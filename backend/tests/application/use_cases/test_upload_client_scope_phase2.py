@@ -14,7 +14,6 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.application.use_cases.aisles.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.aisles.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.aisles.upload_aisle_assets import UploadAisleAssetsUseCase
-from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -24,6 +23,7 @@ from src.infrastructure.repositories.memory_job_repository import MemoryJobRepos
 from src.infrastructure.repositories.memory_source_asset_repository import (
     MemorySourceAssetRepository,
 )
+from tests.support.access_principal_helpers import company_principal, platform_principal, policy_for
 
 
 class _Clock:
@@ -69,10 +69,6 @@ def _aisle(inv_id: str = "inv-a", aisle_id: str = "aisle-1") -> Aisle:
     )
 
 
-def _user(client_id: str | None, *, role: str = "company_admin") -> AuthUser:
-    return AuthUser(id="u1", username="op", role=role, client_id=client_id)
-
-
 @pytest.fixture
 def repos():
     inv = MemoryInventoryRepository()
@@ -95,7 +91,7 @@ def test_upload_rejects_cross_client_before_storage(repos) -> None:
         status_reconciler=InventoryStatusReconciler(
             inventory_repo=inv_repo, aisle_repo=aisle_repo, clock=clock
         ),
-        inventory_repo=inv_repo,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     uf = UploadedFile(
         original_filename="x.jpg",
@@ -107,7 +103,7 @@ def test_upload_rejects_cross_client_before_storage(repos) -> None:
             "inv-a",
             "aisle-1",
             [uf],
-            access_user=_user("client-b"),
+            principal=company_principal("client-b"),
         )
     assert storage.saved == []
     assert list(asset_repo.list_by_aisle("aisle-1")) == []
@@ -129,10 +125,12 @@ def test_list_and_delete_reject_cross_client(repos) -> None:
         )
     )
     list_uc = ListAisleAssetsUseCase(
-        aisle_repo=aisle_repo, asset_repo=asset_repo, inventory_repo=inv_repo
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     with pytest.raises(InventoryNotFoundError):
-        list_uc.execute("inv-a", "aisle-1", access_user=_user("client-b"))
+        list_uc.execute("inv-a", "aisle-1", principal=company_principal("client-b"))
 
     del_uc = DeleteAisleSourceAssetUseCase(
         aisle_repo=aisle_repo,
@@ -141,23 +139,25 @@ def test_list_and_delete_reject_cross_client(repos) -> None:
         artifact_storage=_Storage(),
         clock=_Clock(),
         status_reconciler=MagicMock(),
-        inventory_repo=inv_repo,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     with pytest.raises(InventoryNotFoundError):
-        del_uc.execute("inv-a", "aisle-1", "asset-1", access_user=_user("client-b"))
+        del_uc.execute("inv-a", "aisle-1", "asset-1", principal=company_principal("client-b"))
 
 
 def test_platform_admin_can_cross_client(repos) -> None:
     inv_repo, aisle_repo, asset_repo = repos
     list_uc = ListAisleAssetsUseCase(
-        aisle_repo=aisle_repo, asset_repo=asset_repo, inventory_repo=inv_repo
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     assert (
         list(
             list_uc.execute(
                 "inv-a",
                 "aisle-1",
-                access_user=_user(None, role="platform_admin"),
+                principal=platform_principal(),
             )
         )
         == []
@@ -167,6 +167,10 @@ def test_platform_admin_can_cross_client(repos) -> None:
 def test_same_client_list_ok(repos) -> None:
     inv_repo, aisle_repo, asset_repo = repos
     list_uc = ListAisleAssetsUseCase(
-        aisle_repo=aisle_repo, asset_repo=asset_repo, inventory_repo=inv_repo
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
-    assert list(list_uc.execute("inv-a", "aisle-1", access_user=_user("client-a"))) == []
+    assert (
+        list(list_uc.execute("inv-a", "aisle-1", principal=company_principal("client-a"))) == []
+    )

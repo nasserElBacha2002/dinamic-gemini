@@ -141,10 +141,17 @@ def run_delete_pipeline(cur: Any) -> None:
         "product_records",
         "evidences",
         "aisle_code_scan_detections",
+        # Manual coverage FKs positions/jobs — must clear before positions / inventory_jobs.
+        "position_manual_image_coverage",
+        "position_versions",
         "positions",
         "final_count_records",
         "raw_labels",
         "normalized_labels",
+        # Children of source_assets (must clear before deleting assets).
+        "authoritative_local_code_scan_results",
+        "mobile_preliminary_detections",
+        "preliminary_detection_reconciliations",
         "source_assets",
     ):
         exec_if_table(cur, "dbo", tbl, f"DELETE FROM dbo.[{tbl}];")

@@ -31,6 +31,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.storage.artifact_store import StoredArtifact
+from tests.support.access_principal_helpers import platform_principal, policy_for
 
 
 class FixedClock:
@@ -266,12 +267,13 @@ def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() ->
         artifact_storage=storage,
         clock=clock,
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [
         UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg"),
         UploadedFile("clip.mp4", BytesIO(b"fake_mp4"), "video/mp4"),
     ]
-    created = use_case.execute("inv1", "a1", files).assets
+    created = use_case.execute("inv1", "a1", files, principal=platform_principal()).assets
 
     assert len(created) == 2
     assert all(a.aisle_id == "a1" for a in created)
@@ -294,10 +296,10 @@ def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() ->
 
 def test_upload_aisle_assets_raises_when_aisle_not_found() -> None:
     aisle_repo = StubAisleRepo()
-    inv_repo = StubInventoryRepo([])
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
     asset_repo = StubAssetRepo()
     storage = StubArtifactStorage()
-    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
 
     use_case = UploadAisleAssetsUseCase(
@@ -306,11 +308,12 @@ def test_upload_aisle_assets_raises_when_aisle_not_found() -> None:
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [UploadedFile("x.jpg", BytesIO(b"x"), "image/jpeg")]
 
     with pytest.raises(AisleNotFoundError):
-        use_case.execute("inv1", "nonexistent", files)
+        use_case.execute("inv1", "nonexistent", files, principal=platform_principal())
 
 
 def test_upload_aisle_assets_cleans_storage_when_db_save_fails() -> None:
@@ -331,10 +334,11 @@ def test_upload_aisle_assets_cleans_storage_when_db_save_fails() -> None:
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg")]
 
-    batch = use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files, principal=platform_principal())
     assert batch.assets == []
     assert len(batch.errors) == 1
     assert storage._deleted == [storage._written[0][0]]
@@ -358,10 +362,11 @@ def test_upload_aisle_assets_failed_save_deletes_canonical_storage_key() -> None
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg")]
 
-    batch = use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files, principal=platform_principal())
     assert batch.assets == []
     assert len(batch.errors) == 1
     assert storage._deleted == [storage._written[0][0]]
@@ -373,7 +378,7 @@ def test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory() -> N
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
-    inv_repo = StubInventoryRepo([])
+    inv_repo = StubInventoryRepo([Inventory("other_inv", "W", InventoryStatus.DRAFT, now, now)])
     asset_repo = StubAssetRepo()
     storage = StubArtifactStorage()
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
@@ -384,11 +389,12 @@ def test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory() -> N
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [UploadedFile("x.jpg", BytesIO(b"x"), "image/jpeg")]
 
     with pytest.raises(AisleNotFoundError):
-        use_case.execute("other_inv", "a1", files)
+        use_case.execute("other_inv", "a1", files, principal=platform_principal())
 
 
 def test_upload_aisle_assets_returns_error_for_unsupported_content_type() -> None:
@@ -407,10 +413,11 @@ def test_upload_aisle_assets_returns_error_for_unsupported_content_type() -> Non
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [UploadedFile("doc.pdf", BytesIO(b"pdf"), "application/pdf")]
 
-    batch = use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files, principal=platform_principal())
     assert batch.assets == []
     assert len(batch.errors) == 1
     assert batch.errors[0].code == "UNSUPPORTED_ASSET_TYPE"
@@ -432,10 +439,11 @@ def test_upload_aisle_assets_raises_when_empty_files() -> None:
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
 
     with pytest.raises(EmptyUploadError, match="At least one file"):
-        use_case.execute("inv1", "a1", [])
+        use_case.execute("inv1", "a1", [], principal=platform_principal())
 
 
 def test_upload_aisle_assets_returns_error_for_video_extension_labeled_as_image() -> None:
@@ -454,10 +462,11 @@ def test_upload_aisle_assets_returns_error_for_video_extension_labeled_as_image(
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [UploadedFile("camera_capture.mp4", BytesIO(b"bad"), "image/jpeg")]
 
-    batch = use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files, principal=platform_principal())
     assert batch.assets == []
     assert len(batch.errors) == 1
     assert "Unsupported asset type" in batch.errors[0].detail
@@ -482,10 +491,11 @@ def test_upload_aisle_assets_persist_failure_detail_never_leaks_exception_messag
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg")]
 
-    batch = use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files, principal=platform_principal())
 
     assert len(batch.errors) == 1
     err = batch.errors[0]
@@ -525,6 +535,7 @@ def test_upload_aisle_assets_returns_preexisting_idempotent_asset_without_reuplo
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [
         UploadedFile(
@@ -536,7 +547,7 @@ def test_upload_aisle_assets_returns_preexisting_idempotent_asset_without_reuplo
         )
     ]
 
-    batch = use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files, principal=platform_principal())
 
     assert batch.errors == []
     assert batch.assets == [existing_asset]
@@ -576,6 +587,7 @@ def test_upload_aisle_assets_duplicate_idempotency_key_race_returns_winner_and_d
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [
         UploadedFile(
@@ -587,7 +599,7 @@ def test_upload_aisle_assets_duplicate_idempotency_key_race_returns_winner_and_d
         )
     ]
 
-    batch = use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files, principal=platform_principal())
 
     assert batch.errors == []
     assert len(batch.assets) == 1
@@ -620,6 +632,7 @@ def test_upload_aisle_assets_duplicate_idempotency_key_without_winner_row_report
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [
         UploadedFile(
@@ -631,7 +644,7 @@ def test_upload_aisle_assets_duplicate_idempotency_key_without_winner_row_report
         )
     ]
 
-    batch = use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files, principal=platform_principal())
 
     assert batch.assets == []
     assert len(batch.errors) == 1
@@ -643,6 +656,7 @@ def test_upload_aisle_assets_finalize_reconcile_failure_still_returns_created_as
     """A finalize/reconcile failure after assets are persisted must not turn a successful upload
     into an error response — the client already has durable asset rows."""
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
@@ -656,10 +670,11 @@ def test_upload_aisle_assets_finalize_reconcile_failure_still_returns_created_as
         artifact_storage=storage,
         clock=FixedClock(now),
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     files = [UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg")]
 
-    batch = use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files, principal=platform_principal())
 
     assert batch.errors == []
     assert len(batch.assets) == 1
@@ -668,6 +683,7 @@ def test_upload_aisle_assets_finalize_reconcile_failure_still_returns_created_as
 
 def test_list_aisle_assets_returns_assets_for_aisle() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.ASSETS_UPLOADED, now, now)
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
@@ -676,8 +692,12 @@ def test_list_aisle_assets_returns_assets_for_aisle() -> None:
         SourceAsset("x1", "a1", SourceAssetType.PHOTO, "f.jpg", "/path/f.jpg", "image/jpeg", now)
     )
 
-    use_case = ListAisleAssetsUseCase(aisle_repo=aisle_repo, asset_repo=asset_repo)
-    result = use_case.execute("inv1", "a1")
+    use_case = ListAisleAssetsUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        access_policy=policy_for(inv_repo, aisle_repo),
+    )
+    result = use_case.execute("inv1", "a1", principal=platform_principal())
 
     assert len(result) == 1
     assert result[0].id == "x1"
@@ -685,24 +705,40 @@ def test_list_aisle_assets_returns_assets_for_aisle() -> None:
 
 
 def test_list_aisle_assets_raises_when_aisle_not_found() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
     aisle_repo = StubAisleRepo()
     asset_repo = StubAssetRepo()
-    use_case = ListAisleAssetsUseCase(aisle_repo=aisle_repo, asset_repo=asset_repo)
+    use_case = ListAisleAssetsUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        access_policy=policy_for(inv_repo, aisle_repo),
+    )
 
     with pytest.raises(AisleNotFoundError):
-        use_case.execute("inv1", "nonexistent")
+        use_case.execute("inv1", "nonexistent", principal=platform_principal())
 
 
 def test_list_aisle_assets_get_validated_aisle_matches_execute_rules() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo(
+        [
+            Inventory("inv1", "W", InventoryStatus.DRAFT, now, now),
+            Inventory("wrong-inv", "W", InventoryStatus.DRAFT, now, now),
+        ]
+    )
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.ASSETS_UPLOADED, now, now)
     aisle_repo = StubAisleRepo()
     aisle_repo.save(aisle)
     asset_repo = StubAssetRepo()
-    uc = ListAisleAssetsUseCase(aisle_repo=aisle_repo, asset_repo=asset_repo)
-    got = uc.get_validated_aisle("inv1", "a1")
+    uc = ListAisleAssetsUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        access_policy=policy_for(inv_repo, aisle_repo),
+    )
+    got = uc.get_validated_aisle("inv1", "a1", principal=platform_principal())
     assert got.id == "a1"
     assert got.inventory_id == "inv1"
 
     with pytest.raises(AisleNotFoundError):
-        uc.get_validated_aisle("wrong-inv", "a1")
+        uc.get_validated_aisle("wrong-inv", "a1", principal=platform_principal())

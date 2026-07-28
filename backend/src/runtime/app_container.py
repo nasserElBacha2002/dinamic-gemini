@@ -169,6 +169,7 @@ from src.runtime.container.prompt_config_builders import (
 from src.runtime.container.repository_backend import (
     RepositoryBackendMode,
     RepositoryBackendResolution,
+    RepositoryBackendStatus,
     resolve_repository_backend_mode,
 )
 from src.runtime.container.repository_builders import (
@@ -467,6 +468,54 @@ class AppContainer:
     def get_repository_backend_mode_value(self) -> str:
         """Resolved repository backend mode string for health / observability (no secrets)."""
         return self._get_repository_backend_resolution().mode.value
+
+    def get_repository_backend_status(self) -> RepositoryBackendStatus:
+        """Public, secret-free repository backend status for ``/health`` and ``/ready`` (Phase 2).
+
+        Reuses the cached resolution via :meth:`_get_repository_backend_resolution`. Callers
+        (API layer) must use this method instead of touching the resolution cache directly —
+        it never raises and never leaks connection strings or raw probe exception text.
+        """
+        from src.runtime.container.runtime_environment import (
+            RepositoryBackendForbiddenError,
+            resolve_runtime_environment,
+        )
+
+        env = resolve_runtime_environment()
+        try:
+            resolution = self._get_repository_backend_resolution()
+        except RepositoryBackendForbiddenError as exc:
+            return RepositoryBackendStatus(
+                mode=exc.mode,
+                environment=env.value,
+                resolved=False,
+                healthy=False,
+                fallback_activated=False,
+                reason_code="REPOSITORY_BACKEND_MODE_FORBIDDEN",
+            )
+        except Exception as exc:
+            logger.error(
+                "get_repository_backend_status: resolution failed environment=%s error_type=%s",
+                env.value,
+                type(exc).__name__,
+            )
+            return RepositoryBackendStatus(
+                mode=None,
+                environment=env.value,
+                resolved=False,
+                healthy=False,
+                fallback_activated=False,
+                reason_code="REPOSITORY_BACKEND_RESOLUTION_FAILED",
+            )
+        fallback_activated = resolution.mode == RepositoryBackendMode.MEMORY_FALLBACK
+        return RepositoryBackendStatus(
+            mode=resolution.mode.value,
+            environment=env.value,
+            resolved=True,
+            healthy=True,
+            fallback_activated=fallback_activated,
+            reason_code="SQL_PROBE_FAILED_MEMORY_FALLBACK_ACTIVE" if fallback_activated else None,
+        )
 
     def is_sql_repository_backend(self) -> bool:
         """True when this container's resolved backend is SQL (not memory-only/fallback).

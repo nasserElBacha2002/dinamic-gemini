@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import (
     ActiveJobExistsError,
     AisleInactiveError,
@@ -45,7 +46,7 @@ from src.application.services.image_processing.ocr_client_field_rules import (
     ocr_client_rules_snapshot,
     resolve_ocr_client_field_rules,
 )
-from src.application.services.inventory_access import authorize_inventory_access_or_log_denied
+from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.legacy_processing_guard import (
     reject_legacy_effective_mode_for_new_job,
@@ -53,7 +54,6 @@ from src.application.services.legacy_processing_guard import (
 from src.application.services.process_aisle_execution_resolution import (
     resolve_process_aisle_execution_keys,
 )
-from src.auth.schemas import AuthUser
 from src.config import load_settings
 from src.domain.aisle_identification.modes import CONFIGURATION_SNAPSHOT_VERSION
 from src.domain.aisle_identification.resolver import resolve_aisle_identification_mode
@@ -101,8 +101,8 @@ class StartAisleProcessingCommand:
     prompt_key: str = DEFAULT_HYBRID_PROMPT_PROFILE
     #: Stable client key; replay returns the existing job for this aisle when found.
     idempotency_key: str | None = None
-    #: Authenticated principal for client-scope checks (Phase 2). Optional for unit tests.
-    access_user: AuthUser | None = None
+    #: Authenticated principal (required for user-facing process starts).
+    principal: AccessPrincipal | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +175,7 @@ class StartAisleProcessingUseCase:
         job_repo: JobRepository,
         launch_service: AisleJobLaunchService,
         stale_reconciler: JobStaleReconciler,
+        access_policy: InventoryAccessPolicy,
         client_repo: ClientRepository | None = None,
         extraction_profile_repo=None,
         client_supplier_repo: ClientSupplierRepository | None = None,
@@ -186,18 +187,22 @@ class StartAisleProcessingUseCase:
         self._job_repo = job_repo
         self._launch_service = launch_service
         self._stale_reconciler = stale_reconciler
+        self._access_policy = access_policy
         self._client_repo = client_repo
         self._extraction_profile_repo = extraction_profile_repo
         self._client_supplier_repo = client_supplier_repo
         self._supplier_prompt_config_repo = supplier_prompt_config_repo
 
     def execute(self, command: StartAisleProcessingCommand) -> StartAisleProcessingResult:
-        if command.access_user is not None:
-            authorize_inventory_access_or_log_denied(
-                self._inventory_repo,
-                inventory_id=command.inventory_id,
-                user=command.access_user,
+        if command.principal is None:
+            from src.application.dto.access_principal import AccessPrincipalRequiredError
+
+            raise AccessPrincipalRequiredError(
+                "StartAisleProcessing requires an AccessPrincipal for user-facing starts"
             )
+        self._access_policy.require_aisle(
+            command.inventory_id, command.aisle_id, command.principal
+        )
         pipeline_key, model_name, _resolved_prompt, inv_from_keys = (
             _materialize_execution_keys_for_start(
                 self._inventory_repo,

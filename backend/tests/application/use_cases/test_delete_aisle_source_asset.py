@@ -29,6 +29,7 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.storage.artifact_store import StoredArtifact
+from tests.support.access_principal_helpers import platform_principal, policy_for
 from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
@@ -218,9 +219,10 @@ def test_delete_removes_asset_storage_and_reverts_aisle_when_last() -> None:
         artifact_storage=storage,
         clock=clock,
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
 
-    use_case.execute("inv1", "a1", "ast1")
+    use_case.execute("inv1", "a1", "ast1", principal=platform_principal())
 
     assert asset_repo.get_by_id("ast1") is None
     assert storage._deleted == ["uploads/aisles/a1/raw/x.jpg"]
@@ -259,10 +261,11 @@ def test_delete_blocked_when_active_job() -> None:
         artifact_storage=storage,
         clock=clock,
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
 
     with pytest.raises(AisleSourceAssetMutationBlockedError):
-        use_case.execute("inv1", "a1", "ast1")
+        use_case.execute("inv1", "a1", "ast1", principal=platform_principal())
 
     assert asset_repo.get_by_id("ast1") is not None
     assert storage._deleted == []
@@ -286,10 +289,11 @@ def test_delete_raises_when_asset_wrong_aisle() -> None:
         artifact_storage=StubArtifactStorage(),
         clock=clock,
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
 
     with pytest.raises(SourceAssetNotFoundForAisleError):
-        use_case.execute("inv1", "a1", "ast1")
+        use_case.execute("inv1", "a1", "ast1", principal=platform_principal())
 
 
 def test_delete_raises_aisle_not_found() -> None:
@@ -306,7 +310,8 @@ def test_delete_raises_aisle_not_found() -> None:
         artifact_storage=StubArtifactStorage(),
         clock=clock,
         status_reconciler=reconciler,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
 
     with pytest.raises(AisleNotFoundError):
-        use_case.execute("inv1", "missing", "ast1")
+        use_case.execute("inv1", "missing", "ast1", principal=platform_principal())

@@ -28,6 +28,7 @@ from tests.application.use_cases.test_aisle_processing import (
     make_launch_service,
     make_stale_reconciler,
 )
+from tests.support.access_principal_helpers import platform_principal, policy_for
 
 
 def _build_use_case(
@@ -52,6 +53,7 @@ def _build_use_case(
             reconciler=reconciler,
         ),
         stale_reconciler=make_stale_reconciler(job_repo, clock),
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     return use_case, job_repo, aisle_repo
 
@@ -72,12 +74,12 @@ def test_idempotent_replay_returns_original_job_snapshot() -> None:
 
     first = use_case.execute(
         StartAisleProcessingCommand(
-            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1"
+            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1", principal=platform_principal()
         )
     )
     replay = use_case.execute(
         StartAisleProcessingCommand(
-            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1"
+            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1", principal=platform_principal()
         )
     )
 
@@ -107,7 +109,7 @@ def test_idempotent_replay_unaffected_by_later_aisle_mutation() -> None:
 
     first = use_case.execute(
         StartAisleProcessingCommand(
-            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1"
+            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1", principal=platform_principal()
         )
     )
 
@@ -118,7 +120,7 @@ def test_idempotent_replay_unaffected_by_later_aisle_mutation() -> None:
 
     replay = use_case.execute(
         StartAisleProcessingCommand(
-            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1"
+            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1", principal=platform_principal()
         )
     )
 
@@ -138,7 +140,7 @@ def test_distinct_idempotency_keys_create_distinct_jobs() -> None:
 
     first = use_case.execute(
         StartAisleProcessingCommand(
-            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1"
+            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-1", principal=platform_principal()
         )
     )
     # First attempt occupies the aisle; simulate it terminating so the second start is allowed.
@@ -151,7 +153,7 @@ def test_distinct_idempotency_keys_create_distinct_jobs() -> None:
 
     second = use_case.execute(
         StartAisleProcessingCommand(
-            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-2"
+            inventory_id="inv1", aisle_id="a1", idempotency_key="req-key-2", principal=platform_principal()
         )
     )
 
@@ -165,7 +167,11 @@ def test_no_idempotency_key_always_finds_no_replay_target() -> None:
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     use_case, job_repo, _ = _build_use_case(inventory=inv, aisle=aisle)
 
-    first = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    first = use_case.execute(
+        StartAisleProcessingCommand(
+            inventory_id="inv1", aisle_id="a1", principal=platform_principal()
+        )
+    )
     saved = job_repo.get_by_id(first.job_id)
     assert saved is not None
     assert saved.payload_json.get("idempotency_key") is None

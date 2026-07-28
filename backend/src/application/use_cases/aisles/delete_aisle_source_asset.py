@@ -10,22 +10,16 @@ from __future__ import annotations
 
 import logging
 
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import (
     AisleSourceAssetMutationBlockedError,
     SourceAssetNotFoundForAisleError,
 )
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import (
-    AisleRepository,
-    InventoryRepository,
-    JobRepository,
-    SourceAssetRepository,
-)
+from src.application.ports.repositories import AisleRepository, JobRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
-from src.application.services.inventory_access import authorize_inventory_access_or_log_denied
+from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.auth.schemas import AuthUser
 from src.domain.jobs.entities import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -47,8 +41,7 @@ class DeleteAisleSourceAssetUseCase:
         artifact_storage: ArtifactStorage,
         clock: Clock,
         status_reconciler: InventoryStatusReconciler,
-        *,
-        inventory_repo: InventoryRepository | None = None,
+        access_policy: InventoryAccessPolicy,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
@@ -56,7 +49,7 @@ class DeleteAisleSourceAssetUseCase:
         self._artifact_storage = artifact_storage
         self._clock = clock
         self._status_reconciler = status_reconciler
-        self._inventory_repo = inventory_repo
+        self._access_policy = access_policy
 
     def _assert_no_active_jobs(self, aisle_id: str) -> None:
         jobs = self._job_repo.list_jobs_for_target("aisle", aisle_id, limit=100)
@@ -72,20 +65,9 @@ class DeleteAisleSourceAssetUseCase:
         aisle_id: str,
         asset_id: str,
         *,
-        access_user: AuthUser | None = None,
+        principal: AccessPrincipal,
     ) -> None:
-        if access_user is not None and self._inventory_repo is not None:
-            authorize_inventory_access_or_log_denied(
-                self._inventory_repo,
-                inventory_id=inventory_id,
-                user=access_user,
-            )
-        aisle = require_aisle_scoped_to_inventory(
-            self._aisle_repo,
-            inventory_id=inventory_id,
-            aisle_id=aisle_id,
-            detail_style="strict",
-        )
+        aisle = self._access_policy.require_aisle(inventory_id, aisle_id, principal)
         self._assert_no_active_jobs(aisle_id)
 
         asset = self._asset_repo.get_by_id(asset_id)

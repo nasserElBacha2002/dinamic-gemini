@@ -23,6 +23,7 @@ _PRODUCTION_LIKE: frozenset[str] = frozenset(
         "live",
         "prd",
         "stg",
+        "stage",
         "staging",
         "demo",
         "uat",
@@ -33,16 +34,36 @@ _PRODUCTION_LIKE: frozenset[str] = frozenset(
 _TEST_TOKENS: frozenset[str] = frozenset({"test", "testing", "pytest", "ci"})
 _LOCAL_TOKENS: frozenset[str] = frozenset({"local", "localhost"})
 _DEV_TOKENS: frozenset[str] = frozenset({"dev", "development"})
+_STAGING_TOKENS: frozenset[str] = frozenset({"stg", "stage", "staging"})
+_PREPRODUCTION_TOKENS: frozenset[str] = frozenset({"preproduction", "preprod"})
+_PRODUCTION_TOKENS: frozenset[str] = frozenset({"prod", "production", "live", "prd", "demo", "uat"})
+
+# Explicit runtime designation wins over generic app env vars, which in turn win over the
+# pytest-process heuristic below. Checked in this order; first non-empty token wins.
+_ENV_VAR_PRECEDENCE: tuple[str, ...] = (
+    "V3_RUNTIME_ENVIRONMENT",
+    "DINAMIC_RUNTIME_PROFILE",
+    "APP_ENV",
+    "ENVIRONMENT",
+    "NODE_ENV",
+)
 
 
 def resolve_runtime_environment() -> RuntimeEnvironment:
-    """Classify runtime from ``APP_ENV`` / ``ENVIRONMENT`` / ``NODE_ENV``.
+    """Classify runtime from explicit env vars, falling back to a pytest-process heuristic.
 
-    First matching non-empty token wins (APP_ENV, then ENVIRONMENT, then NODE_ENV).
-    Pytest process (``PYTEST_CURRENT_TEST`` / ``PYTEST_VERSION``) → TEST when no explicit env.
+    First matching non-empty token wins, checked in :data:`_ENV_VAR_PRECEDENCE` order:
+    ``V3_RUNTIME_ENVIRONMENT``, ``DINAMIC_RUNTIME_PROFILE`` (explicit runtime designations),
+    then the generic ``APP_ENV`` / ``ENVIRONMENT`` / ``NODE_ENV``.
+
+    ``PYTEST_CURRENT_TEST`` / ``PYTEST_VERSION`` are used **only** as a last-resort fallback
+    when none of the above env vars are set — they must never override an explicit token
+    (e.g. a test that sets ``V3_RUNTIME_ENVIRONMENT=production`` to exercise production policy
+    must resolve to PRODUCTION, not TEST, even though it runs under pytest).
+
     Unknown or unset → :attr:`RuntimeEnvironment.UNKNOWN` (safe default: requires SQL).
     """
-    for key in ("APP_ENV", "ENVIRONMENT", "NODE_ENV"):
+    for key in _ENV_VAR_PRECEDENCE:
         raw = os.getenv(key)
         if raw is None:
             continue
@@ -55,14 +76,15 @@ def resolve_runtime_environment() -> RuntimeEnvironment:
             return RuntimeEnvironment.LOCAL
         if token in _DEV_TOKENS:
             return RuntimeEnvironment.DEVELOPMENT
-        if token in {"stg", "staging"}:
+        if token in _STAGING_TOKENS:
             return RuntimeEnvironment.STAGING
-        if token in {"preproduction", "preprod"}:
+        if token in _PREPRODUCTION_TOKENS:
             return RuntimeEnvironment.PREPRODUCTION
-        if token in {"prod", "production", "live", "prd", "demo", "uat"}:
+        if token in _PRODUCTION_TOKENS:
             return RuntimeEnvironment.PRODUCTION
         return RuntimeEnvironment.UNKNOWN
-    # Intentional test process without APP_ENV → allow MEMORY_ONLY for unit suites.
+    # No explicit env token set anywhere — fall back to detecting an intentional pytest
+    # process so unit suites default to TEST (allows MEMORY_ONLY) instead of UNKNOWN.
     if os.getenv("PYTEST_CURRENT_TEST") or os.getenv("PYTEST_VERSION"):
         return RuntimeEnvironment.TEST
     return RuntimeEnvironment.UNKNOWN

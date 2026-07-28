@@ -40,6 +40,23 @@ class RepositoryBackendResolution:
     reason: str | None = None
 
 
+@dataclass(frozen=True)
+class RepositoryBackendStatus:
+    """Public, secret-free repository backend status for health/ready endpoints (Phase 2).
+
+    Unlike :class:`RepositoryBackendResolution` (internal, may carry a raw exception summary
+    in ``reason``), this type is safe to serialize directly in an HTTP response: ``reason_code``
+    is always a short fixed token, never a probe exception message or connection string.
+    """
+
+    mode: str | None
+    environment: str
+    resolved: bool
+    healthy: bool
+    fallback_activated: bool
+    reason_code: str | None
+
+
 def _sql_persistence_target_enabled(settings: AppSettings) -> bool:
     """True when settings intend SQL as the persistence target (same gate as legacy ``_v3_db_enabled``)."""
     return bool(

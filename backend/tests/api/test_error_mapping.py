@@ -671,12 +671,16 @@ def test_get_position_detail_product_not_found_returns_structured_json() -> None
 def test_start_aisle_processing_active_job_exists_returns_structured_json() -> None:
     """Integration: Category B structured — controlled ``detail`` + ``code``."""
 
+    from src.api.dependencies import require_inventory_client_scope
+    from tests.support.access_principal_helpers import platform_principal
+
     msg = "Aisle aisle-1 already has an active job (status=QUEUED)"
 
     class _BlockedStart:
         def execute(self, *_args: object, **_kwargs: object) -> None:
             raise ActiveJobExistsError(msg)
 
+    app.dependency_overrides[require_inventory_client_scope] = lambda: platform_principal()
     app.dependency_overrides[get_start_aisle_processing_use_case] = lambda: _BlockedStart()
     try:
         r = TestClient(app, raise_server_exceptions=False).post(
@@ -690,6 +694,7 @@ def test_start_aisle_processing_active_job_exists_returns_structured_json() -> N
         assert body["detail"]
     finally:
         app.dependency_overrides.pop(get_start_aisle_processing_use_case, None)
+        app.dependency_overrides.pop(require_inventory_client_scope, None)
 
 
 def test_promote_operational_job_not_allowed_returns_structured_json() -> None:

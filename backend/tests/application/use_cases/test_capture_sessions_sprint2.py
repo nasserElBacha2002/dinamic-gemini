@@ -51,6 +51,7 @@ from src.infrastructure.repositories.memory_capture_session_repository import (
 )
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+from tests.support.access_principal_helpers import platform_principal, policy_for
 
 
 def _pillow_time_extractor():
@@ -197,12 +198,14 @@ def test_inventory_level_session_upload_close_cancel_flow(tmp_path: Path) -> Non
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     )
     batch = upload_uc.execute(
         inventory_id=inv_id,
         aisle_id=None,
         session_id=session.id,
         files=[UploadedFile("inv-level.jpg", BytesIO(b"abc-inv"), "image/jpeg")],
+        principal=platform_principal(),
     )
     assert len(batch.items) == 1
     assert batch.items[0].import_status.value == "imported"
@@ -312,11 +315,13 @@ def test_close_then_reopen_allowed(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     ).execute(
         inventory_id=inv_id,
         aisle_id=aisle_id,
         session_id=s.id,
         files=[UploadedFile("a.jpg", BytesIO(b"x"), "image/jpeg")],
+        principal=platform_principal(),
     )
     close_uc = CloseCaptureSessionUseCase(
         session_repo=session_repo, item_repo=item_repo, clock=clock
@@ -392,12 +397,14 @@ def test_staging_file_too_large(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_upload_bytes=3,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     )
     batch = upload_uc.execute(
         inventory_id=inv_id,
         aisle_id=aisle_id,
         session_id=s.id,
         files=[UploadedFile("a.jpg", BytesIO(b"abcd"), "image/jpeg")],
+        principal=platform_principal(),
     )
     assert len(batch.items) == 0
     assert len(batch.errors) == 1
@@ -424,6 +431,7 @@ def test_staging_upload_rejects_more_than_global_file_limit(tmp_path: Path) -> N
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
         upload_policy=UploadRequestLimitPolicy(max_files_per_request=5),
     )
     five_files = [
@@ -434,6 +442,7 @@ def test_staging_upload_rejects_more_than_global_file_limit(tmp_path: Path) -> N
         aisle_id=aisle_id,
         session_id=s.id,
         files=five_files,
+        principal=platform_principal(),
     )
     assert len(batch.items) == 5
     with pytest.raises(TooManyFilesPerUploadError):
@@ -445,6 +454,7 @@ def test_staging_upload_rejects_more_than_global_file_limit(tmp_path: Path) -> N
                 UploadedFile(f"{i}.jpg", BytesIO(bytes([i])), "image/jpeg")
                 for i in range(6)
             ],
+            principal=platform_principal(),
         )
 
 
@@ -470,6 +480,7 @@ def test_staging_upload_never_calls_unbounded_read_on_file_obj(tmp_path: Path) -
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     )
     img = Image.new("RGB", (4, 4), color=(10, 20, 30))
     bio = BytesIO()
@@ -481,6 +492,7 @@ def test_staging_upload_never_calls_unbounded_read_on_file_obj(tmp_path: Path) -
         aisle_id=aisle_id,
         session_id=s.id,
         files=[UploadedFile("guarded.jpg", guarded, "image/jpeg")],
+        principal=platform_principal(),
     )
 
     assert len(batch.items) == 1
@@ -509,6 +521,7 @@ def test_upload_creates_item_no_source_asset(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     )
     files = [
         UploadedFile(
@@ -517,7 +530,7 @@ def test_upload_creates_item_no_source_asset(tmp_path: Path) -> None:
             content_type="image/jpeg",
         )
     ]
-    batch = upload_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, files=files)
+    batch = upload_uc.execute(inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id, files=files, principal=platform_principal())
     assert len(batch.items) == 1
     assert batch.errors == ()
     assert batch.items[0].staging_storage_key.startswith("capture/staging/")
@@ -557,6 +570,7 @@ def test_upload_rejected_after_cancel(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     )
     with pytest.raises(CaptureSessionNotAcceptingUploadsError):
         upload_uc.execute(
@@ -570,6 +584,7 @@ def test_upload_rejected_after_cancel(tmp_path: Path) -> None:
                     content_type="image/jpeg",
                 )
             ],
+            principal=platform_principal(),
         )
 
 
@@ -594,6 +609,7 @@ def test_upload_duplicate_content_rejected(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     )
     body = b"same-bytes"
     first = upload_uc.execute(
@@ -603,6 +619,7 @@ def test_upload_duplicate_content_rejected(tmp_path: Path) -> None:
         files=[
             UploadedFile("1.jpg", BytesIO(body), "image/jpeg"),
         ],
+        principal=platform_principal(),
     )
     assert len(first.errors) == 0
     second = upload_uc.execute(
@@ -612,6 +629,7 @@ def test_upload_duplicate_content_rejected(tmp_path: Path) -> None:
         files=[
             UploadedFile("2.jpg", BytesIO(body), "image/jpeg"),
         ],
+        principal=platform_principal(),
     )
     assert len(second.items) == 0
     assert len(second.errors) == 1
@@ -638,6 +656,7 @@ def test_upload_mixed_batch_partial_success(tmp_path: Path) -> None:
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     )
     body = b"unique-for-mixed"
     batch = upload_uc.execute(
@@ -649,6 +668,7 @@ def test_upload_mixed_batch_partial_success(tmp_path: Path) -> None:
             UploadedFile("empty.jpg", BytesIO(b""), "image/jpeg"),
             UploadedFile("dup.jpg", BytesIO(body), "image/jpeg"),
         ],
+        principal=platform_principal(),
     )
     assert len(batch.items) == 1
     assert len(batch.errors) == 2

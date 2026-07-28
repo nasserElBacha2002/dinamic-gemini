@@ -46,6 +46,7 @@ from src.api.dependencies import (
     get_run_auditability_service,
     get_start_aisle_processing_use_case,
     get_update_aisle_code_use_case,
+    require_inventory_client_scope,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.mappers.result_evidence_mapper import job_traceability_to_response
@@ -100,6 +101,7 @@ from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     load_hybrid_report_json_for_api,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import (
     ActiveJobExistsError,
     AisleNotFoundError,
@@ -239,7 +241,7 @@ from src.application.use_cases.inventories.export_inventory_business import (
 from src.application.use_cases.inventories.export_inventory_results import (
     ExportAisleResultsCsvUseCase,
 )
-from src.auth.dependencies import get_current_admin, require_observability_capability
+from src.auth.dependencies import require_observability_capability
 from src.auth.schemas import AuthUser
 from src.config import load_settings
 from src.domain.aisle.entities import Aisle
@@ -553,7 +555,7 @@ def start_aisle_processing(
     aisle_id: str,
     payload: ProcessAisleRequest | None = Body(None),
     use_case: StartAisleProcessingUseCase = Depends(get_start_aisle_processing_use_case),
-    current_user: AuthUser = Depends(get_current_admin),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> ProcessAisleResponse:
     try:
         body = payload or ProcessAisleRequest(
@@ -573,7 +575,7 @@ def start_aisle_processing(
                 requested_prompt_key=body.prompt_key,
                 requested_identification_mode=body.identification_mode,
                 idempotency_key=body.idempotency_key,
-                access_user=current_user,
+                principal=principal,
             )
         )
         return ProcessAisleResponse(

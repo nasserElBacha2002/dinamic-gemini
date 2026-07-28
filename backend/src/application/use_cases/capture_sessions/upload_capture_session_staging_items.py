@@ -9,11 +9,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import uuid4
 
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import (
     CaptureSessionDuplicateItemContentError,
-    CaptureSessionNotAcceptingUploadsError,
-    CaptureSessionNotFoundError,
     EmptyUploadError,
     UnsupportedAssetTypeError,
 )
@@ -30,6 +29,7 @@ from src.application.ports.services import ArtifactStorage
 from src.application.services.aisle_source_asset_materializer import (
     validate_staging_media_upload_file,
 )
+from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.upload_file_count_validation import (
     assert_upload_file_count_within_limit,
 )
@@ -165,6 +165,7 @@ class UploadCaptureSessionStagingItemsUseCase:
         staging_prefix: str,
         max_upload_bytes: int,
         time_metadata_extractor: CaptureStagingTimeMetadataExtractor,
+        access_policy: InventoryAccessPolicy,
         upload_policy: UploadRequestLimitPolicy | None = None,
     ) -> None:
         self._session_repo = session_repo
@@ -174,27 +175,25 @@ class UploadCaptureSessionStagingItemsUseCase:
         self._staging_prefix = _normalize_prefix(staging_prefix)
         self._max_upload_bytes = max(1, int(max_upload_bytes))
         self._time_extractor = time_metadata_extractor
+        self._access_policy = access_policy
         self._policy = upload_policy or UploadRequestLimitPolicy(
             max_file_size_bytes=self._max_upload_bytes
         )
 
     def _require_session_for_staging_upload(
-        self, session_id: str, inventory_id: str, aisle_id: str | None
+        self,
+        session_id: str,
+        inventory_id: str,
+        aisle_id: str | None,
+        *,
+        principal: AccessPrincipal,
     ) -> CaptureSession:
-        session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
-        if session is None:
-            raise CaptureSessionNotFoundError(
-                "Capture session not found for this inventory and aisle."
-            )
-        if aisle_id is not None and session.aisle_id != aisle_id:
-            raise CaptureSessionNotFoundError(
-                "Capture session not found for this inventory and aisle."
-            )
-        if not _session_accepts_uploads(session):
-            raise CaptureSessionNotAcceptingUploadsError(
-                "This capture session does not accept new staging uploads."
-            )
-        return session
+        return self._access_policy.require_capture_session_for_staging_upload(
+            inventory_id=inventory_id,
+            session_id=session_id,
+            principal=principal,
+            aisle_id=aisle_id,
+        )
 
     @staticmethod
     def _error_unsupported_type(
@@ -459,13 +458,16 @@ class UploadCaptureSessionStagingItemsUseCase:
         aisle_id: str | None,
         session_id: str,
         files: Sequence[UploadedFile],
+        principal: AccessPrincipal,
     ) -> StagingUploadBatchResult:
         if not files:
             raise EmptyUploadError("At least one file is required")
         assert_upload_file_count_within_limit(
             len(files), max_files=self._policy.max_files_per_request
         )
-        session = self._require_session_for_staging_upload(session_id, inventory_id, aisle_id)
+        session = self._require_session_for_staging_upload(
+            session_id, inventory_id, aisle_id, principal=principal
+        )
         session_hashes = self._item_repo.list_all_content_hashes_for_session(session_id)
         now = self._clock.now()
         acc = _StagingBatchAccum([], [], set(), False)

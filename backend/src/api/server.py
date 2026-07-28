@@ -173,23 +173,19 @@ async def api_key_middleware(request: Request, call_next):
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    """Liveness with schema compatibility metadata and repository backend observability."""
-    _sha = (os.environ.get("GIT_SHA") or "").strip() or None
-    repo_backend: str | None = None
-    repo_env: str | None = None
-    fallback_activated: bool | None = None
-    try:
-        from src.runtime.app_container import get_app_container
-        from src.runtime.container.repository_backend import RepositoryBackendMode
-        from src.runtime.container.runtime_environment import resolve_runtime_environment
+    """Liveness with schema compatibility metadata and repository backend observability.
 
-        container = get_app_container()
-        resolution = container._get_repository_backend_resolution()
-        repo_backend = resolution.mode.value
-        repo_env = resolve_runtime_environment().value
-        fallback_activated = resolution.mode == RepositoryBackendMode.MEMORY_FALLBACK
-    except Exception as exc:
-        logger.warning("health: repository backend resolution unavailable: %s", type(exc).__name__)
+    ``ok`` is always ``True`` here — this endpoint only asserts the process is alive and
+    serving requests. Repository backend problems are surfaced (not hidden) via the
+    ``repository_backend_resolved`` / ``repository_backend_healthy`` /
+    ``repository_backend_reason_code`` fields; use ``/ready`` for the actual readiness gate.
+    Uses the public :meth:`AppContainer.get_repository_backend_status` API — never touches the
+    internal resolution cache directly, and never leaks connection strings or probe exceptions.
+    """
+    _sha = (os.environ.get("GIT_SHA") or "").strip() or None
+    from src.runtime.app_container import get_app_container
+
+    backend_status = get_app_container().get_repository_backend_status()
     return HealthResponse(
         ok=True,
         deploy_git_sha=_sha,
@@ -199,15 +195,24 @@ async def health() -> HealthResponse:
         required_schema_version=schema_guard_state.required_version,
         current_schema_version=schema_guard_state.current_version,
         schema_reason=schema_guard_state.reason,
-        repository_backend=repo_backend,
-        repository_backend_environment=repo_env,
-        fallback_activated=fallback_activated,
+        repository_backend=backend_status.mode,
+        repository_backend_environment=backend_status.environment,
+        fallback_activated=backend_status.fallback_activated,
+        repository_backend_resolved=backend_status.resolved,
+        repository_backend_healthy=backend_status.healthy,
+        repository_backend_reason_code=backend_status.reason_code,
     )
 
 
 @app.get("/ready")
 async def ready() -> Response:
-    """Readiness: fail when schema guard is incompatible."""
+    """Readiness: fail when schema is incompatible or the repository backend is unusable.
+
+    503 cases (repository backend): SQL required but unavailable, MEMORY_ONLY forbidden for
+    this environment, MEMORY_FALLBACK forbidden for this environment — all surfaced as
+    ``resolved=False`` / ``healthy=False`` by :meth:`AppContainer.get_repository_backend_status`,
+    which never raises. No bare ``except Exception: return 200`` here.
+    """
     if schema_guard_state.checked and not schema_guard_state.compatible:
         return JSONResponse(
             status_code=503,
@@ -218,6 +223,19 @@ async def ready() -> Response:
                 "required_schema_version": schema_guard_state.required_version,
                 "current_schema_version": schema_guard_state.current_version,
                 "detail": schema_guard_state.reason,
+            },
+        )
+    from src.runtime.app_container import get_app_container
+
+    backend_status = get_app_container().get_repository_backend_status()
+    if not backend_status.resolved or not backend_status.healthy:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "reason": "REPOSITORY_BACKEND_UNAVAILABLE",
+                "repository_backend_environment": backend_status.environment,
+                "repository_backend_reason_code": backend_status.reason_code,
             },
         )
     return JSONResponse(status_code=200, content={"ok": True})

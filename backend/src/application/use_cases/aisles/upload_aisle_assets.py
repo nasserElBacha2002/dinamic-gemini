@@ -15,6 +15,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import (
     AisleInactiveError,
@@ -23,22 +24,16 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
 )
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import (
-    AisleRepository,
-    InventoryRepository,
-    SourceAssetRepository,
-)
+from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
-from src.application.services.inventory_access import authorize_inventory_access_or_log_denied
+from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.upload_request_limits import (
     UploadFileTooLargeError,
     UploadRequestLimitPolicy,
     assert_file_size,
 )
-from src.auth.schemas import AuthUser
 from src.domain.assets.entities import SourceAsset
 
 logger = logging.getLogger(__name__)
@@ -87,8 +82,8 @@ class UploadAisleAssetsUseCase:
         artifact_storage: ArtifactStorage,
         clock: Clock,
         status_reconciler: InventoryStatusReconciler,
+        access_policy: InventoryAccessPolicy,
         *,
-        inventory_repo: InventoryRepository | None = None,
         upload_policy: UploadRequestLimitPolicy | None = None,
     ) -> None:
         self._aisle_repo = aisle_repo
@@ -96,7 +91,7 @@ class UploadAisleAssetsUseCase:
         self._artifact_storage = artifact_storage
         self._clock = clock
         self._status_reconciler = status_reconciler
-        self._inventory_repo = inventory_repo
+        self._access_policy = access_policy
         self._policy = upload_policy or UploadRequestLimitPolicy()
         self._materializer = AisleSourceAssetMaterializer(
             aisle_repo=aisle_repo,
@@ -266,24 +261,13 @@ class UploadAisleAssetsUseCase:
         aisle_id: str,
         files: Sequence[UploadedFile],
         *,
+        principal: AccessPrincipal,
         upload_batch_id: str | None = None,
-        access_user: AuthUser | None = None,
     ) -> AisleAssetUploadBatchResult:
         if not files:
             raise EmptyUploadError("At least one file is required")
-        # Actor → client → inventory before aisle scope / storage writes.
-        if access_user is not None and self._inventory_repo is not None:
-            authorize_inventory_access_or_log_denied(
-                self._inventory_repo,
-                inventory_id=inventory_id,
-                user=access_user,
-            )
-        aisle = require_aisle_scoped_to_inventory(
-            self._aisle_repo,
-            inventory_id=inventory_id,
-            aisle_id=aisle_id,
-            detail_style="strict",
-        )
+        # Actor → client → inventory → aisle before any storage writes.
+        aisle = self._access_policy.require_aisle(inventory_id, aisle_id, principal)
         if not aisle.is_active:
             raise AisleInactiveError(
                 f"Aisle {aisle_id} is inactive; reactivate before uploading assets."

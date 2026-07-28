@@ -8,14 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from src.application.ports.repositories import (
-    AisleRepository,
-    InventoryRepository,
-    SourceAssetRepository,
-)
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
-from src.application.services.inventory_access import authorize_inventory_access_or_log_denied
-from src.auth.schemas import AuthUser
+from src.application.dto.access_principal import AccessPrincipal
+from src.application.ports.repositories import AisleRepository, SourceAssetRepository
+from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 
@@ -25,41 +20,29 @@ class ListAisleAssetsUseCase:
         self,
         aisle_repo: AisleRepository,
         asset_repo: SourceAssetRepository,
-        *,
-        inventory_repo: InventoryRepository | None = None,
+        access_policy: InventoryAccessPolicy,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
-        self._inventory_repo = inventory_repo
+        self._access_policy = access_policy
 
     def _aisle_or_raise(
         self,
         inventory_id: str,
         aisle_id: str,
         *,
-        access_user: AuthUser | None = None,
+        principal: AccessPrincipal,
     ) -> Aisle:
-        if access_user is not None and self._inventory_repo is not None:
-            authorize_inventory_access_or_log_denied(
-                self._inventory_repo,
-                inventory_id=inventory_id,
-                user=access_user,
-            )
-        return require_aisle_scoped_to_inventory(
-            self._aisle_repo,
-            inventory_id=inventory_id,
-            aisle_id=aisle_id,
-            detail_style="strict",
-        )
+        return self._access_policy.require_aisle(inventory_id, aisle_id, principal)
 
     def execute(
         self,
         inventory_id: str,
         aisle_id: str,
         *,
-        access_user: AuthUser | None = None,
+        principal: AccessPrincipal,
     ) -> Sequence[SourceAsset]:
-        self._aisle_or_raise(inventory_id, aisle_id, access_user=access_user)
+        self._aisle_or_raise(inventory_id, aisle_id, principal=principal)
         return self._asset_repo.list_by_aisle(aisle_id)
 
     def get_validated_aisle(
@@ -67,7 +50,7 @@ class ListAisleAssetsUseCase:
         inventory_id: str,
         aisle_id: str,
         *,
-        access_user: AuthUser | None = None,
+        principal: AccessPrincipal,
     ) -> Aisle:
         """Same inventory/aisle validation as ``execute``; returns the aisle row (e.g. HEIC normalized path)."""
-        return self._aisle_or_raise(inventory_id, aisle_id, access_user=access_user)
+        return self._aisle_or_raise(inventory_id, aisle_id, principal=principal)

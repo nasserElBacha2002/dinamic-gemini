@@ -1,23 +1,17 @@
-"""Inventory client-scope authorization for inventory-rooted APIs (Phase 2).
+"""Inventory client-scope authorization helpers (Phase 2).
 
-Reuses the same 404-on-mismatch policy as Observability so existence of
-cross-client resources is not leaked. Platform roles retain global access.
+Prefer :class:`~src.application.services.inventory_access_policy.InventoryAccessPolicy`
+for new call sites. These thin wrappers remain for Observability-era callers.
 """
 
 from __future__ import annotations
 
-import logging
-
-from src.application.errors import InventoryNotFoundError
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.ports.repositories import InventoryRepository
-from src.application.services.observability_access import (
-    ObservabilityAccessContext,
-    assert_inventory_client_scope,
-)
+from src.application.services.access_principal_factory import access_principal_from_auth_user
+from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.auth.schemas import AuthUser
 from src.domain.inventory.entities import Inventory
-
-logger = logging.getLogger(__name__)
 
 
 def authorize_inventory_access(
@@ -26,23 +20,18 @@ def authorize_inventory_access(
     inventory_id: str,
     user: AuthUser,
 ) -> Inventory:
-    """Load inventory and enforce actor → client → inventory scope.
+    """Load inventory and enforce actor → client → inventory scope (404 on mismatch)."""
+    principal = access_principal_from_auth_user(user)
+    return InventoryAccessPolicy(inventory_repo).require_inventory(inventory_id, principal)
 
-    Mismatch / missing → ``InventoryNotFoundError`` (HTTP 404 path).
-    """
-    access = ObservabilityAccessContext.from_user(user)
-    inventory = assert_inventory_client_scope(
-        inventory_repo,
-        inventory_id=inventory_id,
-        access=access,
-    )
-    if not access.is_platform:
-        logger.info(
-            "event=inventory_access_authorized inventory_id=%s actor_client_id=%s",
-            inventory_id,
-            access.client_id,
-        )
-    return inventory
+
+def authorize_inventory_access_for_principal(
+    inventory_repo: InventoryRepository,
+    *,
+    inventory_id: str,
+    principal: AccessPrincipal,
+) -> Inventory:
+    return InventoryAccessPolicy(inventory_repo).require_inventory(inventory_id, principal)
 
 
 def authorize_inventory_access_or_log_denied(
@@ -51,18 +40,7 @@ def authorize_inventory_access_or_log_denied(
     inventory_id: str,
     user: AuthUser,
 ) -> Inventory:
-    """Same as :func:`authorize_inventory_access` with structured deny logging."""
-    try:
-        return authorize_inventory_access(
-            inventory_repo, inventory_id=inventory_id, user=user
-        )
-    except InventoryNotFoundError:
-        access = ObservabilityAccessContext.from_user(user)
-        if not access.is_platform:
-            logger.info(
-                "event=cross_client_access_denied actor_client_id=%s resource_type=inventory "
-                "resource_id=%s",
-                access.client_id,
-                inventory_id,
-            )
-        raise
+    """Same as :func:`authorize_inventory_access` (deny logging lives in the policy)."""
+    return authorize_inventory_access(
+        inventory_repo, inventory_id=inventory_id, user=user
+    )
