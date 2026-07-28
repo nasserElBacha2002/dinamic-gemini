@@ -8,6 +8,7 @@ import {
 import type { AppConfig } from '../src/runtime/config/resolveAppConfig';
 import { createLogger } from '../src/core/logging';
 import { DEFAULT_FEATURE_FLAGS } from '../src/core/featureFlags';
+import { DEFAULT_PRODUCTION_CUTOVER } from '../src/core/productionCutover';
 import type { AuthTokens, TokenStorage } from '../src/services/secureStorage/tokenStorage';
 
 class MemoryTokenStorage implements TokenStorage {
@@ -56,6 +57,7 @@ describe('ApiClient refresh mutex', () => {
       backgroundUploadForegroundService: false,
       backgroundUploadRebootResume: false,
     },
+    cutover: DEFAULT_PRODUCTION_CUTOVER,
   };
 
   afterEach(() => {
@@ -201,6 +203,7 @@ describe('ApiClient abort / timeout classification', () => {
       backgroundUploadForegroundService: false,
       backgroundUploadRebootResume: false,
     },
+    cutover: DEFAULT_PRODUCTION_CUTOVER,
   };
 
   afterEach(() => {

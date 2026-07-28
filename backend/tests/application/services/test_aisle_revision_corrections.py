@@ -17,12 +17,10 @@ from src.application.services.aisle_revision_mutation_planner import (
 from src.application.services.aisle_revision_snapshot import (
     RevisionSnapshot,
     RevisionSnapshotAsset,
-    parse_revision_snapshot,
 )
 from src.application.use_cases.aisles.apply_aisle_revision import (
-    ApplyAisleRevision,
-    ApplyAisleRevisionCommand,
     AisleRevisionApplyConflictError,
+    ApplyAisleRevisionCommand,
 )
 from src.application.use_cases.aisles.manage_aisle_revisions import (
     CreateAisleRevisionCommand,
@@ -41,7 +39,6 @@ from src.domain.authoritative_aisle_finalization.entities import (
 from src.domain.positions.entities import PositionStatus
 from src.infrastructure.persistence.memory_aisle_revision_unit_of_work import (
     MemoryAisleRevisionUnitOfWork,
-    build_memory_aisle_revision_uow_factory,
 )
 from tests.application.services.test_aisle_revision_phase8 import _seed
 
@@ -54,9 +51,7 @@ def test_exclude_deactivates_position_and_nulls_fin_position():
     ctx = _seed()
     rev_id = str(uuid4())
     # Need a second asset so we don't exclude all
-    from src.domain.assets.entities import SourceAsset, SourceAssetType
     from src.domain.authoritative_aisle_finalization.entities import (
-        AuthoritativeAisleFinalizationItem,
         AuthoritativeFinalizationItemStatus,
     )
     from src.domain.authoritative_local_code_scan.entities import (
@@ -143,10 +138,10 @@ def test_exclude_deactivates_position_and_nulls_fin_position():
         )
     )
     # Manually add second revision item as UNCHANGED so exclude-all does not fire.
-    from src.domain.aisle_revision.entities import AisleRevisionItem as RI
+    from src.domain.aisle_revision.entities import AisleRevisionItem as RevisionItem
 
     ctx["rev_repo"].save_item(
-        RI(
+        RevisionItem(
             id=str(uuid4()),
             revision_id=rev_id,
             asset_id=asset2,

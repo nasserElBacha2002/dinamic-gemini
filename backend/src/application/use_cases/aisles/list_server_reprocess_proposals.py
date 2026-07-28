@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from src.application.ports.server_reprocess_repository import ServerReprocessRepository
 from src.application.use_cases.aisles.build_server_reprocess_proposals import (

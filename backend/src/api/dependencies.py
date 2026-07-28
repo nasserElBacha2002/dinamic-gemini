@@ -155,9 +155,9 @@ from src.application.use_cases.suppliers.upload_supplier_reference_images import
     ListSupplierReferenceImagesUseCase,
     UploadSupplierReferenceImagesUseCase,
 )
-from src.runtime.app_container import get_app_container
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
+from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
     get_aisle_repo,
     get_analytics_repo,
@@ -175,8 +175,8 @@ from src.runtime.v3_deps import (
     get_job_repo,
     get_metrics_calculator,
     get_mobile_preliminary_detection_repo,
-    get_preliminary_detection_reconciliation_repo,
     get_position_repo,
+    get_preliminary_detection_reconciliation_repo,
     get_product_record_repo,
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
@@ -1480,7 +1480,6 @@ def get_observability_inventory_guard(
         ObservabilityAccessContext,
         assert_inventory_client_scope,
     )
-    from src.auth.schemas import AuthUser
     from src.domain.inventory.entities import Inventory
 
     def _guard(inventory_id: str, user: AuthUser) -> Inventory:

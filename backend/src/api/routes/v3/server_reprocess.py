@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import timezone
+from datetime import datetime, timezone
+from typing import cast
 
 from fastapi import APIRouter, Depends, Header, Query
 
@@ -54,7 +55,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _iso(dt) -> str | None:
+def _iso(dt: datetime | None) -> str | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
@@ -105,19 +106,19 @@ def _get_create() -> CreateServerReprocessRun:
             error_code="SERVER_REPROCESS_UNAVAILABLE",
             detail="Server reprocess is not configured",
         )
-    return uc
+    return cast(CreateServerReprocessRun, uc)
 
 
 def _get_list() -> ListServerReprocessProposals:
-    return get_app_container().list_server_reprocess_proposals
+    return cast(ListServerReprocessProposals, get_app_container().list_server_reprocess_proposals)
 
 
 def _get_cancel() -> CancelServerReprocessRun:
-    return get_app_container().cancel_server_reprocess_run
+    return cast(CancelServerReprocessRun, get_app_container().cancel_server_reprocess_run)
 
 
 def _get_adopt() -> AdoptServerReprocessProposals:
-    return get_app_container().adopt_server_reprocess_proposals
+    return cast(AdoptServerReprocessProposals, get_app_container().adopt_server_reprocess_proposals)
 
 
 @router.post(

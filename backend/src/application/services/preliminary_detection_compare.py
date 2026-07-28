@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 COMPARISON_VERSION = "1"
 
 OUTCOME_MATCH_CODE_AND_QUANTITY = "MATCH_CODE_AND_QUANTITY"

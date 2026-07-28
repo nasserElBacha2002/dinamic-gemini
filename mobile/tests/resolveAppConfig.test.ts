@@ -72,7 +72,7 @@ describe('resolveAppConfig', () => {
     expect(validateAppConfig(config)).toBeNull();
   });
 
-  it('includes version metadata and feature flags', () => {
+  it('includes version metadata, feature flags, and cutover defaults', () => {
     const config = resolveAppConfig({
       apiBaseUrl: 'https://api.example.com',
       versionName: '0.3.0',
@@ -84,5 +84,6 @@ describe('resolveAppConfig', () => {
     expect(config.versionCode).toBe(30);
     expect(config.gitSha).toBe('abc123');
     expect(config.flags.allowMobileDataUploads).toBe(false);
+    expect(config.cutover.minSuccessRate).toBe(0.99);
   });
 });

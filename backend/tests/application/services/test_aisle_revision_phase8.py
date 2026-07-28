@@ -9,9 +9,9 @@ import pytest
 
 from src.application.ports.aisle_revision_unit_of_work import AisleRevisionRepositories
 from src.application.use_cases.aisles.apply_aisle_revision import (
+    AisleRevisionStaleError,
     ApplyAisleRevision,
     ApplyAisleRevisionCommand,
-    AisleRevisionStaleError,
     CreateRollbackCommand,
     CreateRollbackRevision,
 )
@@ -49,6 +49,7 @@ from src.infrastructure.repositories.memory_authoritative_aisle_finalization_rep
 from src.infrastructure.repositories.memory_authoritative_local_code_scan_repository import (
     MemoryAuthoritativeLocalCodeScanRepository,
 )
+
 
 class _MemInventory:
     def __init__(self) -> None:

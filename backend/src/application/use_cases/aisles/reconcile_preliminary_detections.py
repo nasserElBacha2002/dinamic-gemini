@@ -6,6 +6,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
+from typing import cast
 
 from src.application.errors import JobNotFoundError
 from src.application.ports.image_processing_repositories import (
@@ -233,7 +234,7 @@ class EnqueuePreliminaryReconciliationsUseCase:
 
     def _now(self) -> datetime:
         if self._clock is not None:
-            now = self._clock.now()
+            now = cast(datetime, self._clock.now())
         else:
             now = datetime.now(timezone.utc)
         if now.tzinfo is None:
@@ -565,7 +566,7 @@ class ProcessPreliminaryReconciliationsUseCase:
 
     def _now(self) -> datetime:
         if self._clock is not None:
-            now = self._clock.now()
+            now = cast(datetime, self._clock.now())
         else:
             now = datetime.now(timezone.utc)
         if now.tzinfo is None:

@@ -26,8 +26,8 @@ from src.application.use_cases.aisles.list_preliminary_reconciliations import (
 )
 from src.application.use_cases.aisles.reconcile_preliminary_detections import (
     EnqueueReconciliationCommand,
-    ReconciliationDisabledError,
     ReconcilePreliminaryDetectionsUseCase,
+    ReconciliationDisabledError,
 )
 
 router = APIRouter()

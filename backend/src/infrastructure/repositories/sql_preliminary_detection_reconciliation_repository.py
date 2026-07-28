@@ -142,8 +142,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
         rid = (reconciliation_id or "").strip()
         if not rid:
             return None
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(
                 f"SELECT {_SELECT_COLS} FROM preliminary_detection_reconciliations WHERE id = ?",
                 (rid,),
@@ -158,8 +157,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
         comparison_version: str,
         job_id: str,
     ) -> PreliminaryDetectionReconciliation | None:
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(
                 f"SELECT {_SELECT_COLS} FROM preliminary_detection_reconciliations "
                 "WHERE preliminary_detection_id = ? AND comparison_version = ? AND job_id = ?",
@@ -172,8 +170,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
         self, row: PreliminaryDetectionReconciliation
     ) -> PreliminaryDetectionReconciliation:
         try:
-            with self._client.connect() as conn:
-                cur = conn.cursor()
+            with self._client.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO preliminary_detection_reconciliations (
@@ -193,7 +190,6 @@ class SqlPreliminaryDetectionReconciliationRepository:
                     """,
                     _insert_params(row),
                 )
-                conn.commit()
         except pyodbc.IntegrityError as exc:
             if "uq_pdr_preliminary_version_job" in str(exc).lower():
                 raise ReconciliationUniqueViolationError() from exc
@@ -204,8 +200,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
         self, row: PreliminaryDetectionReconciliation, *, expected_version: int
     ) -> PreliminaryDetectionReconciliation:
         new_version = expected_version + 1
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(
                 """
                 UPDATE preliminary_detection_reconciliations SET
@@ -259,9 +254,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
                 ),
             )
             if cur.rowcount != 1:
-                conn.rollback()
                 raise ReconciliationRowVersionConflictError()
-            conn.commit()
         return PreliminaryDetectionReconciliation(**{**row.__dict__, "row_version": new_version})
 
     def list_by_aisle(self, **kwargs) -> Sequence[PreliminaryDetectionReconciliation]:
@@ -274,15 +267,13 @@ class SqlPreliminaryDetectionReconciliationRepository:
             f"OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"
         )
         params.extend([offset, limit])
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(sql, tuple(params))
             return [_row_to_entity(r) for r in cur.fetchall()]
 
     def count_by_aisle(self, **kwargs) -> int:
         where, params = self._where(**kwargs)
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(
                 f"SELECT COUNT(1) AS c FROM preliminary_detection_reconciliations WHERE {where}",
                 tuple(params),
@@ -350,8 +341,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
         FROM preliminary_detection_reconciliations
         WHERE {where}
         """
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(sql, tuple(params))
             row = cur.fetchone()
             if row is None:
@@ -383,8 +373,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
         limit: int = 50,
     ) -> Sequence[PreliminaryDetectionReconciliation]:
         claimed: list[PreliminaryDetectionReconciliation] = []
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(
                 """
                 ;WITH due AS (
@@ -411,7 +400,6 @@ class SqlPreliminaryDetectionReconciliationRepository:
                 (int(limit), now, now, lease_token, lease_expires_at, now),
             )
             ids = [normalize_db_str(getattr(r, "id", None)) for r in cur.fetchall()]
-            conn.commit()
         for rid in ids:
             row = self.get_by_id(rid)
             if row:
@@ -419,8 +407,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
         return claimed
 
     def release_expired_leases(self, *, now: datetime) -> int:
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(
                 """
                 UPDATE preliminary_detection_reconciliations
@@ -438,7 +425,6 @@ class SqlPreliminaryDetectionReconciliationRepository:
                 (now, now, now),
             )
             n = int(cur.rowcount or 0)
-            conn.commit()
             return n
 
     def list_by_preliminary_ids(
@@ -448,8 +434,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
         if not ids:
             return []
         placeholders = ",".join("?" for _ in ids)
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(
                 f"SELECT {_SELECT_COLS} FROM preliminary_detection_reconciliations "
                 f"WHERE preliminary_detection_id IN ({placeholders})",
@@ -458,8 +443,7 @@ class SqlPreliminaryDetectionReconciliationRepository:
             return [_row_to_entity(r) for r in cur.fetchall()]
 
     def delete_expired(self, *, now: datetime, limit: int = 500) -> int:
-        with self._client.connect() as conn:
-            cur = conn.cursor()
+        with self._client.cursor() as cur:
             cur.execute(
                 """
                 DELETE TOP (?) FROM preliminary_detection_reconciliations
@@ -468,7 +452,6 @@ class SqlPreliminaryDetectionReconciliationRepository:
                 (int(limit), now),
             )
             n = int(cur.rowcount or 0)
-            conn.commit()
             return n
 
     def _where(

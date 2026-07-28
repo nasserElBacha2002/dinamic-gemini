@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 
 import pytest
 
+from src.application.ports.job_source_asset_repository import JobSourceAssetLink
 from src.application.services.preliminary_detection_compare import (
     OUTCOME_MATCH_CODE_AND_QUANTITY,
-    OUTCOME_NOT_COMPARABLE,
 )
 from src.application.services.resolve_comparable_remote_result import (
     REASON_GLOBAL_BATCH,
@@ -39,7 +39,6 @@ from src.domain.mobile_preliminary_detections.entities import MobilePreliminaryD
 from src.infrastructure.persistence.memory_job_source_asset_repository import (
     MemoryJobSourceAssetRepository,
 )
-from src.application.ports.job_source_asset_repository import JobSourceAssetLink
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_job_asset_processing_state_repository import (
     MemoryJobAssetProcessingStateRepository,
@@ -351,7 +350,7 @@ def test_enqueue_filters_snapshot_and_worker_completes() -> None:
 def test_enqueue_idempotent_same_job() -> None:
     enqueue, process, recon = _world()
     cmd = EnqueueReconciliationCommand(inventory_id="inv-1", aisle_id="aisle-1", job_id="job-1")
-    first = enqueue.execute(cmd)
+    enqueue.execute(cmd)
     process.process_due_batch(limit=10)
     second = enqueue.execute(cmd)
     assert second.enqueued == 0

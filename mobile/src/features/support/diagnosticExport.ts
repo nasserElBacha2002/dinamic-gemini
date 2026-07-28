@@ -1,5 +1,9 @@
 import type { AppConfig } from '../../runtime/config/resolveAppConfig';
 import { sharedLogBuffer } from '../../core/logging';
+import {
+  evaluateFeatureFlagCompatibility,
+  type FlagCompatibilityReport,
+} from '../../core/featureFlagCompatibility';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import type { UploadQueue } from '../upload/uploadQueue';
@@ -10,6 +14,12 @@ import {
   type BaselineReport,
   type SqliteObservabilityStore,
 } from '../../observability';
+
+export interface OfflineOpsDiagnosticSummary {
+  readonly enabled: boolean;
+  readonly activeCount: number;
+  readonly byStatus: Record<string, number>;
+}
 
 export interface DiagnosticBundle {
   readonly exportedAt: string;
@@ -26,6 +36,9 @@ export interface DiagnosticBundle {
   readonly uploadSnapshot: Record<string, unknown>;
   readonly logs: readonly Record<string, unknown>[];
   readonly flags: Record<string, unknown>;
+  readonly flagCompatibility: FlagCompatibilityReport;
+  readonly cutover: Record<string, unknown>;
+  readonly offlineOperations: OfflineOpsDiagnosticSummary | null;
   readonly observabilityBaseline: BaselineReport | null;
 }
 
@@ -40,6 +53,7 @@ export async function buildDiagnosticBundle(input: {
   readonly uploadQueue: UploadQueue;
   readonly connectivity: ConnectivityService;
   readonly observabilityStore?: SqliteObservabilityStore | null;
+  readonly offlineOperations?: OfflineOpsDiagnosticSummary | null;
 }): Promise<DiagnosticBundle> {
   const sessions = await input.captureRepo.listActivitySessions();
   const jobs = await input.jobRepo.listNonTerminal();
@@ -92,6 +106,9 @@ export async function buildDiagnosticBundle(input: {
       fields: r.fields,
     })),
     flags: { ...input.config.flags },
+    flagCompatibility: evaluateFeatureFlagCompatibility(input.config.flags),
+    cutover: { ...input.config.cutover },
+    offlineOperations: input.offlineOperations ?? null,
     observabilityBaseline,
   };
 }

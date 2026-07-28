@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 RevisionTypeLiteral = Literal[
     "MANUAL_CORRECTION",
     "SERVER_PROPOSAL_ADOPTION",

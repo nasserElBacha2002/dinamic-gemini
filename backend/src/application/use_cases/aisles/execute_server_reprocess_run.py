@@ -6,7 +6,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from src.application.ports.server_reprocess_repository import ServerReprocessRepository
 from src.application.use_cases.aisles.build_server_reprocess_proposals import (
@@ -55,7 +55,7 @@ class ExecuteServerReprocessRun:
 
     def _now(self) -> datetime:
         if self._clock is not None:
-            return self._clock.now()
+            return cast(datetime, self._clock.now())
         return datetime.now(timezone.utc)
 
     def mark_running(self, run_id: str, *, linked_job_id: str | None = None) -> ServerReprocessRun:
@@ -117,7 +117,7 @@ class CancelServerReprocessRun:
 
     def _now(self) -> datetime:
         if self._clock is not None:
-            return self._clock.now()
+            return cast(datetime, self._clock.now())
         return datetime.now(timezone.utc)
 
     def execute(self, *, run_id: str) -> ServerReprocessRun:

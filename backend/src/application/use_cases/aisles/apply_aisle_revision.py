@@ -19,7 +19,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 
 from src.application.ports.aisle_revision_repository import AisleRevisionRepository
 from src.application.ports.aisle_revision_unit_of_work import (
@@ -43,6 +43,10 @@ from src.application.services.aisle_revision_mutation_planner import (
     AisleRevisionMutationPlanner,
     AisleRevisionPlanError,
     AisleRevisionPlanInput,
+    ExclusionCreateOp,
+    PositionDeactivateOp,
+    PositionVersionOp,
+    ResultVersionOp,
 )
 from src.application.services.aisle_revision_snapshot import parse_revision_snapshot
 from src.application.services.historical_finalization_snapshot_reader import (
@@ -160,7 +164,7 @@ class ApplyAisleRevision:
 
     def _now(self) -> datetime:
         if self._clock is not None and hasattr(self._clock, "now"):
-            return self._clock.now()
+            return cast(datetime, self._clock.now())
         return _utcnow()
 
     def execute(self, command: ApplyAisleRevisionCommand) -> AisleRevision:
@@ -368,14 +372,18 @@ class ApplyAisleRevision:
                 now=now,
             )
 
-        for op in plan.exclusions_to_create:
-            repos.finalization_repo.upsert_exclusion(op.exclusion)
+        for exclusion_op in plan.exclusions_to_create:
+            if not isinstance(exclusion_op, ExclusionCreateOp):
+                continue
+            repos.finalization_repo.upsert_exclusion(exclusion_op.exclusion)
 
-        for op in plan.results_to_version:
+        for result_version_op in plan.results_to_version:
+            if not isinstance(result_version_op, ResultVersionOp):
+                continue
             created = repos.authoritative_repo.create_authoritative_version(
-                new_result=op.new_result,
-                expected_current_id=op.expected_current_id,
-                expected_row_version=op.expected_row_version,
+                new_result=result_version_op.new_result,
+                expected_current_id=result_version_op.expected_current_id,
+                expected_row_version=result_version_op.expected_row_version,
             )
             repos.authoritative_repo.mark_applied_if_version(
                 result_id=created.id,
@@ -384,8 +392,10 @@ class ApplyAisleRevision:
                 expected_row_version=created.row_version,
             )
 
-        for op in plan.positions_to_deactivate:
-            pos = repos.position_repo.get_by_id(op.position_id)
+        for position_deactivate_op in plan.positions_to_deactivate:
+            if not isinstance(position_deactivate_op, PositionDeactivateOp):
+                continue
+            pos = repos.position_repo.get_by_id(position_deactivate_op.position_id)
             if pos is not None and pos.status != PositionStatus.DELETED:
                 repos.position_repo.save(
                     replace(
@@ -395,23 +405,25 @@ class ApplyAisleRevision:
                     )
                 )
 
-        for op in plan.positions_to_version:
-            pos = repos.position_repo.get_by_id(op.position_id)
+        for position_version_op in plan.positions_to_version:
+            if not isinstance(position_version_op, PositionVersionOp):
+                continue
+            pos = repos.position_repo.get_by_id(position_version_op.position_id)
             if pos is None:
                 raise AisleRevisionApplyConflictError(
-                    f"Position {op.position_id} missing during apply",
+                    f"Position {position_version_op.position_id} missing during apply",
                     error_code=PLAN_ERROR_POSITION_MISSING,
                 )
             repos.position_repo.save(
                 replace(
                     pos,
                     status=PositionStatus.CORRECTED,
-                    corrected_summary_json=dict(op.corrected_summary),
+                    corrected_summary_json=dict(position_version_op.corrected_summary),
                     updated_at=now,
                 )
             )
             repos.revision_repo.save_position_version(
-                op.position_version, supersede_current=True
+                position_version_op.position_version, supersede_current=True
             )
 
         new_fin = AuthoritativeAisleFinalization(

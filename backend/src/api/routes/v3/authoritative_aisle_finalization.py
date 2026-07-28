@@ -9,10 +9,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 
 from src.api.dependencies import (
-    get_aisle_repo,
     get_evaluate_authoritative_aisle_readiness,
     get_finalize_authoritative_aisle_use_case,
-    get_inventory_repo,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.errors.structured_api_http import StructuredApiHttpError
@@ -24,13 +22,11 @@ from src.api.schemas.authoritative_aisle_finalization_schemas import (
     FinalizeAuthoritativeAisleResponse,
 )
 from src.application.errors import AisleNotFoundError, InventoryNotFoundError
-from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.evaluate_authoritative_aisle_readiness import (
     EvaluateAuthoritativeAisleReadiness,
 )
 from src.application.use_cases.aisles.finalize_authoritative_aisle import (
-    AUTH_FINALIZATION_CONFLICT,
     AUTH_FINALIZATION_COUNT_MISMATCH,
     AUTH_FINALIZATION_DISABLED,
     AUTH_FINALIZATION_LOCK,
@@ -65,12 +61,13 @@ AUTH_EXCLUSION_INVALID_REASON = "AUTHORITATIVE_EXCLUSION_INVALID_REASON"
 def get_authoritative_aisle_readiness(
     inventory_id: str,
     aisle_id: str,
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     readiness: EvaluateAuthoritativeAisleReadiness = Depends(
         get_evaluate_authoritative_aisle_readiness
     ),
 ) -> AuthoritativeAisleReadinessResponse:
+    container = get_app_container()
+    inventory_repo = container.get_inventory_repo()
+    aisle_repo = container.get_aisle_repo()
     if inventory_repo.get_by_id(inventory_id) is None:
         raise StructuredApiHttpError(
             404, error_code="INVENTORY_NOT_FOUND", detail=f"Inventory {inventory_id} not found"
@@ -112,8 +109,6 @@ def post_authoritative_exclusion(
     aisle_id: str,
     asset_id: str,
     body: AuthoritativeExclusionRequest,
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     user: AuthUser = Depends(get_current_admin),
 ) -> AuthoritativeExclusionResponse:
     from src.config import load_settings
@@ -125,6 +120,9 @@ def post_authoritative_exclusion(
             error_code=AUTH_EXCLUSION_DISABLED,
             detail="Authoritative exclusion is not enabled",
         )
+    container = get_app_container()
+    inventory_repo = container.get_inventory_repo()
+    aisle_repo = container.get_aisle_repo()
     if inventory_repo.get_by_id(inventory_id) is None:
         raise StructuredApiHttpError(
             404, error_code="INVENTORY_NOT_FOUND", detail=f"Inventory {inventory_id} not found"

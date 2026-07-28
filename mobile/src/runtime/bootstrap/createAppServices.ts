@@ -555,15 +555,36 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     backgroundUpload,
     offlineOperations,
     offlineScheduler,
-    exportDiagnostic: () =>
-      buildDiagnosticBundle({
+    exportDiagnostic: async () => {
+      let offlineOperationsSummary = null;
+      if (offlineOpsEnabled) {
+        try {
+          const active = await offlineOpsRepo.listActive(500);
+          const byStatus: Record<string, number> = {};
+          for (const row of active) {
+            byStatus[row.status] = (byStatus[row.status] ?? 0) + 1;
+          }
+          offlineOperationsSummary = {
+            enabled: true,
+            activeCount: active.length,
+            byStatus,
+          };
+        } catch {
+          offlineOperationsSummary = { enabled: true, activeCount: -1, byStatus: {} };
+        }
+      } else {
+        offlineOperationsSummary = { enabled: false, activeCount: 0, byStatus: {} };
+      }
+      return buildDiagnosticBundle({
         config,
         captureRepo,
         jobRepo,
         uploadQueue,
         connectivity,
         observabilityStore: observability.store,
-      }),
+        offlineOperations: offlineOperationsSummary,
+      });
+    },
     diagnosticShareText: diagnosticToShareText,
     exportObservabilityBaseline: async () => {
       if (!observability.store) {

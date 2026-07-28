@@ -31,7 +31,9 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+    ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
     expect(v2?.sql).toContain('last_stability_attempt_at');
@@ -79,13 +81,22 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v9 draft harden without raw_value_preview and with FK cascade', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     const v9 = MIGRATIONS.find((m) => m.version === 9);
     expect(v9?.name).toBe('local_detection_drafts_harden');
     expect(v9?.sql).toContain('ON DELETE CASCADE');
     expect(v9?.sql).toContain('scan_generation');
     expect(v9?.sql).toContain('comparison_status');
     expect(v9?.sql).not.toContain('raw_value_preview');
+  });
+
+  it('adds v17/v18 offline_operations ledger and claim lease columns', () => {
+    const v17 = MIGRATIONS.find((m) => m.version === 17);
+    const v18 = MIGRATIONS.find((m) => m.version === 18);
+    expect(v17?.name).toBe('offline_operations');
+    expect(v17?.sql).toContain('CREATE TABLE IF NOT EXISTS offline_operations');
+    expect(v18?.name).toBe('offline_operations_claim_and_payload_hash');
+    expect(v18?.sql).toContain('payload_hash');
+    expect(v18?.sql).toContain('lease_expires_at');
   });
 });
 

@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import cast
 
 from src.application.ports.aisle_revision_repository import AisleRevisionRepository
 from src.application.ports.authoritative_aisle_finalization_repository import (
@@ -159,7 +160,7 @@ class CreateAisleRevision:
 
     def _now(self) -> datetime:
         if self._clock is not None and hasattr(self._clock, "now"):
-            return self._clock.now()
+            return cast(datetime, self._clock.now())
         return _utcnow()
 
     def execute(self, command: CreateAisleRevisionCommand) -> tuple[AisleRevision, bool]:
@@ -359,10 +360,10 @@ class CreateAisleRevision:
         # Prefer finalization item order; fall back to all photos.
         asset_ids_ordered: list[str] = []
         seen: set[str] = set()
-        for fi in fin_items:
-            if fi.asset_id not in seen:
-                asset_ids_ordered.append(fi.asset_id)
-                seen.add(fi.asset_id)
+        for finalization_item in fin_items:
+            if finalization_item.asset_id not in seen:
+                asset_ids_ordered.append(finalization_item.asset_id)
+                seen.add(finalization_item.asset_id)
         for a in assets:
             if a.id not in seen:
                 asset_ids_ordered.append(a.id)
@@ -373,7 +374,7 @@ class CreateAisleRevision:
         base_result_ids: list[str] = []
         base_position_ids: list[str] = []
         for aid in asset_ids_ordered:
-            fi = fi_by_asset.get(aid)
+            mapped_finalization_item = fi_by_asset.get(aid)
             result = results.get(aid)
             position = pos_by_asset.get(aid)
             code, qty = (None, None)
@@ -382,13 +383,13 @@ class CreateAisleRevision:
             elif position is not None:
                 code, qty = _position_code_qty(position)
             base_result_id = (
-                fi.authoritative_result_id
-                if fi and fi.authoritative_result_id
+                mapped_finalization_item.authoritative_result_id
+                if mapped_finalization_item and mapped_finalization_item.authoritative_result_id
                 else (result.id if result else None)
             )
             base_position_id = (
-                fi.position_id
-                if fi and fi.position_id
+                mapped_finalization_item.position_id
+                if mapped_finalization_item and mapped_finalization_item.position_id
                 else (getattr(position, "id", None) if position else None)
             )
             if base_result_id:
@@ -409,8 +410,8 @@ class CreateAisleRevision:
                     base_quantity=qty,
                     excluded=aid in excl_by_asset
                     or (
-                        fi is not None
-                        and fi.item_status == "EXCLUDED"
+                        mapped_finalization_item is not None
+                        and mapped_finalization_item.item_status == "EXCLUDED"
                     ),
                     base_position_version_id=(
                         base_position_version.id if base_position_version else None

@@ -90,6 +90,14 @@ def _post_aisle(inv_id: str, code: str, **extra: Any):
     cid = inv_r.json().get("client_id")
     assert cid
     sid = create_test_supplier(client, cid)
+    prompt_resp = client.post(
+        f"/api/v3/clients/{cid}/suppliers/{sid}/prompt-configs",
+        json={
+            "instructions_text": "Test supplier prompt: prioritize visible product labels.",
+            "activate": True,
+        },
+    )
+    assert prompt_resp.status_code == 201, prompt_resp.text
     body: dict[str, Any] = {"code": code, "client_supplier_id": sid}
     body.update(extra)
     return client.post(f"/api/v3/inventories/{inv_id}/aisles", json=body)

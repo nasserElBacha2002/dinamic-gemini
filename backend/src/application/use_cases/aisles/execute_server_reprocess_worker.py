@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Protocol, cast
 
 from src.application.ports.server_reprocess_repository import ServerReprocessRepository
 from src.application.services.server_reprocess_proposal_sink import (
@@ -73,7 +73,7 @@ class ExecuteServerReprocessWorker:
 
     def _now(self) -> datetime:
         if self._clock is not None:
-            return self._clock.now()
+            return cast(datetime, self._clock.now())
         return datetime.now(timezone.utc)
 
     def execute(self, *, run_id: str) -> tuple[ServerReprocessRun, list[ServerReprocessProposal]]:

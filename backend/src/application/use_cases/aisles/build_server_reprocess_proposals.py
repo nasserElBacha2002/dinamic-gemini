@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from src.application.ports.server_reprocess_repository import ServerReprocessRepository
 from src.application.services.server_reprocess_difference import (
@@ -50,7 +50,7 @@ class BuildServerReprocessProposals:
 
     def _now(self) -> datetime:
         if self._clock is not None:
-            return self._clock.now()
+            return cast(datetime, self._clock.now())
         return datetime.now(timezone.utc)
 
     def execute(

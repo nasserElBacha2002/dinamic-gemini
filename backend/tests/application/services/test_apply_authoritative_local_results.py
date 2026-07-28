@@ -20,8 +20,8 @@ from src.application.services.image_processing.processing_result_persister impor
     PersistOutcome,
     PersistSkipReason,
 )
-from src.domain.authoritative_local_code_scan.entities import AuthoritativeLocalCodeScanResult
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.authoritative_local_code_scan.entities import AuthoritativeLocalCodeScanResult
 from src.domain.image_processing.job_asset_processing_state import (
     JobAssetProcessingState,
     JobAssetProcessingStatus,

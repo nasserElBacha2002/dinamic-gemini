@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 
@@ -55,7 +55,7 @@ def _require_actor_id(user: AuthUser) -> str:
     return actor
 
 
-def _iso(dt) -> str | None:
+def _iso(dt: datetime | None) -> str | None:
     if dt is None:
         return None
     if getattr(dt, "tzinfo", None) is None:
@@ -79,7 +79,9 @@ def _item_response(item) -> AisleRevisionItemResponse:
     )
 
 
-def _revision_response(revision, *, replayed: bool = False, include_items: bool = True):
+def _revision_response(
+    revision, *, replayed: bool = False, include_items: bool = True
+) -> AisleRevisionResponse:
     items = []
     if include_items:
         repo = get_app_container().get_aisle_revision_repo()

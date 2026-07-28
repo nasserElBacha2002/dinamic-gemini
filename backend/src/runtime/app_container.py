@@ -26,15 +26,15 @@ from src.application.ports.capture_repositories import (
 from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.finalization_stage_store import FinalizationStageStore
+from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
+from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.mobile_preliminary_detection_repository import (
     MobilePreliminaryDetectionRepository,
 )
+from src.application.ports.operational_job_promotion import OperationalJobPromotionRepository
 from src.application.ports.preliminary_detection_reconciliation_repository import (
     PreliminaryDetectionReconciliationRepository,
 )
-from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
-from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
-from src.application.ports.operational_job_promotion import OperationalJobPromotionRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -173,6 +173,9 @@ from src.runtime.container.repository_backend import (
 )
 from src.runtime.container.repository_builders import (
     build_aisle_repository,
+    build_aisle_revision_repository,
+    build_authoritative_aisle_finalization_repository,
+    build_authoritative_local_code_scan_repository,
     build_client_repository,
     build_client_supplier_repository,
     build_code_scan_repository,
@@ -180,15 +183,12 @@ from src.runtime.container.repository_builders import (
     build_inventory_repository,
     build_job_repository,
     build_mobile_preliminary_detection_repository,
-    build_authoritative_local_code_scan_repository,
-    build_authoritative_aisle_finalization_repository,
-    build_preliminary_detection_reconciliation_repository,
     build_position_repository,
+    build_preliminary_detection_reconciliation_repository,
     build_product_record_repository,
-    build_review_action_repository,
     build_result_evidence_repository,
+    build_review_action_repository,
     build_server_reprocess_repository,
-    build_aisle_revision_repository,
     build_source_asset_repository,
     build_supplier_extraction_profile_repository,
     build_supplier_prompt_config_repository,

@@ -7,7 +7,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import AisleRepository, InventoryRepository
@@ -144,7 +144,7 @@ class CreateServerReprocessRun:
 
     def _now(self) -> datetime:
         if self._clock is not None:
-            return self._clock.now()
+            return cast(datetime, self._clock.now())
         return _utcnow()
 
     def execute(self, command: CreateServerReprocessCommand) -> CreateServerReprocessResult:
