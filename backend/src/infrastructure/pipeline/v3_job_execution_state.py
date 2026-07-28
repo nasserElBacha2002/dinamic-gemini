@@ -17,8 +17,9 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.application.services.operational_result_promotion_service import (
     OperationalResultPromotionService,
 )
-from src.domain.aisle.entities import Aisle
+from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import InventoryProcessingMode
+from src.domain.jobs.claim import JobClaimResult
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
@@ -69,20 +70,123 @@ class V3JobExecutionStateService:
     def reconcile_inventory_for_aisle(self, aisle: Aisle) -> None:
         self._inventory_status_reconciler.reconcile(aisle.inventory_id)
 
-    def mark_running(self, job_id: str, aisle: Aisle, now) -> None:
+    def mark_running(self, job_id: str, aisle: Aisle, now) -> JobClaimResult:
+        """Atomic STARTING → RUNNING claim + aisle PROCESSING (Phase 1).
+
+        Returns a :class:`JobClaimResult`. Callers must only execute the pipeline when
+        ``result.may_execute`` is True.
+        """
+        from src.domain.jobs.claim import JobClaimOutcome
+
         job = self._job_repo.get_by_id(job_id)
-        if job:
-            job.status = JobStatus.RUNNING
-            job.started_at = job.started_at or now
-            job.last_heartbeat_at = now
-            job.current_stage = "Pipeline"
-            job.current_substep = "startup_confirmed"
-            job.current_step_started_at = now
-            job.updated_at = now
-            self._job_repo.save(job)
+        execution_id = job.execution_id if job is not None else None
+        claim_fn = getattr(self._job_repo, "try_claim_starting_to_running", None)
+        result: JobClaimResult
+        if callable(claim_fn):
+            try:
+                result = claim_fn(
+                    job_id,
+                    now=now,
+                    execution_id=execution_id,
+                    aisle_id=aisle.id,
+                )
+            except NotImplementedError:
+                result = self._claim_starting_to_running_fallback(
+                    job_id, aisle=aisle, now=now, execution_id=execution_id
+                )
+        else:
+            result = self._claim_starting_to_running_fallback(
+                job_id, aisle=aisle, now=now, execution_id=execution_id
+            )
+
+        if not result.may_execute:
+            logger.info(
+                "event=job_claim_rejected job_id=%s aisle_id=%s worker_id=%s reason=%s "
+                "current_status=%s current_owner=%s",
+                job_id,
+                aisle.id,
+                execution_id,
+                result.reason,
+                result.previous_status,
+                getattr(result.job, "execution_id", None) if result.job else None,
+            )
+            return result
+
+        # Ensure local aisle object reflects processing (SQL may have updated DB already).
+        if result.aisle is not None:
+            aisle.status = result.aisle.status
+            aisle.updated_at = result.aisle.updated_at
+            aisle.error_code = result.aisle.error_code
+            aisle.error_message = result.aisle.error_message
+            aisle.retryable = result.aisle.retryable
+        elif aisle.status != AisleStatus.PROCESSING:
+            aisle.mark_processing(now)
+            self._aisle_repo.save(aisle)
+
+        if result.outcome == JobClaimOutcome.ACQUIRED:
+            logger.info(
+                "event=job_claim_acquired job_id=%s aisle_id=%s worker_id=%s "
+                "previous_status=%s new_status=running attempt=%s",
+                job_id,
+                aisle.id,
+                execution_id,
+                result.previous_status,
+                getattr(result.job, "attempt_count", None) if result.job else None,
+            )
+
+        self.reconcile_inventory_for_aisle(aisle)
+        return result
+
+    def _claim_starting_to_running_fallback(
+        self,
+        job_id: str,
+        *,
+        aisle: Aisle,
+        now,
+        execution_id: str | None,
+    ) -> JobClaimResult:
+        """In-process CAS for test doubles that do not implement try_claim_starting_to_running."""
+        from src.application.services.job_claim_helpers import classify_claim_after_cas_miss
+        from src.domain.jobs.claim import JobClaimOutcome, JobClaimResult
+
+        job = self._job_repo.get_by_id(job_id)
+        if job is None:
+            return JobClaimResult(outcome=JobClaimOutcome.NOT_FOUND, reason="job_not_found")
+        if job.status == JobStatus.RUNNING:
+            classified = classify_claim_after_cas_miss(job, execution_id=execution_id)
+            if classified.outcome == JobClaimOutcome.ALREADY_OWNED:
+                if aisle.status != AisleStatus.PROCESSING:
+                    aisle.mark_processing(now)
+                    self._aisle_repo.save(aisle)
+                return JobClaimResult(
+                    outcome=JobClaimOutcome.ALREADY_OWNED,
+                    job=job,
+                    aisle=aisle,
+                    previous_status=JobStatus.RUNNING.value,
+                    reason=classified.reason,
+                )
+            return classified
+        if job.status != JobStatus.STARTING:
+            return classify_claim_after_cas_miss(job, execution_id=execution_id)
+
+        previous = job.status.value
+        job.status = JobStatus.RUNNING
+        job.started_at = job.started_at or now
+        job.last_heartbeat_at = now
+        job.current_stage = "Pipeline"
+        job.current_substep = "startup_confirmed"
+        job.current_step_started_at = now
+        job.updated_at = now
+        self._job_repo.save(job)
         aisle.mark_processing(now)
         self._aisle_repo.save(aisle)
-        self.reconcile_inventory_for_aisle(aisle)
+        return JobClaimResult(
+            outcome=JobClaimOutcome.ACQUIRED,
+            job=job,
+            aisle=aisle,
+            previous_status=previous,
+            reason="fallback_cas_acquired",
+        )
 
     def finalize_success(
         self,

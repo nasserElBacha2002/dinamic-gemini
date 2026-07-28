@@ -14,18 +14,21 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.application.ports.repositories import JobRepository
+from src.application.services.job_claim_helpers import classify_claim_after_cas_miss
 from src.application.services.job_stale_reconciler import (
     STALE_FAILURE_CODE,
     STALE_FAILURE_MESSAGE,
     STALE_RECONCILE_STATUSES,
 )
 from src.database.sqlserver import SqlServerClient
+from src.domain.aisle.entities import AisleStatus
 from src.domain.aisle_identification.modes import (
     CONFIGURATION_SNAPSHOT_VERSION,
     historical_job_execution_strategy,
     historical_job_identification_mode,
     historical_job_identification_mode_source,
 )
+from src.domain.jobs.claim import JobClaimOutcome, JobClaimResult
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
@@ -604,11 +607,129 @@ class SqlJobRepository(JobRepository):
             return None
         return self.get_by_id(claimed_job_id)
 
-    def reclaim_stale_running_jobs(self, stale_after_seconds: int) -> int:
-        """Fail stale active jobs using the shared stale-reconciliation contract."""
+    def try_claim_starting_to_running(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        execution_id: str | None = None,
+        aisle_id: str | None = None,
+    ) -> JobClaimResult:
+        """CAS STARTING → RUNNING; optionally mark aisle processing in the same transaction."""
+        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
+        acquired = False
+        with self._client.begin_transaction() as txn:
+            cur = txn.connection.cursor()
+            try:
+                cur.execute(
+                    """
+                    UPDATE inventory_jobs
+                    SET status = ?,
+                        started_at = COALESCE(started_at, ?),
+                        last_heartbeat_at = ?,
+                        current_stage = ?,
+                        current_substep = ?,
+                        current_step_started_at = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                      AND status = ?
+                    """,
+                    (
+                        JobStatus.RUNNING.value,
+                        now_utc,
+                        now_utc,
+                        "Pipeline",
+                        "startup_confirmed",
+                        now_utc,
+                        now_utc,
+                        job_id,
+                        JobStatus.STARTING.value,
+                    ),
+                )
+                acquired = int(cur.rowcount or 0) == 1
+                if acquired and aisle_id:
+                    cur.execute(
+                        """
+                        UPDATE aisles
+                        SET status = ?,
+                            updated_at = ?,
+                            error_code = NULL,
+                            error_message = NULL,
+                            retryable = NULL
+                        WHERE id = ?
+                          AND status IN (?, ?, ?)
+                        """,
+                        (
+                            AisleStatus.PROCESSING.value,
+                            now_utc,
+                            aisle_id,
+                            AisleStatus.QUEUED.value,
+                            AisleStatus.ASSETS_UPLOADED.value,
+                            AisleStatus.PROCESSING.value,
+                        ),
+                    )
+                if acquired:
+                    txn.commit()
+                else:
+                    txn.rollback()
+            except Exception:
+                txn.rollback()
+                raise
+            finally:
+                cur.close()
+
+        if acquired:
+            job = self.get_by_id(job_id)
+            aisle_obj = self._load_aisle(aisle_id) if aisle_id else None
+            logger.info(
+                "event=job_claim_acquired job_id=%s aisle_id=%s execution_id=%s "
+                "previous_status=starting new_status=running attempt=%s",
+                job_id,
+                aisle_id,
+                execution_id,
+                getattr(job, "attempt_count", None) if job else None,
+            )
+            return JobClaimResult(
+                outcome=JobClaimOutcome.ACQUIRED,
+                job=job,
+                aisle=aisle_obj,
+                previous_status=JobStatus.STARTING.value,
+                reason="cas_acquired",
+            )
+
+        job = self.get_by_id(job_id)
+        result = classify_claim_after_cas_miss(job, execution_id=execution_id)
+        if result.outcome == JobClaimOutcome.ALREADY_OWNED and aisle_id:
+            self._ensure_aisle_processing(aisle_id, now_utc)
+            aisle_obj = self._load_aisle(aisle_id)
+            result = JobClaimResult(
+                outcome=JobClaimOutcome.ALREADY_OWNED,
+                job=job,
+                aisle=aisle_obj,
+                previous_status=result.previous_status,
+                reason=result.reason,
+            )
+        logger.info(
+            "event=job_claim_rejected job_id=%s execution_id=%s reason=%s "
+            "current_status=%s current_owner=%s",
+            job_id,
+            execution_id,
+            result.reason,
+            result.previous_status,
+            getattr(job, "execution_id", None) if job else None,
+        )
+        return result
+
+    def try_fail_stale_job(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        stale_after_seconds: int,
+    ) -> bool:
         if stale_after_seconds <= 0:
-            return 0
-        # IN (?,?,?) must stay aligned with STALE_RECONCILE_STATUSES (three terminal states).
+            return False
+        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
         status_values = tuple(s.value for s in STALE_RECONCILE_STATUSES)
         with self._client.cursor() as cur:
             cur.execute(
@@ -620,18 +741,162 @@ class SqlJobRepository(JobRepository):
                     failure_code = ?,
                     failure_message = ?,
                     error_message = ?
-                WHERE status IN (?, ?, ?)
+                WHERE id = ?
+                  AND status IN (?, ?, ?)
                   AND DATEDIFF(SECOND, COALESCE(last_heartbeat_at, updated_at), ?) >= ?
                 """,
                 (
-                    datetime.now(timezone.utc),
-                    datetime.now(timezone.utc),
+                    now_utc,
+                    now_utc,
                     STALE_FAILURE_CODE,
                     STALE_FAILURE_MESSAGE,
                     STALE_FAILURE_MESSAGE,
+                    job_id,
                     *status_values,
-                    datetime.now(timezone.utc),
+                    now_utc,
                     stale_after_seconds,
                 ),
             )
-            return int(cur.rowcount or 0)
+            return int(cur.rowcount or 0) == 1
+
+    def reclaim_stale_running_jobs(self, stale_after_seconds: int) -> int:
+        """Fail stale active jobs (Option C) and reconcile related aisles transactionally per job."""
+        if stale_after_seconds <= 0:
+            return 0
+        now_utc = datetime.now(timezone.utc)
+        status_values = tuple(s.value for s in STALE_RECONCILE_STATUSES)
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, target_type, target_id, execution_id,
+                       COALESCE(last_heartbeat_at, updated_at) AS hb
+                FROM inventory_jobs
+                WHERE status IN (?, ?, ?)
+                  AND DATEDIFF(SECOND, COALESCE(last_heartbeat_at, updated_at), ?) >= ?
+                """,
+                (*status_values, now_utc, stale_after_seconds),
+            )
+            rows = list(cur.fetchall() or [])
+
+        reclaimed = 0
+        for row in rows:
+            job_id = str(getattr(row, "id", None) or row[0])
+            target_type = getattr(row, "target_type", None)
+            if target_type is None:
+                try:
+                    target_type = row[1]
+                except Exception:
+                    target_type = None
+            target_id = getattr(row, "target_id", None)
+            if target_id is None:
+                try:
+                    target_id = row[2]
+                except Exception:
+                    target_id = None
+            hb = getattr(row, "hb", None)
+            logger.warning(
+                "event=job_stale_detected job_id=%s aisle_id=%s owner=%s "
+                "heartbeat_at=%s stale_threshold=%s",
+                job_id,
+                target_id if target_type == "aisle" else None,
+                getattr(row, "execution_id", None),
+                hb,
+                stale_after_seconds,
+            )
+            if not self.try_fail_stale_job(
+                job_id, now=now_utc, stale_after_seconds=stale_after_seconds
+            ):
+                continue
+            if target_type == "aisle" and target_id:
+                self._reconcile_aisle_after_stale(
+                    job_id=job_id,
+                    aisle_id=str(target_id),
+                    now=now_utc,
+                )
+            logger.warning(
+                "event=job_stale_reclaimed job_id=%s aisle_id=%s previous_owner=%s "
+                "new_status=failed attempt=n/a",
+                job_id,
+                target_id if target_type == "aisle" else None,
+                getattr(row, "execution_id", None),
+            )
+            reclaimed += 1
+        return reclaimed
+
+    def _ensure_aisle_processing(self, aisle_id: str, now: datetime) -> None:
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE aisles
+                SET status = ?,
+                    updated_at = ?,
+                    error_code = NULL,
+                    error_message = NULL,
+                    retryable = NULL
+                WHERE id = ?
+                  AND status IN (?, ?, ?)
+                """,
+                (
+                    AisleStatus.PROCESSING.value,
+                    now,
+                    aisle_id,
+                    AisleStatus.QUEUED.value,
+                    AisleStatus.ASSETS_UPLOADED.value,
+                    AisleStatus.PROCESSING.value,
+                ),
+            )
+
+    def _reconcile_aisle_after_stale(
+        self, *, job_id: str, aisle_id: str, now: datetime
+    ) -> None:
+        """Fail aisle only when no other active job remains for the same aisle."""
+        status_values = tuple(s.value for s in STALE_RECONCILE_STATUSES)
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT TOP 1 id
+                FROM inventory_jobs
+                WHERE target_type = 'aisle'
+                  AND target_id = ?
+                  AND id <> ?
+                  AND status IN (?, ?, ?)
+                """,
+                (aisle_id, job_id, *status_values),
+            )
+            other = cur.fetchone()
+            if other is not None:
+                logger.warning(
+                    "event=job_aisle_state_inconsistency job_id=%s aisle_id=%s "
+                    "job_status=failed aisle_status=unchanged processing_job_id=%s "
+                    "reason=other_active_job",
+                    job_id,
+                    aisle_id,
+                    getattr(other, "id", None) or other[0],
+                )
+                return
+            cur.execute(
+                """
+                UPDATE aisles
+                SET status = ?,
+                    updated_at = ?,
+                    error_code = ?,
+                    error_message = ?,
+                    retryable = 1
+                WHERE id = ?
+                  AND status IN (?, ?)
+                """,
+                (
+                    AisleStatus.FAILED.value,
+                    now,
+                    STALE_FAILURE_CODE,
+                    STALE_FAILURE_MESSAGE,
+                    aisle_id,
+                    AisleStatus.QUEUED.value,
+                    AisleStatus.PROCESSING.value,
+                ),
+            )
+
+    def _load_aisle(self, aisle_id: str):
+        from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
+
+        return SqlAisleRepository(self._client).get_by_id(aisle_id)

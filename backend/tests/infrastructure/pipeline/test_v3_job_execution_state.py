@@ -154,7 +154,9 @@ def test_mark_running_sets_job_running_and_reconciles_inventory() -> None:
     )
     aisle_repo.save(aisle)
 
-    svc.mark_running("job-1", aisle, now)
+    result = svc.mark_running("job-1", aisle, now)
+    assert result.may_execute is True
+    assert result.outcome.value == "acquired"
 
     saved_job = job_repo.get_by_id("job-1")
     assert saved_job is not None

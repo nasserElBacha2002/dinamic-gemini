@@ -21,6 +21,7 @@ from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
+from src.domain.jobs.claim import JobClaimResult
 from src.domain.jobs.entities import Job
 from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLabel
 from src.domain.positions.entities import Position
@@ -283,6 +284,39 @@ class JobRepository(ABC):
         job.result_json = merged
         self.save(job)
         return job
+
+    def try_claim_starting_to_running(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        execution_id: str | None = None,
+        aisle_id: str | None = None,
+    ) -> JobClaimResult:
+        """Atomic STARTING → RUNNING claim (Phase 1).
+
+        Implementations must use compare-and-set (``UPDATE … WHERE status = 'starting'``),
+        not read-then-write alone. When ``aisle_id`` is provided, mark the aisle
+        ``processing`` in the same transaction when the claim is acquired (or reconcile
+        on idempotent ``already_owned``).
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement try_claim_starting_to_running"
+        )
+
+    def try_fail_stale_job(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        stale_after_seconds: int,
+    ) -> bool:
+        """CAS-fail one active job if heartbeat proves stale. Returns True if this caller won."""
+        raise NotImplementedError(f"{type(self).__name__} must implement try_fail_stale_job")
+
+    def reclaim_stale_running_jobs(self, stale_after_seconds: int) -> int:
+        """Fail stale active jobs and reconcile related aisles. Returns jobs reclaimed."""
+        return 0
 
     def list_jobs_for_metrics(
         self,

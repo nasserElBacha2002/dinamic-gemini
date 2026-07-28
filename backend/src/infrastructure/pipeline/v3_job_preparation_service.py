@@ -152,7 +152,31 @@ class V3JobPreparationService:
             event="worker.starting_to_running_transition_started",
             details={"inventory_id": aisle.inventory_id, "aisle_id": aisle_id},
         )
-        self._state.mark_running(job_id, aisle, now)
+        claim = self._state.mark_running(job_id, aisle, now)
+        may_execute = getattr(claim, "may_execute", True)
+        if may_execute is False:
+            logger.warning(
+                "v3 mark running rejected: job_id=%s reason=%s status=%s",
+                job_id,
+                getattr(claim, "reason", None),
+                getattr(claim, "previous_status", None),
+            )
+            append_worker_bootstrap_event(
+                job_id=job_id,
+                execution_id=job.execution_id,
+                event="worker.starting_to_running_transition_rejected",
+                details={
+                    "inventory_id": aisle.inventory_id,
+                    "aisle_id": aisle_id,
+                    "reason": getattr(claim, "reason", None),
+                    "outcome": getattr(getattr(claim, "outcome", None), "value", None),
+                },
+            )
+            return V3PreparationResult.halt(True)
+        # Prefer refreshed job from claim when available (real Job only; mocks stay ignored).
+        claimed_job = getattr(claim, "job", None)
+        if isinstance(claimed_job, Job):
+            job = claimed_job
         append_worker_bootstrap_event(
             job_id=job_id,
             execution_id=job.execution_id,
