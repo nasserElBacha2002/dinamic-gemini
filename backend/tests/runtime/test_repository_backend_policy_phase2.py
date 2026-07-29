@@ -149,7 +149,7 @@ def test_sql_runtime_error_does_not_switch_to_memory_when_fallback_disallowed(
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
 
@@ -194,7 +194,7 @@ def test_get_repository_backend_status_probe_failure_never_raises(
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
     c = AppContainer(load_settings())
@@ -235,7 +235,7 @@ def test_get_repository_backend_status_memory_fallback_activated(
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     monkeypatch.setenv("V3_ALLOW_IN_MEMORY_FALLBACK", "true")
     config_module._settings = None

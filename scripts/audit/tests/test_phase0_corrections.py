@@ -153,10 +153,19 @@ def test_advisory_findings_do_not_block_structural_ok():
     status["areas"]["backend"]["tools"]["bandit"] = {
         "status": "FINDINGS",
         "severity": "medium",
-        "metrics": {"high": 1},
+        "metrics": {"high": 0, "blocking_high": 0, "medium": 3},
         "report": "x",
         "observation": "",
         "exit_code": 1,
+        "error": None,
+    }
+    status["areas"]["backend"]["tools"]["gitleaks"] = {
+        "status": "OK",
+        "severity": "none",
+        "metrics": {"secrets": 0},
+        "report": "x",
+        "observation": "",
+        "exit_code": 0,
         "error": None,
     }
     status["areas"]["frontend"]["tools"]["npm_audit"] = {
@@ -171,6 +180,31 @@ def test_advisory_findings_do_not_block_structural_ok():
     passed, reasons, _ = evaluate_gate(status)
     assert passed is True
     assert reasons == []
+
+
+def test_bandit_blocking_high_fails_gate():
+    status = _base_status()
+    status["areas"]["backend"]["tools"]["bandit"] = {
+        "status": "FINDINGS",
+        "severity": "high",
+        "metrics": {"high": 1, "blocking_high": 1},
+        "report": "x",
+        "observation": "",
+        "exit_code": 1,
+        "error": None,
+    }
+    status["areas"]["backend"]["tools"]["gitleaks"] = {
+        "status": "OK",
+        "severity": "none",
+        "metrics": {"secrets": 0},
+        "report": "x",
+        "observation": "",
+        "exit_code": 0,
+        "error": None,
+    }
+    passed, reasons, _ = evaluate_gate(status)
+    assert passed is False
+    assert any("Bandit" in r for r in reasons)
 
 
 def test_structural_invalidating_blocks_even_if_advisory():
@@ -197,6 +231,7 @@ def test_policy_lists_all_required_tools():
         "Backend Mypy",
         "Bandit",
         "pip-audit",
+        "Gitleaks",
         "Frontend typecheck",
         "Frontend Vitest",
         "Frontend ESLint",

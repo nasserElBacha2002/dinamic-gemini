@@ -1,41 +1,52 @@
-# Phase 4 — Security exceptions (temporary)
+# Phase 4 — Security exceptions (generated)
 
-Every exception must have owner, reason, reachability, mitigation, and expiry.
-The Quality Gate / ops review must fail an exception past `expires_at`.
+Source of truth: `audit/security-exceptions.json`. Do not edit this Markdown by hand.
 
-| finding_id | package/file | reason | reachability | mitigation | owner | ticket | created_at | expires_at |
-| ---------- | ------------ | ------ | ------------ | ---------- | ----- | ------ | ---------- | ---------- |
-| P4-003 | `frontend/src/features/auth/storage.ts` | JWT/access+refresh in localStorage (XSS risk) | Reachable | CSP/XSS hygiene; backend authz; planned httpOnly cookie migration | platform-security | SEC-P4-003 | 2026-07-17 | 2026-10-17 |
-| P4-009 | `.github/workflows/*.yml` | Actions pinned by mutable tags (`@v4`) not commit SHA | Reachable (supply chain) | `permissions: contents: read`; no secrets on fork PRs by default | platform-ci | SEC-P4-009 | 2026-07-17 | 2026-10-17 |
-| P4-010 | `frontend` react-router-dom ^6.30.4 | npm moderate advisories; RR7 is major breaking | Partial (SPA, no SSR) | Stay on RR6; avoid attacker-controlled navigate targets | frontend | SEC-P4-010 | 2026-07-17 | 2026-10-17 |
-| P4-011 | `mobile` Expo 51 transitive (tar/xmldom/glob/…) | High/critical in npm audit; mostly CLI/Jest/eslint | Not reachable (app runtime) | No `npm audit fix --force`; Expo major upgrade dedicated track | mobile | SEC-P4-011 | 2026-07-17 | 2026-12-17 |
-| P4-013 | `GET /health` | Unauthenticated liveness returns schema/backend status fields | Reachable | No secrets/paths/connection strings; `/ready` is the gate | platform-api | SEC-P4-013 | 2026-07-17 | 2026-10-17 |
-| P4-014 | Upload size defaults | Large default upload ceilings | Reachable | Enforce reverse-proxy + app limits; document ops | platform-api | SEC-P4-014 | 2026-07-17 | 2026-10-17 |
+| finding_id | severity | component | reachability | owner | ticket | created_at | expires_at |
+| ---------- | -------- | --------- | ------------ | ----- | ------ | ---------- | ---------- |
+| P4-003 | high | `frontend/src/features/auth/storage.ts` | reachable | platform-security | SEC-P4-003 | 2026-07-17 | 2026-10-17 |
+| P4-009 | medium | `.github/workflows/*.yml` | reachable | platform-ci | SEC-P4-009 | 2026-07-17 | 2026-10-17 |
+| P4-010 | medium | `frontend/react-router-dom` | partial | frontend | SEC-P4-010 | 2026-07-17 | 2026-10-17 |
+| P4-011 | high | `mobile/expo-51-transitive` | ci_build_tooling | mobile | SEC-P4-011 | 2026-07-17 | 2026-12-17 |
+| P4-013 | low | `GET /health` | reachable | platform-api | SEC-P4-013 | 2026-07-17 | 2026-10-17 |
+| P4-014 | low | `upload-limits` | reachable | platform-api | SEC-P4-014 | 2026-07-17 | 2026-10-17 |
+| P4-020 | low | `bandit-B608` | false_positive | platform-api | SEC-P4-020 | 2026-07-29 | 2026-12-17 |
 
-## Policy
+## Details
 
-```text
-CRITICAL/HIGH reachable → block merge unless fixed or exception with owner+expiry
-MEDIUM → fix when low-risk; else exception
-LOW/Info → advisory
-false_positive → evidence in vulnerability-matrix.md
-expired exception → treat as blocking finding
-```
+### P4-003
 
-## Expired-exception check
+- **Reason:** JWT access+refresh tokens stored in localStorage (XSS risk)
+- **Mitigation:** CSP/XSS hygiene; backend authz; planned httpOnly cookie migration
 
-```bash
-# Manual / CI companion (Phase 4): fail if any expires_at < today
-python - <<'PY'
-from datetime import date
-from pathlib import Path
-text = Path("audit-results/phase-4/security-exceptions.md").read_text()
-# rows with ISO dates in last column — keep in sync with table above
-expires = ["2026-10-17", "2026-10-17", "2026-10-17", "2026-12-17", "2026-10-17", "2026-10-17"]
-today = date.today()
-for e in expires:
-    if date.fromisoformat(e) < today:
-        raise SystemExit(f"expired security exception: {e}")
-print("ok: no expired exceptions")
-PY
-```
+### P4-009
+
+- **Reason:** GitHub Actions pinned by mutable tags (@v4) not commit SHA
+- **Mitigation:** permissions contents:read; no deploy secrets on PR gate
+
+### P4-010
+
+- **Reason:** npm moderate advisories on RR6; RR7 major deferred
+- **Mitigation:** SPA without SSR; avoid attacker-controlled navigate targets
+
+### P4-011
+
+- **Reason:** Critical/High npm advisories via Expo 51 CLI/Jest/eslint/tar tooling
+- **Mitigation:** No npm audit fix --force; Expo major upgrade track; app runtime does not unpack untrusted tar
+
+### P4-013
+
+- **Reason:** Unauthenticated liveness returns schema/backend status fields
+- **Mitigation:** No secrets/paths/connection strings; /ready is readiness gate
+
+### P4-014
+
+- **Reason:** Large default upload ceilings
+- **Mitigation:** Reverse-proxy + app limits; ops documentation
+
+### P4-020
+
+- **Reason:** Bandit B608 on constant f-string SQL with bound ? parameters
+- **Mitigation:** Identifiers static/allowlisted; values bound via pyodbc parameters
+
+_Generated at 2026-07-29_

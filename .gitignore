@@ -87,6 +87,7 @@ data/
 # Formal audit docs (versioned). Machine outputs below are regenerated.
 !audit/audit-report.md
 !audit/audit-backlog.md
+!audit/security-exceptions.json
 
 # Generated audit machine outputs — do not commit (regenerate via scripts/audit/).
 audit/audit-status.json
@@ -98,6 +99,10 @@ audit/raw/**
 audit-results/phase-0/phase0-*.txt
 audit-results/phase-1/phase1-*.txt
 audit-results/phase-4/phase4-*.txt
+audit-results/phase-4/*-raw.json
+audit-results/phase-4/*-stdout.txt
+audit-results/phase-4/*-stderr.txt
+audit-results/phase-4/*-npm-audit.json
 
 # Phase 4 security hardening dumps (repo root; never commit)
 phase4-security-hardening-*.txt

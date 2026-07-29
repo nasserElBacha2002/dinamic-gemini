@@ -3,10 +3,8 @@
 Run: uvicorn src.api.server:app --reload
 """
 
-import hashlib
 import logging
 import os
-import secrets
 import threading
 from pathlib import Path
 
@@ -15,6 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from src.api.api_key_policy import (
+    api_keys_match,
+    parse_api_key_path_prefixes,
+    path_requires_api_key,
+)
 from src.api.constants.error_wire import (
     HTTP_DETAIL_API_KEY_INVALID_OR_MISSING,
     HTTP_DETAIL_UNEXPECTED_ERROR,
@@ -38,6 +41,7 @@ from src.api.security_headers import (
     SAFE_CORS_ALLOW_METHODS,
     SecurityHeadersMiddleware,
     normalize_cors_allow_origins,
+    resolve_hsts_enabled,
 )
 from src.auth.errors import AuthHttpError
 from src.auth.routes import router as auth_router
@@ -45,10 +49,7 @@ from src.config import load_settings, resolve_sqlserver_connection_config
 from src.database.migrations import ensure_schema_compatibility, get_required_schema_version
 from src.database.sqlserver import SqlServerClient
 from src.jobs.worker import worker_loop
-from src.runtime.container.runtime_environment import (
-    RuntimeEnvironment,
-    resolve_runtime_environment,
-)
+from src.runtime.container.runtime_environment import resolve_runtime_environment
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +57,11 @@ app = FastAPI(title="Inventory Engine API", version="2.0.0")
 
 # CORS for v3 frontend (e.g. Vite dev server on localhost:5173)
 settings = load_settings()
+_rt = resolve_runtime_environment()
 cors_allow_origins = normalize_cors_allow_origins(
     settings.cors_allow_origins,
     allow_credentials=True,
+    env=_rt,
 )
 
 artifact_provider = (settings.artifact_storage_provider or "local").strip().lower()
@@ -98,28 +101,37 @@ app.add_middleware(
     expose_headers=["Location", "Content-Disposition"],
 )
 
-# HSTS only when explicitly enabled (TLS terminated at edge / forced HTTPS).
-_enable_hsts = (os.getenv("ENABLE_HSTS") or "").strip().lower() in ("1", "true", "yes")
-app.add_middleware(SecurityHeadersMiddleware, enable_hsts=_enable_hsts)
+# HSTS: hosted only, ENABLE_HSTS=true, and FORWARDED_TRUSTED_HOSTS set (TLS at edge).
+_hsts_on, _hsts_max_age = resolve_hsts_enabled(
+    env=_rt,
+    forwarded_trusted_hosts=settings.forwarded_trusted_hosts,
+)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    enable_hsts=_hsts_on,
+    hsts_max_age_sec=_hsts_max_age,
+)
 
 # Behind HTTPS-terminating ALB, redirects must use https; middleware trusts X-Forwarded-Proto from listed hosts.
 _forwarded = (settings.forwarded_trusted_hosts or "").strip()
 if _forwarded:
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_forwarded)
 
-# Production-like: require a non-empty API_KEY so the second auth gate cannot be silently off.
-# JWT remains the primary auth; API_KEY is an additional shared secret for edge/mobile clients.
-# Uses resolve_runtime_environment() (not NODE_ENV alone) so local pytest / NODE_ENV=production
-# shells do not fail import when the process is classified as TEST/LOCAL/DEVELOPMENT.
-_rt = resolve_runtime_environment()
-if _rt in (
-    RuntimeEnvironment.PRODUCTION,
-    RuntimeEnvironment.STAGING,
-    RuntimeEnvironment.PREPRODUCTION,
-) and not (settings.api_key or "").strip():
-    raise RuntimeError(
-        "API_KEY must be set in production-like environments "
-        f"(resolved runtime={_rt.value}). Refusing to start with an empty API key."
+# Model A: JWT for public clients. API_KEY is optional and only enforced on configured
+# path prefixes (API_KEY_REQUIRED_PATH_PREFIXES). Empty prefixes = no HTTP API-key gate.
+_api_key_prefixes = parse_api_key_path_prefixes(
+    getattr(settings, "api_key_required_path_prefixes", None)
+    or os.getenv("API_KEY_REQUIRED_PATH_PREFIXES", "")
+)
+if (settings.api_key or "").strip() and _api_key_prefixes:
+    logger.info(
+        "API key enforcement enabled for path prefixes=%s (Model A — public JWT clients unaffected)",
+        _api_key_prefixes,
+    )
+elif (settings.api_key or "").strip():
+    logger.info(
+        "API_KEY is set but API_KEY_REQUIRED_PATH_PREFIXES is empty — "
+        "no HTTP routes require X-API-Key (Model A default; JWT for public clients)."
     )
 
 # Include routers (v3 only for inventory operations; legacy v1 jobs/entities removed in Stage 3).
@@ -184,19 +196,20 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
-    """Require X-API-Key header if settings.api_key is set."""
-    if request.url.path == "/health":
-        return await call_next(request)
+    """Enforce X-API-Key only on configured internal path prefixes (Model A).
+
+    Public browser/mobile clients use JWT. ``/health`` and ``/ready`` never require a key.
+    """
     settings = load_settings()
     expected = (settings.api_key or "").strip()
-    if not expected:
+    prefixes = parse_api_key_path_prefixes(
+        getattr(settings, "api_key_required_path_prefixes", None)
+        or os.getenv("API_KEY_REQUIRED_PATH_PREFIXES", "")
+    )
+    if not expected or not path_requires_api_key(request.url.path, prefixes):
         return await call_next(request)
     key = (request.headers.get("X-API-Key") or "").strip()
-    # Hash then compare so unequal lengths do not short-circuit before a constant-time compare.
-    if not secrets.compare_digest(
-        hashlib.sha256(key.encode("utf-8")).digest(),
-        hashlib.sha256(expected.encode("utf-8")).digest(),
-    ):
+    if not api_keys_match(key, expected):
         return JSONResponse(
             status_code=403, content={"detail": HTTP_DETAIL_API_KEY_INVALID_OR_MISSING}
         )

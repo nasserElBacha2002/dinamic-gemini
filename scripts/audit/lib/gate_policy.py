@@ -46,20 +46,28 @@ REQUIRED_TOOL_RULES: Tuple[ToolGateRule, ...] = (
         label="Backend Mypy",
         failed_metric_keys=("errors",),
     ),
-    # Backend — security / deps (must run; findings reported, not hard-blocked)
+    # Backend — security / deps
+    # Bandit: FINDINGS allowed for low/medium; blocking_high metric fails the gate.
     ToolGateRule(
         area="backend",
         tool="bandit",
         label="Bandit",
-        failed_metric_keys=(),
+        failed_metric_keys=("blocking_high",),
         allow_findings=True,
     ),
     ToolGateRule(
         area="backend",
         tool="pip-audit",
         label="pip-audit",
-        failed_metric_keys=(),
-        allow_findings=True,
+        failed_metric_keys=("total",),
+        allow_findings=False,
+    ),
+    ToolGateRule(
+        area="backend",
+        tool="gitleaks",
+        label="Gitleaks",
+        failed_metric_keys=("secrets",),
+        allow_findings=False,
     ),
     # Frontend — hard quality
     ToolGateRule(

@@ -54,6 +54,7 @@ if [ "${AUDIT_PHASE0_SKIP_COLLECTORS:-0}" != "1" ]; then
   run_collector "scripts/audit/run_backend_audit.sh"
   run_collector "scripts/audit/run_frontend_audit.sh"
   run_collector "scripts/audit/run_mobile_audit.sh"
+  run_collector "scripts/audit/run_security_audit.sh"
   run_collector "scripts/audit/run_backend_architecture_audit.sh"
   run_collector "scripts/audit/run_frontend_architecture_audit.sh"
 else

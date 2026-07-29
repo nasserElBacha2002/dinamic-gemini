@@ -70,12 +70,12 @@ print("tesseract spa+eng language packs available for INTERNAL_OCR worker path")
 # Negative probe at runtime requires worker restart; immutable image — no probe retries.
 PY
 
-COPY . .
-
-# Non-root runtime (Phase 4).
+# Non-root user (uid/gid 10001) before COPY so --chown avoids recursive chown.
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
     && mkdir -p /app/output \
-    && chown -R appuser:appuser /app
+    && chown appuser:appuser /app /app/output
+
+COPY --chown=appuser:appuser . .
 USER appuser
 
 CMD ["python", "-m", "src.jobs.run_worker"]

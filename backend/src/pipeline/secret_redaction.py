@@ -21,20 +21,31 @@ _SAFE_TOKEN_METRIC_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 
-_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9\-._~+/]+=*"),
-    re.compile(r"\bsk-(?:ant|proj|or-v1)-[A-Za-z0-9\-_]{8,}"),
-    re.compile(r"\bsk-[A-Za-z0-9]{20,}"),
-    re.compile(r"(?i)(password|passwd|pwd)\s*[=:]\s*\S+"),
-    re.compile(r"(?i)(access_token|refresh_token|api_key|authorization)\s*[=:]\s*\S+"),
-    re.compile(r"(?i)(X-Amz-Security-Token|X-Amz-Credential)=[^&\s]+"),
-    re.compile(r"https?://[^\s]*[?&](Signature|X-Amz-Signature)=[^\s]+"),
-    # Azure Blob SAS query params / SharedAccessSignature
-    re.compile(r"(?i)[?&](sig|se|sv|sp|spr|srt|ss|st|sip|sr)=[^&\s]+"),
-    re.compile(r"(?i)(sharedaccesssignature|sas[_-]?token)\s*[=:]\s*\S+"),
-    # Compact JWT-shaped strings (header.payload.sig)
-    re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
-    re.compile(r"(?i)(Server=|UID=|PWD=|Password=)[^;]+"),
+# Preserve URL/query structure: replace value only.
+_SAS_QUERY_RE = re.compile(
+    r"(?i)([?&])(sig|se|sv|sp|spr|srt|ss|st|sip|sr|Signature|X-Amz-Signature|X-Amz-Security-Token|X-Amz-Credential)=([^&\s]*)"
+)
+_AWS_SIGNED_URL_RE = re.compile(
+    r"(?i)([?&])(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|Signature)=([^&\s]*)"
+)
+
+
+def _redact_query_value(match: re.Match[str]) -> str:
+    return f"{match.group(1)}{match.group(2)}={REDACTED}"
+
+
+_PATTERNS: list[tuple[re.Pattern[str], str | None]] = [
+    (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9\-._~+/]+=*"), f"Bearer {REDACTED}"),
+    (re.compile(r"\bsk-(?:ant|proj|or-v1)-[A-Za-z0-9\-_]{8,}"), REDACTED),
+    (re.compile(r"\bsk-[A-Za-z0-9]{20,}"), REDACTED),
+    (re.compile(r"(?i)(password|passwd|pwd)\s*[=:]\s*\S+"), f"password={REDACTED}"),
+    (
+        re.compile(r"(?i)(access_token|refresh_token|api_key|authorization)\s*[=:]\s*\S+"),
+        REDACTED,
+    ),
+    (re.compile(r"(?i)(sharedaccesssignature|sas[_-]?token)\s*[=:]\s*\S+"), REDACTED),
+    (re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"), REDACTED),
+    (re.compile(r"(?i)(Server=|UID=|PWD=|Password=)[^;]+"), REDACTED),
 ]
 
 
@@ -42,8 +53,13 @@ def redact_secrets_in_text(value: str | None) -> str:
     if not value:
         return ""
     out = value
-    for pat in _PATTERNS:
-        out = pat.sub(REDACTED, out)
+    out = _SAS_QUERY_RE.sub(_redact_query_value, out)
+    out = _AWS_SIGNED_URL_RE.sub(_redact_query_value, out)
+    for pat, repl in _PATTERNS:
+        if repl is None:
+            out = pat.sub(REDACTED, out)
+        else:
+            out = pat.sub(repl, out)
     return out
 
 

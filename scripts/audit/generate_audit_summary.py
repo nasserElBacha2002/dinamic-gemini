@@ -19,6 +19,7 @@ if str(_AUDIT_DIR) not in sys.path:
 from lib.parsers import (  # noqa: E402
     parse_bandit as lib_parse_bandit,
     parse_eslint as lib_parse_eslint,
+    parse_gitleaks as lib_parse_gitleaks,
     parse_jest as lib_parse_jest,
     parse_mypy as lib_parse_mypy,
     parse_npm_audit as lib_parse_npm_audit,
@@ -129,6 +130,10 @@ def parse_backend_bandit(path: Path) -> ToolResult:
 
 def parse_backend_pip_audit(path: Path) -> ToolResult:
     return _from_parsed(lib_parse_pip_audit(path))
+
+
+def parse_backend_gitleaks(path: Path) -> ToolResult:
+    return _from_parsed(lib_parse_gitleaks(path))
 
 
 def parse_backend_pytest(path: Path) -> ToolResult:
@@ -633,6 +638,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "Mypy": raw / "backend-mypy.txt",
         "Bandit": raw / "backend-bandit.json",
         "pip-audit": raw / "backend-pip-audit.json",
+        "Gitleaks": raw / "backend-gitleaks.json",
         "Pytest": raw / "backend-pytest.txt",
     }
     frontend_files = {
@@ -664,6 +670,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         parse_backend_mypy(backend_files["Mypy"]),
         parse_backend_bandit(backend_files["Bandit"]),
         parse_backend_pip_audit(backend_files["pip-audit"]),
+        parse_backend_gitleaks(backend_files["Gitleaks"]),
         parse_backend_pytest(backend_files["Pytest"]),
     ]
     frontend = [

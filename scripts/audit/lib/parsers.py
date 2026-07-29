@@ -226,10 +226,15 @@ def parse_bandit(path: Path, *, exit_code: Optional[int] = None) -> ParsedToolRe
         return tr
     results = data.get("results", []) or []
     sev_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    blocking_high = 0
     for r in results:
         sev = str(r.get("issue_severity", "")).upper()
         if sev in sev_counts:
             sev_counts[sev] += 1
+        conf = str(r.get("issue_confidence", "")).upper()
+        # Policy: HIGH severity + HIGH/MEDIUM confidence → blocking (unless allowlisted via exceptions tooling).
+        if sev == "HIGH" and conf in ("HIGH", "MEDIUM"):
+            blocking_high += 1
     total = sum(sev_counts.values())
     tr.metrics.update(
         {
@@ -237,14 +242,71 @@ def parse_bandit(path: Path, *, exit_code: Optional[int] = None) -> ParsedToolRe
             "high": sev_counts["HIGH"],
             "medium": sev_counts["MEDIUM"],
             "low": sev_counts["LOW"],
+            "blocking_high": blocking_high,
         }
     )
     tr.status = ToolStatus.FINDINGS.value if total > 0 else ToolStatus.OK.value
     tr.severity = (
         "high"
-        if sev_counts["HIGH"] > 0
+        if blocking_high > 0 or sev_counts["HIGH"] > 0
         else ("medium" if sev_counts["MEDIUM"] > 0 else ("low" if total > 0 else "none"))
     )
+    return tr
+
+
+def parse_gitleaks(path: Path, *, exit_code: Optional[int] = None) -> ParsedToolResult:
+    tr = ParsedToolResult("Gitleaks", parser="gitleaks")
+    content = safe_read(path)
+    tr.exit_code = exit_code if exit_code is not None else read_exit_code(path)
+    if content is None:
+        tr.status = ToolStatus.NOT_RUN.value
+        tr.observation = "Reporte gitleaks ausente."
+        return tr
+    if _note_unavailable(content) or _note_skipped(content):
+        tr.status = ToolStatus.NOT_AVAILABLE.value
+        tr.severity = "high"
+        tr.error = "gitleaks no ejecutado (docker/herramienta requerida)."
+        return tr
+    if tr.exit_code is not None and tr.exit_code not in (0, 1):
+        tr.status = ToolStatus.EXECUTION_ERROR.value
+        tr.severity = "high"
+        tr.error = f"gitleaks exit {tr.exit_code}"
+        return tr
+    data = extract_json_object(content)
+    # gitleaks JSON report is often a list of findings
+    findings = 0
+    if isinstance(data, list):
+        findings = len(data)
+    elif isinstance(data, dict):
+        if "error" in data and not data.get("findings"):
+            tr.status = ToolStatus.EXECUTION_ERROR.value
+            tr.severity = "high"
+            tr.error = str(data.get("error"))
+            return tr
+        findings = len(data.get("findings") or data.get("leaks") or [])
+    else:
+        # empty file / no leaks sometimes writes []
+        stripped = content.strip()
+        if stripped in ("", "[]", "null"):
+            findings = 0
+        else:
+            try:
+                parsed = json.loads(stripped)
+                if isinstance(parsed, list):
+                    findings = len(parsed)
+                else:
+                    tr.status = ToolStatus.PARSE_ERROR.value
+                    tr.error = "gitleaks JSON shape unexpected"
+                    tr.severity = "high"
+                    return tr
+            except json.JSONDecodeError:
+                tr.status = ToolStatus.PARSE_ERROR.value
+                tr.error = "gitleaks JSON inválido"
+                tr.severity = "high"
+                return tr
+    tr.metrics["secrets"] = findings
+    tr.status = ToolStatus.FINDINGS.value if findings > 0 else ToolStatus.OK.value
+    tr.severity = "critical" if findings > 0 else "none"
     return tr
 
 

@@ -125,6 +125,26 @@ def evaluate_gate(status: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
         reasons.extend(r)
         checks.extend(c)
 
+    # Structured security exceptions (must exist, valid schema, not expired).
+    try:
+        from lib.security_exceptions import (
+            SecurityExceptionsError,
+            default_exceptions_path,
+            load_security_exceptions,
+            validate_security_exceptions_not_expired,
+        )
+
+        exc_path = default_exceptions_path(Path(__file__).resolve().parents[2])
+        exceptions = load_security_exceptions(exc_path)
+        validate_security_exceptions_not_expired(exceptions)
+        checks.append(f"- security-exceptions: OK ({len(exceptions)} entries, not expired)")
+    except SecurityExceptionsError as exc:
+        reasons.append(f"security-exceptions: {exc}")
+        checks.append(f"- security-exceptions: FAIL ({exc})")
+    except OSError as exc:
+        reasons.append(f"security-exceptions: {exc}")
+        checks.append(f"- security-exceptions: FAIL ({exc})")
+
     max_severity = str(status.get("max_severity", "none")).lower()
     overall_status = str(status.get("overall_status", "ok")).lower()
     checks.append(f"- Max severity: {max_severity}")

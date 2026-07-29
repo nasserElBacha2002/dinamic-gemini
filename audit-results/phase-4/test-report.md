@@ -4,39 +4,38 @@
 
 | Suite | Result |
 | ----- | ------ |
-| `pytest -q --no-cov` (full) | **3962 passed**, 16 skipped |
-| `tests/api/test_phase4_security_hardening.py` | pass |
-| `tests/unit/test_sqlserver_resolution.py` (TrustServerCertificate) | pass |
-| Phase 3 fencing test alignment (promotion / cancel / finalization markers) | pass |
+| `pytest -q --no-cov` (full, corrections session) | **3965 passed**, 16 skipped |
+| `tests/api/test_phase4_security_hardening.py` | pass (API key Model A, CORS hosted, HSTS, redaction, TLS) |
+| SQL TLS unit/runtime fixtures | pass (hosted default `TrustServerCertificate=no`) |
+| Audit exception / gate unit tests | pass |
 
 ## Frontend
 
 | Command | Result |
 | ------- | ------ |
-| `npm run typecheck` | pass |
-| `npm run lint` | pass |
-| `npm run test -- --run` | **1223** passed |
+| typecheck / lint / vitest (via full audit) | pass |
 | `tests/security/phase4SecretsHygiene.test.ts` | pass |
-| `npm audit --audit-level=high` | pass (2 moderate remaining) |
+| `npm run build` + `scan-dist-secrets.cjs` | pass |
 
 ## Mobile
 
 | Command | Result |
 | ------- | ------ |
-| `npm run typecheck` | pass |
-| `npm run lint` | pass |
-| `npm test -- --watchman=false` | pass |
+| typecheck / lint / jest (via full audit) | pass |
+| Critical/High reachability doc | `mobile-dependency-reachability.md` |
 
 ## Scanners / Gate
 
 | Tool | Result |
 | ---- | ------ |
-| `pip_audit --skip-editable` | 0 vulns |
-| `bandit -r backend/src scripts` | FINDINGS (advisory; gate allow_findings) |
+| `pip_audit` | OK |
+| `bandit` | FINDINGS allowed; **blocking_high** metric gated |
+| **gitleaks** (digest-pinned Docker) | OK (0 secrets) |
+| security-exceptions schema/expiry | OK (7 entries) |
 | `scripts/audit/run_full_audit.sh` | PASS |
-| `enforce_quality_gate.py --strict` | **PASS** (run_id `20260729T121711Z`) |
+| `enforce_quality_gate.py --strict` | **PASS** (`run_id=20260729T125650Z`) |
 
 ## Notes
 
-- Tests de promoción/finalización se alinearon a `lease_fencing_token` / `update_finalization_if_leased` (deuda de Phase 3), sin cambiar arquitectura de lease.
-- `gitleaks` no disponible en PATH; secrets audit manual + `.gitignore` / `.dockerignore`.
+- No Phase 5 work.
+- Raw `*-stderr.txt` / `*-raw.json` under `audit-results/phase-4/` are not versioned.

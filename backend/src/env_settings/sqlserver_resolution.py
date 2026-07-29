@@ -65,29 +65,11 @@ def _dockerenv_present() -> bool:
 
 
 def _sqlserver_trust_server_certificate_keyword() -> str:
-    """ODBC TrustServerCertificate keyword from env (default ``yes`` for local/dev).
+    """ODBC TrustServerCertificate keyword via :mod:`sql_tls_policy`."""
+    from src.env_settings.sql_tls_policy import trust_server_certificate_odbc_keyword
 
-    Production-like runtimes should set ``SQLSERVER_TRUST_SERVER_CERTIFICATE=no`` and
-    install a trusted CA. When left at ``yes`` in production-like environments, emit a
-    one-line warning (does not fail startup — hostnames/certs vary by deployment).
-    """
-    raw = (os.getenv("SQLSERVER_TRUST_SERVER_CERTIFICATE") or "yes").strip().lower()
-    if raw in ("0", "false", "no"):
-        return "TrustServerCertificate=no"
-    # Default and explicit yes/true/1
-    try:
-        from src.runtime.container.runtime_environment import is_production_like_runtime
+    return trust_server_certificate_odbc_keyword()
 
-        if is_production_like_runtime() and raw in ("1", "true", "yes", ""):
-            import logging
-
-            logging.getLogger(__name__).warning(
-                "SQLSERVER_TRUST_SERVER_CERTIFICATE is enabled (yes) in a production-like "
-                "runtime. Prefer TrustServerCertificate=no with a proper CA chain."
-            )
-    except ImportError:
-        pass
-    return "TrustServerCertificate=yes"
 
 
 def _is_loopback_host_only(host: str) -> bool:
@@ -230,6 +212,9 @@ def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
     raw = (os.getenv("SQLSERVER_CONNECTION_STRING") or "").strip()
     if raw:
         remapped = remap_sqlserver_connection_string_server_if_needed(raw)
+        from src.env_settings.sql_tls_policy import validate_sqlserver_connection_tls
+
+        validate_sqlserver_connection_tls(remapped)
         return SqlServerConnectionResolution(
             mode="connection_string",
             connection_string=remapped,
@@ -296,10 +281,15 @@ def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
 
     server_eff = remap_sqlserver_server_for_container_if_needed(server)
     trust_kw = _sqlserver_trust_server_certificate_keyword()
-    cs = (
+    from src.env_settings.sql_tls_policy import ensure_encrypt_keyword
+
+    cs = ensure_encrypt_keyword(
         f"DRIVER={{{driver}}};SERVER={server_eff};DATABASE={database};UID={uid};PWD={pwd};"
         f"{trust_kw}"
     )
+    from src.env_settings.sql_tls_policy import validate_sqlserver_connection_tls
+
+    validate_sqlserver_connection_tls(cs)
     return SqlServerConnectionResolution(
         mode="split_env",
         connection_string=cs,

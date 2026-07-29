@@ -107,7 +107,7 @@ def test_single_sql_client_construct_when_sql_enabled_two_repos(
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
     reset_app_container_for_tests()
@@ -142,7 +142,7 @@ def test_memory_fallback_cached_single_sql_probe_two_memory_repos(
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
     reset_app_container_for_tests()
@@ -380,7 +380,7 @@ def test_repository_backend_resolution_raises_when_probe_fails_and_fallback_disa
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
     reset_app_container_for_tests()

@@ -22,7 +22,7 @@ def test_explicit_v3_allow_true_ignored_in_production_on_probe_failure(
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
 
@@ -56,7 +56,7 @@ def test_explicit_v3_allow_false_disables_fallback_in_non_production(
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
 
@@ -90,7 +90,7 @@ def test_unset_v3_allow_in_production_disallows_memory_fallback_on_probe_failure
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
 
@@ -127,7 +127,7 @@ def test_unset_v3_allow_with_unknown_env_disallows_memory_fallback_on_probe_fail
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
 
@@ -161,7 +161,7 @@ def test_development_allows_memory_fallback_on_probe_failure(
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
 

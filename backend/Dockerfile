@@ -45,6 +45,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && dpkg -s msodbcsql18 | grep -E '^Package:|^Version:|^Architecture:' \
     && rm -rf /var/lib/apt/lists/*
 
+# Non-root user (uid/gid 10001) before COPY so --chown works without recursive chown of the tree.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/output \
+    && chown appuser:appuser /app /app/output
+
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -77,12 +82,7 @@ print("tesseract spa+eng language packs available for INTERNAL_OCR")
 # this image is immutable; do not add probe retries.
 PY
 
-COPY . .
-
-# Non-root runtime (Phase 4). Writable dirs for logs/output when mounted.
-RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
-    && mkdir -p /app/output \
-    && chown -R appuser:appuser /app
+COPY --chown=appuser:appuser . .
 USER appuser
 
 EXPOSE 8000

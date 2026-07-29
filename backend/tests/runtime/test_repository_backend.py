@@ -25,7 +25,7 @@ def settings_sql_on(monkeypatch: pytest.MonkeyPatch) -> AppSettings:
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",
         "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
-        "TrustServerCertificate=yes",
+        "Encrypt=yes;TrustServerCertificate=no",
     )
     config_module._settings = None
     return load_settings()

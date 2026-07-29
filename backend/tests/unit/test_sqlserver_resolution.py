@@ -85,6 +85,7 @@ def test_split_vars_stripped_and_built(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "PWD=p" in cs
     assert "DRIVER={ODBC Driver 18 for SQL Server}" in cs
     assert "TrustServerCertificate=yes" in cs
+    assert "Encrypt=yes" in cs
     cfg = resolve_sqlserver_connection_config()
     assert cfg.mode == "split_env"
     assert cfg.driver_resolution == "SQLSERVER_DRIVER"

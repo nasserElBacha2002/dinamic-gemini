@@ -613,7 +613,19 @@ class ApiRuntimeSettings(BaseModel):
     # API Server (Stage 7)
     api_key: str = Field(
         default_factory=lambda: os.getenv("API_KEY", ""),
-        description="API key for server auth (header X-API-Key). Empty = no auth (dev only).",
+        description=(
+            "Optional shared secret for internal path prefixes only (Model A). "
+            "Public browser/mobile clients use JWT — do not embed API_KEY in VITE_* or mobile bundles. "
+            "Env: API_KEY."
+        ),
+    )
+    api_key_required_path_prefixes: str = Field(
+        default_factory=lambda: (os.getenv("API_KEY_REQUIRED_PATH_PREFIXES", "") or "").strip(),
+        description=(
+            "Comma-separated URL path prefixes that require X-API-Key when API_KEY is set "
+            "(e.g. /api/v3/admin). Empty = no HTTP API-key enforcement (JWT-only public clients). "
+            "Env: API_KEY_REQUIRED_PATH_PREFIXES."
+        ),
     )
     embedded_worker_enabled: bool = Field(
         default_factory=lambda: (
