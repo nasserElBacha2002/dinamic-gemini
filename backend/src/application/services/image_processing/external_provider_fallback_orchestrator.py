@@ -515,6 +515,25 @@ class ExternalProviderFallbackOrchestrator:
                 persistence_status="PENDING",
             )
 
+        # Lost the idempotency insert race: another worker owns the durable row.
+        # Never start a second provider call for the same key (cost + double-write).
+        if request.id != claim.id and recovery.action == "CONTINUE":
+            self._bump_skipped()
+            self._publish_fallback_event(
+                job_id=job.id,
+                asset_id=asset.id,
+                event_type="fallback.skipped",
+                message="external fallback skipped; idempotency claim held by another worker",
+                error_code="IDEMPOTENCY_CLAIM_HELD",
+                metadata={
+                    **eval_metadata,
+                    "recovery_action": "CONTINUE",
+                    "request_status": getattr(request.status, "value", str(request.status)),
+                    "request_id": request.id,
+                },
+            )
+            return ExternalFallbackOutcome(skipped=True, request=request)
+
         breaker = self._breaker_for(snapshot)
         if breaker is not None and breaker.is_open(provider_name, model_name or ""):
             if self.counters is not None:
