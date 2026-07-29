@@ -1,4 +1,5 @@
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1.4
+FROM python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
 
 WORKDIR /app
 
@@ -51,36 +52,12 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
     && chown appuser:appuser /app /app/output
 
 COPY requirements.txt .
+COPY docker/verify_api_runtime_deps.py /tmp/verify_api_runtime_deps.py
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    python - <<'PY'
-import pyodbc
-
-drivers = {d.strip() for d in pyodbc.drivers() if d.strip()}
-required = {"ODBC Driver 18 for SQL Server"}
-print("pyodbc OK; ODBC drivers:", sorted(drivers))
-if not (drivers & required):
-    raise SystemExit(
-        "Build verification failed: ODBC Driver 18 for SQL Server not registered. "
-        f"Got: {sorted(drivers)}"
-    )
-from pyzbar.pyzbar import decode as _pyzbar_decode
-print("pyzbar-ok")
-
-# Phase 4 INTERNAL_OCR: OpenCloud on-demand workers run in this API image.
-import pytesseract
-_ver = str(pytesseract.get_tesseract_version())
-print(f"pytesseract OK; tesseract version={_ver}")
-_langs = {x.strip() for x in pytesseract.get_languages(config="") if x.strip()}
-if not ({"spa", "eng"} <= _langs):
-    raise SystemExit(
-        f"Build verification failed: tesseract languages must include spa and eng. Got: {sorted(_langs)}"
-    )
-print("tesseract spa+eng language packs available for INTERNAL_OCR")
-# Negative probe at runtime (missing binary after image build) requires container restart —
-# this image is immutable; do not add probe retries.
-PY
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && python /tmp/verify_api_runtime_deps.py \
+    && rm -f /tmp/verify_api_runtime_deps.py
 
 COPY --chown=appuser:appuser . .
 USER appuser

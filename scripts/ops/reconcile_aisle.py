@@ -7,18 +7,30 @@ Prefer::
   python -m scripts.ops.inspect_aisle --aisle-id <id> --dry-run --actor ops --reason 'check'
 
 Kept so existing runbooks that invoke ``reconcile_aisle`` still work as inspect-only.
+
+Deprecation is emitted on **stderr** (visible) — not a hidden warnings-module path.
 """
 
 from __future__ import annotations
 
-import warnings
+import sys
+from pathlib import Path
 
-warnings.warn(
-    "scripts.ops.reconcile_aisle is deprecated; use scripts.ops.inspect_aisle "
-    "(sunset 2026-12-31)",
-    DeprecationWarning,
-    stacklevel=1,
+_DEPRECATION_MSG = (
+    "DEPRECATED: scripts.ops.reconcile_aisle — use scripts.ops.inspect_aisle instead "
+    "(sunset 2026-12-31; ticket PHASE7-CLEANUP-RECONCILE-AISLE)."
 )
+
+
+def _emit_deprecation() -> None:
+    print(_DEPRECATION_MSG, file=sys.stderr)
+
+
+_emit_deprecation()
+
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from scripts.ops.inspect_aisle import main
 

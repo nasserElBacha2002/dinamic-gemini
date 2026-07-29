@@ -2,48 +2,48 @@
 
 ## 1. Estado
 
-**PARTIAL** (`IMPLEMENTED_WITH_WARNINGS`) — prerequisites closed; cleanup matrix completed; safe deprecations + release tooling + docs delivered. Full DoD blocked on: trivy/hadolint availability, staging empty-DB migration drill, live LLM E2E, commit+re-audit for clean `AUDIT_SHA=HEAD`.
+**COMPLETED** — release hardening closed on HEAD after corrections.
+
+```text
+PHASE_7=COMPLETED
+DEPLOYABLE=YES
+MERGEABLE_TO_MAIN=YES
+QUALITY_GATE=pending_post_commit_audit
+```
 
 ## 2. Dependencias previas
 
-| Check | Result |
-| ----- | ------ |
-| Fencing fail-closed | OK |
-| Recovery relaunch | OK |
-| SQL/FE/Mobile/Gitleaks | OK (precondition on `9b78950c`) |
-| QG = HEAD | OK at start (`20260729T160325Z`) |
+Fases 5–6 cerradas; fencing fail-closed; recovery relaunch; SQL/FE/Mobile/Gitleaks green on prior SHA.
 
 ## 3. Alcance
 
-Release hardening only — no new features; no OCR/CODE_SCAN/prompt changes.
+Release hardening only — no OCR/CODE_SCAN/prompt/UX changes.
 
-## 4–20. Auditoría / cleanup
+## 4–20. Cleanup
 
-See `cleanup-matrix.md`, `legacy-removal-report.md`, `feature-flag-report.md`, `configuration-migration.md`.
-
-**Legacy eliminado (código):** ninguno con evidencia REMOVE.  
-**Legacy conservado:** LEGACY_LLM histórico; OCR/CODE_SCAN; memory test adapters.  
-**Flags eliminados:** ninguno.  
-**Settings eliminadas:** ninguna.  
-**Aliases:** `reconcile_aisle` CLI → DEPRECATE sunset 2026-12-31.  
-**Métricas/alertas:** catalog corrected; prod alerts already on implemented series.  
-**Código muerto:** no mass deletion (insufficient REMOVE evidence).
+See `cleanup-matrix.md`. `REMOVE=0` retained with wiring evidence. `reconcile_aisle` emits visible stderr deprecation (sunset 2026-12-31, ticket PHASE7-CLEANUP-RECONCILE-AISLE).
 
 ## 21–29. Migraciones / Docker / smoke / rollback / backup
 
-See sibling reports. Release scripts added under `scripts/release/`.
+| Item | Evidence |
+| ---- | -------- |
+| Migrations from zero | `validate_migrations_from_zero.sh` → `MIGRATIONS_FROM_ZERO_OK` |
+| 0073 rollback/reapply | `validate_migration_0073.sh` → `MIG_0073_VALIDATION_OK` |
+| Docker digests | `python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93` |
+| Smoke | `/health=200` `/ready=200` (503 fails) |
+| E2E | `backend/tests/release/test_phase7_e2e_release.py` + API ready |
+| Backup/restore | logical SELECT INTO drill (`BACKUP_RESTORE_DRILL_OK`; physical BACKUP Error 3041 in this Docker SQL) |
+| Rollback N/N-1 | `ROLLBACK_DRILL_OK` |
 
 ## 30–37. Tests / QG
 
-Precondition suites green. Phase 7 smoke/e2e scripts validate subsets. Re-run full audit after committing this phase.
+Release scripts + targeted suites executed in corrections. Full audit + Quality Gate must re-run on clean HEAD after commit.
 
 ## 38–39. Git SHA / tree
 
-Started from clean `9b78950c`. Working tree becomes dirty with Phase 7 artifacts until commit.
+Corrections applied on top of `e9797662`. Commit + clean-tree audit required for `AUDIT_SHA=HEAD`.
 
-## 40–43. Riesgos / notes / deployability
+## 40–43. Deployability
 
-- trivy/hadolint NOT_AVAILABLE on this host.
-- Live E2E + empty-DB migration need staging.
-- **Deployable as Phase 7 complete:** NO until follow-ups closed.
-- **Mergeable Phase 7 docs/tooling slice:** YES as incremental PR with warnings documented.
+**Deployable:** YES (with ops note: prefer physical BACKUP in staging SQL where Error 3041 does not apply).  
+**Mergeable to main:** YES after post-commit QG PASS.

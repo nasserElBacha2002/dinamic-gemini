@@ -1,32 +1,22 @@
 # Phase 7 — Migration validation report
 
-## Chain
+## 0073
 
-- Historical migrations **0001–0072**: KEEP (never edit applied history).
-- **0073** `UX_inventory_jobs_retry_of_job_id`: additive filtered unique index + duplicate preflight.
+Script: `scripts/release/validate_migration_0073.sh`
 
-## 0073 checklist
+Flow: verify → preflight → rollback (DROP INDEX) → reapply → verify.
 
-| Scenario | Status | Evidence |
-| -------- | ------ | -------- |
-| Preflight lists duplicates | PASS (tool) | `scripts/ops/preflight_0073_retry_of_duplicates.py` + unit tests |
-| Auto-resolve duplicates | N/A by design | Manual resolution per `0073_README.md` |
-| Apply idempotent | documented | SQL `IF NOT EXISTS` index create |
-| Rollback | documented | `DROP INDEX UX_inventory_jobs_retry_of_job_id` |
-| Reapply | documented | re-run migration after rollback |
-| Helper script | added | `scripts/release/validate_migration_0073.sh` |
+Result: `MIG_0073_VALIDATION_OK` · schema_version=`0073` · index_state=`present`.
 
-## Empty DB → latest
+## From zero / upgrade
 
-Run in ops/staging (not auto-run here against prod):
+Script: `scripts/release/validate_migrations_from_zero.sh`
 
-```bash
-# create empty DB, point SQLSERVER_* at it
-cd backend && python scripts/db_migrate.py -- apply
-python scripts/db_migrate.py -- status
-bash ../scripts/release/validate_migration_0073.sh
-```
+- **A)** Schema-only clone of `dinamic-gemini` (0073) + migration history copy → validate → API `/ready=200` → rollback/reapply 0073  
+- **B)** Idempotent apply on full clone  
+- **C)** Concurrent insert uniqueness (IntegrityError expected)  
+- **D)** Upgrade 0072 → 0073 (hide 0073 file, delete row, restore, apply)
 
-## Limitations
+Note: `0001_baseline.sql` is metadata-only; empty DB bootstrap uses schema-only clone of a 0073-compatible source (repo contract). `dinamic_inventory_test` at 0004 is incomplete for 0005+ (missing legacy `jobs`).
 
-Full empty-DB apply/rollback on a throwaway SQL instance should be executed in CI/staging before production cutover. Local helper documents steps; this report does not claim a production DB was wiped.
+Result: `MIGRATIONS_FROM_ZERO_OK`.

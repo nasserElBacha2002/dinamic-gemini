@@ -1,20 +1,23 @@
 # Phase 7 — Backup / restore notes
 
-## Before production cutover
+## Physical BACKUP limitation (this host)
 
-1. Full SQL Server backup (full + log as per ops RPO).
-2. Record `schema_migrations` / migration version table state.
-3. Snapshot artifact storage references (GCS prefixes / local volume paths) — not secrets.
-4. Export Prometheus alert rule file revision (git SHA).
-5. Document secret **references** (names in secret manager), never values.
+Docker SQL Server (`sqlserver` on localhost:1433) rejects `BACKUP DATABASE ... TO DISK` with **Error 3041** / `BackupDiskFile::OpenMedia` OS error 2. `DBCC CLONEDATABASE` targets also cannot be backed up. Evidence: container error log lines `BACKUP failed to complete the command`.
 
-## Restore drill (staging)
+## Executed drill (logical)
 
-1. Restore backup to isolated instance.
-2. Point a staging API at restored DB (read-only first).
-3. Run `/health`, `/ready`, `preflight_0073`, one `inspect_job`.
-4. Measure time → propose RTO; backup frequency → propose RPO (**operational proposal only**).
+Script: `scripts/release/run_backup_restore_drill.sh`
 
-## This phase
+1. Create ephemeral `dinamic_phase7_backup_src`
+2. Logical copy of `schema_migrations`, `inventories`, `aisles`, `inventory_jobs` from `dinamic-gemini`
+3. Seed synthetic SUCCEEDED job
+4. Logical restore into `dinamic_phase7_restore_test`
+5. Verify schema version **0073**, index `UX_inventory_jobs_retry_of_job_id`, job counts
+6. Start API with `EMBEDDED_WORKER_ENABLED=false` → `/ready=200`
+7. Record duration
 
-No production backup was executed from this agent session.
+Result: `BACKUP_RESTORE_DRILL_OK` (`mode=logical_select_into`).
+
+## Staging / production
+
+Use native `BACKUP`/`RESTORE` (or managed snapshots) on SQL instances where Error 3041 does not apply. Keep COPY_ONLY for non-disruptive drills. Never run against production from developer laptops.

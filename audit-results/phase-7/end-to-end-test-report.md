@@ -1,20 +1,20 @@
 # Phase 7 — End-to-end test report
 
-## Automated (this phase)
+## Integration (renamed)
 
-```bash
-bash scripts/release/run_e2e_release_validation.sh
-```
+`scripts/release/run_release_integration_validation.sh` — pytest integration/architecture suites (not E2E).
 
-Includes SQL integration (claim, lease fencing, recovery), architecture fencing characterization, and structured process validation errors.
+## Real E2E
 
-## Live ops E2E (synthetic tenant — manual)
+`scripts/release/run_e2e_release_validation.sh` + `backend/tests/release/test_phase7_e2e_release.py`
 
-```text
-crear inventario → pasillo → imágenes → job → claim → process → fenced persist
-→ finalización → promoción → artifacts → métricas
-```
+Ephemeral SQL (0073) + deterministic `TestLLMExecutor` (no live LLM):
 
-Plus cancel / retry / stale recovery / launch failure — use staging tenant only.
+- claim / lease path
+- cancel queued job
+- retry_of unique constraint
+- stale recovery + worker launch failure
+- provider timeout + SQL transient retry
+- API `/ready=200`
 
-Live LLM spend and customer data: **out of automated gate**.
+Result marker: `E2E_RELEASE_VALIDATION_OK` (script) / pytest release_e2e passed.
