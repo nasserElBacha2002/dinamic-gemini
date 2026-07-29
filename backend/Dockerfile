@@ -79,6 +79,12 @@ PY
 
 COPY . .
 
+# Non-root runtime (Phase 4). Writable dirs for logs/output when mounted.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/output \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 
 CMD ["uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000"]

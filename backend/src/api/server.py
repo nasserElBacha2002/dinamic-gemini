@@ -3,8 +3,10 @@
 Run: uvicorn src.api.server:app --reload
 """
 
+import hashlib
 import logging
 import os
+import secrets
 import threading
 from pathlib import Path
 
@@ -31,12 +33,22 @@ from src.api.routes.v3.observability import router as v3_observability_router
 from src.api.routes.v3.review_queue import router as v3_review_queue_router
 from src.api.schema_guard import schema_guard_state
 from src.api.schemas.responses import HealthResponse
+from src.api.security_headers import (
+    SAFE_CORS_ALLOW_HEADERS,
+    SAFE_CORS_ALLOW_METHODS,
+    SecurityHeadersMiddleware,
+    normalize_cors_allow_origins,
+)
 from src.auth.errors import AuthHttpError
 from src.auth.routes import router as auth_router
 from src.config import load_settings, resolve_sqlserver_connection_config
 from src.database.migrations import ensure_schema_compatibility, get_required_schema_version
 from src.database.sqlserver import SqlServerClient
 from src.jobs.worker import worker_loop
+from src.runtime.container.runtime_environment import (
+    RuntimeEnvironment,
+    resolve_runtime_environment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +56,10 @@ app = FastAPI(title="Inventory Engine API", version="2.0.0")
 
 # CORS for v3 frontend (e.g. Vite dev server on localhost:5173)
 settings = load_settings()
-raw_cors_allow_origins = (settings.cors_allow_origins or "").strip()
-cors_allow_origins = (
-    [o.strip() for o in raw_cors_allow_origins.split(",") if o.strip()]
-    if raw_cors_allow_origins
-    else []
+cors_allow_origins = normalize_cors_allow_origins(
+    settings.cors_allow_origins,
+    allow_credentials=True,
 )
-if not cors_allow_origins:
-    cors_allow_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 artifact_provider = (settings.artifact_storage_provider or "local").strip().lower()
 if artifact_provider == "s3":
@@ -83,17 +91,36 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allow_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=SAFE_CORS_ALLOW_METHODS,
+    allow_headers=SAFE_CORS_ALLOW_HEADERS,
     # Location: asset 307 → signed URL (fetch redirect: manual).
     # Content-Disposition: blob downloads via fetch (apiDownloadBlob) need the filename.
     expose_headers=["Location", "Content-Disposition"],
 )
 
+# HSTS only when explicitly enabled (TLS terminated at edge / forced HTTPS).
+_enable_hsts = (os.getenv("ENABLE_HSTS") or "").strip().lower() in ("1", "true", "yes")
+app.add_middleware(SecurityHeadersMiddleware, enable_hsts=_enable_hsts)
+
 # Behind HTTPS-terminating ALB, redirects must use https; middleware trusts X-Forwarded-Proto from listed hosts.
 _forwarded = (settings.forwarded_trusted_hosts or "").strip()
 if _forwarded:
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_forwarded)
+
+# Production-like: require a non-empty API_KEY so the second auth gate cannot be silently off.
+# JWT remains the primary auth; API_KEY is an additional shared secret for edge/mobile clients.
+# Uses resolve_runtime_environment() (not NODE_ENV alone) so local pytest / NODE_ENV=production
+# shells do not fail import when the process is classified as TEST/LOCAL/DEVELOPMENT.
+_rt = resolve_runtime_environment()
+if _rt in (
+    RuntimeEnvironment.PRODUCTION,
+    RuntimeEnvironment.STAGING,
+    RuntimeEnvironment.PREPRODUCTION,
+) and not (settings.api_key or "").strip():
+    raise RuntimeError(
+        "API_KEY must be set in production-like environments "
+        f"(resolved runtime={_rt.value}). Refusing to start with an empty API key."
+    )
 
 # Include routers (v3 only for inventory operations; legacy v1 jobs/entities removed in Stage 3).
 app.include_router(v3_router)
@@ -161,10 +188,15 @@ async def api_key_middleware(request: Request, call_next):
     if request.url.path == "/health":
         return await call_next(request)
     settings = load_settings()
-    if not settings.api_key:
+    expected = (settings.api_key or "").strip()
+    if not expected:
         return await call_next(request)
-    key = request.headers.get("X-API-Key")
-    if key != settings.api_key:
+    key = (request.headers.get("X-API-Key") or "").strip()
+    # Hash then compare so unequal lengths do not short-circuit before a constant-time compare.
+    if not secrets.compare_digest(
+        hashlib.sha256(key.encode("utf-8")).digest(),
+        hashlib.sha256(expected.encode("utf-8")).digest(),
+    ):
         return JSONResponse(
             status_code=403, content={"detail": HTTP_DETAIL_API_KEY_INVALID_OR_MISSING}
         )

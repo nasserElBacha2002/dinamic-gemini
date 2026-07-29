@@ -1,0 +1,117 @@
+[main]	INFO	profile include tests: None
+[main]	INFO	profile exclude tests: None
+[main]	INFO	cli include tests: None
+[main]	INFO	cli exclude tests: None
+[tester]	WARNING	nosec encountered (B110), but no failed test on file backend/src/database/sqlserver.py:54
+[manager]	WARNING	Test in comment: static is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: fragments is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: only is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: values is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: bound is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: as is not a test name or id, ignoring
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/persistence/sql_job_image_coverage_repository.py:147
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/persistence/sql_job_image_coverage_repository.py:150
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/persistence/sql_job_image_coverage_repository.py:198
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/persistence/sql_job_image_coverage_repository.py:202
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/persistence/sql_job_image_coverage_repository.py:205
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/persistence/sql_job_image_coverage_repository.py:217
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:214
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:215
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:216
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:217
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:227
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:232
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:233
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:234
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:240
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:255
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:256
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:284
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:285
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:379
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:380
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:405
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:406
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:407
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:412
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:439
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:440
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:537
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:539
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:540
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:541
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:551
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:634
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:635
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:636
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:653
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:654
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:690
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:718
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:719
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:721
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:722
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:723
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:724
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:725
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:726
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:727
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:728
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:738
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:802
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:812
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:880
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:881
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:885
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:886
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:887
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:888
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:889
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:890
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_analytics_repository.py:891
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_batch_processing_attempt_repository.py:121
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_batch_processing_attempt_repository.py:135
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_capture_session_repository.py:168
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_capture_session_repository.py:211
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_final_count_repository.py:173
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_asset_processing_state_repository.py:189
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_asset_processing_state_repository.py:205
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_asset_processing_state_repository.py:217
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_asset_processing_state_repository.py:255
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_asset_processing_state_repository.py:256
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_asset_processing_state_repository.py:317
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_asset_processing_state_repository.py:332
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_processing_lease_repository.py:92
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_processing_lease_repository.py:167
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_processing_lease_repository.py:211
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_processing_lease_repository.py:234
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:434
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:446
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:467
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:467
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:503
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:506
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:507
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:524
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:536
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:542
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:568
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:568
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:596
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:596
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_job_repository.py:1753
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_normalized_label_repository.py:188
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_position_repository.py:281
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_position_repository.py:282
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_position_repository.py:291
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_position_repository.py:292
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_position_repository.py:332
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_processing_attempt_repository.py:205
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_processing_attempt_repository.py:223
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_processing_attempt_repository.py:239
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_processing_attempt_repository.py:252
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_processing_attempt_repository.py:388
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_product_record_repository.py:182
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_raw_label_repository.py:183
+[tester]	WARNING	nosec encountered (B608), but no failed test on file backend/src/infrastructure/repositories/sql_source_asset_repository.py:302
+[json]	INFO	JSON output written to file: audit-results/phase-4/bandit-raw.json

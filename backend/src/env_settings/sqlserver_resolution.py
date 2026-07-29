@@ -64,6 +64,32 @@ def _dockerenv_present() -> bool:
         return False
 
 
+def _sqlserver_trust_server_certificate_keyword() -> str:
+    """ODBC TrustServerCertificate keyword from env (default ``yes`` for local/dev).
+
+    Production-like runtimes should set ``SQLSERVER_TRUST_SERVER_CERTIFICATE=no`` and
+    install a trusted CA. When left at ``yes`` in production-like environments, emit a
+    one-line warning (does not fail startup — hostnames/certs vary by deployment).
+    """
+    raw = (os.getenv("SQLSERVER_TRUST_SERVER_CERTIFICATE") or "yes").strip().lower()
+    if raw in ("0", "false", "no"):
+        return "TrustServerCertificate=no"
+    # Default and explicit yes/true/1
+    try:
+        from src.runtime.container.runtime_environment import is_production_like_runtime
+
+        if is_production_like_runtime() and raw in ("1", "true", "yes", ""):
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "SQLSERVER_TRUST_SERVER_CERTIFICATE is enabled (yes) in a production-like "
+                "runtime. Prefer TrustServerCertificate=no with a proper CA chain."
+            )
+    except ImportError:
+        pass
+    return "TrustServerCertificate=yes"
+
+
 def _is_loopback_host_only(host: str) -> bool:
     h = host.strip()
     if h.startswith("[") and "]" in h:
@@ -269,9 +295,10 @@ def resolve_sqlserver_connection_config() -> SqlServerConnectionResolution:
         )
 
     server_eff = remap_sqlserver_server_for_container_if_needed(server)
+    trust_kw = _sqlserver_trust_server_certificate_keyword()
     cs = (
         f"DRIVER={{{driver}}};SERVER={server_eff};DATABASE={database};UID={uid};PWD={pwd};"
-        "TrustServerCertificate=yes"
+        f"{trust_kw}"
     )
     return SqlServerConnectionResolution(
         mode="split_env",

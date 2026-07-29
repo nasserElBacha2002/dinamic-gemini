@@ -97,6 +97,11 @@ audit/raw/**
 # Ephemeral Phase 0 git/command dumps (reports/notes stay tracked).
 audit-results/phase-0/phase0-*.txt
 audit-results/phase-1/phase1-*.txt
+audit-results/phase-4/phase4-*.txt
+
+# Phase 4 security hardening dumps (repo root; never commit)
+phase4-security-hardening-*.txt
+**/phase4-security-hardening-*.txt
 
 # Test coverage
 htmlcov/

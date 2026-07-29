@@ -349,25 +349,31 @@ def test_p3_2_t07b_operational_promotion_hard_failure(tmp_path) -> None:
 
 
 def test_p3_2_corr_a_domain_marker_save_fails_after_commit(tmp_path, monkeypatch) -> None:
+    from copy import deepcopy
+
     harness = ExecutorHarness.build(tmp_path)
     executor = harness.make_executor()
-    original_save = harness.job_repo.save
+    original_update = harness.job_repo.update_finalization_if_leased
     marker_write_attempts = 0
 
-    def save_fail_on_domain_marker(job: Job) -> None:
+    def update_fail_on_domain_marker(lease, *, now, mutator):
         nonlocal marker_write_attempts
+        current = harness.job_repo.get_by_id(lease.job_id)
+        assert current is not None
+        probe = deepcopy(current)
+        mutator(probe)
         if (
-            job.finalization_status == FinalizationStatus.IN_PROGRESS
-            and job.domain_persisted_at is not None
-            and job.finalization_error_code is None
-            and job.current_finalization_step == CurrentFinalizationStep.PUBLISH_ARTIFACTS
+            probe.finalization_status == FinalizationStatus.IN_PROGRESS
+            and probe.domain_persisted_at is not None
+            and probe.finalization_error_code is None
+            and probe.current_finalization_step == CurrentFinalizationStep.PUBLISH_ARTIFACTS
         ):
             marker_write_attempts += 1
             if marker_write_attempts == 1:
                 raise RuntimeError("simulated domain marker save failure")
-        original_save(job)
+        return original_update(lease, now=now, mutator=mutator)
 
-    monkeypatch.setattr(harness.job_repo, "save", save_fail_on_domain_marker)
+    monkeypatch.setattr(harness.job_repo, "update_finalization_if_leased", update_fail_on_domain_marker)
 
     handled = harness.run_with_mock_pipeline(executor)
 
@@ -385,26 +391,32 @@ def test_p3_2_corr_a_domain_marker_save_fails_after_commit(tmp_path, monkeypatch
 
 
 def test_p3_2_corr_b_artifact_marker_save_fails_after_upload(tmp_path, monkeypatch) -> None:
+    from copy import deepcopy
+
     artifact_store = ArtifactUploadSpy()
     harness = ExecutorHarness.build(tmp_path, artifact_store=artifact_store)
     executor = harness.make_executor()
-    original_save = harness.job_repo.save
+    original_update = harness.job_repo.update_finalization_if_leased
     marker_write_attempts = 0
 
-    def save_fail_on_artifact_marker(job: Job) -> None:
+    def update_fail_on_artifact_marker(lease, *, now, mutator):
         nonlocal marker_write_attempts
+        current = harness.job_repo.get_by_id(lease.job_id)
+        assert current is not None
+        probe = deepcopy(current)
+        mutator(probe)
         if (
-            job.finalization_status == FinalizationStatus.IN_PROGRESS
-            and job.artifacts_published_at is not None
-            and job.finalization_error_code is None
-            and job.current_finalization_step == CurrentFinalizationStep.TERMINALIZE_JOB
+            probe.finalization_status == FinalizationStatus.IN_PROGRESS
+            and probe.artifacts_published_at is not None
+            and probe.finalization_error_code is None
+            and probe.current_finalization_step == CurrentFinalizationStep.TERMINALIZE_JOB
         ):
             marker_write_attempts += 1
             if marker_write_attempts == 1:
                 raise RuntimeError("simulated artifact marker save failure")
-        original_save(job)
+        return original_update(lease, now=now, mutator=mutator)
 
-    monkeypatch.setattr(harness.job_repo, "save", save_fail_on_artifact_marker)
+    monkeypatch.setattr(harness.job_repo, "update_finalization_if_leased", update_fail_on_artifact_marker)
 
     handled = harness.run_with_mock_pipeline(executor)
 
@@ -426,19 +438,25 @@ def test_p3_2_corr_b_artifact_marker_save_fails_after_upload(tmp_path, monkeypat
 
 
 def test_p3_2_corr_g_failure_reporting_repo_unavailable(tmp_path, monkeypatch, caplog) -> None:
+    from copy import deepcopy
+
     harness = ExecutorHarness.build(tmp_path)
     executor = harness.make_executor()
-    original_save = harness.job_repo.save
+    original_update = harness.job_repo.update_finalization_if_leased
     reporting_attempts = 0
 
-    def save_fail_on_finalization_fail(job: Job) -> None:
+    def update_fail_on_finalization_fail(lease, *, now, mutator):
         nonlocal reporting_attempts
-        if job.finalization_status == FinalizationStatus.FAILED:
+        current = harness.job_repo.get_by_id(lease.job_id)
+        assert current is not None
+        probe = deepcopy(current)
+        mutator(probe)
+        if probe.finalization_status == FinalizationStatus.FAILED:
             reporting_attempts += 1
             raise RuntimeError("simulated persistent job repo failure")
-        original_save(job)
+        return original_update(lease, now=now, mutator=mutator)
 
-    monkeypatch.setattr(harness.job_repo, "save", save_fail_on_finalization_fail)
+    monkeypatch.setattr(harness.job_repo, "update_finalization_if_leased", update_fail_on_finalization_fail)
     failing_factory = FailingJobScopedRecomputeFactory()
     executor = harness.make_executor(job_scoped_recompute_factory=failing_factory)
 

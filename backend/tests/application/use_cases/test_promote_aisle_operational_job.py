@@ -75,6 +75,7 @@ def test_promote_only_succeeded_process_aisle_for_scoped_job() -> None:
             payload_json={},
             created_at=now,
             updated_at=now,
+            lease_fencing_token=1,
         )
     )
     job_repo.save(
@@ -125,6 +126,7 @@ def test_promote_validates_inventory_and_aisle_scope() -> None:
             payload_json={},
             created_at=now,
             updated_at=now,
+            lease_fencing_token=1,
         )
     )
     promotion = build_operational_promotion_service_from_repos(inv_repo, aisle_repo, job_repo)
@@ -158,6 +160,7 @@ def test_promote_validates_inventory_and_aisle_scope() -> None:
             payload_json={},
             created_at=now,
             updated_at=now,
+            lease_fencing_token=1,
         )
     )
     with pytest.raises(JobDoesNotBelongToAisleError):

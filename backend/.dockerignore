@@ -44,3 +44,19 @@ temp/
 tests/
 
 output/
+
+# Secrets / local credentials — never bake into image layers
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+**/credentials.json
+**/service-account*.json
+id_rsa
+id_ed25519
+*.secret
+

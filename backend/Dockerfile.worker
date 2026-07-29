@@ -72,4 +72,10 @@ PY
 
 COPY . .
 
+# Non-root runtime (Phase 4).
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/output \
+    && chown -R appuser:appuser /app
+USER appuser
+
 CMD ["python", "-m", "src.jobs.run_worker"]

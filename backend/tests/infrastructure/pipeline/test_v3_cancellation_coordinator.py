@@ -97,6 +97,7 @@ def test_handle_pipeline_cancellation_calls_cancel_job_and_aisle(tmp_path: Path)
         "cooperative cancel",
         exec_log=exec_log,
         cancel_event_emitted=cancel_event_emitted,
+        lease=None,
     )
 
 

@@ -9,7 +9,6 @@ import pytest
 from src.domain.jobs.finalization import CurrentFinalizationStep
 from src.domain.jobs.lease import JobLeaseLostError
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy
 from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
 
 

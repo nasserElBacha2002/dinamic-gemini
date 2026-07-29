@@ -67,6 +67,8 @@ def _save_job(
         payload_json={"aisle_id": aid},
         created_at=created_at,
         updated_at=created_at,
+        # Phase 3: promotion requires an initialized fencing token (>= 1).
+        lease_fencing_token=1 if status == JobStatus.SUCCEEDED else 0,
     )
     harness.job_repo.save(job)
     return job
@@ -266,6 +268,7 @@ def test_p2_p3_t006_stale_successful_job_remains_succeeded(tmp_path: Path) -> No
     job_old = harness.job_repo.get_by_id("job-old")
     assert job_old is not None
     job_old.status = JobStatus.SUCCEEDED
+    job_old.lease_fencing_token = 1
     harness.job_repo.save(job_old)
     state.mark_success("job-old", aisle, Path("/tmp/r2.json"))
     assert harness.job_repo.get_by_id("job-old").status == JobStatus.SUCCEEDED

@@ -29,6 +29,11 @@ _PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)(access_token|refresh_token|api_key|authorization)\s*[=:]\s*\S+"),
     re.compile(r"(?i)(X-Amz-Security-Token|X-Amz-Credential)=[^&\s]+"),
     re.compile(r"https?://[^\s]*[?&](Signature|X-Amz-Signature)=[^\s]+"),
+    # Azure Blob SAS query params / SharedAccessSignature
+    re.compile(r"(?i)[?&](sig|se|sv|sp|spr|srt|ss|st|sip|sr)=[^&\s]+"),
+    re.compile(r"(?i)(sharedaccesssignature|sas[_-]?token)\s*[=:]\s*\S+"),
+    # Compact JWT-shaped strings (header.payload.sig)
+    re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
     re.compile(r"(?i)(Server=|UID=|PWD=|Password=)[^;]+"),
 ]
 
