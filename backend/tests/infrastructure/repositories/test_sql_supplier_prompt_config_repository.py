@@ -42,8 +42,8 @@ def _ensure_supplier(
     client_repo: SqlClientRepository,
     supplier_repo: SqlClientSupplierRepository,
 ) -> tuple[str, str]:
-    client_id = f"test-client-d2-{uuid4()}"
-    supplier_id = f"test-supplier-d2-{uuid4()}"
+    client_id = f"tcd2-{uuid4().hex[:30]}"
+    supplier_id = f"tsd2-{uuid4().hex[:30]}"
     now = now_utc()
     client_repo.save(
         Client(
@@ -96,7 +96,7 @@ def test_sql_supplier_prompt_config_repository_scope_and_activation(repos) -> No
     now = now_utc()
 
     cfg_default_v1 = _cfg(
-        config_id=f"cfg-default-v1-{uuid4()}",
+        config_id=f"cfg-default-v1-{uuid4().hex[:8]}",
         supplier_id=supplier_id,
         provider="gemini",
         model=None,
@@ -105,7 +105,7 @@ def test_sql_supplier_prompt_config_repository_scope_and_activation(repos) -> No
         created_at=now,
     )
     cfg_default_v2 = _cfg(
-        config_id=f"cfg-default-v2-{uuid4()}",
+        config_id=f"cfg-default-v2-{uuid4().hex[:8]}",
         supplier_id=supplier_id,
         provider="gemini",
         model=None,
@@ -114,7 +114,7 @@ def test_sql_supplier_prompt_config_repository_scope_and_activation(repos) -> No
         created_at=now_utc(),
     )
     cfg_model_v1 = _cfg(
-        config_id=f"cfg-model-v1-{uuid4()}",
+        config_id=f"cfg-model-v1-{uuid4().hex[:8]}",
         supplier_id=supplier_id,
         provider="gemini",
         model="gemini-2.0-flash-exp",
@@ -168,7 +168,7 @@ def test_sql_duplicate_version_in_same_scope_fails(repos) -> None:
     now = now_utc()
     prompt_repo.create(
         _cfg(
-            config_id=f"cfg-dup-ver-1-{uuid4()}",
+            config_id=f"cfg-dup-ver-1-{uuid4().hex[:8]}",
             supplier_id=supplier_id,
             provider="gemini",
             model=None,
@@ -180,7 +180,7 @@ def test_sql_duplicate_version_in_same_scope_fails(repos) -> None:
     with pytest.raises(Exception):
         prompt_repo.create(
             _cfg(
-                config_id=f"cfg-dup-ver-2-{uuid4()}",
+                config_id=f"cfg-dup-ver-2-{uuid4().hex[:8]}",
                 supplier_id=supplier_id,
                 provider="gemini",
                 model=None,
@@ -197,7 +197,7 @@ def test_sql_duplicate_active_in_same_scope_fails(repos) -> None:
     now = now_utc()
     prompt_repo.create(
         _cfg(
-            config_id=f"cfg-dup-active-1-{uuid4()}",
+            config_id=f"cfg-dup-a1-{uuid4().hex[:8]}",
             supplier_id=supplier_id,
             provider="gemini",
             model=None,
@@ -209,7 +209,7 @@ def test_sql_duplicate_active_in_same_scope_fails(repos) -> None:
     with pytest.raises(Exception):
         prompt_repo.create(
             _cfg(
-                config_id=f"cfg-dup-active-2-{uuid4()}",
+                config_id=f"cfg-dup-a2-{uuid4().hex[:8]}",
                 supplier_id=supplier_id,
                 provider="gemini",
                 model=None,
@@ -225,7 +225,7 @@ def test_sql_default_and_model_specific_active_can_coexist(repos) -> None:
     _, supplier_id = _ensure_supplier(client_repo, supplier_repo)
     now = now_utc()
     cfg_default = _cfg(
-        config_id=f"cfg-default-active-{uuid4()}",
+        config_id=f"cfg-def-act-{uuid4().hex[:8]}",
         supplier_id=supplier_id,
         provider="gemini",
         model=None,
@@ -234,7 +234,7 @@ def test_sql_default_and_model_specific_active_can_coexist(repos) -> None:
         created_at=now,
     )
     cfg_model = _cfg(
-        config_id=f"cfg-model-active-{uuid4()}",
+        config_id=f"cfg-mod-act-{uuid4().hex[:8]}",
         supplier_id=supplier_id,
         provider="gemini",
         model="gemini-2.0-flash-exp",
@@ -258,7 +258,7 @@ def test_sql_activate_default_does_not_deactivate_model_specific(repos) -> None:
     _, supplier_id = _ensure_supplier(client_repo, supplier_repo)
     now = now_utc()
     cfg_default_v1 = _cfg(
-        config_id=f"cfg-default-v1-{uuid4()}",
+        config_id=f"cfg-default-v1-{uuid4().hex[:8]}",
         supplier_id=supplier_id,
         provider="gemini",
         model=None,
@@ -267,7 +267,7 @@ def test_sql_activate_default_does_not_deactivate_model_specific(repos) -> None:
         created_at=now,
     )
     cfg_default_v2 = _cfg(
-        config_id=f"cfg-default-v2-{uuid4()}",
+        config_id=f"cfg-default-v2-{uuid4().hex[:8]}",
         supplier_id=supplier_id,
         provider="gemini",
         model=None,
@@ -276,7 +276,7 @@ def test_sql_activate_default_does_not_deactivate_model_specific(repos) -> None:
         created_at=now_utc(),
     )
     cfg_model_v1 = _cfg(
-        config_id=f"cfg-model-v1-{uuid4()}",
+        config_id=f"cfg-model-v1-{uuid4().hex[:8]}",
         supplier_id=supplier_id,
         provider="gemini",
         model="gemini-2.0-flash-exp",

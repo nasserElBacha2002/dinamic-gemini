@@ -1,7 +1,7 @@
 /**
  * Phase 3 / Phase 6 — run picker for multi-run aisles (test inventories).
  *
- * When `jobs` is non-empty, `valueJobId` must be a concrete job id (URL-aligned with the list query).
+ * Prefer explicit `valueJobId`, else operational. Never defaults to `jobs[0]`.
  */
 
 import {
@@ -37,7 +37,7 @@ function formatJobLine(j: JobSummary): string {
 export type AisleRunSelectorProps = {
   operationalJobId?: string | null;
   jobs: JobSummary[];
-  /** Must match one of `jobs[].id` (page aligns URL + list query to this id). */
+  /** Selected run id, or empty when browsing backend SoT (operational/legacy). */
   valueJobId: string;
   onChange: (jobId: string) => void;
   disabled?: boolean;
@@ -53,8 +53,14 @@ export default function AisleRunSelector({
   const { t } = useTranslation();
   const trimmed = valueJobId.trim();
   const validIds = new Set(jobs.map((j) => j.id));
-  const fallback = jobs[0]?.id ?? '';
-  const value = trimmed !== '' && validIds.has(trimmed) ? trimmed : fallback;
+  const operational =
+    operationalJobId && validIds.has(operationalJobId) ? operationalJobId : '';
+  const value =
+    trimmed !== '' && validIds.has(trimmed)
+      ? trimmed
+      : operational !== ''
+        ? operational
+        : '';
 
   const handleChange = (e: SelectChangeEvent<string>) => {
     onChange(e.target.value);
@@ -67,7 +73,12 @@ export default function AisleRunSelector({
   return (
     <FormControl
       size="small"
-      sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: 0, sm: 200 }, maxWidth: { xs: '100%', sm: 480 }, flex: { sm: '1 1 280px' } }}
+      sx={{
+        width: { xs: '100%', sm: 'auto' },
+        minWidth: { xs: 0, sm: 200 },
+        maxWidth: { xs: '100%', sm: 480 },
+        flex: { sm: '1 1 280px' },
+      }}
       disabled={disabled}
     >
       <InputLabel id="aisle-run-select-label">{t('results.browse_run')}</InputLabel>
@@ -75,11 +86,21 @@ export default function AisleRunSelector({
         labelId="aisle-run-select-label"
         label={t('results.browse_run')}
         value={value}
+        displayEmpty
         onChange={handleChange}
         MenuProps={{
           PaperProps: { sx: { maxHeight: 360 } },
         }}
       >
+        {value === '' ? (
+          <MenuItem value="">
+            <Typography variant="body2" color="text.secondary">
+              {t('results.browse_run_legacy_or_empty', {
+                defaultValue: 'Legacy / sin run operacional',
+              })}
+            </Typography>
+          </MenuItem>
+        ) : null}
         {jobs.map((j) => {
           const isOp = Boolean(operationalJobId != null && operationalJobId === j.id);
           const isBench = !isOp && j.status === 'succeeded';
@@ -98,8 +119,9 @@ export default function AisleRunSelector({
                   ) : null}
                 </Stack>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  {[j.provider_name, j.model_name, j.prompt_key, j.prompt_version].filter(Boolean).join(' · ') ||
-                    i18n.t('common.em_dash')}
+                  {[j.provider_name, j.model_name, j.prompt_key, j.prompt_version]
+                    .filter(Boolean)
+                    .join(' · ') || i18n.t('common.em_dash')}
                 </Typography>
               </Stack>
             </MenuItem>

@@ -1,0 +1,2 @@
+# Ignore synthetic example credential placeholders (not production secrets).
+secrets/gcp-service-account.json.example

@@ -207,6 +207,31 @@ class FinalizationStageRecorder:
             )
             raise
         try:
+            from src.observability.metrics.instruments import record_finalization_stage
+
+            started_at = existing.updated_at if existing is not None else None
+            duration = 0.0
+            if started_at is not None:
+                ref = started_at
+                if ref.tzinfo is None:
+                    from datetime import timezone
+
+                    ref = ref.replace(tzinfo=timezone.utc)
+                duration = max(0.0, (now - ref).total_seconds())
+            record_finalization_stage(
+                stage=stage.value,
+                outcome="ok" if status == StageStatus.COMPLETED else status.value.lower(),
+                duration_seconds=duration,
+                reason=last_error_code,
+            )
+        except Exception:
+            logger.warning(
+                "finalization_stage_metrics_failed job_id=%s stage=%s",
+                job_id,
+                stage.value,
+                exc_info=True,
+            )
+        try:
             self._projection.refresh_summary(job_id)
         except Exception as exc:
             logger.error(

@@ -9,13 +9,14 @@ import pytest
 
 from src.application.errors import AisleNotFoundError
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import AisleRepository, JobRepository
+from src.application.ports.repositories import AisleRepository
 from src.application.use_cases.aisles.cancel_aisle_job import (
     CancelAisleJobCommand,
     CancelAisleJobUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.jobs.entities import Job, JobStatus
+from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
 class FixedClock(Clock):
@@ -46,7 +47,7 @@ class InMemoryAisleRepo(AisleRepository):
         return None
 
 
-class InMemoryJobRepo(JobRepository):
+class InMemoryJobRepo(JobRepositoryTestBase):
     def __init__(self) -> None:
         self._store: dict[str, Job] = {}
 

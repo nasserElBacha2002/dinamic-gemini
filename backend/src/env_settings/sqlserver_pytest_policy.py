@@ -70,6 +70,10 @@ def assert_pytest_sqlserver_database_is_safe() -> None:
 
     Set ``DINAMIC_PYTEST_ALLOW_NON_TEST_SQLSERVER=1`` only as an explicit escape hatch (e.g. rare
     debugging). Prefer a dedicated test database and ``backend/.env.test`` instead.
+
+    After loading ``.env.test``, pytest sets ``DINAMIC_PYTEST_DOTENV_LOCKED=1`` so
+    ``src.config.reload_settings()`` cannot reload developer ``.env`` and redirect SQL
+    writes to a non-test database (e.g. ``dinamic-gemini``).
     """
     if (os.getenv("DINAMIC_PYTEST_ALLOW_NON_TEST_SQLSERVER") or "").strip() == "1":
         return

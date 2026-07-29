@@ -7,7 +7,7 @@ Use cases depend on these abstractions; infrastructure provides SQL (or other) i
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from typing import Any, Literal, Union
 
@@ -21,7 +21,9 @@ from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
+from src.domain.jobs.claim import JobClaimResult, StaleReclaimResult
 from src.domain.jobs.entities import Job
+from src.domain.jobs.lease import JobLease, LeaseRenewalResult, LeaseWriteResult
 from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLabel
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
@@ -265,8 +267,28 @@ class JobRepository(ABC):
         """
 
     def list_all_jobs(self) -> Sequence[Job]:
-        """Bulk read for analytics. Default empty; SQL/memory implementations scan ``inventory_jobs``."""
-        return []
+        """Bulk read for analytics / ops. Implementations must scan ``inventory_jobs``.
+
+        The abstract default raises so ops CLIs cannot silently scan zero rows.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__}.list_all_jobs is required for operational scans"
+        )
+
+    @abstractmethod
+    def list_jobs_by_retry_of(self, retry_of_job_id: str) -> Sequence[Job]:
+        """Return jobs whose ``retry_of_job_id`` equals ``retry_of_job_id`` (0 or 1 expected)."""
+        ...
+
+    @abstractmethod
+    def list_jobs_for_ops_scan(
+        self,
+        *,
+        limit: int = 200,
+        statuses: Sequence[str] | None = None,
+    ) -> Sequence[Job]:
+        """Bounded ops scan (newest first). Must not return silently empty when unsupported."""
+        ...
 
     def merge_result_json(self, job_id: str, patch: dict[str, Any]) -> Job | None:
         """Merge top-level keys into ``job.result_json`` without dropping sibling keys.
@@ -283,6 +305,131 @@ class JobRepository(ABC):
         job.result_json = merged
         self.save(job)
         return job
+
+    @abstractmethod
+    def try_claim_starting_to_running(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        claim_owner_id: str,
+        aisle_id: str,
+        lease_duration_seconds: int = 60,
+    ) -> JobClaimResult:
+        """Atomic STARTING → RUNNING claim with aisle PROCESSING in the same transaction.
+
+        ``claim_owner_id`` must be a non-empty worker token (never ``execution_id``).
+        Phase 3: also acquires a lease (fencing token incremented, expiry set from
+        ``lease_duration_seconds``) and attaches it to the returned ``JobClaimResult.lease``.
+        """
+
+    @abstractmethod
+    def renew_lease(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        extension_seconds: int,
+    ) -> LeaseRenewalResult:
+        """Extend ``lease_expires_at`` for an active lease (CAS on owner + fencing_token).
+
+        Does not increment the fencing token.
+        """
+
+    @abstractmethod
+    def reacquire_expired_lease(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        new_owner_id: str,
+        extension_seconds: int,
+    ) -> JobClaimResult:
+        """Steal an expired RUNNING lease: new owner + fencing_token + 1.
+
+        Test / admin recovery only when production policy is stale-fail (see Phase 3 docs).
+        """
+
+    @abstractmethod
+    def merge_result_json_if_leased(
+        self,
+        lease: JobLease,
+        patch: dict[str, Any],
+        *,
+        now: datetime,
+    ) -> tuple[LeaseWriteResult, Job | None]:
+        """Merge ``result_json`` only while the caller still holds the lease."""
+
+    def touch_heartbeat_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        extension_seconds: int,
+    ) -> LeaseRenewalResult:
+        """Renew lease + update ``last_heartbeat_at`` (same semantics as ``renew_lease`` for Phase 3)."""
+        return self.renew_lease(lease, now=now, extension_seconds=extension_seconds)
+
+    @abstractmethod
+    def assert_lease(self, lease: JobLease, *, now: datetime) -> LeaseWriteResult:
+        """Validate the caller still holds an active lease (no mutation)."""
+
+    @abstractmethod
+    def complete_if_leased(
+        self,
+        lease: JobLease,
+        job: Job,
+        *,
+        now: datetime,
+    ) -> LeaseWriteResult:
+        """Persist a SUCCEEDED terminal row only while ``lease`` is still held."""
+
+    @abstractmethod
+    def fail_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        error_message: str,
+        failure_code: str = "PROCESSING_FAILED",
+    ) -> LeaseWriteResult:
+        """Mark job FAILED only while ``lease`` is still held."""
+
+    @abstractmethod
+    def update_finalization_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        mutator: Callable[[Job], None],
+    ) -> LeaseWriteResult:
+        """Apply finalization-field mutations under lease CAS (no generic save_if_owned)."""
+
+    @abstractmethod
+    def acknowledge_cancel_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        reason: str,
+    ) -> LeaseWriteResult:
+        """Worker acknowledgement: CANCEL_REQUESTED/RUNNING → CANCELED under lease CAS."""
+
+    @abstractmethod
+    def try_reclaim_stale_job_and_reconcile_aisle(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        stale_after_seconds: int,
+    ) -> StaleReclaimResult:
+        """Single-transaction stale CAS fail + aisle reconcile when appropriate."""
+
+    def reclaim_stale_running_jobs(
+        self, stale_after_seconds: int, *, batch_size: int = 100
+    ) -> int:
+        """Fail stale active jobs in bounded batches. Returns jobs reclaimed."""
+        return 0
 
     def list_jobs_for_metrics(
         self,

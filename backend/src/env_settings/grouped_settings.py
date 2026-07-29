@@ -613,7 +613,65 @@ class ApiRuntimeSettings(BaseModel):
     # API Server (Stage 7)
     api_key: str = Field(
         default_factory=lambda: os.getenv("API_KEY", ""),
-        description="API key for server auth (header X-API-Key). Empty = no auth (dev only).",
+        description=(
+            "Optional shared secret for internal path prefixes only (Model A). "
+            "Public browser/mobile clients use JWT — do not embed API_KEY in VITE_* or mobile bundles. "
+            "Env: API_KEY."
+        ),
+    )
+    api_key_required_path_prefixes: str = Field(
+        default_factory=lambda: (os.getenv("API_KEY_REQUIRED_PATH_PREFIXES", "") or "").strip(),
+        description=(
+            "Comma-separated URL path prefixes that require X-API-Key when API_KEY is set "
+            "(e.g. /api/v3/admin). Empty = no HTTP API-key enforcement (JWT-only public clients). "
+            "Env: API_KEY_REQUIRED_PATH_PREFIXES."
+        ),
+    )
+    metrics_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("METRICS_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+        ),
+        description="Enable Prometheus text exposition at GET /metrics. Env: METRICS_ENABLED.",
+    )
+    metrics_internal_auth: str = Field(
+        default_factory=lambda: (os.getenv("METRICS_INTERNAL_AUTH", "api_key") or "api_key").strip().lower(),
+        description=(
+            "Protect /metrics: api_key (require X-API-Key when API_KEY set; else deny in hosted), "
+            "loopback (only 127.0.0.1/::1), open (local/test only). Env: METRICS_INTERNAL_AUTH."
+        ),
+    )
+    recovery_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("RECOVERY_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+        ),
+        description=(
+            "Enable automatic stale-job recovery scheduler (explicit in production). "
+            "Env: RECOVERY_ENABLED."
+        ),
+    )
+    recovery_interval_sec: int = Field(
+        default_factory=lambda: int(os.getenv("RECOVERY_INTERVAL_SEC", "60")),
+        description="Recovery poll interval seconds (>0). Env: RECOVERY_INTERVAL_SEC.",
+        ge=1,
+        le=3600,
+    )
+    recovery_batch_size: int = Field(
+        default_factory=lambda: int(os.getenv("RECOVERY_BATCH_SIZE", "20")),
+        description="Max jobs per recovery batch (1..200). Env: RECOVERY_BATCH_SIZE.",
+        ge=1,
+        le=200,
+    )
+    recovery_max_attempts: int = Field(
+        default_factory=lambda: int(os.getenv("RECOVERY_MAX_ATTEMPTS", "3")),
+        description="Max automatic recovery attempts per job lineage (>=1). Env: RECOVERY_MAX_ATTEMPTS.",
+        ge=1,
+        le=50,
+    )
+    metrics_max_series_per_metric: int = Field(
+        default_factory=lambda: int(os.getenv("METRICS_MAX_SERIES_PER_METRIC", "500")),
+        description="Max label-sets per metric before rejection. Env: METRICS_MAX_SERIES_PER_METRIC.",
+        ge=1,
+        le=10000,
     )
     embedded_worker_enabled: bool = Field(
         default_factory=lambda: (
@@ -634,6 +692,47 @@ class ApiRuntimeSettings(BaseModel):
             "before claim. Set 0 to disable reclaim. Env: WORKER_STALE_RUNNING_TIMEOUT_SEC."
         ),
     )
+    job_lease_duration_sec: int = Field(
+        default_factory=lambda: int(os.getenv("JOB_LEASE_DURATION_SEC", "60")),
+        ge=10,
+        le=3600,
+        description=(
+            "Phase 3: lease duration (seconds) granted on STARTING→RUNNING acquire/reacquire and "
+            "extended on each renewal. Env: JOB_LEASE_DURATION_SEC."
+        ),
+    )
+    job_lease_heartbeat_interval_sec: int = Field(
+        default_factory=lambda: int(os.getenv("JOB_LEASE_HEARTBEAT_INTERVAL_SEC", "15")),
+        ge=1,
+        le=3600,
+        description=(
+            "Phase 3: interval (seconds) at which the worker renews its lease / heartbeat while "
+            "running. Env: JOB_LEASE_HEARTBEAT_INTERVAL_SEC."
+        ),
+    )
+    job_lease_renewal_safety_margin_sec: int = Field(
+        default_factory=lambda: int(os.getenv("JOB_LEASE_RENEWAL_SAFETY_MARGIN_SEC", "20")),
+        ge=0,
+        le=3600,
+        description=(
+            "Phase 3: safety margin (seconds) subtracted from lease_duration when deciding renewal "
+            "urgency (renew before expiry, not exactly at it). Env: JOB_LEASE_RENEWAL_SAFETY_MARGIN_SEC."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_job_lease_timing(self) -> Self:
+        duration = int(self.job_lease_duration_sec)
+        heartbeat = int(self.job_lease_heartbeat_interval_sec)
+        margin = int(self.job_lease_renewal_safety_margin_sec)
+        if duration <= heartbeat + margin:
+            raise ValueError(
+                "JOB_LEASE_DURATION_SEC must be greater than "
+                "JOB_LEASE_HEARTBEAT_INTERVAL_SEC + JOB_LEASE_RENEWAL_SAFETY_MARGIN_SEC "
+                f"(got duration={duration}, heartbeat={heartbeat}, margin={margin})"
+            )
+        return self
+
     cors_allow_origins: str = Field(
         default_factory=lambda: (os.getenv("CORS_ALLOW_ORIGINS", "") or "").strip(),
         description=(

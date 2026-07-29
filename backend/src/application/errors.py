@@ -24,6 +24,36 @@ class ActiveJobExistsError(Exception):
     """Raised when the aisle already has a job in QUEUED or RUNNING state."""
 
 
+class WorkerLaunchFailedError(RuntimeError):
+    """Raised after the job has been marked FAILED with failure_code WORKER_LAUNCH_FAILED."""
+
+    failure_code = "WORKER_LAUNCH_FAILED"
+
+    def __init__(self, message: str, *, job_id: str | None = None) -> None:
+        super().__init__(message)
+        self.job_id = job_id
+
+
+class FencingConfigurationError(RuntimeError):
+    """Lease is present but no UoW fence and no JobRepository assert are available (fail-closed)."""
+
+    def __init__(
+        self,
+        message: str = "Lease fencing required but neither UoW fence nor job_repo assert is available",
+        *,
+        job_id: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.job_id = job_id
+
+
+class DownloadCapacityExceededError(Exception):
+    """Too many concurrent Observability artifact downloads."""
+
+    def __init__(self, message: str = "Download capacity exceeded; retry later") -> None:
+        super().__init__(message)
+
+
 class InventoryNotFoundError(Exception):
     """Raised when the parent inventory does not exist."""
 

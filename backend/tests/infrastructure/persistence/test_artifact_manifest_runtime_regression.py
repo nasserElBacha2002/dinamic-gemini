@@ -129,6 +129,7 @@ def test_record_artifact_manifest_marks_required_artifacts_completed(tmp_path) -
         job_id=harness.job_id,
         job_repo=harness.job_repo,
         clock=FixedClock(harness.now),
+        lease=harness.lease(),
         stage_recorder=recorder,
     )
     durable_meta = {
@@ -169,6 +170,7 @@ def test_marker_write_failure_after_upload_classifies_metadata_error(tmp_path) -
         job_id=harness.job_id,
         job_repo=harness.job_repo,
         clock=FixedClock(harness.now),
+        lease=harness.lease(),
         stage_recorder=recorder,
     )
 

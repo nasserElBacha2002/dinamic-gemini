@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import (
     AisleSourceAssetMutationBlockedError,
     SourceAssetNotFoundForAisleError,
@@ -17,7 +18,7 @@ from src.application.errors import (
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, JobRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
+from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.jobs.entities import JobStatus
 
@@ -40,6 +41,7 @@ class DeleteAisleSourceAssetUseCase:
         artifact_storage: ArtifactStorage,
         clock: Clock,
         status_reconciler: InventoryStatusReconciler,
+        access_policy: InventoryAccessPolicy,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
@@ -47,6 +49,7 @@ class DeleteAisleSourceAssetUseCase:
         self._artifact_storage = artifact_storage
         self._clock = clock
         self._status_reconciler = status_reconciler
+        self._access_policy = access_policy
 
     def _assert_no_active_jobs(self, aisle_id: str) -> None:
         jobs = self._job_repo.list_jobs_for_target("aisle", aisle_id, limit=100)
@@ -56,13 +59,15 @@ class DeleteAisleSourceAssetUseCase:
                     f"Aisle {aisle_id} has an active job (status={j.status.value})"
                 )
 
-    def execute(self, inventory_id: str, aisle_id: str, asset_id: str) -> None:
-        aisle = require_aisle_scoped_to_inventory(
-            self._aisle_repo,
-            inventory_id=inventory_id,
-            aisle_id=aisle_id,
-            detail_style="strict",
-        )
+    def execute(
+        self,
+        inventory_id: str,
+        aisle_id: str,
+        asset_id: str,
+        *,
+        principal: AccessPrincipal,
+    ) -> None:
+        aisle = self._access_policy.require_aisle(inventory_id, aisle_id, principal)
         self._assert_no_active_jobs(aisle_id)
 
         asset = self._asset_repo.get_by_id(asset_id)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -46,6 +46,7 @@ from src.domain.execution_image_manifest import (
 )
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.lease import JobLease
 from src.domain.labels.merge import MergeRuleEngine
 from src.infrastructure.artifacts.filesystem_artifact_staging_store import (
     FileSystemArtifactStagingStore,
@@ -246,8 +247,15 @@ class ExecutorHarness:
         inventory_repo: InventoryRepository | None = None,
     ) -> ExecutorHarness:
         now = datetime(2026, 6, 12, 10, 0, 0, tzinfo=timezone.utc)
-        job_repo = job_repo or MemoryJobRepository()
         aisle_repo = aisle_repo or MemoryAisleRepository()
+        if job_repo is None:
+            job_repo = MemoryJobRepository(aisle_repo=aisle_repo)
+        elif isinstance(job_repo, MemoryJobRepository):
+            job_repo.bind_aisle_repository(aisle_repo)
+        else:
+            bind = getattr(job_repo, "bind_aisle_repository", None)
+            if callable(bind):
+                bind(aisle_repo)
         inventory_repo = inventory_repo or MemoryInventoryRepository()
         position_repo = position_repo or MemoryPositionRepository()
         product_repo = product_repo or MemoryProductRecordRepository()
@@ -291,6 +299,10 @@ class ExecutorHarness:
                     created_at=now,
                     updated_at=now,
                     execution_id="exec-phase1",
+                    claim_owner_id="harness-owner",
+                    lease_fencing_token=1,
+                    lease_acquired_at=now,
+                    lease_expires_at=now + timedelta(hours=1),
                 )
             )
 
@@ -360,6 +372,37 @@ class ExecutorHarness:
             manifest_store=manifest_store,
             outbox_store=outbox_store,
             staging_store=staging_store,
+        )
+
+    def lease(self) -> JobLease:
+        """Return the harness job's active Phase-3 lease (seeded on create)."""
+        from src.domain.jobs.entities import JobStatus
+
+        job = self.job_repo.get_by_id(self.job_id)
+        assert job is not None
+        owner = (job.claim_owner_id or "harness-owner").strip()
+        token = int(job.lease_fencing_token or 1)
+        acquired = job.lease_acquired_at or self.now
+        expires = job.lease_expires_at or (self.now + timedelta(hours=1))
+        dirty = False
+        if int(job.lease_fencing_token or 0) < 1 or not job.lease_expires_at:
+            job.claim_owner_id = owner
+            job.lease_fencing_token = token
+            job.lease_acquired_at = acquired
+            job.lease_expires_at = expires
+            dirty = True
+        if job.status in (JobStatus.STARTING, JobStatus.QUEUED):
+            # Lease-conditioned writes require an active leasable status.
+            job.status = JobStatus.RUNNING
+            dirty = True
+        if dirty:
+            self.job_repo.save(job)
+        return JobLease(
+            job_id=self.job_id,
+            owner_id=owner,
+            fencing_token=token,
+            acquired_at=acquired,
+            expires_at=expires,
         )
 
     def make_executor(self, **kwargs: Any) -> V3JobExecutor:

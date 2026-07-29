@@ -27,8 +27,10 @@ from src.api.dependencies import (
     get_artifact_storage,
     get_list_aisle_assets_use_case,
     get_result_context_resolver,
+    require_inventory_client_scope,
 )
 from src.api.server import app
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
@@ -40,6 +42,7 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+from tests.support.access_principal_helpers import platform_principal
 
 
 class StubListAisleAssetsUseCase:
@@ -49,10 +52,14 @@ class StubListAisleAssetsUseCase:
         self._assets = list(assets)
         self._aisle = aisle
 
-    def execute(self, inventory_id: str, aisle_id: str) -> Sequence[SourceAsset]:
+    def execute(
+        self, inventory_id: str, aisle_id: str, *, principal: AccessPrincipal | None = None
+    ) -> Sequence[SourceAsset]:
         return self._assets
 
-    def get_validated_aisle(self, inventory_id: str, aisle_id: str) -> Aisle:
+    def get_validated_aisle(
+        self, inventory_id: str, aisle_id: str, *, principal: AccessPrincipal | None = None
+    ) -> Aisle:
         from src.application.errors import AisleNotFoundError
 
         if self._aisle is None:
@@ -142,11 +149,13 @@ def _phase4_api_dependency_stubs(output_dir: Path) -> None:
     app.dependency_overrides[get_current_admin] = lambda: AuthUser(
         id="admin", username="admin", role="administrator"
     )
+    app.dependency_overrides[require_inventory_client_scope] = platform_principal
     stub_root = output_dir / "_artifact_store_stub"
     stub_root.mkdir(parents=True, exist_ok=True)
     app.dependency_overrides[get_artifact_storage] = lambda: V3ArtifactStorageAdapter(stub_root)
     yield
     app.dependency_overrides.pop(get_current_admin, None)
+    app.dependency_overrides.pop(require_inventory_client_scope, None)
     app.dependency_overrides.pop(get_artifact_storage, None)
 
 

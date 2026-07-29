@@ -22,6 +22,9 @@ def _bootstrap_dotenv_for_pytest() -> None:
     load_dotenv(backend / ".env", override=False)
     load_dotenv(repo / ".env.test", override=True)
     load_dotenv(backend / ".env.test", override=True)
+    # Prevent ``src.config.reload_settings()`` / import-time dotenv from clobbering
+    # ``.env.test`` (developer ``.env`` uses DATABASE=dinamic-gemini).
+    os.environ["DINAMIC_PYTEST_DOTENV_LOCKED"] = "1"
 
 
 def _ensure_pytest_identification_flags() -> None:

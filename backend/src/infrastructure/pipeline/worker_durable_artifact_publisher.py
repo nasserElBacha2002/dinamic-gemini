@@ -52,23 +52,43 @@ DEFAULT_V3_WORKER_RUN_SEGMENT = "run"
 WORKER_DURABLE_LOGICAL_PREFIX_ROOT = "jobs"
 
 
-def worker_durable_artifact_key_prefix(job_id: str, run_segment: str) -> str:
-    """Return ``jobs/{job_id}/{run_segment}`` (no trailing slash).
+def worker_durable_artifact_key_prefix(
+    job_id: str,
+    run_segment: str,
+    *,
+    fencing_token: int | None = None,
+) -> str:
+    """Return durable key prefix (no trailing slash).
 
-    All durable worker object keys for this job run share this prefix.
+    When ``fencing_token`` is set, keys are token-scoped:
+    ``jobs/{job_id}/ft{token}/{run_segment}`` so a stale worker cannot overwrite
+    the current owner's artifact namespace.
     """
+    if fencing_token is not None and int(fencing_token) >= 1:
+        return (
+            f"{WORKER_DURABLE_LOGICAL_PREFIX_ROOT}/{job_id}/"
+            f"ft{int(fencing_token)}/{run_segment}"
+        )
     return f"{WORKER_DURABLE_LOGICAL_PREFIX_ROOT}/{job_id}/{run_segment}"
 
 
-def worker_output_storage_keys(job_id: str, run_segment: str) -> Mapping[str, str]:
+def worker_output_storage_keys(
+    job_id: str,
+    run_segment: str,
+    *,
+    fencing_token: int | None = None,
+) -> Mapping[str, str]:
     """Logical storage keys (prefix-free) for durable worker artifacts.
 
     Args:
         job_id: v3 inventory job id.
         run_segment: Run directory name under the job folder (normally
             :data:`DEFAULT_V3_WORKER_RUN_SEGMENT`).
+        fencing_token: Optional Phase-3 lease fencing token for token-scoped keys.
     """
-    base = worker_durable_artifact_key_prefix(job_id, run_segment)
+    base = worker_durable_artifact_key_prefix(
+        job_id, run_segment, fencing_token=fencing_token
+    )
     return {
         DURABLE_ARTIFACT_KIND_EXECUTION_LOG: f"{base}/execution_log.jsonl",
         DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON: f"{base}/hybrid_report.json",

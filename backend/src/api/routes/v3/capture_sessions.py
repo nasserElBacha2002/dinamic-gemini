@@ -22,6 +22,7 @@ from src.api.dependencies import (
     get_materialize_capture_session_use_case,
     get_update_capture_session_clock_offset_use_case,
     get_upload_capture_session_staging_items_use_case,
+    require_capture_session_upload_scope,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.capture_schemas import (
@@ -46,6 +47,7 @@ from src.api.schemas.capture_schemas import (
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.services.multipart_aisle_uploads import read_spooled_multipart_upload_files
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.services.capture_session_status_filter import (
     parse_capture_session_status_filter,
@@ -582,12 +584,14 @@ def post_materialized_capture_session_group_preview(
 async def upload_capture_session_staging_items_inventory_scope(
     inventory_id: str,
     session_id: str,
-    files: list[UploadFile] = File(...),
-    upload_batch_id: str | None = Form(default=None),
-    client_file_ids: list[str] | None = Form(default=None),
+    # Hierarchical auth before staging spool (defense-in-depth also in use case).
+    principal: AccessPrincipal = Depends(require_capture_session_upload_scope),
     use_case: UploadCaptureSessionStagingItemsUseCase = Depends(
         get_upload_capture_session_staging_items_use_case
     ),
+    files: list[UploadFile] = File(...),
+    upload_batch_id: str | None = Form(default=None),
+    client_file_ids: list[str] | None = Form(default=None),
 ) -> UploadCaptureSessionItemsResponse:
     uploaded: list[UploadedFile] = []
     try:
@@ -605,6 +609,7 @@ async def upload_capture_session_staging_items_inventory_scope(
             aisle_id=None,
             session_id=session_id,
             files=uploaded,
+            principal=principal,
         )
         return _staging_upload_batch_response(batch)
     except Exception as e:
@@ -623,12 +628,13 @@ async def upload_capture_session_staging_items(
     inventory_id: str,
     aisle_id: str,
     session_id: str,
-    files: list[UploadFile] = File(...),
-    upload_batch_id: str | None = Form(default=None),
-    client_file_ids: list[str] | None = Form(default=None),
+    principal: AccessPrincipal = Depends(require_capture_session_upload_scope),
     use_case: UploadCaptureSessionStagingItemsUseCase = Depends(
         get_upload_capture_session_staging_items_use_case
     ),
+    files: list[UploadFile] = File(...),
+    upload_batch_id: str | None = Form(default=None),
+    client_file_ids: list[str] | None = Form(default=None),
 ) -> UploadCaptureSessionItemsResponse:
     """Stage files for a capture session (spooled ingest with per-request size limits)."""
     uploaded: list[UploadedFile] = []
@@ -647,6 +653,7 @@ async def upload_capture_session_staging_items(
             aisle_id=aisle_id,
             session_id=session_id,
             files=uploaded,
+            principal=principal,
         )
         return _staging_upload_batch_response(batch)
     except Exception as e:

@@ -8,6 +8,7 @@ pipeline strategies except through ``LLMRequest`` / ``LLMResponse``.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
 from src.llm.types import LLMRequest, LLMResponse
+from src.observability.metrics.instruments import record_provider_call
 from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 
 logger = logging.getLogger(__name__)
@@ -76,6 +78,7 @@ class GeminiSdkAdapter:
         analyzer = GeminiGlobalAnalyzer(client, prompt_text=prompt_text)
         run_dir = request.metadata.get("run_dir")
         save_raw_to_path = Path(run_dir) / "gemini_raw_response.json" if run_dir else None
+        started = time.perf_counter()
         try:
             data = analyzer.analyze_video_frames(
                 frames_nd,
@@ -88,12 +91,26 @@ class GeminiSdkAdapter:
                 save_raw_to_path=save_raw_to_path,
             )
         except GlobalAnalysisParsingError as e:
+            record_provider_call(
+                provider="gemini",
+                operation="analyze_global",
+                outcome="error",
+                duration_seconds=time.perf_counter() - started,
+                error_class="parse_error",
+            )
             raise LLMProviderError(
                 code="INVALID_JSON",
                 message=str(e),
                 details={"provider": "gemini"},
             ) from e
         except GlobalAnalysisValidationError as e:
+            record_provider_call(
+                provider="gemini",
+                operation="analyze_global",
+                outcome="error",
+                duration_seconds=time.perf_counter() - started,
+                error_class="schema_invalid",
+            )
             raise LLMProviderError(
                 code="SCHEMA_INVALID",
                 message=str(e),
@@ -101,35 +118,59 @@ class GeminiSdkAdapter:
             ) from e
         except RuntimeError as e:
             msg = str(e).lower()
+            err_class = "unknown"
             if "429" in str(e) or "rate limit" in msg:
-                raise LLMProviderError(
-                    code="RATE_LIMIT",
-                    message=str(e),
-                    details={"provider": "gemini"},
-                ) from e
-            if "timeout" in msg or "timed out" in msg:
-                raise LLMProviderError(
-                    code="TIMEOUT",
-                    message=str(e),
-                    details={"provider": "gemini"},
-                ) from e
+                err_class = "rate_limit"
+                raise_code = "RATE_LIMIT"
+            elif "timeout" in msg or "timed out" in msg:
+                err_class = "timeout"
+                raise_code = "TIMEOUT"
+            else:
+                raise_code = "UNKNOWN"
+            record_provider_call(
+                provider="gemini",
+                operation="analyze_global",
+                outcome="error",
+                duration_seconds=time.perf_counter() - started,
+                error_class=err_class,
+            )
             raise LLMProviderError(
-                code="UNKNOWN",
+                code=raise_code,
                 message=str(e),
                 details={"provider": "gemini"},
             ) from e
         except ProviderImageExecutionError as e:
+            record_provider_call(
+                provider="gemini",
+                operation="analyze_global",
+                outcome="error",
+                duration_seconds=time.perf_counter() - started,
+                error_class=(e.code or "unknown").lower(),
+            )
             raise LLMProviderError(
                 code=e.code,
                 message=e.message,
                 details=e.to_details(),
             ) from e
         except ValueError as e:
+            record_provider_call(
+                provider="gemini",
+                operation="analyze_global",
+                outcome="error",
+                duration_seconds=time.perf_counter() - started,
+                error_class="unknown",
+            )
             raise LLMProviderError(
                 code="UNKNOWN",
                 message=str(e),
                 details={"provider": "gemini"},
             ) from e
+        record_provider_call(
+            provider="gemini",
+            operation="analyze_global",
+            outcome="ok",
+            duration_seconds=time.perf_counter() - started,
+        )
         return LLMResponse(
             provider="gemini",
             model=str(effective_model),

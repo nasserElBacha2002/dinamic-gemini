@@ -10,6 +10,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 
+from src.application.errors import WorkerLaunchFailedError
 from src.application.ports.clock import Clock
 from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.repositories import AisleRepository, JobRepository
@@ -58,13 +59,31 @@ class AisleJobLaunchService:
         engine_params_json: dict | None = None,
     ) -> Job:
         now = self.clock.now()
+        payload_dict = dict(payload)
+        try:
+            from src.application.use_cases.recovery.recover_stale_job import (
+                CORRELATION_PAYLOAD_KEY,
+                ensure_payload_correlation,
+            )
+            from src.observability.context import get_correlation_id
+            from src.observability.request_ids import generate_correlation_id
+
+            if not (
+                isinstance(payload_dict.get(CORRELATION_PAYLOAD_KEY), str)
+                and str(payload_dict.get(CORRELATION_PAYLOAD_KEY)).strip()
+            ):
+                payload_dict = ensure_payload_correlation(
+                    payload_dict, get_correlation_id() or generate_correlation_id()
+                )
+        except Exception:
+            logger.warning("launch correlation ensure failed aisle_id=%s", aisle.id, exc_info=True)
         job = Job(
             id=str(uuid.uuid4()),
             target_type="aisle",
             target_id=aisle.id,
             job_type="process_aisle",
             status=JobStatus.STARTING,
-            payload_json=dict(payload),
+            payload_json=payload_dict,
             created_at=now,
             updated_at=now,
             started_at=now,
@@ -89,6 +108,19 @@ class AisleJobLaunchService:
             execution_strategy=execution_strategy,
         )
         self.job_repo.save(job)
+        try:
+            from src.observability.metrics.instruments import JOBS_CREATED_TOTAL, record_job_outcome
+            from src.observability.metrics.registry import get_metrics_registry
+
+            get_metrics_registry().inc(
+                JOBS_CREATED_TOTAL,
+                "Jobs created",
+                {"job_type": job.job_type or "process_aisle", "outcome": "created"},
+            )
+            if retry_of_job_id:
+                record_job_outcome(job_type=job.job_type or "process_aisle", outcome="retried")
+        except Exception:
+            logger.warning("job create metrics failed job_id=%s", job.id, exc_info=True)
 
         aisle.mark_queued(now)
         self.aisle_repo.save(aisle)
@@ -154,4 +186,57 @@ class AisleJobLaunchService:
                 retry_of_job_id,
                 launch_error,
             )
-            raise
+            raise WorkerLaunchFailedError(launch_error, job_id=job.id) from exc
+
+    def relaunch_failed_worker(self, job: Job, *, idempotency_key: str) -> str:
+        """Re-spawn a worker for a child that failed with WORKER_LAUNCH_FAILED (same job id)."""
+        if job.status != JobStatus.FAILED or (job.failure_code or "") != "WORKER_LAUNCH_FAILED":
+            raise WorkerLaunchFailedError(
+                f"Job {job.id} is not eligible for worker relaunch "
+                f"(status={job.status.value} failure_code={job.failure_code!r})",
+                job_id=job.id,
+            )
+        now = self.clock.now()
+        job.status = JobStatus.STARTING
+        job.error_message = None
+        job.failure_code = None
+        job.failure_message = None
+        job.finished_at = None
+        job.updated_at = now
+        job.started_at = now
+        job.current_stage = "worker_launch"
+        job.current_substep = "spawn_relaunch_requested"
+        job.current_step_started_at = now
+        job.execution_id = None
+        self.job_repo.save(job)
+
+        aisle = self.aisle_repo.get_by_id(job.target_id)
+        if aisle is not None:
+            aisle.mark_queued(now)
+            self.aisle_repo.save(aisle)
+            self.status_reconciler.reconcile(aisle.inventory_id)
+
+        try:
+            execution_id = self.worker_launch_service.launch_job_if_not_launched(
+                job.id, idempotency_key=idempotency_key
+            )
+            job.execution_id = execution_id
+            job.current_substep = "spawn_succeeded"
+            job.updated_at = now
+            self.job_repo.save(job)
+            return execution_id
+        except Exception as exc:
+            launch_error = f"Worker relaunch failed: {exc}"
+            job.status = JobStatus.FAILED
+            job.error_message = launch_error
+            job.failure_code = "WORKER_LAUNCH_FAILED"
+            job.failure_message = launch_error
+            job.finished_at = now
+            job.updated_at = now
+            job.current_substep = "spawn_failed"
+            self.job_repo.save(job)
+            if aisle is not None:
+                aisle.mark_failed(now, error_message=launch_error)
+                self.aisle_repo.save(aisle)
+                self.status_reconciler.reconcile(aisle.inventory_id)
+            raise WorkerLaunchFailedError(launch_error, job_id=job.id) from exc

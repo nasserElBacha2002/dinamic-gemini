@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 
 from src.application.ports.repositories import (
     JOB_ID_FILTER_UNSET,
-    JobRepository,
     PositionRepository,
     ProductRecordRepository,
 )
@@ -31,6 +30,7 @@ from src.domain.products.entities import ProductRecord
 from src.infrastructure.repositories.memory_code_scan_repository import MemoryCodeScanRepository
 from tests.application.use_cases.test_run_aisle_code_scan import FixedClock, StubAisleRepo
 from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
+from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
 class StubPositionRepo(PositionRepository):
@@ -95,7 +95,7 @@ class StubProductRepo(ProductRecordRepository):
         return [p for p in self._products if p.position_id in ids]
 
 
-class StubJobRepo(JobRepository):
+class StubJobRepo(JobRepositoryTestBase):
     def __init__(self, jobs: Sequence[Job] | None = None) -> None:
         self._jobs = {j.id: j for j in (jobs or [])}
 

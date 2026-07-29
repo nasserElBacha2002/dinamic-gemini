@@ -14,6 +14,8 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_JOB_NOT_IN_AISLE_CATEGORY_C,
     HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY,
     HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
+    HTTP_DETAIL_SUPPLIER_NOT_RESOLVED,
+    HTTP_DETAIL_SUPPLIER_PROMPT_REQUIRED,
 )
 from src.api.dependencies import (
     get_activate_aisle_use_case,
@@ -46,8 +48,15 @@ from src.api.dependencies import (
     get_run_auditability_service,
     get_start_aisle_processing_use_case,
     get_update_aisle_code_use_case,
+    require_inventory_client_scope,
 )
 from src.api.errors import reraise_if_mapped
+from src.api.errors.structured_api_http import (
+    PROCESS_VALIDATION_FAILED,
+    SUPPLIER_NOT_RESOLVED,
+    SUPPLIER_PROMPT_REQUIRED,
+    StructuredApiHttpError,
+)
 from src.api.mappers.result_evidence_mapper import job_traceability_to_response
 from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest, UpdateAisleRequest
 from src.api.schemas.benchmark_schemas import (
@@ -100,12 +109,14 @@ from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     load_hybrid_report_json_for_api,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import (
     ActiveJobExistsError,
     AisleNotFoundError,
     ClientSupplierClientMismatchError,
     ClientSupplierNotFoundError,
     ClientSupplierRequiredForAisleError,
+    DownloadCapacityExceededError,
     DuplicateAisleCodeError,
     InventoryClientRequiredForAisleError,
     InventoryNotFoundError,
@@ -252,6 +263,24 @@ from .shared import aisle_to_response, job_to_detail, job_to_summary, status_res
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _structured_process_value_error(exc: ValueError) -> StructuredApiHttpError:
+    """Map process-start configuration ValueErrors to structured 422 (never 500)."""
+    msg = str(exc).strip() or "Invalid process request"
+    code = PROCESS_VALIDATION_FAILED
+    detail = msg
+    if ":" in msg:
+        head, rest = msg.split(":", 1)
+        head = head.strip()
+        if head and head == head.upper() and all(c.isalnum() or c == "_" for c in head):
+            code = head
+            detail = rest.strip() or msg
+    if code == SUPPLIER_PROMPT_REQUIRED:
+        detail = HTTP_DETAIL_SUPPLIER_PROMPT_REQUIRED
+    elif code == SUPPLIER_NOT_RESOLVED:
+        detail = HTTP_DETAIL_SUPPLIER_NOT_RESOLVED
+    return StructuredApiHttpError(422, error_code=code, detail=detail)
 
 
 def _aisle_response(
@@ -553,6 +582,7 @@ def start_aisle_processing(
     aisle_id: str,
     payload: ProcessAisleRequest | None = Body(None),
     use_case: StartAisleProcessingUseCase = Depends(get_start_aisle_processing_use_case),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> ProcessAisleResponse:
     try:
         body = payload or ProcessAisleRequest(
@@ -572,6 +602,7 @@ def start_aisle_processing(
                 requested_prompt_key=body.prompt_key,
                 requested_identification_mode=body.identification_mode,
                 idempotency_key=body.idempotency_key,
+                principal=principal,
             )
         )
         return ProcessAisleResponse(
@@ -585,6 +616,8 @@ def start_aisle_processing(
         )
     except Exception as e:
         reraise_if_mapped(e)
+        if isinstance(e, ValueError):
+            raise _structured_process_value_error(e) from e
         raise
 
 
@@ -1136,8 +1169,11 @@ def download_job_artifact(
     max_bytes = int(getattr(settings, "observability_download_max_bytes", 0) or 0)
     max_concurrent = int(getattr(settings, "observability_download_max_concurrent", 4) or 4)
     # Hold the slot for the full stream lifetime (released in _iter_chunks finally).
-    slot_cm = acquire_download_slot(max_concurrent=max_concurrent)
-    slot_cm.__enter__()
+    try:
+        slot_cm = acquire_download_slot(max_concurrent=max_concurrent)
+        slot_cm.__enter__()
+    except DownloadCapacityExceededError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     try:
         try:
             meta = artifact_storage.get_object_metadata(key)

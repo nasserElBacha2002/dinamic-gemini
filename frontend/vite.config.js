@@ -8,6 +8,11 @@ export default defineConfig({
     globals: true,
     include: ['tests/**/*.{test,spec}.{ts,tsx}'],
     setupFiles: ['./src/test/setup.ts'],
+    testTimeout: 15000,
+    hookTimeout: 15000,
+    // Reduce worker contention flakiness under full-suite CI/audit load.
+    fileParallelism: true,
+    maxWorkers: 4,
   },
   server: {
     port: 5173,

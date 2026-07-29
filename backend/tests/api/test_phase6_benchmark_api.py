@@ -74,6 +74,7 @@ def _seed() -> None:
                 model_name="gpt",
                 prompt_key="global_v21",
                 prompt_version="pv1",
+                lease_fencing_token=1,
                 result_json={
                     "llm_cost_snapshot": {
                         "provider": "openai",
@@ -113,6 +114,7 @@ def _seed() -> None:
             model_name="gpt",
             prompt_key="global_v21",
             prompt_version="pv1",
+            lease_fencing_token=1,
             result_json={},
         )
     )

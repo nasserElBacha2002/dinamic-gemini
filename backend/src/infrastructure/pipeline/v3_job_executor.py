@@ -72,6 +72,7 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
 )
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
+from src.domain.jobs.lease import JobLease, JobLeaseLostError
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
@@ -243,6 +244,7 @@ class V3JobExecutor:
             final_count_repo=final_count_repo,
             job_scoped_recompute_factory=job_scoped_recompute_factory,
             job_result_uow_factory=job_result_uow_factory,
+            job_repo=job_repo,
         )
         self._result_evidence_repo = result_evidence_repo
         self._traceability_artifact_service = TraceabilityArtifactService(
@@ -317,6 +319,9 @@ class V3JobExecutor:
         )
         self._monitoring_service = V3JobMonitoringService(
             state_service=self._state,
+            heartbeat_interval_sec=float(
+                getattr(load_settings(), "job_lease_heartbeat_interval_sec", 15) or 15
+            ),
             startup_progress_timeout_sec=float(
                 getattr(load_settings(), "job_startup_progress_timeout_seconds", 120.0)
             ),
@@ -483,6 +488,7 @@ class V3JobExecutor:
         state_repo: Any,
         lease_repo: Any,
         ctx: _GlobalFallbackRuntimeCtx,
+        lease: JobLease | None = None,
     ) -> bool:
         """Run GLOBAL_BATCH after internal aisle pass. False => caller must stop (failed)."""
         import uuid as _uuid
@@ -707,7 +713,13 @@ class V3JobExecutor:
         )
 
         def _persist_summary(job_id: str, summary: dict) -> None:
-            self._job_repo.merge_result_json(job_id, {"global_fallback": summary})
+            if lease is None:
+                raise ValueError(
+                    f"modern job global_fallback requires JobLease (job_id={job_id})"
+                )
+            self._state.merge_result_json_protected(
+                job_id, {"global_fallback": summary}, lease=lease
+            )
 
         coordinator = GlobalExternalFallbackCoordinator(
             lease_repo=lease_repo,
@@ -760,6 +772,7 @@ class V3JobExecutor:
         exec_log: Any,
         cancel_event_emitted: dict[str, bool],
         runtime_abort_event: Any = None,
+        lease: Any = None,
         global_fallback_ctx: _GlobalFallbackRuntimeCtx | None = None,
     ) -> bool:
         """Phase 3 CODE_SCAN execution — deterministic per-image scan, no LLM pipeline."""
@@ -993,7 +1006,7 @@ class V3JobExecutor:
 
         def _merge_progress(progress) -> None:
             public = progress_to_public_dict(progress)
-            self._job_repo.merge_result_json(job_id, {"asset_progress": public})
+            self._state.merge_result_json_protected(job_id, {"asset_progress": public}, lease=lease)
             # Heartbeat alone is not progress — advance runtime stage from asset counts.
             processed = (
                 int(public.get("resolved", 0) or 0)
@@ -1096,7 +1109,7 @@ class V3JobExecutor:
                     resolved_internal=int(getattr(outcome.progress, "resolved", 0) or 0),
                 )
             )
-        self._job_repo.merge_result_json(job_id, merge_payload)
+        self._state.merge_result_json_protected(job_id, merge_payload, lease=lease)
 
         job_outcome = outcome.job_outcome
         assets_eligible = int(getattr(outcome, "assets_eligible", 0) or 0)
@@ -1112,7 +1125,7 @@ class V3JobExecutor:
             "assets_failed_technical": int(progress_public.get("failed", 0) or 0),
             "assets_skipped": max(0, total_assets - assets_eligible),
         }
-        self._job_repo.merge_result_json(job_id, {"code_scan_counters": code_scan_counters})
+        self._state.merge_result_json_protected(job_id, {"code_scan_counters": code_scan_counters}, lease=lease)
 
         # Loop-not-executed is decided solely by AisleProcessingOrchestrator
         # (job_outcome FAILED + error_message CODE_SCAN_ASSET_LOOP_NOT_EXECUTED).
@@ -1126,6 +1139,7 @@ class V3JobExecutor:
                     error=PipelineCancellationRequestedError(outcome.error_message or "cancelled"),
                     exec_log=exec_log,
                     cancel_event_emitted=cancel_event_emitted,
+                    lease=lease,
                 )
             return True
 
@@ -1155,9 +1169,9 @@ class V3JobExecutor:
         # SUCCEEDED or PARTIALLY_COMPLETED — both are completed jobs. A partial run recorded
         # a mix of asset outcomes (some FAILED_TECHNICAL, some resolved/unrecognized/manual);
         # it is still a completed job, annotated in result_json for auditability.
-        self._job_repo.merge_result_json(job_id, {"code_scan_outcome": job_outcome.value})
+        self._state.merge_result_json_protected(job_id, {"code_scan_outcome": job_outcome.value}, lease=lease)
         if job_outcome is CodeScanJobOutcome.PARTIALLY_COMPLETED:
-            self._job_repo.merge_result_json(job_id, {"code_scan_partial": True})
+            self._state.merge_result_json_protected(job_id, {"code_scan_partial": True}, lease=lease)
 
         if global_fallback_ctx is not None:
             gf = self._run_global_external_fallback_after_internal(
@@ -1170,6 +1184,7 @@ class V3JobExecutor:
                 state_repo=state_repo,
                 lease_repo=lease_repo,
                 ctx=global_fallback_ctx,
+                lease=lease,
             )
             if gf is False:
                 return True
@@ -1183,7 +1198,7 @@ class V3JobExecutor:
             logger.warning("code_scan.aborted_before_success_finalization job_id=%s", job_id)
             return True
         try:
-            self._state.finalize_code_scan_success(job_id, aisle)
+            self._state.finalize_code_scan_success(job_id, aisle, lease=lease)
             _publish_job_event(
                 "job.completed",
                 message="CODE_SCAN job completed",
@@ -1193,6 +1208,8 @@ class V3JobExecutor:
                     **code_scan_counters,
                 },
             )
+        except JobLeaseLostError:
+            raise
         except Exception as exc:
             logger.exception("code_scan.finalize_failed job_id=%s", job_id)
             _publish_job_event(
@@ -1206,6 +1223,7 @@ class V3JobExecutor:
                 aisle,
                 f"code_scan finalization failed: {exc}",
                 failure_code="CODE_SCAN_FINALIZATION_FAILED",
+                lease=lease,
             )
         return True
 
@@ -1220,6 +1238,7 @@ class V3JobExecutor:
         exec_log: Any,
         cancel_event_emitted: dict[str, bool],
         runtime_abort_event: Any = None,
+        lease: Any = None,
         global_fallback_ctx: _GlobalFallbackRuntimeCtx | None = None,
     ) -> bool:
         """Phase 4 INTERNAL_OCR execution — local Tesseract OCR per image, no LLM."""
@@ -1425,7 +1444,7 @@ class V3JobExecutor:
             )
             return True
 
-        self._job_repo.merge_result_json(
+        self._state.merge_result_json_protected(
             job_id,
             {
                 "internal_ocr_config": {
@@ -1443,13 +1462,14 @@ class V3JobExecutor:
                     "snapshot_version": getattr(job, "configuration_snapshot_version", None),
                 }
             },
+            lease=lease,
         )
 
         total_assets = len(assets)
 
         def _merge_progress(progress) -> None:
             public = progress_to_public_dict(progress)
-            self._job_repo.merge_result_json(job_id, {"asset_progress": public})
+            self._state.merge_result_json_protected(job_id, {"asset_progress": public}, lease=lease)
             processed = (
                 int(public.get("resolved", 0) or 0)
                 + int(public.get("failed", 0) or 0)
@@ -1545,7 +1565,7 @@ class V3JobExecutor:
                     resolved_internal=int(getattr(outcome.progress, "resolved", 0) or 0),
                 )
             )
-        self._job_repo.merge_result_json(job_id, merge_payload)
+        self._state.merge_result_json_protected(job_id, merge_payload, lease=lease)
 
         job_outcome = outcome.job_outcome
 
@@ -1558,6 +1578,7 @@ class V3JobExecutor:
                     error=PipelineCancellationRequestedError(outcome.error_message or "cancelled"),
                     exec_log=exec_log,
                     cancel_event_emitted=cancel_event_emitted,
+                    lease=lease,
                 )
             return True
 
@@ -1590,6 +1611,7 @@ class V3JobExecutor:
                 state_repo=state_repo,
                 lease_repo=lease_repo,
                 ctx=global_fallback_ctx,
+                lease=lease,
             )
             if gf is False:
                 return True
@@ -1605,15 +1627,17 @@ class V3JobExecutor:
             },
         )
 
-        self._job_repo.merge_result_json(job_id, {"internal_ocr_outcome": job_outcome.value})
+        self._state.merge_result_json_protected(job_id, {"internal_ocr_outcome": job_outcome.value}, lease=lease)
         if job_outcome is CodeScanJobOutcome.PARTIALLY_COMPLETED:
-            self._job_repo.merge_result_json(job_id, {"internal_ocr_partial": True})
+            self._state.merge_result_json_protected(job_id, {"internal_ocr_partial": True}, lease=lease)
 
         try:
             if _is_cancelled():
                 logger.warning("internal_ocr.aborted_before_success_finalization job_id=%s", job_id)
                 return True
-            self._state.finalize_code_scan_success(job_id, aisle)
+            self._state.finalize_code_scan_success(job_id, aisle, lease=lease)
+        except JobLeaseLostError:
+            raise
         except Exception as exc:
             logger.exception("internal_ocr.finalize_failed job_id=%s", job_id)
             _publish_job_event(
@@ -1627,6 +1651,7 @@ class V3JobExecutor:
                 aisle,
                 f"internal_ocr finalization failed: {exc}",
                 failure_code="INTERNAL_OCR_FINALIZATION_FAILED",
+                lease=lease,
             )
             return True
 
@@ -1744,8 +1769,17 @@ class V3JobExecutor:
             job=job,
             aisle=aisle,
             aisle_id=aisle_id,
+            lease=prep.lease,
+            lease_extension_seconds=int(
+                getattr(settings, "job_lease_duration_sec", 60) or 60
+            ),
+            renewal_safety_margin_sec=int(
+                getattr(settings, "job_lease_renewal_safety_margin_sec", 20) or 20
+            ),
         )
         with self._monitoring_service.session(monitoring_req) as rt:
+
+            lease = prep.lease
 
             def execution_observer(
                 stage: str, substep: str | None, event: str, details: dict[str, Any] | None
@@ -1816,6 +1850,7 @@ class V3JobExecutor:
                                 getattr(job_input, "input_type", "") == "photos"
                                 and job.job_type == "process_aisle"
                             ),
+                            lease=prep.lease,
                         )
                     )
                     with_result = assets_with_result_from_evidence(
@@ -1845,6 +1880,7 @@ class V3JobExecutor:
                         exec_log=rt.exec_log,
                         cancel_event_emitted=rt.cancel_event_emitted,
                         runtime_abort_event=rt.runtime_abort_event,
+                        lease=prep.lease,
                         global_fallback_ctx=_GlobalFallbackRuntimeCtx(
                             base_path=base_path,
                             v3_base=v3_base,
@@ -1873,6 +1909,7 @@ class V3JobExecutor:
                         exec_log=rt.exec_log,
                         cancel_event_emitted=rt.cancel_event_emitted,
                         runtime_abort_event=rt.runtime_abort_event,
+                        lease=prep.lease,
                         global_fallback_ctx=_GlobalFallbackRuntimeCtx(
                             base_path=base_path,
                             v3_base=v3_base,
@@ -1978,9 +2015,10 @@ class V3JobExecutor:
                     )
                     # Prefer repository-level merge so concurrent writers of other result_json
                     # keys (costs, durable artifacts, etc.) are not wiped by a full RMW.
-                    self._job_repo.merge_result_json(
+                    self._state.merge_result_json_protected(
                         job_id,
                         {"asset_progress": progress_to_public_dict(orch_out.progress)},
+                        lease=lease,
                     )
 
                     # Preserve exact legacy semantics: orchestrator must not turn a failed or
@@ -1996,6 +2034,7 @@ class V3JobExecutor:
                                 ),
                                 exec_log=rt.exec_log,
                                 cancel_event_emitted=rt.cancel_event_emitted,
+                                lease=lease,
                             )
                         return True
 
@@ -2050,6 +2089,17 @@ class V3JobExecutor:
                 # compensation; operators should treat FAILED as "processing did not fully complete" and use
                 # a new or explicitly reset job if work must be redone. Re-running the same job id without
                 # reset is out of band for this executor (claim path expects terminal FAILED to stay terminal).
+                # If lease was lost mid-run, halt without failing the job (another worker may continue).
+                if rt.runtime_abort_event.is_set():
+                    logger.info(
+                        "event=job_lease_lost job_id=%s reason=runtime_abort_before_finalize "
+                        "owner_id=%s fencing_token=%s",
+                        job_id,
+                        getattr(lease, "owner_id", None),
+                        getattr(lease, "fencing_token", None),
+                    )
+                    return True
+
                 if self._finalization_service.finalize_success(
                     V3JobFinalizationRequest(
                         job_id=job_id,
@@ -2068,9 +2118,19 @@ class V3JobExecutor:
                             getattr(job_input, "input_type", "") == "photos"
                             and job.job_type == "process_aisle"
                         ),
+                        lease=lease,
                     )
                 ):
                     return True
+            except JobLeaseLostError as lease_exc:
+                logger.info(
+                    "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s reason=%s",
+                    job_id,
+                    lease_exc.owner_id,
+                    lease_exc.fencing_token,
+                    lease_exc.reason,
+                )
+                return True
             except PipelineCancellationRequestedError as e:
                 return self._cancellation_coordinator.handle_pipeline_cancellation(
                     job_id=job_id,
@@ -2078,6 +2138,7 @@ class V3JobExecutor:
                     error=e,
                     exec_log=rt.exec_log,
                     cancel_event_emitted=rt.cancel_event_emitted,
+                    lease=lease,
                 )
             except Exception as e:
                 return self._failure_handler.handle_unexpected_failure(

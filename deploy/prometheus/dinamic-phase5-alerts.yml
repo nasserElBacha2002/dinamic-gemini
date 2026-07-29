@@ -1,0 +1,120 @@
+# Phase 5 — deployable Prometheus alerting rules (conservative initial thresholds).
+# Thresholds are tunable via recording/config; values here are intentionally conservative.
+groups:
+  - name: dinamic-inventory-phase5
+    rules:
+      - alert: Http5xxRateHigh
+        expr: |
+          sum(rate(http_response_errors_total{status_class="5xx"}[5m]))
+            /
+          clamp_min(sum(rate(http_requests_total[5m])), 0.001)
+            > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HTTP 5xx rate above 5% for 5m"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#http-5xx"
+
+      - alert: JobExpiredRunningLeases
+        expr: job_expired_running_leases > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RUNNING jobs with expired leases detected"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#job-stuck"
+
+      - alert: QueueDepthHigh
+        expr: jobs_in_state{status="queued",job_type="process_aisle"} > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queued process_aisle jobs exceed warn threshold (50)"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#queue-depth"
+
+      - alert: QueueDepthCritical
+        expr: jobs_in_state{status="queued",job_type="process_aisle"} > 200
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Queued process_aisle jobs exceed critical threshold (200)"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#queue-depth"
+
+      - alert: LeaseLossElevated
+        expr: sum(rate(job_lease_lost_total[15m])) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated job lease loss rate"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#lease-loss"
+
+      - alert: StaleWriteRejectionElevated
+        expr: sum(rate(job_stale_write_rejected_total[15m])) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated stale write rejections (fencing)"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#stale-write"
+
+      - alert: ProviderErrorRatioHigh
+        expr: |
+          sum(rate(provider_errors_total[15m]))
+            /
+          clamp_min(sum(rate(provider_requests_total[15m])), 0.001)
+            > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Provider error ratio above 20% for 15m"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#provider-degraded"
+
+      - alert: ArtifactOutboxBlocked
+        expr: artifact_outbox_pending > 100 or artifact_outbox_failed > 10
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Artifact outbox backlog or permanent failures elevated"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#outbox-blocked"
+
+      - alert: FinalizationFailuresElevated
+        expr: sum(rate(job_finalization_failures_total[15m])) > 0.05
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Elevated finalization failure rate"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#finalization"
+
+      - alert: WorkerProcessDown
+        expr: max(worker_process_up) < 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No worker_process_up=1 observed"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#worker-heartbeat"
+
+      - alert: RecoverySchedulerFailures
+        expr: sum(rate(stale_recovery_scheduler_runs_total{outcome="error"}[15m])) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stale job recovery scheduler error iterations elevated"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#recovery"
+
+      - alert: OperationalMetricsCollectorErrors
+        expr: sum(rate(operational_metrics_collector_errors_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Operational SQL gauge collector failing"
+          runbook_url: "audit-results/phase-5/operational-runbooks.md#gauges"

@@ -108,6 +108,18 @@ def main(argv: list[str] | None = None) -> None:
     _configure_worker_logging()
     base_path = Path(load_settings().output_dir)
     base_path.mkdir(parents=True, exist_ok=True)
+    try:
+        from src.observability.metrics.instruments import WORKER_PROCESS_UP
+        from src.observability.metrics.registry import get_metrics_registry
+
+        get_metrics_registry().set_gauge(
+            WORKER_PROCESS_UP,
+            "Worker process liveness",
+            1.0,
+            {"worker_role": "process_aisle", "environment": "worker"},
+        )
+    except Exception:
+        logger.warning("worker_process_up metric failed", exc_info=True)
     logger.info("Worker process starting (output_dir=%s)", str(base_path))
     logger.info("Worker code profile: v3_executor_accepts_running_status=true")
     if args.execution_id:

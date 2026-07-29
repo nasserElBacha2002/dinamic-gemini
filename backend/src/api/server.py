@@ -13,6 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from src.api.api_key_policy import (
+    api_keys_match,
+    parse_api_key_path_prefixes,
+    path_requires_api_key,
+)
 from src.api.constants.error_wire import (
     HTTP_DETAIL_API_KEY_INVALID_OR_MISSING,
     HTTP_DETAIL_UNEXPECTED_ERROR,
@@ -31,12 +36,30 @@ from src.api.routes.v3.observability import router as v3_observability_router
 from src.api.routes.v3.review_queue import router as v3_review_queue_router
 from src.api.schema_guard import schema_guard_state
 from src.api.schemas.responses import HealthResponse
+from src.api.security_headers import (
+    SAFE_CORS_ALLOW_HEADERS,
+    SAFE_CORS_ALLOW_METHODS,
+    SecurityHeadersMiddleware,
+    normalize_cors_allow_origins,
+    resolve_hsts_enabled,
+)
 from src.auth.errors import AuthHttpError
 from src.auth.routes import router as auth_router
 from src.config import load_settings, resolve_sqlserver_connection_config
 from src.database.migrations import ensure_schema_compatibility, get_required_schema_version
 from src.database.sqlserver import SqlServerClient
 from src.jobs.worker import worker_loop
+from src.observability.metrics.registry import get_metrics_registry
+from src.observability.metrics_auth import metrics_access_allowed
+from src.observability.middleware import ObservabilityMiddleware
+from src.observability.runtime_wiring import (
+    configure_metrics_registry_limits,
+    refresh_operational_gauges_for_scrape,
+    stop_recovery_scheduler,
+    wire_operational_metrics_collector,
+    wire_recovery_scheduler,
+)
+from src.runtime.container.runtime_environment import resolve_runtime_environment
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +67,12 @@ app = FastAPI(title="Inventory Engine API", version="2.0.0")
 
 # CORS for v3 frontend (e.g. Vite dev server on localhost:5173)
 settings = load_settings()
-raw_cors_allow_origins = (settings.cors_allow_origins or "").strip()
-cors_allow_origins = (
-    [o.strip() for o in raw_cors_allow_origins.split(",") if o.strip()]
-    if raw_cors_allow_origins
-    else []
+_rt = resolve_runtime_environment()
+cors_allow_origins = normalize_cors_allow_origins(
+    settings.cors_allow_origins,
+    allow_credentials=True,
+    env=_rt,
 )
-if not cors_allow_origins:
-    cors_allow_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 artifact_provider = (settings.artifact_storage_provider or "local").strip().lower()
 if artifact_provider == "s3":
@@ -79,21 +100,55 @@ else:
         settings.artifact_storage_legacy_local_read_enabled,
     )
 
+# Observability outermost among app middleware (Starlette: last added = first executed).
+app.add_middleware(
+    ObservabilityMiddleware,
+    metrics_enabled=bool(getattr(settings, "metrics_enabled", True)),
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allow_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=SAFE_CORS_ALLOW_METHODS,
+    allow_headers=SAFE_CORS_ALLOW_HEADERS,
     # Location: asset 307 → signed URL (fetch redirect: manual).
     # Content-Disposition: blob downloads via fetch (apiDownloadBlob) need the filename.
     expose_headers=["Location", "Content-Disposition"],
+)
+
+# HSTS: hosted only, ENABLE_HSTS=true, and FORWARDED_TRUSTED_HOSTS set (TLS at edge).
+_hsts_on, _hsts_max_age = resolve_hsts_enabled(
+    env=_rt,
+    forwarded_trusted_hosts=settings.forwarded_trusted_hosts,
+)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    enable_hsts=_hsts_on,
+    hsts_max_age_sec=_hsts_max_age,
 )
 
 # Behind HTTPS-terminating ALB, redirects must use https; middleware trusts X-Forwarded-Proto from listed hosts.
 _forwarded = (settings.forwarded_trusted_hosts or "").strip()
 if _forwarded:
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_forwarded)
+
+# Model A: JWT for public clients. API_KEY is optional and only enforced on configured
+# path prefixes (API_KEY_REQUIRED_PATH_PREFIXES). Empty prefixes = no HTTP API-key gate.
+_api_key_prefixes = parse_api_key_path_prefixes(
+    getattr(settings, "api_key_required_path_prefixes", None)
+    or os.getenv("API_KEY_REQUIRED_PATH_PREFIXES", "")
+)
+if (settings.api_key or "").strip() and _api_key_prefixes:
+    logger.info(
+        "API key enforcement enabled for path prefixes=%s (Model A — public JWT clients unaffected)",
+        _api_key_prefixes,
+    )
+elif (settings.api_key or "").strip():
+    logger.info(
+        "API_KEY is set but API_KEY_REQUIRED_PATH_PREFIXES is empty — "
+        "no HTTP routes require X-API-Key (Model A default; JWT for public clients)."
+    )
 
 # Include routers (v3 only for inventory operations; legacy v1 jobs/entities removed in Stage 3).
 app.include_router(v3_router)
@@ -157,24 +212,59 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
-    """Require X-API-Key header if settings.api_key is set."""
-    if request.url.path == "/health":
-        return await call_next(request)
+    """Enforce X-API-Key only on configured internal path prefixes (Model A).
+
+    Public browser/mobile clients use JWT. ``/health`` and ``/ready`` never require a key.
+    """
     settings = load_settings()
-    if not settings.api_key:
+    expected = (settings.api_key or "").strip()
+    prefixes = parse_api_key_path_prefixes(
+        getattr(settings, "api_key_required_path_prefixes", None)
+        or os.getenv("API_KEY_REQUIRED_PATH_PREFIXES", "")
+    )
+    if not expected or not path_requires_api_key(request.url.path, prefixes):
         return await call_next(request)
-    key = request.headers.get("X-API-Key")
-    if key != settings.api_key:
+    key = (request.headers.get("X-API-Key") or "").strip()
+    if not api_keys_match(key, expected):
         return JSONResponse(
             status_code=403, content={"detail": HTTP_DETAIL_API_KEY_INVALID_OR_MISSING}
         )
     return await call_next(request)
 
 
+@app.get("/metrics")
+async def metrics(request: Request) -> Response:
+    """Prometheus text exposition — internal only (not a public internet surface)."""
+    settings = load_settings()
+    if not bool(getattr(settings, "metrics_enabled", True)):
+        return Response(status_code=404, content="metrics disabled")
+    if not metrics_access_allowed(
+        request,
+        api_key=settings.api_key or "",
+        auth_mode=getattr(settings, "metrics_internal_auth", "api_key") or "api_key",
+        env=resolve_runtime_environment(),
+    ):
+        return JSONResponse(status_code=403, content={"detail": "metrics access denied"})
+    refresh_operational_gauges_for_scrape()
+    body = get_metrics_registry().render_prometheus()
+    return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    """Liveness with schema compatibility metadata."""
+    """Liveness with schema compatibility metadata and repository backend observability.
+
+    ``ok`` is always ``True`` here — this endpoint only asserts the process is alive and
+    serving requests. Repository backend problems are surfaced (not hidden) via the
+    ``repository_backend_resolved`` / ``repository_backend_healthy`` /
+    ``repository_backend_reason_code`` fields; use ``/ready`` for the actual readiness gate.
+    Uses the public :meth:`AppContainer.get_repository_backend_status` API — never touches the
+    internal resolution cache directly, and never leaks connection strings or probe exceptions.
+    """
     _sha = (os.environ.get("GIT_SHA") or "").strip() or None
+    from src.runtime.app_container import get_app_container
+
+    backend_status = get_app_container().get_repository_backend_status()
     return HealthResponse(
         ok=True,
         deploy_git_sha=_sha,
@@ -184,12 +274,24 @@ async def health() -> HealthResponse:
         required_schema_version=schema_guard_state.required_version,
         current_schema_version=schema_guard_state.current_version,
         schema_reason=schema_guard_state.reason,
+        repository_backend=backend_status.mode,
+        repository_backend_environment=backend_status.environment,
+        fallback_activated=backend_status.fallback_activated,
+        repository_backend_resolved=backend_status.resolved,
+        repository_backend_healthy=backend_status.healthy,
+        repository_backend_reason_code=backend_status.reason_code,
     )
 
 
 @app.get("/ready")
 async def ready() -> Response:
-    """Readiness: fail when schema guard is incompatible."""
+    """Readiness: fail when schema is incompatible or the repository backend is unusable.
+
+    503 cases (repository backend): SQL required but unavailable, MEMORY_ONLY forbidden for
+    this environment, MEMORY_FALLBACK forbidden for this environment — all surfaced as
+    ``resolved=False`` / ``healthy=False`` by :meth:`AppContainer.get_repository_backend_status`,
+    which never raises. No bare ``except Exception: return 200`` here.
+    """
     if schema_guard_state.checked and not schema_guard_state.compatible:
         return JSONResponse(
             status_code=503,
@@ -200,6 +302,19 @@ async def ready() -> Response:
                 "required_schema_version": schema_guard_state.required_version,
                 "current_schema_version": schema_guard_state.current_version,
                 "detail": schema_guard_state.reason,
+            },
+        )
+    from src.runtime.app_container import get_app_container
+
+    backend_status = get_app_container().get_repository_backend_status()
+    if not backend_status.resolved or not backend_status.healthy:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "reason": "REPOSITORY_BACKEND_UNAVAILABLE",
+                "repository_backend_environment": backend_status.environment,
+                "repository_backend_reason_code": backend_status.reason_code,
             },
         )
     return JSONResponse(status_code=200, content={"ok": True})
@@ -296,6 +411,13 @@ def start_worker() -> None:
             "Schema guard enabled but SQL Server connection is not configured (mode=unset); "
             "skipping startup compatibility check."
         )
+    configure_metrics_registry_limits(settings)
+    from src.runtime.app_container import get_app_container
+
+    container = get_app_container()
+    wire_operational_metrics_collector(container, settings)
+    wire_recovery_scheduler(container, settings)
+
     if not settings.embedded_worker_enabled:
         logger.info(
             "Embedded worker disabled (EMBEDDED_WORKER_ENABLED=false); "
@@ -305,3 +427,8 @@ def start_worker() -> None:
     t = threading.Thread(target=_worker_thread_fn, daemon=True)
     t.start()
     logger.info("Worker thread started")
+
+
+@app.on_event("shutdown")
+def stop_observability_runtime() -> None:
+    stop_recovery_scheduler()

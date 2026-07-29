@@ -72,13 +72,16 @@ def resolve_local_source(
     run_dir: Path,
     source_paths: dict[str, Path] | None = None,
     required_override: bool | None = None,
+    fencing_token: int | None = None,
 ) -> ResolvedArtifactSource:
     required = (
         required_override
         if required_override is not None
         else is_required_artifact_kind(artifact_kind)
     )
-    destination_key = worker_output_storage_keys(job_id, run_segment)[artifact_kind]
+    destination_key = worker_output_storage_keys(
+        job_id, run_segment, fencing_token=fencing_token
+    )[artifact_kind]
     content_type = _CONTENT_TYPES.get(artifact_kind, "application/octet-stream")
     source_type = classify_source_type(artifact_kind)
     filename = _KIND_TO_FILENAME.get(artifact_kind)

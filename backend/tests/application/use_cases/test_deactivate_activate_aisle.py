@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import pytest
 
 from src.application.errors import ActiveJobExistsError
-from src.application.ports.repositories import AisleRepository, JobRepository
+from src.application.ports.repositories import AisleRepository
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.aisles.activate_aisle import (
     ActivateAisleCommand,
@@ -20,6 +20,7 @@ from src.application.use_cases.aisles.deactivate_aisle import (
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.jobs.entities import Job, JobStatus
+from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
 class FixedClock:
@@ -52,7 +53,7 @@ class StubAisleRepo(AisleRepository):
         return None
 
 
-class StubJobRepo(JobRepository):
+class StubJobRepo(JobRepositoryTestBase):
     def __init__(self) -> None:
         self._store: dict[str, Job] = {}
 

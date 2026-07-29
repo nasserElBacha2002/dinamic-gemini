@@ -12,6 +12,12 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Allow the Phase 0 audit shared package (root `lib/` stays ignored).
+!scripts/audit/lib/
+!scripts/audit/lib/**
+# Re-ignore bytecode under the force-included audit lib package.
+scripts/audit/lib/**/__pycache__/
+scripts/audit/lib/**/*.py[cod]
 parts/
 sdist/
 var/
@@ -78,14 +84,29 @@ data/
 # Mobile / Android Gradle caches (never commit)
 **/.gradle/
 
-!audit/raw/.gitkeep
-!audit/raw/LATEST_RUN.txt
-!audit/raw/runs/
-!audit/raw/runs/**
+# Formal audit docs (versioned). Machine outputs below are regenerated.
 !audit/audit-report.md
 !audit/audit-backlog.md
-!audit/audit-summary.md
-!audit/audit-status.json
+!audit/security-exceptions.json
+
+# Generated audit machine outputs — do not commit (regenerate via scripts/audit/).
+audit/audit-status.json
+audit/audit-summary.md
+audit/raw/**
+!audit/raw/.gitkeep
+
+# Ephemeral Phase 0 git/command dumps (reports/notes stay tracked).
+audit-results/phase-0/phase0-*.txt
+audit-results/phase-1/phase1-*.txt
+audit-results/phase-4/phase4-*.txt
+audit-results/phase-4/*-raw.json
+audit-results/phase-4/*-stdout.txt
+audit-results/phase-4/*-stderr.txt
+audit-results/phase-4/*-npm-audit.json
+
+# Phase 4 security hardening dumps (repo root; never commit)
+phase4-security-hardening-*.txt
+**/phase4-security-hardening-*.txt
 
 # Test coverage
 htmlcov/
@@ -131,6 +152,16 @@ implementation-corrections-diffstat.txt
 implementation-corrections-status.txt
 implementation-corrections-test-results.txt
 implementation-corrections-*.txt
+phase2-source-of-truth-security-*.txt
+**/phase2-source-of-truth-security-*.txt
+phase3-lease-fencing-*.txt
+**/phase3-lease-fencing-*.txt
+phase5-observability-operations-*.txt
+**/phase5-observability-operations-*.txt
+phase6-architecture-refactor-*.txt
+**/phase6-architecture-refactor-*.txt
+phase7-release-hardening-*.txt
+**/phase7-release-hardening-*.txt
 authoritative-local-code-scan-intermediate-*.txt
 authoritative-local-code-scan-intermediate-*.md
 legacy-processing-cleanup-*.txt

@@ -42,6 +42,82 @@ class OnDemandWorkerLaunchService(WorkerLaunchService):
     """Launch a single-job worker process using the current runtime image/interpreter."""
 
     def launch(self, job_id: str) -> str:
+        return self._spawn(job_id)
+
+    def launch_job_if_not_launched(self, job_id: str, *, idempotency_key: str) -> str:
+        """Suppress duplicate spawns using job state + an exclusive launch claim file.
+
+        The claim file is durable under ``output_dir/<job_id>/`` so concurrent schedulers
+        and process restarts observe the same key (not a process-local lock alone).
+        """
+        existing = self._existing_live_execution_id(job_id)
+        if existing:
+            return existing
+
+        settings = load_settings()
+        output_dir = Path(settings.output_dir)
+        claim_dir = output_dir / job_id
+        claim_dir.mkdir(parents=True, exist_ok=True)
+        safe_key = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in idempotency_key)[
+            :120
+        ]
+        claim_path = claim_dir / f".launch-claim-{safe_key or 'default'}"
+        try:
+            fd = os.open(str(claim_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            existing = self._existing_live_execution_id(job_id)
+            if existing:
+                return existing
+            # Claim held but job not live yet — wait briefly then re-check / fail closed.
+            time.sleep(WORKER_STARTUP_GRACE_SEC)
+            existing = self._existing_live_execution_id(job_id)
+            if existing:
+                return existing
+            raise RuntimeError(
+                f"Launch claim exists for job_id={job_id} key={idempotency_key!r} "
+                "but no live execution_id; another launcher may still be spawning"
+            )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as claim:
+                claim.write(f"key={idempotency_key}\n")
+                claim.flush()
+            existing = self._existing_live_execution_id(job_id)
+            if existing:
+                return existing
+            execution_id = self._spawn(job_id)
+            claim_path.write_text(
+                f"key={idempotency_key}\nexecution_id={execution_id}\n",
+                encoding="utf-8",
+            )
+            return execution_id
+        except Exception:
+            try:
+                claim_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
+    def _existing_live_execution_id(self, job_id: str) -> str | None:
+        try:
+            from src.domain.jobs.entities import JobStatus
+            from src.runtime.v3_deps import get_job_repo
+
+            job = get_job_repo().get_by_id(job_id)
+        except Exception:
+            logger.warning("launch idempotency job lookup failed job_id=%s", job_id, exc_info=True)
+            return None
+        if job is None:
+            return None
+        if job.status in (
+            JobStatus.QUEUED,
+            JobStatus.STARTING,
+            JobStatus.RUNNING,
+            JobStatus.CANCEL_REQUESTED,
+        ) and (job.execution_id or "").strip():
+            return str(job.execution_id).strip()
+        return None
+
+    def _spawn(self, job_id: str) -> str:
         execution_id = str(uuid.uuid4())
         settings = load_settings()
         command = self._build_command()
@@ -50,6 +126,9 @@ class OnDemandWorkerLaunchService(WorkerLaunchService):
         _merge_worker_pythonpath(env)
         env["DINAMIC_JOB_ID"] = job_id
         env["DINAMIC_EXECUTION_ID"] = execution_id
+        correlation_id = self._resolve_correlation_id(job_id)
+        if correlation_id:
+            env["DINAMIC_CORRELATION_ID"] = correlation_id
         cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         output_dir = Path(settings.output_dir)
         launch_log_path = output_dir / job_id / WORKER_LAUNCH_LOG_NAME
@@ -133,3 +212,24 @@ class OnDemandWorkerLaunchService(WorkerLaunchService):
                 )
             return parsed
         return shlex.split(raw_command)
+
+    def _resolve_correlation_id(self, job_id: str) -> str | None:
+        try:
+            from src.application.use_cases.recovery.recover_stale_job import (
+                CORRELATION_PAYLOAD_KEY,
+                job_correlation_id,
+            )
+            from src.runtime.v3_deps import get_job_repo
+
+            job = get_job_repo().get_by_id(job_id)
+            if job is None:
+                return None
+            # Prefer explicit payload; helper generates only if missing — for env, only set if known.
+            if isinstance(job.payload_json, dict):
+                raw = job.payload_json.get(CORRELATION_PAYLOAD_KEY)
+                if isinstance(raw, str) and raw.strip():
+                    return raw.strip()
+            return job_correlation_id(job)
+        except Exception:
+            logger.warning("worker launch correlation resolve failed job_id=%s", job_id, exc_info=True)
+            return None

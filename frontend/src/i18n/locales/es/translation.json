@@ -1147,6 +1147,8 @@
     "retry_job": "No se pudo reintentar la ejecución",
     "review_action_failed": "Falló la acción de revisión",
     "start_processing": "No se pudo iniciar el procesamiento",
+    "supplier_prompt_required": "Este pasillo tiene proveedor y el fallback externo está activo: necesitás un prompt de proveedor activo con instrucciones. Configuralo en Cliente → Proveedor → Prompts, o desactivá EXTERNAL_FALLBACK_PER_IMAGE_ENABLED.",
+    "supplier_not_resolved": "No se pudo resolver el proveedor del pasillo para seleccionar el prompt de fallback externo.",
     "unexpected": "Error inesperado",
     "upload_aisle_source_assets": "Falló la subida de activos del pasillo",
     "upload_failed": "La subida falló",
@@ -2147,6 +2149,7 @@
   },
   "results": {
     "browse_run": "Seleccionar corrida",
+    "browse_run_legacy_or_empty": "Legacy / sin run operacional",
     "cannot_exceed_max": "No puede superar el máximo",
     "clear_filter": "Clear filter",
     "close_preview": "Close preview",

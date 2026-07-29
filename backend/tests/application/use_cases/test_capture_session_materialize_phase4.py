@@ -53,6 +53,7 @@ from src.infrastructure.repositories.memory_source_asset_repository import (
     MemorySourceAssetRepository,
 )
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+from tests.support.access_principal_helpers import platform_principal, policy_for
 
 
 class _FixedClock(Clock):
@@ -140,11 +141,13 @@ def _prepare_assignment_proposed_session(tmp_path):
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     ).execute(
         inventory_id=inv_id,
         aisle_id=aisle_id,
         session_id=session.id,
         files=[UploadedFile("a.jpg", BytesIO(b"materialize-me"), "image/jpeg")],
+        principal=platform_principal(),
     )
     CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock).execute(
         inventory_id=inv_id, aisle_id=aisle_id, session_id=session.id
@@ -339,6 +342,7 @@ def test_materialize_failure_rolls_back_links_and_assets(tmp_path) -> None:
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     ).execute(
         inventory_id=inv_id,
         aisle_id=aisle_id,
@@ -357,6 +361,7 @@ def test_materialize_failure_rolls_back_links_and_assets(tmp_path) -> None:
                 last_modified_at=datetime(2026, 5, 1, 12, 0, 2, tzinfo=timezone.utc),
             ),
         ],
+        principal=platform_principal(),
     )
     CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock).execute(
         inventory_id=inv_id, aisle_id=aisle_id, session_id=session.id

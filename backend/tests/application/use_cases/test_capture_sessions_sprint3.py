@@ -53,6 +53,7 @@ from src.infrastructure.repositories.memory_capture_session_repository import (
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+from tests.support.access_principal_helpers import platform_principal, policy_for
 
 
 class _FixedClock(Clock):
@@ -124,11 +125,13 @@ def test_preview_rejected_before_close(tmp_path) -> None:
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     ).execute(
         inventory_id=inv_id,
         aisle_id=aisle_id,
         session_id=s.id,
         files=[UploadedFile("a.jpg", BytesIO(b"abc"), "image/jpeg")],
+        principal=platform_principal(),
     )
     preview_uc = ComputeCaptureSessionAssignmentPreviewUseCase(
         session_repo=session_repo,
@@ -176,11 +179,13 @@ def test_preview_moves_session_and_offset_invalidates(tmp_path) -> None:
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        access_policy=policy_for(inv_repo, aisle_repo=aisle_repo, capture_session_repo=session_repo),
     ).execute(
         inventory_id=inv_id,
         aisle_id=aisle_id,
         session_id=s.id,
         files=[UploadedFile("a.jpg", BytesIO(b"unique-bytes-a"), "image/jpeg")],
+        principal=platform_principal(),
     )
     CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock).execute(
         inventory_id=inv_id, aisle_id=aisle_id, session_id=s.id

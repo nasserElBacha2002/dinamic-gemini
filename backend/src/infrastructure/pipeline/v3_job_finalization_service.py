@@ -37,6 +37,7 @@ from src.domain.jobs.finalization import (
     FinalizationErrorCode,
     LastCompletedFinalizationStep,
 )
+from src.domain.jobs.lease import JobLease, JobLeaseLostError
 from src.domain.traceability_artifact.errors import TraceabilityArtifactError
 from src.infrastructure.pipeline.finalization_errors import (
     ArtifactPublishError,
@@ -87,6 +88,7 @@ class V3JobFinalizationRequest:
     cancel_event_emitted: dict[str, bool]
     input_type: str | None = None
     canonical_traceability_expected: bool = False
+    lease: JobLease | None = None
 
 
 class V3JobFinalizationService:
@@ -119,15 +121,54 @@ class V3JobFinalizationService:
 
     def finalize_success(self, req: V3JobFinalizationRequest) -> bool:
         """Persist domain, upload durables, finalize success. True => caller must return True (failure)."""
+        if req.lease is None:
+            raise ValueError(
+                f"V3JobFinalizationRequest requires an active JobLease for modern jobs "
+                f"(job_id={req.job_id})"
+            )
+        # Validate lease before tracker.begin() — LEASE_LOST must not write metadata/FAIL.
+        pre = self._job_repo.assert_lease(req.lease, now=self._clock.now())
+        if not pre.applied:
+            logger.info(
+                "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s "
+                "reason=%s stage=finalization_pre_begin",
+                req.job_id,
+                req.lease.owner_id,
+                req.lease.fencing_token,
+                pre.reason,
+            )
+            return True
         tracker = JobFinalizationTracker(
             job_repo=self._job_repo,
             clock=self._clock,
             job_id=req.job_id,
+            lease=req.lease,
             stage_recorder=self._stage_recorder,
         )
-        tracker.begin()
+        try:
+            tracker.begin()
+        except JobLeaseLostError as lease_exc:
+            logger.info(
+                "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s "
+                "reason=%s stage=finalization_begin",
+                req.job_id,
+                lease_exc.owner_id,
+                lease_exc.fencing_token,
+                lease_exc.reason,
+            )
+            return True
         try:
             return self._finalize_success_body(req, tracker)
+        except JobLeaseLostError as lease_exc:
+            logger.info(
+                "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s "
+                "reason=%s stage=finalization",
+                req.job_id,
+                lease_exc.owner_id,
+                lease_exc.fencing_token,
+                lease_exc.reason,
+            )
+            return True
         except PipelineCancellationRequestedError as cancel_exc:
             if tracker.last_completed == LastCompletedFinalizationStep.DOMAIN_RESULTS_PERSISTED:
                 self._state.cancel_finalization_after_domain_commit(
@@ -137,6 +178,7 @@ class V3JobFinalizationService:
                     tracker=tracker,
                     exec_log=req.exec_log,
                     cancel_event_emitted=req.cancel_event_emitted,
+                    lease=req.lease,
                 )
             else:
                 self._state.cancel_job_and_aisle(
@@ -146,6 +188,7 @@ class V3JobFinalizationService:
                     exec_log=req.exec_log,
                     cancel_event_emitted=req.cancel_event_emitted,
                     tracker=tracker,
+                    lease=req.lease,
                 )
             return True
 
@@ -172,6 +215,7 @@ class V3JobFinalizationService:
                     model_name=(req.job.model_name or "").strip() or None,
                     prompt_composition=_prompt_composition_from_run_metadata(req.pipeline_result.run_metadata),
                     input_type=req.input_type,
+                    lease=req.lease,
                 )
             )
         except PipelineCancellationRequestedError:
@@ -219,6 +263,17 @@ class V3JobFinalizationService:
                 },
             )
             return True
+
+        if req.lease is not None:
+            assert_result = self._job_repo.assert_lease(req.lease, now=self._clock.now())
+            if not assert_result.applied:
+                raise JobLeaseLostError(
+                    "Lease lost before artifact publication",
+                    job_id=req.job_id,
+                    owner_id=req.lease.owner_id,
+                    fencing_token=req.lease.fencing_token,
+                    reason=assert_result.reason,
+                )
 
         logger.info(
             "v3_job_domain_persist_complete job_id=%s aisle_id=%s next_step=traceability_artifact_generation",
@@ -470,6 +525,7 @@ class V3JobFinalizationService:
                 tracker=tracker,
                 run_metadata=req.pipeline_result.run_metadata,
                 durable_artifacts=durable_meta,
+                lease=req.lease,
             )
         except Exception:
             logger.exception("v3_job_finalization_terminal_failed job_id=%s", req.job_id)
@@ -498,6 +554,7 @@ class V3JobFinalizationService:
                 run_segment=RUN_ID,
                 run_dir=req.run_dir,
                 required_kind_overrides=required_kind_overrides,
+                fencing_token=req.lease.fencing_token if req.lease is not None else None,
             )
         except ArtifactSourceStagingFailedError as exc:
             staging_code = getattr(exc, "error_code", "ARTIFACT_STAGING_FAILED")
@@ -627,6 +684,7 @@ class V3JobFinalizationService:
                     tracker=tracker,
                     run_metadata=req.pipeline_result.run_metadata,
                     durable_artifacts=dispatch_result.durable_meta,
+                    lease=req.lease,
                 )
             except Exception:
                 return True

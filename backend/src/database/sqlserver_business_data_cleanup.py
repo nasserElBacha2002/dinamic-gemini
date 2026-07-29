@@ -45,6 +45,12 @@ TABLES_FOR_REPORT: tuple[tuple[str, str], ...] = (
     ("dbo", "job_events"),
     ("dbo", "jobs"),
     ("dbo", "v3_jobs"),
+    ("dbo", "supplier_reference_annotations"),
+    ("dbo", "supplier_reference_images"),
+    ("dbo", "supplier_prompt_configs"),
+    ("dbo", "supplier_extraction_profiles"),
+    ("dbo", "client_suppliers"),
+    ("dbo", "clients"),
 )
 
 
@@ -141,10 +147,17 @@ def run_delete_pipeline(cur: Any) -> None:
         "product_records",
         "evidences",
         "aisle_code_scan_detections",
+        # Manual coverage FKs positions/jobs — must clear before positions / inventory_jobs.
+        "position_manual_image_coverage",
+        "position_versions",
         "positions",
         "final_count_records",
         "raw_labels",
         "normalized_labels",
+        # Children of source_assets (must clear before deleting assets).
+        "authoritative_local_code_scan_results",
+        "mobile_preliminary_detections",
+        "preliminary_detection_reconciliations",
         "source_assets",
     ):
         exec_if_table(cur, "dbo", tbl, f"DELETE FROM dbo.[{tbl}];")
@@ -177,6 +190,17 @@ def run_delete_pipeline(cur: Any) -> None:
 
     exec_if_table(cur, "dbo", "jobs", "DELETE FROM dbo.jobs;")
     exec_if_table(cur, "dbo", "v3_jobs", "DELETE FROM dbo.v3_jobs;")
+
+    # Client catalog (API wiring tests create clients; wipe on isolated test DB only).
+    for tbl in (
+        "supplier_reference_annotations",
+        "supplier_reference_images",
+        "supplier_prompt_configs",
+        "supplier_extraction_profiles",
+        "client_suppliers",
+        "clients",
+    ):
+        exec_if_table(cur, "dbo", tbl, f"DELETE FROM dbo.[{tbl}];")
 
 
 def validate_critical_tables_empty(cur: Any) -> dict[str, int]:

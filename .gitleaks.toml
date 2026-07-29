@@ -1,0 +1,62 @@
+# Gitleaks configuration — Phase 4 corrections (+ Phase 5/6 allowlists-only).
+# Prefer scanning the Git-tracked tree (see run_security_audit.sh).
+# Use [[allowlists]] only — [allowlist] is rejected by gitleaks >= 8.30.
+
+title = "dinamic-gemini"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Build artifacts, deps, local env, and audit machine outputs"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)\.venv/''',
+  '''(^|/)venv/''',
+  '''(^|/)output/''',
+  '''(^|/)backend/output/''',
+  '''(^|/)frontend/dist/''',
+  '''(^|/)\.next/''',
+  '''(^|/)coverage/''',
+  '''(^|/)htmlcov/''',
+  '''(^|/)\.pytest_cache/''',
+  '''(^|/)\.mypy_cache/''',
+  '''(^|/)\.ruff_cache/''',
+  '''(^|/)audit/raw/''',
+  '''(^|/)\.review/''',
+  '''(^|/)review/''',
+  '''(^|/)phase4-security-hardening-.*\.txt$''',
+  '''(^|/)implementation-corrections-.*\.txt$''',
+  '''\.env$''',
+  '''\.env\..*$''',
+]
+
+[[allowlists]]
+description = "Synthetic test fixtures and example env placeholders"
+paths = [
+  '''(^|/)backend/tests/''',
+  '''(^|/)frontend/tests/''',
+  '''(^|/)mobile/tests/''',
+  '''(^|/)scripts/audit/tests/''',
+  '''\.env\.example$''',
+  '''(^|/)secrets/.*\.example$''',
+  '''(^|/)secrets/gcp-service-account\.json\.example$''',
+  '''(^|/)audit-results/''',
+  '''(^|/)audit/security-exceptions\.json$''',
+]
+
+[[allowlists]]
+description = "Documented fake tokens used in tests/docs"
+regexTarget = "match"
+regexes = [
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjMifQ\.signaturepart''',
+  '''sk-test''',
+  '''sk-ant-test''',
+  '''sk-ds-test''',
+  '''sk-openai-test''',
+  '''expected-secret-key''',
+  '''SECRET_GEMINI_SHOULD_NOT_APPEAR''',
+  '''offline-test-key''',
+  '''test_api_key_123''',
+  '''test_key_123''',
+]

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
@@ -19,6 +19,7 @@ from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionSta
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter
 from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
+from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
 class _FixedClock(Clock):
@@ -29,7 +30,7 @@ class _FixedClock(Clock):
         return self._now
 
 
-class _MemJobRepo(JobRepository):
+class _MemJobRepo(JobRepositoryTestBase):
     def __init__(self) -> None:
         self._store: dict[str, Job] = {}
 
@@ -130,7 +131,35 @@ def _make_svc(
 
 
 def test_mark_running_sets_job_running_and_reconciles_inventory() -> None:
-    svc, job_repo, aisle_repo, now, reconciler = _make_svc()
+    from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+    from src.infrastructure.repositories.memory_inventory_repository import (
+        MemoryInventoryRepository,
+    )
+    from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+
+    now = datetime(2026, 1, 10, 12, 0, 0, tzinfo=timezone.utc)
+    clock = _FixedClock(now)
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository(aisle_repo=aisle_repo)
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    inv = Inventory(
+        id="inv-1",
+        name="Inv",
+        status=InventoryStatus.PROCESSING,
+        created_at=t0,
+        updated_at=t0,
+        processing_mode=InventoryProcessingMode.TEST,
+    )
+    inventory_repo = MemoryInventoryRepository()
+    inventory_repo.save(inv)
+    reconciler = MagicMock(spec=InventoryStatusReconciler)
+    svc = V3JobExecutionStateService(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+        clock=clock,
+        inventory_status_reconciler=reconciler,
+    )
     job = Job(
         id="job-1",
         job_type="process_aisle",
@@ -154,11 +183,14 @@ def test_mark_running_sets_job_running_and_reconciles_inventory() -> None:
     )
     aisle_repo.save(aisle)
 
-    svc.mark_running("job-1", aisle, now)
+    result = svc.mark_running("job-1", aisle, now, claim_owner_id="owner-1")
+    assert result.may_execute is True
+    assert result.outcome.value == "acquired"
 
     saved_job = job_repo.get_by_id("job-1")
     assert saved_job is not None
     assert saved_job.status == JobStatus.RUNNING
+    assert saved_job.claim_owner_id == "owner-1"
     assert saved_job.current_stage == "Pipeline"
     assert saved_job.current_substep == "startup_confirmed"
     saved_aisle = aisle_repo.get_by_id("aisle-1")

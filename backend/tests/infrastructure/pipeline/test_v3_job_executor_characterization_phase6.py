@@ -88,9 +88,13 @@ def _build_coordination_executor(
     *,
     job_id: str = "char-success",
     aisle_id: str = "aisle-1",
-) -> tuple[V3JobExecutor, InMemoryJobRepo, str, str]:
+) -> tuple[V3JobExecutor, object, str, str]:
     now = datetime(2026, 6, 17, 12, 0, 0, tzinfo=timezone.utc)
-    job_repo = InMemoryJobRepo()
+    from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+    from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository(aisle_repo=aisle_repo)
     job_repo.save(
         Job(
             id=job_id,
@@ -104,13 +108,12 @@ def _build_coordination_executor(
             execution_id="ex-char",
         )
     )
-    aisle_repo = InMemoryAisleRepo()
     aisle_repo.save(
         Aisle(
             id=aisle_id,
             inventory_id="inv-1",
             code="A01",
-            status=AisleStatus.CREATED,
+            status=AisleStatus.QUEUED,
             created_at=now,
             updated_at=now,
         )
@@ -371,6 +374,7 @@ def _build_outbox_executor_params(
         job_repo=harness.job_repo,
         clock=FixedClock(harness.now),
         job_id=harness.job_id,
+        lease=harness.lease(),
         stage_recorder=executor._stage_recorder,
     )
     tracker.begin()
@@ -392,6 +396,7 @@ def _build_outbox_executor_params(
         cancel_event_emitted={"requested": False, "detected": False, "cancelled": False},
         input_type="photos",
         canonical_traceability_expected=True,
+        lease=harness.lease(),
     )
     dispatcher_spy = MagicMock()
     executor._artifact_dispatcher = dispatcher_spy
@@ -566,7 +571,7 @@ def test_characterization_visual_reference_failure_metadata_before_fail_and_no_p
             id=aisle_id,
             inventory_id="inv-1",
             code="A01",
-            status=AisleStatus.CREATED,
+            status=AisleStatus.QUEUED,
             created_at=now,
             updated_at=now,
         )

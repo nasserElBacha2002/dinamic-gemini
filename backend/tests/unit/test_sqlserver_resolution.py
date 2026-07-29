@@ -28,6 +28,7 @@ def _clean_sql_env(monkeypatch: pytest.MonkeyPatch):
         "SQLSERVER_UID",
         "SQLSERVER_PWD",
         "SQLSERVER_DRIVER",
+        "SQLSERVER_TRUST_SERVER_CERTIFICATE",
     ):
         monkeypatch.delenv(key, raising=False)
     yield
@@ -83,9 +84,24 @@ def test_split_vars_stripped_and_built(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "UID=u" in cs
     assert "PWD=p" in cs
     assert "DRIVER={ODBC Driver 18 for SQL Server}" in cs
+    assert "TrustServerCertificate=yes" in cs
+    assert "Encrypt=yes" in cs
     cfg = resolve_sqlserver_connection_config()
     assert cfg.mode == "split_env"
     assert cfg.driver_resolution == "SQLSERVER_DRIVER"
+
+
+def test_split_vars_respect_trust_server_certificate_no(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SQLSERVER_SERVER", "localhost")
+    monkeypatch.setenv("SQLSERVER_DATABASE", "db1")
+    monkeypatch.setenv("SQLSERVER_UID", "u")
+    monkeypatch.setenv("SQLSERVER_PWD", "p")
+    monkeypatch.setenv("SQLSERVER_DRIVER", "ODBC Driver 18 for SQL Server")
+    monkeypatch.setenv("SQLSERVER_TRUST_SERVER_CERTIFICATE", "no")
+    cs, missing = resolve_sqlserver_effective_connection_string()
+    assert missing == ()
+    assert "TrustServerCertificate=no" in cs
+    assert "TrustServerCertificate=yes" not in cs
 
 
 def test_partial_split_reports_missing(monkeypatch: pytest.MonkeyPatch) -> None:

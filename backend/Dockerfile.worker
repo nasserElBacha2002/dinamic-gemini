@@ -1,4 +1,5 @@
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1.4
+FROM python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
 
 WORKDIR /app
 
@@ -38,38 +39,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+COPY docker/verify_worker_runtime_deps.py /tmp/verify_worker_runtime_deps.py
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    python - <<'PY'
-import pyodbc
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && python /tmp/verify_worker_runtime_deps.py \
+    && rm -f /tmp/verify_worker_runtime_deps.py
 
-drivers = {d.strip() for d in pyodbc.drivers() if d.strip()}
-required = {"ODBC Driver 18 for SQL Server"}
-print("pyodbc OK; ODBC drivers:", sorted(drivers))
-if not (drivers & required):
-    raise SystemExit(
-        "Build verification failed: ODBC Driver 18 for SQL Server not registered. "
-        f"Got: {sorted(drivers)}"
-    )
+# Non-root user (uid/gid 10001) before COPY so --chown avoids recursive chown.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/output \
+    && chown appuser:appuser /app /app/output
 
-# Phase 3 CODE_SCAN: verify pyzbar + libzbar0 are importable/loadable in the worker image.
-from pyzbar.pyzbar import decode as _pyzbar_decode  # noqa: F401
-print("pyzbar OK; libzbar0 loadable for CODE_SCAN worker path")
-
-# Phase 4 INTERNAL_OCR: verify pytesseract + tesseract binary + Spanish traineddata.
-import pytesseract
-_ver = str(pytesseract.get_tesseract_version())
-print(f"pytesseract OK; tesseract version={_ver}")
-_langs = {x.strip() for x in pytesseract.get_languages(config="") if x.strip()}
-if not ({"spa", "eng"} <= _langs):
-    raise SystemExit(
-        f"Build verification failed: tesseract languages must include spa and eng. Got: {sorted(_langs)}"
-    )
-print("tesseract spa+eng language packs available for INTERNAL_OCR worker path")
-# Negative probe at runtime requires worker restart; immutable image — no probe retries.
-PY
-
-COPY . .
+COPY --chown=appuser:appuser . .
+USER appuser
 
 CMD ["python", "-m", "src.jobs.run_worker"]

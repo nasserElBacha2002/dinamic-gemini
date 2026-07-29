@@ -54,6 +54,16 @@ class WorkerLaunchService(ABC):
         """Start worker execution for job_id and return an execution identifier."""
         ...
 
+    def launch_job_if_not_launched(self, job_id: str, *, idempotency_key: str) -> str:
+        """Idempotent launch: at most one live worker per job for a given key.
+
+        Default delegates to :meth:`launch`. Production adapters must suppress duplicate
+        subprocess/queue publishes when the job is already launched or another caller
+        holds the same ``idempotency_key``.
+        """
+        _ = idempotency_key
+        return self.launch(job_id)
+
 
 class AnalysisProvider(ABC):
     """Port for running analysis on an aisle's assets. Returns result per §9.4 (AnalysisResultPayload)."""

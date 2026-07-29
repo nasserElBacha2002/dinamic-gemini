@@ -35,6 +35,10 @@ from tests.support.worker_phase1.sql_cleanup import (
 )
 from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
 from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
+from tests.support.worker_phase2.sql_job_seed import (
+    seed_process_aisle_job,
+    sql_result_evidence_repo,
+)
 
 
 @pytest.fixture
@@ -76,11 +80,13 @@ def test_wkr_p1_t001_sql_partial_persist_characterization(sql_client_or_skip) ->
         aisle_repo.save(
             Aisle(aisle_id, inv_id, "WKR", AisleStatus.PROCESSING, now, now)
         )
+        seed_process_aisle_job(client, job_id=job_id, aisle_id=aisle_id, now=now)
 
         persist = build_persist_aisle_result_use_case(
             position_repo=pos_repo,
             product_record_repo=prod_repo,
             evidence_repo=ev_repo,
+            result_evidence_repo=sql_result_evidence_repo(client),
             aisle_repo=aisle_repo,
             raw_label_repo=raw_repo,
             normalized_label_repo=norm_repo,

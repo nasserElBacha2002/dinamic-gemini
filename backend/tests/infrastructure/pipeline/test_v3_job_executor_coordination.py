@@ -64,7 +64,7 @@ def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> N
             id=aisle_id,
             inventory_id="inv-1",
             code="A01",
-            status=AisleStatus.CREATED,
+            status=AisleStatus.QUEUED,
             created_at=now,
             updated_at=now,
         )
@@ -200,7 +200,7 @@ def test_execute_success_delegates_finalization_to_finalization_service(tmp_path
             id=aisle_id,
             inventory_id="inv-1",
             code="A01",
-            status=AisleStatus.CREATED,
+            status=AisleStatus.QUEUED,
             created_at=now,
             updated_at=now,
         )
@@ -337,7 +337,7 @@ def test_execute_invalid_hybrid_report_json_fails_job_and_skips_finalization(
             id=aisle_id,
             inventory_id="inv-1",
             code="A01",
-            status=AisleStatus.CREATED,
+            status=AisleStatus.QUEUED,
             created_at=now,
             updated_at=now,
         )
@@ -464,7 +464,7 @@ def test_execute_delegates_pipeline_cancellation_to_cancellation_coordinator(
             id=aisle_id,
             inventory_id="inv-1",
             code="A01",
-            status=AisleStatus.CREATED,
+            status=AisleStatus.QUEUED,
             created_at=now,
             updated_at=now,
         )
@@ -586,7 +586,7 @@ def test_execute_delegates_unexpected_failure_to_worker_failure_handler(
             id=aisle_id,
             inventory_id="inv-1",
             code="A01",
-            status=AisleStatus.CREATED,
+            status=AisleStatus.QUEUED,
             created_at=now,
             updated_at=now,
         )
@@ -713,7 +713,7 @@ def test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle(tmp_path: Pa
             id=aisle_id,
             inventory_id="inv-1",
             code="A02",
-            status=AisleStatus.CREATED,
+            status=AisleStatus.QUEUED,
             created_at=now,
             updated_at=now,
         )

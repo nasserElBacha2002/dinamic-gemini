@@ -81,6 +81,7 @@ def test_p2_p3_t014_sql_compare_and_set_promotion(sql_client_or_skip) -> None:
                 {},
                 now,
                 now,
+                lease_fencing_token=1,
             )
         )
         job_repo.save(
@@ -93,6 +94,7 @@ def test_p2_p3_t014_sql_compare_and_set_promotion(sql_client_or_skip) -> None:
                 {},
                 now + timedelta(minutes=5),
                 now + timedelta(minutes=5),
+                lease_fencing_token=1,
             )
         )
         assert promo.promote_for_success(aisle_id=aisle_id, candidate_job_id=job_new).outcome == PromotionOutcome.PROMOTED
@@ -157,13 +159,24 @@ def test_p2_p3_t016_sql_cleanup_protects_operational_job(sql_client_or_skip) -> 
 
     try:
         inv_repo.save(Inventory(inv_id, "P3", InventoryStatus.PROCESSING, now, now))
+        # Job must exist before aisle.operational_job_id FK is set.
+        job_repo.save(
+            Job(
+                job_id,
+                "aisle",
+                aisle_id,
+                "process_aisle",
+                JobStatus.SUCCEEDED,
+                {},
+                now,
+                now,
+                lease_fencing_token=1,
+            )
+        )
         aisle = Aisle(
             aisle_id, inv_id, "P3", AisleStatus.PROCESSED, now, now, operational_job_id=job_id
         )
         aisle_repo.save(aisle)
-        job_repo.save(
-            Job(job_id, "aisle", aisle_id, "process_aisle", JobStatus.SUCCEEDED, {}, now, now)
-        )
         result = cleanup.execute(
             CleanupJobResultsCommand(inventory_id=inv_id, aisle_id=aisle_id, job_id=job_id)
         )

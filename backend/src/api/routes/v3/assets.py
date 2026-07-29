@@ -21,6 +21,7 @@ from src.api.dependencies import (
     get_list_aisle_assets_use_case,
     get_result_context_resolver,
     get_upload_aisle_assets_use_case,
+    require_inventory_client_scope,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.asset_schemas import (
@@ -36,6 +37,7 @@ from src.api.services.v3_stored_artifact_access import (
     resolve_source_asset_file_response,
     resolve_source_asset_image_display,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import AisleNotFoundError
 from src.application.services.result_context_resolver import ResultContextResolver
@@ -63,9 +65,10 @@ def _normalized_heic_jpeg_path_for_asset(
     job_id: str | None,
     use_case: ListAisleAssetsUseCase,
     resolver: ResultContextResolver,
+    principal: AccessPrincipal,
 ) -> Path | None:
     """Resolve pipeline normalized JPEG for a HEIC asset (operational or explicit job slice)."""
-    aisle_row = use_case.get_validated_aisle(inventory_id, aisle_id)
+    aisle_row = use_case.get_validated_aisle(inventory_id, aisle_id, principal=principal)
     output_dir = Path(load_settings().output_dir)
     request_job_id = job_id.strip() if job_id and job_id.strip() else None
     return resolve_normalized_asset_path(
@@ -115,12 +118,15 @@ class AssetFileFailureReason(str, Enum):
 async def upload_aisle_assets(
     inventory_id: str,
     aisle_id: str,
+    # Auth dependency first: deny before ``read_uploaded_files_for_aisle_asset_upload`` spool.
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case: UploadAisleAssetsUseCase = Depends(get_upload_aisle_assets_use_case),
     files: list[UploadFile] = File(..., description="One or more image or video files"),
     upload_batch_id: str | None = Form(default=None),
     client_file_ids: list[str] | None = Form(default=None),
-    use_case: UploadAisleAssetsUseCase = Depends(get_upload_aisle_assets_use_case),
 ) -> UploadAisleAssetsResponse:
     """Upload one or more assets (photos/videos) to an aisle. Aisle transitions to assets_uploaded."""
+    # Client scope enforced by ``require_inventory_client_scope`` before application spool.
     uploaded: list[UploadedFile] = []
     try:
         uploaded = await read_uploaded_files_for_aisle_asset_upload(
@@ -137,6 +143,7 @@ async def upload_aisle_assets(
             aisle_id,
             uploaded,
             upload_batch_id=upload_batch_id,
+            principal=principal,
         )
         asset_responses = [asset_to_response(a) for a in batch.assets]
         uploaded_items = [
@@ -175,10 +182,11 @@ def list_aisle_assets(
     inventory_id: str,
     aisle_id: str,
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> list[SourceAssetResponse]:
     """List source assets for an aisle."""
     try:
-        assets = use_case.execute(inventory_id, aisle_id)
+        assets = use_case.execute(inventory_id, aisle_id, principal=principal)
         return [asset_to_response(a) for a in assets]
     except AisleNotFoundError as e:
         reraise_if_mapped(e)
@@ -204,11 +212,12 @@ def get_aisle_asset_file(
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
     resolver: ResultContextResolver = Depends(get_result_context_resolver),
     artifact_storage=Depends(get_artifact_storage),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> Response:
     """Serve the reference image/file for an aisle asset. HEIC/HEIF: serves normalized JPG when available (optional job_id)."""
     failure_reason: AssetFileFailureReason | None = None
     try:
-        assets = use_case.execute(inventory_id, aisle_id)
+        assets = use_case.execute(inventory_id, aisle_id, principal=principal)
     except AisleNotFoundError:
         failure_reason = AssetFileFailureReason.AISLE_NOT_FOUND
         logger.warning(
@@ -247,6 +256,7 @@ def get_aisle_asset_file(
                 job_id=job_id,
                 use_case=use_case,
                 resolver=resolver,
+                principal=principal,
             )
         except AisleNotFoundError:
             failure_reason = AssetFileFailureReason.AISLE_NOT_FOUND
@@ -298,10 +308,11 @@ def get_aisle_asset_image_display_url(
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
     resolver: ResultContextResolver = Depends(get_result_context_resolver),
     artifact_storage=Depends(get_artifact_storage),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> SourceAssetImageDisplayUrlResponse:
     """Return how to display the asset image: presigned URL or authenticated GET on ``.../file``."""
     try:
-        assets = use_case.execute(inventory_id, aisle_id)
+        assets = use_case.execute(inventory_id, aisle_id, principal=principal)
     except AisleNotFoundError:
         logger.warning(
             "Asset image-display-url: aisle_not_found inventory_id=%s aisle_id=%s asset_id=%s",
@@ -330,6 +341,7 @@ def get_aisle_asset_image_display_url(
                 job_id=job_id,
                 use_case=use_case,
                 resolver=resolver,
+                principal=principal,
             )
         except AisleNotFoundError:
             logger.warning(
@@ -378,10 +390,11 @@ def delete_aisle_source_asset(
     aisle_id: str,
     asset_id: str,
     use_case: DeleteAisleSourceAssetUseCase = Depends(get_delete_aisle_source_asset_use_case),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> None:
     """Remove one uploaded source asset for the aisle (DB row + stored object best-effort)."""
     try:
-        use_case.execute(inventory_id, aisle_id, asset_id)
+        use_case.execute(inventory_id, aisle_id, asset_id, principal=principal)
     except Exception as e:
         reraise_if_mapped(e)
         raise

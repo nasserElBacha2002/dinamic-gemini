@@ -8,7 +8,6 @@ from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, JobRepository
 from src.domain.aisle.entities import AisleStatus
 from src.domain.jobs.entities import Job, JobStatus
-from src.domain.jobs.finalization import FinalizationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -61,49 +60,38 @@ class JobStaleReconciler:
         if (now - reference).total_seconds() < self.stale_after_seconds:
             return job
 
-        job.status = JobStatus.FAILED
-        job.failure_code = STALE_FAILURE_CODE
-        job.failure_message = STALE_FAILURE_MESSAGE
-        job.error_message = STALE_FAILURE_MESSAGE
-        job.finished_at = now
-        job.updated_at = now
-
-        if job.finalization_status in (
-            FinalizationStatus.IN_PROGRESS,
-            FinalizationStatus.NOT_STARTED,
-        ):
-            job.finalization_status = FinalizationStatus.FAILED
-            if job.finalization_error_code is None:
-                job.finalization_error_code = STALE_FAILURE_CODE
-            if job.finalization_started_at is None:
-                job.finalization_started_at = now
-
-        self.job_repo.save(job)
-        self._reconcile_aisle_for_stale_job(job, now=now)
-
         logger.warning(
-            "stale_job_reconciled job_id=%s target_type=%s target_id=%s failure_code=%s",
+            "event=job_stale_detected job_id=%s aisle_id=%s owner=%s "
+            "heartbeat_at=%s stale_threshold=%s",
             job.id,
-            job.target_type,
-            job.target_id,
-            STALE_FAILURE_CODE,
+            job.target_id if job.target_type == "aisle" else None,
+            job.claim_owner_id or job.execution_id,
+            reference,
+            self.stale_after_seconds,
         )
-        return job
 
-    def _reconcile_aisle_for_stale_job(self, job: Job, *, now) -> None:
-        if self.aisle_repo is None:
-            return
-        if job.target_type != "aisle" or not job.target_id:
-            return
-        aisle = self.aisle_repo.get_by_id(job.target_id)
-        if aisle is None:
-            return
-        if aisle.status not in _AISLE_ACTIVE_STATUSES:
-            return
-        aisle.mark_failed(
-            now,
-            error_code=STALE_FAILURE_CODE,
-            error_message=STALE_FAILURE_MESSAGE,
-            retryable=True,
+        result = self.job_repo.try_reclaim_stale_job_and_reconcile_aisle(
+            job.id,
+            now=now,
+            stale_after_seconds=self.stale_after_seconds,
         )
-        self.aisle_repo.save(aisle)
+        if not result.won:
+            return self.job_repo.get_by_id(job.id) or job
+
+        try:
+            from src.observability.metrics.instruments import record_job_outcome
+
+            record_job_outcome(job_type=getattr(job, "job_type", None) or "aisle", outcome="stale")
+        except Exception:
+            logger.warning("event=job_stale_metric_failed job_id=%s", job.id, exc_info=True)
+        refreshed = result.job or self.job_repo.get_by_id(job.id) or job
+        logger.warning(
+            "event=job_stale_reclaimed job_id=%s aisle_id=%s previous_owner=%s "
+            "new_status=failed attempt=%s aisle_transition_applied=%s",
+            refreshed.id,
+            refreshed.target_id if refreshed.target_type == "aisle" else None,
+            refreshed.claim_owner_id or refreshed.execution_id,
+            refreshed.attempt_count,
+            result.aisle_transition_applied,
+        )
+        return refreshed

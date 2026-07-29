@@ -53,6 +53,7 @@ import {
   sortResultsByPriority,
   getInitialFilterFromReturnState,
 } from '../features/results';
+import { resolveBrowseRunJobIds } from '../features/results/resolveBrowseRunJobId';
 import {
   aisleResultsSearchParamsEqual,
   areAisleResultsFiltersEqual,
@@ -222,17 +223,20 @@ export default function AislePositionsPage() {
   const isTestInventory = inventory?.processing_mode === 'test';
 
   /**
-   * Concrete run for positions list + URL when jobs exist: valid `?jobId=` if listed, else
-   * `operational_job_id` from listAisleJobs when listed, else first job. Operational pointer is API-owned;
-   * promote flow updates it — we do not persist a separate “default run” client-side.
+   * Browse selection: URL explicit → operational (display) → null (backend SoT).
+   * Never falls back to `jobs[0]`.
    */
-  const pickedRunJobId = useMemo(() => {
-    if (jobs.length === 0) return null;
-    const url = jobIdParam?.trim();
-    if (url && jobs.some((j) => j.id === url)) return url;
-    if (operationalJobId && jobs.some((j) => j.id === operationalJobId)) return operationalJobId;
-    return jobs[0]?.id ?? null;
-  }, [jobs, operationalJobId, jobIdParam]);
+  const browseRun = useMemo(
+    () =>
+      resolveBrowseRunJobIds({
+        jobs,
+        urlJobId: jobIdParam,
+        operationalJobId,
+      }),
+    [jobs, operationalJobId, jobIdParam]
+  );
+  const pickedRunJobId = browseRun.displayJobId;
+  const explicitBrowseJobId = browseRun.explicitJobId;
 
   const blockPositionsForTestNoJobs = Boolean(
     isTestInventory && aisleJobsQuery.isFetched && !aisleJobsQuery.isLoading && jobs.length === 0
@@ -247,11 +251,12 @@ export default function AislePositionsPage() {
 
   const positionsListQuery = useMemo<AislePositionsListQuery>(() => {
     const base: AislePositionsListQuery = { ...AISLE_RESULTS_LIST_QUERY };
-    if (aisleJobsQuery.isFetched && pickedRunJobId) {
-      return { ...base, job_id: pickedRunJobId };
+    // Only pass job_id for explicit operator/URL selection; otherwise backend resolves SoT.
+    if (aisleJobsQuery.isFetched && browseRun.passExplicitJobIdToApi && explicitBrowseJobId) {
+      return { ...base, job_id: explicitBrowseJobId };
     }
     return base;
-  }, [aisleJobsQuery.isFetched, pickedRunJobId]);
+  }, [aisleJobsQuery.isFetched, browseRun.passExplicitJobIdToApi, explicitBrowseJobId]);
   const aisle = useMemo(
     () => aislesQuery.data?.items?.find((a) => a.id === aisleId) ?? null,
     [aislesQuery.data?.items, aisleId]
@@ -366,7 +371,8 @@ export default function AislePositionsPage() {
   const navigateToAnalyticsCompare = useCallback(() => {
     if (!inventoryId || !aisleId) return;
     if (jobs.length < 2) return;
-    const a = visibleJobId ?? jobs[0]?.id ?? '';
+    // Prefer resolved visible/operational context; never invent jobs[0] as SoT.
+    const a = visibleJobId ?? operationalJobId ?? '';
     const b = jobs.find((j) => j.id !== a)?.id ?? '';
     if (!a || !b || a === b) return;
     const params = new URLSearchParams();
@@ -374,7 +380,7 @@ export default function AislePositionsPage() {
     params.set('jobIds', `${a},${b}`);
     params.set('baseline', a);
     navigate(`${pathToInventoryAnalyticsCompareMany(inventoryId)}?${params.toString()}`);
-  }, [aisleId, inventoryId, jobs, navigate, visibleJobId]);
+  }, [aisleId, inventoryId, jobs, navigate, operationalJobId, visibleJobId]);
 
   useEffect(() => {
     const key = `${inventoryId ?? ''}-${aisleId ?? ''}`;
@@ -393,16 +399,21 @@ export default function AislePositionsPage() {
     routeIdentityRef.current = key;
   }, [inventoryId, aisleId, setSearchParams]);
 
-  /** Keep URL aligned with the concrete run used for fetching (valid/missing jobId → canonical pick). */
+  /**
+   * URL sync: only persist explicit operator selections.
+   * Do not write operational/default picks into `?jobId=` (that would force explicit SoT).
+   * Clear stale URL ids that are not in the jobs list.
+   */
   useEffect(() => {
     if (!inventoryId || !aisleId) return;
     if (!aisleJobsQuery.isFetched) return;
-    if (jobs.length === 0 || !pickedRunJobId) return;
-    if (jobIdParam === pickedRunJobId) return;
+    const url = jobIdParam?.trim() || '';
+    if (!url) return;
+    if (jobs.some((j) => j.id === url)) return;
     setSearchParams(
       (prev) => {
         const p = new URLSearchParams(prev);
-        p.set('jobId', pickedRunJobId);
+        p.delete('jobId');
         return p;
       },
       { replace: true }
@@ -412,8 +423,7 @@ export default function AislePositionsPage() {
     aisleJobsQuery.isFetched,
     inventoryId,
     jobIdParam,
-    jobs.length,
-    pickedRunJobId,
+    jobs,
     setSearchParams,
   ]);
 
@@ -813,7 +823,8 @@ export default function AislePositionsPage() {
             setExportingCsv(true);
             try {
               await exportAisleOperationalCsv(inventoryId, aisleId, {
-                jobId: pickedRunJobId ?? jobIdParam,
+                // Same resolved context as the visible table (backend resultJobId).
+                jobId: visibleJobId ?? pickedRunJobId ?? jobIdParam,
               });
             } catch (e) {
               showErrorSnackbar(e, 'results');

@@ -64,6 +64,8 @@ class Job:
     failure_code: str | None = None
     failure_message: str | None = None
     execution_id: str | None = None
+    #: Worker process that acquired STARTING→RUNNING (Phase 1 corrections). Distinct from execution_id.
+    claim_owner_id: str | None = None
     # Phase 1 — transitional indexed metadata for future multi-provider work; not a runtime provider abstraction.
     provider_name: str | None = None
     model_name: str | None = None
@@ -93,3 +95,7 @@ class Job:
     finalization_completed_at: datetime | None = None
     domain_persisted_at: datetime | None = None
     artifacts_published_at: datetime | None = None
+    # Phase 3 — lease fencing (monotonic token + expiry). Owner reuses claim_owner_id.
+    lease_fencing_token: int = 0
+    lease_expires_at: datetime | None = None
+    lease_acquired_at: datetime | None = None

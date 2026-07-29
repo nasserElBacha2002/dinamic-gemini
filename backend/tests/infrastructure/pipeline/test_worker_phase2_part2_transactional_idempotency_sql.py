@@ -41,6 +41,10 @@ from tests.support.worker_phase2.duplicate_detection import (
     entity_uid_from_position,
 )
 from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_phase2.sql_job_seed import (
+    seed_process_aisle_job,
+    sql_result_evidence_repo,
+)
 from tests.support.worker_phase2.sql_verification import verify_sql_scope_fully_removed
 
 
@@ -118,6 +122,7 @@ def _build_sql_persist(client, *, inv_id, aisle_id, now):
         position_repo=pos_repo,
         product_record_repo=prod_repo,
         evidence_repo=ev_repo,
+        result_evidence_repo=sql_result_evidence_repo(client),
         aisle_repo=aisle_repo,
         raw_label_repo=raw_repo,
         normalized_label_repo=norm_repo,
@@ -142,6 +147,7 @@ def test_p2_p2_t010_sql_rollback_after_deletion_preserves_snapshot(sql_client_or
     try:
         inv_repo.save(Inventory(inv_id, "P2P2", InventoryStatus.PROCESSING, now, now))
         aisle_repo.save(Aisle(aisle_id, inv_id, "P2", AisleStatus.PROCESSING, now, now))
+        seed_process_aisle_job(client, job_id=job_id, aisle_id=aisle_id, now=now)
 
         cmd = PersistAisleResultCommand(
             aisle_id=aisle_id,
@@ -160,6 +166,7 @@ def test_p2_p2_t010_sql_rollback_after_deletion_preserves_snapshot(sql_client_or
             position_repo=pos_repo,
             product_record_repo=prod_repo,
             evidence_repo=ev_repo,
+            result_evidence_repo=sql_result_evidence_repo(client),
             aisle_repo=aisle_repo,
             raw_label_repo=raw_repo,
             normalized_label_repo=norm_repo,
@@ -202,6 +209,7 @@ def test_p2_p2_t011_sql_identical_re_persist_is_idempotent(sql_client_or_skip) -
     try:
         inv_repo.save(Inventory(inv_id, "P2P2", InventoryStatus.PROCESSING, now, now))
         aisle_repo.save(Aisle(aisle_id, inv_id, "P2", AisleStatus.PROCESSING, now, now))
+        seed_process_aisle_job(client, job_id=job_id, aisle_id=aisle_id, now=now)
         cmd = PersistAisleResultCommand(
             aisle_id=aisle_id,
             job_id=job_id,
@@ -243,6 +251,7 @@ def test_p2_p2_t012_sql_changed_report_replaces_snapshot(sql_client_or_skip) -> 
     try:
         inv_repo.save(Inventory(inv_id, "P2P2", InventoryStatus.PROCESSING, now, now))
         aisle_repo.save(Aisle(aisle_id, inv_id, "P2", AisleStatus.PROCESSING, now, now))
+        seed_process_aisle_job(client, job_id=job_id, aisle_id=aisle_id, now=now)
         persist.execute(
             PersistAisleResultCommand(
                 aisle_id=aisle_id,
@@ -304,6 +313,7 @@ def test_p2_p2_c013_polymorphic_evidence_preserved_sql(sql_client_or_skip) -> No
     try:
         inv_repo.save(Inventory(inv_id, "P2P2", InventoryStatus.PROCESSING, now, now))
         aisle_repo.save(Aisle(aisle_id, inv_id, "P2", AisleStatus.PROCESSING, now, now))
+        seed_process_aisle_job(client, job_id=job_id, aisle_id=aisle_id, now=now)
         pos_repo.save(
             Position(
                 id=shared_id,

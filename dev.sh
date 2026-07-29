@@ -23,6 +23,13 @@ if [[ -f "${ROOT}/.env" ]]; then
   done < "${ROOT}/.env"
 fi
 
+# Local dev defaults: without APP_ENV the runtime resolves UNKNOWN and hosted CORS
+# rules reject http://localhost (Phase 4). Prefer explicit .env APP_ENV=local|development.
+if [[ -z "${APP_ENV:-}" && -z "${V3_RUNTIME_ENVIRONMENT:-}" && -z "${DINAMIC_RUNTIME_PROFILE:-}" && -z "${ENVIRONMENT:-}" ]]; then
+  export APP_ENV=local
+  echo "[dev] APP_ENV unset → defaulting to local"
+fi
+
 # Docker uses /app/secrets/...; local dev uses repo secrets/ (same file, host path).
 if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" && ! -f "${GOOGLE_APPLICATION_CREDENTIALS}" ]]; then
   case "${GOOGLE_APPLICATION_CREDENTIALS}" in

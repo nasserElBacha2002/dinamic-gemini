@@ -71,6 +71,30 @@ class HealthResponse(BaseModel):
     required_schema_version: Optional[str] = None
     current_schema_version: Optional[str] = None
     schema_reason: Optional[str] = None
+    repository_backend: Optional[str] = Field(
+        default=None,
+        description="Active v3 repository backend: sql | memory_only | memory_fallback.",
+    )
+    repository_backend_environment: Optional[str] = Field(
+        default=None,
+        description="Classified runtime environment used for repository-backend policy.",
+    )
+    fallback_activated: Optional[bool] = Field(
+        default=None,
+        description="True when repository backend is memory_fallback after SQL probe failure.",
+    )
+    repository_backend_resolved: bool = Field(
+        default=False,
+        description="True when the repository backend resolved successfully (see /ready for the gate).",
+    )
+    repository_backend_healthy: bool = Field(
+        default=False,
+        description="True when the resolved repository backend is usable for this environment.",
+    )
+    repository_backend_reason_code: Optional[str] = Field(
+        default=None,
+        description="Fixed status code explaining an unresolved/unhealthy repository backend; never a secret or raw exception message.",
+    )
 
 
 class EntityListItem(BaseModel):

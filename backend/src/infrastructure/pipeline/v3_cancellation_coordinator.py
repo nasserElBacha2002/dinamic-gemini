@@ -56,6 +56,7 @@ class V3CancellationCoordinator:
         error: PipelineCancellationRequestedError,
         exec_log: ExecutionLogWriter,
         cancel_event_emitted: dict[str, bool],
+        lease=None,
     ) -> bool:
         """Cancel job and aisle after cooperative cancellation before domain persistence commits."""
         logger.info("v3 job %s cancellation detected cooperatively: %s", job_id, error)
@@ -65,5 +66,6 @@ class V3CancellationCoordinator:
             str(error),
             exec_log=exec_log,
             cancel_event_emitted=cancel_event_emitted,
+            lease=lease,
         )
         return True

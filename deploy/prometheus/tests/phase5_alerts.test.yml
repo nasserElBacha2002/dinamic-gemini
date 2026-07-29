@@ -1,0 +1,46 @@
+# promtool test rules — Phase 5 alert expressions
+rule_files:
+  - ../dinamic-phase5-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'job_expired_running_leases'
+        values: "0 0 1 1 1 1 1 1 1 1"
+      - series: 'jobs_in_state{status="queued",job_type="process_aisle"}'
+        values: "10 10 10 60 60 60 60 60 60 60"
+      - series: 'http_response_errors_total{status_class="5xx"}'
+        values: "0+10x9"
+      - series: 'http_requests_total'
+        values: "0+100x9"
+      - series: 'stale_recovery_scheduler_runs_total{outcome="error"}'
+        values: "0+5x40"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: JobExpiredRunningLeases
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "RUNNING jobs with expired leases detected"
+              runbook_url: "audit-results/phase-5/operational-runbooks.md#job-stuck"
+      - eval_time: 9m
+        alertname: QueueDepthHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              status: queued
+              job_type: process_aisle
+            exp_annotations:
+              summary: "Queued process_aisle jobs exceed warn threshold (50)"
+              runbook_url: "audit-results/phase-5/operational-runbooks.md#queue-depth"
+      - eval_time: 35m
+        alertname: RecoverySchedulerFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Stale job recovery scheduler error iterations elevated"
+              runbook_url: "audit-results/phase-5/operational-runbooks.md#recovery"

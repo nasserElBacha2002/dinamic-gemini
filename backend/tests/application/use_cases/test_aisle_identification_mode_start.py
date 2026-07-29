@@ -32,6 +32,7 @@ from tests.application.use_cases.test_aisle_processing import (
     StubWorkerLaunchService,
     make_stale_reconciler,
 )
+from tests.support.access_principal_helpers import platform_principal, policy_for
 
 
 class StubClientRepo:
@@ -93,6 +94,7 @@ def _build_use_case(
         ),
         stale_reconciler=make_stale_reconciler(job_repo, clock),
         client_repo=client_repo,
+        access_policy=policy_for(inv_repo, aisle_repo),
     )
     return use_case, job_repo, aisle_repo
 
@@ -112,6 +114,7 @@ def test_create_job_with_request_code_scan(monkeypatch: pytest.MonkeyPatch) -> N
             inventory_id="inv1",
             aisle_id="a1",
             requested_identification_mode="CODE_SCAN",
+            principal=platform_principal(),
         )
     )
     assert result.identification_mode == "CODE_SCAN"
@@ -141,7 +144,7 @@ def test_create_job_inherits_aisle_then_snapshot_immutable(monkeypatch: pytest.M
         identification_mode=AisleIdentificationMode.INTERNAL_OCR,
     )
     uc, job_repo, aisle_repo = _build_use_case(inventory=inv, aisle=aisle)
-    result = uc.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    result = uc.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1", principal=platform_principal()))
     assert result.identification_mode == "INTERNAL_OCR"
     assert result.identification_mode_source == "AISLE"
     job = job_repo.get_by_id(result.job_id)
@@ -174,7 +177,7 @@ def test_create_job_inherits_client(monkeypatch: pytest.MonkeyPatch) -> None:
     inv = Inventory("inv1", "W", InventoryStatus.DRAFT, now, now, client_id="c1")
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     uc, job_repo, _ = _build_use_case(inventory=inv, aisle=aisle, client=client)
-    result = uc.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    result = uc.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1", principal=platform_principal()))
     assert result.identification_mode == "CODE_SCAN"
     assert result.identification_mode_source == "CLIENT"
     assert result.execution_strategy == "CODE_SCAN"
@@ -218,7 +221,7 @@ def test_blocks_effective_legacy_from_aisle(monkeypatch: pytest.MonkeyPatch) -> 
     )
     uc, _, _ = _build_use_case(inventory=inv, aisle=aisle)
     with pytest.raises(LegacyProcessingModeNotAllowedError):
-        uc.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+        uc.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1", principal=platform_principal()))
 
 
 def test_modern_override_allows_despite_legacy_aisle(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -244,6 +247,7 @@ def test_modern_override_allows_despite_legacy_aisle(monkeypatch: pytest.MonkeyP
             inventory_id="inv1",
             aisle_id="a1",
             requested_identification_mode="INTERNAL_OCR",
+            principal=platform_principal(),
         )
     )
     assert result.identification_mode == "INTERNAL_OCR"

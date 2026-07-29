@@ -13,6 +13,12 @@ describe('errorTranslations mappings', () => {
       'errors.aisle_deactivate_active_job'
     );
     expect(v3StructuredErrorCodeToTranslationKey('AISLE_INACTIVE')).toBe('errors.aisle_inactive');
+    expect(v3StructuredErrorCodeToTranslationKey('SUPPLIER_PROMPT_REQUIRED')).toBe(
+      'errors.supplier_prompt_required'
+    );
+    expect(v3StructuredErrorCodeToTranslationKey('SUPPLIER_NOT_RESOLVED')).toBe(
+      'errors.supplier_not_resolved'
+    );
   });
 
   it('returns null for unknown v3 structured code', () => {

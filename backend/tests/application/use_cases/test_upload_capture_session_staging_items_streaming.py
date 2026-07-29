@@ -11,6 +11,7 @@ from src.application.use_cases.capture_sessions.upload_capture_session_staging_i
     UploadCaptureSessionStagingItemsUseCase,
 )
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+from tests.support.access_principal_helpers import policy_for
 
 
 class _NoUnboundedReadFile:
@@ -57,6 +58,7 @@ def _use_case(
         staging_prefix="capture/staging",
         max_upload_bytes=max_upload_bytes,
         time_metadata_extractor=MagicMock(),
+        access_policy=policy_for(MagicMock()),
     )
 
 

@@ -31,6 +31,10 @@ from tests.support.worker_phase1.sql_cleanup import (
 )
 from tests.support.worker_phase2.duplicate_detection import duplicate_positions_by_job_entity_uid
 from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_phase2.sql_job_seed import (
+    seed_process_aisle_job,
+    sql_result_evidence_repo,
+)
 from tests.support.worker_phase2.sql_verification import verify_sql_scope_fully_removed
 
 
@@ -73,11 +77,13 @@ def test_p2_t001_sql_positions_same_job_identical_persist_is_idempotent(
     try:
         inv_repo.save(Inventory(inv_id, "P2 SQL", InventoryStatus.PROCESSING, now, now))
         aisle_repo.save(Aisle(aisle_id, inv_id, "P2", AisleStatus.PROCESSING, now, now))
+        seed_process_aisle_job(client, job_id=job_id, aisle_id=aisle_id, now=now)
 
         persist = build_persist_aisle_result_use_case(
             position_repo=pos_repo,
             product_record_repo=prod_repo,
             evidence_repo=ev_repo,
+            result_evidence_repo=sql_result_evidence_repo(client),
             aisle_repo=aisle_repo,
             raw_label_repo=raw_repo,
             normalized_label_repo=norm_repo,

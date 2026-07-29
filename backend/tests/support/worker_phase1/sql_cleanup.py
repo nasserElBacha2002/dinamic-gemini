@@ -44,6 +44,10 @@ def cleanup_worker_phase1_sql_scope(
             "DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ? AND job_id = ?",
             (inventory_id, aisle_id, job_id),
         )
+        cur.execute(
+            "UPDATE aisles SET operational_job_id = NULL WHERE id = ? AND operational_job_id = ?",
+            (aisle_id, job_id),
+        )
         cur.execute("DELETE FROM inventory_jobs WHERE id = ?", (job_id,))
         cur.execute("DELETE FROM aisles WHERE id = ?", (aisle_id,))
         cur.execute("DELETE FROM inventories WHERE id = ?", (inventory_id,))
