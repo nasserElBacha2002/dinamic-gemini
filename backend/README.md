@@ -98,7 +98,7 @@ Create SQL Server test configuration (gitignored):
 cp backend/.env.test.example backend/.env.test
 ```
 
-Edit `backend/.env.test` and point `SQLSERVER_DATABASE` (or `SQLSERVER_CONNECTION_STRING`) at a **dedicated** database (name should clearly indicate test, e.g. `dinamic_inventory_test` or `dinamic-inventory-test`). Pytest loads `.env.test` **after** `.env` with override so your manual dev DB is not used.
+Edit `backend/.env.test` and point `SQLSERVER_DATABASE` (or `SQLSERVER_CONNECTION_STRING`) at a **dedicated** database (name should clearly indicate test, e.g. `dinamic_inventory_test` or `dinamic-inventory-test`). Pytest loads `.env.test` **after** `.env` with override so your manual dev DB is not used. It also sets `DINAMIC_PYTEST_DOTENV_LOCKED=1` so `reload_settings()` cannot reload developer `.env` and accidentally write to `dinamic-gemini`.
 
 Run tests from **repository root** (recommended; uses root `pytest.ini` and coverage):
 
@@ -116,6 +116,8 @@ cd backend && pytest
 
 - If SQL Server is configured but the database name is not clearly a test DB (and not on `DINAMIC_PYTEST_SQLSERVER_DATABASE_ALLOWLIST`), pytest **exits before collecting tests**. Escape hatch (exceptional): `DINAMIC_PYTEST_ALLOW_NON_TEST_SQLSERVER=1` (disables automatic integration cleanup too).
 - `@pytest.mark.integration` tests that use SQL Server run **business-table cleanup before and after each test** when auto cleanup is enabled (see `backend/tests/conftest.py`). Disable with `DINAMIC_PYTEST_DISABLE_SQLSERVER_TEST_CLEANUP=1`.
+- API test modules also wipe the isolated test DB around each module (clients included) when pointed at a test database — see `backend/tests/api/conftest.py`.
+- To remove junk clients from the **developer** DB while keeping named originals: `backend/.venv/bin/python scripts/ops/cleanup_junk_clients.py --confirm`.
 
 ### Manual local business-data cleanup (manual dev DB)
 

@@ -1,15 +1,27 @@
 # Phase 5 — Recovery test report
 
-| Scenario | Result |
-| -------- | ------ |
-| Consistency: RUNNING without lease | unit pass |
-| Consistency: expired lease → AUTO_RECOVERY | unit pass |
-| Metrics registry rejects job_id label | unit pass |
-| Lease metrics single registry | unit pass |
-| Retry exhausted / auth not retryable | unit pass |
-| Request ID echoed + /metrics open in test | unit pass |
-| /metrics denied hosted without key | unit pass |
-| Duplicate stale reclaim CAS | covered by existing Phase 1/3 SQL/memory reclaim tests (one winner) |
-| Active lease refuses recover_job | CLI logic + unit consistency |
+## Memory
 
-SQL reclaim idempotency remains validated by prior phase suites (`test_sql_atomic_job_claim`, lease fencing). Phase 5 does not change stale-fail CAS semantics.
+| Case | Result |
+| ---- | ------ |
+| Recover creates child + one worker launch | PASS |
+| Two concurrent recoverers → one child, one launch | PASS |
+| Max attempts / active lease | PASS |
+| Dry-run / worker launch failure → `WORKER_LAUNCH_FAILED` | PASS |
+| Correlation preserved on child payload | PASS |
+
+Suite: `backend/tests/observability/test_recover_stale_job.py`
+
+## SQL (real)
+
+| Case | Result |
+| ---- | ------ |
+| Two concurrent recoverers → one retry + one worker | PASS (deadlock → `LOST_CAS`) |
+| Lineage `retry_of_job_id` + correlation | PASS |
+
+Suite: `backend/tests/integration/recovery/test_sql_recover_stale_job.py`  
+Requires SQL Server + `retry_of_job_id` column (migrations incl. `0073`).
+
+## Notes
+
+Mocks are not the sole evidence for SQL recovery. Memory unique constraint mirrors SQL filtered unique index for concurrent create races.

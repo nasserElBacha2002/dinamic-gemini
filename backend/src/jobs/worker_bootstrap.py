@@ -31,11 +31,20 @@ def append_worker_bootstrap_event(
     event: str,
     details: dict[str, Any] | None = None,
 ) -> None:
+    correlation_id = (os.environ.get("DINAMIC_CORRELATION_ID") or "").strip() or None
+    if correlation_id:
+        try:
+            from src.observability.context import bind_correlation_id
+
+            bind_correlation_id(correlation_id)
+        except Exception:
+            pass
     payload = {
         "ts": _utc_now().isoformat(),
         "event": event,
         "job_id": job_id,
         "execution_id": execution_id or "",
+        "correlation_id": correlation_id or "",
         "pid": os.getpid(),
         "cwd": os.getcwd(),
         "sys_executable": sys.executable,

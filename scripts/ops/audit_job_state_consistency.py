@@ -11,7 +11,6 @@ import json
 import sys
 from pathlib import Path
 
-# Allow running from repo root without install.
 _ROOT = Path(__file__).resolve().parents[2]
 _BACKEND = _ROOT / "backend"
 if str(_BACKEND) not in sys.path:
@@ -20,16 +19,21 @@ if str(_BACKEND) not in sys.path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit job/aisle operational consistency")
-    parser.add_argument("--dry-run", action="store_true", default=True, help="Read-only (default)")
-    parser.add_argument("--apply", action="store_true", help="Reserved; mutations not implemented")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="Read-only (default)")
+    mode.add_argument("--confirm", action="store_true", help="Reserved; mutations not implemented")
     parser.add_argument("--json", action="store_true", help="Emit JSON findings")
     parser.add_argument("--limit", type=int, default=200, help="Max jobs to scan")
     args = parser.parse_args(argv)
 
-    if args.apply:
-        print("ERROR: --apply is not implemented; use admin recovery tools with dry-run.", file=sys.stderr)
+    if args.confirm:
+        print(
+            "ERROR: --confirm is not implemented for consistency audit; use admin recovery tools.",
+            file=sys.stderr,
+        )
         return 2
 
+    from src.application.ports.repositories import JobRepository
     from src.observability.job_state_consistency import audit_jobs
     from src.runtime.app_container import get_app_container
 
@@ -37,31 +41,34 @@ def main(argv: list[str] | None = None) -> int:
     job_repo = container.get_job_repository()
     aisle_repo = container.get_aisle_repository()
 
-    # Prefer list helpers if present; otherwise empty scan with clear message.
-    jobs = []
-    if hasattr(job_repo, "list_recent"):
-        jobs = list(job_repo.list_recent(limit=args.limit))
-    elif hasattr(job_repo, "list_all"):
-        jobs = list(job_repo.list_all())[: args.limit]
-    else:
-        print(
-            "WARN: job repository has no list_recent/list_all; "
-            "pass jobs via unit tests or extend repository for ops scan.",
-            file=sys.stderr,
-        )
+    if not isinstance(job_repo, JobRepository):
+        print("ERROR: job repository port unavailable", file=sys.stderr)
+        return 4
 
-    aisle_by_id: dict = {}
-    for job in jobs:
-        if getattr(job, "target_type", None) == "aisle":
-            aid = getattr(job, "target_id", None)
-            if aid and aid not in aisle_by_id:
-                aisle = aisle_repo.get_by_id(aid) if hasattr(aisle_repo, "get_by_id") else None
-                if aisle is not None:
-                    aisle_by_id[aid] = aisle
+    try:
+        jobs = list(job_repo.list_jobs_for_ops_scan(limit=args.limit))
+    except NotImplementedError as exc:
+        print(f"ERROR: ops scan unsupported: {exc}", file=sys.stderr)
+        return 4
+
+    aisle_ids = {
+        j.target_id
+        for j in jobs
+        if j.target_type == "aisle" and isinstance(j.target_id, str) and j.target_id
+    }
+    aisle_by_id = {}
+    for aid in aisle_ids:
+        aisle = aisle_repo.get_by_id(aid)
+        if aisle is not None:
+            aisle_by_id[aid] = aisle
 
     findings = audit_jobs(jobs, aisle_by_id=aisle_by_id)
-    if args.json:
-        payload = [
+    payload = {
+        "dry_run": True,
+        "jobs_scanned": len(jobs),
+        "findings_count": len(findings),
+        "scan_backend": type(job_repo).__name__,
+        "findings": [
             {
                 "kind": f.kind.value,
                 "action": f.action.value,
@@ -70,13 +77,21 @@ def main(argv: list[str] | None = None) -> int:
                 "detail": f.detail,
             }
             for f in findings
-        ]
-        print(json.dumps({"dry_run": True, "count": len(payload), "findings": payload}, indent=2))
+        ],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2))
     else:
-        print(f"dry_run=true jobs_scanned={len(jobs)} findings={len(findings)}")
+        print(
+            f"dry_run=true jobs_scanned={payload['jobs_scanned']} "
+            f"findings={payload['findings_count']} backend={payload['scan_backend']}"
+        )
         for f in findings:
-            print(f"- {f.kind.value} action={f.action.value} job_id={f.job_id} aisle_id={f.aisle_id} {f.detail}")
-
+            print(
+                f"- {f.kind.value} action={f.action.value} "
+                f"job_id={f.job_id} aisle_id={f.aisle_id} {f.detail}"
+            )
+    # Empty DB is success (0 findings); unsupported scan already failed above.
     return 1 if findings else 0
 
 

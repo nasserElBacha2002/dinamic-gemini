@@ -13,6 +13,8 @@ from src.application.ports.job_result_unit_of_work import (
     JobResultRepositories,
     JobResultUnitOfWork,
 )
+from src.application.ports.repositories import JobRepository
+from src.domain.jobs.lease import JobLease, JobLeaseLostError
 from src.infrastructure.persistence.job_result_bundle_validation import (
     assert_memory_job_result_bundle,
 )
@@ -60,12 +62,23 @@ def _restore_store(repo: Any, snapshot: dict | None) -> None:
 class MemoryJobResultUnitOfWork:
     repositories: JobResultRepositories
     stage_store: MemoryFinalizationStageStore | None = field(default=None)
+    job_repo: JobRepository | None = field(default=None)
     _scope_store: JobResultScopeStore | None = field(default=None, init=False)
     _evidence_writer: MemoryFinalizationEvidenceWriter | None = field(default=None, init=False)
     _stage_snapshot: dict | None = field(default=None, init=False)
     _snapshots: dict[str, dict | None] | None = field(default=None, init=False)
     _committed: bool = field(default=False, init=False)
     _rolled_back: bool = field(default=False, init=False)
+    _fenced_job_id: str | None = field(default=None, init=False)
+
+    def _release_lease_fence_hold(self) -> None:
+        if self._fenced_job_id is None or self.job_repo is None:
+            self._fenced_job_id = None
+            return
+        release = getattr(self.job_repo, "release_lease_fence", None)
+        if callable(release):
+            release(self._fenced_job_id)
+        self._fenced_job_id = None
 
     @property
     def scope_store(self) -> JobResultScopeStore:
@@ -80,14 +93,17 @@ class MemoryJobResultUnitOfWork:
     def commit(self) -> None:
         if self._rolled_back:
             raise RuntimeError("Cannot commit after rollback")
-        if self._evidence_writer is not None:
-            from datetime import datetime, timezone
+        try:
+            if self._evidence_writer is not None:
+                from datetime import datetime, timezone
 
-            self._evidence_writer.flush(datetime.now(timezone.utc))
-        self._committed = True
-        self._snapshots = None
-        self._stage_snapshot = None
-        logger.debug("MemoryJobResultUnitOfWork committed")
+                self._evidence_writer.flush(datetime.now(timezone.utc))
+            self._committed = True
+            self._snapshots = None
+            self._stage_snapshot = None
+            logger.debug("MemoryJobResultUnitOfWork committed")
+        finally:
+            self._release_lease_fence_hold()
 
     def rollback(self) -> None:
         if self._rolled_back:
@@ -98,6 +114,7 @@ class MemoryJobResultUnitOfWork:
             self.stage_store.restore(self._stage_snapshot)
         if self._snapshots is None:
             self._rolled_back = True
+            self._release_lease_fence_hold()
             return
         repos = self.repositories
         _restore_store(repos.position_repo, self._snapshots.get("positions"))
@@ -111,9 +128,29 @@ class MemoryJobResultUnitOfWork:
         self._stage_snapshot = None
         self._rolled_back = True
         logger.warning("MemoryJobResultUnitOfWork rolled back to prior snapshot")
+        self._release_lease_fence_hold()
 
     def acquire_image_result_lock(self, *, job_id: str, source_asset_id: str) -> None:
         _ = (job_id, source_asset_id)
+
+    def fence_job_lease(self, lease: JobLease, *, now) -> bool:
+        if self.job_repo is None:
+            # Unbound test doubles: PersistAisleResult still asserts via its job_repo.
+            return False
+        result = self.job_repo.assert_lease(lease, now=now)
+        if not result.applied:
+            raise JobLeaseLostError(
+                "Lease lost before domain persist",
+                job_id=lease.job_id,
+                owner_id=lease.owner_id,
+                fencing_token=lease.fencing_token,
+                reason=result.reason,
+            )
+        hold = getattr(self.job_repo, "hold_lease_fence", None)
+        if callable(hold):
+            hold(lease.job_id)
+            self._fenced_job_id = lease.job_id
+        return True
 
     def __enter__(self) -> MemoryJobResultUnitOfWork:
         repos = self.repositories
@@ -144,16 +181,23 @@ class MemoryJobResultUnitOfWork:
             elif not self._committed and exc_type is None:
                 self.rollback()
         finally:
+            self._release_lease_fence_hold()
             self._scope_store = None
 
 
 class MemoryJobResultUnitOfWorkFactory:
-    def __init__(self, stage_store: MemoryFinalizationStageStore | None = None) -> None:
+    def __init__(
+        self,
+        stage_store: MemoryFinalizationStageStore | None = None,
+        job_repo: JobRepository | None = None,
+    ) -> None:
         self._stage_store = stage_store
+        self._job_repo = job_repo
 
     def __call__(self, repositories: JobResultRepositories) -> JobResultUnitOfWork:
         assert_memory_job_result_bundle(repositories)
         return MemoryJobResultUnitOfWork(
             repositories=repositories,
             stage_store=self._stage_store,
+            job_repo=self._job_repo,
         )

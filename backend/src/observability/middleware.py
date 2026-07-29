@@ -24,10 +24,14 @@ from src.observability.request_ids import (
 )
 
 _SKIP_METRIC_PATHS = frozenset({"/metrics", "/health", "/ready"})
+UNMATCHED_ROUTE = "__unmatched__"
 
 
 def resolve_route_template(request: Request) -> str:
-    """Prefer FastAPI/Starlette route path template (no UUID cardinality)."""
+    """Return the registered FastAPI route template, or ``__unmatched__``.
+
+    Never builds labels from the raw URL path (unlimited cardinality).
+    """
     route = request.scope.get("route")
     path = getattr(route, "path", None)
     if isinstance(path, str) and path:
@@ -41,16 +45,7 @@ def resolve_route_template(request: Request) -> str:
                 p = getattr(r, "path", None)
                 if isinstance(p, str) and p:
                     return p
-    raw = request.url.path or "/"
-    parts: list[str] = []
-    for seg in raw.split("/"):
-        if not seg:
-            continue
-        if len(seg) >= 32 and all(c in "0123456789abcdefABCDEF-" for c in seg):
-            parts.append("{id}")
-        else:
-            parts.append(seg)
-    return "/" + "/".join(parts) if parts else "/"
+    return UNMATCHED_ROUTE
 
 
 def status_class(status_code: int) -> str:
@@ -87,7 +82,6 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         tokens = bind_request_ids(request_id=request_id, correlation_id=correlation_id)
         path = request.url.path or "/"
         track = self._metrics_enabled and path not in _SKIP_METRIC_PATHS
-        route_template = "pending"
         method = request.method.upper()
         started = time.perf_counter()
         reg = get_metrics_registry()
@@ -102,10 +96,9 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception:
             if track:
-                route_template = resolve_route_template(request)
                 observe_http_request(
                     method=method,
-                    route_template=route_template,
+                    route_template=resolve_route_template(request),
                     status_class="5xx",
                     duration_seconds=time.perf_counter() - started,
                 )
@@ -121,10 +114,9 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             response.headers["X-Request-ID"] = request_id
             response.headers["X-Correlation-ID"] = correlation_id
             if track:
-                route_template = resolve_route_template(request)
                 observe_http_request(
                     method=method,
-                    route_template=route_template,
+                    route_template=resolve_route_template(request),
                     status_class=status_class(response.status_code),
                     duration_seconds=time.perf_counter() - started,
                 )

@@ -52,6 +52,13 @@ from src.jobs.worker import worker_loop
 from src.observability.metrics.registry import get_metrics_registry
 from src.observability.metrics_auth import metrics_access_allowed
 from src.observability.middleware import ObservabilityMiddleware
+from src.observability.runtime_wiring import (
+    configure_metrics_registry_limits,
+    refresh_operational_gauges_for_scrape,
+    stop_recovery_scheduler,
+    wire_operational_metrics_collector,
+    wire_recovery_scheduler,
+)
 from src.runtime.container.runtime_environment import resolve_runtime_environment
 
 logger = logging.getLogger(__name__)
@@ -238,6 +245,7 @@ async def metrics(request: Request) -> Response:
         env=resolve_runtime_environment(),
     ):
         return JSONResponse(status_code=403, content={"detail": "metrics access denied"})
+    refresh_operational_gauges_for_scrape()
     body = get_metrics_registry().render_prometheus()
     return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
@@ -403,6 +411,13 @@ def start_worker() -> None:
             "Schema guard enabled but SQL Server connection is not configured (mode=unset); "
             "skipping startup compatibility check."
         )
+    configure_metrics_registry_limits(settings)
+    from src.runtime.app_container import get_app_container
+
+    container = get_app_container()
+    wire_operational_metrics_collector(container, settings)
+    wire_recovery_scheduler(container, settings)
+
     if not settings.embedded_worker_enabled:
         logger.info(
             "Embedded worker disabled (EMBEDDED_WORKER_ENABLED=false); "
@@ -412,3 +427,8 @@ def start_worker() -> None:
     t = threading.Thread(target=_worker_thread_fn, daemon=True)
     t.start()
     logger.info("Worker thread started")
+
+
+@app.on_event("shutdown")
+def stop_observability_runtime() -> None:
+    stop_recovery_scheduler()

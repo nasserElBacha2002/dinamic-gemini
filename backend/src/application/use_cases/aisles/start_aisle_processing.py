@@ -610,6 +610,17 @@ class StartAisleProcessingUseCase:
         payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
         if command.idempotency_key and str(command.idempotency_key).strip():
             payload["idempotency_key"] = str(command.idempotency_key).strip()
+        try:
+            from src.application.use_cases.recovery.recover_stale_job import (
+                ensure_payload_correlation,
+            )
+            from src.observability.context import get_correlation_id
+            from src.observability.request_ids import generate_correlation_id
+
+            corr = get_correlation_id() or generate_correlation_id()
+            payload = ensure_payload_correlation(dict(payload), corr)  # type: ignore[assignment]
+        except Exception:
+            logger.warning("correlation inject failed aisle_id=%s", command.aisle_id, exc_info=True)
         job = self._launch_service.create_and_launch_attempt(
             aisle=aisle,
             payload=payload,

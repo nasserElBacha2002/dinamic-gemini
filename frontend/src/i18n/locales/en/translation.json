@@ -976,6 +976,8 @@
     "retry_job": "Retry job",
     "review_action_failed": "Review action failed",
     "start_processing": "Start processing",
+    "supplier_prompt_required": "This aisle has a supplier and external fallback is enabled: an active supplier prompt with instructions is required. Configure it under Client → Supplier → Prompts, or disable EXTERNAL_FALLBACK_PER_IMAGE_ENABLED.",
+    "supplier_not_resolved": "The aisle supplier could not be resolved for external fallback prompt selection.",
     "unexpected": "Unexpected error",
     "upload_aisle_source_assets": "Upload aisle source assets",
     "upload_failed": "Upload failed",

@@ -697,6 +697,37 @@ def test_start_aisle_processing_active_job_exists_returns_structured_json() -> N
         app.dependency_overrides.pop(require_inventory_client_scope, None)
 
 
+def test_start_aisle_processing_supplier_prompt_required_returns_422() -> None:
+    """Process ValueError SUPPLIER_PROMPT_REQUIRED must be structured 422, not 500."""
+
+    from src.api.constants.error_wire import HTTP_DETAIL_SUPPLIER_PROMPT_REQUIRED
+    from src.api.dependencies import require_inventory_client_scope
+    from src.api.errors.structured_api_http import SUPPLIER_PROMPT_REQUIRED
+    from tests.support.access_principal_helpers import platform_principal
+
+    class _MissingPrompt:
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            raise ValueError(
+                "SUPPLIER_PROMPT_REQUIRED: active non-empty supplier prompt is required "
+                "when external fallback is enabled for a supplier-associated aisle"
+            )
+
+    app.dependency_overrides[require_inventory_client_scope] = lambda: platform_principal()
+    app.dependency_overrides[get_start_aisle_processing_use_case] = lambda: _MissingPrompt()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).post(
+            "/api/v3/inventories/inv-1/aisles/aisle-1/process",
+            json={},
+        )
+        assert r.status_code == 422
+        body = r.json()
+        assert body["code"] == SUPPLIER_PROMPT_REQUIRED
+        assert body["detail"] == HTTP_DETAIL_SUPPLIER_PROMPT_REQUIRED
+    finally:
+        app.dependency_overrides.pop(get_start_aisle_processing_use_case, None)
+        app.dependency_overrides.pop(require_inventory_client_scope, None)
+
+
 def test_promote_operational_job_not_allowed_returns_structured_json() -> None:
     """Integration: ``JobPromotionNotAllowedError`` through real route + handler."""
 

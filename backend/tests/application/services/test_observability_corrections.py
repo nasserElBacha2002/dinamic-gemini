@@ -317,8 +317,13 @@ def test_retry_chain_detects_fork() -> None:
         attempt_count=2,
         retry_of_job_id="j1",
     )
-    for j in (root, c1, c2):
-        job_repo.save(j)
+    job_repo.save(root)
+    job_repo.save(c1)
+    with pytest.raises(ValueError, match="duplicate retry_of_job_id"):
+        job_repo.save(c2)
+    # Inject a legacy fork (pre-unique-index) to exercise FORKED detection.
+    with job_repo._lock:
+        job_repo._store[c2.id] = c2
     view = JobRetryChainService(job_repo).build(c1, aisle_id="a1")
     assert view.integrity == RetryChainIntegrity.FORKED
     assert any("fork_at=j1" in w for w in view.warnings)

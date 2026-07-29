@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from src.application.ports.finalization_evidence_writer import FinalizationEvidenceWriter
@@ -16,6 +17,7 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     ResultEvidenceRepository,
 )
+from src.domain.jobs.lease import JobLease
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,18 @@ class JobResultUnitOfWork(Protocol):
     def rollback(self) -> None: ...
 
     def acquire_image_result_lock(self, *, job_id: str, source_asset_id: str) -> None: ...
+
+    def fence_job_lease(self, lease: JobLease, *, now: datetime) -> bool:
+        """Reject stale domain writes under the active UoW transaction.
+
+        Returns ``True`` when fencing was applied by this UoW.
+        Returns ``False`` when the UoW cannot fence (e.g. unbound memory double);
+        callers with a ``JobRepository`` must then ``assert_lease``.
+
+        SQL implementations use UPDLOCK on the job row. Memory implementations
+        assert via a bound ``JobRepository``. Raises ``JobLeaseLostError`` when lost.
+        """
+        ...
 
     def __enter__(self) -> JobResultUnitOfWork: ...
 

@@ -267,8 +267,28 @@ class JobRepository(ABC):
         """
 
     def list_all_jobs(self) -> Sequence[Job]:
-        """Bulk read for analytics. Default empty; SQL/memory implementations scan ``inventory_jobs``."""
-        return []
+        """Bulk read for analytics / ops. Implementations must scan ``inventory_jobs``.
+
+        The abstract default raises so ops CLIs cannot silently scan zero rows.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__}.list_all_jobs is required for operational scans"
+        )
+
+    @abstractmethod
+    def list_jobs_by_retry_of(self, retry_of_job_id: str) -> Sequence[Job]:
+        """Return jobs whose ``retry_of_job_id`` equals ``retry_of_job_id`` (0 or 1 expected)."""
+        ...
+
+    @abstractmethod
+    def list_jobs_for_ops_scan(
+        self,
+        *,
+        limit: int = 200,
+        statuses: Sequence[str] | None = None,
+    ) -> Sequence[Job]:
+        """Bounded ops scan (newest first). Must not return silently empty when unsupported."""
+        ...
 
     def merge_result_json(self, job_id: str, patch: dict[str, Any]) -> Job | None:
         """Merge top-level keys into ``job.result_json`` without dropping sibling keys.

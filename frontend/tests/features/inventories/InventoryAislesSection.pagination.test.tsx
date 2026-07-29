@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { createRef, type ChangeEvent, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material';
 import theme from '../../../src/theme';
@@ -66,7 +66,7 @@ const baseProps = {
 };
 
 describe('InventoryAislesSection pagination', () => {
-  it('shows pagination controls when aisle list exceeds page size', () => {
+  it('shows pagination controls when aisle list exceeds page size', async () => {
     const rows = Array.from({ length: 30 }, (_, i) =>
       makeRow(`aisle-${i + 1}`, `A-${String(i + 1).padStart(2, '0')}`)
     );
@@ -76,15 +76,20 @@ describe('InventoryAislesSection pagination', () => {
       </WithProviders>
     );
 
-    expect(screen.getByText('A-01')).toBeInTheDocument();
-    expect(screen.getByText('A-25')).toBeInTheDocument();
+    expect(await screen.findByText('A-01')).toBeInTheDocument();
+    expect(await screen.findByText('A-25')).toBeInTheDocument();
     expect(screen.queryByText('A-26')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /siguiente|next page/i }));
-    expect(screen.getByText('A-26')).toBeInTheDocument();
+
+    const nextButton = await screen.findByRole('button', { name: /siguiente|next page/i });
+    fireEvent.click(nextButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('A-26')).toBeInTheDocument();
+    });
     expect(screen.queryByText('A-01')).not.toBeInTheDocument();
   });
 
-  it('resets to page 1 when search changes', () => {
+  it('resets to page 1 when search changes', async () => {
     const rows = Array.from({ length: 30 }, (_, i) =>
       makeRow(`aisle-${i + 1}`, `A-${String(i + 1).padStart(2, '0')}`)
     );
@@ -100,8 +105,9 @@ describe('InventoryAislesSection pagination', () => {
       </WithProviders>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /siguiente|next page/i }));
-    expect(screen.getByText('A-26')).toBeInTheDocument();
+    const nextButton = await screen.findByRole('button', { name: /siguiente|next page/i });
+    fireEvent.click(nextButton);
+    await screen.findByText('A-26');
 
     rerender(
       <WithProviders>
@@ -115,11 +121,13 @@ describe('InventoryAislesSection pagination', () => {
       </WithProviders>
     );
 
-    expect(screen.getByText('A-01')).toBeInTheDocument();
-    expect(screen.queryByText('A-26')).not.toBeInTheDocument();
+    expect(await screen.findByText('A-01')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('A-26')).not.toBeInTheDocument();
+    });
   });
 
-  it('resets to page 1 when a sortable column header is clicked', () => {
+  it('resets to page 1 when a sortable column header is clicked', async () => {
     const rows = Array.from({ length: 30 }, (_, i) =>
       makeRow(`aisle-${i + 1}`, `A-${String(i + 1).padStart(2, '0')}`)
     );
@@ -129,12 +137,17 @@ describe('InventoryAislesSection pagination', () => {
       </WithProviders>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /siguiente|next page/i }));
-    expect(screen.getByText('A-26')).toBeInTheDocument();
+    const nextButton = await screen.findByRole('button', { name: /siguiente|next page/i });
+    fireEvent.click(nextButton);
+    await screen.findByText('A-26');
     expect(screen.queryByText('A-01')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /aisle\.code_label/i }));
-    expect(screen.getByText('A-01')).toBeInTheDocument();
-    expect(screen.queryByText('A-26')).not.toBeInTheDocument();
+    const sortButton = await screen.findByRole('button', { name: /aisle\.code_label/i });
+    fireEvent.click(sortButton);
+
+    expect(await screen.findByText('A-01')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('A-26')).not.toBeInTheDocument();
+    });
   });
 });

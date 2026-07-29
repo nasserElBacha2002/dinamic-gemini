@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Sequence
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -64,7 +65,34 @@ class MemoryJobRepository(JobRepository):
     def __init__(self, aisle_repo: AisleRepository | None = None) -> None:
         self._store: dict[str, Job] = {}
         self._lock = threading.RLock()
+        self._lease_fence_locks: dict[str, threading.RLock] = {}
+        self._lease_fence_locks_guard = threading.Lock()
         self._aisle_repo = aisle_repo
+
+    def _lease_fence_lock(self, job_id: str) -> threading.RLock:
+        with self._lease_fence_locks_guard:
+            lock = self._lease_fence_locks.get(job_id)
+            if lock is None:
+                lock = threading.RLock()
+                self._lease_fence_locks[job_id] = lock
+            return lock
+
+    def hold_lease_fence(self, job_id: str) -> None:
+        """Hold per-job lease fence until ``release_lease_fence`` (UoW domain persist)."""
+        self._lease_fence_lock(job_id).acquire()
+
+    def release_lease_fence(self, job_id: str) -> None:
+        self._lease_fence_lock(job_id).release()
+
+    @contextmanager
+    def _lease_mutation(self, job_id: str):
+        fence = self._lease_fence_lock(job_id)
+        fence.acquire()
+        try:
+            with self._lock:
+                yield
+        finally:
+            fence.release()
 
     def bind_aisle_repository(self, aisle_repo: AisleRepository) -> None:
         """Attach aisle repo when constructed without one (test harnesses)."""
@@ -73,6 +101,17 @@ class MemoryJobRepository(JobRepository):
 
     def save(self, job: Job) -> None:
         with self._lock:
+            parent = (job.retry_of_job_id or "").strip()
+            if parent:
+                for existing in self._store.values():
+                    if (
+                        existing.id != job.id
+                        and (existing.retry_of_job_id or "").strip() == parent
+                    ):
+                        raise ValueError(
+                            f"duplicate retry_of_job_id={parent} "
+                            f"(existing={existing.id}, new={job.id})"
+                        )
             self._store[job.id] = job
 
     def merge_result_json(self, job_id: str, patch: dict) -> Job | None:
@@ -145,6 +184,31 @@ class MemoryJobRepository(JobRepository):
     def list_all_jobs(self) -> Sequence[Job]:
         with self._lock:
             return list(self._store.values())
+
+    def list_jobs_by_retry_of(self, retry_of_job_id: str) -> Sequence[Job]:
+        parent = (retry_of_job_id or "").strip()
+        with self._lock:
+            return [j for j in self._store.values() if j.retry_of_job_id == parent]
+
+    def list_jobs_for_ops_scan(
+        self,
+        *,
+        limit: int = 200,
+        statuses: Sequence[str] | None = None,
+    ) -> Sequence[Job]:
+        lim = max(1, min(int(limit or 200), 5000))
+        status_filter = {s.lower() for s in (statuses or []) if s}
+        with self._lock:
+            jobs = list(self._store.values())
+        if status_filter:
+            jobs = [
+                j
+                for j in jobs
+                if (j.status.value if hasattr(j.status, "value") else str(j.status)).lower()
+                in status_filter
+            ]
+        jobs.sort(key=lambda j: (j.updated_at, j.created_at, j.id), reverse=True)
+        return jobs[:lim]
 
     def claim_next_queued_job(self) -> Job | None:
         with self._lock:
@@ -318,7 +382,7 @@ class MemoryJobRepository(JobRepository):
         extension_seconds: int,
     ) -> LeaseRenewalResult:
         """Extend ``lease_expires_at`` under CAS (owner + fencing_token + not-yet-expired)."""
-        with self._lock:
+        with self._lease_mutation(lease.job_id):
             job = self._store.get(lease.job_id)
             if not lease_is_currently_valid(
                 job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now
@@ -377,7 +441,7 @@ class MemoryJobRepository(JobRepository):
                 reason="claim_owner_id_required",
                 claim_owner_id=None,
             )
-        with self._lock:
+        with self._lease_mutation(job_id):
             job = self._store.get(job_id)
             if job is None:
                 return JobClaimResult(
@@ -446,7 +510,7 @@ class MemoryJobRepository(JobRepository):
         now: datetime,
     ) -> tuple[LeaseWriteResult, Job | None]:
         """Merge ``result_json`` only while the caller still holds the lease (owner+token+not expired)."""
-        with self._lock:
+        with self._lease_mutation(lease.job_id):
             job = self._store.get(lease.job_id)
             if not lease_is_currently_valid(
                 job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now
@@ -504,7 +568,7 @@ class MemoryJobRepository(JobRepository):
     ) -> LeaseWriteResult:
         if job.id != lease.job_id:
             return LeaseWriteResult(outcome=LeaseWriteOutcome.INVALID_STATE, reason="job_id_mismatch")
-        with self._lock:
+        with self._lease_mutation(lease.job_id):
             current = self._store.get(lease.job_id)
             if not lease_is_currently_valid(
                 current, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now
@@ -535,7 +599,7 @@ class MemoryJobRepository(JobRepository):
         error_message: str,
         failure_code: str = "PROCESSING_FAILED",
     ) -> LeaseWriteResult:
-        with self._lock:
+        with self._lease_mutation(lease.job_id):
             job = self._store.get(lease.job_id)
             if not lease_is_currently_valid(
                 job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now
@@ -573,7 +637,7 @@ class MemoryJobRepository(JobRepository):
         mutator,
     ) -> LeaseWriteResult:
         """Apply finalization mutations under lease CAS."""
-        with self._lock:
+        with self._lease_mutation(lease.job_id):
             current = self._store.get(lease.job_id)
             if not lease_allows_finalization_write(
                 current, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now
@@ -614,7 +678,7 @@ class MemoryJobRepository(JobRepository):
         now: datetime,
         reason: str,
     ) -> LeaseWriteResult:
-        with self._lock:
+        with self._lease_mutation(lease.job_id):
             job = self._store.get(lease.job_id)
             if not lease_is_currently_valid(
                 job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now

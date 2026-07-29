@@ -1,4 +1,4 @@
-"""CLI: recover job (dry-run by default; mutate requires --confirm).
+"""CLI: recover job via RecoverStaleJobUseCase (dry-run by default).
 
 Usage:
   python -m scripts.ops.recover_job --job-id <id> --dry-run --actor ops --reason 'stale'
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sys
 from pathlib import Path
 
@@ -18,122 +17,88 @@ _BACKEND = _ROOT / "backend"
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-logger = logging.getLogger("dinamic.ops.recover_job")
-
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Recover a stale/failed job (ops)")
+    parser = argparse.ArgumentParser(description="Recover a stale job (ops)")
     parser.add_argument("--job-id", required=True)
-    parser.add_argument("--dry-run", action="store_true", default=True)
-    parser.add_argument("--confirm", action="store_true", help="Execute mutation (disables dry-run)")
-    parser.add_argument("--actor", required=True, help="Operator identity for audit")
-    parser.add_argument("--reason", required=True, help="Mandatory reason")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--confirm", action="store_true")
+    parser.add_argument("--actor", required=True)
+    parser.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
 
-    dry_run = not args.confirm
+    from src.application.services.aisle_job_launch_service import AisleJobLaunchService
+    from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+    from src.application.use_cases.recovery.recover_stale_job import (
+        RecoverStaleJobCommand,
+        RecoverStaleJobOutcome,
+        RecoverStaleJobUseCase,
+    )
     from src.config import load_settings
-    from src.observability.job_state_consistency import audit_job_row
-    from src.observability.logging import log_event
+    from src.infrastructure.adapters.clock import UtcClock
     from src.runtime.app_container import get_app_container
 
     container = get_app_container()
-    job_repo = container.get_job_repository()
-    job = job_repo.get_by_id(args.job_id)
-    if job is None:
-        print(json.dumps({"ok": False, "error": "job_not_found", "job_id": args.job_id}))
-        return 1
-
-    aisle = None
-    if getattr(job, "target_type", None) == "aisle":
-        aisle = container.get_aisle_repository().get_by_id(job.target_id)
-
-    findings = audit_job_row(job, aisle=aisle)
-    status = getattr(getattr(job, "status", None), "value", getattr(job, "status", None))
-    lease_expires = getattr(job, "lease_expires_at", None)
-    has_active_lease = False
-    if status in {"RUNNING", "STARTING", "CANCEL_REQUESTED"} and lease_expires is not None:
-        from datetime import datetime, timezone
-
-        now = datetime.now(timezone.utc)
-        exp = lease_expires if lease_expires.tzinfo else lease_expires.replace(tzinfo=timezone.utc)
-        if exp >= now and getattr(job, "claim_owner_id", None):
-            has_active_lease = True
-
-    result = {
-        "ok": True,
-        "dry_run": dry_run,
-        "job_id": job.id,
-        "status": status,
-        "actor": args.actor,
-        "reason": args.reason,
-        "has_active_lease": has_active_lease,
-        "findings": [{"kind": f.kind.value, "action": f.action.value} for f in findings],
-        "action": "none",
-    }
-
-    if has_active_lease:
-        result["ok"] = False
-        result["error"] = "active_lease_present"
-        result["action"] = "refused"
-        log_event(
-            "job_recovery_refused",
-            component="ops",
-            operation="recover_job",
-            outcome="refused",
-            reason_code="ACTIVE_LEASE",
-            job_id=job.id,
-            actor=args.actor,
-        )
-        print(json.dumps(result, indent=2, default=str))
-        return 3
-
-    if dry_run:
-        result["action"] = "would_stale_fail_or_manual_admin"
-        log_event(
-            "job_recovery_started",
-            component="ops",
-            operation="recover_job",
-            outcome="dry_run",
-            job_id=job.id,
-            actor=args.actor,
-            reason_code=args.reason,
-        )
-        print(json.dumps(result, indent=2, default=str))
-        return 0
-
-    # Mutating path: only stale reclaim CAS if repository supports it.
-    if not hasattr(job_repo, "try_reclaim_stale_job_and_reconcile_aisle"):
-        result["ok"] = False
-        result["error"] = "reclaim_unsupported"
-        print(json.dumps(result, indent=2, default=str))
-        return 4
-
-    from datetime import datetime, timezone
-
-    now = datetime.now(timezone.utc)
     settings = load_settings()
-    stale_after = int(getattr(settings, "worker_stale_running_timeout_sec", 900) or 900)
-    reclaim = job_repo.try_reclaim_stale_job_and_reconcile_aisle(
-        job.id, now=now, stale_after_seconds=stale_after
+    job_repo = container.get_job_repository()
+    aisle_repo = container.get_aisle_repository()
+    clock = UtcClock()
+    launch = AisleJobLaunchService(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        worker_launch_service=container.get_worker_launch_service(),
+        clock=clock,
+        status_reconciler=InventoryStatusReconciler(
+            inventory_repo=container.get_inventory_repository(),
+            aisle_repo=aisle_repo,
+            clock=clock,
+        ),
     )
-    result["action"] = "stale_fail_reclaim"
-    result["won"] = bool(getattr(reclaim, "won", False))
-    result["after_status"] = getattr(
-        getattr(getattr(reclaim, "job", None), "status", None),
-        "value",
-        None,
+    uc = RecoverStaleJobUseCase(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        launch_service=launch,
+        clock=clock,
     )
-    log_event(
-        "job_recovery_completed" if result["won"] else "job_recovery_failed",
-        component="ops",
-        operation="recover_job",
-        outcome="ok" if result["won"] else "lost_cas",
-        job_id=job.id,
-        actor=args.actor,
-        reason_code=args.reason,
+    result = uc.execute(
+        RecoverStaleJobCommand(
+            job_id=args.job_id,
+            actor=args.actor,
+            reason=args.reason,
+            dry_run=bool(args.dry_run),
+            stale_after_seconds=int(settings.worker_stale_running_timeout_sec or 900),
+            max_attempts=int(settings.recovery_max_attempts or 3),
+        )
     )
-    print(json.dumps(result, indent=2, default=str))
-    return 0 if result["won"] else 5
+    print(
+        json.dumps(
+            {
+                "outcome": result.outcome.value,
+                "job_id": result.job_id,
+                "new_job_id": result.new_job_id,
+                "detail": result.detail,
+                "dry_run": bool(args.dry_run),
+                "actor": args.actor,
+                "reason": args.reason,
+            },
+            indent=2,
+        )
+    )
+    if result.outcome in {
+        RecoverStaleJobOutcome.RECOVERED,
+        RecoverStaleJobOutcome.RELAUNCHED,
+        RecoverStaleJobOutcome.DRY_RUN,
+        RecoverStaleJobOutcome.ALREADY_RECOVERED,
+    }:
+        return 0
+    if result.outcome == RecoverStaleJobOutcome.CHILD_TERMINAL:
+        return 4
+    if result.outcome == RecoverStaleJobOutcome.ACTIVE_LEASE:
+        return 3
+    if result.outcome == RecoverStaleJobOutcome.LOST_CAS:
+        return 5
+    return 1
 
 
 if __name__ == "__main__":

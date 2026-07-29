@@ -21,7 +21,10 @@ echo "AUDIT_PYTHON=$AUDIT_PYTHON"
 
 RUN_ID="${AUDIT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 export AUDIT_RUN_ID="$RUN_ID"
+AUDIT_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+export AUDIT_STARTED_AT="$AUDIT_STARTED_AT"
 echo "AUDIT_RUN_ID=$RUN_ID"
+echo "AUDIT_STARTED_AT=$AUDIT_STARTED_AT"
 
 # Clear published aggregates so a failed generator cannot leave / expose stale status.
 rm -f "$STATUS_PUBLISHED" "$SUMMARY_PUBLISHED"
@@ -70,7 +73,8 @@ echo "--- Ejecutando: scripts/audit/generate_audit_summary.py (atomic publish)"
 "$AUDIT_PYTHON" "$ROOT_DIR/scripts/audit/generate_audit_summary.py" \
   --status-out "$STATUS_TMP" \
   --summary-out "$SUMMARY_TMP" \
-  --run-id "$RUN_ID"
+  --run-id "$RUN_ID" \
+  --started-at "$AUDIT_STARTED_AT"
 GENERATOR_RC=$?
 if [ "$GENERATOR_RC" -ne 0 ]; then
   echo "ERROR: generate_audit_summary.py failed (rc=$GENERATOR_RC)" >&2

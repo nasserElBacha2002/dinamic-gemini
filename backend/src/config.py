@@ -11,6 +11,7 @@ backward-compatible alias for ``AppSettings``.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -61,7 +62,13 @@ def _load_dotenv_files(*, for_reload: bool = False) -> None:
     override keys from repo for local developer overrides. Cwd `.env` fills remaining gaps.
 
     Reload: file values override OS env so edits to `.env` take effect after `reload_settings()`.
+
+    Pytest lock: when ``DINAMIC_PYTEST_DOTENV_LOCKED=1`` (set by ``backend/tests/conftest.py`` after
+    loading ``.env.test``), skip file loads so developer ``.env`` cannot clobber the isolated
+    test database (e.g. ``dinamic_inventory_test`` → ``dinamic-gemini``).
     """
+    if (os.getenv("DINAMIC_PYTEST_DOTENV_LOCKED") or "").strip() == "1":
+        return
     override_repo = for_reload
     repo_env = _REPO_ROOT / ".env"
     if repo_env.is_file():

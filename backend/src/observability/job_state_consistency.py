@@ -6,7 +6,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+
+from src.domain.aisle.entities import Aisle
+from src.domain.jobs.entities import Job, JobStatus
 
 
 class ConsistencyFindingKind(str, Enum):
@@ -40,27 +42,46 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _status_value(status: object) -> str:
+    raw = getattr(status, "value", status)
+    return str(raw).strip().lower() if raw is not None else ""
+
+
 def audit_job_row(
-    job: Any,
+    job: Job | None,
     *,
-    aisle: Any | None = None,
+    aisle: Aisle | None = None,
     now: datetime | None = None,
     finalization_stuck_after_sec: int = 3600,
 ) -> list[ConsistencyFinding]:
     """Inspect a single job (+ optional aisle) for operational inconsistencies."""
+    if job is None:
+        return []
     now = now or _utc_now()
     findings: list[ConsistencyFinding] = []
-    status = getattr(job, "status", None)
-    status_value = getattr(status, "value", status)
-    job_id = getattr(job, "id", None)
-    aisle_id = None
-    if getattr(job, "target_type", None) == "aisle":
-        aisle_id = getattr(job, "target_id", None)
+    status_value = _status_value(job.status)
+    job_id = job.id
+    aisle_id = job.target_id if job.target_type == "aisle" else None
 
-    lease_owner = getattr(job, "claim_owner_id", None) or getattr(job, "lease_owner_id", None)
-    lease_expires = getattr(job, "lease_expires_at", None)
+    lease_owner = job.claim_owner_id
+    lease_expires = job.lease_expires_at
 
-    if status_value in {"RUNNING", "STARTING", "CANCEL_REQUESTED"}:
+    active_statuses = frozenset(
+        {
+            JobStatus.RUNNING.value,
+            JobStatus.STARTING.value,
+            JobStatus.CANCEL_REQUESTED.value,
+        }
+    )
+    terminal_statuses = frozenset(
+        {
+            JobStatus.SUCCEEDED.value,
+            JobStatus.FAILED.value,
+            JobStatus.CANCELED.value,
+        }
+    )
+
+    if status_value in active_statuses:
         if not lease_owner and lease_expires is None:
             findings.append(
                 ConsistencyFinding(
@@ -82,7 +103,7 @@ def audit_job_row(
                 )
             )
 
-    if status_value == "SUCCEEDED" and getattr(job, "finished_at", None) is None:
+    if status_value == JobStatus.SUCCEEDED.value and job.finished_at is None:
         findings.append(
             ConsistencyFinding(
                 ConsistencyFindingKind.SUCCEEDED_WITHOUT_FINISHED_AT,
@@ -93,7 +114,7 @@ def audit_job_row(
             )
         )
 
-    if status_value == "FAILED" and not getattr(job, "failure_code", None):
+    if status_value == JobStatus.FAILED.value and not job.failure_code:
         findings.append(
             ConsistencyFinding(
                 ConsistencyFindingKind.FAILED_WITHOUT_FAILURE_CODE,
@@ -104,12 +125,11 @@ def audit_job_row(
             )
         )
 
-    fin_status = getattr(job, "finalization_status", None)
-    fin_value = getattr(fin_status, "value", fin_status)
-    updated = getattr(job, "updated_at", None) or getattr(job, "finalization_updated_at", None)
+    fin_value = _status_value(job.finalization_status)
+    updated = job.updated_at
     if (
-        fin_value in {"IN_PROGRESS", "in_progress"}
-        and status_value in {"SUCCEEDED", "FAILED", "CANCELED"}
+        fin_value == "in_progress"
+        and status_value in terminal_statuses
         and updated is not None
         and (now - updated).total_seconds() > finalization_stuck_after_sec
     ):
@@ -124,12 +144,11 @@ def audit_job_row(
         )
 
     if aisle is not None:
-        aisle_status = getattr(aisle, "status", None)
-        aisle_status_value = getattr(aisle_status, "value", aisle_status)
-        aisle_id = getattr(aisle, "id", None) or aisle_id
-        if status_value in {"SUCCEEDED", "FAILED", "CANCELED"} and aisle_status_value in {
-            "PROCESSING",
-            "QUEUED",
+        aisle_status_value = _status_value(aisle.status)
+        aisle_id = aisle.id or aisle_id
+        if status_value in terminal_statuses and aisle_status_value in {
+            "processing",
+            "queued",
         }:
             findings.append(
                 ConsistencyFinding(
@@ -140,10 +159,13 @@ def audit_job_row(
                     "Terminal job with aisle still active",
                 )
             )
-        if status_value in {"RUNNING", "STARTING"} and aisle_status_value in {
-            "COMPLETED",
-            "FAILED",
-            "CANCELED",
+        if status_value in {
+            JobStatus.RUNNING.value,
+            JobStatus.STARTING.value,
+        } and aisle_status_value in {
+            "completed",
+            "failed",
+            "canceled",
         }:
             findings.append(
                 ConsistencyFinding(
@@ -154,8 +176,8 @@ def audit_job_row(
                     "Running job with terminal aisle",
                 )
             )
-        op_job = getattr(aisle, "operational_job_id", None)
-        if op_job and op_job == job_id and status_value != "SUCCEEDED":
+        op_job = aisle.operational_job_id
+        if op_job and op_job == job_id and status_value != JobStatus.SUCCEEDED.value:
             findings.append(
                 ConsistencyFinding(
                     ConsistencyFindingKind.OPERATIONAL_JOB_NOT_SUCCEEDED,
@@ -170,18 +192,16 @@ def audit_job_row(
 
 
 def audit_jobs(
-    jobs: Iterable[Any],
+    jobs: Iterable[Job],
     *,
-    aisle_by_id: dict[str, Any] | None = None,
+    aisle_by_id: dict[str, Aisle] | None = None,
     now: datetime | None = None,
 ) -> list[ConsistencyFinding]:
     aisle_by_id = aisle_by_id or {}
     out: list[ConsistencyFinding] = []
     for job in jobs:
         aisle = None
-        if getattr(job, "target_type", None) == "aisle":
-            target_id = getattr(job, "target_id", None)
-            if isinstance(target_id, str) and target_id:
-                aisle = aisle_by_id.get(target_id)
+        if job.target_type == "aisle" and isinstance(job.target_id, str) and job.target_id:
+            aisle = aisle_by_id.get(job.target_id)
         out.extend(audit_job_row(job, aisle=aisle, now=now))
     return out

@@ -1,55 +1,49 @@
-# Phase 5 — Implementation report
+# Phase 5 — Implementation report (post final corrections)
 
 ## 1. Estado
 
-`COMPLETED` (with documented residual instrumentation gaps). Quality Gate `--strict` **PASS** (`run_id=20260729T133918Z`) on `DIN-251` stacked over Phase 4.
+`CORRECTIONS_VALIDATED` (Phase 5 + shared Phase 6 recovery/fencing hardening). Recovery relaunch, fencing fail-closed, migration preflight, SQL/FE suites green, Quality Gate freshness wired.
 
-## 2. Alcance
+## 2. Alcance de correcciones finales
 
-Observabilidad productiva, métricas scrapeables, correlation IDs, clasificación de errores/retry, tooling ops dry-run, alertas/dashboards/SLO/runbooks. **No** Fase 6. **No** cambios OCR/CODE_SCAN/prompts/pipeline identification.
+- Fencing fail-closed: lease presente → UoW fence o assert vía `job_repo`; sin ambos → `FencingConfigurationError`
+- Recovery child states: `CHILD_ACTIVE` / `SUCCEEDED` / `LAUNCH_FAILED` / `TERMINAL_FUNCTIONAL_FAILURE` / `INCONSISTENT`
+- Outcomes: `RELAUNCHED` / `RELAUNCH_FAILED` / `CHILD_TERMINAL` (no segundo child bajo índice único)
+- Worker launch idempotente: `launch_job_if_not_launched(job_id, idempotency_key=...)`
+- Sin duck typing: `except WorkerLaunchFailedError`; SQL contention classifier tipado
+- Ports: `list_jobs_by_retry_of` / `list_jobs_for_ops_scan` abstractos
+- Migración `0073`: preflight de duplicados + README rollback/reapply
+- Alertas: `RecoverySchedulerFailures` usa `stale_recovery_scheduler_runs_total{outcome="error"}` (no métrica PLANNED)
+- Quality Gate: falla si `git_sha` ≠ HEAD, tree dirty vs audited-clean, scanner `NOT_AVAILABLE`, tests fallidos
 
-## 3. Auditoría inicial
+## 3. Migraciones
 
-Ver inventario previo (Phase 4 closed on branch; gaps: no Prometheus, no request-id middleware, alerts declarative only).
+- `0073_inventory_jobs_retry_of_unique.sql` — índice único filtrado
+- Preflight: `scripts/ops/preflight_0073_retry_of_duplicates.py`
+- Docs: `0073_README.md` + sección en `recovery-policy.md`
+- Rollback: `DROP INDEX IF EXISTS UX_inventory_jobs_retry_of_job_id ON dbo.inventory_jobs`
 
-## 4–16. Arquitectura
+## 4. Evidencia de validación (corrections)
 
-- Paquete `backend/src/observability/` — contextvars, request IDs, structured log helper, metrics registry (Prometheus text, sin dependencia nueva), middleware, error/retry, consistency audit.
-- Lease metrics Phase 3 delegan al registry único.
-- `GET /metrics` protegido (`METRICS_INTERNAL_AUTH`).
-- `/health` vs `/ready` sin mezcla; `/metrics` excluido de métricas HTTP.
-- Recovery: stale-fail intacto; CLIs `scripts/ops/*` dry-run-first.
+- Backend full: **4027 passed**, 6 skipped
+- SQL Phase2 suites (8): **passed**
+- Frontend: **1223 passed**; pagination hardened
+- Mobile: **139 + 10 integration passed**
+- Ruff: clean (`backend` + `scripts`)
+- Promtool (Docker): rules check + unit tests **SUCCESS**
+- pip_audit: no known vulns
+- gitleaks: executed (Homebrew 8.30.1)
 
-## 17–23. Alertas / dashboards / SLO / runbooks
+## 5. Limitaciones reales
 
-Documentados en `audit-results/phase-5/*`. Catálogo `production_alerts.py` alineado a nombres de métricas.
+- Varias métricas siguen `PLANNED` (queue wait, processing duration, upload counters, etc.) — no usadas en alertas productivas.
+- Idempotencia de launch en Memory/on-demand usa claim file + live `execution_id`; SQL unique index es la garantía de un solo child.
+- mypy reporta stubs faltantes de `pyodbc` / untyped OCR deps (preexistente / entorno).
 
-## 24. Migraciones
+## 6. Mergeabilidad
 
-Ninguna (índices SQL operativos diferidos hasta evidencia de plan).
+Mergeable a `main` respecto a suites ejecutadas arriba. Ejecutar `bash scripts/audit/run_full_audit.sh` + `enforce_quality_gate.py --strict` en HEAD limpio antes del merge final para asociar el artifact al SHA definitivo.
 
-## 25–26. Performance / seguridad
+## 7. Phase 7
 
-- Labels allowlist; sin IDs en métricas.
-- Redacción en logs estructurados.
-- Controles Phase 4 preservados (Model A API key).
-
-## 27–35. Tests
-
-- Backend full pytest: **3974+ passed** (suite green in audit).
-- Phase 5 unit: pass.
-- Frontend/mobile typecheck/lint/test (via full audit): pass.
-- Security: pip_audit, bandit, gitleaks: OK.
-- `enforce_quality_gate.py --strict`: **PASS** (`run_id=20260729T133918Z`).
-
-## 36–37. Limitaciones / riesgos
-
-- Gauges SQL (`jobs_in_state`, outbox pending) catalogados; refresh scraper helper no es un daemon completo.
-- Instrumentación provider/upload/finalization helpers listos; no todos los call sites del pipeline están cableados (incremental).
-- OTel no introducido.
-- `/ready` aún no falla solo por worker caído (documentado; evitar flapping).
-
-## 38–39. Confirmaciones
-
-- Phase 6 **no** iniciada.
-- Mergeable a `main` tras QG strict + review (apilado con Phase 4 en `DIN-251`).
+**No** iniciada. OCR/CODE_SCAN/prompts/identification UX **no** modificados.

@@ -34,6 +34,13 @@ HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE = "Position not found or does not belong
 HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION = "Product not found or does not belong to this position"
 HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND = "Supplier reference image not found"
 HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_NOT_FOUND = "Supplier prompt config not found"
+HTTP_DETAIL_SUPPLIER_PROMPT_REQUIRED = (
+    "An active non-empty supplier prompt is required when external fallback "
+    "is enabled for a supplier-associated aisle"
+)
+HTTP_DETAIL_SUPPLIER_NOT_RESOLVED = (
+    "The aisle supplier could not be resolved for external fallback prompt selection"
+)
 
 # Structured Category B — fixed 422 ``detail`` (must match mapper / use-case emitters).
 HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER = (

@@ -1,31 +1,31 @@
-# Phase 5 — Test report
+# Phase 5 — Test report (corrections)
 
-## Unit / API
-
-```bash
-cd backend && .venv/bin/python -m pytest tests/observability/test_phase5_observability.py -q --no-cov
-# 9 passed
-```
-
-Related lease/health (regression):
+## Focused
 
 ```bash
-.venv/bin/python -m pytest tests/ -k "lease_metric or job_lease or phase4_security or health_ready" -q --no-cov
-# 58 passed
+backend/.venv/bin/python -m pytest \
+  backend/tests/observability \
+  backend/tests/integration/recovery \
+  -q --no-cov
 ```
 
-## Coverage map
+Result (latest corrections run): **24 passed** (includes SQL recovery when SQL available).
 
-| Area | Tests |
-| ---- | ----- |
-| Request/correlation IDs | test_http_request_id_and_metrics_endpoint |
-| Route template / status class | helpers + middleware |
-| Label cardinality | test_metrics_reject_high_cardinality_labels |
-| Error classification / retry | test_classify_error_and_retry_policy |
-| Consistency dry-run findings | test_consistency_* |
-| Metrics auth | test_metrics_denied_without_auth_in_hosted |
-| Lease registry bridge | test_lease_metrics_use_single_registry |
+Coverage includes:
 
-## Not claiming COMPLETED until
+- Histogram golden / series limit / unmatched cardinality
+- Logging forging / correlation helpers
+- RecoverStaleJob memory + SQL concurrent
 
-Full backend pytest + ruff/mypy + frontend/mobile + QG strict recorded in implementation-report.
+## Alerts
+
+```bash
+promtool check rules deploy/prometheus/dinamic-phase5-alerts.yml
+promtool test rules deploy/prometheus/tests/phase5_alerts.test.yml
+```
+
+(Use Docker `prom/prometheus` if `promtool` is not on PATH.)
+
+## Full gate
+
+Run full backend pytest, ruff, mypy, frontend/mobile, security scans, and `enforce_quality_gate.py --strict` before merge. See corrections deliverables for latest run artifacts.

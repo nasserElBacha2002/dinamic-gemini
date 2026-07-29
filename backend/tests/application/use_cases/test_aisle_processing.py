@@ -220,7 +220,9 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     assert saved_job.target_id == "a1"
     assert saved_job.job_type == "process_aisle"
     assert saved_job.status == JobStatus.STARTING
-    assert saved_job.payload_json == {"aisle_id": "a1"}
+    assert saved_job.payload_json.get("aisle_id") == "a1"
+    assert isinstance(saved_job.payload_json.get("correlation_id"), str)
+    assert saved_job.payload_json["correlation_id"]
     assert saved_job.execution_id == f"exec-{job_id}"
     assert saved_job.current_substep == "spawn_succeeded"
 

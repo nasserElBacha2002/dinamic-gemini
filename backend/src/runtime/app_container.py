@@ -1599,9 +1599,10 @@ class AppContainer:
         if resolution.mode == RepositoryBackendMode.SQL:
             return SqlJobResultUnitOfWorkFactory(self._get_v3_sql_client())
         stage_store = self.get_finalization_stage_store()
+        job_repo = self.get_job_repo()
         if not isinstance(stage_store, MemoryFinalizationStageStore):
-            return MemoryJobResultUnitOfWorkFactory()
-        return MemoryJobResultUnitOfWorkFactory(stage_store=stage_store)
+            return MemoryJobResultUnitOfWorkFactory(job_repo=job_repo)
+        return MemoryJobResultUnitOfWorkFactory(stage_store=stage_store, job_repo=job_repo)
 
     def get_job_scoped_recompute_factory(self) -> JobScopedRecomputeFactory:
         return DefaultJobScopedRecomputeFactory()

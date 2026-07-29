@@ -158,6 +158,8 @@ phase3-lease-fencing-*.txt
 **/phase3-lease-fencing-*.txt
 phase5-observability-operations-*.txt
 **/phase5-observability-operations-*.txt
+phase6-architecture-refactor-*.txt
+**/phase6-architecture-refactor-*.txt
 authoritative-local-code-scan-intermediate-*.txt
 authoritative-local-code-scan-intermediate-*.md
 legacy-processing-cleanup-*.txt

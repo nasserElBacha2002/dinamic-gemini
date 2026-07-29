@@ -587,12 +587,45 @@ class OpenAiSdkAdapter:
             client_kw["base_url"] = base_url
         client = OpenAI(**client_kw)
         model_str: str = str(effective_model).strip()
-        completion, latency_ms = _openai_chat_completions_create(
-            client,
-            model_str=model_str,
-            content=content,
-            prov=prov,
-            v=v,
+        started = time.perf_counter()
+        try:
+            completion, latency_ms = _openai_chat_completions_create(
+                client,
+                model_str=model_str,
+                content=content,
+                prov=prov,
+                v=v,
+            )
+        except LLMProviderError as exc:
+            from src.observability.metrics.instruments import record_provider_call
+
+            err = (exc.code or "unknown").lower()
+            record_provider_call(
+                provider=prov,
+                operation="analyze_global",
+                outcome="error",
+                duration_seconds=time.perf_counter() - started,
+                error_class="timeout" if "timeout" in err else err,
+            )
+            raise
+        except Exception:
+            from src.observability.metrics.instruments import record_provider_call
+
+            record_provider_call(
+                provider=prov,
+                operation="analyze_global",
+                outcome="error",
+                duration_seconds=time.perf_counter() - started,
+                error_class="unknown",
+            )
+            raise
+        from src.observability.metrics.instruments import record_provider_call
+
+        record_provider_call(
+            provider=prov,
+            operation="analyze_global",
+            outcome="ok",
+            duration_seconds=time.perf_counter() - started,
         )
         choice = completion.choices[0] if completion.choices else None
         raw_text = (choice.message.content or "").strip() if choice and choice.message else ""

@@ -40,7 +40,7 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
 )
 from src.domain.jobs.finalization_evidence import EvidenceLevel, FinalizationStage
-from src.domain.jobs.lease import JobLease, JobLeaseLostError
+from src.domain.jobs.lease import JobLease
 from src.domain.result_evidence.manifest_primary import primary_manifest_entry
 from src.domain.traceability import TraceabilityStatus
 
@@ -188,21 +188,25 @@ class PersistAisleResultUseCase:
         """Reject stale domain writes without relying on a standalone pre-assert alone.
 
         Prefer ``uow.fence_job_lease`` (UPDLOCK in the same SQL transaction as delete/insert).
-        Fall back to ``job_repo.assert_lease`` for memory UoW / test doubles.
+        When the UoW cannot fence (returns False), Persist **must** assert via ``_job_repo``.
+        Missing both paths is a configuration error (fail-closed — never skip fencing).
         """
         lease = command.lease
         if lease is None:
             return
-        fence = getattr(uow, "fence_job_lease", None)
-        if callable(fence):
-            fence(lease, now=now)
+        if uow.fence_job_lease(lease, now=now):
             return
         if self._job_repo is None:
-            raise ValueError(
-                "PersistAisleResultCommand.lease requires job_repo or UoW.fence_job_lease"
+            from src.application.errors import FencingConfigurationError
+
+            raise FencingConfigurationError(
+                "Lease present but UoW did not fence and PersistAisleResult has no job_repo",
+                job_id=command.job_id,
             )
         result = self._job_repo.assert_lease(lease, now=now)
         if not result.applied:
+            from src.domain.jobs.lease import JobLeaseLostError
+
             raise JobLeaseLostError(
                 "Lease lost before domain persist",
                 job_id=command.job_id,

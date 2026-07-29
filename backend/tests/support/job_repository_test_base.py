@@ -125,3 +125,12 @@ class JobRepositoryTestBase(JobRepository):
         self, stale_after_seconds: int, *, batch_size: int = 100
     ) -> int:
         return 0
+
+    def list_all_jobs(self):
+        return []
+
+    def list_jobs_by_retry_of(self, retry_of_job_id: str):
+        return []
+
+    def list_jobs_for_ops_scan(self, *, limit: int = 200, statuses=None):
+        return []

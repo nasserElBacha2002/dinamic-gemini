@@ -1,12 +1,13 @@
-# Gitleaks configuration — Phase 4 corrections.
+# Gitleaks configuration — Phase 4 corrections (+ Phase 5/6 allowlists-only).
 # Prefer scanning the Git-tracked tree (see run_security_audit.sh).
+# Use [[allowlists]] only — [allowlist] is rejected by gitleaks >= 8.30.
 
 title = "dinamic-gemini"
 
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Build artifacts, deps, local env, and audit machine outputs"
 paths = [
   '''(^|/)node_modules/''',

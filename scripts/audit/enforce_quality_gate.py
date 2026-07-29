@@ -15,6 +15,7 @@ if str(_AUDIT_DIR) not in sys.path:
     sys.path.insert(0, str(_AUDIT_DIR))
 
 from lib.gate_policy import REQUIRED_AREAS, REQUIRED_TOOL_RULES, ToolGateRule  # noqa: E402
+from lib.git_provenance import current_git_sha, working_tree_status  # noqa: E402
 from lib.schema import SchemaValidationError, normalize_status_document  # noqa: E402
 from lib.statuses import (  # noqa: E402
     ToolStatus,
@@ -90,7 +91,7 @@ def _evaluate_required_tool(
     return reasons, checks
 
 
-def evaluate_gate(status: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
+def evaluate_gate(status: Dict[str, Any], *, repo_root: Path | None = None) -> Tuple[bool, List[str], List[str]]:
     reasons: List[str] = []
     checks: List[str] = []
 
@@ -112,6 +113,43 @@ def evaluate_gate(status: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
     generated_at = status.get("generated_at")
     if generated_at:
         checks.append(f"- generated_at: {generated_at}")
+
+    if repo_root is not None:
+        recorded_sha = status.get("git_sha")
+        head_sha = current_git_sha(repo_root)
+        if recorded_sha and head_sha and recorded_sha != head_sha:
+            reasons.append(
+                f"audit git_sha mismatch: status={recorded_sha} current HEAD={head_sha}"
+            )
+            checks.append("- git_sha: FAIL (stale snapshot)")
+        elif recorded_sha and head_sha:
+            checks.append(f"- git_sha: OK ({recorded_sha})")
+        elif not recorded_sha:
+            reasons.append("audit git_sha missing — cannot prove snapshot matches current HEAD")
+            checks.append("- git_sha: FAIL (missing)")
+        else:
+            checks.append("- git_sha: WARN (HEAD unavailable)")
+
+        recorded_tree = str(status.get("working_tree_status") or "").lower()
+        current_tree = working_tree_status(repo_root)
+        if recorded_tree == "clean" and current_tree == "dirty":
+            reasons.append(
+                "working tree is dirty but audit was recorded on a clean tree"
+            )
+            checks.append("- working_tree_status: FAIL (dirty vs audited clean)")
+        elif recorded_tree in {"clean", "dirty"}:
+            checks.append(f"- working_tree_status: OK (recorded={recorded_tree}, current={current_tree})")
+        elif recorded_tree:
+            checks.append(f"- working_tree_status: recorded={recorded_tree}, current={current_tree}")
+        else:
+            checks.append("- working_tree_status: not recorded")
+
+        started_at = status.get("started_at")
+        finished_at = status.get("finished_at")
+        if started_at:
+            checks.append(f"- started_at: {started_at}")
+        if finished_at:
+            checks.append(f"- finished_at: {finished_at}")
 
     for area in sorted(REQUIRED_AREAS):
         if _get_nested(status, ["areas", area]) is None:
@@ -206,7 +244,7 @@ def main() -> int:
         print("Deploy blocked")
         return 1 if args.strict else 0
 
-    passed, reasons, checks = evaluate_gate(status_data)
+    passed, reasons, checks = evaluate_gate(status_data, repo_root=repo_root)
 
     print(f"Quality Gate Result: {'PASS' if passed else 'FAIL'}")
     print("")

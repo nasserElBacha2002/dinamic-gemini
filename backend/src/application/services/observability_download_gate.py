@@ -7,7 +7,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from fastapi import HTTPException
+from src.application.errors import DownloadCapacityExceededError
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ _active = 0
 
 @contextmanager
 def acquire_download_slot(*, max_concurrent: int) -> Iterator[None]:
-    """Bound concurrent Observability downloads; raise 503 when saturated."""
+    """Bound concurrent Observability downloads; raise when saturated."""
     global _active
     limit = max(1, int(max_concurrent or 1))
     with _lock:
@@ -27,10 +27,7 @@ def acquire_download_slot(*, max_concurrent: int) -> Iterator[None]:
                 _active,
                 limit,
             )
-            raise HTTPException(
-                status_code=503,
-                detail="Download capacity exceeded; retry later",
-            )
+            raise DownloadCapacityExceededError()
         _active += 1
     try:
         yield

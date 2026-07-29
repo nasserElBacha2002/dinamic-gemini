@@ -1,39 +1,26 @@
-# Phase 5 — Observability contract
-
-## Goals
-
-- Detect failures before user impact.
-- Correlate API → job → worker without high-cardinality metric labels.
-- Scrapeable metrics + protected `/metrics`.
-- Stale-fail recovery remains Phase 3 policy (no lease stealing).
+# Phase 5 — Observability contract (corrections)
 
 ## IDs
 
-| ID | Where | Metric label? |
-| -- | ----- | ------------- |
-| `request_id` | HTTP header `X-Request-ID`, logs, response | No |
-| `correlation_id` | HTTP header `X-Correlation-ID`, logs, job context | No |
-| `job_id` / `execution_id` | Logs only | **Never** |
-| `aisle_id` / `inventory_id` | Logs only | **Never** |
+- Each HTTP request: unique `X-Request-ID` (echoed).
+- Correlation: inbound `X-Correlation-ID` or generated; stored on job `payload_json.correlation_id`.
+- Worker: `DINAMIC_CORRELATION_ID` from launch → bootstrap bind.
+- Retry/recovery: preserve root correlation; non-HTTP jobs generate their own.
 
-## Metric label allowlist
+## Metrics
 
-`component`, `operation`, `outcome`, `status`, `job_type`, `provider`, `stage`, `reason_code`, `environment`, `repository_backend`, `method`, `route_template`, `status_class`, `reason`, `artifact_kind`, `storage_backend`, `worker_role`, `host_group`, `error_class`, `failure_code`.
+- Single in-process registry; Prometheus text at `GET /metrics`.
+- Labels allowlisted; no entity IDs.
+- Unmatched routes → `__unmatched__` (never raw path).
+- Series budget: `METRICS_MAX_SERIES_PER_METRIC`.
+- Histograms: non-cumulative storage; cumulative on render; `le="+Inf"` == `_count`.
+- SQL gauges: `OperationalMetricsCollector` TTL cache + single-flight; scrape never hard-fails.
 
-## Endpoints
+## Auth
 
-| Path | Role | Auth |
-| ---- | ---- | ---- |
-| `/health` | Liveness | Public |
-| `/ready` | Readiness (schema + repository backend) | Public |
-| `/metrics` | Prometheus text | `METRICS_INTERNAL_AUTH` (api_key / loopback / open-local) |
-| `/api/v3/observability/metrics` | Product H5 JSON aggregates | Admin JWT (unchanged) |
+- `/metrics`: `METRICS_INTERNAL_AUTH` = `api_key` | `loopback` | `open` (local/test only).
+- Phase 4 Model A preserved (no browser API key for scrape).
 
-## Registry
+## Status
 
-Single process registry: `src.observability.metrics.registry.get_metrics_registry()`.
-Lease counters from Phase 3 delegate into the same registry.
-
-## OpenTelemetry
-
-Not introduced as a mandatory migration. Interfaces remain compatible for a future exporter.
+Contracts above are **IMPLEMENTED**. Catalog metrics marked `PLANNED` must not be treated as scrape-ready SLIs until producers exist.

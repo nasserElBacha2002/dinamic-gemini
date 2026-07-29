@@ -97,7 +97,7 @@ class SqlJobResultUnitOfWork:
             source_asset_id=source_asset_id,
         )
 
-    def fence_job_lease(self, lease, *, now) -> None:
+    def fence_job_lease(self, lease, *, now) -> bool:
         """UPDLOCK the job row under the current UoW transaction — reject stale domain writes.
 
         Holding the row lock until commit closes the TOCTOU window between lease check and
@@ -105,9 +105,12 @@ class SqlJobResultUnitOfWork:
         """
         from datetime import timezone
 
-        from src.domain.jobs.entities import JobStatus
         from src.domain.jobs.lease import JobLeaseLostError
-        from src.infrastructure.repositories.sql_job_repository import _ensure_utc
+        from src.infrastructure.repositories.sql_job_lease_predicates import (
+            LEASE_ACTIVE_PREDICATE_SQL,
+            lease_active_bind_params,
+        )
+        from src.infrastructure.repositories.sql_job_row_mapper import ensure_utc as _ensure_utc
 
         if self._tx is None:
             raise RuntimeError("SqlJobResultUnitOfWork is not active")
@@ -116,24 +119,13 @@ class SqlJobResultUnitOfWork:
             now_utc = now_utc.replace(tzinfo=timezone.utc)
         with self._tx.connection.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT 1
                 FROM inventory_jobs WITH (UPDLOCK, ROWLOCK)
                 WHERE id = ?
-                  AND status IN (?, ?)
-                  AND claim_owner_id = ?
-                  AND lease_fencing_token = ?
-                  AND lease_expires_at IS NOT NULL
-                  AND lease_expires_at >= ?
+                {LEASE_ACTIVE_PREDICATE_SQL}
                 """,
-                (
-                    lease.job_id,
-                    JobStatus.RUNNING.value,
-                    JobStatus.CANCEL_REQUESTED.value,
-                    lease.owner_id,
-                    lease.fencing_token,
-                    now_utc,
-                ),
+                (lease.job_id, *lease_active_bind_params(lease, now_utc=now_utc)),
             )
             row = cur.fetchone()
         if row is None:
@@ -144,6 +136,7 @@ class SqlJobResultUnitOfWork:
                 fencing_token=lease.fencing_token,
                 reason="domain_persist_fence_miss",
             )
+        return True
 
     def __enter__(self) -> SqlJobResultUnitOfWork:
         self._tx = self._client.begin_transaction()

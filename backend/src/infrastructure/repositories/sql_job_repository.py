@@ -15,12 +15,6 @@ from typing import Any
 
 from src.application.ports.repositories import JobRepository
 from src.application.services.job_claim_helpers import classify_claim_after_cas_miss
-from src.application.services.job_lease_helpers import (
-    classify_lease_renewal_after_cas_miss,
-    classify_lease_write_after_cas_miss,
-    lease_allows_finalization_write,
-    lease_is_currently_valid,
-)
 from src.application.services.job_stale_reconciler import (
     STALE_FAILURE_CODE,
     STALE_FAILURE_MESSAGE,
@@ -28,32 +22,31 @@ from src.application.services.job_stale_reconciler import (
 )
 from src.database.sqlserver import SqlServerClient
 from src.domain.aisle.entities import AisleStatus
-from src.domain.aisle_identification.modes import (
-    CONFIGURATION_SNAPSHOT_VERSION,
-    historical_job_execution_strategy,
-    historical_job_identification_mode,
-    historical_job_identification_mode_source,
-)
+from src.domain.aisle_identification.modes import CONFIGURATION_SNAPSHOT_VERSION
 from src.domain.jobs.claim import (
-    TERMINAL_JOB_STATUSES,
     JobClaimOutcome,
     JobClaimResult,
     StaleReclaimResult,
 )
 from src.domain.jobs.entities import Job, JobStatus
-from src.domain.jobs.finalization import (
-    CurrentFinalizationStep,
-    FinalizationStatus,
-    LastCompletedFinalizationStep,
-)
 from src.domain.jobs.lease import (
     JobLease,
-    LeaseRenewalOutcome,
     LeaseRenewalResult,
-    LeaseWriteOutcome,
     LeaseWriteResult,
 )
-from src.infrastructure.repositories.db_row_text import normalize_db_str
+from src.infrastructure.repositories.sql_job_lease_store import SqlJobLeaseStore
+from src.infrastructure.repositories.sql_job_row_mapper import (
+    JOB_SELECT_FIELDS as _JOB_SELECT_FIELDS,
+)
+from src.infrastructure.repositories.sql_job_row_mapper import (
+    ensure_utc as _ensure_utc,
+)
+from src.infrastructure.repositories.sql_job_row_mapper import (
+    parse_json as _parse_json,
+)
+from src.infrastructure.repositories.sql_job_row_mapper import (
+    row_to_job as _row_to_job,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,186 +54,10 @@ logger = logging.getLogger(__name__)
 TARGET_ID_BATCH_SIZE = 500
 
 
-def _ensure_utc(dt: datetime | None) -> datetime | None:
-    if dt is None:
-        return None
-    if dt.tzinfo is not None:
-        return dt
-    return dt.replace(tzinfo=timezone.utc)
-
-
-def _status_from_row(row, job_id: str = "?") -> JobStatus:
-    raw = getattr(row, "status", None)
-    if raw is None:
-        status_str = "queued"
-    elif isinstance(raw, str):
-        status_str = raw.strip() or "queued"
-    else:
-        status_str = str(raw).strip() or "queued"
-    try:
-        return JobStatus(status_str)
-    except ValueError:
-        logger.warning(
-            "Invalid job status from DB: %r, using QUEUED for job_id=%s",
-            status_str,
-            job_id,
-        )
-        return JobStatus.QUEUED
-
-
-def _finalization_status_from_row(row: Any) -> FinalizationStatus:
-    raw = getattr(row, "finalization_status", None)
-    if raw is None or (isinstance(raw, str) and not raw.strip()):
-        return FinalizationStatus.NOT_STARTED
-    try:
-        return FinalizationStatus(str(raw).strip())
-    except ValueError:
-        return FinalizationStatus.NOT_STARTED
-
-
-def _current_finalization_step_from_row(row: Any) -> CurrentFinalizationStep | None:
-    raw = getattr(row, "current_finalization_step", None)
-    if raw is None or (isinstance(raw, str) and not raw.strip()):
-        return None
-    try:
-        return CurrentFinalizationStep(str(raw).strip())
-    except ValueError:
-        return None
-
-
-def _last_completed_step_from_row(row: Any) -> LastCompletedFinalizationStep:
-    raw = getattr(row, "last_completed_finalization_step", None)
-    if raw is None or (isinstance(raw, str) and not raw.strip()):
-        return LastCompletedFinalizationStep.NONE
-    try:
-        return LastCompletedFinalizationStep(str(raw).strip())
-    except ValueError:
-        return LastCompletedFinalizationStep.NONE
-
-
-def _parse_json(raw: object) -> dict[str, Any]:
-    if raw is None:
-        return {}
-    if isinstance(raw, str):
-        text = raw.strip()
-    else:
-        text = str(raw).strip()
-    if not text:
-        return {}
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _parse_optional_json(raw: object) -> dict[str, Any] | None:
-    if raw is None:
-        return None
-    if isinstance(raw, str):
-        text = raw.strip()
-    else:
-        text = str(raw).strip()
-    if not text:
-        return None
-    try:
-        v = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    if isinstance(v, dict):
-        return v
-    return {"value": v}
-
-
-# Fixed column projection for inventory_jobs reads (not user-controlled).
-_JOB_SELECT_FIELDS = (
-    "id, target_type, target_id, job_type, status, "
-    "payload_json, result_json, error_message, created_at, updated_at, "
-    "started_at, finished_at, last_heartbeat_at, cancel_requested_at, "
-    "current_stage, current_substep, current_step_started_at, "
-    "attempt_count, retry_of_job_id, failure_code, failure_message, execution_id, claim_owner_id, "
-    "provider_name, model_name, prompt_key, engine_params_json, prompt_version, "
-    "identification_mode, identification_mode_source, configuration_snapshot_version, "
-    "execution_strategy, "
-    "finalization_status, current_finalization_step, last_completed_finalization_step, "
-    "finalization_error_code, finalization_error_metadata, finalization_started_at, "
-    "finalization_completed_at, domain_persisted_at, artifacts_published_at, "
-    "lease_fencing_token, lease_expires_at, lease_acquired_at"
-)
-
-
-def _row_to_job(row: Any) -> Job:
-    jid = getattr(row, "id", "")
-    created = _ensure_utc(getattr(row, "created_at", None))
-    updated = _ensure_utc(getattr(row, "updated_at", None))
-    if created is None:
-        logger.warning("inventory_jobs row missing created_at for job_id=%s", jid)
-        raise ValueError("inventory_jobs row missing required created_at")
-    if updated is None:
-        logger.warning("inventory_jobs row missing updated_at for job_id=%s", jid)
-        raise ValueError("inventory_jobs row missing required updated_at")
-    return Job(
-        id=jid,
-        target_type=normalize_db_str(getattr(row, "target_type", None)),
-        target_id=normalize_db_str(getattr(row, "target_id", None)),
-        job_type=normalize_db_str(getattr(row, "job_type", None)),
-        status=_status_from_row(row, jid),
-        payload_json=_parse_json(getattr(row, "payload_json", None)),
-        created_at=created,
-        updated_at=updated,
-        result_json=_parse_json(getattr(row, "result_json", None)) or None,
-        error_message=getattr(row, "error_message", None),
-        started_at=_ensure_utc(getattr(row, "started_at", None)),
-        finished_at=_ensure_utc(getattr(row, "finished_at", None)),
-        last_heartbeat_at=_ensure_utc(getattr(row, "last_heartbeat_at", None)),
-        cancel_requested_at=_ensure_utc(getattr(row, "cancel_requested_at", None)),
-        current_stage=getattr(row, "current_stage", None),
-        current_substep=getattr(row, "current_substep", None),
-        current_step_started_at=_ensure_utc(getattr(row, "current_step_started_at", None)),
-        attempt_count=int(getattr(row, "attempt_count", 1) or 1),
-        retry_of_job_id=getattr(row, "retry_of_job_id", None),
-        failure_code=getattr(row, "failure_code", None),
-        failure_message=getattr(row, "failure_message", None),
-        execution_id=getattr(row, "execution_id", None),
-        claim_owner_id=getattr(row, "claim_owner_id", None),
-        provider_name=getattr(row, "provider_name", None),
-        model_name=getattr(row, "model_name", None),
-        prompt_key=getattr(row, "prompt_key", None),
-        engine_params_json=_parse_optional_json(getattr(row, "engine_params_json", None)),
-        prompt_version=getattr(row, "prompt_version", None),
-        identification_mode=historical_job_identification_mode(
-            getattr(row, "identification_mode", None)
-        ),
-        identification_mode_source=historical_job_identification_mode_source(
-            getattr(row, "identification_mode_source", None)
-        ),
-        configuration_snapshot_version=int(
-            getattr(row, "configuration_snapshot_version", None)
-            or CONFIGURATION_SNAPSHOT_VERSION
-        ),
-        execution_strategy=historical_job_execution_strategy(
-            getattr(row, "execution_strategy", None)
-        ),
-        finalization_status=_finalization_status_from_row(row),
-        current_finalization_step=_current_finalization_step_from_row(row),
-        last_completed_finalization_step=_last_completed_step_from_row(row),
-        finalization_error_code=getattr(row, "finalization_error_code", None),
-        finalization_error_metadata=_parse_optional_json(
-            getattr(row, "finalization_error_metadata", None)
-        ),
-        finalization_started_at=_ensure_utc(getattr(row, "finalization_started_at", None)),
-        finalization_completed_at=_ensure_utc(getattr(row, "finalization_completed_at", None)),
-        domain_persisted_at=_ensure_utc(getattr(row, "domain_persisted_at", None)),
-        artifacts_published_at=_ensure_utc(getattr(row, "artifacts_published_at", None)),
-        lease_fencing_token=int(getattr(row, "lease_fencing_token", 0) or 0),
-        lease_expires_at=_ensure_utc(getattr(row, "lease_expires_at", None)),
-        lease_acquired_at=_ensure_utc(getattr(row, "lease_acquired_at", None)),
-    )
-
-
 class SqlJobRepository(JobRepository):
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
+        self._lease_store = SqlJobLeaseStore(client, self.get_by_id)
 
     def save(self, job: Job) -> None:
         if job.created_at is None or job.updated_at is None:
@@ -523,6 +340,49 @@ class SqlJobRepository(JobRepository):
             cur.execute(
                 f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC"  # nosec B608
             )
+            rows = cur.fetchall()
+        return [_row_to_job(row) for row in rows]
+
+    def list_jobs_by_retry_of(self, retry_of_job_id: str) -> Sequence[Job]:
+        parent = (retry_of_job_id or "").strip()
+        if not parent:
+            return []
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE retry_of_job_id = ?",  # nosec B608
+                (parent,),
+            )
+            rows = cur.fetchall()
+        return [_row_to_job(row) for row in rows]
+
+    def list_jobs_for_ops_scan(
+        self,
+        *,
+        limit: int = 200,
+        statuses: Sequence[str] | None = None,
+    ) -> Sequence[Job]:
+        lim = max(1, min(int(limit or 200), 5000))
+        status_list = [s.lower() for s in (statuses or []) if s]
+        with self._client.cursor() as cur:
+            if status_list:
+                placeholders = ",".join("?" * len(status_list))
+                cur.execute(
+                    f"""
+                    SELECT TOP ({lim}) {_JOB_SELECT_FIELDS}
+                    FROM inventory_jobs
+                    WHERE status IN ({placeholders})
+                    ORDER BY updated_at DESC, created_at DESC
+                    """,  # nosec B608
+                    tuple(status_list),
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT TOP ({lim}) {_JOB_SELECT_FIELDS}
+                    FROM inventory_jobs
+                    ORDER BY updated_at DESC, created_at DESC
+                    """  # nosec B608
+                )
             rows = cur.fetchall()
         return [_row_to_job(row) for row in rows]
 
@@ -932,65 +792,9 @@ class SqlJobRepository(JobRepository):
         now: datetime,
         extension_seconds: int,
     ) -> LeaseRenewalResult:
-        """Extend ``lease_expires_at`` under CAS (owner + fencing_token + not-yet-expired)."""
-        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
-        duration = max(1, int(extension_seconds or 0))
-        new_expires_at = now_utc + timedelta(seconds=duration)
-        with self._client.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE inventory_jobs
-                SET lease_expires_at = ?, last_heartbeat_at = ?, updated_at = ?
-                WHERE id = ?
-                  AND status IN (?, ?)
-                  AND claim_owner_id = ?
-                  AND lease_fencing_token = ?
-                  AND lease_expires_at >= ?
-                """,
-                (
-                    new_expires_at,
-                    now_utc,
-                    now_utc,
-                    lease.job_id,
-                    JobStatus.RUNNING.value,
-                    JobStatus.CANCEL_REQUESTED.value,
-                    lease.owner_id,
-                    lease.fencing_token,
-                    now_utc,
-                ),
-            )
-            applied = int(cur.rowcount or 0) == 1
-
-        if applied:
-            renewed = JobLease(
-                job_id=lease.job_id,
-                owner_id=lease.owner_id,
-                fencing_token=lease.fencing_token,
-                acquired_at=lease.acquired_at,
-                expires_at=new_expires_at,
-            )
-            logger.info(
-                "event=job_lease_renewed job_id=%s owner_id=%s fencing_token=%s expires_at=%s",
-                lease.job_id,
-                lease.owner_id,
-                lease.fencing_token,
-                new_expires_at.isoformat(),
-            )
-            return LeaseRenewalResult(outcome=LeaseRenewalOutcome.RENEWED, lease=renewed)
-
-        job = self.get_by_id(lease.job_id)
-        result = classify_lease_renewal_after_cas_miss(
-            job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
+        return self._lease_store.renew_lease(
+            lease, now=now, extension_seconds=extension_seconds
         )
-        logger.warning(
-            "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s outcome=%s reason=%s",
-            lease.job_id,
-            lease.owner_id,
-            lease.fencing_token,
-            result.outcome.value,
-            result.reason,
-        )
-        return result
 
     def reacquire_expired_lease(
         self,
@@ -1000,95 +804,11 @@ class SqlJobRepository(JobRepository):
         new_owner_id: str,
         extension_seconds: int,
     ) -> JobClaimResult:
-        """Steal an expired RUNNING lease: new owner + fencing_token + 1."""
-        owner = (new_owner_id or "").strip()
-        if not owner:
-            return JobClaimResult(
-                outcome=JobClaimOutcome.CONFLICT,
-                reason="claim_owner_id_required",
-                claim_owner_id=None,
-            )
-        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
-        duration = max(1, int(extension_seconds or 0))
-        new_expires_at = now_utc + timedelta(seconds=duration)
-        with self._client.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE inventory_jobs
-                SET claim_owner_id = ?,
-                    lease_fencing_token = lease_fencing_token + 1,
-                    lease_acquired_at = ?,
-                    lease_expires_at = ?,
-                    last_heartbeat_at = ?,
-                    updated_at = ?
-                OUTPUT inserted.lease_fencing_token
-                WHERE id = ?
-                  AND status = ?
-                  AND lease_expires_at < ?
-                """,
-                (
-                    owner,
-                    now_utc,
-                    new_expires_at,
-                    now_utc,
-                    now_utc,
-                    job_id,
-                    JobStatus.RUNNING.value,
-                    now_utc,
-                ),
-            )
-            row = cur.fetchone()
-        if row is None:
-            job = self.get_by_id(job_id)
-            if job is None:
-                return JobClaimResult(
-                    outcome=JobClaimOutcome.NOT_FOUND, reason="job_not_found", claim_owner_id=owner
-                )
-            status_value = job.status.value if isinstance(job.status, JobStatus) else str(job.status)
-            if status_value in TERMINAL_JOB_STATUSES:
-                return JobClaimResult(
-                    outcome=JobClaimOutcome.TERMINAL,
-                    job=job,
-                    previous_status=status_value,
-                    reason="job_terminal",
-                    claim_owner_id=owner,
-                )
-            return JobClaimResult(
-                outcome=JobClaimOutcome.CONFLICT,
-                job=job,
-                previous_status=status_value,
-                reason="lease_not_expired_or_not_running",
-                claim_owner_id=owner,
-            )
-
-        raw_token = getattr(row, "lease_fencing_token", None)
-        if raw_token is None:
-            try:
-                raw_token = row[0]
-            except Exception:
-                raw_token = None
-        fencing_token = int(raw_token) if raw_token is not None else 0
-        job = self.get_by_id(job_id)
-        lease = JobLease(
-            job_id=job_id,
-            owner_id=owner,
-            fencing_token=fencing_token,
-            acquired_at=now_utc,
-            expires_at=new_expires_at,
-        )
-        logger.warning(
-            "event=job_lease_reacquired job_id=%s new_owner_id=%s fencing_token=%s expires_at=%s",
+        return self._lease_store.reacquire_expired_lease(
             job_id,
-            owner,
-            fencing_token,
-            new_expires_at.isoformat(),
-        )
-        return JobClaimResult(
-            outcome=JobClaimOutcome.ACQUIRED,
-            job=job,
-            reason="lease_reacquired",
-            claim_owner_id=owner,
-            lease=lease,
+            now=now,
+            new_owner_id=new_owner_id,
+            extension_seconds=extension_seconds,
         )
 
     def merge_result_json_if_leased(
@@ -1098,163 +818,7 @@ class SqlJobRepository(JobRepository):
         *,
         now: datetime,
     ) -> tuple[LeaseWriteResult, Job | None]:
-        """Merge ``result_json`` only while the caller still holds the lease (owner+token+not expired)."""
-        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
-        if not patch:
-            job = self.get_by_id(lease.job_id)
-            if lease_is_currently_valid(
-                job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
-            ):
-                return LeaseWriteResult(outcome=LeaseWriteOutcome.APPLIED), job
-            result = classify_lease_write_after_cas_miss(
-                job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
-            )
-            return result, job
-
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
-            try:
-                cur.execute(
-                    """
-                    SELECT result_json, status, claim_owner_id, lease_fencing_token, lease_expires_at
-                    FROM inventory_jobs WITH (UPDLOCK, ROWLOCK)
-                    WHERE id = ?
-                    """,
-                    (lease.job_id,),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    txn.rollback()
-                    return (
-                        LeaseWriteResult(outcome=LeaseWriteOutcome.NOT_FOUND, reason="job_not_found"),
-                        None,
-                    )
-
-                status_value = str(getattr(row, "status", None) or "")
-                persisted_owner = normalize_db_str(getattr(row, "claim_owner_id", None))
-                persisted_token = int(getattr(row, "lease_fencing_token", 0) or 0)
-                expires_at = _ensure_utc(getattr(row, "lease_expires_at", None))
-
-                if status_value in TERMINAL_JOB_STATUSES:
-                    txn.rollback()
-                    logger.warning(
-                        "event=job_stale_write_rejected job_id=%s owner_id=%s fencing_token=%s "
-                        "reason=job_terminal",
-                        lease.job_id,
-                        lease.owner_id,
-                        lease.fencing_token,
-                    )
-                    return (
-                        LeaseWriteResult(
-                            outcome=LeaseWriteOutcome.JOB_TERMINAL,
-                            reason=f"job_terminal:{status_value}",
-                        ),
-                        self.get_by_id(lease.job_id),
-                    )
-                if status_value not in (JobStatus.RUNNING.value, JobStatus.CANCEL_REQUESTED.value):
-                    txn.rollback()
-                    logger.warning(
-                        "event=job_stale_write_rejected job_id=%s owner_id=%s fencing_token=%s "
-                        "reason=invalid_state:%s",
-                        lease.job_id,
-                        lease.owner_id,
-                        lease.fencing_token,
-                        status_value,
-                    )
-                    return (
-                        LeaseWriteResult(
-                            outcome=LeaseWriteOutcome.INVALID_STATE,
-                            reason=f"status_not_leasable:{status_value}",
-                        ),
-                        self.get_by_id(lease.job_id),
-                    )
-                if (
-                    persisted_owner != (lease.owner_id or "").strip()
-                    or persisted_token != lease.fencing_token
-                ):
-                    txn.rollback()
-                    logger.warning(
-                        "event=job_stale_write_rejected job_id=%s owner_id=%s fencing_token=%s "
-                        "persisted_owner=%s persisted_token=%s reason=owner_or_fencing_token_mismatch",
-                        lease.job_id,
-                        lease.owner_id,
-                        lease.fencing_token,
-                        persisted_owner,
-                        persisted_token,
-                    )
-                    return (
-                        LeaseWriteResult(
-                            outcome=LeaseWriteOutcome.LEASE_LOST,
-                            reason="owner_or_fencing_token_mismatch",
-                        ),
-                        self.get_by_id(lease.job_id),
-                    )
-                if expires_at is not None and expires_at < now_utc:
-                    txn.rollback()
-                    logger.warning(
-                        "event=job_stale_write_rejected job_id=%s owner_id=%s fencing_token=%s "
-                        "reason=lease_expired",
-                        lease.job_id,
-                        lease.owner_id,
-                        lease.fencing_token,
-                    )
-                    return (
-                        LeaseWriteResult(outcome=LeaseWriteOutcome.LEASE_LOST, reason="lease_expired"),
-                        self.get_by_id(lease.job_id),
-                    )
-
-                current = _parse_json(getattr(row, "result_json", None)) or {}
-                if not isinstance(current, dict):
-                    current = {}
-                merged = dict(current)
-                merged.update(patch)
-                cur.execute(
-                    """
-                    UPDATE inventory_jobs
-                    SET result_json = ?, updated_at = ?
-                    WHERE id = ?
-                      AND claim_owner_id = ?
-                      AND lease_fencing_token = ?
-                      AND lease_expires_at >= ?
-                      AND status IN (?, ?)
-                    """,
-                    (
-                        json.dumps(merged, ensure_ascii=False),
-                        now_utc,
-                        lease.job_id,
-                        lease.owner_id,
-                        lease.fencing_token,
-                        now_utc,
-                        JobStatus.RUNNING.value,
-                        JobStatus.CANCEL_REQUESTED.value,
-                    ),
-                )
-                if int(cur.rowcount or 0) != 1:
-                    txn.rollback()
-                    job = self.get_by_id(lease.job_id)
-                    result = classify_lease_write_after_cas_miss(
-                        job,
-                        owner_id=lease.owner_id,
-                        fencing_token=lease.fencing_token,
-                        now=now_utc,
-                    )
-                    logger.warning(
-                        "event=job_stale_write_rejected job_id=%s owner_id=%s fencing_token=%s "
-                        "outcome=%s reason=%s",
-                        lease.job_id,
-                        lease.owner_id,
-                        lease.fencing_token,
-                        result.outcome.value,
-                        result.reason,
-                    )
-                    return result, job
-                txn.commit()
-            except Exception:
-                txn.rollback()
-                raise
-            finally:
-                cur.close()
-        return LeaseWriteResult(outcome=LeaseWriteOutcome.APPLIED), self.get_by_id(lease.job_id)
+        return self._lease_store.merge_result_json_if_leased(lease, patch, now=now)
 
     def touch_heartbeat_if_leased(
         self,
@@ -1263,19 +827,12 @@ class SqlJobRepository(JobRepository):
         now: datetime,
         extension_seconds: int,
     ) -> LeaseRenewalResult:
-        """Renew lease + update ``last_heartbeat_at`` (same as renew for Phase 3)."""
-        return self.renew_lease(lease, now=now, extension_seconds=extension_seconds)
+        return self._lease_store.touch_heartbeat_if_leased(
+            lease, now=now, extension_seconds=extension_seconds
+        )
 
     def assert_lease(self, lease: JobLease, *, now: datetime) -> LeaseWriteResult:
-        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
-        job = self.get_by_id(lease.job_id)
-        if lease_is_currently_valid(
-            job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
-        ):
-            return LeaseWriteResult(outcome=LeaseWriteOutcome.APPLIED)
-        return classify_lease_write_after_cas_miss(
-            job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
-        )
+        return self._lease_store.assert_lease(lease, now=now)
 
     def complete_if_leased(
         self,
@@ -1284,74 +841,7 @@ class SqlJobRepository(JobRepository):
         *,
         now: datetime,
     ) -> LeaseWriteResult:
-        """CAS terminal SUCCEEDED write gated by owner + fencing_token + not-expired lease."""
-        if job.id != lease.job_id:
-            return LeaseWriteResult(outcome=LeaseWriteOutcome.INVALID_STATE, reason="job_id_mismatch")
-        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
-        result_str = json.dumps(job.result_json, ensure_ascii=False) if job.result_json else None
-        finalization_meta_str = (
-            json.dumps(job.finalization_error_metadata, ensure_ascii=False)
-            if job.finalization_error_metadata
-            else None
-        )
-        with self._client.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE inventory_jobs
-                SET status = ?,
-                    result_json = ?,
-                    error_message = NULL,
-                    failure_code = NULL,
-                    failure_message = NULL,
-                    finalization_error_code = NULL,
-                    finalization_error_metadata = ?,
-                    updated_at = ?,
-                    finished_at = ?,
-                    last_heartbeat_at = ?,
-                    current_stage = ?,
-                    current_substep = ?,
-                    prompt_version = ?
-                WHERE id = ?
-                  AND status IN (?, ?)
-                  AND claim_owner_id = ?
-                  AND lease_fencing_token = ?
-                  AND lease_expires_at >= ?
-                """,
-                (
-                    JobStatus.SUCCEEDED.value,
-                    result_str,
-                    finalization_meta_str,
-                    now_utc,
-                    _ensure_utc(job.finished_at) or now_utc,
-                    _ensure_utc(job.last_heartbeat_at) or now_utc,
-                    job.current_stage,
-                    job.current_substep,
-                    job.prompt_version,
-                    lease.job_id,
-                    JobStatus.RUNNING.value,
-                    JobStatus.CANCEL_REQUESTED.value,
-                    lease.owner_id,
-                    lease.fencing_token,
-                    now_utc,
-                ),
-            )
-            applied = int(cur.rowcount or 0) == 1
-        if applied:
-            return LeaseWriteResult(outcome=LeaseWriteOutcome.APPLIED)
-        persisted = self.get_by_id(lease.job_id)
-        result = classify_lease_write_after_cas_miss(
-            persisted, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
-        )
-        logger.warning(
-            "event=job_stale_write_rejected job_id=%s operation=complete owner_id=%s "
-            "fencing_token=%s outcome=%s reason=%s",
-            lease.job_id,
-            lease.owner_id,
-            lease.fencing_token,
-            result.outcome.value,
-            result.reason,
-        )
-        return result
+        return self._lease_store.complete_if_leased(lease, job, now=now)
 
     def fail_if_leased(
         self,
@@ -1361,58 +851,12 @@ class SqlJobRepository(JobRepository):
         error_message: str,
         failure_code: str = "PROCESSING_FAILED",
     ) -> LeaseWriteResult:
-        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
-        msg = error_message[:2048] if len(error_message) > 2048 else error_message
-        with self._client.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE inventory_jobs
-                SET status = ?,
-                    updated_at = ?,
-                    finished_at = ?,
-                    last_heartbeat_at = ?,
-                    failure_code = ?,
-                    failure_message = ?,
-                    error_message = ?
-                WHERE id = ?
-                  AND status IN (?, ?)
-                  AND claim_owner_id = ?
-                  AND lease_fencing_token = ?
-                  AND lease_expires_at >= ?
-                """,
-                (
-                    JobStatus.FAILED.value,
-                    now_utc,
-                    now_utc,
-                    now_utc,
-                    failure_code,
-                    msg,
-                    msg,
-                    lease.job_id,
-                    JobStatus.RUNNING.value,
-                    JobStatus.CANCEL_REQUESTED.value,
-                    lease.owner_id,
-                    lease.fencing_token,
-                    now_utc,
-                ),
-            )
-            applied = int(cur.rowcount or 0) == 1
-        if applied:
-            return LeaseWriteResult(outcome=LeaseWriteOutcome.APPLIED)
-        persisted = self.get_by_id(lease.job_id)
-        result = classify_lease_write_after_cas_miss(
-            persisted, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
+        return self._lease_store.fail_if_leased(
+            lease,
+            now=now,
+            error_message=error_message,
+            failure_code=failure_code,
         )
-        logger.warning(
-            "event=job_stale_write_rejected job_id=%s operation=fail owner_id=%s "
-            "fencing_token=%s outcome=%s reason=%s",
-            lease.job_id,
-            lease.owner_id,
-            lease.fencing_token,
-            result.outcome.value,
-            result.reason,
-        )
-        return result
 
     def update_finalization_if_leased(
         self,
@@ -1421,113 +865,9 @@ class SqlJobRepository(JobRepository):
         now: datetime,
         mutator,
     ) -> LeaseWriteResult:
-        """Apply finalization mutations then persist under lease CAS."""
-        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
-        job = self.get_by_id(lease.job_id)
-        if not lease_allows_finalization_write(
-            job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
-        ):
-            result = classify_lease_write_after_cas_miss(
-                job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
-            )
-            logger.warning(
-                "event=job_stale_write_rejected job_id=%s operation=finalization owner_id=%s "
-                "fencing_token=%s outcome=%s reason=%s",
-                lease.job_id,
-                lease.owner_id,
-                lease.fencing_token,
-                result.outcome.value,
-                result.reason,
-            )
-            return result
-        assert job is not None
-        mutator(job)
-        job.updated_at = now_utc
-        finalization_meta_str = (
-            json.dumps(job.finalization_error_metadata, ensure_ascii=False)
-            if job.finalization_error_metadata
-            else None
+        return self._lease_store.update_finalization_if_leased(
+            lease, now=now, mutator=mutator
         )
-        result_str = json.dumps(job.result_json, ensure_ascii=False) if job.result_json else None
-        with self._client.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE inventory_jobs
-                SET status = ?,
-                    result_json = ?,
-                    error_message = ?,
-                    failure_code = ?,
-                    failure_message = ?,
-                    updated_at = ?,
-                    finished_at = ?,
-                    last_heartbeat_at = ?,
-                    current_stage = ?,
-                    current_substep = ?,
-                    finalization_status = ?,
-                    current_finalization_step = ?,
-                    last_completed_finalization_step = ?,
-                    finalization_error_code = ?,
-                    finalization_error_metadata = ?,
-                    finalization_started_at = ?,
-                    finalization_completed_at = ?,
-                    domain_persisted_at = ?,
-                    artifacts_published_at = ?
-                WHERE id = ?
-                  AND status IN (?, ?, ?)
-                  AND claim_owner_id = ?
-                  AND lease_fencing_token = ?
-                  AND (
-                        status = ?
-                     OR (lease_expires_at IS NOT NULL AND lease_expires_at >= ?)
-                  )
-                """,
-                (
-                    job.status.value,
-                    result_str,
-                    job.error_message,
-                    job.failure_code,
-                    job.failure_message,
-                    now_utc,
-                    _ensure_utc(job.finished_at),
-                    _ensure_utc(job.last_heartbeat_at),
-                    job.current_stage,
-                    job.current_substep,
-                    job.finalization_status.value,
-                    job.current_finalization_step.value if job.current_finalization_step else None,
-                    job.last_completed_finalization_step.value,
-                    job.finalization_error_code,
-                    finalization_meta_str,
-                    _ensure_utc(job.finalization_started_at),
-                    _ensure_utc(job.finalization_completed_at),
-                    _ensure_utc(job.domain_persisted_at),
-                    _ensure_utc(job.artifacts_published_at),
-                    lease.job_id,
-                    JobStatus.RUNNING.value,
-                    JobStatus.CANCEL_REQUESTED.value,
-                    JobStatus.SUCCEEDED.value,
-                    lease.owner_id,
-                    lease.fencing_token,
-                    JobStatus.SUCCEEDED.value,
-                    now_utc,
-                ),
-            )
-            applied = int(cur.rowcount or 0) == 1
-        if applied:
-            return LeaseWriteResult(outcome=LeaseWriteOutcome.APPLIED)
-        persisted = self.get_by_id(lease.job_id)
-        result = classify_lease_write_after_cas_miss(
-            persisted, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
-        )
-        logger.warning(
-            "event=job_stale_write_rejected job_id=%s operation=finalization owner_id=%s "
-            "fencing_token=%s outcome=%s reason=%s",
-            lease.job_id,
-            lease.owner_id,
-            lease.fencing_token,
-            result.outcome.value,
-            result.reason,
-        )
-        return result
 
     def acknowledge_cancel_if_leased(
         self,
@@ -1536,58 +876,9 @@ class SqlJobRepository(JobRepository):
         now: datetime,
         reason: str,
     ) -> LeaseWriteResult:
-        now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
-        msg = reason[:2048] if len(reason) > 2048 else reason
-        with self._client.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE inventory_jobs
-                SET status = ?,
-                    updated_at = ?,
-                    finished_at = ?,
-                    last_heartbeat_at = ?,
-                    failure_code = ?,
-                    failure_message = ?,
-                    error_message = ?
-                WHERE id = ?
-                  AND status IN (?, ?)
-                  AND claim_owner_id = ?
-                  AND lease_fencing_token = ?
-                  AND lease_expires_at >= ?
-                """,
-                (
-                    JobStatus.CANCELED.value,
-                    now_utc,
-                    now_utc,
-                    now_utc,
-                    "CANCELED",
-                    msg,
-                    msg,
-                    lease.job_id,
-                    JobStatus.RUNNING.value,
-                    JobStatus.CANCEL_REQUESTED.value,
-                    lease.owner_id,
-                    lease.fencing_token,
-                    now_utc,
-                ),
-            )
-            applied = int(cur.rowcount or 0) == 1
-        if applied:
-            return LeaseWriteResult(outcome=LeaseWriteOutcome.APPLIED)
-        persisted = self.get_by_id(lease.job_id)
-        result = classify_lease_write_after_cas_miss(
-            persisted, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now_utc
+        return self._lease_store.acknowledge_cancel_if_leased(
+            lease, now=now, reason=reason
         )
-        logger.warning(
-            "event=job_stale_write_rejected job_id=%s operation=acknowledge_cancel owner_id=%s "
-            "fencing_token=%s outcome=%s reason=%s",
-            lease.job_id,
-            lease.owner_id,
-            lease.fencing_token,
-            result.outcome.value,
-            result.reason,
-        )
-        return result
 
     def try_reclaim_stale_job_and_reconcile_aisle(
         self,

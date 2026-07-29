@@ -16,6 +16,7 @@ _AUDIT_DIR = Path(__file__).resolve().parent
 if str(_AUDIT_DIR) not in sys.path:
     sys.path.insert(0, str(_AUDIT_DIR))
 
+from lib.git_provenance import current_git_sha, working_tree_status  # noqa: E402
 from lib.parsers import (  # noqa: E402
     parse_bandit as lib_parse_bandit,
     parse_eslint as lib_parse_eslint,
@@ -619,6 +620,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Correlation id for this aggregation (default: AUDIT_RUN_ID or UTC timestamp).",
     )
     parser.add_argument(
+        "--started-at",
+        default=None,
+        help="ISO timestamp when audit run started (default: now at aggregation start).",
+    )
+    parser.add_argument(
         "--skip-report-update",
         action="store_true",
         help="Do not rewrite the autosection in audit/audit-report.md.",
@@ -631,7 +637,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     audit_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    started_at = args.started_at or os.environ.get("AUDIT_STARTED_AT") or generated_at
     run_id = args.run_id or os.environ.get("AUDIT_RUN_ID") or generated_at.replace(":", "").replace("+00:00", "Z")
+    git_sha = current_git_sha(repo_root)
+    tree_status = working_tree_status(repo_root)
+    finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     backend_files = {
         "Ruff": raw / "backend-ruff.txt",
@@ -768,6 +778,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         "overall_status": overall_status,
         "max_severity": overall_max_sev,
         "generated_at": generated_at,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "git_sha": git_sha,
+        "working_tree_status": tree_status,
         "areas": {},
     }
     for area_key, tools in areas.items():

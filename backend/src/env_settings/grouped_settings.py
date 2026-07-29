@@ -645,21 +645,33 @@ class ApiRuntimeSettings(BaseModel):
             os.getenv("RECOVERY_ENABLED", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
-            "Enable automatic recovery scheduler hooks (explicit in production). "
+            "Enable automatic stale-job recovery scheduler (explicit in production). "
             "Env: RECOVERY_ENABLED."
         ),
     )
     recovery_interval_sec: int = Field(
         default_factory=lambda: int(os.getenv("RECOVERY_INTERVAL_SEC", "60")),
-        description="Recovery poll interval seconds. Env: RECOVERY_INTERVAL_SEC.",
+        description="Recovery poll interval seconds (>0). Env: RECOVERY_INTERVAL_SEC.",
+        ge=1,
+        le=3600,
     )
     recovery_batch_size: int = Field(
         default_factory=lambda: int(os.getenv("RECOVERY_BATCH_SIZE", "20")),
-        description="Max jobs per recovery batch. Env: RECOVERY_BATCH_SIZE.",
+        description="Max jobs per recovery batch (1..200). Env: RECOVERY_BATCH_SIZE.",
+        ge=1,
+        le=200,
     )
     recovery_max_attempts: int = Field(
         default_factory=lambda: int(os.getenv("RECOVERY_MAX_ATTEMPTS", "3")),
-        description="Max automatic recovery attempts per job lineage. Env: RECOVERY_MAX_ATTEMPTS.",
+        description="Max automatic recovery attempts per job lineage (>=1). Env: RECOVERY_MAX_ATTEMPTS.",
+        ge=1,
+        le=50,
+    )
+    metrics_max_series_per_metric: int = Field(
+        default_factory=lambda: int(os.getenv("METRICS_MAX_SERIES_PER_METRIC", "500")),
+        description="Max label-sets per metric before rejection. Env: METRICS_MAX_SERIES_PER_METRIC.",
+        ge=1,
+        le=10000,
     )
     embedded_worker_enabled: bool = Field(
         default_factory=lambda: (
