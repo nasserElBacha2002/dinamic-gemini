@@ -50,8 +50,8 @@ Status column: `IMPLEMENTED` | `PLANNED` | `DEPRECATED`
 | worker_shutdown_total | counter | … | instruments | PLANNED | — |
 | repository_operations_total | counter | … | instruments | PLANNED | — |
 | sql_* | counter | … | instruments | PLANNED | — |
-| job_recovery_total | counter | outcome | instruments | PLANNED | RecoverySchedulerFailures |
-| stale_recovery_scheduler_runs_total | counter | outcome | StaleJobRecoveryScheduler | IMPLEMENTED | — |
+| job_recovery_total | counter | outcome | instruments | PLANNED | — (do not alert; use stale_recovery_scheduler_*) |
+| stale_recovery_scheduler_runs_total | counter | outcome | StaleJobRecoveryScheduler | IMPLEMENTED | RecoverySchedulerFailures |
 | stale_recovery_scheduler_recovered_total | counter | outcome | StaleJobRecoveryScheduler | IMPLEMENTED | — |
 | operational_metrics_collector_errors_total | counter | reason_code | OperationalMetricsCollector | IMPLEMENTED | OperationalMetricsCollectorErrors |
 

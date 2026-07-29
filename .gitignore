@@ -160,6 +160,8 @@ phase5-observability-operations-*.txt
 **/phase5-observability-operations-*.txt
 phase6-architecture-refactor-*.txt
 **/phase6-architecture-refactor-*.txt
+phase7-release-hardening-*.txt
+**/phase7-release-hardening-*.txt
 authoritative-local-code-scan-intermediate-*.txt
 authoritative-local-code-scan-intermediate-*.md
 legacy-processing-cleanup-*.txt

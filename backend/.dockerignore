@@ -44,6 +44,12 @@ temp/
 tests/
 
 output/
+review/
+.review/
+audit/raw/
+audit-results/
+phase7-release-hardening-*.txt
+implementation-corrections-*.txt
 
 # Secrets / local credentials — never bake into image layers
 .env
