@@ -627,6 +627,40 @@ class ApiRuntimeSettings(BaseModel):
             "Env: API_KEY_REQUIRED_PATH_PREFIXES."
         ),
     )
+    metrics_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("METRICS_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+        ),
+        description="Enable Prometheus text exposition at GET /metrics. Env: METRICS_ENABLED.",
+    )
+    metrics_internal_auth: str = Field(
+        default_factory=lambda: (os.getenv("METRICS_INTERNAL_AUTH", "api_key") or "api_key").strip().lower(),
+        description=(
+            "Protect /metrics: api_key (require X-API-Key when API_KEY set; else deny in hosted), "
+            "loopback (only 127.0.0.1/::1), open (local/test only). Env: METRICS_INTERNAL_AUTH."
+        ),
+    )
+    recovery_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("RECOVERY_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+        ),
+        description=(
+            "Enable automatic recovery scheduler hooks (explicit in production). "
+            "Env: RECOVERY_ENABLED."
+        ),
+    )
+    recovery_interval_sec: int = Field(
+        default_factory=lambda: int(os.getenv("RECOVERY_INTERVAL_SEC", "60")),
+        description="Recovery poll interval seconds. Env: RECOVERY_INTERVAL_SEC.",
+    )
+    recovery_batch_size: int = Field(
+        default_factory=lambda: int(os.getenv("RECOVERY_BATCH_SIZE", "20")),
+        description="Max jobs per recovery batch. Env: RECOVERY_BATCH_SIZE.",
+    )
+    recovery_max_attempts: int = Field(
+        default_factory=lambda: int(os.getenv("RECOVERY_MAX_ATTEMPTS", "3")),
+        description="Max automatic recovery attempts per job lineage. Env: RECOVERY_MAX_ATTEMPTS.",
+    )
     embedded_worker_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("EMBEDDED_WORKER_ENABLED", "true").strip().lower() in ("1", "true", "yes")

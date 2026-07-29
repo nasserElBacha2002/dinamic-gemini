@@ -27,7 +27,7 @@ PRODUCTION_ALERT_CATALOG: tuple[ProductionAlertDefinition, ...] = (
     ProductionAlertDefinition(
         alert_id="queue_depth_high",
         severity="warning",
-        metric="queue_depth",
+        metric="jobs_in_state",
         window="5m",
         owner="platform-ops",
         action="Scale workers; check claim/lease; pause non-critical tenants if critical.",
@@ -36,7 +36,7 @@ PRODUCTION_ALERT_CATALOG: tuple[ProductionAlertDefinition, ...] = (
     ProductionAlertDefinition(
         alert_id="queue_depth_critical",
         severity="critical",
-        metric="queue_depth",
+        metric="jobs_in_state",
         window="5m",
         owner="platform-ops",
         action="Page on-call; pause rollout; drain backlog before new tenants.",
@@ -45,7 +45,7 @@ PRODUCTION_ALERT_CATALOG: tuple[ProductionAlertDefinition, ...] = (
     ProductionAlertDefinition(
         alert_id="oldest_pending_high",
         severity="warning",
-        metric="oldest_pending_age",
+        metric="job_queue_wait_duration_seconds",
         window="10m",
         owner="platform-ops",
         action="Inspect stuck jobs; reclaim expired leases; check provider health.",
@@ -54,7 +54,7 @@ PRODUCTION_ALERT_CATALOG: tuple[ProductionAlertDefinition, ...] = (
     ProductionAlertDefinition(
         alert_id="job_stuck",
         severity="critical",
-        metric="job_lease_expired_running",
+        metric="job_expired_running_leases",
         window="5m",
         owner="pipeline-oncall",
         action="Reclaim lease; inspect worker crash; verify heartbeat.",
@@ -63,7 +63,7 @@ PRODUCTION_ALERT_CATALOG: tuple[ProductionAlertDefinition, ...] = (
     ProductionAlertDefinition(
         alert_id="worker_no_heartbeat",
         severity="critical",
-        metric="worker_heartbeat_age",
+        metric="worker_last_heartbeat_timestamp",
         window="2m",
         owner="pipeline-oncall",
         action="Restart worker; check process supervisor; verify network to SQL.",
@@ -72,7 +72,7 @@ PRODUCTION_ALERT_CATALOG: tuple[ProductionAlertDefinition, ...] = (
     ProductionAlertDefinition(
         alert_id="retry_rate_high",
         severity="warning",
-        metric="retry_rate",
+        metric="jobs_retried_total",
         window="15m",
         owner="pipeline-oncall",
         action="Check provider 429/5xx; inspect idempotency conflicts; throttle.",
@@ -81,7 +81,7 @@ PRODUCTION_ALERT_CATALOG: tuple[ProductionAlertDefinition, ...] = (
     ProductionAlertDefinition(
         alert_id="http_5xx_rate",
         severity="critical",
-        metric="http_5xx_rate",
+        metric="http_response_errors_total",
         window="5m",
         owner="api-oncall",
         action="Check API pods; SQL connectivity; circuit-break nonessential paths.",

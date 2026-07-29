@@ -78,6 +78,12 @@ class JobStaleReconciler:
         if not result.won:
             return self.job_repo.get_by_id(job.id) or job
 
+        try:
+            from src.observability.metrics.instruments import record_job_outcome
+
+            record_job_outcome(job_type=getattr(job, "job_type", None) or "aisle", outcome="stale")
+        except Exception:
+            logger.warning("event=job_stale_metric_failed job_id=%s", job.id, exc_info=True)
         refreshed = result.job or self.job_repo.get_by_id(job.id) or job
         logger.warning(
             "event=job_stale_reclaimed job_id=%s aisle_id=%s previous_owner=%s "

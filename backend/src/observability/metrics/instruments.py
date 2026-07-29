@@ -1,0 +1,191 @@
+"""Phase 5 — named metrics instruments (single registry)."""
+
+from __future__ import annotations
+
+from src.observability.metrics.registry import get_metrics_registry
+
+# HTTP
+HTTP_REQUESTS_TOTAL = "http_requests_total"
+HTTP_REQUEST_DURATION_SECONDS = "http_request_duration_seconds"
+HTTP_REQUESTS_IN_PROGRESS = "http_requests_in_progress"
+HTTP_RESPONSE_ERRORS_TOTAL = "http_response_errors_total"
+
+# Jobs
+JOBS_CREATED_TOTAL = "jobs_created_total"
+JOBS_STARTED_TOTAL = "jobs_started_total"
+JOBS_COMPLETED_TOTAL = "jobs_completed_total"
+JOBS_FAILED_TOTAL = "jobs_failed_total"
+JOBS_CANCELED_TOTAL = "jobs_canceled_total"
+JOBS_RETRIED_TOTAL = "jobs_retried_total"
+JOBS_RECOVERED_TOTAL = "jobs_recovered_total"
+JOBS_STALE_TOTAL = "jobs_stale_total"
+JOBS_IN_STATE = "jobs_in_state"
+JOB_PROCESSING_DURATION_SECONDS = "job_processing_duration_seconds"
+JOB_QUEUE_WAIT_DURATION_SECONDS = "job_queue_wait_duration_seconds"
+
+# Leases (aligned with Phase 3 names)
+JOB_LEASE_ACQUIRE_TOTAL = "job_lease_acquire_total"
+JOB_LEASE_RENEW_TOTAL = "job_lease_renew_total"
+JOB_LEASE_LOST_TOTAL = "job_lease_lost_total"
+JOB_STALE_WRITE_REJECTED_TOTAL = "job_stale_write_rejected_total"
+JOB_LEASE_REACQUIRE_TOTAL = "job_lease_reacquire_total"
+JOB_ACTIVE_LEASES = "job_active_leases"
+JOB_EXPIRED_RUNNING_LEASES = "job_expired_running_leases"
+
+# Worker
+WORKER_PROCESS_UP = "worker_process_up"
+WORKER_LAST_HEARTBEAT_TIMESTAMP = "worker_last_heartbeat_timestamp"
+WORKER_JOBS_ACTIVE = "worker_jobs_active"
+WORKER_JOBS_STARTED_TOTAL = "worker_jobs_started_total"
+WORKER_JOBS_COMPLETED_TOTAL = "worker_jobs_completed_total"
+WORKER_JOBS_FAILED_TOTAL = "worker_jobs_failed_total"
+WORKER_SHUTDOWN_TOTAL = "worker_shutdown_total"
+WORKER_ABORT_TOTAL = "worker_abort_total"
+
+# Providers
+PROVIDER_REQUESTS_TOTAL = "provider_requests_total"
+PROVIDER_REQUEST_DURATION_SECONDS = "provider_request_duration_seconds"
+PROVIDER_ERRORS_TOTAL = "provider_errors_total"
+PROVIDER_TIMEOUTS_TOTAL = "provider_timeouts_total"
+PROVIDER_RETRIES_TOTAL = "provider_retries_total"
+
+# Uploads / artifacts
+UPLOAD_REQUESTS_TOTAL = "upload_requests_total"
+UPLOAD_BYTES_TOTAL = "upload_bytes_total"
+UPLOAD_REJECTED_TOTAL = "upload_rejected_total"
+UPLOAD_PROCESSING_DURATION_SECONDS = "upload_processing_duration_seconds"
+ARTIFACT_PUBLICATION_TOTAL = "artifact_publication_total"
+ARTIFACT_PUBLICATION_DURATION_SECONDS = "artifact_publication_duration_seconds"
+ARTIFACT_PUBLICATION_RETRY_TOTAL = "artifact_publication_retry_total"
+ARTIFACT_OUTBOX_PENDING = "artifact_outbox_pending"
+ARTIFACT_OUTBOX_FAILED = "artifact_outbox_failed"
+
+# SQL / repository
+REPOSITORY_OPERATIONS_TOTAL = "repository_operations_total"
+REPOSITORY_OPERATION_DURATION_SECONDS = "repository_operation_duration_seconds"
+SQL_CONNECTION_FAILURES_TOTAL = "sql_connection_failures_total"
+SQL_TIMEOUTS_TOTAL = "sql_timeouts_total"
+SQL_DEADLOCKS_TOTAL = "sql_deadlocks_total"
+SQL_TRANSACTION_ROLLBACKS_TOTAL = "sql_transaction_rollbacks_total"
+REPOSITORY_BACKEND_MODE = "repository_backend_mode"
+
+# Finalization
+JOB_FINALIZATION_STAGE_DURATION_SECONDS = "job_finalization_stage_duration_seconds"
+JOB_FINALIZATION_STAGE_TOTAL = "job_finalization_stage_total"
+JOB_FINALIZATION_FAILURES_TOTAL = "job_finalization_failures_total"
+
+# Recovery
+JOB_RECOVERY_TOTAL = "job_recovery_total"
+JOB_RECOVERY_DURATION_SECONDS = "job_recovery_duration_seconds"
+
+
+def observe_http_request(
+    *,
+    method: str,
+    route_template: str,
+    status_class: str,
+    duration_seconds: float,
+) -> None:
+    reg = get_metrics_registry()
+    labels = {
+        "method": method.upper(),
+        "route_template": route_template,
+        "status_class": status_class,
+    }
+    reg.inc(HTTP_REQUESTS_TOTAL, "Total HTTP requests", labels)
+    reg.observe(
+        HTTP_REQUEST_DURATION_SECONDS,
+        "HTTP request latency in seconds",
+        duration_seconds,
+        labels,
+    )
+    if status_class in ("4xx", "5xx"):
+        reg.inc(
+            HTTP_RESPONSE_ERRORS_TOTAL,
+            "HTTP error responses",
+            {"method": method.upper(), "route_template": route_template, "status_class": status_class},
+        )
+
+
+def inc_lease_metric(name: str, *, operation: str = "default", outcome: str = "ok") -> None:
+    """Bridge used by Phase 3 callers — single registry."""
+    help_map = {
+        JOB_LEASE_ACQUIRE_TOTAL: "Job lease acquire attempts",
+        JOB_LEASE_RENEW_TOTAL: "Job lease renew attempts",
+        JOB_LEASE_LOST_TOTAL: "Job lease lost events",
+        JOB_STALE_WRITE_REJECTED_TOTAL: "Stale write rejections (fencing)",
+        JOB_LEASE_REACQUIRE_TOTAL: "Job lease reacquire attempts",
+    }
+    get_metrics_registry().inc(
+        name,
+        help_map.get(name, "Job lease metric"),
+        {"operation": operation, "outcome": outcome},
+    )
+
+
+def record_job_outcome(*, job_type: str, outcome: str, failure_code: str | None = None) -> None:
+    reg = get_metrics_registry()
+    labels = {"job_type": job_type or "unknown", "outcome": outcome}
+    if outcome == "succeeded":
+        reg.inc(JOBS_COMPLETED_TOTAL, "Jobs completed successfully", labels)
+    elif outcome == "failed":
+        fail_labels = {**labels, "failure_code": (failure_code or "unknown")[:64]}
+        reg.inc(JOBS_FAILED_TOTAL, "Jobs failed", fail_labels)
+    elif outcome == "canceled":
+        reg.inc(JOBS_CANCELED_TOTAL, "Jobs canceled", labels)
+    elif outcome == "stale":
+        reg.inc(JOBS_STALE_TOTAL, "Jobs marked stale-failed", labels)
+    elif outcome == "recovered":
+        reg.inc(JOBS_RECOVERED_TOTAL, "Jobs recovered", labels)
+    elif outcome == "retried":
+        reg.inc(JOBS_RETRIED_TOTAL, "Jobs retried", labels)
+
+
+def record_provider_call(
+    *,
+    provider: str,
+    operation: str,
+    outcome: str,
+    duration_seconds: float,
+    error_class: str | None = None,
+) -> None:
+    reg = get_metrics_registry()
+    labels = {
+        "provider": provider[:64],
+        "operation": operation[:64],
+        "outcome": outcome[:64],
+    }
+    reg.inc(PROVIDER_REQUESTS_TOTAL, "External provider requests", labels)
+    reg.observe(
+        PROVIDER_REQUEST_DURATION_SECONDS,
+        "Provider request duration seconds",
+        duration_seconds,
+        labels,
+    )
+    if outcome != "ok":
+        err = {**labels, "error_class": (error_class or outcome)[:64]}
+        reg.inc(PROVIDER_ERRORS_TOTAL, "Provider errors", err)
+        if (error_class or "").lower() == "timeout" or outcome == "timeout":
+            reg.inc(PROVIDER_TIMEOUTS_TOTAL, "Provider timeouts", labels)
+
+
+def record_finalization_stage(
+    *,
+    stage: str,
+    outcome: str,
+    duration_seconds: float,
+    reason: str | None = None,
+) -> None:
+    reg = get_metrics_registry()
+    labels = {"stage": stage[:64], "outcome": outcome[:64]}
+    if reason:
+        labels["reason"] = reason[:64]
+    reg.inc(JOB_FINALIZATION_STAGE_TOTAL, "Job finalization stage outcomes", labels)
+    reg.observe(
+        JOB_FINALIZATION_STAGE_DURATION_SECONDS,
+        "Job finalization stage duration seconds",
+        duration_seconds,
+        labels,
+    )
+    if outcome != "ok":
+        reg.inc(JOB_FINALIZATION_FAILURES_TOTAL, "Job finalization failures", labels)

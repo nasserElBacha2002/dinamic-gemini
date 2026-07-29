@@ -156,6 +156,8 @@ phase2-source-of-truth-security-*.txt
 **/phase2-source-of-truth-security-*.txt
 phase3-lease-fencing-*.txt
 **/phase3-lease-fencing-*.txt
+phase5-observability-operations-*.txt
+**/phase5-observability-operations-*.txt
 authoritative-local-code-scan-intermediate-*.txt
 authoritative-local-code-scan-intermediate-*.md
 legacy-processing-cleanup-*.txt

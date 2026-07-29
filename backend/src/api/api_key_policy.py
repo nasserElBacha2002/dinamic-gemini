@@ -15,6 +15,7 @@ API_KEY_BYPASS_EXACT_PATHS: frozenset[str] = frozenset(
     {
         "/health",
         "/ready",
+        "/metrics",
         "/docs",
         "/redoc",
         "/openapi.json",

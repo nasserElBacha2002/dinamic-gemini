@@ -49,6 +49,9 @@ from src.config import load_settings, resolve_sqlserver_connection_config
 from src.database.migrations import ensure_schema_compatibility, get_required_schema_version
 from src.database.sqlserver import SqlServerClient
 from src.jobs.worker import worker_loop
+from src.observability.metrics.registry import get_metrics_registry
+from src.observability.metrics_auth import metrics_access_allowed
+from src.observability.middleware import ObservabilityMiddleware
 from src.runtime.container.runtime_environment import resolve_runtime_environment
 
 logger = logging.getLogger(__name__)
@@ -89,6 +92,12 @@ else:
         settings.output_dir,
         settings.artifact_storage_legacy_local_read_enabled,
     )
+
+# Observability outermost among app middleware (Starlette: last added = first executed).
+app.add_middleware(
+    ObservabilityMiddleware,
+    metrics_enabled=bool(getattr(settings, "metrics_enabled", True)),
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -214,6 +223,23 @@ async def api_key_middleware(request: Request, call_next):
             status_code=403, content={"detail": HTTP_DETAIL_API_KEY_INVALID_OR_MISSING}
         )
     return await call_next(request)
+
+
+@app.get("/metrics")
+async def metrics(request: Request) -> Response:
+    """Prometheus text exposition — internal only (not a public internet surface)."""
+    settings = load_settings()
+    if not bool(getattr(settings, "metrics_enabled", True)):
+        return Response(status_code=404, content="metrics disabled")
+    if not metrics_access_allowed(
+        request,
+        api_key=settings.api_key or "",
+        auth_mode=getattr(settings, "metrics_internal_auth", "api_key") or "api_key",
+        env=resolve_runtime_environment(),
+    ):
+        return JSONResponse(status_code=403, content={"detail": "metrics access denied"})
+    body = get_metrics_registry().render_prometheus()
+    return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 @app.get("/health", response_model=HealthResponse)
