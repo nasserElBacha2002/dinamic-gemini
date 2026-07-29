@@ -2,14 +2,16 @@
 
 ## 1. Estado
 
-**COMPLETED** — release hardening closed on HEAD after corrections.
+**COMPLETED** — release hardening closed with Quality Gate PASS on clean HEAD.
 
 ```text
 PHASE_7=COMPLETED
 DEPLOYABLE=YES
 MERGEABLE_TO_MAIN=YES
-QUALITY_GATE=pending_post_commit_audit
+QUALITY_GATE=PASS
 ```
+
+Confirm live values with `audit/audit-status.json` + `python3 scripts/audit/enforce_quality_gate.py --strict` on the tip commit.
 
 ## 2. Dependencias previas
 
@@ -37,13 +39,13 @@ See `cleanup-matrix.md`. `REMOVE=0` retained with wiring evidence. `reconcile_ai
 
 ## 30–37. Tests / QG
 
-Release scripts + targeted suites executed in corrections. Full audit + Quality Gate must re-run on clean HEAD after commit.
+Full audit `scripts/audit/run_full_audit.sh` → `enforce_quality_gate.py --strict` **PASS**. Concurrent external-fallback idempotency race fixed so two workers share one provider call. Frontend Vitest stabilized under full-suite load.
 
 ## 38–39. Git SHA / tree
 
-Corrections applied on top of `e9797662`. Commit + clean-tree audit required for `AUDIT_SHA=HEAD`.
+`AUDIT_SHA` equals tip HEAD with clean working tree at gate time (see latest `audit/audit-status.json`).
 
 ## 40–43. Deployability
 
 **Deployable:** YES (with ops note: prefer physical BACKUP in staging SQL where Error 3041 does not apply).  
-**Mergeable to main:** YES after post-commit QG PASS.
+**Mergeable to main:** YES.

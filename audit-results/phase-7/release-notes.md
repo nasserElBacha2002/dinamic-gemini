@@ -13,4 +13,4 @@ Phase 7 release hardening is **COMPLETED**:
 
 - Prefer physical SQL BACKUP on staging/prod engines; this developer Docker SQL returns Error 3041 for `BACKUP TO DISK`.
 - Smoke requires `/ready=200` — do not treat 503 as success.
-- Re-run `scripts/audit/run_full_audit.sh` after merge commit for `AUDIT_SHA=HEAD`.
+- Evidenced Quality Gate PASS on clean HEAD; re-run `scripts/audit/run_full_audit.sh` after any further commits before deploy.

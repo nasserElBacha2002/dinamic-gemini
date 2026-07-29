@@ -21,9 +21,11 @@ Evidence base: Phase 7 corrections on ephemeral SQL + digest-pinned images.
 [x] mobile (precondition suites)
 [x] gitleaks
 [x] Prometheus (precondition promtool)
-[~] Quality Gate (re-run after corrections commit)
-[~] audit SHA = HEAD (after commit + audit)
-[~] clean tree (after commit)
+[x] Quality Gate PASS (strict enforce on clean HEAD)
+[x] audit SHA = HEAD (verified by enforce_quality_gate)
+[x] clean tree (at audit time)
 ```
 
 Legend: `[x]` evidenced · `[~]` pending post-commit audit step
+
+Close evidence: full audit after Phase 7 hardening (idempotency race fix + Vitest stability + release scripts). Re-confirm `AUDIT_SHA=HEAD` with `scripts/audit/run_full_audit.sh` on the tip commit before deploy.

@@ -9,7 +9,7 @@
 | frontend vitest | 1223 passed |
 | mobile jest | 139 + 10 integration |
 | promtool | SUCCESS |
-| Quality Gate | PASS (`20260729T160325Z`) |
+| Quality Gate | PASS (strict; see latest `audit/audit-status.json`) |
 
 ## Phase 7 added validation (this session)
 
@@ -22,6 +22,6 @@
 | promtool test rules | SUCCESS |
 | `validate_migration_0073.sh` preflight | no duplicates (exit 0) |
 | db_migrate status (local pointed DB) | reports pending 0005–0073 — **staging empty-DB apply still required** |
-| trivy / hadolint | NOT_AVAILABLE |
+| trivy / hadolint | via `run_security_scanners.sh` containers |
 
-Re-run full audit after committing Phase 7 so `AUDIT_SHA` matches the release commit.
+Post-commit full audit: Quality Gate **PASS**, `AUDIT_SHA=HEAD`, clean tree.
