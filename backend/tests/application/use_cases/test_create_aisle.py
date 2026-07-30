@@ -25,6 +25,7 @@ from src.application.use_cases.aisles.create_aisle import CreateAisleCommand, Cr
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.client_repository_stubs import ClientSupplierRepositoryBatchMixin
 
 
 class FixedClock:
@@ -69,7 +70,7 @@ class StubAisleRepo(AisleRepository):
         return None
 
 
-class StubClientSupplierRepo(ClientSupplierRepository):
+class StubClientSupplierRepo(ClientSupplierRepositoryBatchMixin, ClientSupplierRepository):
     def __init__(self, suppliers: list[ClientSupplier] | None = None) -> None:
         self._store = {s.id: s for s in (suppliers or [])}
 

@@ -59,6 +59,10 @@ def test_get_inventories_returns_list_and_includes_created() -> None:
     data = response.json()
     assert "items" in data
     assert all("client_id" in item for item in data["items"])
+    assert all("client_name" in item for item in data["items"])
+    matched = next(item for item in data["items"] if item["id"] == created_id)
+    assert matched["client_id"] is not None
+    assert isinstance(matched["client_name"], str) and matched["client_name"].strip()
     ids = [item["id"] for item in data["items"]]
     assert created_id in ids
 

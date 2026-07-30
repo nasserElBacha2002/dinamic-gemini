@@ -502,6 +502,7 @@ def inventory_list_item_to_response(item: InventoryListItem) -> InventoryListIte
         name=inv.name,
         status=inv.status.value,
         client_id=inv.client_id,
+        client_name=item.client_name,
         created_at=inv.created_at,
         updated_at=inv.updated_at,
         aisles_count=item.aisles_count,
@@ -522,6 +523,7 @@ def aisle_to_response(
     inventory: Inventory | None = None,
     client: Client | None = None,
     identification: IdentificationModeApiFields | None = None,
+    client_supplier_name: str | None = None,
 ) -> AisleResponse:
     latest = None
     if latest_job is not None:
@@ -563,6 +565,7 @@ def aisle_to_response(
         error_message=a.error_message,
         operational_job_id=a.operational_job_id,
         client_supplier_id=a.client_supplier_id,
+        client_supplier_name=client_supplier_name,
         latest_job=latest,
         assets_count=assets_count,
         positions_count=positions_count,

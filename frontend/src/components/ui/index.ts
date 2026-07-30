@@ -35,6 +35,8 @@ export { default as StatusChip } from './StatusChip';
 export type { StatusChipProps, StatusChipColor } from './StatusChip';
 export { default as StatusBadge } from './StatusBadge';
 export type { StatusBadgeProps, StatusBadgeSemantic } from './StatusBadge';
+export { default as RelatedEntityCell } from './RelatedEntityCell';
+export type { RelatedEntityCellProps } from './RelatedEntityCell';
 export { default as TraceabilityChip } from './TraceabilityChip';
 export type { TraceabilityChipProps, ApiTraceabilityStatus } from './TraceabilityChip';
 

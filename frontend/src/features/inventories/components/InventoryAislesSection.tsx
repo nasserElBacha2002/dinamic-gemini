@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { Box, Button, FormControl, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
 import {
   FilterToolbar,
+  RelatedEntityCell,
   StatusBadge,
   TableSearchField,
   TableSection,
@@ -13,7 +14,7 @@ import {
   sortDataTableRows,
 } from '../../../components/ui';
 import { useTableState } from '../../../hooks';
-import { pathToAisleObservability } from '../../../constants/appRoutes';
+import { pathToAisleObservability, pathToClientSupplier } from '../../../constants/appRoutes';
 import { pathToAislePositions } from '../../../utils/resultRoutes';
 import { computeProcessAisleMenuState, type AisleInventoryTableRow, type ProcessAisleMenuContext } from '../adapters';
 
@@ -21,6 +22,8 @@ export type AisleActiveFilter = 'active' | 'inactive' | 'all';
 
 export interface InventoryAislesSectionProps {
   inventoryId: string;
+  /** Inventory client for supplier detail links; null for legacy inventories. */
+  inventoryClientId?: string | null;
   /** All aisles (for empty vs filter-empty). */
   tableRows: AisleInventoryTableRow[];
   filteredTableRows: AisleInventoryTableRow[];
@@ -98,6 +101,7 @@ function buildAisleRowActions(params: {
 
 export default function InventoryAislesSection({
   inventoryId,
+  inventoryClientId = null,
   tableRows,
   filteredTableRows,
   aislesLoading,
@@ -178,6 +182,27 @@ export default function InventoryAislesSection({
             ) : null}
           </Box>
         ),
+      },
+      {
+        id: 'supplier',
+        label: t('inventory.column_aisle_supplier'),
+        sortable: false,
+        width: 180,
+        cell: (row) => {
+          const p = row.presentation;
+          const supplierTo =
+            inventoryClientId && p.clientSupplierId && p.clientSupplierName
+              ? pathToClientSupplier(inventoryClientId, p.clientSupplierId)
+              : null;
+          return (
+            <RelatedEntityCell
+              name={p.clientSupplierName}
+              emptyLabel={t('inventory.no_supplier')}
+              to={supplierTo}
+              testId={`aisle-supplier-cell-${p.id}`}
+            />
+          );
+        },
       },
       {
         id: 'aisle_status',
@@ -313,6 +338,7 @@ export default function InventoryAislesSection({
     ],
     [
       inventoryId,
+      inventoryClientId,
       menuCtx,
       navigate,
       onRequestProcess,
@@ -430,6 +456,12 @@ export default function InventoryAislesSection({
           ),
           ariaLabel: (row) => row.presentation.code,
           fields: [
+            {
+              id: 'supplier',
+              label: t('inventory.column_aisle_supplier'),
+              value: (row) => row.presentation.clientSupplierName ?? t('inventory.no_supplier'),
+              fullWidth: true,
+            },
             {
               id: 'active',
               label: t('aisle.filter_active_label'),

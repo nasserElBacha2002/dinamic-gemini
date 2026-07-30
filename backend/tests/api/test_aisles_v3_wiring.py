@@ -262,6 +262,9 @@ def test_get_aisles_returns_list_and_includes_created() -> None:
     items = data["items"]
     assert isinstance(items, list)
     assert items[0]["client_supplier_id"] is not None
+    assert "client_supplier_name" in items[0]
+    assert isinstance(items[0]["client_supplier_name"], str)
+    assert items[0]["client_supplier_name"].strip()
     codes = [a["code"] for a in items]
     assert "B-01" in codes
 

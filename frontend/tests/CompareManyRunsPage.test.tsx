@@ -9,7 +9,7 @@ import CompareManyRunsPage from '../src/pages/analytics/CompareManyRunsPage';
 import { buildDraftError } from '../src/features/analytics/compare/compareManyRunsDraft';
 import { AppSnackbarProvider } from '../src/components/ui';
 import theme from '../src/theme';
-import type { AisleBenchmarkCompareManyResponse, Inventory, Aisle, JobSummary, LlmCostSnapshot } from '../src/api/types';
+import type { AisleBenchmarkCompareManyResponse, Inventory, AisleListItem, JobSummary, LlmCostSnapshot } from '../src/api/types';
 
 function llmCostSnapshotWithTotal(totalCost = '0.123400', currency = 'USD'): LlmCostSnapshot {
   return {
@@ -32,13 +32,14 @@ const inventoryFixture = (): Inventory => ({
   processing_mode: 'test',
 });
 
-const aisleFixture = (id: string, code: string): Aisle => ({
+const aisleFixture = (id: string, code: string): AisleListItem => ({
   id,
   inventory_id: 'inv-1',
   code,
   status: 'created',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
+  client_supplier_name: null,
 });
 
 const jobFixture = (id: string, status = 'succeeded'): JobSummary => ({

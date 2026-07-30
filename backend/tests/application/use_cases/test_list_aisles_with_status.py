@@ -24,9 +24,13 @@ from src.application.use_cases.aisles.create_aisle import InventoryNotFoundError
 from src.application.use_cases.aisles.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset
+from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
+from src.infrastructure.repositories.memory_client_supplier_repository import (
+    MemoryClientSupplierRepository,
+)
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
@@ -34,8 +38,14 @@ from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
 class StubInventoryRepo(InventoryRepository):
-    def __init__(self, inventory_ids: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        inventory_ids: set[str] | None = None,
+        *,
+        client_id: str | None = "client-1",
+    ) -> None:
         self._ids = inventory_ids or set()
+        self._client_id = client_id
 
     def save(self, inventory: Inventory) -> None:
         self._ids.add(inventory.id)
@@ -43,11 +53,39 @@ class StubInventoryRepo(InventoryRepository):
     def get_by_id(self, inventory_id: str) -> Inventory | None:
         if inventory_id in self._ids:
             now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-            return Inventory(inventory_id, "Stub", InventoryStatus.DRAFT, now, now)
+            return Inventory(
+                inventory_id,
+                "Stub",
+                InventoryStatus.DRAFT,
+                now,
+                now,
+                client_id=self._client_id,
+            )
         return None
 
     def list_all(self) -> Sequence[Inventory]:
         return []
+
+
+def _make_uc(
+    *,
+    inv_repo,
+    aisle_repo,
+    job_repo,
+    position_repo=None,
+    source_asset_repo=None,
+    client_supplier_repo=None,
+) -> ListAislesWithStatusUseCase:
+    pos = position_repo or StubPositionRepo([])
+    return ListAislesWithStatusUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=pos,
+        source_asset_repo=source_asset_repo or StubSourceAssetRepo({}),
+        result_context_resolver=ResultContextResolver(job_repo, pos),
+        client_supplier_repo=client_supplier_repo or MemoryClientSupplierRepository(),
+    )
 
 
 class StubAisleRepo(AisleRepository):
@@ -98,8 +136,6 @@ class StubJobRepo(JobRepositoryTestBase):
         j = self._latest.get(target_id)
         return [j] if j is not None else []
 
-
-
     def list_jobs_for_targets(
         self,
         target_type: str,
@@ -110,9 +146,7 @@ class StubJobRepo(JobRepositoryTestBase):
         store = getattr(self, "_store", None) or getattr(self, "_jobs", None)
         if store is None:
             return []
-        return list_jobs_for_targets_from_store(
-            store, target_type, target_ids, job_type=job_type
-        )
+        return list_jobs_for_targets_from_store(store, target_type, target_ids, job_type=job_type)
 
 
 class StubPositionRepo(PositionRepository):
@@ -242,13 +276,10 @@ def test_list_aisles_with_status_returns_aisles_and_latest_jobs() -> None:
     aisle_repo = StubAisleRepo([a1, a2])
     job_repo = StubJobRepo({"a1": j1})
 
-    use_case = ListAislesWithStatusUseCase(
-        inventory_repo=inv_repo,
+    use_case = _make_uc(
+        inv_repo=inv_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        position_repo=StubPositionRepo([]),
-        source_asset_repo=StubSourceAssetRepo({}),
-        result_context_resolver=ResultContextResolver(job_repo, StubPositionRepo([])),
     )
     result, total = use_case.execute("inv-1")
 
@@ -294,13 +325,12 @@ def test_list_aisles_with_status_rollups_positions_and_pending_review() -> None:
     asset_roll = AisleAssetRollup(count=3, last_uploaded_at=later)
     src_repo = StubSourceAssetRepo({"a1": asset_roll})
 
-    use_case = ListAislesWithStatusUseCase(
-        inventory_repo=inv_repo,
+    use_case = _make_uc(
+        inv_repo=inv_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
         position_repo=pos_repo,
         source_asset_repo=src_repo,
-        result_context_resolver=ResultContextResolver(job_repo, pos_repo),
     )
     result, total = use_case.execute("inv-1")
     assert total == 1
@@ -342,13 +372,12 @@ def test_list_aisles_with_status_last_activity_at_can_win_on_latest_job_only() -
     job_repo = StubJobRepo({"a1": j1})
     pos_repo = StubPositionRepo([p1])
     src_repo = StubSourceAssetRepo({"a1": AisleAssetRollup(count=1, last_uploaded_at=t_old)})
-    use_case = ListAislesWithStatusUseCase(
-        inventory_repo=inv_repo,
+    use_case = _make_uc(
+        inv_repo=inv_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
         position_repo=pos_repo,
         source_asset_repo=src_repo,
-        result_context_resolver=ResultContextResolver(job_repo, pos_repo),
     )
     result, total = use_case.execute("inv-1")
     assert total == 1
@@ -397,13 +426,11 @@ def test_list_aisles_positions_count_uses_operational_slice_not_all_runs() -> No
         )
     inv_repo = StubInventoryRepo({"inv-1"})
     aisle_repo = StubAisleRepo([a1])
-    use_case = ListAislesWithStatusUseCase(
-        inventory_repo=inv_repo,
+    use_case = _make_uc(
+        inv_repo=inv_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
         position_repo=pos_repo,
-        source_asset_repo=StubSourceAssetRepo({}),
-        result_context_resolver=ResultContextResolver(job_repo, pos_repo),
     )
     result, total = use_case.execute("inv-1")
     assert total == 1
@@ -418,14 +445,210 @@ def test_list_aisles_with_status_raises_when_inventory_not_found() -> None:
     inv_repo = StubInventoryRepo(set())
     aisle_repo = StubAisleRepo([])
     job_repo = StubJobRepo()
-    use_case = ListAislesWithStatusUseCase(
-        inventory_repo=inv_repo,
+    use_case = _make_uc(
+        inv_repo=inv_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        position_repo=StubPositionRepo([]),
-        source_asset_repo=StubSourceAssetRepo({}),
-        result_context_resolver=ResultContextResolver(job_repo, StubPositionRepo([])),
     )
 
     with pytest.raises(InventoryNotFoundError):
         use_case.execute("nonexistent")
+
+
+def _save_supplier(
+    repo: MemoryClientSupplierRepository,
+    *,
+    supplier_id: str,
+    client_id: str,
+    name: str,
+    status: ClientSupplierStatus = ClientSupplierStatus.ACTIVE,
+) -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    repo.save(
+        ClientSupplier(
+            id=supplier_id,
+            client_id=client_id,
+            name=name,
+            status=status,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+
+def test_list_aisles_resolves_supplier_name_and_null_in_one_batch() -> None:
+    """Interaction: one scoped batch call; valid name vs no-supplier null."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    with_sup = Aisle(
+        "a1",
+        "inv-1",
+        "A-01",
+        AisleStatus.CREATED,
+        now,
+        now,
+        client_supplier_id="sup-1",
+    )
+    without = Aisle("a2", "inv-1", "A-02", AisleStatus.CREATED, now, now)
+    supplier_repo = MemoryClientSupplierRepository()
+    _save_supplier(
+        supplier_repo,
+        supplier_id="sup-1",
+        client_id="client-1",
+        name="Proveedor Ejemplo",
+    )
+    calls = {"n": 0}
+    original = supplier_repo.get_by_client_and_ids
+
+    def counting_get_by_client_and_ids(client_id, ids):
+        calls["n"] += 1
+        return original(client_id, ids)
+
+    supplier_repo.get_by_client_and_ids = counting_get_by_client_and_ids  # type: ignore[method-assign]
+
+    use_case = _make_uc(
+        inv_repo=StubInventoryRepo({"inv-1"}, client_id="client-1"),
+        aisle_repo=StubAisleRepo([with_sup, without]),
+        job_repo=StubJobRepo(),
+        client_supplier_repo=supplier_repo,
+    )
+    result, total = use_case.execute("inv-1")
+    assert total == 2
+    by_id = {r.aisle.id: r for r in result}
+    assert by_id["a1"].client_supplier_name == "Proveedor Ejemplo"
+    assert by_id["a1"].aisle.client_supplier_id == "sup-1"
+    assert by_id["a2"].client_supplier_name is None
+    assert calls["n"] == 1
+
+
+def test_list_aisles_supplier_missing_name_null_keeps_id() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle(
+        "a1",
+        "inv-1",
+        "A-01",
+        AisleStatus.CREATED,
+        now,
+        now,
+        client_supplier_id="missing-sup",
+    )
+    use_case = _make_uc(
+        inv_repo=StubInventoryRepo({"inv-1"}, client_id="client-1"),
+        aisle_repo=StubAisleRepo([aisle]),
+        job_repo=StubJobRepo(),
+        client_supplier_repo=MemoryClientSupplierRepository(),
+    )
+    result, _ = use_case.execute("inv-1")
+    assert result[0].client_supplier_name is None
+    assert result[0].aisle.client_supplier_id == "missing-sup"
+
+
+def test_list_aisles_inactive_supplier_still_exposes_name() -> None:
+    """Inactive but owned suppliers remain a valid association for presentation."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle(
+        "a1",
+        "inv-1",
+        "A-01",
+        AisleStatus.CREATED,
+        now,
+        now,
+        client_supplier_id="sup-inactive",
+    )
+    supplier_repo = MemoryClientSupplierRepository()
+    _save_supplier(
+        supplier_repo,
+        supplier_id="sup-inactive",
+        client_id="client-1",
+        name="Inactivo SA",
+        status=ClientSupplierStatus.INACTIVE,
+    )
+    use_case = _make_uc(
+        inv_repo=StubInventoryRepo({"inv-1"}, client_id="client-1"),
+        aisle_repo=StubAisleRepo([aisle]),
+        job_repo=StubJobRepo(),
+        client_supplier_repo=supplier_repo,
+    )
+    result, _ = use_case.execute("inv-1")
+    assert result[0].client_supplier_name == "Inactivo SA"
+
+
+def test_list_aisles_cross_client_supplier_never_exposes_name() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle(
+        "a1",
+        "inv-1",
+        "A-01",
+        AisleStatus.CREATED,
+        now,
+        now,
+        client_supplier_id="sup-other",
+    )
+    supplier_repo = MemoryClientSupplierRepository()
+    _save_supplier(
+        supplier_repo,
+        supplier_id="sup-other",
+        client_id="other-client",
+        name="Proveedor Ajeno",
+    )
+    use_case = _make_uc(
+        inv_repo=StubInventoryRepo({"inv-1"}, client_id="client-1"),
+        aisle_repo=StubAisleRepo([aisle]),
+        job_repo=StubJobRepo(),
+        client_supplier_repo=supplier_repo,
+    )
+    result, _ = use_case.execute("inv-1")
+    assert result[0].client_supplier_name is None
+    assert result[0].aisle.client_supplier_id == "sup-other"
+
+
+def test_list_aisles_legacy_inventory_without_client_nulls_supplier_name() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle(
+        "a1",
+        "inv-1",
+        "A-01",
+        AisleStatus.CREATED,
+        now,
+        now,
+        client_supplier_id="sup-1",
+    )
+    supplier_repo = MemoryClientSupplierRepository()
+    _save_supplier(
+        supplier_repo,
+        supplier_id="sup-1",
+        client_id="client-1",
+        name="Residual",
+    )
+    use_case = _make_uc(
+        inv_repo=StubInventoryRepo({"inv-1"}, client_id=None),
+        aisle_repo=StubAisleRepo([aisle]),
+        job_repo=StubJobRepo(),
+        client_supplier_repo=supplier_repo,
+    )
+    result, _ = use_case.execute("inv-1")
+    assert result[0].client_supplier_name is None
+    assert result[0].aisle.client_supplier_id == "sup-1"
+
+
+def test_list_aisles_empty_supplier_ids_skips_batch_call() -> None:
+    """Interaction: no scoped batch when page has no supplier ids."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle("a1", "inv-1", "A-01", AisleStatus.CREATED, now, now)
+    supplier_repo = MemoryClientSupplierRepository()
+    calls = {"n": 0}
+    original = supplier_repo.get_by_client_and_ids
+
+    def counting(client_id, ids):
+        calls["n"] += 1
+        return original(client_id, ids)
+
+    supplier_repo.get_by_client_and_ids = counting  # type: ignore[method-assign]
+    use_case = _make_uc(
+        inv_repo=StubInventoryRepo({"inv-1"}, client_id="client-1"),
+        aisle_repo=StubAisleRepo([aisle]),
+        job_repo=StubJobRepo(),
+        client_supplier_repo=supplier_repo,
+    )
+    result, _ = use_case.execute("inv-1")
+    assert result[0].client_supplier_name is None
+    assert calls["n"] == 0

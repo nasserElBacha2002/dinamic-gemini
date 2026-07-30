@@ -10,9 +10,10 @@ from src.application.errors import ClientNotFoundError
 from src.application.ports.repositories import ClientRepository
 from src.application.use_cases.clients.get_client import GetClientUseCase
 from src.domain.client.entities import Client, ClientStatus
+from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
 
 
-class StubClientRepo(ClientRepository):
+class StubClientRepo(ClientRepositoryBatchMixin, ClientRepository):
     def __init__(self) -> None:
         self._store: dict[str, Client] = {}
 

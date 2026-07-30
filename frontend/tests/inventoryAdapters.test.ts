@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import type { Aisle, Inventory } from '../src/api/types';
+import type { AisleListItem, Inventory } from '../src/api/types';
 import {
   toAisleInventoryRowActionContext,
   toAisleInventoryRowPresentation,
@@ -45,7 +45,7 @@ describe('inventory view-model adapters', () => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
       },
-    } as unknown as Aisle;
+    } as unknown as AisleListItem;
 
     const pres = toAisleInventoryRowPresentation(aisle, '—');
     expect(pres.latestRun?.providerDisplay).toBe('gemini');
@@ -54,7 +54,24 @@ describe('inventory view-model adapters', () => {
     expect(pres.latestRun?.modelRaw).toBe('m1');
     expect(pres.lastUpdatedSortKey).toBe('2024-01-02T00:00:00Z');
     expect(pres.clientSupplierId).toBeNull();
+    expect(pres.clientSupplierName).toBeNull();
     expect((pres as { observabilityInitialRunId?: string }).observabilityInitialRunId).toBeUndefined();
+  });
+
+  it('toAisleInventoryRowPresentation maps supplier name from list API', () => {
+    const aisle = {
+      id: 'a1',
+      code: 'A-1',
+      status: 'draft',
+      client_supplier_id: 'sup-1',
+      client_supplier_name: '  Acme Supplier  ',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    } as unknown as AisleListItem;
+
+    const pres = toAisleInventoryRowPresentation(aisle, '—');
+    expect(pres.clientSupplierId).toBe('sup-1');
+    expect(pres.clientSupplierName).toBe('Acme Supplier');
   });
 
   it('toAisleInventoryRowActionContext carries observability run id and process menu input', () => {
@@ -69,7 +86,7 @@ describe('inventory view-model adapters', () => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
       },
-    } as unknown as Aisle;
+    } as unknown as AisleListItem;
 
     const action = toAisleInventoryRowActionContext(aisle);
     expect(action.observabilityInitialRunId).toBe('job-1');
@@ -83,7 +100,7 @@ describe('inventory view-model adapters', () => {
       status: 'processed',
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
-    } as unknown as Aisle;
+    } as unknown as AisleListItem;
 
     const row = toAisleInventoryTableRow(aisle, '—');
     expect(row.presentation.id).toBe('a1');

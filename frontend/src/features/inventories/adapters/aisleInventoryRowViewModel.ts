@@ -2,7 +2,7 @@
  * Aisle list rows: presentation models for the table plus separate operational context for actions.
  */
 
-import type { Aisle } from '../../../api/types';
+import type { AisleListItem } from '../../../api/types';
 import type { StatusBadgeSemantic } from '../../../components/ui/StatusBadge';
 import i18n from '../../../i18n';
 import { formatDate } from '../../../utils/formatDate';
@@ -38,6 +38,8 @@ export interface AisleInventoryRowPresentation {
   isActive: boolean;
   /** Aisle `client_supplier_id` when present (supplier-linked prompt context). */
   clientSupplierId: string | null;
+  /** Readable supplier name from list API when associated. */
+  clientSupplierName: string | null;
   aisleStatusLabel: string;
   aisleStatusSemantic: StatusBadgeSemantic;
   assetsCount: number | undefined;
@@ -67,7 +69,7 @@ export interface AisleInventoryTableRow {
   action: AisleInventoryRowActionContext;
 }
 
-export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string): AisleInventoryRowPresentation {
+export function toAisleInventoryRowPresentation(aisle: AisleListItem, emptyLabel: string): AisleInventoryRowPresentation {
   const run = getLatestRunFromAisleListItem(aisle);
   const effectiveDisplay = deriveAisleEffectiveDisplayState(aisle, run);
   const latestRun: LatestRunSnapshotViewModel | null = run
@@ -107,6 +109,7 @@ export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string
     code: aisle.code,
     isActive: isAisleActive(aisle),
     clientSupplierId: aisle.client_supplier_id ?? null,
+    clientSupplierName: aisle.client_supplier_name?.trim() ? aisle.client_supplier_name.trim() : null,
     aisleStatusLabel,
     aisleStatusSemantic,
     assetsCount: aisle.assets_count,
@@ -127,7 +130,7 @@ export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string
   };
 }
 
-export function toAisleInventoryRowActionContext(aisle: Aisle): AisleInventoryRowActionContext {
+export function toAisleInventoryRowActionContext(aisle: AisleListItem): AisleInventoryRowActionContext {
   const run = getLatestRunFromAisleListItem(aisle);
   return {
     processMenuAisle: {
@@ -139,13 +142,13 @@ export function toAisleInventoryRowActionContext(aisle: Aisle): AisleInventoryRo
   };
 }
 
-export function toAisleInventoryTableRow(aisle: Aisle, emptyLabel: string): AisleInventoryTableRow {
+export function toAisleInventoryTableRow(aisle: AisleListItem, emptyLabel: string): AisleInventoryTableRow {
   return {
     presentation: toAisleInventoryRowPresentation(aisle, emptyLabel),
     action: toAisleInventoryRowActionContext(aisle),
   };
 }
 
-export function toAisleInventoryTableRows(aisles: Aisle[], emptyLabel: string): AisleInventoryTableRow[] {
+export function toAisleInventoryTableRows(aisles: AisleListItem[], emptyLabel: string): AisleInventoryTableRow[] {
   return aisles.map((a) => toAisleInventoryTableRow(a, emptyLabel));
 }

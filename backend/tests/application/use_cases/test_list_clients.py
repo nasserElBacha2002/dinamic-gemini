@@ -7,9 +7,10 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import ClientRepository
 from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.domain.client.entities import Client, ClientStatus
+from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
 
 
-class StubClientRepo(ClientRepository):
+class StubClientRepo(ClientRepositoryBatchMixin, ClientRepository):
     def __init__(self, clients: list[Client]) -> None:
         self._store = {c.id: c for c in clients}
 

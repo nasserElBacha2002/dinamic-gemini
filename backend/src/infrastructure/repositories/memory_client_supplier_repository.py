@@ -29,3 +29,20 @@ class MemoryClientSupplierRepository(ClientSupplierRepository):
         rows = [s for s in self._store.values() if s.client_id == client_id]
         return sorted(rows, key=lambda s: s.created_at, reverse=True)
 
+    def get_by_ids(self, supplier_ids: Sequence[str]) -> dict[str, ClientSupplier]:
+        uniq = {sid for sid in supplier_ids if sid}
+        if not uniq:
+            return {}
+        return {sid: self._store[sid] for sid in uniq if sid in self._store}
+
+    def get_by_client_and_ids(
+        self, client_id: str, supplier_ids: Sequence[str]
+    ) -> dict[str, ClientSupplier]:
+        uniq = {sid for sid in supplier_ids if sid}
+        if not uniq or not client_id:
+            return {}
+        return {
+            sid: self._store[sid]
+            for sid in uniq
+            if sid in self._store and self._store[sid].client_id == client_id
+        }

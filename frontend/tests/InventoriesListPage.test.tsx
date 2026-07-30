@@ -95,4 +95,45 @@ describe('InventoriesList page', () => {
     });
     expect(screen.getByText('Warehouse A')).toBeInTheDocument();
   });
+
+  it('renders client column with name and empty state', () => {
+    useInventoriesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'inv-1',
+            name: 'With Client',
+            status: 'draft',
+            client_id: 'c-1',
+            client_name: 'Cliente Ejemplo',
+            aisles_count: 0,
+            pending_review_count: 0,
+            last_activity_at: null,
+          },
+          {
+            id: 'inv-2',
+            name: 'Legacy',
+            status: 'draft',
+            client_id: null,
+            client_name: null,
+            aisles_count: 0,
+            pending_review_count: 0,
+            last_activity_at: null,
+          },
+        ],
+        page: 1,
+        page_size: 25,
+        total_items: 2,
+        total_pages: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    expect(screen.getByTestId('inventory-client-cell-inv-1')).toHaveTextContent('Cliente Ejemplo');
+    expect(screen.getByTestId('inventory-client-cell-inv-2')).toHaveTextContent('Sin cliente');
+  });
 });

@@ -29,6 +29,7 @@ function makeRow(id: string, code: string): AisleInventoryTableRow {
       code,
       isActive: true,
       clientSupplierId: null,
+      clientSupplierName: null,
       aisleStatusLabel: 'Draft',
       aisleStatusSemantic: 'neutral',
       assetsCount: 0,

@@ -23,6 +23,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
@@ -124,7 +125,9 @@ def test_status_reconciler_ignores_inactive_failed_aisle() -> None:
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
     pos_repo = MemoryPositionRepository()
-    _seed_i1(aisle_repo=aisle_repo, pos_repo=pos_repo, inv_repo=inv_repo, b_status=AisleStatus.FAILED)
+    _seed_i1(
+        aisle_repo=aisle_repo, pos_repo=pos_repo, inv_repo=inv_repo, b_status=AisleStatus.FAILED
+    )
 
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(NOW))
     changed = reconciler.reconcile("I1")
@@ -178,7 +181,7 @@ def test_list_items_pending_active_only_aisles_count_all() -> None:
     pos_repo = MemoryPositionRepository()
     _seed_i1(aisle_repo=aisle_repo, pos_repo=pos_repo, inv_repo=inv_repo)
 
-    uc = ListInventoryListItemsUseCase(inv_repo, aisle_repo, pos_repo)
+    uc = ListInventoryListItemsUseCase(inv_repo, aisle_repo, pos_repo, MemoryClientRepository())
     rows, total = uc.execute()
     assert total == 1
     row = rows[0]

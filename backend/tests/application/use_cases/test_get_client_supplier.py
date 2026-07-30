@@ -11,9 +11,13 @@ from src.application.ports.repositories import ClientRepository, ClientSupplierR
 from src.application.use_cases.suppliers.get_client_supplier import GetClientSupplierUseCase
 from src.domain.client.entities import Client, ClientStatus
 from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
+from tests.support.client_repository_stubs import (
+    ClientRepositoryBatchMixin,
+    ClientSupplierRepositoryBatchMixin,
+)
 
 
-class StubClientRepo(ClientRepository):
+class StubClientRepo(ClientRepositoryBatchMixin, ClientRepository):
     def __init__(self) -> None:
         self._store: dict[str, Client] = {}
 
@@ -27,7 +31,7 @@ class StubClientRepo(ClientRepository):
         return list(self._store.values())
 
 
-class StubClientSupplierRepo(ClientSupplierRepository):
+class StubClientSupplierRepo(ClientSupplierRepositoryBatchMixin, ClientSupplierRepository):
     def __init__(self) -> None:
         self._store: dict[str, ClientSupplier] = {}
 

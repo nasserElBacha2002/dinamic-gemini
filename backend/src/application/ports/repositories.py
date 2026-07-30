@@ -66,6 +66,11 @@ class ClientRepository(ABC):
         """Return all clients. Order is implementation-defined (SQL impl: created_at DESC)."""
         ...
 
+    @abstractmethod
+    def get_by_ids(self, client_ids: Sequence[str]) -> dict[str, Client]:
+        """Batch load clients by id (dedupe; empty input → empty dict; one query in SQL)."""
+        ...
+
 
 class ClientSupplierRepository(ABC):
     @abstractmethod
@@ -82,6 +87,18 @@ class ClientSupplierRepository(ABC):
         """Return suppliers for one client. Order is implementation-defined (SQL impl: created_at DESC)."""
         ...
 
+    @abstractmethod
+    def get_by_ids(self, supplier_ids: Sequence[str]) -> dict[str, ClientSupplier]:
+        """Batch load suppliers by id (dedupe; empty input → empty dict; one query in SQL)."""
+        ...
+
+    @abstractmethod
+    def get_by_client_and_ids(
+        self, client_id: str, supplier_ids: Sequence[str]
+    ) -> dict[str, ClientSupplier]:
+        """Batch load suppliers owned by ``client_id`` (cross-client ids omitted)."""
+        ...
+
 
 class AisleRepository(ABC):
     @abstractmethod
@@ -94,6 +111,13 @@ class AisleRepository(ABC):
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         """Return aisles for the given inventory. Order is implementation-defined (SQL impl: created_at DESC)."""
         ...
+
+    def list_by_inventories(self, inventory_ids: Sequence[str]) -> Sequence[Aisle]:
+        """Batch aisles for many inventories. SQL/Memory override with one query; default loops for stubs."""
+        out: list[Aisle] = []
+        for inventory_id in {iid for iid in inventory_ids if iid}:
+            out.extend(self.list_by_inventory(inventory_id))
+        return out
 
     @abstractmethod
     def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
