@@ -109,6 +109,13 @@ class AisleResponse(BaseModel):
         None, description="Canonical run for default result reads (Phase 2); null = legacy aisle."
     )
     client_supplier_id: str | None = None
+    client_supplier_name: str | None = Field(
+        None,
+        description=(
+            "Readable supplier name from client_suppliers when client_supplier_id is set; "
+            "null when the aisle has no supplier association."
+        ),
+    )
     latest_job: AisleJobSummary | None = None
     assets_count: int = 0
     positions_count: int = 0

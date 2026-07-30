@@ -10,6 +10,7 @@ from src.application.errors import InvalidClientNameError
 from src.application.ports.repositories import ClientRepository
 from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
 from src.domain.client.entities import Client, ClientStatus
+from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
 
 
 class FixedClock:
@@ -20,7 +21,7 @@ class FixedClock:
         return self._now
 
 
-class StubClientRepo(ClientRepository):
+class StubClientRepo(ClientRepositoryBatchMixin, ClientRepository):
     def __init__(self) -> None:
         self._store: dict[str, Client] = {}
 

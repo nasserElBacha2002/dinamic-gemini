@@ -434,11 +434,13 @@ def get_list_inventory_list_items_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
+    client_repo: ClientRepository = Depends(get_client_repo),
 ) -> ListInventoryListItemsUseCase:
     return ListInventoryListItemsUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         position_repo=position_repo,
+        client_repo=client_repo,
     )
 
 
@@ -676,6 +678,7 @@ def get_list_aisles_with_status_use_case(
     position_repo: PositionRepository = Depends(get_position_repo),
     source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
     result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
 ) -> ListAislesWithStatusUseCase:
     return ListAislesWithStatusUseCase(
         inventory_repo=inventory_repo,
@@ -684,6 +687,7 @@ def get_list_aisles_with_status_use_case(
         position_repo=position_repo,
         source_asset_repo=source_asset_repo,
         result_context_resolver=result_context_resolver,
+        client_supplier_repo=client_supplier_repo,
     )
 
 

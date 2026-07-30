@@ -91,6 +91,7 @@ class InventoryListItem:
     aisles_count: int
     pending_review_count: int
     last_activity_at: datetime | None
+    client_name: str | None = None
 
 
 @dataclass

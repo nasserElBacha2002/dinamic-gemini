@@ -96,3 +96,20 @@ class SqlClientRepository(ClientRepository):
             rows = cur.fetchall()
         return [_client_from_row(row) for row in rows]
 
+    def get_by_ids(self, client_ids: Sequence[str]) -> dict[str, Client]:
+        uniq = list({cid for cid in client_ids if cid})
+        if not uniq:
+            return {}
+        placeholders = ",".join("?" * len(uniq))
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, name, status, created_at, updated_at, default_identification_mode
+                FROM clients
+                WHERE id IN ({placeholders})
+                """,
+                tuple(uniq),
+            )
+            rows = cur.fetchall()
+        return {row.id: _client_from_row(row) for row in rows}
+

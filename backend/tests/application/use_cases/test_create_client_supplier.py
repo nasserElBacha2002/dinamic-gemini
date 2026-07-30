@@ -18,6 +18,10 @@ from src.application.use_cases.suppliers.create_client_supplier import (
 )
 from src.domain.client.entities import Client, ClientStatus
 from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
+from tests.support.client_repository_stubs import (
+    ClientRepositoryBatchMixin,
+    ClientSupplierRepositoryBatchMixin,
+)
 
 
 class FixedClock:
@@ -28,7 +32,7 @@ class FixedClock:
         return self._now
 
 
-class StubClientRepo(ClientRepository):
+class StubClientRepo(ClientRepositoryBatchMixin, ClientRepository):
     def __init__(self) -> None:
         self._store: dict[str, Client] = {}
 
@@ -42,7 +46,7 @@ class StubClientRepo(ClientRepository):
         return list(self._store.values())
 
 
-class StubClientSupplierRepo(ClientSupplierRepository):
+class StubClientSupplierRepo(ClientSupplierRepositoryBatchMixin, ClientSupplierRepository):
     def __init__(self) -> None:
         self._store: dict[str, ClientSupplier] = {}
 

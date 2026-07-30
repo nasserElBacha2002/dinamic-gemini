@@ -559,6 +559,7 @@ def list_aisles(
                     positions_count=item.positions_count,
                     pending_review_positions_count=item.pending_review_positions_count,
                     last_activity_at=item.last_activity_at,
+                    client_supplier_name=item.client_supplier_name,
                 )
                 for item in items
             ],

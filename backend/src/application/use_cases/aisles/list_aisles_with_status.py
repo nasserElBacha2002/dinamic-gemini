@@ -4,10 +4,14 @@ ListAislesWithStatus use case — v3.0 (Épica 4 correction).
 Returns aisles for an inventory with latest job per aisle in one batch.
 Sprint 1.3: per-aisle rollups (positions/pending_review use the same default result slice as
 ``ListAislePositions`` — operational, legacy, or latest succeeded per Phase 2). Sprint 1.4: search, status filter, sort, pagination.
+
+Supplier names are resolved with ``get_by_client_and_ids`` scoped to the inventory client so
+cross-tenant suppliers never appear in ``client_supplier_name``.
 """
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -17,6 +21,7 @@ from src.application.errors import InventoryNotFoundError
 from src.application.ports.contracts import AisleTableQuery
 from src.application.ports.repositories import (
     AisleRepository,
+    ClientSupplierRepository,
     InventoryRepository,
     JobRepository,
     PositionRepository,
@@ -24,8 +29,11 @@ from src.application.ports.repositories import (
 )
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.aisle.entities import Aisle
+from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
 from src.domain.positions.entities import Position
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -38,6 +46,7 @@ class AisleWithLatestJob:
     positions_count: int = 0
     pending_review_positions_count: int = 0
     last_activity_at: datetime | None = None
+    client_supplier_name: str | None = None
 
 
 def _aisle_last_activity_at(
@@ -96,6 +105,7 @@ class ListAislesWithStatusUseCase:
         position_repo: PositionRepository,
         source_asset_repo: SourceAssetRepository,
         result_context_resolver: ResultContextResolver,
+        client_supplier_repo: ClientSupplierRepository,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -103,11 +113,59 @@ class ListAislesWithStatusUseCase:
         self._position_repo = position_repo
         self._source_asset_repo = source_asset_repo
         self._resolver = result_context_resolver
+        self._client_supplier_repo = client_supplier_repo
+
+    def _enrich_supplier_names(
+        self,
+        rows: list[AisleWithLatestJob],
+        inventory: Inventory,
+    ) -> list[AisleWithLatestJob]:
+        if not rows:
+            return rows
+        supplier_ids = [r.aisle.client_supplier_id for r in rows if r.aisle.client_supplier_id]
+        if not supplier_ids:
+            return rows
+
+        client_id = (inventory.client_id or "").strip()
+        if not client_id:
+            for row in rows:
+                if row.aisle.client_supplier_id:
+                    logger.warning(
+                        "aisle_supplier_unscoped inventory_id=%s aisle_id=%s "
+                        "client_supplier_id=%s reason=inventory_has_no_client",
+                        inventory.id,
+                        row.aisle.id,
+                        row.aisle.client_supplier_id,
+                    )
+                    row.client_supplier_name = None
+            return rows
+
+        by_id = self._client_supplier_repo.get_by_client_and_ids(client_id, supplier_ids)
+        for row in rows:
+            sid = row.aisle.client_supplier_id
+            if not sid:
+                row.client_supplier_name = None
+                continue
+            supplier = by_id.get(sid)
+            if supplier is None:
+                logger.warning(
+                    "aisle_supplier_not_in_client_scope inventory_id=%s aisle_id=%s "
+                    "client_id=%s client_supplier_id=%s",
+                    inventory.id,
+                    row.aisle.id,
+                    client_id,
+                    sid,
+                )
+                row.client_supplier_name = None
+                continue
+            row.client_supplier_name = supplier.name
+        return rows
 
     def execute(
         self, inventory_id: str, query: AisleTableQuery | None = None
     ) -> tuple[list[AisleWithLatestJob], int]:
-        if self._inventory_repo.get_by_id(inventory_id) is None:
+        inventory = self._inventory_repo.get_by_id(inventory_id)
+        if inventory is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
         q = query or AisleTableQuery()
         aisles = list(self._aisle_repo.list_by_inventory(inventory_id))
@@ -158,4 +216,5 @@ class ListAislesWithStatusUseCase:
         page = max(1, q.page)
         page_size = max(1, min(q.page_size, 200))
         start = (page - 1) * page_size
-        return rows[start : start + page_size], total
+        page_rows = rows[start : start + page_size]
+        return self._enrich_supplier_names(page_rows, inventory), total

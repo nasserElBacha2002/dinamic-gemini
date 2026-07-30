@@ -10,6 +10,7 @@ import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../u
 import {
   ErrorAlert,
   FilterToolbar,
+  RelatedEntityCell,
   StatusBadge,
   TableSearchField,
   TableSection,
@@ -20,7 +21,7 @@ import { PageHeader } from '../components/shell';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
 import { useDebouncedSearchInput, useInventoriesList, useCreateInventory, useTableState } from '../hooks';
 import { DEFAULT_LIST_PAGE_SIZE, TABLE_SERVER_SEARCH_DEBOUNCE_MS } from '../constants/dataTable';
-import { pathToInventory } from '../constants/appRoutes';
+import { pathToClient, pathToInventory } from '../constants/appRoutes';
 import { INVENTORY_LIST_EMPTY_MESSAGE_KEY, INVENTORY_LIST_EMPTY_TITLE_KEY } from '../constants/uiCopy';
 
 const INVENTORY_LIST_INITIAL_SORT = { sortBy: 'created_at', sortDir: 'desc' as const };
@@ -99,6 +100,20 @@ export default function InventoriesList() {
           >
             {inv.name}
           </Link>
+        ),
+      },
+      {
+        id: 'client',
+        label: t('inventory.column_client'),
+        sortable: false,
+        width: 180,
+        cell: (inv) => (
+          <RelatedEntityCell
+            name={inv.client_name}
+            emptyLabel={t('inventory.no_client')}
+            to={inv.client_id ? pathToClient(inv.client_id) : null}
+            testId={`inventory-client-cell-${inv.id}`}
+          />
         ),
       },
       {
@@ -231,6 +246,12 @@ export default function InventoriesList() {
             ),
             ariaLabel: (inv) => inv.name,
             fields: [
+              {
+                id: 'client',
+                label: t('inventory.column_client'),
+                value: (inv) => inv.client_name?.trim() || t('inventory.no_client'),
+                fullWidth: true,
+              },
               {
                 id: 'processing_mode',
                 label: t('dialogs.inventory.processing_mode_label'),

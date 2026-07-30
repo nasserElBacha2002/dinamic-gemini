@@ -28,6 +28,14 @@ class MemoryAisleRepository(AisleRepository):
         out.sort(key=lambda a: a.created_at, reverse=True)
         return out
 
+    def list_by_inventories(self, inventory_ids: Sequence[str]) -> Sequence[Aisle]:
+        wanted = {iid for iid in inventory_ids if iid}
+        if not wanted:
+            return []
+        out = [a for a in self._store.values() if a.inventory_id in wanted]
+        out.sort(key=lambda a: (a.inventory_id, a.created_at), reverse=True)
+        return out
+
     def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for a in self._store.values():
             if a.inventory_id == inventory_id and a.code == code:

@@ -142,6 +142,7 @@ export default function InventoryDetail() {
 
             <InventoryAislesSection
               inventoryId={inventoryId ?? ''}
+              inventoryClientId={inventory?.client_id ?? null}
               tableRows={tableRows}
               filteredTableRows={filteredTableRows}
               aislesLoading={aislesLoading}

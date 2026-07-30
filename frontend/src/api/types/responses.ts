@@ -131,6 +131,8 @@ export interface InventoryListItem extends Inventory {
   aisles_count: number;
   pending_review_count: number;
   last_activity_at: string | null;
+  /** Always present on list; null when unassociated or client missing. */
+  client_name: string | null;
 }
 
 /**
@@ -223,11 +225,20 @@ export interface Aisle {
 }
 
 /**
+ * GET .../inventories/{id}/aisles — list/table row with presentation enrichment.
+ * Create/detail aisle payloads use `Aisle` and do not guarantee `client_supplier_name`.
+ */
+export interface AisleListItem extends Aisle {
+  /** Always present on list; null when unassociated or out of client scope. */
+  client_supplier_name: string | null;
+}
+
+/**
  * GET .../inventories/{id}/aisles — paginated (Sprint 1.4).
  * Breaking change: the HTTP body is this object, not `Aisle[]`.
  */
 export interface PaginatedAisleListResponse {
-  items: Aisle[];
+  items: AisleListItem[];
   page: number;
   page_size: number;
   total_items: number;

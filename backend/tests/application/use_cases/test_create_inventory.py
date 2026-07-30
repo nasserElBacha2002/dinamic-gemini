@@ -18,6 +18,7 @@ from src.application.use_cases.inventories.create_inventory import (
 )
 from src.domain.client.entities import Client, ClientStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
+from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 
@@ -58,7 +59,7 @@ def _dummy_settings() -> object:
     return object()
 
 
-class StubClientRepo(ClientRepository):
+class StubClientRepo(ClientRepositoryBatchMixin, ClientRepository):
     def __init__(self, clients: list[Client] | None = None) -> None:
         self._store = {c.id: c for c in (clients or [])}
 

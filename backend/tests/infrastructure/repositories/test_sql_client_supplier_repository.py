@@ -60,3 +60,30 @@ def test_sql_client_supplier_repository_save_get_list(repos) -> None:
     listed = supplier_repo.list_by_client("test-client-a2-1")
     assert "test-supplier-a2-1" in [r.id for r in listed]
 
+
+def test_sql_client_supplier_get_by_client_and_ids_scopes(repos) -> None:
+    client_repo, supplier_repo = repos
+    _ensure_client(client_repo, "test-client-batch-a")
+    _ensure_client(client_repo, "test-client-batch-b")
+    now = now_utc()
+    for sid, cid, name in (
+        ("test-sup-batch-own", "test-client-batch-a", "Own"),
+        ("test-sup-batch-other", "test-client-batch-b", "Other"),
+    ):
+        supplier_repo.save(
+            ClientSupplier(
+                id=sid,
+                client_id=cid,
+                name=name,
+                status=ClientSupplierStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    scoped = supplier_repo.get_by_client_and_ids(
+        "test-client-batch-a",
+        ["test-sup-batch-own", "test-sup-batch-other", "missing"],
+    )
+    assert set(scoped) == {"test-sup-batch-own"}
+    assert scoped["test-sup-batch-own"].name == "Own"
+    assert supplier_repo.get_by_client_and_ids("test-client-batch-a", []) == {}

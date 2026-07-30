@@ -62,6 +62,10 @@ class ClientNotFoundError(Exception):
     """Raised when a client does not exist."""
 
 
+class RepositoryRowMappingError(ValueError):
+    """Persisted row violates repository mapping invariants (status/timestamps/etc.)."""
+
+
 class InvalidClientNameError(Exception):
     """Raised when client name is missing or invalid."""
 

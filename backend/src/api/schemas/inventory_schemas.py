@@ -99,6 +99,10 @@ class InventoryListItemResponse(BaseModel):
     name: str
     status: str
     client_id: str | None = None
+    client_name: str | None = Field(
+        None,
+        description="Readable client name when client_id is set; null for legacy inventories without client.",
+    )
     created_at: datetime | None = None
     updated_at: datetime | None = None
     aisles_count: int = Field(0, ge=0, description="Number of aisles in this inventory.")

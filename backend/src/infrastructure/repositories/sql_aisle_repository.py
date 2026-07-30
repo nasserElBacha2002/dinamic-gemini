@@ -165,6 +165,26 @@ class SqlAisleRepository(AisleRepository):
             rows = cur.fetchall()
         return [_row_to_aisle(row) for row in rows]
 
+    def list_by_inventories(self, inventory_ids: Sequence[str]) -> Sequence[Aisle]:
+        uniq = list({iid for iid in inventory_ids if iid})
+        if not uniq:
+            return []
+        placeholders = ",".join("?" * len(uniq))
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                f"""
+                SELECT id, inventory_id, code, status, created_at, updated_at,
+                       operational_job_id, client_supplier_id, error_code, error_message, retryable,
+                       is_active, identification_mode
+                FROM aisles
+                WHERE inventory_id IN ({placeholders})
+                ORDER BY inventory_id, created_at DESC
+                """,
+                tuple(uniq),
+            )
+            rows = cur.fetchall()
+        return [_row_to_aisle(row) for row in rows]
+
     def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(

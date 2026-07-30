@@ -34,6 +34,9 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
+from src.infrastructure.repositories.memory_client_supplier_repository import (
+    MemoryClientSupplierRepository,
+)
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
@@ -76,9 +79,7 @@ def _save_job(
 
 def _state_service(harness: ExecutorHarness) -> V3JobExecutionStateService:
     clock = FixedClock(harness.now)
-    reconciler = InventoryStatusReconciler(
-        harness.inventory_repo, harness.aisle_repo, clock
-    )
+    reconciler = InventoryStatusReconciler(harness.inventory_repo, harness.aisle_repo, clock)
     return V3JobExecutionStateService(
         job_repo=harness.job_repo,
         aisle_repo=harness.aisle_repo,
@@ -158,9 +159,17 @@ def test_p2_p3_t002_wrong_aisle_cannot_promote(tmp_path: Path) -> None:
     harness = ExecutorHarness.build(tmp_path)
     other_aisle = "aisle-other"
     harness.aisle_repo.save(
-        Aisle(other_aisle, harness.inventory_id, "O", AisleStatus.PROCESSING, harness.now, harness.now)
+        Aisle(
+            other_aisle, harness.inventory_id, "O", AisleStatus.PROCESSING, harness.now, harness.now
+        )
     )
-    _save_job(harness, job_id="j-wrong", status=JobStatus.SUCCEEDED, created_at=harness.now, aisle_id=other_aisle)
+    _save_job(
+        harness,
+        job_id="j-wrong",
+        status=JobStatus.SUCCEEDED,
+        created_at=harness.now,
+        aisle_id=other_aisle,
+    )
     promo = build_operational_promotion_service(harness)
     result = promo.promote_for_success(aisle_id=harness.aisle_id, candidate_job_id="j-wrong")
     assert result.outcome == PromotionOutcome.REJECTED_WRONG_AISLE
@@ -182,7 +191,10 @@ def test_p2_p3_t003_older_job_cannot_overwrite_newer_operational(tmp_path: Path)
     _save_job(harness, job_id="job-1", status=JobStatus.SUCCEEDED, created_at=_ts(base, 0))
     _save_job(harness, job_id="job-2", status=JobStatus.SUCCEEDED, created_at=_ts(base, 10))
     promo = build_operational_promotion_service(harness)
-    assert promo.promote_for_success(aisle_id=harness.aisle_id, candidate_job_id="job-2").outcome == PromotionOutcome.PROMOTED
+    assert (
+        promo.promote_for_success(aisle_id=harness.aisle_id, candidate_job_id="job-2").outcome
+        == PromotionOutcome.PROMOTED
+    )
     stale = promo.promote_for_success(aisle_id=harness.aisle_id, candidate_job_id="job-1")
     assert stale.outcome == PromotionOutcome.REJECTED_STALE
     assert harness.aisle_repo.get_by_id(harness.aisle_id).operational_job_id == "job-2"
@@ -364,7 +376,9 @@ def test_p2_p3_t010_active_job_cleanup_rejected(tmp_path: Path) -> None:
 def test_p2_p3_t011_operational_readers_agree(tmp_path: Path) -> None:
     harness = ExecutorHarness.build(tmp_path)
     harness.persist_report(make_two_entity_hybrid_report())
-    _save_job(harness, job_id="job-other", status=JobStatus.SUCCEEDED, created_at=_ts(harness.now, 5))
+    _save_job(
+        harness, job_id="job-other", status=JobStatus.SUCCEEDED, created_at=_ts(harness.now, 5)
+    )
     aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
     assert aisle is not None
     aisle.operational_job_id = harness.job_id
@@ -401,6 +415,7 @@ def test_p2_p3_t011_operational_readers_agree(tmp_path: Path) -> None:
         harness.position_repo,
         harness.source_asset_repo,
         resolver,
+        MemoryClientSupplierRepository(),
     ).execute(harness.inventory_id)[0]
     row = next(r for r in list_aisles if r.aisle.id == harness.aisle_id)
     bundle = next(b for b in export_slice.aisle_bundles if b.aisle.id == harness.aisle_id)
