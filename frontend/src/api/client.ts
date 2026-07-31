@@ -31,12 +31,13 @@ export {
   startAisleProcessing,
   updateAisle,
 } from './aislesApi';
-export type { AisleLocationsListQuery, AisleLocationLabelArtifact, RenderAisleLocationLabelRequest } from './aisleLocationsApi';
+export type { AisleLocationsListQuery, AisleLocationLabelArtifact, BatchRenderAisleLocationLabelsRequest, RenderAisleLocationLabelRequest } from './aisleLocationsApi';
 export {
   aisleLocationLabelDownloadUrl,
   aisleLocationLabelPreviewUrl,
   aisleLocationLabelsBatchRenderUrl,
   downloadAisleLocationLabelFile,
+  downloadAisleLocationLabelsBatch,
   fetchAisleLocationLabelPreviewBlob,
   createAisleLocation,
   invalidateAisleLocationLabel,

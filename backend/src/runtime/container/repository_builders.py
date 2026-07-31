@@ -679,3 +679,28 @@ def build_aisle_location_label_artifact_repository(
         build_sql=_sql,
         build_memory=_memory,
     )
+
+
+def build_client_position_label_repository(
+    build_repo: BuildSqlOrMemory[_RepoT],
+) -> _RepoT:
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_client_position_label_repository import (
+            SqlClientPositionLabelRepository,
+        )
+
+        return SqlClientPositionLabelRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_client_position_label_repository import (
+            MemoryClientPositionLabelRepository,
+        )
+
+        return MemoryClientPositionLabelRepository()
+
+    return build_repo(
+        backend_info_name="ClientPositionLabelRepository",
+        sql_error_subject="client_position_label repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )

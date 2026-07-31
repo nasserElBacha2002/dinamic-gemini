@@ -12,6 +12,8 @@ import InventoriesList from './pages/InventoriesList';
 import InventoryDetail from './pages/InventoryDetail';
 import AislePositionsPage from './pages/AislePositionsPage';
 import AisleLocationsPage from './pages/AisleLocationsPage';
+import ClientPositionLabelsPage from './pages/ClientPositionLabelsPage';
+import InventoryPhysicalLocationsHubPage from './pages/InventoryPhysicalLocationsHubPage';
 import CompareManyRunsPage from './pages/analytics/CompareManyRunsPage';
 import AnalyticsCompareRedirect from './pages/analytics/AnalyticsCompareRedirect';
 import LegacyAisleCompareRedirect from './pages/analytics/LegacyAisleCompareRedirect';
@@ -51,6 +53,8 @@ function App() {
   const detailEl = useMemo(() => <InventoryDetail />, []);
   const positionsEl = useMemo(() => <AislePositionsPage />, []);
   const aisleLocationsEl = useMemo(() => <AisleLocationsPage />, []);
+  const inventoryPhysicalLocationsHubEl = useMemo(() => <InventoryPhysicalLocationsHubPage />, []);
+  const clientPositionLabelsEl = useMemo(() => <ClientPositionLabelsPage />, []);
   const compareManyRunsEl = useMemo(() => <CompareManyRunsPage />, []);
   const analyticsCompareRedirectEl = useMemo(() => <AnalyticsCompareRedirect />, []);
   const legacyCompareRedirectEl = useMemo(() => <LegacyAisleCompareRedirect />, []);
@@ -101,6 +105,7 @@ function App() {
         <Route path={ROUTE_PATH.analitica} element={analyticsDashboardEl} />
         <Route path={ROUTE_PATH.clients} element={clientsEl} />
         <Route path={ROUTE_PATH.clientSupplierDetail} element={clientSupplierDetailEl} />
+        <Route path={ROUTE_PATH.clientPhysicalLocations} element={clientPositionLabelsEl} />
         <Route path={ROUTE_PATH.clientDetail} element={clientDetailEl} />
         <Route path={ROUTE_PATH.ingestionSessions} element={ingestionSessionsRedirectEl} />
         <Route path={ROUTE_PATH.ingestionSessionDetail} element={ingestionSessionsRedirectEl} />
@@ -109,6 +114,7 @@ function App() {
         <Route path={ROUTE_PATH.dashboard} element={<Navigate to={ROUTE_HOME} replace />} />
         <Route path={ROUTE_PATH.settings} element={<Navigate to={ROUTE_HOME} replace />} />
         <Route path={ROUTE_PATH.observabilidad} element={observabilityLegacyRedirectEl} />
+        <Route path={ROUTE_PATH.inventoryPhysicalLocations} element={inventoryPhysicalLocationsHubEl} />
         <Route path={ROUTE_PATH.inventoryDetail} element={detailEl} />
         <Route path={ROUTE_PATH.aislePositions} element={positionsEl} />
         <Route path={ROUTE_PATH.aisleLocations} element={aisleLocationsEl} />

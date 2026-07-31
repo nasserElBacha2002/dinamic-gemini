@@ -607,3 +607,21 @@ class AisleLocationLabelConflictError(Exception):
     def __init__(self, message: str, *, code: str = "AISLE_LOCATION_LABEL_CONFLICT") -> None:
         self.code = code
         super().__init__(message)
+
+
+class ClientPositionLabelNotFoundError(Exception):
+    def __init__(self, label_id: str) -> None:
+        self.label_id = label_id
+        super().__init__(f"Position label not found: {label_id}")
+
+
+class ClientPositionLabelConflictError(Exception):
+    def __init__(self, message: str, *, code: str = "POSITION_LABEL_CONFLICT") -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class ClientPositionLabelAccessDeniedError(Exception):
+    def __init__(self, message: str = "Position label access denied") -> None:
+        self.code = "POSITION_LABEL_ACCESS_DENIED"
+        super().__init__(message)

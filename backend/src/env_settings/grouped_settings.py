@@ -1815,6 +1815,37 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: AISLE_LOCATION_LABEL_RENDER_ENABLED (default true)."
         ),
     )
+    position_labels_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "POSITION_LABELS_ENABLED",
+                os.getenv("AISLE_LOCATION_LABELS_ENABLED", "true"),
+            )
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Enable client-scoped positioning labels API. "
+            "Env: POSITION_LABELS_ENABLED (falls back to AISLE_LOCATION_LABELS_ENABLED)."
+        ),
+    )
+    position_label_render_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "POSITION_LABEL_RENDER_ENABLED",
+                os.getenv("AISLE_LOCATION_LABEL_RENDER_ENABLED", "true"),
+            )
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Enable client-scoped positioning label render/preview/download. "
+            "Env: POSITION_LABEL_RENDER_ENABLED "
+            "(falls back to AISLE_LOCATION_LABEL_RENDER_ENABLED)."
+        ),
+    )
     positioning_label_hmac_secret: str = Field(
         default_factory=lambda: (os.getenv("POSITIONING_LABEL_HMAC_SECRET", "") or "").strip(),
         description=(

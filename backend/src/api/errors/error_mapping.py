@@ -164,6 +164,10 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_AISLE_LOCATION_LABEL_CONFLICT,
     HTTP_DETAIL_AISLE_LOCATION_LABEL_NOT_FOUND,
     HTTP_DETAIL_AISLE_LOCATION_NOT_FOUND,
+    HTTP_DETAIL_POSITION_LABEL_ACCESS_DENIED,
+    HTTP_DETAIL_POSITION_LABEL_CONFLICT,
+    HTTP_DETAIL_POSITION_LABEL_NOT_FOUND,
+    HTTP_DETAIL_POSITION_LABEL_SIGNING_NOT_CONFIGURED,
     HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_CODE_SCAN,
     HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
     HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
@@ -238,6 +242,10 @@ from src.api.errors.structured_api_http import (
     AISLE_LOCATION_LABEL_CONFLICT,
     AISLE_LOCATION_LABEL_NOT_FOUND,
     AISLE_LOCATION_NOT_FOUND,
+    POSITION_LABEL_ACCESS_DENIED,
+    POSITION_LABEL_CONFLICT,
+    POSITION_LABEL_NOT_FOUND,
+    POSITION_LABEL_SIGNING_NOT_CONFIGURED,
     AISLE_NOT_FOUND,
     AISLE_NOT_FOUND_FOR_ASSIGNMENT,
     AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
@@ -326,6 +334,9 @@ from src.application.errors import (
     AisleLocationLabelConflictError,
     AisleLocationLabelNotFoundError,
     AisleLocationNotFoundError,
+    ClientPositionLabelAccessDeniedError,
+    ClientPositionLabelConflictError,
+    ClientPositionLabelNotFoundError,
     AisleNotFoundError,
     AisleNotFoundForAssignmentError,
     AisleSourceAssetMutationBlockedError,
@@ -423,6 +434,7 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
+from src.application.services.positioning_label_signing import PositioningLabelSigningError
 from src.application.services.upload_request_limits import (
     UploadFileTooLargeError,
     UploadRequestTooLargeError,
@@ -1059,6 +1071,38 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
             }
         ),
         detail=lambda e: str(e) or HTTP_DETAIL_AISLE_LOCATION_LABEL_CONFLICT,
+    ),
+    ClientPositionLabelNotFoundError: _structured_fixed(
+        404,
+        error_code=POSITION_LABEL_NOT_FOUND,
+        detail=HTTP_DETAIL_POSITION_LABEL_NOT_FOUND,
+    ),
+    ClientPositionLabelAccessDeniedError: _structured_fixed(
+        403,
+        error_code=POSITION_LABEL_ACCESS_DENIED,
+        detail=HTTP_DETAIL_POSITION_LABEL_ACCESS_DENIED,
+    ),
+    ClientPositionLabelConflictError: _structured_detail_with_exc_code(
+        409,
+        default_error_code=POSITION_LABEL_CONFLICT,
+        allowed_codes=frozenset(
+            {
+                "POSITION_LABEL_CONFLICT",
+                "POSITION_LABEL_NAME_REQUIRED",
+                "POSITION_LABEL_NAME_CONFLICT",
+                "POSITION_LABEL_ALREADY_INVALIDATED",
+                "POSITION_LABEL_FORMAT_UNSUPPORTED",
+                "POSITION_LABEL_RENDER_FAILED",
+                "POSITION_LABEL_CLIENT_MISMATCH",
+                "POSITION_LABEL_IDEMPOTENCY_CONFLICT",
+            }
+        ),
+        detail=lambda e: str(e) or HTTP_DETAIL_POSITION_LABEL_CONFLICT,
+    ),
+    PositioningLabelSigningError: _structured_fixed(
+        503,
+        error_code=POSITION_LABEL_SIGNING_NOT_CONFIGURED,
+        detail=HTTP_DETAIL_POSITION_LABEL_SIGNING_NOT_CONFIGURED,
     ),
 }
 

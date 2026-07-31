@@ -164,7 +164,10 @@ class AppSettings(
     @model_validator(mode="after")
     def validate_positioning_label_signing_when_render_enabled(self) -> Self:
         """Fail closed when render is on, signing is required, and secret is missing/short."""
-        render_enabled = bool(getattr(self, "aisle_location_label_render_enabled", False))
+        render_enabled = bool(
+            getattr(self, "position_label_render_enabled", False)
+            or getattr(self, "aisle_location_label_render_enabled", False)
+        )
         signing_required = bool(getattr(self, "positioning_label_signing_required", False))
         if not (render_enabled and signing_required):
             return self
@@ -173,7 +176,7 @@ class AppSettings(
         if not secret:
             raise ValueError(
                 "POSITIONING_LABEL_HMAC_SECRET is required when "
-                "AISLE_LOCATION_LABEL_RENDER_ENABLED=true and "
+                "POSITION_LABEL_RENDER_ENABLED=true and "
                 "POSITIONING_LABEL_SIGNING_REQUIRED=true"
             )
         if len(secret) < min_len:

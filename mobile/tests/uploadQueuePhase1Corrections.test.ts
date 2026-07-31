@@ -503,4 +503,21 @@ describe('UploadQueue phase1 corrections', () => {
     expect(sessions.get('s1')?.preparation_processing_mode).toBe('INTERNAL_OCR');
     await queue.dispose();
   });
+
+  it('requeues an excluded photo without creating a duplicate row', async () => {
+    const s1 = session('s1');
+    const p1 = photo('p1', 's1', { upload_status: 'excluded' });
+    const { queue, photos } = buildHarness({
+      sessions: [s1],
+      photosBySession: { s1: [p1] },
+    });
+    const first = await queue.requeueExcludedPhoto('p1');
+    expect(first.ok).toBe(true);
+    expect(photos.get('p1')?.upload_status).toBe('not_queued');
+    const second = await queue.requeueExcludedPhoto('p1');
+    expect(second.ok).toBe(false);
+    expect(second.reason).toBe('EXCLUDED_PHOTO_ALREADY_RESTORED');
+    expect([...photos.keys()]).toEqual(['p1']);
+    await queue.dispose();
+  });
 });

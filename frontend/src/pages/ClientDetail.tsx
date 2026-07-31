@@ -18,7 +18,12 @@ import {
   sortDataTableRows,
   type DataTableColumn,
 } from '../components/ui';
-import { ROUTE_CLIENTS, pathToClientSupplier, pathToInventory } from '../constants/appRoutes';
+import {
+  ROUTE_CLIENTS,
+  pathToClientPhysicalLocations,
+  pathToClientSupplier,
+  pathToInventory,
+} from '../constants/appRoutes';
 import {
   useClient,
   useClientSuppliers,
@@ -237,6 +242,16 @@ export default function ClientDetail() {
               disabled={!safeClientId || !clientQuery.data}
             >
               {t('clients.labels.action_generate')}
+            </Button>
+            <Button
+              component={RouterLink}
+              to={pathToClientPhysicalLocations(safeClientId)}
+              variant="outlined"
+              size="small"
+              disabled={!safeClientId}
+              data-testid="client-open-position-labels"
+            >
+              {t('position_labels.title')}
             </Button>
             <Button component={RouterLink} to={ROUTE_CLIENTS} variant="outlined" size="small">
               {t('clients.detail.back_to_list')}

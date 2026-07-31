@@ -1,4 +1,9 @@
-"""v3 aisle locations + positioning labels (CRUD, issue, render, replace, batch)."""
+"""v3 aisle locations + positioning labels (CRUD, issue, render, replace, batch).
+
+DEPRECATED for new product flows: prefer client-scoped
+``/api/v3/clients/{client_id}/position-labels``. These inventory/aisle-rooted
+routes remain temporarily for legacy consumers and emit Deprecation via docs.
+"""
 
 from __future__ import annotations
 
@@ -451,7 +456,8 @@ def download_aisle_location_label(
             raise AisleLocationLabelConflictError(
                 "format must be PDF or PNG",
                 code="POSITION_LABEL_FORMAT_UNSUPPORTED",
-            )        result = use_case.execute(
+            )
+        result = use_case.execute(
             DownloadAisleLocationLabelCommand(
                 inventory_id=inventory_id,
                 label_id=label_id,

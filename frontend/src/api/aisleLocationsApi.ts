@@ -212,6 +212,36 @@ export async function downloadAisleLocationLabelFile(
   });
 }
 
+export interface BatchRenderAisleLocationLabelsRequest {
+  preset?: string;
+  format?: 'PDF';
+  location_ids?: string[] | null;
+  emit_missing?: boolean;
+  idempotency_key?: string | null;
+}
+
 export function aisleLocationLabelsBatchRenderUrl(inventoryId: string, aisleId: string): string {
   return `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/labels/batch-render`;
+}
+
+/** Authenticated POST batch-render → PDF download (Bearer). */
+export async function downloadAisleLocationLabelsBatch(
+  inventoryId: string,
+  aisleId: string,
+  body: BatchRenderAisleLocationLabelsRequest
+): Promise<void> {
+  const url = aisleLocationLabelsBatchRenderUrl(inventoryId, aisleId);
+  const preset = body.preset ?? 'MM_100x100';
+  await apiDownloadBlob(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      preset,
+      format: body.format ?? 'PDF',
+      location_ids: body.location_ids ?? null,
+      emit_missing: Boolean(body.emit_missing),
+      idempotency_key: body.idempotency_key ?? null,
+    }),
+    fallbackFilename: `dinamic_position_batch_${aisleId}_${preset}.pdf`,
+  });
 }

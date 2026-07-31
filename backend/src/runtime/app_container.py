@@ -192,6 +192,7 @@ from src.runtime.container.repository_builders import (
     build_server_reprocess_repository,
     build_aisle_location_label_repository,
     build_aisle_location_repository,
+    build_client_position_label_repository,
     build_ordered_capture_session_repository,
     build_source_asset_repository,
     build_supplier_extraction_profile_repository,
@@ -280,6 +281,7 @@ class AppContainer:
         self._aisle_location_repo = None
         self._aisle_location_label_repo = None
         self._aisle_location_label_artifact_repo = None
+        self._client_position_label_repo = None
         self._code_scan_repo: CodeScanRepository | None = None
         self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
         self._authoritative_local_code_scan_repo = None
@@ -408,6 +410,7 @@ class AppContainer:
         self._aisle_location_repo = None
         self._aisle_location_label_repo = None
         self._aisle_location_label_artifact_repo = None
+        self._client_position_label_repo = None
         self._code_scan_repo = None
         self._preliminary_detection_repo = None
         self._authoritative_local_code_scan_repo = None
@@ -1175,6 +1178,14 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._aisle_location_label_artifact_repo
+
+    def get_client_position_label_repo(self):
+        if getattr(self, "_client_position_label_repo", None) is not None:
+            return self._client_position_label_repo
+        self._client_position_label_repo = build_client_position_label_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._client_position_label_repo
 
     def get_recompute_consolidated_counts_use_case(self) -> RecomputeConsolidatedCountsUseCase:
         return build_recompute_consolidated_counts_use_case(

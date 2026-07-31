@@ -24,6 +24,8 @@ import { ServerReprocessScreen } from './src/screens/ServerReprocessScreen';
 import { AisleRevisionScreen } from './src/screens/AisleRevisionScreen';
 import { AisleHistoryScreen } from './src/screens/AisleHistoryScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
+import { ExcludedPhotosScreen } from './src/screens/ExcludedPhotosScreen';
+import { AisleResultsListScreen } from './src/screens/AisleResultsListScreen';
 import type { AisleIdentificationMode } from './src/features/processing/processingMode';
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
 import { processingRunStore } from './src/features/processing/processingRun';
@@ -43,6 +45,8 @@ type Screen =
   | 'aisle-history'
   | 'processing'
   | 'results'
+  | 'aisle-results-list'
+  | 'excluded-photos'
   | 'diagnostic';
 
 export default function App(): JSX.Element {
@@ -407,6 +411,8 @@ export default function App(): JSX.Element {
           onError={setError}
           onLocalReview={() => setScreen('local-result-review')}
           onAuthoritativeFinalize={() => setScreen('authoritative-finalize')}
+          onViewAisleResults={() => setScreen('aisle-results-list')}
+          onExcludedPhotos={() => setScreen('excluded-photos')}
         />
       ) : null}
       {screen === 'authoritative-finalize' &&
@@ -442,6 +448,30 @@ export default function App(): JSX.Element {
           onBack={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onAnotherAisle={() => setScreen('inventories')}
           onViewResults={() => setScreen('results')}
+          onViewAisleResults={() => setScreen('aisle-results-list')}
+          onExcludedPhotos={() => setScreen('excluded-photos')}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'aisle-results-list' && workSessionId ? (
+        <AisleResultsListScreen
+          services={services}
+          sessionId={workSessionId}
+          inventoryName={selectedInventory?.name ?? ''}
+          aisleName={selectedAisle?.code ?? ''}
+          onBack={() => setScreen('uploads')}
+          onViewServerResult={() => setScreen('results')}
+          onUploadLocal={() => undefined}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'excluded-photos' && workSessionId ? (
+        <ExcludedPhotosScreen
+          services={services}
+          sessionId={workSessionId}
+          inventoryName={selectedInventory?.name ?? ''}
+          aisleName={selectedAisle?.code ?? ''}
+          onBack={() => setScreen('uploads')}
           onError={setError}
         />
       ) : null}

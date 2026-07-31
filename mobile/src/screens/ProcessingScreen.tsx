@@ -9,6 +9,11 @@ import {
   processingStateLabelFromRemote,
   type ProcessingState,
 } from '../core/processingState';
+import type { ConfirmedLocalResultRow } from '../database/repositories/confirmedLocalResultRepository';
+import {
+  countExcludedPhotos,
+  countPendingLocalResults,
+} from '../features/processing/aisleProcessDialogHelpers';
 import type { AisleIdentificationMode, IdentificationModeSelection } from '../features/processing/processingMode';
 import {
   labelForIdentificationMode,
@@ -31,6 +36,8 @@ export interface ProcessingScreenProps {
   onBack: () => void;
   onAnotherAisle: () => void;
   onViewResults: () => void;
+  onViewAisleResults?: () => void;
+  onExcludedPhotos?: () => void;
   onError: (message: string | null) => void;
 }
 
@@ -44,6 +51,8 @@ export function ProcessingScreen({
   onBack,
   onAnotherAisle,
   onViewResults,
+  onViewAisleResults,
+  onExcludedPhotos,
   onError,
 }: ProcessingScreenProps) {
   const [view, setView] = useState<Awaited<ReturnType<AppServices['processing']['getSessionProcessingView']>> | null>(
@@ -55,9 +64,17 @@ export function ProcessingScreen({
   const [reconciliationSummary, setReconciliationSummary] = useState<ReconciliationSummary | null>(
     null,
   );
+  const [localResults, setLocalResults] = useState<ConfirmedLocalResultRow[]>([]);
+  const [excludedPhotoCount, setExcludedPhotoCount] = useState(0);
+  const [uploadLocalBusy, setUploadLocalBusy] = useState(false);
+  const [uploadLocalMessage, setUploadLocalMessage] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void services.processing.getSessionProcessingView(sessionId).then(setView);
+    void services.confirmedLocalResults.listForSession(sessionId).then(setLocalResults);
+    void services.capture.loadSession(sessionId, false).then((snap) => {
+      setExcludedPhotoCount(countExcludedPhotos(snap.photos ?? []));
+    });
   }, [services, sessionId]);
 
   useEffect(() => {
@@ -118,6 +135,27 @@ export function ProcessingScreen({
     } finally {
       setBusy(false);
     }
+  };
+
+  const uploadLocalResults = () => {
+    if (uploadLocalBusy) return;
+    setUploadLocalBusy(true);
+    setUploadLocalMessage(null);
+    setConfirmError(null);
+    void services.authoritativeLocalSync
+      .syncPending()
+      .then((summary) => {
+        setUploadLocalMessage(
+          `Subida: ${summary.synced} ok · ${summary.retry} reintento · ${summary.conflict} conflicto · ${summary.failed_terminal} fallidos`,
+        );
+        refresh();
+      })
+      .catch((e) => {
+        const msg = messageOf(e);
+        setConfirmError(msg);
+        onError(msg);
+      })
+      .finally(() => setUploadLocalBusy(false));
   };
 
   return (
@@ -184,16 +222,32 @@ export function ProcessingScreen({
         aisleName={aisleName}
         uploadedCount={0}
         pendingCount={0}
+        pendingLocalResultCount={countPendingLocalResults(localResults)}
+        excludedPhotoCount={excludedPhotoCount}
+        localResults={localResults}
         preference={identificationModePreference}
         busy={busy}
         error={confirmError}
+        uploadLocalBusy={uploadLocalBusy}
+        uploadLocalMessage={uploadLocalMessage}
         onClose={() => {
-          if (busy) return;
+          if (busy || uploadLocalBusy) return;
           setConfirmVisible(false);
           setConfirmError(null);
+          setUploadLocalMessage(null);
         }}
         onConfirm={(selection) => {
           void startOrResumeProcessing(selection);
+        }}
+        onUploadLocalResults={uploadLocalResults}
+        onViewResults={() => {
+          setConfirmVisible(false);
+          if (onViewAisleResults) onViewAisleResults();
+          else onViewResults();
+        }}
+        onExcludedPhotos={() => {
+          setConfirmVisible(false);
+          onExcludedPhotos?.();
         }}
       />
     </View>

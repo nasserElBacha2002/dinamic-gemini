@@ -42,6 +42,8 @@ export const ROUTE_PATH = {
   inventoryDetail: 'inventories/:inventoryId',
   aislePositions: 'inventories/:inventoryId/aisles/:aisleId/positions',
   aisleLocations: 'inventories/:inventoryId/aisles/:aisleId/locations',
+  inventoryPhysicalLocations: 'inventories/:inventoryId/posiciones-fisicas',
+  clientPhysicalLocations: 'clientes/:clientId/posiciones-fisicas',
   analyticsCompare: 'inventories/:inventoryId/analytics/compare',
   analyticsCompareMany: 'inventories/:inventoryId/analytics/compare-many',
   legacyAisleCompare: 'inventories/:inventoryId/aisles/:aisleId/compare',
@@ -58,6 +60,7 @@ export const ROUTE_MATCH = {
   inventoryDetail: `${ROUTE_INVENTORIES_ROOT}/:inventoryId`,
   aislePositions: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/positions`,
   aisleLocations: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/locations`,
+  inventoryPhysicalLocations: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/posiciones-fisicas`,
   analyticsCompare: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/analytics/compare`,
   analyticsCompareMany: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/analytics/compare-many`,
   legacyAisleCompare: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/compare`,
@@ -65,6 +68,7 @@ export const ROUTE_MATCH = {
   aisleObservability: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/observability`,
   ingestionSessionDetail: `/ingestion-sessions/:sessionId`,
   clientDetail: '/clientes/:clientId',
+  clientPhysicalLocations: '/clientes/:clientId/posiciones-fisicas',
   clientSupplierDetail: '/clientes/:clientId/proveedores/:supplierId',
 } as const;
 
@@ -102,6 +106,14 @@ export function pathToAislePositions(inventoryId: string, aisleId: string): stri
 
 export function pathToAisleLocations(inventoryId: string, aisleId: string): string {
   return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/aisles/${aisleId}/locations`;
+}
+
+export function pathToInventoryPhysicalLocations(inventoryId: string): string {
+  return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/posiciones-fisicas`;
+}
+
+export function pathToClientPhysicalLocations(clientId: string): string {
+  return `/clientes/${clientId}/posiciones-fisicas`;
 }
 
 export function pathToAisleObservability(

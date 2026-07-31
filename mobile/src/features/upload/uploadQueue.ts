@@ -389,6 +389,40 @@ export class UploadQueue {
     }
   }
 
+  /**
+   * Re-queue a photo previously excluded from the upload queue (not remote-deleted).
+   * Reuses the same capture_photos row — does not create a duplicate.
+   */
+  async requeueExcludedPhoto(photoId: string): Promise<{ ok: boolean; reason: string | null }> {
+    const photo = await this.repo.getPhotoById(photoId);
+    if (!photo) {
+      return { ok: false, reason: 'EXCLUDED_PHOTO_NOT_FOUND' };
+    }
+    if (photo.upload_status === 'remote_deleted' || photo.upload_status === 'remote_delete_pending') {
+      return {
+        ok: false,
+        reason: 'La foto fue eliminada del servidor. No se puede volver a encolar sin una nueva captura.',
+      };
+    }
+    if (photo.upload_status !== 'excluded') {
+      return { ok: false, reason: 'EXCLUDED_PHOTO_ALREADY_RESTORED' };
+    }
+    await this.repo.setPhotoUploadStatus(photoId, 'not_queued', {
+      errorCode: null,
+      errorMessage: null,
+      nextRetryAt: null,
+    });
+    this.cancelledWhileUploading.delete(photoId);
+    this.emit();
+    emitObservability(this.obs?.reporter, {
+      name: 'excluded_photo_reupload_requested',
+      sessionId: photo.capture_session_id,
+      clientFileId: photo.client_file_id ?? undefined,
+      attributes: { photo_id: photoId },
+    });
+    return { ok: true, reason: null };
+  }
+
   async cancelPhoto(photoId: string): Promise<void> {
     const photo = await this.repo.getPhotoById(photoId);
     if (!photo) {

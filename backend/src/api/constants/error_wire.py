@@ -196,6 +196,10 @@ HTTP_DETAIL_AISLE_LOCATION_NOT_FOUND = "Aisle location not found"
 HTTP_DETAIL_AISLE_LOCATION_CONFLICT = "Aisle location conflict"
 HTTP_DETAIL_AISLE_LOCATION_LABEL_NOT_FOUND = "Aisle location label not found"
 HTTP_DETAIL_AISLE_LOCATION_LABEL_CONFLICT = "Aisle location label conflict"
+HTTP_DETAIL_POSITION_LABEL_NOT_FOUND = "Position label not found"
+HTTP_DETAIL_POSITION_LABEL_ACCESS_DENIED = "Position label access denied"
+HTTP_DETAIL_POSITION_LABEL_CONFLICT = "Position label conflict"
+HTTP_DETAIL_POSITION_LABEL_SIGNING_NOT_CONFIGURED = "Position label signing is not configured"
 
 # Supplier prompt configs (Phase D4)
 HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER = "provider_name is not supported"
