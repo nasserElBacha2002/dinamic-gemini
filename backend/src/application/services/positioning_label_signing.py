@@ -77,6 +77,9 @@ class PositioningLabelSigningService:
         expected = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, signature.strip())
 
+    def has_secret_for_version(self, key_version: int) -> bool:
+        return self._secret_for_version(int(key_version)) is not None
+
     def _secret_for_version(self, key_version: int) -> str | None:
         if key_version == int(self._config.key_version):
             secret = (self._config.secret or "").strip()

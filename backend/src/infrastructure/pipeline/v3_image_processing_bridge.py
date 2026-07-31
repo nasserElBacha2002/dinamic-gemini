@@ -299,7 +299,75 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
         consolidator=CodeDetectionConsolidator(),
         config=config,
         event_publisher=event_publisher,
+        position_detection=_build_position_detection_use_case(settings),
     )
+
+
+def _build_position_detection_use_case(settings):
+    """Best-effort Phase 3 wiring; returns None when deps unavailable."""
+    if not bool(getattr(settings, "position_label_detection_enabled", True)):
+        return None
+    try:
+        from src.application.services.position_label_detection.code_classifier import (
+            CodeClassifier,
+        )
+        from src.application.services.position_label_detection.payload_parser import (
+            PositionLabelPayloadParser,
+        )
+        from src.application.services.position_label_detection.resolver import (
+            PositionLabelResolver,
+        )
+        from src.application.services.position_label_detection.validation_service import (
+            PositionLabelValidationService,
+        )
+        from src.application.services.positioning_label_signing import (
+            PositioningLabelSigningConfig,
+            PositioningLabelSigningService,
+            parse_previous_secrets,
+        )
+        from src.application.use_cases.position_label_detection.detect_image_position_labels import (
+            ImagePositionDetectionUseCase,
+        )
+        from src.runtime.app_container import get_app_container
+
+        container = get_app_container()
+        clock = container.get_clock()
+        label_repo = container.get_client_position_label_repo()
+        detection_repo = container.get_image_position_label_detection_repo()
+        signing = PositioningLabelSigningService(
+            PositioningLabelSigningConfig(
+                secret=getattr(settings, "positioning_label_hmac_secret", None),
+                key_version=int(getattr(settings, "positioning_label_hmac_key_version", 1) or 1),
+                previous_secrets=parse_previous_secrets(
+                    getattr(settings, "positioning_label_hmac_previous_secrets", "")
+                ),
+                required=bool(getattr(settings, "positioning_label_signing_required", False)),
+            )
+        )
+        max_bytes = int(getattr(settings, "position_label_max_payload_bytes", 4096) or 4096)
+        return ImagePositionDetectionUseCase(
+            classifier=CodeClassifier(max_payload_bytes=max_bytes),
+            parser=PositionLabelPayloadParser(max_payload_bytes=max_bytes),
+            validator=PositionLabelValidationService(
+                signing=signing,
+                signature_validation_enabled=bool(
+                    getattr(settings, "position_label_signature_validation_enabled", True)
+                ),
+            ),
+            resolver=PositionLabelResolver(label_repo=label_repo),
+            repo=detection_repo,
+            clock=clock,
+            detection_enabled=True,
+            persistence_enabled=bool(
+                getattr(settings, "position_label_detection_persistence_enabled", True)
+            ),
+            max_codes_per_image=int(
+                getattr(settings, "position_label_max_codes_per_image", 32) or 32
+            ),
+        )
+    except Exception:
+        logger.exception("position_label_detection_wiring_failed")
+        return None
 
 
 def build_default_code_scan_persister(

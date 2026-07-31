@@ -2469,6 +2469,10 @@ def get_aisle_location_label_artifact_repo():
     return get_app_container().get_aisle_location_label_artifact_repo()
 
 
+def get_image_position_label_detection_repo():
+    return get_app_container().get_image_position_label_detection_repo()
+
+
 def get_render_aisle_location_label_use_case(
     location_repo=Depends(get_aisle_location_repo),
     label_repo=Depends(get_aisle_location_label_repo),

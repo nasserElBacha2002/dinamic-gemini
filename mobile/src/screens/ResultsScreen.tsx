@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
 import type { ProcessingResultSummary } from '../features/processing/processingService';
+import {
+  formatPositionDetectionLine,
+  PositionLabelDetectionsApi,
+  type ImagePositionDetectionDto,
+} from '../features/processing/positionLabelDetectionsApi';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import { Button, ErrorText, styles } from '../ui';
@@ -33,23 +38,42 @@ export function ResultsScreen({
 }: ResultsScreenProps) {
   const [busy, setBusy] = useState(true);
   const [summary, setSummary] = useState<ProcessingResultSummary | null>(null);
+  const [positionLines, setPositionLines] = useState<readonly string[]>([]);
 
   const load = useCallback(() => {
     setBusy(true);
     void services.processing
       .getResultSummary(sessionId)
-      .then((result) => {
+      .then(async (result) => {
         setSummary(result);
         if (result.loadState === 'error' && result.message) {
           onError(result.message);
         }
+        const invId = inventory?.id?.trim() || result.inventoryId?.trim();
+        const jobId = result.jobId?.trim();
+        if (!invId || !jobId) {
+          setPositionLines([]);
+          return;
+        }
+        try {
+          const api = new PositionLabelDetectionsApi(services.api);
+          const response = await api.listForJob(invId, jobId);
+          const lines = (response.items ?? [])
+            .filter((item: ImagePositionDetectionDto) => item.status !== 'NO_LABEL')
+            .map(formatPositionDetectionLine);
+          setPositionLines(lines);
+        } catch {
+          // Detection query is best-effort; product summary remains primary.
+          setPositionLines([]);
+        }
       })
       .catch((e) => {
         setSummary(null);
+        setPositionLines([]);
         onError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => setBusy(false));
-  }, [services, sessionId, onError]);
+  }, [services, sessionId, inventory, onError]);
 
   useEffect(() => {
     load();
@@ -101,6 +125,16 @@ export function ResultsScreen({
       </Text>
       {summary.finishedAt ? <Text style={styles.row}>Finalizado: {summary.finishedAt}</Text> : null}
       {summary.jobId ? <Text style={styles.muted}>Diagnóstico job: {summary.jobId}</Text> : null}
+      {positionLines.length > 0 ? (
+        <View>
+          <Text style={styles.h2}>Etiquetas de posicionamiento</Text>
+          {positionLines.map((line) => (
+            <Text key={line} style={styles.row}>
+              {line}
+            </Text>
+          ))}
+        </View>
+      ) : null}
       {summary.loadState === 'error' || summary.loadState === 'pending' || summary.loadState === 'partial' ? (
         <Button label="Reintentar consulta" onPress={load} />
       ) : null}

@@ -9,6 +9,7 @@ import { useParams, useNavigate, useLocation, useSearchParams } from 'react-rout
 import { Alert, Box, Button, Tooltip, Typography } from '@mui/material';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import ImageSearchOutlinedIcon from '@mui/icons-material/ImageSearchOutlined';
+import JobPositionDetectionsPanel from '../features/positionLabels/JobPositionDetectionsPanel';
 import { exportAisleOperationalCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
@@ -875,6 +876,7 @@ export default function AislePositionsPage() {
               updateFilters({ resultsView: v }, { historyMode: 'push' });
             }}
           />
+          <JobPositionDetectionsPanel inventoryId={inventoryId} jobId={pickedRunJobId} />
         </Box>
       ) : null}
 

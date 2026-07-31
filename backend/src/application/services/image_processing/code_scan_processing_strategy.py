@@ -154,6 +154,7 @@ class CodeScanProcessingStrategy:
         config: CodeScanConfig,
         metrics: CodeScanMetrics | None = None,
         event_publisher: ProcessingEventPublisher | None = None,
+        position_detection=None,
     ) -> None:
         self._scanner = scanner
         self._reader = content_reader
@@ -162,6 +163,7 @@ class CodeScanProcessingStrategy:
         self._config = config
         self._metrics = metrics or CodeScanMetrics()
         self._events = event_publisher
+        self._position_detection = position_detection
 
     def _publish_asset_event(
         self,
@@ -332,11 +334,108 @@ class CodeScanProcessingStrategy:
                 metadata={"symbol_count": symbol_count},
             )
 
-        detections = self._to_detection_inputs(candidates)
+        item_candidates = candidates
+        position_meta: dict | None = None
+        if self._position_detection is not None:
+            position_started = time.monotonic()
+            try:
+                from src.application.use_cases.position_label_detection.detect_image_position_labels import (
+                    ImagePositionDetectionCommand,
+                )
+                from src.domain.position_label_detection.entities import DetectedCode
+
+                detected_codes = [
+                    DetectedCode(
+                        symbology=symbology_for_candidate(c),
+                        raw_value=c.code_value,
+                        normalized_value=(c.code_value or "").strip(),
+                        bounding_box=c.bounding_box_json,
+                        confidence=c.confidence,
+                        rotation_degrees=(
+                            float(c.metadata_json.get("rotation_degrees"))
+                            if c.metadata_json is not None
+                            and c.metadata_json.get("rotation_degrees") is not None
+                            else None
+                        ),
+                    )
+                    for c in candidates
+                ]
+                pos_result = self._position_detection.execute(
+                    ImagePositionDetectionCommand(
+                        client_id=(context.client_id or "").strip() or "unknown-client",
+                        inventory_id=context.inventory_id,
+                        job_id=context.job_id,
+                        source_asset_id=context.asset_id,
+                        codes=detected_codes,
+                        client_image_id=getattr(asset, "upload_client_file_id", None),
+                        ordered_capture_session_id=getattr(
+                            asset, "ordered_capture_session_id", None
+                        ),
+                        sequence_number=getattr(asset, "sequence_number", None),
+                        correlation_id=context.job_id,
+                    )
+                )
+                item_raw = {(c.raw_value or "").strip() for c in pos_result.item_codes}
+                item_candidates = [
+                    c for c in candidates if (c.code_value or "").strip() in item_raw
+                ]
+                # If classifier returned no item codes but originals were all position/unknown,
+                # keep empty item list (position-only images).
+                if pos_result.disabled:
+                    item_candidates = candidates
+                position_duration_ms = int((time.monotonic() - position_started) * 1000)
+                position_meta = {
+                    "position_detection_count": len(pos_result.detections),
+                    "position_ambiguous": pos_result.ambiguous,
+                    "position_statuses": [
+                        d.detection_status.value for d in pos_result.detections
+                    ],
+                    "position_detection_duration_ms": position_duration_ms,
+                }
+                self._metrics.increment("position_label_detection_total")
+                self._metrics.increment(
+                    "position_label_detection_duration", amount=position_duration_ms
+                )
+                if any(d.detection_status.value == "VALID" for d in pos_result.detections):
+                    self._metrics.increment("position_label_detection_valid_total")
+                if pos_result.ambiguous:
+                    self._metrics.increment("position_label_detection_ambiguous_total")
+                if any(
+                    d.detection_status.value == "CLIENT_MISMATCH" for d in pos_result.detections
+                ):
+                    self._metrics.increment("position_label_client_mismatch_total")
+                if any(
+                    d.detection_status.value
+                    in (
+                        "INVALID_SIGNATURE",
+                        "CLIENT_MISMATCH",
+                        "LABEL_INVALIDATED",
+                        "LABEL_NOT_FOUND",
+                        "UNSUPPORTED_VERSION",
+                        "UNSUPPORTED_LEGACY_PAYLOAD",
+                        "MISSING_SIGNATURE",
+                        "PAYLOAD_TOO_LARGE",
+                    )
+                    for d in pos_result.detections
+                ):
+                    self._metrics.increment("position_label_detection_invalid_total")
+            except Exception:
+                # Position detection must not cancel item CODE_SCAN.
+                self._metrics.increment("position_label_detection_failed_total")
+                logger.exception(
+                    "position_label_detection_failed job_id=%s asset_id=%s",
+                    context.job_id,
+                    context.asset_id,
+                )
+                item_candidates = candidates
+
+        detections = self._to_detection_inputs(item_candidates)
         consolidated = self._consolidator.consolidate(detections)
 
         duration_ms = int((time.monotonic() - started) * 1000)
         evidence = self._build_evidence(consolidated, detections)
+        if position_meta:
+            evidence = {**(evidence or {}), "position_label_detection": position_meta}
         # Never apply OCR/supplier text-profile validation here. Profile rules are for
         # INTERNAL_OCR; AI fallback uses prompts. CODE_SCAN is consolidator-only.
 

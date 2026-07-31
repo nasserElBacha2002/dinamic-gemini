@@ -704,3 +704,28 @@ def build_client_position_label_repository(
         build_sql=_sql,
         build_memory=_memory,
     )
+
+
+def build_image_position_label_detection_repository(
+    build_repo: BuildSqlOrMemory[_RepoT],
+) -> _RepoT:
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_image_position_label_detection_repository import (
+            SqlImagePositionLabelDetectionRepository,
+        )
+
+        return SqlImagePositionLabelDetectionRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_image_position_label_detection_repository import (
+            MemoryImagePositionLabelDetectionRepository,
+        )
+
+        return MemoryImagePositionLabelDetectionRepository()
+
+    return build_repo(
+        backend_info_name="ImagePositionLabelDetectionRepository",
+        sql_error_subject="image_position_label_detection repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )

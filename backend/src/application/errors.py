@@ -625,3 +625,61 @@ class ClientPositionLabelAccessDeniedError(Exception):
     def __init__(self, message: str = "Position label access denied") -> None:
         self.code = "POSITION_LABEL_ACCESS_DENIED"
         super().__init__(message)
+
+
+class PositionLabelDetectionError(Exception):
+    """Structured Phase 3 detection failure (not raised for soft validation rows)."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class PositionLabelInvalidPayloadError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Invalid position label payload") -> None:
+        super().__init__(message, code="POSITION_LABEL_INVALID_PAYLOAD")
+
+
+class PositionLabelUnsupportedVersionError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Unsupported position label payload version") -> None:
+        super().__init__(message, code="POSITION_LABEL_UNSUPPORTED_VERSION")
+
+
+class PositionLabelInvalidSignatureError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Invalid position label signature") -> None:
+        super().__init__(message, code="POSITION_LABEL_INVALID_SIGNATURE")
+
+
+class PositionLabelUnknownKeyVersionError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Unknown position label key version") -> None:
+        super().__init__(message, code="POSITION_LABEL_UNKNOWN_KEY_VERSION")
+
+
+class PositionLabelDetectionNotFoundError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Position label not found for detection") -> None:
+        super().__init__(message, code="POSITION_LABEL_NOT_FOUND")
+
+
+class PositionLabelInvalidatedError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Position label is invalidated") -> None:
+        super().__init__(message, code="POSITION_LABEL_INVALIDATED")
+
+
+class PositionLabelClientMismatchError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Position label belongs to another client") -> None:
+        super().__init__(message, code="POSITION_LABEL_CLIENT_MISMATCH")
+
+
+class PositionLabelAmbiguousError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Ambiguous position label detection") -> None:
+        super().__init__(message, code="POSITION_LABEL_AMBIGUOUS")
+
+
+class PositionLabelDecodeTimeoutError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Position label decode timed out") -> None:
+        super().__init__(message, code="POSITION_LABEL_DECODE_TIMEOUT")
+
+
+class PositionLabelDetectionFailedError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Position label detection failed") -> None:
+        super().__init__(message, code="POSITION_LABEL_DETECTION_FAILED")

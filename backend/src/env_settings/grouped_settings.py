@@ -1921,6 +1921,60 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: POSITION_LABEL_BATCH_SYNC_LIMIT."
         ),
     )
+    position_label_detection_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_LABEL_DETECTION_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: detect DINAMIC_POSITION codes during CODE_SCAN. "
+            "Env: POSITION_LABEL_DETECTION_ENABLED (default true)."
+        ),
+    )
+    position_label_signature_validation_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_LABEL_SIGNATURE_VALIDATION_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: verify HMAC on DINAMIC_POSITION payloads. "
+            "Env: POSITION_LABEL_SIGNATURE_VALIDATION_ENABLED (default true)."
+        ),
+    )
+    position_label_detection_persistence_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_LABEL_DETECTION_PERSISTENCE_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: persist image_position_label_detections rows. "
+            "Env: POSITION_LABEL_DETECTION_PERSISTENCE_ENABLED (default true)."
+        ),
+    )
+    position_label_max_payload_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_LABEL_MAX_PAYLOAD_BYTES", "4096") or "4096"
+        ),
+        ge=256,
+        description="Max DINAMIC_POSITION payload size. Env: POSITION_LABEL_MAX_PAYLOAD_BYTES.",
+    )
+    position_label_max_codes_per_image: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_LABEL_MAX_CODES_PER_IMAGE", "32") or "32"
+        ),
+        ge=1,
+        description="Max decoded codes considered per image. Env: POSITION_LABEL_MAX_CODES_PER_IMAGE.",
+    )
+    position_label_decode_timeout_ms: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_LABEL_DECODE_TIMEOUT_MS", "15000") or "15000"
+        ),
+        ge=100,
+        description=(
+            "Soft decode budget for position-aware CODE_SCAN (ms). "
+            "Env: POSITION_LABEL_DECODE_TIMEOUT_MS."
+        ),
+    )
     legacy_image_order_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("LEGACY_IMAGE_ORDER_ENABLED", "true").strip().lower()
