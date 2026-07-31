@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 
 from src.application.errors import IdempotencyKeyReusedError
 from src.application.ports.aisle_location_repository import (
     AisleLocationLabelRepository,
     AisleLocationRepository,
 )
+from src.domain.aisle_location.artifact_entities import (
+    AisleLocationLabelArtifact,
+    AisleLocationLabelArtifactStatus,
+)
 from src.domain.aisle_location.entities import AisleLocation, AisleLocationStatus
-from src.domain.aisle_location.label_entities import AisleLocationLabel
+from src.domain.aisle_location.label_entities import (
+    AisleLocationLabel,
+    AisleLocationLabelStatus,
+)
 
 
 class MemoryAisleLocationRepository(AisleLocationRepository):
@@ -22,6 +30,15 @@ class MemoryAisleLocationRepository(AisleLocationRepository):
 
     def get_by_id(self, location_id: str) -> AisleLocation | None:
         return self._store.get(location_id)
+
+    def get_by_public_identifier(self, public_identifier: str) -> AisleLocation | None:
+        pub = (public_identifier or "").strip()
+        if not pub:
+            return None
+        for loc in self._store.values():
+            if loc.public_identifier == pub:
+                return loc
+        return None
 
     def get_active_by_normalized_code(
         self,
@@ -130,3 +147,120 @@ class MemoryAisleLocationLabelRepository(AisleLocationLabelRepository):
         if status:
             rows = [lab for lab in rows if lab.status.value == status.upper()]
         return sorted(rows, key=lambda lab: lab.generated_at, reverse=True)
+
+    def list_active_labels_by_location_ids(
+        self, location_ids: Sequence[str]
+    ) -> dict[str, AisleLocationLabel]:
+        wanted = {(lid or "").strip() for lid in location_ids if (lid or "").strip()}
+        if not wanted:
+            return {}
+        result: dict[str, AisleLocationLabel] = {}
+        for label in self._store.values():
+            if label.location_id not in wanted:
+                continue
+            if label.status != AisleLocationLabelStatus.ACTIVE:
+                continue
+            current = result.get(label.location_id)
+            if current is None or label.generated_at > current.generated_at:
+                result[label.location_id] = label
+        return result
+
+
+class MemoryAisleLocationLabelArtifactRepository:
+    def __init__(self) -> None:
+        self._store: dict[str, AisleLocationLabelArtifact] = {}
+
+    def save(self, artifact: AisleLocationLabelArtifact) -> None:
+        existing = self.get_by_identity(
+            label_id=artifact.label_id,
+            format=artifact.format,
+            preset=artifact.preset,
+            template_version=artifact.template_version,
+            marker_version=artifact.marker_version,
+        )
+        if existing is not None and existing.id != artifact.id:
+            # Idempotent overwrite of same logical identity is allowed only same id.
+            raise ValueError("artifact identity already exists")
+        self._store[artifact.id] = artifact
+
+    def get_by_id(self, artifact_id: str) -> AisleLocationLabelArtifact | None:
+        return self._store.get(artifact_id)
+
+    def get_by_identity(
+        self,
+        *,
+        label_id: str,
+        format: str,
+        preset: str,
+        template_version: int,
+        marker_version: int,
+    ) -> AisleLocationLabelArtifact | None:
+        for art in self._store.values():
+            if (
+                art.label_id == label_id
+                and art.format.upper() == format.upper()
+                and art.preset == preset
+                and int(art.template_version) == int(template_version)
+                and int(art.marker_version) == int(marker_version)
+            ):
+                return art
+        return None
+
+    def list_by_label(self, label_id: str) -> Sequence[AisleLocationLabelArtifact]:
+        rows = [a for a in self._store.values() if a.label_id == label_id]
+        return sorted(rows, key=lambda a: a.created_at, reverse=True)
+
+    def reserve_or_get(
+        self,
+        *,
+        artifact: AisleLocationLabelArtifact,
+    ) -> tuple[AisleLocationLabelArtifact, bool]:
+        existing = self.get_by_identity(
+            label_id=artifact.label_id,
+            format=artifact.format,
+            preset=artifact.preset,
+            template_version=artifact.template_version,
+            marker_version=artifact.marker_version,
+        )
+        if existing is not None:
+            return existing, False
+        self._store[artifact.id] = artifact
+        return artifact, True
+
+    def claim_for_render(
+        self,
+        *,
+        artifact_id: str,
+        render_owner: str,
+        now: datetime,
+    ) -> AisleLocationLabelArtifact | None:
+        artifact = self._store.get(artifact_id)
+        if artifact is None:
+            return None
+        if artifact.status not in (
+            AisleLocationLabelArtifactStatus.PENDING,
+            AisleLocationLabelArtifactStatus.FAILED,
+        ):
+            return None
+        claimed = AisleLocationLabelArtifact(
+            id=artifact.id,
+            label_id=artifact.label_id,
+            format=artifact.format,
+            preset=artifact.preset,
+            template_version=artifact.template_version,
+            marker_version=artifact.marker_version,
+            storage_provider=artifact.storage_provider,
+            storage_bucket=artifact.storage_bucket,
+            storage_key=artifact.storage_key,
+            content_type=artifact.content_type,
+            file_size_bytes=artifact.file_size_bytes,
+            artifact_hash=artifact.artifact_hash,
+            created_at=artifact.created_at,
+            status=AisleLocationLabelArtifactStatus.RENDERING,
+            failure_code=artifact.failure_code,
+            failure_detail=artifact.failure_detail,
+            updated_at=now,
+            render_owner=render_owner,
+        )
+        self._store[artifact_id] = claimed
+        return claimed

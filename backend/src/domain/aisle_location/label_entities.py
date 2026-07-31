@@ -45,5 +45,6 @@ class AisleLocationLabel:
     invalidated_at: datetime | None = None
     invalidation_reason: str | None = None
     replaced_by_label_id: str | None = None
+    replaced_at: datetime | None = None
     idempotency_key: str | None = None
     idempotency_request_hash: str | None = None

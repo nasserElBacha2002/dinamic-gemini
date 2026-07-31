@@ -13,7 +13,6 @@ import {
   Chip,
   Stack,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import { PageHeader } from '../components/shell';
@@ -35,9 +34,15 @@ import {
   useInvalidateAisleLocationLabel,
   useInventoryDetail,
   useIssueAisleLocationLabel,
+  useRenderAisleLocationLabel,
+  useReplaceAisleLocationLabel,
   useUpdateAisleLocation,
 } from '../hooks';
 import type { AisleLocation, AisleLocationLabel } from '../api/types';
+import {
+  downloadAisleLocationLabelFile,
+  fetchAisleLocationLabelPreviewBlob,
+} from '../api/client';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 
 export default function AisleLocationsPage() {
@@ -77,6 +82,8 @@ export default function AisleLocationsPage() {
   const updateMutation = useUpdateAisleLocation(safeInv, safeAisle);
   const issueMutation = useIssueAisleLocationLabel(safeInv, safeAisle);
   const invalidateMutation = useInvalidateAisleLocationLabel(safeInv, safeAisle);
+  const renderMutation = useRenderAisleLocationLabel(safeInv, safeAisle);
+  const replaceMutation = useReplaceAisleLocationLabel(safeInv, safeAisle);
 
   const breadcrumbs = [
     { label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME },
@@ -349,20 +356,83 @@ export default function AisleLocationsPage() {
                       <StatusBadge label={String(label.status)} semantic="neutral" />
                     </Box>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      <Tooltip title={t('aisle_locations.phase2_unavailable')}>
-                        <span>
-                          <Button size="small" disabled>
-                            {t('aisle_locations.download_pdf')}
-                          </Button>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title={t('aisle_locations.phase2_unavailable')}>
-                        <span>
-                          <Button size="small" disabled>
-                            {t('aisle_locations.print')}
-                          </Button>
-                        </span>
-                      </Tooltip>
+                      <Button
+                        size="small"
+                        disabled={renderMutation.isPending}
+                        onClick={() => {
+                          void renderMutation
+                            .mutateAsync({
+                              labelId: label.id,
+                              format: 'PNG',
+                              preset: 'MM_100x100',
+                            })
+                            .then(async () => {
+                              showSnackbar(t('aisle_locations.render_ok'), 'success');
+                              const blob = await fetchAisleLocationLabelPreviewBlob(
+                                safeInv,
+                                label.id,
+                                { format: 'PNG', preset: 'MM_100x100' }
+                              );
+                              const objectUrl = URL.createObjectURL(blob);
+                              window.open(objectUrl, '_blank', 'noopener,noreferrer');
+                              window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+                            })
+                            .catch((err: unknown) => {
+                              showSnackbar(
+                                resolveApiErrorMessage(err, 'aisle_locations.label_issue_error'),
+                                'error'
+                              );
+                            });
+                        }}
+                      >
+                        {t('aisle_locations.preview')}
+                      </Button>
+                      <Button
+                        size="small"
+                        disabled={renderMutation.isPending}
+                        onClick={() => {
+                          void renderMutation
+                            .mutateAsync({
+                              labelId: label.id,
+                              format: 'PDF',
+                              preset: 'MM_100x100',
+                            })
+                            .then(async () => {
+                              showSnackbar(t('aisle_locations.render_ok'), 'success');
+                              await downloadAisleLocationLabelFile(safeInv, label.id, {
+                                format: 'PDF',
+                                preset: 'MM_100x100',
+                              });
+                            })
+                            .catch((err: unknown) => {
+                              showSnackbar(
+                                resolveApiErrorMessage(err, 'aisle_locations.label_issue_error'),
+                                'error'
+                              );
+                            });
+                        }}
+                      >
+                        {t('aisle_locations.download_pdf')}
+                      </Button>
+                      {label.status === 'ACTIVE' ? (
+                        <Button
+                          size="small"
+                          disabled={replaceMutation.isPending}
+                          onClick={() => {
+                            void replaceMutation
+                              .mutateAsync({ labelId: label.id })
+                              .then(() => showSnackbar(t('aisle_locations.replace_ok'), 'success'))
+                              .catch((err: unknown) =>
+                                showSnackbar(
+                                  resolveApiErrorMessage(err, 'aisle_locations.label_issue_error'),
+                                  'error'
+                                )
+                              );
+                          }}
+                        >
+                          {t('aisle_locations.replace_label')}
+                        </Button>
+                      ) : null}
                       {label.status === 'ACTIVE' ? (
                         <Button
                           size="small"

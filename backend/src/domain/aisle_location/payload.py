@@ -1,4 +1,4 @@
-"""Canonical DINAMIC_POSITION payload helpers — Phase 1 (no crypto)."""
+"""Canonical DINAMIC_POSITION payload helpers — Phase 2 adds HMAC fields."""
 
 from __future__ import annotations
 
@@ -11,25 +11,40 @@ from src.domain.aisle_location.label_entities import (
     POSITIONING_LABEL_TYPE,
 )
 
+_SIGNING_EXCLUDED_KEYS = frozenset({"signature"})
+
 
 def build_positioning_label_payload(
     *,
     public_label_id: str,
     public_position_id: str,
     version: int = POSITIONING_LABEL_PAYLOAD_VERSION,
+    key_version: int | None = None,
+    signature: str | None = None,
 ) -> dict[str, Any]:
     """Build the versioned discriminator payload for a positioning label."""
-    return {
+    payload: dict[str, Any] = {
         "type": POSITIONING_LABEL_TYPE,
         "version": int(version),
         "label_id": public_label_id,
         "position_id": public_position_id,
     }
+    if key_version is not None:
+        payload["key_version"] = int(key_version)
+    if signature is not None:
+        payload["signature"] = signature
+    return payload
 
 
 def canonicalize_positioning_payload(payload: dict[str, Any]) -> str:
-    """Stable JSON for hashing (sorted keys, no whitespace variance)."""
+    """Stable JSON for hashing/encoding (sorted keys, no whitespace variance)."""
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def canonicalize_positioning_payload_for_signing(payload: dict[str, Any]) -> str:
+    """Canonical UTF-8 JSON excluding the signature field (signing input)."""
+    filtered = {k: v for k, v in payload.items() if k not in _SIGNING_EXCLUDED_KEYS}
+    return canonicalize_positioning_payload(filtered)
 
 
 def payload_sha256(payload: dict[str, Any]) -> str:
@@ -50,6 +65,16 @@ def validate_positioning_payload(payload: dict[str, Any]) -> None:
         raise ValueError("payload.label_id is required")
     if not isinstance(position_id, str) or not position_id.strip():
         raise ValueError("payload.position_id is required")
+    if "key_version" in payload:
+        try:
+            if int(payload["key_version"]) < 1:
+                raise ValueError("payload.key_version must be >= 1")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("payload.key_version must be an integer >= 1") from exc
+    if "signature" in payload:
+        sig = payload.get("signature")
+        if not isinstance(sig, str) or not sig.strip():
+            raise ValueError("payload.signature must be a non-empty string when present")
     # Item identity must never appear on positioning payloads.
     for forbidden in ("sku", "product_id", "item_id", "quantity", "pallet_sku"):
         if forbidden in payload:

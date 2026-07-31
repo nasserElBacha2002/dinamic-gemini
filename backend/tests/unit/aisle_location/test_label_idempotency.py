@@ -58,6 +58,7 @@ def _setup():
         status=AisleLocationStatus.ACTIVE,
         created_at=now,
         updated_at=now,
+        public_identifier="loc_pub_test_1",
     )
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()

@@ -26,6 +26,7 @@ export interface AisleLocation {
   display_name?: string | null;
   description?: string | null;
   created_by?: string | null;
+  public_identifier?: string;
 }
 
 export interface AisleLocationListResponse {
@@ -74,6 +75,7 @@ export interface AisleLocationLabel {
   invalidated_at?: string | null;
   invalidation_reason?: string | null;
   replaced_by_label_id?: string | null;
+  replaced_at?: string | null;
 }
 
 export interface AisleLocationLabelListResponse {

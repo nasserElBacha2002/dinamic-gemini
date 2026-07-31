@@ -31,13 +31,20 @@ export {
   startAisleProcessing,
   updateAisle,
 } from './aislesApi';
-export type { AisleLocationsListQuery } from './aisleLocationsApi';
+export type { AisleLocationsListQuery, AisleLocationLabelArtifact, RenderAisleLocationLabelRequest } from './aisleLocationsApi';
 export {
+  aisleLocationLabelDownloadUrl,
+  aisleLocationLabelPreviewUrl,
+  aisleLocationLabelsBatchRenderUrl,
+  downloadAisleLocationLabelFile,
+  fetchAisleLocationLabelPreviewBlob,
   createAisleLocation,
   invalidateAisleLocationLabel,
   issueAisleLocationLabel,
   listAisleLocationLabels,
   listAisleLocations,
+  renderAisleLocationLabel,
+  replaceAisleLocationLabel,
   updateAisleLocation,
 } from './aisleLocationsApi';
 export type { AislePositionsListQuery, JobImageResultsQuery } from './jobsApi';

@@ -10,7 +10,9 @@ import type {
   UpdateAisleLocationRequest,
 } from './types';
 import { buildQueryString } from './queryString';
-import { apiRequestJson } from './request';
+import { apiDownloadBlob, apiRequestJson } from './request';
+import { protectedFetch, throwApiErrorIfNotOk } from './http';
+import type { ApiErrorDetail } from './types';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -104,4 +106,112 @@ export async function invalidateAisleLocationLabel(
       body: body ?? {},
     }
   );
+}
+
+export interface RenderAisleLocationLabelRequest {
+  format: 'PDF' | 'PNG';
+  preset: string;
+}
+
+export interface AisleLocationLabelArtifact {
+  id: string;
+  label_id: string;
+  format: string;
+  preset: string;
+  template_version: number;
+  marker_version: number;
+  content_type: string;
+  file_size_bytes: number;
+  artifact_hash: string;
+  created_at: string;
+}
+
+export async function renderAisleLocationLabel(
+  inventoryId: string,
+  labelId: string,
+  body: RenderAisleLocationLabelRequest
+): Promise<AisleLocationLabelArtifact> {
+  return apiRequestJson<AisleLocationLabelArtifact>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/labels/${encodeURIComponent(labelId)}/render`,
+    { method: 'POST', body }
+  );
+}
+
+export async function replaceAisleLocationLabel(
+  inventoryId: string,
+  labelId: string,
+  body?: { idempotency_key?: string | null }
+): Promise<AisleLocationLabel> {
+  return apiRequestJson<AisleLocationLabel>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/labels/${encodeURIComponent(labelId)}/replace`,
+    { method: 'POST', body: body ?? {} }
+  );
+}
+
+/** Absolute URL for backend-rendered preview (prefer authenticated blob helpers below). */
+export function aisleLocationLabelPreviewUrl(
+  inventoryId: string,
+  labelId: string,
+  opts?: { format?: 'PDF' | 'PNG'; preset?: string }
+): string {
+  const format = opts?.format ?? 'PNG';
+  const preset = opts?.preset ?? 'MM_100x100';
+  const qs = buildQueryString([
+    ['format', format],
+    ['preset', preset],
+  ]);
+  return `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/labels/${encodeURIComponent(labelId)}/preview${qs}`;
+}
+
+export function aisleLocationLabelDownloadUrl(
+  inventoryId: string,
+  labelId: string,
+  opts?: { format?: 'PDF' | 'PNG'; preset?: string }
+): string {
+  const format = opts?.format ?? 'PDF';
+  const preset = opts?.preset ?? 'MM_100x100';
+  const qs = buildQueryString([
+    ['format', format],
+    ['preset', preset],
+  ]);
+  return `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/labels/${encodeURIComponent(labelId)}/download${qs}`;
+}
+
+/** Authenticated GET → Blob (Bearer via protectedFetch). Caller must revoke object URL. */
+export async function fetchAisleLocationLabelPreviewBlob(
+  inventoryId: string,
+  labelId: string,
+  opts?: { format?: 'PDF' | 'PNG'; preset?: string }
+): Promise<Blob> {
+  const url = aisleLocationLabelPreviewUrl(inventoryId, labelId, opts);
+  const response = await protectedFetch(url);
+  if (!response.ok) {
+    const text = await response.text();
+    let data: ApiErrorDetail;
+    try {
+      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
+    } catch {
+      data = {};
+    }
+    throwApiErrorIfNotOk(response, text, data);
+  }
+  return response.blob();
+}
+
+/** Authenticated download via blob + anchor (Bearer). */
+export async function downloadAisleLocationLabelFile(
+  inventoryId: string,
+  labelId: string,
+  opts?: { format?: 'PDF' | 'PNG'; preset?: string }
+): Promise<void> {
+  const format = opts?.format ?? 'PDF';
+  const preset = opts?.preset ?? 'MM_100x100';
+  const url = aisleLocationLabelDownloadUrl(inventoryId, labelId, { format, preset });
+  await apiDownloadBlob(url, {
+    fallbackFilename: `dinamic_position_${labelId}_${preset}.${format.toLowerCase()}`,
+  });
+}
+
+export function aisleLocationLabelsBatchRenderUrl(inventoryId: string, aisleId: string): string {
+  return `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/labels/batch-render`;
 }

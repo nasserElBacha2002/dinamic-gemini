@@ -1028,6 +1028,8 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
                 "AISLE_LOCATION_CODE_REQUIRED",
                 "AISLE_LOCATION_CODE_CONFLICT",
                 "AISLE_LOCATION_INACTIVE",
+                "AISLE_LOCATION_PUBLIC_ID_REQUIRED",
+                "AISLE_LOCATION_LABEL_BATCH_EMPTY",
             }
         ),
         detail=lambda e: str(e) or HTTP_DETAIL_AISLE_LOCATION_CONFLICT,
@@ -1043,6 +1045,17 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         allowed_codes=frozenset(
             {
                 "AISLE_LOCATION_LABEL_CONFLICT",
+                "AISLE_LOCATION_LABEL_INVALIDATED",
+                "AISLE_LOCATION_LABEL_FORMAT_INVALID",
+                "AISLE_LOCATION_LABEL_BATCH_FORMAT",
+                "POSITION_LABEL_FORMAT_UNSUPPORTED",
+                "POSITION_LABEL_RENDER_CONFLICT",
+                "POSITION_LABEL_RENDER_FAILED",
+                "POSITION_LABEL_ARTIFACT_NOT_READY",
+                "POSITION_LABEL_REPLACE_CONFLICT",
+                "POSITION_LABEL_BATCH_CONFLICT",
+                "POSITION_LABEL_BATCH_TOO_LARGE",
+                "POSITION_LABEL_SIGNING_REQUIRED",
             }
         ),
         detail=lambda e: str(e) or HTTP_DETAIL_AISLE_LOCATION_LABEL_CONFLICT,

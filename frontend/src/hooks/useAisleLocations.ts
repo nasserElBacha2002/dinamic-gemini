@@ -9,6 +9,8 @@ import {
   issueAisleLocationLabel,
   listAisleLocationLabels,
   listAisleLocations,
+  renderAisleLocationLabel,
+  replaceAisleLocationLabel,
   updateAisleLocation,
   type AisleLocationsListQuery,
 } from '../api/client';
@@ -122,6 +124,36 @@ export function useInvalidateAisleLocationLabel(inventoryId: string, aisleId: st
       labelId: string;
       body?: InvalidateAisleLocationLabelRequest;
     }) => invalidateAisleLocationLabel(inventoryId, locationId, labelId, body),
+    onSuccess: (label) =>
+      invalidateLocationCaches(queryClient, inventoryId, aisleId, label.location_id),
+  });
+}
+
+export function useRenderAisleLocationLabel(inventoryId: string, aisleId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      labelId,
+      format,
+      preset,
+    }: {
+      labelId: string;
+      format: 'PDF' | 'PNG';
+      preset: string;
+    }) => renderAisleLocationLabel(inventoryId, labelId, { format, preset }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.aisleLocations(inventoryId, aisleId),
+      });
+    },
+  });
+}
+
+export function useReplaceAisleLocationLabel(inventoryId: string, aisleId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ labelId }: { labelId: string }) =>
+      replaceAisleLocationLabel(inventoryId, labelId),
     onSuccess: (label) =>
       invalidateLocationCaches(queryClient, inventoryId, aisleId, label.location_id),
   });

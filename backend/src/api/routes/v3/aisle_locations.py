@@ -1,35 +1,45 @@
-"""v3 aisle locations + positioning labels — Phase 1 positioning foundation."""
+"""v3 aisle locations + positioning labels (CRUD, issue, render, replace, batch)."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, status
 
 from src.api.dependencies import (
+    get_batch_render_aisle_location_labels_use_case,
     get_create_aisle_location_use_case,
+    get_download_aisle_location_label_use_case,
+    get_get_aisle_location_label_use_case,
     get_get_aisle_location_use_case,
     get_invalidate_aisle_location_label_use_case,
     get_issue_aisle_location_label_use_case,
     get_list_aisle_location_labels_use_case,
     get_list_aisle_locations_use_case,
+    get_render_aisle_location_label_use_case,
+    get_replace_aisle_location_label_use_case,
     get_update_aisle_location_use_case,
     require_inventory_client_scope,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.aisle_location_schemas import (
+    AisleLocationLabelArtifactResponse,
     AisleLocationLabelListResponse,
     AisleLocationLabelResponse,
     AisleLocationListResponse,
     AisleLocationResponse,
+    BatchRenderAisleLocationLabelsRequest,
     CreateAisleLocationRequest,
     InvalidateAisleLocationLabelRequest,
     IssueAisleLocationLabelRequest,
+    RenderAisleLocationLabelRequest,
+    ReplaceAisleLocationLabelRequest,
     UpdateAisleLocationRequest,
+    aisle_location_label_artifact_to_response,
     aisle_location_label_to_response,
     aisle_location_to_response,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.dto.access_principal import AccessPrincipal
-from src.application.errors import StrategyDisabledError
+from src.application.errors import AisleLocationLabelConflictError, StrategyDisabledError
 from src.application.use_cases.aisle_locations.manage_aisle_locations import (
     CreateAisleLocationCommand,
     CreateAisleLocationUseCase,
@@ -297,3 +307,237 @@ def invalidate_aisle_location_label(
         reraise_if_mapped(e)
         raise
     return aisle_location_label_to_response(label)
+
+
+def _require_aisle_location_label_render_enabled() -> None:
+    if not load_settings().aisle_location_label_render_enabled:
+        raise StrategyDisabledError("AISLE_LOCATION_LABEL_RENDER_ENABLED=false")
+
+
+@router.get(
+    "/{inventory_id}/locations/{location_id}/labels/{label_id}",
+    response_model=AisleLocationLabelResponse,
+)
+def get_aisle_location_label(
+    inventory_id: str,
+    location_id: str,
+    label_id: str,
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case=Depends(get_get_aisle_location_label_use_case),
+) -> AisleLocationLabelResponse:
+    from src.application.errors import AisleLocationLabelNotFoundError
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        GetAisleLocationLabelCommand,
+    )
+
+    try:
+        _require_aisle_location_domain_enabled()
+        _require_aisle_location_labels_enabled()
+        label = use_case.execute(
+            GetAisleLocationLabelCommand(
+                inventory_id=inventory_id,
+                label_id=label_id,
+                principal=principal,
+            )
+        )
+        if label.location_id != location_id:
+            raise AisleLocationLabelNotFoundError(label_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return aisle_location_label_to_response(label)
+
+
+@router.post(
+    "/{inventory_id}/labels/{label_id}/render",
+    response_model=AisleLocationLabelArtifactResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def render_aisle_location_label(
+    inventory_id: str,
+    label_id: str,
+    body: RenderAisleLocationLabelRequest,
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case=Depends(get_render_aisle_location_label_use_case),
+) -> AisleLocationLabelArtifactResponse:
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        RenderAisleLocationLabelCommand,
+    )
+
+    try:
+        _require_aisle_location_domain_enabled()
+        _require_aisle_location_labels_enabled()
+        _require_aisle_location_label_render_enabled()
+        artifact = use_case.execute(
+            RenderAisleLocationLabelCommand(
+                inventory_id=inventory_id,
+                label_id=label_id,
+                principal=principal,
+                format=body.format,  # type: ignore[arg-type]
+                preset=body.preset,
+            )
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return aisle_location_label_artifact_to_response(artifact)
+
+
+@router.get("/{inventory_id}/labels/{label_id}/preview")
+def preview_aisle_location_label(
+    inventory_id: str,
+    label_id: str,
+    format: str = Query("PNG"),
+    preset: str = Query("MM_100x100"),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case=Depends(get_download_aisle_location_label_use_case),
+):
+    from fastapi.responses import Response
+
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        DownloadAisleLocationLabelCommand,
+    )
+
+    try:
+        _require_aisle_location_domain_enabled()
+        _require_aisle_location_labels_enabled()
+        _require_aisle_location_label_render_enabled()
+        fmt = format.upper()
+        if fmt not in ("PDF", "PNG"):
+            raise AisleLocationLabelConflictError(
+                "format must be PDF or PNG",
+                code="POSITION_LABEL_FORMAT_UNSUPPORTED",
+            )
+        result = use_case.execute(
+            DownloadAisleLocationLabelCommand(
+                inventory_id=inventory_id,
+                label_id=label_id,
+                principal=principal,
+                format=fmt,  # type: ignore[arg-type]
+                preset=preset,
+            )
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return Response(
+        content=result.content,
+        media_type=result.artifact.content_type,
+        headers={"Content-Disposition": f'inline; filename="{result.filename}"'},
+    )
+
+
+@router.get("/{inventory_id}/labels/{label_id}/download")
+def download_aisle_location_label(
+    inventory_id: str,
+    label_id: str,
+    format: str = Query("PDF"),
+    preset: str = Query("MM_100x100"),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case=Depends(get_download_aisle_location_label_use_case),
+):
+    from fastapi.responses import Response
+
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        DownloadAisleLocationLabelCommand,
+    )
+
+    try:
+        _require_aisle_location_domain_enabled()
+        _require_aisle_location_labels_enabled()
+        _require_aisle_location_label_render_enabled()
+        fmt = format.upper()
+        if fmt not in ("PDF", "PNG"):
+            raise AisleLocationLabelConflictError(
+                "format must be PDF or PNG",
+                code="POSITION_LABEL_FORMAT_UNSUPPORTED",
+            )        result = use_case.execute(
+            DownloadAisleLocationLabelCommand(
+                inventory_id=inventory_id,
+                label_id=label_id,
+                principal=principal,
+                format=fmt,  # type: ignore[arg-type]
+                preset=preset,
+            )
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return Response(
+        content=result.content,
+        media_type=result.artifact.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{result.filename}"'},
+    )
+
+
+@router.post(
+    "/{inventory_id}/labels/{label_id}/replace",
+    response_model=AisleLocationLabelResponse,
+)
+def replace_aisle_location_label(
+    inventory_id: str,
+    label_id: str,
+    body: ReplaceAisleLocationLabelRequest | None = None,
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case=Depends(get_replace_aisle_location_label_use_case),
+) -> AisleLocationLabelResponse:
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        ReplaceAisleLocationLabelCommand,
+    )
+
+    try:
+        _require_aisle_location_domain_enabled()
+        _require_aisle_location_labels_enabled()
+        req = body or ReplaceAisleLocationLabelRequest()
+        label = use_case.execute(
+            ReplaceAisleLocationLabelCommand(
+                inventory_id=inventory_id,
+                label_id=label_id,
+                principal=principal,
+                idempotency_key=req.idempotency_key,
+            )
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return aisle_location_label_to_response(label)
+
+
+@router.post("/{inventory_id}/aisles/{aisle_id}/labels/batch-render")
+def batch_render_aisle_location_labels(
+    inventory_id: str,
+    aisle_id: str,
+    body: BatchRenderAisleLocationLabelsRequest,
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case=Depends(get_batch_render_aisle_location_labels_use_case),
+):
+    from fastapi.responses import Response
+
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        BatchRenderAisleLocationLabelsCommand,
+    )
+
+    try:
+        _require_aisle_location_domain_enabled()
+        _require_aisle_location_labels_enabled()
+        _require_aisle_location_label_render_enabled()
+        result = use_case.execute(
+            BatchRenderAisleLocationLabelsCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                principal=principal,
+                preset=body.preset,
+                format=body.format,  # type: ignore[arg-type]
+                location_ids=tuple(body.location_ids) if body.location_ids else None,
+                emit_missing=bool(body.emit_missing),
+                idempotency_key=body.idempotency_key,
+            )
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return Response(
+        content=result.content,
+        media_type=result.artifact.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{result.filename}"'},
+    )

@@ -25,6 +25,7 @@ from src.application.services.image_processing.processing_action_idempotency_ser
     hash_request_payload,
 )
 from src.application.services.inventory_access_policy import InventoryAccessPolicy
+from src.application.services.positioning_label_signing import PositioningLabelSigningService
 from src.domain.aisle_location.entities import (
     AisleLocation,
     AisleLocationStatus,
@@ -126,6 +127,7 @@ class CreateAisleLocationUseCase:
                 code="AISLE_LOCATION_CODE_CONFLICT",
             )
         now = self._clock.now()
+        public_identifier = f"loc_{secrets.token_urlsafe(12)}"
         location = AisleLocation(
             id=str(uuid4()),
             client_id=inventory.client_id,
@@ -138,6 +140,7 @@ class CreateAisleLocationUseCase:
             display_name=command.display_name,
             description=command.description,
             created_by=command.created_by or command.principal.actor_id,
+            public_identifier=public_identifier,
         )
         self._location_repo.save(location)
         logger.info(
@@ -284,11 +287,13 @@ class IssueAisleLocationLabelUseCase:
         label_repo: AisleLocationLabelRepository,
         access_policy: InventoryAccessPolicy,
         clock: Clock,
+        signing: PositioningLabelSigningService | None = None,
     ) -> None:
         self._location_repo = location_repo
         self._label_repo = label_repo
         self._access_policy = access_policy
         self._clock = clock
+        self._signing = signing
 
     @staticmethod
     def _request_hash(*, client_id: str, location_id: str) -> str:
@@ -325,6 +330,11 @@ class IssueAisleLocationLabelUseCase:
                 "Cannot issue label for inactive location",
                 code="AISLE_LOCATION_INACTIVE",
             )
+        if not (location.public_identifier or "").strip():
+            raise AisleLocationConflictError(
+                "Location is missing public_identifier",
+                code="AISLE_LOCATION_PUBLIC_ID_REQUIRED",
+            )
         idem_key = (command.idempotency_key or "").strip() or None
         request_hash: str | None = None
         if idem_key:
@@ -340,9 +350,22 @@ class IssueAisleLocationLabelUseCase:
         label_id = str(uuid4())
         payload = build_positioning_label_payload(
             public_label_id=public_identifier,
-            public_position_id=location.id,
+            public_position_id=location.public_identifier,
             version=POSITIONING_LABEL_PAYLOAD_VERSION,
         )
+        if self._signing is not None and self._signing.can_sign:
+            payload = self._signing.sign_payload(payload)
+            signature_status = PositioningLabelSignatureStatus.SIGNED
+        elif self._signing is not None and self._signing.required:
+            from src.application.services.positioning_label_signing import (
+                PositioningLabelSigningError,
+            )
+
+            raise PositioningLabelSigningError(
+                "POSITIONING_LABEL_HMAC_SECRET is required but not configured"
+            )
+        else:
+            signature_status = PositioningLabelSignatureStatus.UNSIGNED
         validate_positioning_payload(payload)
         now = self._clock.now()
         label = AisleLocationLabel(
@@ -357,7 +380,7 @@ class IssueAisleLocationLabelUseCase:
             payload=payload,
             generated_at=now,
             payload_hash=payload_sha256(payload),
-            signature_status=PositioningLabelSignatureStatus.NOT_IMPLEMENTED,
+            signature_status=signature_status,
             generated_by=command.generated_by or command.principal.actor_id,
             idempotency_key=idem_key,
             idempotency_request_hash=request_hash,

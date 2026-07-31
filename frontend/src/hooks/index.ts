@@ -36,6 +36,8 @@ export {
   useUpdateAisleLocation,
   useIssueAisleLocationLabel,
   useInvalidateAisleLocationLabel,
+  useRenderAisleLocationLabel,
+  useReplaceAisleLocationLabel,
 } from './useAisleLocations';
 export {
   useAislePositions,

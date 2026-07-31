@@ -652,3 +652,30 @@ def build_aisle_location_label_repository(
         build_sql=_sql,
         build_memory=_memory,
     )
+
+
+def build_aisle_location_label_artifact_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    """Phase 2 positioning: rendered label artifacts."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_aisle_location_repository import (
+            SqlAisleLocationLabelArtifactRepository,
+        )
+
+        return SqlAisleLocationLabelArtifactRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_aisle_location_repository import (
+            MemoryAisleLocationLabelArtifactRepository,
+        )
+
+        return MemoryAisleLocationLabelArtifactRepository()
+
+    return build_repo(
+        backend_info_name="AisleLocationLabelArtifactRepository",
+        sql_error_subject="aisle_location_label_artifact repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )

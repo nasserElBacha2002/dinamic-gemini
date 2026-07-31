@@ -35,3 +35,5 @@ class AisleLocation:
     display_name: str | None = None
     description: str | None = None
     created_by: str | None = None
+    #: Stable public id for DINAMIC_POSITION.position_id (never the internal UUID).
+    public_identifier: str = ""

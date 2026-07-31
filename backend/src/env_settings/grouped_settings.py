@@ -1805,6 +1805,91 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: AISLE_LOCATION_LABELS_ENABLED (default true)."
         ),
     )
+    aisle_location_label_render_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("AISLE_LOCATION_LABEL_RENDER_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 2 positioning: enable label render/preview/download/batch API. "
+            "Env: AISLE_LOCATION_LABEL_RENDER_ENABLED (default true)."
+        ),
+    )
+    positioning_label_hmac_secret: str = Field(
+        default_factory=lambda: (os.getenv("POSITIONING_LABEL_HMAC_SECRET", "") or "").strip(),
+        description=(
+            "Backend-only HMAC-SHA256 secret for DINAMIC_POSITION signatures. "
+            "Env: POSITIONING_LABEL_HMAC_SECRET (never ship to clients)."
+        ),
+    )
+    positioning_label_hmac_key_version: int = Field(
+        default_factory=lambda: int(os.getenv("POSITIONING_LABEL_HMAC_KEY_VERSION", "1") or "1"),
+        ge=1,
+        description="Active HMAC key version. Env: POSITIONING_LABEL_HMAC_KEY_VERSION.",
+    )
+    positioning_label_hmac_previous_secrets: str = Field(
+        default_factory=lambda: (
+            os.getenv("POSITIONING_LABEL_HMAC_PREVIOUS_SECRETS", "") or ""
+        ).strip(),
+        description=(
+            "Optional rotation verify material as comma-separated version:secret. "
+            "Env: POSITIONING_LABEL_HMAC_PREVIOUS_SECRETS."
+        ),
+    )
+    positioning_label_signing_required: bool = Field(
+        default_factory=lambda: (
+            (
+                os.getenv("POSITIONING_LABEL_SIGNING_REQUIRED", "").strip().lower()
+                in ("1", "true", "yes")
+            )
+            if os.getenv("POSITIONING_LABEL_SIGNING_REQUIRED") is not None
+            and os.getenv("POSITIONING_LABEL_SIGNING_REQUIRED", "").strip() != ""
+            else (
+                (os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "development")
+                .strip()
+                .lower()
+                in ("production", "prod")
+            )
+        ),
+        description=(
+            "When true, label issue fails if POSITIONING_LABEL_HMAC_SECRET is missing. "
+            "Defaults to true when APP_ENV=production; otherwise false unless explicitly set. "
+            "Env: POSITIONING_LABEL_SIGNING_REQUIRED."
+        ),
+    )
+    positioning_label_hmac_min_secret_length: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITIONING_LABEL_HMAC_MIN_SECRET_LENGTH", "16") or "16"
+        ),
+        ge=8,
+        description=(
+            "Minimum HMAC secret length when signing is required. "
+            "Env: POSITIONING_LABEL_HMAC_MIN_SECRET_LENGTH (default 16)."
+        ),
+    )
+    position_label_max_batch_size: int = Field(
+        default_factory=lambda: int(os.getenv("POSITION_LABEL_MAX_BATCH_SIZE", "200") or "200"),
+        ge=1,
+        description="Max locations per sync batch render. Env: POSITION_LABEL_MAX_BATCH_SIZE.",
+    )
+    position_label_max_pdf_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_LABEL_MAX_PDF_BYTES", str(50 * 1024 * 1024))
+            or str(50 * 1024 * 1024)
+        ),
+        ge=1024,
+        description="Max batch PDF size in bytes. Env: POSITION_LABEL_MAX_PDF_BYTES.",
+    )
+    position_label_batch_sync_limit: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_LABEL_BATCH_SYNC_LIMIT", "200") or "200"
+        ),
+        ge=1,
+        description=(
+            "Alias/ cap for sync batch size (same role as POSITION_LABEL_MAX_BATCH_SIZE). "
+            "Env: POSITION_LABEL_BATCH_SYNC_LIMIT."
+        ),
+    )
     legacy_image_order_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("LEGACY_IMAGE_ORDER_ENABLED", "true").strip().lower()
