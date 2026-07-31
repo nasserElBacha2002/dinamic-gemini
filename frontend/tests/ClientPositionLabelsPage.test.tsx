@@ -75,4 +75,30 @@ describe('ClientPositionLabelsPage', () => {
     expect(screen.getByTestId('position-label-name-input')).toBeInTheDocument();
     expect(screen.queryByLabelText(/inventario/i)).toBeNull();
   });
+
+  it('lists labels without crashing snackbar helpers', async () => {
+    listMock.mockResolvedValue({
+      items: [
+        {
+          id: 'lbl-1',
+          public_identifier: 'DINAMIC_POSITION:x',
+          client_id: 'c1',
+          name: '01',
+          description: null,
+          status: 'ACTIVE',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          available_formats: ['PNG', 'PDF'],
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 100,
+      total_pages: 1,
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('position-labels-table')).toBeInTheDocument());
+    expect(screen.getByText('01')).toBeInTheDocument();
+    expect(screen.queryByText(/No se pudieron cargar/i)).toBeNull();
+  });
 });

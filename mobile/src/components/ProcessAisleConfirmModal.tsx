@@ -41,8 +41,8 @@ export interface ProcessAisleConfirmModalProps {
   uploadLocalMessage?: string | null;
   onClose: () => void;
   onConfirm: (selection: IdentificationModeSelection) => void;
-  /** Sync pending confirmed local results to the server (idempotent). */
-  onUploadLocalResults: () => void;
+  /** Sync one result (preferred) or all pending for this aisle session. */
+  onUploadLocalResults: (resultId?: string | null) => void;
   onViewResults: () => void;
   onExcludedPhotos: () => void;
 }
@@ -71,11 +71,13 @@ export function ProcessAisleConfirmModal({
   const [draft, setDraft] = useState<IdentificationModeSelection>(
     selectionFromPreference(preference),
   );
+  const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
     setStep('menu');
     setDraft(selectionFromPreference(preference));
+    setSelectedResultId(null);
   }, [visible, preference]);
 
   const selectedLabel = labelForIdentificationMode(preferenceFromSelection(draft));
@@ -204,8 +206,8 @@ export function ProcessAisleConfirmModal({
               <>
                 <Text style={styles.h2}>Subir resultado local</Text>
                 <Text style={styles.muted}>
-                  Se envían al servidor los resultados confirmados de este pasillo. La operación es
-                  idempotente: un reintento no duplica.
+                  Elegí un resultado de este pasillo. Solo se sincroniza la selección (no otros
+                  pasillos). La operación es idempotente.
                 </Text>
                 {localResults.length === 0 ? (
                   <Text style={[styles.row, { marginTop: 8 }]}>
@@ -213,17 +215,28 @@ export function ProcessAisleConfirmModal({
                     revisión local antes de subir.
                   </Text>
                 ) : (
-                  localResults.map((row) => (
-                    <View key={row.id} style={[styles.pickerItem, { marginTop: 6 }]}>
-                      <Text style={styles.row}>
-                        {row.confirmed_internal_code} · {formatShortDate(row.confirmed_at)}
-                      </Text>
-                      <Text style={styles.muted}>
-                        Estado: {labelForLocalSyncStatus(row.sync_status)}
-                        {row.sync_last_error_code ? ` · ${row.sync_last_error_code}` : ''}
-                      </Text>
-                    </View>
-                  ))
+                  localResults.map((row) => {
+                    const active = selectedResultId === row.id;
+                    return (
+                      <TouchableOpacity
+                        key={row.id}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: active, disabled: anyBusy }}
+                        testID={`upload-local-result-${row.id}`}
+                        disabled={anyBusy}
+                        style={[styles.pickerItem, { marginTop: 6 }, active ? styles.pickerItemActive : null]}
+                        onPress={() => setSelectedResultId(row.id)}
+                      >
+                        <Text style={styles.row}>
+                          {row.confirmed_internal_code} · {formatShortDate(row.confirmed_at)}
+                        </Text>
+                        <Text style={styles.muted}>
+                          Estado: {labelForLocalSyncStatus(row.sync_status)}
+                          {row.sync_last_error_code ? ` · ${row.sync_last_error_code}` : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
                 )}
                 {uploadLocalMessage ? (
                   <Text style={[styles.muted, { marginTop: 8 }]}>{uploadLocalMessage}</Text>
@@ -239,12 +252,12 @@ export function ProcessAisleConfirmModal({
                     label={
                       uploadLocalBusy
                         ? 'Subiendo…'
-                        : pendingLocalResultCount > 0
-                          ? 'Subir al servidor'
-                          : 'Reintentar sync'
+                        : selectedResultId
+                          ? 'Subir seleccionado'
+                          : 'Subir pendientes del pasillo'
                     }
                     disabled={anyBusy || localResults.length === 0}
-                    onPress={onUploadLocalResults}
+                    onPress={() => onUploadLocalResults(selectedResultId)}
                   />
                 </View>
               </>

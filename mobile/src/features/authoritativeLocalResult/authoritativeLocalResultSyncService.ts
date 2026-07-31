@@ -117,6 +117,31 @@ export class AuthoritativeLocalResultSyncService {
   }
 
   async syncPending(): Promise<AuthoritativeSyncSummary> {
+    return this.runSyncPass({});
+  }
+
+  /** UI aisle action: only sync results belonging to this capture session. */
+  async syncPendingForSession(sessionId: string): Promise<AuthoritativeSyncSummary> {
+    const sid = (sessionId || '').trim();
+    if (!sid) {
+      return this.emptySummary();
+    }
+    return this.runSyncPass({ sessionId: sid });
+  }
+
+  /** UI selection: sync specific confirmed local result ids (same lease/idempotency path). */
+  async syncResults(resultIds: readonly string[]): Promise<AuthoritativeSyncSummary> {
+    const ids = [...new Set(resultIds.map((id) => (id || '').trim()).filter(Boolean))];
+    if (ids.length === 0) {
+      return this.emptySummary();
+    }
+    return this.runSyncPass({ resultIds: ids });
+  }
+
+  private async runSyncPass(filter: {
+    sessionId?: string;
+    resultIds?: readonly string[];
+  }): Promise<AuthoritativeSyncSummary> {
     const empty = this.emptySummary();
     if (!this.isSyncEnabled() || this.pausedForCorruptDb) {
       return empty;
@@ -134,14 +159,25 @@ export class AuthoritativeLocalResultSyncService {
     try {
       const now = new Date(nowMs).toISOString();
       await this.options.confirmed.recoverExpiredSyncLeases(now);
-      const due = await this.options.confirmed.listDueForSync(now, SYNC_BATCH_MAX);
+      let due = await this.options.confirmed.listDueForSync(now, SYNC_BATCH_MAX);
+      if (filter.sessionId) {
+        due = due.filter((row) => row.capture_session_id === filter.sessionId);
+      }
+      if (filter.resultIds && filter.resultIds.length > 0) {
+        const allow = new Set(filter.resultIds);
+        due = due.filter((row) => allow.has(row.id));
+      }
       if (due.length === 0) {
         this.noProgressBackoffMs = 0;
         return summary;
       }
       emitObservability(this.options.reporter, {
         name: 'authoritative_sync_started',
-        attributes: { pending_count: due.length },
+        attributes: {
+          pending_count: due.length,
+          session_scoped: Boolean(filter.sessionId),
+          result_scoped: Boolean(filter.resultIds?.length),
+        },
       });
 
       const sessionCache = new Map<string, Promise<CaptureSessionRow | null>>();

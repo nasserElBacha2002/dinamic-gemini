@@ -14,6 +14,7 @@ module.exports = {
     '<rootDir>/tests/processingMode.test.ts',
     '<rootDir>/tests/aisleProcessDialogHelpers.test.ts',
     '<rootDir>/tests/clientPositionLabelsContract.test.ts',
+    '<rootDir>/tests/UploadsScreen.test.ts',
     '<rootDir>/tests/operationalFlow.test.ts',
     '<rootDir>/tests/aisleCreationRules.test.ts',
     '<rootDir>/tests/mediaStoreAccessMediaLocation.test.ts',

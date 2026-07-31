@@ -33,6 +33,7 @@ export type LogEvent =
   | 'storage_cleanup'
   | 'work_scheduled'
   | 'health_check'
+  | 'mobile_api_base_url'
   | 'aisle_blocked';
 
 export interface LogRecord {

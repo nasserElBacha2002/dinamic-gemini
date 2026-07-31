@@ -26,6 +26,7 @@ import { AisleHistoryScreen } from './src/screens/AisleHistoryScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
 import { ExcludedPhotosScreen } from './src/screens/ExcludedPhotosScreen';
 import { AisleResultsListScreen } from './src/screens/AisleResultsListScreen';
+import { ClientPositionLabelsScreen } from './src/screens/ClientPositionLabelsScreen';
 import type { AisleIdentificationMode } from './src/features/processing/processingMode';
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
 import { processingRunStore } from './src/features/processing/processingRun';
@@ -47,6 +48,7 @@ type Screen =
   | 'results'
   | 'aisle-results-list'
   | 'excluded-photos'
+  | 'position-labels'
   | 'diagnostic';
 
 export default function App(): JSX.Element {
@@ -324,6 +326,17 @@ export default function App(): JSX.Element {
               },
             ])
           }
+          {...(selectedInventory.client_id
+            ? { onOpenPositionLabels: () => setScreen('position-labels') }
+            : {})}
+        />
+      ) : null}
+      {screen === 'position-labels' && selectedInventory?.client_id ? (
+        <ClientPositionLabelsScreen
+          services={services}
+          clientId={selectedInventory.client_id}
+          clientName={selectedInventory.name}
+          onBack={() => setScreen('aisles')}
         />
       ) : null}
       {screen === 'capture' && (capture?.context || (selectedInventory && selectedAisle)) ? (

@@ -14,6 +14,7 @@ import {
 import {
   countExcludedPhotos,
   countPendingLocalResults,
+  formatShortDate as formatLocalResultStamp,
 } from '../features/processing/aisleProcessDialogHelpers';
 import type { AisleIdentificationMode } from '../features/processing/processingMode';
 import {
@@ -320,17 +321,37 @@ export function UploadsScreen({
       .finally(() => setBusy(false));
   };
 
-  const uploadLocalResults = () => {
+  const uploadLocalResults = (resultId?: string | null) => {
     if (uploadLocalBusy) return;
     setUploadLocalBusy(true);
     setUploadLocalMessage(null);
     setConfirmError(null);
-    void services.authoritativeLocalSync
-      .syncPending()
+    const selected = (resultId ?? '').trim();
+    const syncPromise = selected
+      ? services.authoritativeLocalSync.syncResults([selected])
+      : services.authoritativeLocalSync.syncPendingForSession(sessionId);
+    void syncPromise
       .then((summary) => {
-        setUploadLocalMessage(
-          `Subida: ${summary.synced} ok · ${summary.retry} reintento · ${summary.conflict} conflicto · ${summary.failed_terminal} fallidos`,
-        );
+        const row = selected
+          ? localResults.find((r) => r.id === selected)
+          : localResults.find((r) => r.sync_status !== 'SYNCED');
+        if (summary.synced > 0 && row) {
+          setUploadLocalMessage(
+            `Resultado del ${formatLocalResultStamp(row.confirmed_at)} subido correctamente`,
+          );
+        } else if (summary.retry > 0) {
+          setUploadLocalMessage('La subida quedó pendiente y se reintentará');
+        } else if (summary.conflict > 0) {
+          setUploadLocalMessage(
+            'El servidor ya tiene una versión diferente de este resultado',
+          );
+        } else if (summary.attempted === 0) {
+          setUploadLocalMessage('No hay resultados pendientes de este pasillo para subir');
+        } else {
+          setUploadLocalMessage(
+            `Subida pasillo: ${summary.synced} ok · ${summary.retry} reintento · ${summary.conflict} conflicto · ${summary.failed_terminal} fallidos`,
+          );
+        }
         refresh();
       })
       .catch((e) => {
@@ -514,6 +535,7 @@ export function UploadsScreen({
           setConfirmVisible(false);
           onExcludedPhotos?.();
         }}
-      />    </>
+      />
+    </>
   );
 }

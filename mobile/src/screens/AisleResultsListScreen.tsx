@@ -77,7 +77,7 @@ export function AisleResultsListScreen({
     if (syncBusy) return;
     setSyncBusy(true);
     try {
-      const summary = await services.authoritativeLocalSync.syncPending();
+      const summary = await services.authoritativeLocalSync.syncPendingForSession(sessionId);
       onError(null);
       await reload();
       if (summary.synced === 0 && summary.attempted === 0) {

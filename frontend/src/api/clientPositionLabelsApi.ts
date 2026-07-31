@@ -58,12 +58,12 @@ export async function listClientPositionLabels(
   clientId: string,
   query?: ClientPositionLabelsListQuery
 ): Promise<ClientPositionLabelListResponse> {
-  const qs = buildQueryString({
-    status: query?.status,
-    search: query?.search,
-    page: query?.page,
-    page_size: query?.page_size,
-  });
+  const qs = buildQueryString([
+    ['status', query?.status],
+    ['search', query?.search],
+    ['page', query?.page, { min: 1 }],
+    ['page_size', query?.page_size, { min: 1 }],
+  ]);
   return apiRequestJson<ClientPositionLabelListResponse>(
     `${positionLabelsBase(clientId)}${qs}`
   );
@@ -79,7 +79,7 @@ export async function createClientPositionLabel(
   return apiRequestJson<ClientPositionLabel>(positionLabelsBase(clientId), {
     method: 'POST',
     headers,
-    body: JSON.stringify(body),
+    body,
   });
 }
 
@@ -101,7 +101,7 @@ export async function updateClientPositionLabel(
     `${positionLabelsBase(clientId)}/${encodeURIComponent(labelId)}`,
     {
       method: 'PATCH',
-      body: JSON.stringify(body),
+      body,
     }
   );
 }
@@ -115,7 +115,7 @@ export async function invalidateClientPositionLabel(
     `${positionLabelsBase(clientId)}/${encodeURIComponent(labelId)}/invalidate`,
     {
       method: 'POST',
-      body: JSON.stringify({ reason: reason ?? null }),
+      body: { reason: reason ?? null },
     }
   );
 }
@@ -127,7 +127,10 @@ export function clientPositionLabelPreviewUrl(
 ): string {
   const format = opts?.format ?? 'PNG';
   const preset = opts?.preset ?? 'MM_100x100';
-  const qs = buildQueryString({ format, preset });
+  const qs = buildQueryString([
+    ['format', format],
+    ['preset', preset],
+  ]);
   return `${positionLabelsBase(clientId)}/${encodeURIComponent(labelId)}/preview${qs}`;
 }
 
@@ -138,7 +141,10 @@ export function clientPositionLabelDownloadUrl(
 ): string {
   const format = opts?.format ?? 'PDF';
   const preset = opts?.preset ?? 'MM_100x100';
-  const qs = buildQueryString({ format, preset });
+  const qs = buildQueryString([
+    ['format', format],
+    ['preset', preset],
+  ]);
   return `${positionLabelsBase(clientId)}/${encodeURIComponent(labelId)}/download${qs}`;
 }
 

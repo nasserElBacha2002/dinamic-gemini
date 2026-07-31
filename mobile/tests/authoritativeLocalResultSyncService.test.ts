@@ -194,6 +194,31 @@ describe('AuthoritativeLocalResultSyncService', () => {
     expect(confirmedRepo.completeSyncSuccess).toHaveBeenCalled();
   });
 
+  it('syncPendingForSession skips other sessions', async () => {
+    const other = confirmed({
+      id: 'result-other',
+      capture_session_id: 'sess-other',
+      capture_photo_id: 'photo-other',
+    });
+    const mine = confirmed({ id: 'result-1', capture_session_id: 'sess-1' });
+    const { service, confirmedRepo, api } = createHarness({ rows: [mine, other] });
+    confirmedRepo.listDueForSync = jest.fn(async () => [mine, other]);
+    const summary = await service.syncPendingForSession('sess-1');
+    expect(summary.attempted).toBe(1);
+    expect(summary.synced).toBe(1);
+    expect(api.upsertResult).toHaveBeenCalledTimes(1);
+  });
+
+  it('syncResults only syncs selected ids', async () => {
+    const a = confirmed({ id: 'result-a' });
+    const b = confirmed({ id: 'result-b', capture_photo_id: 'photo-2' });
+    const { service, confirmedRepo, api } = createHarness({ rows: [a, b] });
+    confirmedRepo.listDueForSync = jest.fn(async () => [a, b]);
+    const summary = await service.syncResults(['result-b']);
+    expect(summary.attempted).toBe(1);
+    expect(api.upsertResult).toHaveBeenCalledTimes(1);
+  });
+
   it('resets to pending on endpoint 404', async () => {
     const upsert = jest.fn(async () => {
       throw new ApiError('not found', 404, null);

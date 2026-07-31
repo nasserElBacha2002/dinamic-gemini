@@ -137,17 +137,36 @@ export function ProcessingScreen({
     }
   };
 
-  const uploadLocalResults = () => {
+  const uploadLocalResults = (resultId?: string | null) => {
     if (uploadLocalBusy) return;
     setUploadLocalBusy(true);
     setUploadLocalMessage(null);
     setConfirmError(null);
-    void services.authoritativeLocalSync
-      .syncPending()
+    const selected = (resultId ?? '').trim();
+    const syncPromise = selected
+      ? services.authoritativeLocalSync.syncResults([selected])
+      : services.authoritativeLocalSync.syncPendingForSession(sessionId);
+    void syncPromise
       .then((summary) => {
-        setUploadLocalMessage(
-          `Subida: ${summary.synced} ok · ${summary.retry} reintento · ${summary.conflict} conflicto · ${summary.failed_terminal} fallidos`,
-        );
+        if (summary.synced > 0) {
+          setUploadLocalMessage(
+            selected
+              ? 'Resultado local subido correctamente'
+              : `Resultados del pasillo: ${summary.synced} subido(s)`,
+          );
+        } else if (summary.retry > 0) {
+          setUploadLocalMessage('La subida quedó pendiente y se reintentará');
+        } else if (summary.conflict > 0) {
+          setUploadLocalMessage(
+            'El servidor ya tiene una versión diferente de este resultado',
+          );
+        } else if (summary.attempted === 0) {
+          setUploadLocalMessage('No hay resultados pendientes de este pasillo para subir');
+        } else {
+          setUploadLocalMessage(
+            `Subida pasillo: ${summary.synced} ok · ${summary.retry} reintento · ${summary.conflict} conflicto`,
+          );
+        }
         refresh();
       })
       .catch((e) => {

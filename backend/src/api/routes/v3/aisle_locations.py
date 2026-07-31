@@ -67,6 +67,15 @@ from src.domain.aisle_location.entities import AisleLocationStatus
 router = APIRouter()
 
 
+def _reject_legacy_positioning_writes() -> None:
+    """Block new aisle-scoped positioning writes; client-scoped API is source of truth."""
+    raise StrategyDisabledError(
+        "AISLE_SCOPED_POSITIONING_WRITES_DISABLED: "
+        "use POST /api/v3/clients/{client_id}/position-labels "
+        "(removal after consumers migrate; read endpoints remain temporarily)"
+    )
+
+
 def _require_aisle_location_domain_enabled() -> None:
     if not load_settings().aisle_location_domain_enabled:
         raise StrategyDisabledError("AISLE_LOCATION_DOMAIN_ENABLED=false")
@@ -90,6 +99,7 @@ def create_aisle_location(
     use_case: CreateAisleLocationUseCase = Depends(get_create_aisle_location_use_case),
 ) -> AisleLocationResponse:
     try:
+        _reject_legacy_positioning_writes()
         _require_aisle_location_domain_enabled()
         location = use_case.execute(
             CreateAisleLocationCommand(
@@ -190,6 +200,7 @@ def update_aisle_location(
     use_case: UpdateAisleLocationUseCase = Depends(get_update_aisle_location_use_case),
 ) -> AisleLocationResponse:
     try:
+        _reject_legacy_positioning_writes()
         _require_aisle_location_domain_enabled()
         status_value = (
             AisleLocationStatus(body.status) if body.status is not None else None
@@ -229,6 +240,7 @@ def issue_aisle_location_label(
     ),
 ) -> AisleLocationLabelResponse:
     try:
+        _reject_legacy_positioning_writes()
         _require_aisle_location_domain_enabled()
         _require_aisle_location_labels_enabled()
         req = body or IssueAisleLocationLabelRequest()
@@ -293,6 +305,7 @@ def invalidate_aisle_location_label(
     ),
 ) -> AisleLocationLabelResponse:
     try:
+        _reject_legacy_positioning_writes()
         _require_aisle_location_domain_enabled()
         _require_aisle_location_labels_enabled()
         req = body or InvalidateAisleLocationLabelRequest()
@@ -492,6 +505,7 @@ def replace_aisle_location_label(
     )
 
     try:
+        _reject_legacy_positioning_writes()
         _require_aisle_location_domain_enabled()
         _require_aisle_location_labels_enabled()
         req = body or ReplaceAisleLocationLabelRequest()
@@ -524,6 +538,7 @@ def batch_render_aisle_location_labels(
     )
 
     try:
+        _reject_legacy_positioning_writes()
         _require_aisle_location_domain_enabled()
         _require_aisle_location_labels_enabled()
         _require_aisle_location_label_render_enabled()

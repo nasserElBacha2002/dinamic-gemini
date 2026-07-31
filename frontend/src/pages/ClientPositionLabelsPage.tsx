@@ -56,7 +56,7 @@ function statusSemantic(status: string): 'success' | 'warning' | 'neutral' {
 
 export default function ClientPositionLabelsPage() {
   const { t } = useTranslation();
-  const { showSuccess, showError } = useAppSnackbar();
+  const { showSnackbar } = useAppSnackbar();
   const queryClient = useQueryClient();
   const { clientId } = useParams<{ clientId: string }>();
   const safeClientId = (clientId ?? '').trim();
@@ -103,10 +103,10 @@ export default function ClientPositionLabelsPage() {
         });
         setPreviewUrl(URL.createObjectURL(blob));
       } catch {
-        showError(t('position_labels.preview_error'));
+        showSnackbar(t('position_labels.preview_error'), 'error');
       }
     },
-    [revokePreview, safeClientId, showError, t]
+    [revokePreview, safeClientId, showSnackbar, t]
   );
 
   const createMutation = useMutation({
@@ -123,12 +123,12 @@ export default function ClientPositionLabelsPage() {
       await queryClient.invalidateQueries({
         queryKey: ['clients', safeClientId, 'position-labels'],
       });
-      showSuccess(t('position_labels.created_snackbar'));
+      showSnackbar(t('position_labels.created_snackbar'), 'success');
       if (caps.renderEnabled) {
         await loadPreview(label);
       }
     },
-    onError: () => showError(t('position_labels.create_error')),
+    onError: () => showSnackbar(t('position_labels.create_error'), 'error'),
   });
 
   const invalidateMutation = useMutation({
@@ -144,26 +144,26 @@ export default function ClientPositionLabelsPage() {
       await queryClient.invalidateQueries({
         queryKey: ['clients', safeClientId, 'position-labels'],
       });
-      showSuccess(t('position_labels.invalidated_snackbar'));
+      showSnackbar(t('position_labels.invalidated_snackbar'), 'success');
     },
-    onError: () => showError(t('position_labels.invalidate_error')),
+    onError: () => showSnackbar(t('position_labels.invalidate_error'), 'error'),
   });
 
   const download = async (label: ClientPositionLabel, format: 'PDF' | 'PNG') => {
     try {
       await downloadClientPositionLabelFile(safeClientId, label.id, { format, preset: PRESET });
-      showSuccess(t('position_labels.download_ok'));
+      showSnackbar(t('position_labels.download_ok'), 'success');
     } catch {
-      showError(t('position_labels.download_error'));
+      showSnackbar(t('position_labels.download_error'), 'error');
     }
   };
 
   const reprint = async (label: ClientPositionLabel) => {
     try {
       await loadPreview(label);
-      showSuccess(t('position_labels.reprint_ok'));
+      showSnackbar(t('position_labels.reprint_ok'), 'success');
     } catch {
-      showError(t('position_labels.reprint_error'));
+      showSnackbar(t('position_labels.reprint_error'), 'error');
     }
   };
 

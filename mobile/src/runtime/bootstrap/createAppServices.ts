@@ -144,6 +144,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const config = loadAppConfig();
   const configError = validateAppConfig(config);
   const logger = createLogger();
+  if (config.isDevelopment && config.apiBaseUrl) {
+    logger.info('mobile_api_base_url', { apiBaseUrl: config.apiBaseUrl });
+  }
   const tokenStorage = createMirroredTokenStorage(secureTokenStorage, config);
   const api = new ApiClient({
     config,
