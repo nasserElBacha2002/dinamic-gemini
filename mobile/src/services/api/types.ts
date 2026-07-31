@@ -119,6 +119,10 @@ export interface SourceAssetDto {
   readonly mime_type: string;
   readonly uploaded_at: string;
   readonly file_size_bytes?: number | null;
+  readonly ordered_capture_session_id?: string | null;
+  readonly sequence_number?: number | null;
+  readonly sequence_source?: string | null;
+  readonly upload_client_file_id?: string | null;
 }
 
 export interface UploadAisleAssetUploadedDto {

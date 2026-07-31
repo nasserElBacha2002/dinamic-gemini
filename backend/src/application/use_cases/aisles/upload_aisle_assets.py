@@ -197,11 +197,64 @@ class UploadAisleAssetsUseCase:
         resolved_batch = (batch_id or uf.upload_batch_id or "").strip()
         if not client_id or not resolved_batch:
             return None
-        return self._asset_repo.get_by_upload_idempotency_key(
+        existing = self._asset_repo.get_by_upload_idempotency_key(
             aisle_id,
             resolved_batch,
             client_id,
         )
+        if existing is None:
+            return None
+        return self._bind_ordered_capture_on_idempotent_hit(
+            aisle_id=aisle_id, existing=existing, uf=uf
+        )
+
+    def _bind_ordered_capture_on_idempotent_hit(
+        self,
+        *,
+        aisle_id: str,
+        existing: SourceAsset,
+        uf: UploadedFile,
+    ) -> SourceAsset:
+        """Attach ordered-session metadata when a legacy idempotent row lacks it.
+
+        Mobile can race: first upload lands without ``ordered_capture_session_id``,
+        then a retry with session+sequence must not leave an unsequenced orphan
+        (seal would fail with incomplete sequence).
+        """
+        session_id = (uf.ordered_capture_session_id or "").strip()
+        if not session_id or uf.sequence_number is None:
+            return existing
+        stored_session = (existing.ordered_capture_session_id or "").strip()
+        if stored_session:
+            if stored_session != session_id:
+                raise IdempotencyKeyReusedError(
+                    "IDEMPOTENCY_KEY_REUSED: same client_image_id already bound to a "
+                    "different ordered_capture_session_id"
+                )
+            self._assert_ordered_idempotent_compatible(existing, uf)
+            return existing
+        self._assert_ordered_session_accepts_upload(aisle_id=aisle_id, uf=uf)
+        conflict = self._asset_repo.get_by_ordered_session_and_sequence(
+            session_id, int(uf.sequence_number)
+        )
+        if conflict is not None and conflict.id != existing.id:
+            raise IdempotencyKeyReusedError(
+                "IDEMPOTENCY_KEY_REUSED: sequence_number already taken in ordered session"
+            )
+        existing.ordered_capture_session_id = session_id
+        existing.sequence_number = int(uf.sequence_number)
+        existing.sequence_source = "CLIENT_ASSIGNED"
+        self._asset_repo.save(existing)
+        logger.info(
+            "image_upload_idempotent_ordered_bind aisle_id=%s capture_session_id=%s "
+            "client_image_id=%s sequence_number=%s image_id=%s",
+            aisle_id,
+            session_id,
+            (uf.client_file_id or "").strip(),
+            existing.sequence_number,
+            existing.id,
+        )
+        return existing
 
     def _metadata_for_upload(self, uf: UploadedFile) -> dict[str, str] | None:
         digest = self._incoming_content_sha256(uf)

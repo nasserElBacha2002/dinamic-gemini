@@ -36,6 +36,7 @@ import {
   type AisleIdentificationMode,
 } from './processingMode';
 import { processingRunStore } from './processingRun';
+import { validateCompleteSequence } from '../../core/captureSequenceValidation';
 
 export type { ProcessingReadiness } from './processingReadiness';
 export type { AisleIdentificationMode } from './processingMode';
@@ -169,6 +170,9 @@ export class ProcessingService {
   /**
    * Seal the backend ordered-capture session before POST /process.
    * No-op when no ordered session was created for this capture.
+   *
+   * Preflights against remote assets so we can rebind orphans (uploaded without
+   * ordered_capture_session_id) instead of failing with a generic seal error.
    */
   private async sealOrderedCaptureBeforeProcess(
     session: CaptureSessionRow,
@@ -178,9 +182,61 @@ export class ProcessingService {
       return { ok: true, reason: null };
     }
     const photos = await this.repo.listPhotos(session.id);
-    const expectedAssetCount = photos.filter(
-      (p) => p.upload_status === 'uploaded' && p.sequence_number != null,
-    ).length;
+    const localUploaded = photos.filter(
+      (p) => p.upload_status === 'uploaded' && p.sequence_number != null && p.backend_asset_id,
+    );
+    const expectedAssetCount = localUploaded.length;
+    if (expectedAssetCount < 1) {
+      return {
+        ok: false,
+        reason: 'No hay fotos subidas con secuencia para sellar la sesión ordenada.',
+      };
+    }
+
+    try {
+      const remote = await this.assetsApi.listAssets(session.inventory_id, session.aisle_id);
+      const sessionAssets = remote.filter((a) => (a.ordered_capture_session_id || '') === orderedId);
+      const remoteReasons = validateCompleteSequence(sessionAssets, expectedAssetCount, {
+        requireClientImageId: false,
+      });
+      if (remoteReasons.length > 0) {
+        const orphanPhotoIds = localUploaded
+          .filter((p) => {
+            const asset = remote.find((a) => a.id === p.backend_asset_id);
+            return (
+              !asset ||
+              (asset.ordered_capture_session_id || '') !== orderedId ||
+              asset.sequence_number !== p.sequence_number
+            );
+          })
+          .map((p) => p.id);
+        if (orphanPhotoIds.length > 0) {
+          const rebound = await this.uploadQueue.rebindOrderedCaptureUploads(
+            session.id,
+            orphanPhotoIds,
+          );
+          if (rebound.ok && rebound.requeued > 0) {
+            return {
+              ok: false,
+              reason:
+                `Algunas fotos no quedaron vinculadas a la secuencia ordenada (${rebound.requeued}). ` +
+                'Se reencolaron para resubir; esperá a que terminen e intentá Procesar de nuevo.',
+            };
+          }
+        }
+        return {
+          ok: false,
+          reason: `No se pudo sellar la sesión ordenada: ${remoteReasons.join('; ')}`,
+        };
+      }
+    } catch (e) {
+      this.logger.warn('ordered_capture_seal_preflight_failed', {
+        sessionId: session.id,
+        error: String(e),
+      });
+      // Fall through to seal; server remains authoritative.
+    }
+
     try {
       await this.orderedCapture.sealSession(orderedId, {
         expected_asset_count: expectedAssetCount,

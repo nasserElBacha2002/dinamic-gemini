@@ -37,6 +37,7 @@ describe('ProcessingService', () => {
   };
   const uploadQueue = {
     refreshSessionReadiness: jest.fn(),
+    rebindOrderedCaptureUploads: jest.fn(),
   };
   const assetsApi = { listAssets: jest.fn() };
   const logger = createLogger(() => undefined);
@@ -211,6 +212,58 @@ describe('ProcessingService', () => {
     const result = await service.startProcess('session-1', { identificationMode: 'INTERNAL_OCR' });
     expect(result.ok).toBe(false);
     expect(result.reason).toMatch(/ya no está disponible/i);
+  });
+
+  it('startProcess rebinds orphan ordered-capture assets before seal', async () => {
+    repo.listPhotos.mockResolvedValue([
+      {
+        id: 'p1',
+        status: 'stable',
+        upload_status: 'uploaded',
+        backend_asset_id: 'asset-1',
+        sequence_number: 1,
+      },
+      {
+        id: 'p2',
+        status: 'stable',
+        upload_status: 'uploaded',
+        backend_asset_id: 'asset-2',
+        sequence_number: 2,
+      },
+    ]);
+    uploadQueue.refreshSessionReadiness.mockResolvedValue('ready');
+    uploadQueue.rebindOrderedCaptureUploads.mockResolvedValue({ ok: true, requeued: 1, reason: null });
+    repo.getSession.mockResolvedValue({
+      id: 'session-1',
+      inventory_id: 'inv-1',
+      aisle_id: 'aisle-1',
+      backend_job_id: null,
+      backend_ordered_capture_session_id: 'ocs-1',
+    });
+    assetsApi.listAssets.mockResolvedValue([
+      { id: 'asset-1', ordered_capture_session_id: null, sequence_number: null },
+      { id: 'asset-2', ordered_capture_session_id: 'ocs-1', sequence_number: 2 },
+    ]);
+    jobs.getByBackendJobId.mockResolvedValue(null);
+    api.get.mockResolvedValue({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    const orderedCapture = { sealSession: jest.fn() };
+    const service = new ProcessingService(
+      api as never,
+      repo as never,
+      jobs as never,
+      uploadQueue as never,
+      assetsApi as never,
+      logger,
+      null,
+      null,
+      orderedCapture as never,
+    );
+    const result = await service.startProcess('session-1');
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/reencolaron|secuencia ordenada/i);
+    expect(uploadQueue.rebindOrderedCaptureUploads).toHaveBeenCalledWith('session-1', ['p1']);
+    expect(orderedCapture.sealSession).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it('startProcess rejects concurrent double start with lock', async () => {

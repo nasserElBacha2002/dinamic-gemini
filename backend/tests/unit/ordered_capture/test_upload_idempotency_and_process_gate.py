@@ -123,6 +123,68 @@ def _fixture():
     return create, upload, session_repo, asset_repo, inv_repo, aisle_repo, clock, access
 
 
+def test_idempotent_upload_binds_ordered_session_onto_legacy_row() -> None:
+    """Retry with ordered metadata upgrades a prior unsequenced idempotent hit."""
+    create, upload, session_repo, asset_repo, *_rest = _fixture()
+    principal = platform_principal()
+    client_image_id = str(uuid4())
+    payload = b"fake-jpeg-bytes-orphan"
+    first = upload.execute(
+        "inv-1",
+        "aisle-1",
+        [
+            UploadedFile(
+                "1.jpg",
+                BytesIO(payload),
+                "image/jpeg",
+                client_file_id=client_image_id,
+                upload_batch_id="batch-orphan-1",
+            )
+        ],
+        principal=principal,
+    )
+    assert len(first.assets) == 1
+    assert first.errors == []
+    assert first.assets[0].ordered_capture_session_id is None
+    assert first.assets[0].sequence_number is None
+    asset_id = first.assets[0].id
+
+    session = create.execute(
+        CreateOrderedCaptureSessionCommand(
+            inventory_id="inv-1", aisle_id="aisle-1", principal=principal
+        )
+    )
+    second = upload.execute(
+        "inv-1",
+        "aisle-1",
+        [
+            UploadedFile(
+                "1.jpg",
+                BytesIO(payload),
+                "image/jpeg",
+                client_file_id=client_image_id,
+                upload_batch_id="batch-orphan-1",
+                ordered_capture_session_id=session.id,
+                sequence_number=1,
+            )
+        ],
+        principal=principal,
+    )
+    assert len(second.assets) == 1
+    assert second.errors == []
+    assert second.assets[0].id == asset_id
+    assert second.assets[0].ordered_capture_session_id == session.id
+    assert second.assets[0].sequence_number == 1
+    assert second.assets[0].sequence_source == "CLIENT_ASSIGNED"
+    stored = asset_repo.get_by_id(asset_id)
+    assert stored is not None
+    assert stored.ordered_capture_session_id == session.id
+    assert stored.sequence_number == 1
+    refreshed = session_repo.get_by_id(session.id)
+    assert refreshed is not None
+    assert refreshed.status == OrderedCaptureSessionStatus.UPLOADING
+
+
 def test_ordered_upload_idempotent_by_session_and_client_image_id() -> None:
     create, upload, session_repo, asset_repo, *_rest = _fixture()
     principal = platform_principal()

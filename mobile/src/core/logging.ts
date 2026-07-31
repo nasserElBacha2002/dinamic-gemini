@@ -24,6 +24,8 @@ export type LogEvent =
   | 'upload_limits_fallback'
   | 'upload_enqueue_missing_batch'
   | 'upload_missing_sequence_number'
+  | 'ordered_capture_ensure_on_enqueue_failed'
+  | 'ordered_capture_seal_preflight_failed'
   | 'error'
   | 'job_started'
   | 'job_status_changed'

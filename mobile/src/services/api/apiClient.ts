@@ -142,6 +142,7 @@ export class ApiClient {
         timedOut,
         externalAborted: options.signal?.aborted === true,
         fallbackMessage: 'No se pudo conectar con el backend.',
+        apiBaseUrl: this.options.config.apiBaseUrl,
       });
     } finally {
       unlink();
@@ -191,6 +192,7 @@ export class ApiClient {
         timedOut,
         externalAborted: options.signal?.aborted === true,
         fallbackMessage: 'No se pudo conectar con el backend.',
+        apiBaseUrl: this.options.config.apiBaseUrl,
       });
     } finally {
       unlink();
@@ -332,10 +334,21 @@ export const REQUEST_ABORTED = 'REQUEST_ABORTED';
 export const REQUEST_TIMEOUT = 'REQUEST_TIMEOUT';
 export const NETWORK_ERROR = 'NETWORK_ERROR';
 
+function isLoopbackApiBaseUrl(apiBaseUrl: string | undefined): boolean {
+  if (!apiBaseUrl) return false;
+  try {
+    const host = new URL(apiBaseUrl).hostname;
+    return host === '127.0.0.1' || host === 'localhost';
+  } catch {
+    return false;
+  }
+}
+
 function mapFetchAbortError(input: {
   readonly timedOut: boolean;
   readonly externalAborted: boolean;
   readonly fallbackMessage: string;
+  readonly apiBaseUrl?: string;
 }): ApiError {
   if (input.externalAborted && !input.timedOut) {
     return new ApiError('La solicitud fue cancelada.', null, REQUEST_ABORTED);
@@ -343,7 +356,13 @@ function mapFetchAbortError(input: {
   if (input.timedOut) {
     return new ApiError('La solicitud excedió el tiempo de espera.', null, REQUEST_TIMEOUT);
   }
-  return new ApiError(input.fallbackMessage, null, NETWORK_ERROR);
+  let message = input.fallbackMessage;
+  if (isLoopbackApiBaseUrl(input.apiBaseUrl)) {
+    message =
+      `${message} API en loopback: con dispositivo físico por USB ejecutá ` +
+      '`adb reverse tcp:<puerto> tcp:<puerto>` (o usá la IP LAN del host).';
+  }
+  return new ApiError(message, null, NETWORK_ERROR);
 }
 
 /**

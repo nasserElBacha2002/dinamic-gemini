@@ -5,6 +5,7 @@
 import {
   buildLocalResultListItems,
   buildLocalResultsUploadIdempotencyKey,
+  canRestoreExcludedPhoto,
   countExcludedPhotos,
   countPendingLocalResults,
   isExcludedPhoto,
@@ -107,6 +108,25 @@ describe('aisleProcessDialogHelpers', () => {
     ).toBe(true);
     expect(
       isSessionSealedForPhotoRestore({ status: 'ready_to_process' } as CaptureSessionRow),
+    ).toBe(false);
+    expect(
+      isSessionSealedForPhotoRestore({ status: 'finishing' } as CaptureSessionRow),
+    ).toBe(false);
+  });
+
+  it('allows re-queue of never-uploaded queue exclusions before a job starts', () => {
+    const session = { status: 'finishing', backend_job_id: null } as CaptureSessionRow;
+    const excludedQueue = photo({
+      id: 'q1',
+      upload_status: 'excluded',
+      backend_asset_id: null,
+    });
+    expect(canRestoreExcludedPhoto(session, excludedQueue)).toBe(true);
+    expect(
+      canRestoreExcludedPhoto(
+        { status: 'ready_to_process', backend_job_id: 'job-1' } as CaptureSessionRow,
+        excludedQueue,
+      ),
     ).toBe(false);
   });
 

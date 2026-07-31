@@ -5,10 +5,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Image, Text, View } from 'react-native';
 
-import type { CapturePhotoRow } from '../database/schema/captureSchema';
+import type { CapturePhotoRow, CaptureSessionRow } from '../database/schema/captureSchema';
 import {
+  canRestoreExcludedPhoto,
   isExcludedPhoto,
-  isSessionSealedForPhotoRestore,
 } from '../features/processing/aisleProcessDialogHelpers';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, ErrorText, SmallButton, messageOf, styles } from '../ui';
@@ -39,9 +39,9 @@ export function ExcludedPhotosScreen({
   onError,
 }: ExcludedPhotosScreenProps): JSX.Element {
   const [photos, setPhotos] = useState<CapturePhotoRow[]>([]);
+  const [session, setSession] = useState<CaptureSessionRow | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [sealed, setSealed] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -50,8 +50,7 @@ export function ExcludedPhotosScreen({
       const snap = await services.capture.loadSession(sessionId, false);
       setPhotos((snap.photos ?? []).filter(isExcludedPhoto));
       const sessions = await services.capture.listActivitySessions();
-      const row = sessions.find((s) => s.id === sessionId);
-      setSealed(row ? isSessionSealedForPhotoRestore(row) : false);
+      setSession(sessions.find((s) => s.id === sessionId) ?? snap.session ?? null);
     } catch (e) {
       onError(messageOf(e));
     }
@@ -61,7 +60,15 @@ export function ExcludedPhotosScreen({
     void reload();
   }, [reload]);
 
+  const restorableIds = new Set(
+    session
+      ? photos.filter((p) => canRestoreExcludedPhoto(session, p)).map((p) => p.id)
+      : [],
+  );
+  const allBlocked = photos.length > 0 && restorableIds.size === 0;
+
   const toggle = (id: string) => {
+    if (!restorableIds.has(id)) return;
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -71,18 +78,20 @@ export function ExcludedPhotosScreen({
   };
 
   const restoreSelected = async () => {
-    if (busy || selected.size === 0) return;
-    if (sealed) {
+    if (busy || selected.size === 0 || !session) return;
+    const toRestore = [...selected].filter((id) => restorableIds.has(id));
+    if (toRestore.length === 0) {
       Alert.alert(
-        'Sesión sellada',
-        'No se puede modificar la secuencia de una sesión ya procesada. Creá una nueva captura para incluir fotos.',
+        'No se puede reincorporar',
+        'Estas fotos ya no se pueden volver a incluir en esta sesión (trabajo iniciado o eliminadas del servidor).',
       );
       return;
     }
     setBusy(true);
     setMessage(null);
     try {
-      for (const id of selected) {
+      let requeued = false;
+      for (const id of toRestore) {
         const photo = photos.find((p) => p.id === id);
         if (!photo) continue;
         if (photo.status === 'excluded') {
@@ -92,8 +101,14 @@ export function ExcludedPhotosScreen({
           const r = await services.uploadQueue.requeueExcludedPhoto(photo.id);
           if (!r.ok) {
             setMessage(r.reason ?? 'No se pudo volver a incluir');
+          } else {
+            requeued = true;
           }
         }
+      }
+      if (requeued) {
+        await services.uploadQueue.enqueueSession(sessionId);
+        await services.uploadQueue.resume();
       }
       setSelected(new Set());
       setMessage('Fotos reincorporadas. Revisá la galería o la cola de carga.');
@@ -117,14 +132,19 @@ export function ExcludedPhotosScreen({
             <Text style={styles.muted}>
               {inventoryName} / {aisleName}
             </Text>
-            {sealed ? (
-              <ErrorText text="La sesión está sellada. No se pueden reincorporar fotos a esta secuencia." />
-            ) : null}
+            {allBlocked ? (
+              <ErrorText text="No se pueden reincorporar estas fotos: la sesión ya tiene un trabajo de procesamiento o fueron eliminadas del servidor." />
+            ) : (
+              <Text style={styles.muted}>
+                Las fotos excluidas de la cola (aún no subidas) se pueden volver a incluir y
+                cargarán al servidor. Luego podés editar resultados en la app administrativa.
+              </Text>
+            )}
             {message ? <Text style={styles.muted}>{message}</Text> : null}
             <View style={styles.nav}>
               <Button
                 label={busy ? 'Incluyendo…' : 'Volver a incluir'}
-                disabled={busy || selected.size === 0 || sealed}
+                disabled={busy || selected.size === 0}
                 onPress={() => void restoreSelected()}
               />
             </View>
@@ -134,6 +154,7 @@ export function ExcludedPhotosScreen({
           <Text style={styles.muted}>No hay fotos excluidas en este pasillo.</Text>
         }
         renderItem={({ item }) => {
+          const canRestore = session ? canRestoreExcludedPhoto(session, item) : false;
           const active = selected.has(item.id);
           return (
             <View style={[styles.photoCard, active ? styles.pickerItemActive : null]}>
@@ -145,10 +166,14 @@ export function ExcludedPhotosScreen({
               {item.sequence_number != null ? (
                 <Text style={styles.muted}>Secuencia: {item.sequence_number}</Text>
               ) : null}
-              <SmallButton
-                label={active ? 'Seleccionada' : 'Seleccionar'}
-                onPress={() => toggle(item.id)}
-              />
+              {!canRestore ? (
+                <Text style={styles.muted}>No se puede reincorporar en esta sesión.</Text>
+              ) : (
+                <SmallButton
+                  label={active ? 'Seleccionada' : 'Seleccionar'}
+                  onPress={() => toggle(item.id)}
+                />
+              )}
             </View>
           );
         }}

@@ -53,16 +53,48 @@ const FAILED_SYNC: ReadonlySet<ConfirmedLocalResultSyncStatus> = new Set([
 
 /** Sessions where restoring excluded capture photos is allowed without a new session. */
 const RESTORE_ALLOWED_SESSION: ReadonlySet<string> = new Set([
+  'preparing',
   'active',
   'paused',
+  'finishing',
   'review',
   'uploading',
   'upload_review',
   'ready_to_process',
+  'failed',
+  'failed_processing',
 ]);
 
+/** True when the capture sequence is locked (job already started / finished). */
 export function isSessionSealedForPhotoRestore(session: CaptureSessionRow): boolean {
+  if (session.backend_job_id) {
+    return true;
+  }
   return !RESTORE_ALLOWED_SESSION.has(session.status);
+}
+
+/**
+ * Whether an excluded photo can be restored into the current session.
+ * Queue exclusions that never reached the server stay restorable until a job starts.
+ */
+export function canRestoreExcludedPhoto(
+  session: CaptureSessionRow,
+  photo: CapturePhotoRow,
+): boolean {
+  if (
+    photo.upload_status === 'remote_deleted' ||
+    photo.upload_status === 'remote_delete_pending'
+  ) {
+    return false;
+  }
+  // Never uploaded — re-queue is safe even if local status drifted; block only after a job.
+  if (photo.upload_status === 'excluded' && !photo.backend_asset_id) {
+    if (session.backend_job_id) {
+      return false;
+    }
+    return session.status !== 'completed' && session.status !== 'cancelled';
+  }
+  return !isSessionSealedForPhotoRestore(session);
 }
 
 export function isExcludedPhoto(photo: CapturePhotoRow): boolean {

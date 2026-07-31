@@ -28,6 +28,9 @@ export function normalizeObservabilityError(input: {
     return 'PREPARE_FAILED';
   }
 
+  if (code === 'LOCAL_DB_BUSY' || msg.includes('database is locked') || msg.includes('base local')) {
+    return 'UPLOAD_RETRYABLE';
+  }
   if (code === 'UPLOAD_LIMIT_EXCEEDED' || code.includes('413') || status === 413) {
     return 'UPLOAD_LIMIT_EXCEEDED';
   }

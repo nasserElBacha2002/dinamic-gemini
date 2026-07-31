@@ -271,6 +271,19 @@ describe('ApiClient abort / timeout classification', () => {
     await expect(client.get('/api/v3/inventories/')).rejects.toMatchObject({ code: NETWORK_ERROR });
   });
 
+  it('hints adb reverse when loopback API is unreachable', async () => {
+    jest.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Network request failed'));
+    const client = new ApiClient({
+      config: { ...config, apiBaseUrl: 'http://127.0.0.1:8000' },
+      tokenStorage: new MemoryTokenStorage(),
+      logger: createLogger(() => undefined),
+    });
+    await expect(client.get('/api/v3/inventories/')).rejects.toMatchObject({
+      code: NETWORK_ERROR,
+      message: expect.stringMatching(/adb reverse/),
+    });
+  });
+
   it('cleans up linkAbortSignal listeners across multiple requests', () => {
     const external = new AbortController();
     const add = jest.spyOn(external.signal, 'addEventListener');

@@ -185,7 +185,7 @@ class SealOrderedCaptureSessionUseCase:
                 reasons,
             )
             raise OrderedCaptureSealRejectedError(
-                "Seal rejected: incomplete or invalid sequence",
+                "Seal rejected: incomplete or invalid sequence: " + "; ".join(reasons),
                 reasons=reasons,
             )
         now = self._clock.now()

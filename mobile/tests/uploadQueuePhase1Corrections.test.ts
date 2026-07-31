@@ -520,4 +520,36 @@ describe('UploadQueue phase1 corrections', () => {
     expect([...photos.keys()]).toEqual(['p1']);
     await queue.dispose();
   });
+
+  it('retrySession re-queues stuck queued/not_queued photos and clears pause', async () => {
+    const s1 = session('s1');
+    const { queue, photos, repo } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [
+          photo('p1', 's1', { upload_status: 'queued' }),
+          photo('p2', 's1', {
+            upload_status: 'not_queued',
+            upload_size: null,
+            local_transform_uri: null,
+          }),
+        ],
+      },
+    });
+    (repo.listStableNotQueued as jest.Mock).mockImplementation(async (sessionId: string) =>
+      [...photos.values()].filter(
+        (p) =>
+          p.capture_session_id === sessionId &&
+          p.status === 'stable' &&
+          p.upload_status === 'not_queued',
+      ),
+    );
+    await queue.pause('auth');
+    expect(queue.getSnapshot().pauseReason).toBe('auth');
+    await queue.retrySession('s1');
+    expect(queue.getSnapshot().pauseReason).toBeNull();
+    expect(photos.get('p1')?.upload_status).toBe('queued');
+    expect(photos.get('p2')?.upload_status).toBe('queued');
+    await queue.dispose();
+  });
 });

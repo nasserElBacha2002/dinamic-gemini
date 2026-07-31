@@ -21,6 +21,7 @@ import {
   labelForIdentificationMode,
   preferenceFromSelection,
 } from '../features/processing/processingMode';
+import { describeProcessButtonBlock } from '../features/upload/describeProcessButtonBlock';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, SmallButton, messageOf, styles } from '../ui';
 
@@ -52,9 +53,13 @@ function labelForUploadStatus(photo: CapturePhotoRow): string {
     case 'uploaded':
       return 'Completado';
     case 'retryable_error':
-      return 'Reintentando';
+      return photo.last_upload_error_message
+        ? `Error de carga: ${photo.last_upload_error_message}`
+        : 'Reintentando';
     case 'permanent_error':
-      return 'Error';
+      return photo.last_upload_error_message
+        ? `Error: ${photo.last_upload_error_message}`
+        : 'Error';
     case 'excluded':
       return 'Excluida';
     case 'remote_delete_pending':
@@ -295,6 +300,15 @@ export function UploadsScreen({
       .finally(() => setRetrying(false));
   };
 
+  const resumeQueue = () => {
+    onError(null);
+    void services.uploadQueue
+      .resume()
+      .then(() => services.uploadQueue.enqueueSession(sessionId))
+      .then(() => refresh())
+      .catch((e) => onError(messageOf(e)));
+  };
+
   const confirmAndStart = (selection: import('../features/processing/processingMode').IdentificationModeSelection) => {
     if (busy) return;
     setBusy(true);
@@ -424,6 +438,9 @@ export function UploadsScreen({
                 disabled={retrying}
                 onPress={retryAll}
               />
+              {pendingUploads > 0 ? (
+                <SmallButton label="Reanudar cola" onPress={resumeQueue} />
+              ) : null}
               <SmallButton label="Actualizar" onPress={refresh} />
             </View>
             {onLocalReview &&
@@ -445,7 +462,12 @@ export function UploadsScreen({
             />
             {!ready ? (
               <Text style={styles.muted}>
-                El procesamiento se habilita cuando no queden cargas pendientes ni errores recuperables.
+                {describeProcessButtonBlock({
+                  ready,
+                  photos: uploadPhotos,
+                  pendingUploads,
+                  uploadedCount,
+                })}
               </Text>
             ) : null}
           </View>
@@ -518,6 +540,9 @@ export function UploadsScreen({
         error={confirmError}
         uploadLocalBusy={uploadLocalBusy}
         uploadLocalMessage={uploadLocalMessage}
+        allowUploadLocalResults={Boolean(
+          services.config.flags.mobileAuthoritativeLocalCodeScan,
+        )}
         onClose={() => {
           if (busy || uploadLocalBusy) return;
           setConfirmVisible(false);

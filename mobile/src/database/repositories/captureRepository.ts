@@ -428,17 +428,20 @@ export class CaptureRepository {
    * Existing values are never recalculated (survives reopen / retry).
    */
   async assignMissingSequenceNumbers(sessionId: string): Promise<void> {
+    const photos = await this.db.getAllAsync<Pick<CapturePhotoRow, 'id' | 'sequence_number'>>(
+      `SELECT id, sequence_number FROM capture_photos
+       WHERE capture_session_id = ?
+         AND status = 'stable'
+         AND upload_status NOT IN ('excluded', 'remote_deleted')
+       ORDER BY date_added ASC, asset_id ASC;`,
+      sessionId,
+    );
+    const assignments = nextSequenceAssignments(photos);
+    if (assignments.length === 0) {
+      return;
+    }
     await this.db.execAsync('BEGIN IMMEDIATE;');
     try {
-      const photos = await this.db.getAllAsync<Pick<CapturePhotoRow, 'id' | 'sequence_number'>>(
-        `SELECT id, sequence_number FROM capture_photos
-         WHERE capture_session_id = ?
-           AND status = 'stable'
-           AND upload_status NOT IN ('excluded', 'remote_deleted')
-         ORDER BY date_added ASC, asset_id ASC;`,
-        sessionId,
-      );
-      const assignments = nextSequenceAssignments(photos);
       const now = new Date().toISOString();
       for (const a of assignments) {
         await this.db.runAsync(

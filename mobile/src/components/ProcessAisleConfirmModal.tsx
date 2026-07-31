@@ -39,6 +39,8 @@ export interface ProcessAisleConfirmModalProps {
   error: string | null;
   uploadLocalBusy?: boolean;
   uploadLocalMessage?: string | null;
+  /** When false, hide "Subir resultado local" (server process does not require local confirm). */
+  allowUploadLocalResults?: boolean;
   onClose: () => void;
   onConfirm: (selection: IdentificationModeSelection) => void;
   /** Sync one result (preferred) or all pending for this aisle session. */
@@ -61,6 +63,7 @@ export function ProcessAisleConfirmModal({
   error,
   uploadLocalBusy = false,
   uploadLocalMessage = null,
+  allowUploadLocalResults = false,
   onClose,
   onConfirm,
   onUploadLocalResults,
@@ -100,34 +103,37 @@ export function ProcessAisleConfirmModal({
                 </Text>
                 {pendingLocalResultCount > 0 || excludedPhotoCount > 0 ? (
                   <Text style={[styles.muted, { marginTop: 6 }]} accessibilityLiveRegion="polite">
-                    {pendingLocalResultCount > 0
-                      ? `${pendingLocalResultCount} resultado(s) local(es) pendiente(s)`
-                      : null}
-                    {pendingLocalResultCount > 0 && excludedPhotoCount > 0 ? ' · ' : null}
-                    {excludedPhotoCount > 0
-                      ? `${excludedPhotoCount} foto(s) excluida(s)`
-                      : null}
+                    {[
+                      pendingLocalResultCount > 0
+                        ? `${pendingLocalResultCount} resultado(s) local(es) pendiente(s)`
+                        : '',
+                      excludedPhotoCount > 0 ? `${excludedPhotoCount} foto(s) excluida(s)` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </Text>
                 ) : null}
                 <Text style={[styles.row, { marginTop: 12 }]}>¿Qué querés hacer?</Text>
 
                 <ActionRow
                   title="Procesar fotos"
-                  description="Procesar las fotos del pasillo y enviar el trabajo al servidor."
+                  description="Sube el trabajo al servidor con las fotos cargadas. No hace falta confirmar borradores locales (podés editar en la app administrativa)."
                   disabled={anyBusy}
                   testID="process-aisle-action-process"
                   onPress={() => setStep('process')}
                 />
-                <ActionRow
-                  title="Subir resultado local"
-                  description="Enviar resultados confirmados en este dispositivo (sin reprocesar)."
-                  {...(pendingLocalResultCount > 0
-                    ? { badge: String(pendingLocalResultCount) }
-                    : {})}
-                  disabled={anyBusy}
-                  testID="process-aisle-action-upload-local"
-                  onPress={() => setStep('upload_local')}
-                />
+                {allowUploadLocalResults ? (
+                  <ActionRow
+                    title="Subir resultado local"
+                    description="Enviar resultados confirmados en este dispositivo (sin reprocesar)."
+                    {...(pendingLocalResultCount > 0
+                      ? { badge: String(pendingLocalResultCount) }
+                      : {})}
+                    disabled={anyBusy}
+                    testID="process-aisle-action-upload-local"
+                    onPress={() => setStep('upload_local')}
+                  />
+                ) : null}
                 <ActionRow
                   title="Ver resultados"
                   description="Consultar procesamientos locales y del servidor de este pasillo."
