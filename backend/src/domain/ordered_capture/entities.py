@@ -42,4 +42,5 @@ class OrderedCaptureSession:
     created_by: str | None = None
     sealed_at: datetime | None = None
     processing_started_at: datetime | None = None
+    processing_job_id: str | None = None
     completed_at: datetime | None = None

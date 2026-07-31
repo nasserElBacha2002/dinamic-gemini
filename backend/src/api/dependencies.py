@@ -181,6 +181,7 @@ from src.runtime.v3_deps import (
     get_metrics_calculator,
     get_mobile_preliminary_detection_repo,
     get_ordered_capture_session_repo,
+    get_ordered_capture_processing_reservation,
     get_position_repo,
     get_preliminary_detection_reconciliation_repo,
     get_product_record_repo,
@@ -734,6 +735,7 @@ def get_start_aisle_processing_use_case(
         get_supplier_prompt_config_repo
     ),
     ordered_session_repo=Depends(get_ordered_capture_session_repo),
+    ordered_processing_reservation=Depends(get_ordered_capture_processing_reservation),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
         inventory_repo=inventory_repo,
@@ -748,6 +750,7 @@ def get_start_aisle_processing_use_case(
         client_supplier_repo=client_supplier_repo,
         supplier_prompt_config_repo=supplier_prompt_config_repo,
         ordered_session_repo=ordered_session_repo,
+        ordered_processing_reservation=ordered_processing_reservation,
     )
 
 

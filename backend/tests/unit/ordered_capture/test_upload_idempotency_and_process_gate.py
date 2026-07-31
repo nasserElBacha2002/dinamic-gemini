@@ -12,6 +12,12 @@ from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import ProcessingRejectedUnsealedSessionError
 from src.application.ports.services import WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
+from src.application.services.ordered_capture_processing_reservation import (
+    OrderedCaptureProcessingReservationService,
+)
+from src.infrastructure.persistence.memory_ordered_capture_processing_reservation_unit_of_work import (
+    build_memory_ordered_capture_processing_reservation_uow_factory,
+)
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.aisles.start_aisle_processing import (
@@ -314,6 +320,12 @@ def test_processing_rejected_when_session_uploading() -> None:
         ),
         access_policy=access,
         ordered_session_repo=session_repo,
+        ordered_processing_reservation=OrderedCaptureProcessingReservationService(
+            uow_factory=build_memory_ordered_capture_processing_reservation_uow_factory(
+                job_repo=job_repo,
+                session_repo=session_repo,
+            )
+        ),
     )
     with pytest.raises(ProcessingRejectedUnsealedSessionError) as exc_info:
         use_case.execute(

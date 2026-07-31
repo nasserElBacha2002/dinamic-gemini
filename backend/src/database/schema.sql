@@ -657,6 +657,37 @@ IF NOT EXISTS (
           AND status <> 'FAILED';
 GO
 
+-- 0076: SEALED→PROCESSING reservation link (nullable FK to inventory_jobs).
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+      AND name = N'processing_job_id'
+)
+    ALTER TABLE dbo.ordered_capture_sessions ADD processing_job_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ordered_capture_sessions_processing_job'
+)
+BEGIN
+    ALTER TABLE dbo.ordered_capture_sessions
+        ADD CONSTRAINT FK_ordered_capture_sessions_processing_job
+        FOREIGN KEY (processing_job_id)
+        REFERENCES dbo.inventory_jobs(id);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_ordered_capture_sessions_processing_job'
+      AND object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+)
+    CREATE NONCLUSTERED INDEX IX_ordered_capture_sessions_processing_job
+        ON dbo.ordered_capture_sessions(processing_job_id)
+        WHERE processing_job_id IS NOT NULL;
+GO
+
 IF NOT EXISTS (
     SELECT 1 FROM sys.columns
     WHERE object_id = OBJECT_ID(N'dbo.source_assets') AND name = N'ordered_capture_session_id'

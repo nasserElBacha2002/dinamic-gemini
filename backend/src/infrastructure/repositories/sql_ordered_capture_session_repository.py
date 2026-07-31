@@ -16,6 +16,7 @@ from src.domain.ordered_capture.entities import (
     OrderedCaptureSession,
     OrderedCaptureSessionStatus,
 )
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 
@@ -55,6 +56,7 @@ def _row_to_session(row) -> OrderedCaptureSession:
         created_by=optional_nonempty_db_str(getattr(row, "created_by", None)),
         sealed_at=_ensure_utc(getattr(row, "sealed_at", None)),
         processing_started_at=_ensure_utc(getattr(row, "processing_started_at", None)),
+        processing_job_id=optional_nonempty_db_str(getattr(row, "processing_job_id", None)),
         completed_at=_ensure_utc(getattr(row, "completed_at", None)),
     )
 
@@ -62,24 +64,25 @@ def _row_to_session(row) -> OrderedCaptureSession:
 _SELECT = """
 SELECT id, client_id, inventory_id, aisle_id, status, expected_asset_count,
        uploaded_asset_count, sequence_version, created_by, created_at, updated_at,
-       sealed_at, processing_started_at, completed_at
+       sealed_at, processing_started_at, processing_job_id, completed_at
 FROM ordered_capture_sessions
 """
 
 
 class SqlOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save(self, session: OrderedCaptureSession) -> None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 UPDATE ordered_capture_sessions
                 SET client_id = ?, inventory_id = ?, aisle_id = ?, status = ?,
                     expected_asset_count = ?, uploaded_asset_count = ?, sequence_version = ?,
                     created_by = ?, updated_at = ?, sealed_at = ?,
-                    processing_started_at = ?, completed_at = ?
+                    processing_started_at = ?, processing_job_id = ?, completed_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -94,6 +97,7 @@ class SqlOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
                     _ensure_utc(session.updated_at),
                     _ensure_utc(session.sealed_at),
                     _ensure_utc(session.processing_started_at),
+                    session.processing_job_id,
                     _ensure_utc(session.completed_at),
                     session.id,
                 ),
@@ -106,8 +110,8 @@ class SqlOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
                             id, client_id, inventory_id, aisle_id, status,
                             expected_asset_count, uploaded_asset_count, sequence_version,
                             created_by, created_at, updated_at, sealed_at,
-                            processing_started_at, completed_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            processing_started_at, processing_job_id, completed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             session.id,
@@ -123,6 +127,7 @@ class SqlOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
                             _ensure_utc(session.updated_at),
                             _ensure_utc(session.sealed_at),
                             _ensure_utc(session.processing_started_at),
+                            session.processing_job_id,
                             _ensure_utc(session.completed_at),
                         ),
                     )
@@ -135,8 +140,20 @@ class SqlOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
                     raise
 
     def get_by_id(self, session_id: str) -> OrderedCaptureSession | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(_SELECT + " WHERE id = ?", (session_id,))
+            row = cur.fetchone()
+        return _row_to_session(row) if row else None
+
+    def get_by_id_for_update(self, session_id: str) -> OrderedCaptureSession | None:
+        """Load session row with UPDLOCK for reservation transactions."""
+        locked_select = _SELECT.replace(
+            "FROM ordered_capture_sessions",
+            "FROM ordered_capture_sessions WITH (UPDLOCK, ROWLOCK)",
+            1,
+        )
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(locked_select + " WHERE id = ?", (session_id,))
             row = cur.fetchone()
         return _row_to_session(row) if row else None
 
@@ -146,7 +163,7 @@ class SqlOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
         *,
         statuses: Sequence[str] | None = None,
     ) -> list[OrderedCaptureSession]:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             if statuses:
                 placeholders = ",".join("?" * len(statuses))
                 cur.execute(
@@ -164,7 +181,7 @@ class SqlOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
         return [_row_to_session(r) for r in rows]
 
     def get_open_or_uploading_for_aisle(self, aisle_id: str) -> OrderedCaptureSession | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 _SELECT
                 + " WHERE aisle_id = ? AND status IN ('OPEN', 'UPLOADING')"
@@ -188,3 +205,56 @@ class SqlOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
             if recovered is not None:
                 return recovered
             raise
+
+    def transition_sealed_to_processing(
+        self,
+        session_id: str,
+        *,
+        sequence_version: int,
+        job_id: str,
+        now: datetime,
+    ) -> OrderedCaptureSession | None:
+        """CAS SEALED→PROCESSING with processing_job_id; idempotent if already linked."""
+        started = _ensure_utc(now)
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                """
+                UPDATE ordered_capture_sessions
+                SET status = 'PROCESSING',
+                    processing_job_id = ?,
+                    processing_started_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                  AND status = 'SEALED'
+                  AND sequence_version = ?
+                """,
+                (job_id, started, started, session_id, int(sequence_version)),
+            )
+            if cur.rowcount and cur.rowcount > 0:
+                cur.execute(_SELECT + " WHERE id = ?", (session_id,))
+                row = cur.fetchone()
+                return _row_to_session(row) if row else None
+
+            cur.execute(_SELECT + " WHERE id = ?", (session_id,))
+            row = cur.fetchone()
+        if row is None:
+            return None
+        current = _row_to_session(row)
+        if (
+            current.status == OrderedCaptureSessionStatus.PROCESSING
+            and current.sequence_version == int(sequence_version)
+            and (current.processing_job_id or "") == job_id
+        ):
+            return current
+        if (
+            current.status == OrderedCaptureSessionStatus.PROCESSING
+            and current.sequence_version == int(sequence_version)
+            and not (current.processing_job_id or "").strip()
+        ):
+            current.processing_job_id = job_id
+            if current.processing_started_at is None:
+                current.processing_started_at = started
+            current.updated_at = started
+            self.save(current)
+            return current
+        return None

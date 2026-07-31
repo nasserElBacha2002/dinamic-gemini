@@ -23,6 +23,7 @@ from src.application.services.job_stale_reconciler import (
     STALE_RECONCILE_STATUSES,
 )
 from src.database.sqlserver import SqlServerClient
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.aisle.entities import AisleStatus
 from src.domain.aisle_identification.modes import CONFIGURATION_SNAPSHOT_VERSION
 from src.domain.jobs.claim import (
@@ -77,8 +78,9 @@ def _is_ordered_session_version_unique_violation(exc: BaseException) -> bool:
 
 
 class SqlJobRepository(JobRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
         self._lease_store = SqlJobLeaseStore(client, self.get_by_id)
 
     def save(self, job: Job) -> None:
@@ -98,7 +100,7 @@ class SqlJobRepository(JobRepository):
             if job.finalization_error_metadata
             else None
         )
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 UPDATE inventory_jobs
@@ -274,7 +276,7 @@ class SqlJobRepository(JobRepository):
         return self.get_by_id(job_id)
 
     def get_by_id(self, job_id: str) -> Job | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE id = ?",  # nosec B608
                 (job_id,),
@@ -290,7 +292,7 @@ class SqlJobRepository(JobRepository):
         session_id = (ordered_capture_session_id or "").strip()
         if not session_id:
             return None
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"""
                 SELECT {_JOB_SELECT_FIELDS}

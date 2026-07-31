@@ -7,6 +7,12 @@ from uuid import uuid4
 
 from src.application.ports.services import WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
+from src.application.services.ordered_capture_processing_reservation import (
+    OrderedCaptureProcessingReservationService,
+)
+from src.infrastructure.persistence.memory_ordered_capture_processing_reservation_unit_of_work import (
+    build_memory_ordered_capture_processing_reservation_uow_factory,
+)
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.aisles.start_aisle_processing import (
@@ -270,6 +276,12 @@ def test_start_processing_idempotent_via_columns_without_payload_scan() -> None:
         ),
         access_policy=access,
         ordered_session_repo=session_repo,
+        ordered_processing_reservation=OrderedCaptureProcessingReservationService(
+            uow_factory=build_memory_ordered_capture_processing_reservation_uow_factory(
+                job_repo=job_repo,
+                session_repo=session_repo,
+            )
+        ),
     )
     cmd = StartAisleProcessingCommand(
         inventory_id="inv-1",

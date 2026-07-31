@@ -1,4 +1,4 @@
-"""Unit tests — StartAisleProcessing idempotent when session is already PROCESSING."""
+"""Unit tests — ordered-capture processing reservation (memory UoW)."""
 
 from __future__ import annotations
 
@@ -7,17 +7,14 @@ from uuid import uuid4
 
 import pytest
 
-from src.application.errors import ProcessingRejectedUnsealedSessionError
+from src.application.errors import WorkerLaunchFailedError
 from src.application.ports.services import WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.ordered_capture_processing_reservation import (
     OrderedCaptureProcessingReservationService,
 )
-from src.infrastructure.persistence.memory_ordered_capture_processing_reservation_unit_of_work import (
-    build_memory_ordered_capture_processing_reservation_uow_factory,
-)
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.aisles.start_aisle_processing import (
     StartAisleProcessingCommand,
     StartAisleProcessingUseCase,
@@ -31,7 +28,11 @@ from src.application.use_cases.ordered_capture.manage_ordered_capture_session im
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.jobs.entities import Job, JobStatus
 from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
+from src.infrastructure.persistence.memory_ordered_capture_processing_reservation_unit_of_work import (
+    build_memory_ordered_capture_processing_reservation_uow_factory,
+)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import (
     MemoryInventoryRepository,
@@ -51,16 +52,26 @@ class _FixedClock:
         return datetime(2026, 7, 17, tzinfo=timezone.utc)
 
 
-class _CountingWorkerLaunch(WorkerLaunchService):
-    def __init__(self) -> None:
-        self.launch_calls = 0
-
+class _OkWorker(WorkerLaunchService):
     def launch(self, job_id: str) -> str:
-        self.launch_calls += 1
         return f"exec-{job_id}"
 
 
-def _fixture():
+class _FailingWorker(WorkerLaunchService):
+    def launch(self, job_id: str) -> str:
+        raise RuntimeError("spawn denied")
+
+
+def _reservation_service(job_repo, session_repo) -> OrderedCaptureProcessingReservationService:
+    return OrderedCaptureProcessingReservationService(
+        uow_factory=build_memory_ordered_capture_processing_reservation_uow_factory(
+            job_repo=job_repo,
+            session_repo=session_repo,
+        )
+    )
+
+
+def _sealed_fixture(*, worker: WorkerLaunchService | None = None):
     now = datetime(2026, 7, 17, tzinfo=timezone.utc)
     inv = Inventory(
         id="inv-1",
@@ -132,15 +143,16 @@ def _fixture():
         )
     )
     assert sealed.status == OrderedCaptureSessionStatus.SEALED
-    worker = _CountingWorkerLaunch()
+    launch_worker = worker or _OkWorker()
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
     launch = AisleJobLaunchService(
         aisle_repo=aisle_repo,
         job_repo=job_repo,
-        worker_launch_service=worker,
+        worker_launch_service=launch_worker,
         clock=clock,
         status_reconciler=reconciler,
     )
+    reservation = _reservation_service(job_repo, session_repo)
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
@@ -152,12 +164,7 @@ def _fixture():
         ),
         access_policy=access,
         ordered_session_repo=session_repo,
-        ordered_processing_reservation=OrderedCaptureProcessingReservationService(
-            uow_factory=build_memory_ordered_capture_processing_reservation_uow_factory(
-                job_repo=job_repo,
-                session_repo=session_repo,
-            )
-        ),
+        ordered_processing_reservation=reservation,
     )
     cmd = StartAisleProcessingCommand(
         inventory_id="inv-1",
@@ -165,43 +172,64 @@ def _fixture():
         principal=principal,
         ordered_capture_session_id=session.id,
     )
-    return use_case, cmd, session_repo, session, worker
+    return use_case, cmd, session_repo, job_repo, reservation, sealed, now
 
 
-def test_start_processing_processing_status_idempotent() -> None:
-    use_case, cmd, session_repo, session, worker = _fixture()
-    first = use_case.execute(cmd)
-    refreshed = session_repo.get_by_id(session.id)
+def test_memory_double_reserve_same_job_and_processing_link() -> None:
+    _use_case, _cmd, session_repo, job_repo, reservation, sealed, now = _sealed_fixture()
+    template_a = Job(
+        id=str(uuid4()),
+        target_type="aisle",
+        target_id="aisle-1",
+        job_type="process_aisle",
+        status=JobStatus.STARTING,
+        payload_json={
+            "aisle_id": "aisle-1",
+            "ordered_capture_session_id": sealed.id,
+            "sequence_version": 1,
+        },
+        created_at=now,
+        updated_at=now,
+        started_at=now,
+        ordered_capture_session_id=sealed.id,
+        sequence_version=1,
+    )
+    template_b = Job(
+        id=str(uuid4()),
+        target_type="aisle",
+        target_id="aisle-1",
+        job_type="process_aisle",
+        status=JobStatus.STARTING,
+        payload_json={
+            "aisle_id": "aisle-1",
+            "ordered_capture_session_id": sealed.id,
+            "sequence_version": 1,
+        },
+        created_at=now,
+        updated_at=now,
+        started_at=now,
+        ordered_capture_session_id=sealed.id,
+        sequence_version=1,
+    )
+    first = reservation.reserve(template_a, sealed, now)
+    second = reservation.reserve(template_b, sealed, now)
+    assert first.created is True
+    assert second.created is False
+    assert first.job.id == second.job.id == template_a.id
+    refreshed = session_repo.get_by_id(sealed.id)
     assert refreshed is not None
     assert refreshed.status == OrderedCaptureSessionStatus.PROCESSING
-
-    second = use_case.execute(cmd)
-    assert second.job_id == first.job_id
-    assert worker.launch_calls == 1
+    assert refreshed.processing_job_id == first.job.id
+    assert job_repo.get_by_id(first.job.id) is not None
 
 
-def test_start_processing_completed_with_existing_job_returns_same_id() -> None:
-    use_case, cmd, session_repo, session, worker = _fixture()
-    first = use_case.execute(cmd)
-    refreshed = session_repo.get_by_id(session.id)
-    assert refreshed is not None
-    refreshed.status = OrderedCaptureSessionStatus.COMPLETED
-    refreshed.completed_at = datetime(2026, 7, 18, tzinfo=timezone.utc)
-    session_repo.save(refreshed)
-
-    second = use_case.execute(cmd)
-    assert second.job_id == first.job_id
-    assert worker.launch_calls == 1
-
-
-def test_start_processing_failed_without_job_rejects() -> None:
-    use_case, cmd, session_repo, session, _worker = _fixture()
-    refreshed = session_repo.get_by_id(session.id)
-    assert refreshed is not None
-    refreshed.status = OrderedCaptureSessionStatus.FAILED
-    refreshed.completed_at = datetime(2026, 7, 18, tzinfo=timezone.utc)
-    session_repo.save(refreshed)
-
-    with pytest.raises(ProcessingRejectedUnsealedSessionError) as exc_info:
+def test_launch_failure_leaves_session_processing() -> None:
+    use_case, cmd, session_repo, _job_repo, _reservation, sealed, _now = _sealed_fixture(
+        worker=_FailingWorker()
+    )
+    with pytest.raises(WorkerLaunchFailedError):
         use_case.execute(cmd)
-    assert "FAILED" in str(exc_info.value)
+    refreshed = session_repo.get_by_id(sealed.id)
+    assert refreshed is not None
+    assert refreshed.status == OrderedCaptureSessionStatus.PROCESSING
+    assert refreshed.processing_job_id is not None

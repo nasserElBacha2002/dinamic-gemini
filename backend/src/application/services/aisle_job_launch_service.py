@@ -66,7 +66,7 @@ class AisleJobLaunchService:
     clock: Clock
     status_reconciler: InventoryStatusReconciler
 
-    def persist_attempt(
+    def build_attempt_job(
         self,
         *,
         aisle: Aisle,
@@ -85,8 +85,8 @@ class AisleJobLaunchService:
             AisleIdentificationExecutionStrategy.INTERNAL_OCR
         ),
         engine_params_json: dict | None = None,
-    ) -> tuple[Job, bool]:
-        """Create the job row (or return existing ordered-session pin). Returns (job, created)."""
+    ) -> Job:
+        """Build a process-aisle Job template (not persisted)."""
         now = self.clock.now()
         payload_dict = dict(payload)
         try:
@@ -108,7 +108,7 @@ class AisleJobLaunchService:
             logger.warning("launch correlation ensure failed aisle_id=%s", aisle.id, exc_info=True)
 
         ordered_session_id, sequence_version = _ordered_session_pin_from_payload(payload_dict)
-        job = Job(
+        return Job(
             id=str(uuid.uuid4()),
             target_type="aisle",
             target_id=aisle.id,
@@ -140,6 +140,44 @@ class AisleJobLaunchService:
             ordered_capture_session_id=ordered_session_id,
             sequence_version=sequence_version,
         )
+
+    def persist_attempt(
+        self,
+        *,
+        aisle: Aisle,
+        payload: ProcessAislePayload,
+        attempt_count: int,
+        retry_of_job_id: str | None = None,
+        provider_name: str,
+        model_name: str | None,
+        prompt_key: str,
+        identification_mode: AisleIdentificationMode = AisleIdentificationMode.INTERNAL_OCR,
+        identification_mode_source: AisleIdentificationModeSource = (
+            AisleIdentificationModeSource.SYSTEM_DEFAULT
+        ),
+        configuration_snapshot_version: int = CONFIGURATION_SNAPSHOT_VERSION,
+        execution_strategy: AisleIdentificationExecutionStrategy = (
+            AisleIdentificationExecutionStrategy.INTERNAL_OCR
+        ),
+        engine_params_json: dict | None = None,
+    ) -> tuple[Job, bool]:
+        """Create the job row (or return existing ordered-session pin). Returns (job, created)."""
+        job = self.build_attempt_job(
+            aisle=aisle,
+            payload=payload,
+            attempt_count=attempt_count,
+            retry_of_job_id=retry_of_job_id,
+            provider_name=provider_name,
+            model_name=model_name,
+            prompt_key=prompt_key,
+            identification_mode=identification_mode,
+            identification_mode_source=identification_mode_source,
+            configuration_snapshot_version=configuration_snapshot_version,
+            execution_strategy=execution_strategy,
+            engine_params_json=engine_params_json,
+        )
+        ordered_session_id = job.ordered_capture_session_id
+        sequence_version = job.sequence_version
 
         if ordered_session_id is not None and sequence_version is not None:
             job, created = self.job_repo.create_or_get_for_ordered_session(job)

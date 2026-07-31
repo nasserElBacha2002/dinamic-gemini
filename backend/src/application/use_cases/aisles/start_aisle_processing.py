@@ -27,6 +27,9 @@ from src.application.errors import (
     NoSourceAssetsForAisleProcessingError,
     ProcessingRejectedUnsealedSessionError,
 )
+from src.application.services.ordered_capture_processing_reservation import (
+    OrderedCaptureProcessingReservationService,
+)
 from src.application.ports.ordered_capture_session_repository import (
     OrderedCaptureSessionRepository,
 )
@@ -192,6 +195,7 @@ class StartAisleProcessingUseCase:
         client_supplier_repo: ClientSupplierRepository | None = None,
         supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
         ordered_session_repo: OrderedCaptureSessionRepository | None = None,
+        ordered_processing_reservation: OrderedCaptureProcessingReservationService | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -205,6 +209,7 @@ class StartAisleProcessingUseCase:
         self._client_supplier_repo = client_supplier_repo
         self._supplier_prompt_config_repo = supplier_prompt_config_repo
         self._ordered_session_repo = ordered_session_repo
+        self._ordered_processing_reservation = ordered_processing_reservation
 
     def _mark_ordered_session_processing(
         self,
@@ -220,6 +225,7 @@ class StartAisleProcessingUseCase:
         now = job.started_at or job.created_at
         current.status = OrderedCaptureSessionStatus.PROCESSING
         current.processing_started_at = now
+        current.processing_job_id = job.id
         current.updated_at = now
         self._ordered_session_repo.save(current)
         logger.info(
@@ -815,13 +821,62 @@ class StartAisleProcessingUseCase:
         except Exception:
             logger.warning("correlation inject failed aisle_id=%s", command.aisle_id, exc_info=True)
 
-        # Persist first (create_or_get for ordered session), then mark session PROCESSING,
-        # then spawn worker only when newly created or still needs launch.
-        job, created = self._launch_service.persist_attempt(
+        if sealed_session is not None:
+            # Ordered path: reserve SEALED→PROCESSING + unique job in one transaction,
+            # then launch worker only after commit.
+            if self._ordered_processing_reservation is None:
+                raise ProcessingRejectedUnsealedSessionError(
+                    "Ordered capture session processing reservation is not configured"
+                )
+            job_template = self._launch_service.build_attempt_job(
+                aisle=aisle,
+                payload=payload,
+                attempt_count=1,
+                retry_of_job_id=None,
+                provider_name=pipeline_key,
+                model_name=model_name,
+                prompt_key=prompt_key,
+                identification_mode=resolution.effective_mode,
+                identification_mode_source=resolution.source,
+                configuration_snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
+                execution_strategy=execution_strategy,
+                engine_params_json=engine_params_json,
+            )
+            reservation = self._ordered_processing_reservation.reserve(
+                job_template,
+                sealed_session,
+                now=job_template.started_at or job_template.created_at,
+            )
+            job = reservation.job
+            if reservation.created:
+                job = self._launch_service.launch_persisted_attempt(
+                    job,
+                    aisle,
+                    log_prefix="job.start_requested",
+                    retry_of_job_id=None,
+                )
+            else:
+                job = self._launch_service.ensure_worker_launched_if_needed(
+                    job,
+                    aisle,
+                    log_prefix="job.start_requested",
+                    retry_of_job_id=None,
+                )
+            return StartAisleProcessingResult(
+                job_id=job.id,
+                identification_mode=job.identification_mode.value,
+                identification_mode_source=job.identification_mode_source.value,
+                execution_strategy=job.execution_strategy.value,
+                configuration_snapshot_version=job.configuration_snapshot_version,
+            )
+
+        # Legacy (non-ordered) path: create and launch unchanged.
+        job = self._launch_service.create_and_launch_attempt(
             aisle=aisle,
             payload=payload,
             attempt_count=1,
             retry_of_job_id=None,
+            log_prefix="job.start_requested",
             provider_name=pipeline_key,
             model_name=model_name,
             prompt_key=prompt_key,
@@ -831,22 +886,6 @@ class StartAisleProcessingUseCase:
             execution_strategy=execution_strategy,
             engine_params_json=engine_params_json,
         )
-        if sealed_session is not None:
-            self._mark_ordered_session_processing(sealed_session, job)
-        if created:
-            job = self._launch_service.launch_persisted_attempt(
-                job,
-                aisle,
-                log_prefix="job.start_requested",
-                retry_of_job_id=None,
-            )
-        else:
-            job = self._launch_service.ensure_worker_launched_if_needed(
-                job,
-                aisle,
-                log_prefix="job.start_requested",
-                retry_of_job_id=None,
-            )
         return StartAisleProcessingResult(
             job_id=job.id,
             identification_mode=job.identification_mode.value,

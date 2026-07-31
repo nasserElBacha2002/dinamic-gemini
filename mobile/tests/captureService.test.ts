@@ -458,7 +458,7 @@ describe('CaptureService corrections', () => {
       { ...image, assetId: '20', mediaStoreNumericId: 20, dateAdded: 2000, uri: 'file://20.jpg', displayName: '20.jpg' },
     ];
 
-    let resolveProbes: Array<(v: { ok: true; checks: number }) => void> = [];
+    const resolveProbes: Array<(v: { ok: true; checks: number }) => void> = [];
     const prober: CaptureStabilityProber = {
       probe: jest.fn().mockImplementation(
         () =>

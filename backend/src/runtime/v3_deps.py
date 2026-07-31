@@ -179,6 +179,10 @@ def get_ordered_capture_session_repo():
     return get_app_container().get_ordered_capture_session_repo()
 
 
+def get_ordered_capture_processing_reservation():
+    return get_app_container().get_ordered_capture_processing_reservation()
+
+
 def get_aisle_location_repo():
     return get_app_container().get_aisle_location_repo()
 

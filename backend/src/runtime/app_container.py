@@ -276,6 +276,7 @@ class AppContainer:
         self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = None
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
         self._ordered_capture_session_repo = None
+        self._ordered_capture_processing_reservation = None
         self._aisle_location_repo = None
         self._aisle_location_label_repo = None
         self._code_scan_repo: CodeScanRepository | None = None
@@ -402,6 +403,7 @@ class AppContainer:
         self._capture_session_confirm_repo = None
         self._capture_session_group_repo = None
         self._ordered_capture_session_repo = None
+        self._ordered_capture_processing_reservation = None
         self._aisle_location_repo = None
         self._aisle_location_label_repo = None
         self._code_scan_repo = None
@@ -1107,6 +1109,42 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._ordered_capture_session_repo
+
+    def get_ordered_capture_processing_reservation(self):
+        """SEALED→PROCESSING + unique job reservation (SQL TX or memory lock)."""
+        if self._ordered_capture_processing_reservation is not None:
+            return self._ordered_capture_processing_reservation
+        from src.application.services.ordered_capture_processing_reservation import (
+            OrderedCaptureProcessingReservationService,
+        )
+        from src.infrastructure.persistence.memory_ordered_capture_processing_reservation_unit_of_work import (
+            build_memory_ordered_capture_processing_reservation_uow_factory,
+        )
+        from src.infrastructure.persistence.sql_ordered_capture_processing_reservation_unit_of_work import (
+            build_sql_ordered_capture_processing_reservation_uow_factory,
+        )
+        from src.infrastructure.repositories.memory_ordered_capture_session_repository import (
+            MemoryOrderedCaptureSessionRepository,
+        )
+
+        if self.is_sql_repository_backend():
+            uow_factory = build_sql_ordered_capture_processing_reservation_uow_factory(
+                self._get_v3_sql_client()
+            )
+        else:
+            session_repo = self.get_ordered_capture_session_repo()
+            if not isinstance(session_repo, MemoryOrderedCaptureSessionRepository):
+                raise RuntimeError(
+                    "Memory ordered-capture reservation requires MemoryOrderedCaptureSessionRepository"
+                )
+            uow_factory = build_memory_ordered_capture_processing_reservation_uow_factory(
+                job_repo=self.get_job_repo(),
+                session_repo=session_repo,
+            )
+        self._ordered_capture_processing_reservation = OrderedCaptureProcessingReservationService(
+            uow_factory=uow_factory
+        )
+        return self._ordered_capture_processing_reservation
 
     def get_aisle_location_repo(self):
         if self._aisle_location_repo is not None:

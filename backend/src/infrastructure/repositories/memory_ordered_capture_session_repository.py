@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Sequence
+from copy import deepcopy
+from datetime import datetime
 
 from src.application.errors import OrderedCaptureSessionConflictError
 from src.application.ports.ordered_capture_session_repository import (
@@ -46,11 +48,15 @@ class MemoryOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
                         "An open ordered capture session already exists for this aisle",
                         code="ORDERED_CAPTURE_OPEN_SESSION_EXISTS",
                     )
-            self._store[session.id] = session
+            self._store[session.id] = deepcopy(session)
 
     def get_by_id(self, session_id: str) -> OrderedCaptureSession | None:
         with self._lock:
-            return self._store.get(session_id)
+            row = self._store.get(session_id)
+            return deepcopy(row) if row is not None else None
+
+    def get_by_id_for_update(self, session_id: str) -> OrderedCaptureSession | None:
+        return self.get_by_id(session_id)
 
     def list_by_aisle(
         self,
@@ -63,11 +69,12 @@ class MemoryOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
             if statuses:
                 allowed = {str(x).upper() for x in statuses}
                 rows = [s for s in rows if s.status.value in allowed]
-            return sorted(rows, key=lambda s: s.created_at, reverse=True)
+            return [deepcopy(s) for s in sorted(rows, key=lambda s: s.created_at, reverse=True)]
 
     def get_open_or_uploading_for_aisle(self, aisle_id: str) -> OrderedCaptureSession | None:
         with self._lock:
-            return self._open_for_aisle_unlocked(aisle_id)
+            existing = self._open_for_aisle_unlocked(aisle_id)
+            return deepcopy(existing) if existing is not None else None
 
     def get_or_create_open_for_aisle(
         self, session: OrderedCaptureSession
@@ -75,6 +82,45 @@ class MemoryOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
         with self._lock:
             existing = self._open_for_aisle_unlocked(session.aisle_id)
             if existing is not None:
-                return existing
-            self._store[session.id] = session
-            return session
+                return deepcopy(existing)
+            self._store[session.id] = deepcopy(session)
+            return deepcopy(session)
+
+    def transition_sealed_to_processing(
+        self,
+        session_id: str,
+        *,
+        sequence_version: int,
+        job_id: str,
+        now: datetime,
+    ) -> OrderedCaptureSession | None:
+        with self._lock:
+            current = self._store.get(session_id)
+            if current is None:
+                return None
+            if (
+                current.status == OrderedCaptureSessionStatus.SEALED
+                and int(current.sequence_version) == int(sequence_version)
+            ):
+                current.status = OrderedCaptureSessionStatus.PROCESSING
+                current.processing_job_id = job_id
+                current.processing_started_at = now
+                current.updated_at = now
+                return deepcopy(current)
+            if (
+                current.status == OrderedCaptureSessionStatus.PROCESSING
+                and int(current.sequence_version) == int(sequence_version)
+                and (current.processing_job_id or "") == job_id
+            ):
+                return deepcopy(current)
+            if (
+                current.status == OrderedCaptureSessionStatus.PROCESSING
+                and int(current.sequence_version) == int(sequence_version)
+                and not (current.processing_job_id or "").strip()
+            ):
+                current.processing_job_id = job_id
+                if current.processing_started_at is None:
+                    current.processing_started_at = now
+                current.updated_at = now
+                return deepcopy(current)
+            return None
