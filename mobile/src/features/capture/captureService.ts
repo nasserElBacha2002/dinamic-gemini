@@ -545,8 +545,10 @@ export class CaptureService {
     for (const rejected of result.rejected) {
       this.logger.info('photo_ignored', { assetId: rejected.assetId, reason: rejected.reason });
     }
+    // Assign sequence_number at first persist (gallery order), before stability/prep.
+    // Multi-admit and single (direct) capture share this transactional path.
+    await this.repo.upsertAdmittedPhotosWithSequences(sessionId, result.admitted, 'detected');
     for (const image of result.admitted) {
-      await this.repo.upsertPhoto(sessionId, image, 'detected');
       await this.repo.updatePhotoStatus(sessionId, image.assetId, 'waiting_stability');
       this.scheduleValidation(sessionId, image);
     }

@@ -175,6 +175,18 @@ def get_capture_session_confirm_repo() -> CaptureSessionConfirmIdempotencyReposi
     return get_app_container().get_capture_session_confirm_repo()
 
 
+def get_ordered_capture_session_repo():
+    return get_app_container().get_ordered_capture_session_repo()
+
+
+def get_aisle_location_repo():
+    return get_app_container().get_aisle_location_repo()
+
+
+def get_aisle_location_label_repo():
+    return get_app_container().get_aisle_location_label_repo()
+
+
 def get_recompute_consolidated_counts_use_case():
     return get_app_container().get_recompute_consolidated_counts_use_case()
 

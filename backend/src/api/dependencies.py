@@ -162,6 +162,8 @@ from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
+    get_aisle_location_label_repo,
+    get_aisle_location_repo,
     get_aisle_repo,
     get_analytics_repo,
     get_capture_session_confirm_repo,
@@ -178,6 +180,7 @@ from src.runtime.v3_deps import (
     get_job_repo,
     get_metrics_calculator,
     get_mobile_preliminary_detection_repo,
+    get_ordered_capture_session_repo,
     get_position_repo,
     get_preliminary_detection_reconciliation_repo,
     get_product_record_repo,
@@ -301,6 +304,13 @@ def require_inventory_client_scope(
         reraise_if_mapped(e)
         raise
     return principal
+
+
+def get_access_principal(
+    user: AuthUser = Depends(get_current_admin),
+) -> AccessPrincipal:
+    """FastAPI dependency: AuthUser → AccessPrincipal (no inventory scope check)."""
+    return access_principal_from_auth_user(user)
 
 
 def get_inventory_access_policy(
@@ -723,6 +733,7 @@ def get_start_aisle_processing_use_case(
     supplier_prompt_config_repo: SupplierPromptConfigRepository = Depends(
         get_supplier_prompt_config_repo
     ),
+    ordered_session_repo=Depends(get_ordered_capture_session_repo),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
         inventory_repo=inventory_repo,
@@ -736,6 +747,7 @@ def get_start_aisle_processing_use_case(
         extraction_profile_repo=extraction_profile_repo,
         client_supplier_repo=client_supplier_repo,
         supplier_prompt_config_repo=supplier_prompt_config_repo,
+        ordered_session_repo=ordered_session_repo,
     )
 
 
@@ -784,6 +796,7 @@ def get_upload_aisle_assets_use_case(
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
     access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    ordered_session_repo=Depends(get_ordered_capture_session_repo),
 ) -> UploadAisleAssetsUseCase:
     from src.application.services.upload_request_limits import UploadRequestLimitPolicy
     from src.config import load_settings
@@ -796,6 +809,7 @@ def get_upload_aisle_assets_use_case(
         status_reconciler=status_reconciler,
         access_policy=access_policy,
         upload_policy=UploadRequestLimitPolicy.from_settings(load_settings()),
+        ordered_session_repo=ordered_session_repo,
     )
 
 
@@ -2292,5 +2306,173 @@ def get_materialize_capture_session_use_case(
         asset_repo=asset_repo,
         artifact_storage=artifact_storage,
         status_reconciler=status_reconciler,
+        clock=clock,
+    )
+
+
+def get_create_ordered_capture_session_use_case(
+    session_repo=Depends(get_ordered_capture_session_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.ordered_capture.manage_ordered_capture_session import (
+        CreateOrderedCaptureSessionUseCase,
+    )
+
+    return CreateOrderedCaptureSessionUseCase(
+        session_repo=session_repo,
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_get_ordered_capture_session_use_case(
+    session_repo=Depends(get_ordered_capture_session_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.ordered_capture.manage_ordered_capture_session import (
+        GetOrderedCaptureSessionUseCase,
+    )
+
+    return GetOrderedCaptureSessionUseCase(
+        session_repo=session_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_seal_ordered_capture_session_use_case(
+    session_repo=Depends(get_ordered_capture_session_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.ordered_capture.manage_ordered_capture_session import (
+        SealOrderedCaptureSessionUseCase,
+    )
+
+    return SealOrderedCaptureSessionUseCase(
+        session_repo=session_repo,
+        asset_repo=asset_repo,
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_create_aisle_location_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        CreateAisleLocationUseCase,
+    )
+
+    return CreateAisleLocationUseCase(
+        location_repo=location_repo,
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_list_aisle_locations_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        ListAisleLocationsUseCase,
+    )
+
+    return ListAisleLocationsUseCase(
+        location_repo=location_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_get_aisle_location_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        GetAisleLocationUseCase,
+    )
+
+    return GetAisleLocationUseCase(
+        location_repo=location_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_update_aisle_location_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        UpdateAisleLocationUseCase,
+    )
+
+    return UpdateAisleLocationUseCase(
+        location_repo=location_repo,
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_issue_aisle_location_label_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        IssueAisleLocationLabelUseCase,
+    )
+
+    return IssueAisleLocationLabelUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_list_aisle_location_labels_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        ListAisleLocationLabelsUseCase,
+    )
+
+    return ListAisleLocationLabelsUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_invalidate_aisle_location_label_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        InvalidateAisleLocationLabelUseCase,
+    )
+
+    return InvalidateAisleLocationLabelUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        access_policy=access_policy,
         clock=clock,
     )

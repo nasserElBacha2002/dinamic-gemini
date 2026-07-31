@@ -11,6 +11,7 @@ import AppShell from './layout/AppShell';
 import InventoriesList from './pages/InventoriesList';
 import InventoryDetail from './pages/InventoryDetail';
 import AislePositionsPage from './pages/AislePositionsPage';
+import AisleLocationsPage from './pages/AisleLocationsPage';
 import CompareManyRunsPage from './pages/analytics/CompareManyRunsPage';
 import AnalyticsCompareRedirect from './pages/analytics/AnalyticsCompareRedirect';
 import LegacyAisleCompareRedirect from './pages/analytics/LegacyAisleCompareRedirect';
@@ -49,6 +50,7 @@ function App() {
   const listEl = useMemo(() => <InventoriesList />, []);
   const detailEl = useMemo(() => <InventoryDetail />, []);
   const positionsEl = useMemo(() => <AislePositionsPage />, []);
+  const aisleLocationsEl = useMemo(() => <AisleLocationsPage />, []);
   const compareManyRunsEl = useMemo(() => <CompareManyRunsPage />, []);
   const analyticsCompareRedirectEl = useMemo(() => <AnalyticsCompareRedirect />, []);
   const legacyCompareRedirectEl = useMemo(() => <LegacyAisleCompareRedirect />, []);
@@ -109,6 +111,7 @@ function App() {
         <Route path={ROUTE_PATH.observabilidad} element={observabilityLegacyRedirectEl} />
         <Route path={ROUTE_PATH.inventoryDetail} element={detailEl} />
         <Route path={ROUTE_PATH.aislePositions} element={positionsEl} />
+        <Route path={ROUTE_PATH.aisleLocations} element={aisleLocationsEl} />
         <Route path={ROUTE_PATH.analyticsCompare} element={analyticsCompareRedirectEl} />
         <Route path={ROUTE_PATH.analyticsCompareMany} element={compareManyRunsEl} />
         <Route path={ROUTE_PATH.legacyAisleCompare} element={legacyCompareRedirectEl} />

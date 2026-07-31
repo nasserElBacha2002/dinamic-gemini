@@ -75,6 +75,10 @@ export interface UploadQueueOptions {
   readonly authoritativeSync?: {
     enqueuePhotoAfterUpload(photoId: string, backendAssetId: string): Promise<void>;
   } | null;
+  /** Phase 1 ordered capture — create backend session before uploads. */
+  readonly orderedCapture?: {
+    createSession(inventoryId: string, aisleId: string): Promise<{ readonly id: string }>;
+  } | null;
   /** Phase 6: persist explicit exclusion before remote delete (best-effort). */
   readonly authoritativeExclusion?: {
     recordExclusion(input: {
@@ -269,6 +273,8 @@ export class UploadQueue {
       this.logger.warn('upload_enqueue_missing_batch', { sessionId });
       return;
     }
+    // Defensive only: primary sequence assignment is at capture persist time.
+    await this.repo.assignMissingSequenceNumbers(sessionId);
     const clientFileId = await this.repo.ensureClientFileId(
       sessionId,
       photo.asset_id,
@@ -775,6 +781,30 @@ export class UploadQueue {
     return photo.upload_status === 'queued';
   }
 
+  /**
+   * Creates (or reuses) the backend ordered-capture session and persists its id locally.
+   * Returns null when ordered capture is disabled on the server.
+   */
+  private async ensureOrderedCaptureSession(session: CaptureSessionRow): Promise<string | null> {
+    if (session.backend_ordered_capture_session_id) {
+      return session.backend_ordered_capture_session_id;
+    }
+    const api = this.options.orderedCapture;
+    if (!api) {
+      return null;
+    }
+    try {
+      const created = await api.createSession(session.inventory_id, session.aisle_id);
+      await this.repo.setBackendOrderedCaptureSessionId(session.id, created.id);
+      return created.id;
+    } catch (e) {
+      if (e instanceof ApiError && (e.code === 'STRATEGY_DISABLED' || e.status === 422)) {
+        return null;
+      }
+      throw e;
+    }
+  }
+
   private scheduleNativeDrain(_sessionId?: string): void {
     if (this.flags?.backgroundUploadWorker !== true || !this.options.backgroundWork) {
       return;
@@ -1075,6 +1105,7 @@ export class UploadQueue {
 
       const preparedFiles: { uri: string; name: string; mimeType: string }[] = [];
       const clientFileIds: string[] = [];
+      const sequenceNumbers: number[] = [];
       const photoRows: CapturePhotoRow[] = [];
       const attemptId = createId();
       const abortController = new AbortController();
@@ -1085,6 +1116,15 @@ export class UploadQueue {
       let totalPreparedBytes = 0;
 
       try {
+        // Defensive only: fill legacy NULL sequences; never recalculates existing.
+        await this.repo.assignMissingSequenceNumbers(session.id);
+        const orderedCaptureSessionId = await this.ensureOrderedCaptureSession(session);
+        // Re-read session in case backend id was just persisted.
+        const sessionFresh =
+          (orderedCaptureSessionId
+            ? await this.repo.getSession(session.id)
+            : null) ?? session;
+
         for (const photoId of photoIds) {
           const photo = await this.repo.getPhotoById(photoId);
           if (!photo || !photo.client_file_id || !(photo.upload_size != null && photo.upload_size > 0)) {
@@ -1094,6 +1134,13 @@ export class UploadQueue {
             photo.upload_status === 'excluded' ||
             this.cancelledWhileUploading.has(photoId)
           ) {
+            continue;
+          }
+          if (photo.sequence_number == null) {
+            this.logger.warn('upload_missing_sequence_number', {
+              sessionId: session.id,
+              photoId,
+            });
             continue;
           }
           const uri = photo.local_transform_uri || photo.uri;
@@ -1129,6 +1176,7 @@ export class UploadQueue {
             mimeType,
           });
           clientFileIds.push(photo.client_file_id);
+          sequenceNumbers.push(photo.sequence_number);
           photoRows.push(photo);
           totalOriginalBytes += photo.original_size ?? photo.size ?? 0;
           totalPreparedBytes += photo.upload_size ?? 0;
@@ -1205,12 +1253,20 @@ export class UploadQueue {
         });
 
         const uploadStartedAt = this.clock.nowMs();
+        const orderedSessionId =
+          orderedCaptureSessionId ?? sessionFresh.backend_ordered_capture_session_id ?? null;
         const response = await this.assetsApi.uploadBatch({
-          inventoryId: session.inventory_id,
-          aisleId: session.aisle_id,
-          uploadBatchId: session.upload_batch_id!,
+          inventoryId: sessionFresh.inventory_id,
+          aisleId: sessionFresh.aisle_id,
+          uploadBatchId: sessionFresh.upload_batch_id!,
           clientFileIds,
           files: preparedFiles,
+          ...(orderedSessionId
+            ? {
+                orderedCaptureSessionId: orderedSessionId,
+                sequenceNumbers,
+              }
+            : {}),
           ...(this.flags?.uploadAbortEnabled !== false ? { signal: abortController.signal } : {}),
         });
         const uploadMs = Math.max(0, Math.round(this.clock.nowMs() - uploadStartedAt));

@@ -88,6 +88,9 @@ class AisleSourceAssetMaterializer:
         capture_session_item_id: str | None = None,
         upload_batch_id: str | None = None,
         upload_client_file_id: str | None = None,
+        ordered_capture_session_id: str | None = None,
+        sequence_number: int | None = None,
+        sequence_source: str | None = None,
     ) -> tuple[SourceAsset, str]:
         """Write bytes to final storage, save ``SourceAsset``, return (entity, rollback_delete_key).
 
@@ -135,6 +138,11 @@ class AisleSourceAssetMaterializer:
             storage_bucket or "",
             delete_key,
         )
+        session_id = ordered_capture_session_id or uploaded.ordered_capture_session_id
+        seq = sequence_number if sequence_number is not None else uploaded.sequence_number
+        seq_source = sequence_source
+        if session_id and seq is not None and not seq_source:
+            seq_source = "CLIENT_ASSIGNED"
         asset = SourceAsset(
             id=asset_id,
             aisle_id=aisle_id,
@@ -153,6 +161,9 @@ class AisleSourceAssetMaterializer:
             capture_session_item_id=capture_session_item_id,
             upload_batch_id=upload_batch_id or uploaded.upload_batch_id,
             upload_client_file_id=upload_client_file_id or uploaded.client_file_id,
+            ordered_capture_session_id=session_id,
+            sequence_number=seq,
+            sequence_source=seq_source,
         )
         try:
             self._asset_repo.save(asset)

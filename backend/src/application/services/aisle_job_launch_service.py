@@ -29,6 +29,35 @@ from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFIL
 logger = logging.getLogger(__name__)
 
 
+def _ordered_session_pin_from_payload(
+    payload: dict,
+) -> tuple[str | None, int | None]:
+    session_raw = payload.get("ordered_capture_session_id")
+    version_raw = payload.get("sequence_version")
+    session_id = str(session_raw).strip() if session_raw is not None else ""
+    if not session_id or version_raw is None:
+        return None, None
+    try:
+        version = int(version_raw)
+    except (TypeError, ValueError):
+        return None, None
+    if version < 1:
+        return None, None
+    return session_id, version
+
+
+def job_needs_worker_spawn(job: Job) -> bool:
+    """True when an existing job still needs a worker process (idempotent relaunch)."""
+    if (job.execution_id or "").strip():
+        return False
+    if job.status == JobStatus.STARTING:
+        return True
+    return (
+        job.status == JobStatus.FAILED
+        and (job.failure_code or "") == "WORKER_LAUNCH_FAILED"
+    )
+
+
 @dataclass
 class AisleJobLaunchService:
     aisle_repo: AisleRepository
@@ -37,14 +66,13 @@ class AisleJobLaunchService:
     clock: Clock
     status_reconciler: InventoryStatusReconciler
 
-    def create_and_launch_attempt(
+    def persist_attempt(
         self,
         *,
         aisle: Aisle,
         payload: ProcessAislePayload,
         attempt_count: int,
         retry_of_job_id: str | None = None,
-        log_prefix: str = "job.start_requested",
         provider_name: str,
         model_name: str | None,
         prompt_key: str,
@@ -57,7 +85,8 @@ class AisleJobLaunchService:
             AisleIdentificationExecutionStrategy.INTERNAL_OCR
         ),
         engine_params_json: dict | None = None,
-    ) -> Job:
+    ) -> tuple[Job, bool]:
+        """Create the job row (or return existing ordered-session pin). Returns (job, created)."""
         now = self.clock.now()
         payload_dict = dict(payload)
         try:
@@ -77,6 +106,8 @@ class AisleJobLaunchService:
                 )
         except Exception:
             logger.warning("launch correlation ensure failed aisle_id=%s", aisle.id, exc_info=True)
+
+        ordered_session_id, sequence_version = _ordered_session_pin_from_payload(payload_dict)
         job = Job(
             id=str(uuid.uuid4()),
             target_type="aisle",
@@ -106,22 +137,43 @@ class AisleJobLaunchService:
                 configuration_snapshot_version or CONFIGURATION_SNAPSHOT_VERSION
             ),
             execution_strategy=execution_strategy,
+            ordered_capture_session_id=ordered_session_id,
+            sequence_version=sequence_version,
         )
-        self.job_repo.save(job)
-        try:
-            from src.observability.metrics.instruments import JOBS_CREATED_TOTAL, record_job_outcome
-            from src.observability.metrics.registry import get_metrics_registry
 
-            get_metrics_registry().inc(
-                JOBS_CREATED_TOTAL,
-                "Jobs created",
-                {"job_type": job.job_type or "process_aisle", "outcome": "created"},
-            )
-            if retry_of_job_id:
-                record_job_outcome(job_type=job.job_type or "process_aisle", outcome="retried")
-        except Exception:
-            logger.warning("job create metrics failed job_id=%s", job.id, exc_info=True)
+        if ordered_session_id is not None and sequence_version is not None:
+            job, created = self.job_repo.create_or_get_for_ordered_session(job)
+        else:
+            self.job_repo.save(job)
+            created = True
 
+        if created:
+            try:
+                from src.observability.metrics.instruments import JOBS_CREATED_TOTAL, record_job_outcome
+                from src.observability.metrics.registry import get_metrics_registry
+
+                get_metrics_registry().inc(
+                    JOBS_CREATED_TOTAL,
+                    "Jobs created",
+                    {"job_type": job.job_type or "process_aisle", "outcome": "created"},
+                )
+                if retry_of_job_id:
+                    record_job_outcome(job_type=job.job_type or "process_aisle", outcome="retried")
+            except Exception:
+                logger.warning("job create metrics failed job_id=%s", job.id, exc_info=True)
+
+        return job, created
+
+    def launch_persisted_attempt(
+        self,
+        job: Job,
+        aisle: Aisle,
+        *,
+        log_prefix: str = "job.start_requested",
+        retry_of_job_id: str | None = None,
+    ) -> Job:
+        """Mark aisle queued and spawn the worker for an already-persisted job."""
+        now = self.clock.now()
         aisle.mark_queued(now)
         self.aisle_repo.save(aisle)
         self.status_reconciler.reconcile(aisle.inventory_id)
@@ -148,6 +200,11 @@ class AisleJobLaunchService:
         try:
             execution_id = self.worker_launch_service.launch(job.id)
             job.execution_id = execution_id
+            job.status = JobStatus.STARTING
+            job.error_message = None
+            job.failure_code = None
+            job.failure_message = None
+            job.finished_at = None
             job.current_substep = "spawn_succeeded"
             job.current_step_started_at = now
             job.updated_at = now
@@ -187,6 +244,91 @@ class AisleJobLaunchService:
                 launch_error,
             )
             raise WorkerLaunchFailedError(launch_error, job_id=job.id) from exc
+
+    def ensure_worker_launched_if_needed(
+        self,
+        job: Job,
+        aisle: Aisle,
+        *,
+        log_prefix: str = "job.start_requested",
+        retry_of_job_id: str | None = None,
+    ) -> Job:
+        """Idempotent: return job as-is unless it still needs a worker spawn."""
+        if not job_needs_worker_spawn(job):
+            return job
+        if (
+            job.status == JobStatus.FAILED
+            and (job.failure_code or "") == "WORKER_LAUNCH_FAILED"
+        ):
+            # Reset spawn bookkeeping before a fresh launch attempt.
+            now = self.clock.now()
+            job.status = JobStatus.STARTING
+            job.error_message = None
+            job.failure_code = None
+            job.failure_message = None
+            job.finished_at = None
+            job.updated_at = now
+            job.started_at = now
+            job.current_stage = "worker_launch"
+            job.current_substep = "spawn_requested"
+            job.current_step_started_at = now
+            job.execution_id = None
+            self.job_repo.save(job)
+        return self.launch_persisted_attempt(
+            job,
+            aisle,
+            log_prefix=log_prefix,
+            retry_of_job_id=retry_of_job_id,
+        )
+
+    def create_and_launch_attempt(
+        self,
+        *,
+        aisle: Aisle,
+        payload: ProcessAislePayload,
+        attempt_count: int,
+        retry_of_job_id: str | None = None,
+        log_prefix: str = "job.start_requested",
+        provider_name: str,
+        model_name: str | None,
+        prompt_key: str,
+        identification_mode: AisleIdentificationMode = AisleIdentificationMode.INTERNAL_OCR,
+        identification_mode_source: AisleIdentificationModeSource = (
+            AisleIdentificationModeSource.SYSTEM_DEFAULT
+        ),
+        configuration_snapshot_version: int = CONFIGURATION_SNAPSHOT_VERSION,
+        execution_strategy: AisleIdentificationExecutionStrategy = (
+            AisleIdentificationExecutionStrategy.INTERNAL_OCR
+        ),
+        engine_params_json: dict | None = None,
+    ) -> Job:
+        job, created = self.persist_attempt(
+            aisle=aisle,
+            payload=payload,
+            attempt_count=attempt_count,
+            retry_of_job_id=retry_of_job_id,
+            provider_name=provider_name,
+            model_name=model_name,
+            prompt_key=prompt_key,
+            identification_mode=identification_mode,
+            identification_mode_source=identification_mode_source,
+            configuration_snapshot_version=configuration_snapshot_version,
+            execution_strategy=execution_strategy,
+            engine_params_json=engine_params_json,
+        )
+        if not created:
+            return self.ensure_worker_launched_if_needed(
+                job,
+                aisle,
+                log_prefix=log_prefix,
+                retry_of_job_id=retry_of_job_id,
+            )
+        return self.launch_persisted_attempt(
+            job,
+            aisle,
+            log_prefix=log_prefix,
+            retry_of_job_id=retry_of_job_id,
+        )
 
     def relaunch_failed_worker(self, job: Job, *, idempotency_key: str) -> str:
         """Re-spawn a worker for a child that failed with WORKER_LAUNCH_FAILED (same job id)."""

@@ -16,6 +16,7 @@ module.exports = {
     '<rootDir>/tests/aisleCreationRules.test.ts',
     '<rootDir>/tests/mediaStoreAccessMediaLocation.test.ts',
     '<rootDir>/tests/uploadQueuePhase1Corrections.test.ts',
+    '<rootDir>/tests/orderedCapturePhase1.test.ts',
     '<rootDir>/tests/localCodeScanStrategy.test.ts',
     '<rootDir>/tests/preliminaryDetectionSyncService.test.ts',
     '<rootDir>/tests/preliminarySyncDoesNotBlockProcess.test.ts',

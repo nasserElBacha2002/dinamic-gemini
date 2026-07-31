@@ -112,7 +112,75 @@ class MemoryJobRepository(JobRepository):
                             f"duplicate retry_of_job_id={parent} "
                             f"(existing={existing.id}, new={job.id})"
                         )
+            session_id = (job.ordered_capture_session_id or "").strip() or None
+            seq_ver = job.sequence_version
+            if session_id and seq_ver is not None:
+                for existing in self._store.values():
+                    if existing.id == job.id:
+                        continue
+                    existing_session = (existing.ordered_capture_session_id or "").strip() or None
+                    if (
+                        existing_session == session_id
+                        and existing.sequence_version is not None
+                        and int(existing.sequence_version) == int(seq_ver)
+                    ):
+                        raise ValueError(
+                            "UQ_inventory_jobs_ordered_session_version "
+                            f"duplicate ordered_capture_session_id={session_id} "
+                            f"sequence_version={seq_ver} "
+                            f"(existing={existing.id}, new={job.id})"
+                        )
             self._store[job.id] = job
+
+    def get_by_ordered_capture_session(
+        self, ordered_capture_session_id: str, *, sequence_version: int
+    ) -> Job | None:
+        session_id = (ordered_capture_session_id or "").strip()
+        if not session_id:
+            return None
+        version = int(sequence_version)
+        with self._lock:
+            for job in self._store.values():
+                existing_session = (job.ordered_capture_session_id or "").strip() or None
+                if (
+                    existing_session == session_id
+                    and job.sequence_version is not None
+                    and int(job.sequence_version) == version
+                ):
+                    return job
+        return None
+
+    def create_or_get_for_ordered_session(self, job: Job) -> tuple[Job, bool]:
+        session_id = (job.ordered_capture_session_id or "").strip()
+        if not session_id or job.sequence_version is None:
+            raise ValueError(
+                "create_or_get_for_ordered_session requires "
+                "ordered_capture_session_id and sequence_version"
+            )
+        job.ordered_capture_session_id = session_id
+        job.sequence_version = int(job.sequence_version)
+        with self._lock:
+            for existing in self._store.values():
+                existing_session = (existing.ordered_capture_session_id or "").strip() or None
+                if (
+                    existing_session == session_id
+                    and existing.sequence_version is not None
+                    and int(existing.sequence_version) == int(job.sequence_version)
+                ):
+                    return existing, False
+            parent = (job.retry_of_job_id or "").strip()
+            if parent:
+                for existing in self._store.values():
+                    if (
+                        existing.id != job.id
+                        and (existing.retry_of_job_id or "").strip() == parent
+                    ):
+                        raise ValueError(
+                            f"duplicate retry_of_job_id={parent} "
+                            f"(existing={existing.id}, new={job.id})"
+                        )
+            self._store[job.id] = job
+            return job, True
 
     def merge_result_json(self, job_id: str, patch: dict) -> Job | None:
         with self._lock:

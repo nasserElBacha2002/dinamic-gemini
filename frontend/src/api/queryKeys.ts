@@ -68,6 +68,16 @@ export const queryKeys = {
     /** Source assets (uploaded photos/videos) for one aisle. */
     aisleSourceAssets: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'source-assets', aisleId] as const,
+    /** Physical aisle locations (positioning labels — not CV positions). */
+    aisleLocations: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'locations', aisleId] as const,
+    aisleLocationsList: (
+      inventoryId: string,
+      aisleId: string,
+      params: Record<string, string | number>
+    ) => [...queryKeys.inventories.aisleLocations(inventoryId, aisleId), params] as const,
+    aisleLocationLabels: (inventoryId: string, locationId: string) =>
+      [...queryKeys.inventories.all, 'locations', inventoryId, locationId, 'labels'] as const,
     aisleCodeScans: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'code-scans', aisleId] as const,
     aisleCodeScanSummary: (inventoryId: string, aisleId: string) =>

@@ -555,3 +555,55 @@ class AuthoritativeSessionNotReadyError(Exception):
     def __init__(self, message: str, *, reasons: tuple[str, ...] = ()) -> None:
         super().__init__(message)
         self.reasons = reasons
+
+
+# --- Phase 1 positioning foundation (ordered capture + aisle locations) ---
+
+
+class OrderedCaptureSessionNotFoundError(Exception):
+    def __init__(self, session_id: str) -> None:
+        self.session_id = session_id
+        super().__init__(f"Ordered capture session not found: {session_id}")
+
+
+class OrderedCaptureSessionConflictError(Exception):
+    def __init__(self, message: str, *, code: str = "ORDERED_CAPTURE_CONFLICT") -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class OrderedCaptureSealRejectedError(Exception):
+    def __init__(self, message: str, *, reasons: list[str] | None = None) -> None:
+        self.reasons = list(reasons or [])
+        self.code = "CAPTURE_SESSION_SEAL_REJECTED"
+        super().__init__(message)
+
+
+class ProcessingRejectedUnsealedSessionError(Exception):
+    def __init__(self, message: str) -> None:
+        self.code = "PROCESSING_REJECTED_UNSEALED_SESSION"
+        super().__init__(message)
+
+
+class AisleLocationNotFoundError(Exception):
+    def __init__(self, location_id: str) -> None:
+        self.location_id = location_id
+        super().__init__(f"Aisle location not found: {location_id}")
+
+
+class AisleLocationConflictError(Exception):
+    def __init__(self, message: str, *, code: str = "AISLE_LOCATION_CONFLICT") -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class AisleLocationLabelNotFoundError(Exception):
+    def __init__(self, label_id: str) -> None:
+        self.label_id = label_id
+        super().__init__(f"Aisle location label not found: {label_id}")
+
+
+class AisleLocationLabelConflictError(Exception):
+    def __init__(self, message: str, *, code: str = "AISLE_LOCATION_LABEL_CONFLICT") -> None:
+        self.code = code
+        super().__init__(message)

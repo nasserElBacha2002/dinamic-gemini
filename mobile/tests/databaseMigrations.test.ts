@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -97,6 +97,14 @@ describe('SQLite migrations', () => {
     expect(v18?.name).toBe('offline_operations_claim_and_payload_hash');
     expect(v18?.sql).toContain('payload_hash');
     expect(v18?.sql).toContain('lease_expires_at');
+  });
+
+  it('adds v19 ordered capture sequence_number and backend session id', () => {
+    const v19 = MIGRATIONS.find((m) => m.version === 19);
+    expect(v19?.name).toBe('ordered_capture_sequence');
+    expect(v19?.sql).toContain('ALTER TABLE capture_photos ADD COLUMN sequence_number');
+    expect(v19?.sql).toContain('backend_ordered_capture_session_id');
+    expect(v19?.sql).toContain('idx_capture_photos_session_sequence');
   });
 });
 

@@ -1,5 +1,6 @@
 import type { CompositeCursor } from '../../core/compositeCursor';
 import { EMPTY_CURSOR } from '../../core/compositeCursor';
+import { nextSequenceAssignments, sortByGalleryOrder } from '../../core/captureSequence';
 import {
   CAPTURE_EXCLUSIVE_SESSION_STATUSES,
   OPEN_CAPTURE_SESSION_STATUSES,
@@ -261,15 +262,25 @@ export class CaptureRepository {
     );
   }
 
-  async upsertPhoto(sessionId: string, image: GalleryImage, status: CapturePhotoStatus, rejectionReason: string | null = null): Promise<void> {
+  /**
+   * Low-level photo upsert. Prefer {@link upsertAdmittedPhotosWithSequences} so
+   * sequence_number is assigned at first persist (not at upload time).
+   */
+  async upsertPhoto(
+    sessionId: string,
+    image: GalleryImage,
+    status: CapturePhotoStatus,
+    rejectionReason: string | null = null,
+    sequenceNumber: number | null = null,
+  ): Promise<void> {
     const now = new Date().toISOString();
     await this.db.runAsync(
       `INSERT INTO capture_photos (
         id, capture_session_id, asset_id, media_store_numeric_id, uri, display_name, mime_type,
         size, width, height, date_added, date_modified, bucket_id, relative_path, status,
         rejection_reason, stability_checks, stability_error, detected_at, stable_at, excluded_at,
-        upload_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_queued', ?, ?)
+        upload_status, sequence_number, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_queued', ?, ?, ?)
       ON CONFLICT(capture_session_id, asset_id) DO UPDATE SET
         uri = excluded.uri,
         display_name = excluded.display_name,
@@ -282,6 +293,7 @@ export class CaptureRepository {
         rejection_reason = excluded.rejection_reason,
         stable_at = CASE WHEN excluded.status = 'stable' THEN excluded.updated_at ELSE capture_photos.stable_at END,
         excluded_at = CASE WHEN excluded.status = 'excluded' THEN excluded.updated_at ELSE capture_photos.excluded_at END,
+        sequence_number = COALESCE(capture_photos.sequence_number, excluded.sequence_number),
         updated_at = excluded.updated_at;`,
       `${sessionId}:${image.assetId}`,
       sessionId,
@@ -304,9 +316,61 @@ export class CaptureRepository {
       now,
       status === 'stable' ? now : null,
       status === 'excluded' ? now : null,
+      sequenceNumber,
       now,
       now,
     );
+  }
+
+  /**
+   * Primary sequence assignment path: order the full selection by gallery contract,
+   * reserve/assign sequence_number transactionally, then persist. Call before prep.
+   * Existing sequence_number values are never recalculated.
+   */
+  async upsertAdmittedPhotosWithSequences(
+    sessionId: string,
+    images: readonly GalleryImage[],
+    status: CapturePhotoStatus = 'detected',
+  ): Promise<void> {
+    if (images.length === 0) {
+      return;
+    }
+    const ordered = sortByGalleryOrder(images);
+    await this.db.execAsync('BEGIN IMMEDIATE;');
+    try {
+      const maxRow = await this.db.getFirstAsync<{ m: number | null }>(
+        `SELECT MAX(sequence_number) AS m FROM capture_photos WHERE capture_session_id = ?;`,
+        sessionId,
+      );
+      let next = maxRow?.m ?? 0;
+      for (const image of ordered) {
+        const existing = await this.getPhoto(sessionId, image.assetId);
+        let sequenceNumber = existing?.sequence_number ?? null;
+        if (sequenceNumber == null) {
+          next += 1;
+          sequenceNumber = next;
+        } else if (sequenceNumber > next) {
+          next = sequenceNumber;
+        }
+        await this.upsertPhoto(sessionId, image, status, null, sequenceNumber);
+      }
+      await this.db.execAsync('COMMIT;');
+    } catch (e) {
+      await this.db.execAsync('ROLLBACK;');
+      throw e;
+    }
+  }
+
+  /**
+   * Direct capture: transactionally reserve the next sequence and persist the photo.
+   * Equivalent to {@link upsertAdmittedPhotosWithSequences} for a single image.
+   */
+  async upsertCapturedPhotoWithSequence(
+    sessionId: string,
+    image: GalleryImage,
+    status: CapturePhotoStatus = 'detected',
+  ): Promise<void> {
+    await this.upsertAdmittedPhotosWithSequences(sessionId, [image], status);
   }
 
   async updatePhotoStatus(sessionId: string, assetId: string, status: CapturePhotoStatus, error: string | null = null): Promise<void> {
@@ -356,6 +420,53 @@ export class CaptureRepository {
     );
     const updated = await this.getPhoto(sessionId, assetId);
     return updated?.client_file_id ?? clientFileId;
+  }
+
+  /**
+   * Defensive recovery for legacy rows with NULL sequence_number.
+   * Primary assignment is {@link upsertAdmittedPhotosWithSequences} at first persist.
+   * Existing values are never recalculated (survives reopen / retry).
+   */
+  async assignMissingSequenceNumbers(sessionId: string): Promise<void> {
+    await this.db.execAsync('BEGIN IMMEDIATE;');
+    try {
+      const photos = await this.db.getAllAsync<Pick<CapturePhotoRow, 'id' | 'sequence_number'>>(
+        `SELECT id, sequence_number FROM capture_photos
+         WHERE capture_session_id = ?
+           AND status = 'stable'
+           AND upload_status NOT IN ('excluded', 'remote_deleted')
+         ORDER BY date_added ASC, asset_id ASC;`,
+        sessionId,
+      );
+      const assignments = nextSequenceAssignments(photos);
+      const now = new Date().toISOString();
+      for (const a of assignments) {
+        await this.db.runAsync(
+          `UPDATE capture_photos
+           SET sequence_number = ?, updated_at = ?
+           WHERE id = ? AND sequence_number IS NULL;`,
+          a.sequenceNumber,
+          now,
+          a.id,
+        );
+      }
+      await this.db.execAsync('COMMIT;');
+    } catch (e) {
+      await this.db.execAsync('ROLLBACK;');
+      throw e;
+    }
+  }
+
+  async setBackendOrderedCaptureSessionId(sessionId: string, orderedCaptureSessionId: string): Promise<void> {
+    await this.db.runAsync(
+      `UPDATE capture_sessions
+       SET backend_ordered_capture_session_id = COALESCE(backend_ordered_capture_session_id, ?),
+           updated_at = ?
+       WHERE id = ?;`,
+      orderedCaptureSessionId,
+      new Date().toISOString(),
+      sessionId,
+    );
   }
 
   async setPhotoUploadStatus(

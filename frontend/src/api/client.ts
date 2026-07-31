@@ -31,6 +31,15 @@ export {
   startAisleProcessing,
   updateAisle,
 } from './aislesApi';
+export type { AisleLocationsListQuery } from './aisleLocationsApi';
+export {
+  createAisleLocation,
+  invalidateAisleLocationLabel,
+  issueAisleLocationLabel,
+  listAisleLocationLabels,
+  listAisleLocations,
+  updateAisleLocation,
+} from './aisleLocationsApi';
 export type { AislePositionsListQuery, JobImageResultsQuery } from './jobsApi';
 export {
   cancelAisleJob,

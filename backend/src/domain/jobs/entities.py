@@ -99,3 +99,7 @@ class Job:
     lease_fencing_token: int = 0
     lease_expires_at: datetime | None = None
     lease_acquired_at: datetime | None = None
+    #: Ordered capture session pin (Phase 1); NULL for legacy process jobs.
+    ordered_capture_session_id: str | None = None
+    #: Sequence version sealed when this job was reserved; pairs with session id.
+    sequence_version: int | None = None

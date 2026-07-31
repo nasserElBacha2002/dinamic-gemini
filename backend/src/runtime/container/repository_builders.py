@@ -571,3 +571,84 @@ def build_preliminary_detection_reconciliation_repository(
         build_sql=_sql,
         build_memory=_memory,
     )
+
+
+def build_ordered_capture_session_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    """Phase 1 positioning: ordered capture sessions (mobile sequence spine)."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_ordered_capture_session_repository import (
+            SqlOrderedCaptureSessionRepository,
+        )
+
+        return SqlOrderedCaptureSessionRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_ordered_capture_session_repository import (
+            MemoryOrderedCaptureSessionRepository,
+        )
+
+        return MemoryOrderedCaptureSessionRepository()
+
+    return build_repo(
+        backend_info_name="OrderedCaptureSessionRepository",
+        sql_error_subject="ordered_capture_session repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_aisle_location_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    """Phase 1 positioning: physical aisle locations."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_aisle_location_repository import (
+            SqlAisleLocationRepository,
+        )
+
+        return SqlAisleLocationRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_aisle_location_repository import (
+            MemoryAisleLocationRepository,
+        )
+
+        return MemoryAisleLocationRepository()
+
+    return build_repo(
+        backend_info_name="AisleLocationRepository",
+        sql_error_subject="aisle_location repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_aisle_location_label_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    """Phase 1 positioning: aisle location labels."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_aisle_location_repository import (
+            SqlAisleLocationLabelRepository,
+        )
+
+        return SqlAisleLocationLabelRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_aisle_location_repository import (
+            MemoryAisleLocationLabelRepository,
+        )
+
+        return MemoryAisleLocationLabelRepository()
+
+    return build_repo(
+        backend_info_name="AisleLocationLabelRepository",
+        sql_error_subject="aisle_location_label repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )

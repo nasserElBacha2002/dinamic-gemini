@@ -71,6 +71,7 @@ function session(id: string, overrides: Partial<CaptureSessionRow> = {}): Captur
     last_upload_error: null,
     last_processing_error: null,
     preparation_processing_mode: 'UNKNOWN',
+    backend_ordered_capture_session_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,
@@ -107,6 +108,7 @@ function photo(
     stable_at: new Date().toISOString(),
     excluded_at: null,
     client_file_id: `cf-${id}`,
+    sequence_number: 1,
     backend_asset_id: null,
     upload_status: 'queued',
     upload_progress: 0,
@@ -226,6 +228,16 @@ describe('UploadQueue phase1 corrections', () => {
       updateSessionUploadMeta: jest.fn(async () => undefined),
       listStableNotQueued: jest.fn(async () => []),
       ensureClientFileId: jest.fn(async (_s: string, _a: string, id: string) => id),
+      assignMissingSequenceNumbers: jest.fn(async () => undefined),
+      setBackendOrderedCaptureSessionId: jest.fn(async (sessionId: string, orderedId: string) => {
+        const s = sessions.get(sessionId);
+        if (s) {
+          sessions.set(sessionId, {
+            ...s,
+            backend_ordered_capture_session_id: s.backend_ordered_capture_session_id ?? orderedId,
+          });
+        }
+      }),
     };
 
     let activeUploads = 0;

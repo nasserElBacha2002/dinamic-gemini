@@ -14,7 +14,7 @@ import {
   sortDataTableRows,
 } from '../../../components/ui';
 import { useTableState } from '../../../hooks';
-import { pathToAisleObservability, pathToClientSupplier } from '../../../constants/appRoutes';
+import { pathToAisleObservability, pathToAisleLocations, pathToClientSupplier } from '../../../constants/appRoutes';
 import { pathToAislePositions } from '../../../utils/resultRoutes';
 import { computeProcessAisleMenuState, type AisleInventoryTableRow, type ProcessAisleMenuContext } from '../adapters';
 
@@ -84,6 +84,11 @@ function buildAisleRowActions(params: {
       label: t('aisle.action_observability_view'),
       onClick: () =>
         navigate(pathToAisleObservability(inventoryId, p.id, row.action.observabilityInitialRunId)),
+    },
+    {
+      id: 'locations',
+      label: t('aisle_locations.action_manage'),
+      onClick: () => navigate(pathToAisleLocations(inventoryId, p.id)),
     },
     {
       id: 'process',

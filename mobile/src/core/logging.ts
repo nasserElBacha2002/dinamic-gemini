@@ -23,6 +23,7 @@ export type LogEvent =
   | 'upload_limits_refreshed'
   | 'upload_limits_fallback'
   | 'upload_enqueue_missing_batch'
+  | 'upload_missing_sequence_number'
   | 'error'
   | 'job_started'
   | 'job_status_changed'

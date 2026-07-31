@@ -3,7 +3,7 @@ import { mapProcessingPersistence, toProcessingState } from '../../core/processi
 import { normalizePreparationProcessingMode } from '../../core/imagePreparationPolicy';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
-import type { CapturePhotoRow } from '../../database/schema/captureSchema';
+import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import {
   createMonotonicClock,
@@ -26,6 +26,7 @@ import type { ConnectivityService } from '../../services/connectivity/connectivi
 import { createId } from '../../shared/createId';
 import type { UploadQueue } from '../upload/uploadQueue';
 import type { AisleAssetsApi } from '../upload/aisleAssetsApi';
+import type { OrderedCaptureApi } from '../upload/orderedCaptureApi';
 import type { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { computeProcessingReadiness, type ProcessingReadiness } from './processingReadiness';
 import {
@@ -92,6 +93,7 @@ export class ProcessingService {
     private readonly logger: Logger,
     private readonly observability: ProcessingObservability | null = null,
     private readonly authoritativeGate: ProcessingAuthoritativeGate | null = null,
+    private readonly orderedCapture: OrderedCaptureApi | null = null,
   ) {}
 
   async readiness(sessionId: string): Promise<ProcessingReadiness> {
@@ -162,6 +164,48 @@ export class ProcessingService {
       };
     }
     return { ready: true, reason: null };
+  }
+
+  /**
+   * Seal the backend ordered-capture session before POST /process.
+   * No-op when no ordered session was created for this capture.
+   */
+  private async sealOrderedCaptureBeforeProcess(
+    session: CaptureSessionRow,
+  ): Promise<{ ok: boolean; reason: string | null }> {
+    const orderedId = session.backend_ordered_capture_session_id;
+    if (!orderedId || !this.orderedCapture) {
+      return { ok: true, reason: null };
+    }
+    const photos = await this.repo.listPhotos(session.id);
+    const expectedAssetCount = photos.filter(
+      (p) => p.upload_status === 'uploaded' && p.sequence_number != null,
+    ).length;
+    try {
+      await this.orderedCapture.sealSession(orderedId, {
+        expected_asset_count: expectedAssetCount,
+        sequence_version: 1,
+      });
+      return { ok: true, reason: null };
+    } catch (e) {
+      if (e instanceof ApiError && (e.code === 'STRATEGY_DISABLED' || e.status === 422)) {
+        // Already sealed or feature disabled — continue to process when safe.
+        const detail = (e.message || '').toLowerCase();
+        if (e.code === 'STRATEGY_DISABLED') {
+          return { ok: true, reason: null };
+        }
+        if (detail.includes('already') || detail.includes('sealed')) {
+          return { ok: true, reason: null };
+        }
+      }
+      return {
+        ok: false,
+        reason:
+          e instanceof ApiError
+            ? `No se pudo sellar la sesión ordenada: ${e.message}`
+            : `No se pudo sellar la sesión ordenada: ${String(e)}`,
+      };
+    }
   }
 
   async validateBeforeProcess(sessionId: string): Promise<{ ok: boolean; reason: string | null }> {
@@ -236,6 +280,12 @@ export class ProcessingService {
         await this.repo.updateSessionStatus(sessionId, 'processing');
       } catch {
         // already processing
+      }
+
+      const sealed = await this.sealOrderedCaptureBeforeProcess(session);
+      if (!sealed.ok) {
+        await processingRunStore.markTerminal(run.id, 'failed');
+        return { ok: false, jobId: null, reason: sealed.reason };
       }
 
       const path =

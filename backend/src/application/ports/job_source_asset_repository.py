@@ -34,6 +34,8 @@ class JobSourceAssetLink:
     artifact_id: str | None = None
     #: Monotonic version for immutable, append-only snapshots of the same job attempt.
     snapshot_version: int = 1
+    #: Logical capture sequence (1-based) when CLIENT_ASSIGNED; mirrors position_order for ordered sessions.
+    sequence_number: int | None = None
 
 
 class JobSourceAssetRepository(Protocol):

@@ -62,6 +62,8 @@ describe('uploadLease', () => {
       UPLOAD_MULTIPART_FIELD_BATCH,
       UPLOAD_MULTIPART_FIELD_CLIENT_IDS,
       UPLOAD_MULTIPART_FIELD_FILES,
+      UPLOAD_MULTIPART_FIELD_ORDERED_SESSION,
+      UPLOAD_MULTIPART_FIELD_SEQUENCE_NUMBERS,
     } = require('../src/core/uploadLease') as typeof import('../src/core/uploadLease');
     expect(UPLOAD_CODE_AUTH_REQUIRED).toBe('AUTH_REQUIRED');
     expect(UPLOAD_CODE_AUTH_VAULT_UNAVAILABLE).toBe('AUTH_VAULT_UNAVAILABLE');
@@ -74,6 +76,8 @@ describe('uploadLease', () => {
     expect(UPLOAD_MULTIPART_FIELD_BATCH).toBe('upload_batch_id');
     expect(UPLOAD_MULTIPART_FIELD_CLIENT_IDS).toBe('client_file_ids');
     expect(UPLOAD_MULTIPART_FIELD_FILES).toBe('files');
+    expect(UPLOAD_MULTIPART_FIELD_ORDERED_SESSION).toBe('ordered_capture_session_id');
+    expect(UPLOAD_MULTIPART_FIELD_SEQUENCE_NUMBERS).toBe('sequence_numbers');
   });
 });
 

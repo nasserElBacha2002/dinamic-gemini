@@ -853,6 +853,9 @@ def asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
         mime_type=asset.mime_type,
         uploaded_at=asset.uploaded_at,
         file_size_bytes=asset.file_size_bytes,
+        ordered_capture_session_id=asset.ordered_capture_session_id,
+        sequence_number=asset.sequence_number,
+        sequence_source=asset.sequence_source,
     )
 
 

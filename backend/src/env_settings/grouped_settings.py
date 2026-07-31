@@ -1765,6 +1765,56 @@ class LimitsAndSchemaSettings(BaseModel):
         le=1.0,
         description="Confidence when time falls back to ingest clock (Sprint 3). Env: V3_CAPTURE_TIME_CONFIDENCE_FALLBACK.",
     )
+    ordered_capture_sessions_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("ORDERED_CAPTURE_SESSIONS_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 1 positioning: enable ordered capture session create/seal API. "
+            "Default true; set ORDERED_CAPTURE_SESSIONS_ENABLED=false to disable rollout."
+        ),
+    )
+    client_sequence_required: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CLIENT_SEQUENCE_REQUIRED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, uploads without client sequence_number are rejected for new clients "
+            "(enforced on upload path, not Phase 1 API). Env: CLIENT_SEQUENCE_REQUIRED (default false)."
+        ),
+    )
+    aisle_location_domain_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("AISLE_LOCATION_DOMAIN_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 1 positioning: enable aisle location CRUD API. "
+            "Env: AISLE_LOCATION_DOMAIN_ENABLED (default true)."
+        ),
+    )
+    aisle_location_labels_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("AISLE_LOCATION_LABELS_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 1 positioning: enable aisle location label issue/list/invalidate API. "
+            "Env: AISLE_LOCATION_LABELS_ENABLED (default true)."
+        ),
+    )
+    legacy_image_order_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("LEGACY_IMAGE_ORDER_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Allow legacy image-order derivation when client sequence is absent "
+            "(upload/process path). Env: LEGACY_IMAGE_ORDER_ENABLED (default true)."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_upload_size_relationship(self) -> Self:

@@ -18,6 +18,7 @@ import {
 import { runHealthChecks, type HealthCheckResult } from '../../features/support/healthChecks';
 import { cleanupTransformTemps, getStorageStatus } from '../../features/support/storageCleanup';
 import { AisleAssetsApi } from '../../features/upload/aisleAssetsApi';
+import { OrderedCaptureApi } from '../../features/upload/orderedCaptureApi';
 import { UploadLimitsService } from '../../features/upload/uploadLimitsService';
 import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
@@ -173,6 +174,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const backgroundUpload = asBackgroundUploadScheduler(backgroundWork);
   const uploadLimits = new UploadLimitsService(api, logger);
   const assetsApi = new AisleAssetsApi(api);
+  const orderedCaptureApi = new OrderedCaptureApi(api);
   const observability = createObservabilityStack({
     enabled: config.flags.uploadObservabilityEnabled,
     logger,
@@ -336,6 +338,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       localCodeScan,
       preliminarySync,
       authoritativeSync: authoritativeLocalSync,
+      orderedCapture: orderedCaptureApi,
       authoritativeExclusion: config.flags.mobileAuthoritativeAisleFinalization
         ? authoritativeAisleFinalization
         : null,
@@ -369,6 +372,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       ? { reporter: obsWire.reporter, marks: obsWire.marks, connectivity }
       : null,
     { flags: config.flags, confirmed: confirmedLocalResults },
+    orderedCaptureApi,
   );
   const jobMonitor = new JobMonitor(api, jobRepo, captureRepo, logger, {
     backgroundPolling: config.flags.backgroundJobPolling,

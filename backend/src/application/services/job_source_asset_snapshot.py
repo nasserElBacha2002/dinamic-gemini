@@ -12,6 +12,10 @@ from src.application.ports.job_source_asset_repository import (
     JobSourceAssetLink,
     JobSourceAssetRepository,
 )
+from src.application.services.capture_sequence import (
+    position_order_for_asset,
+    sort_assets_by_logical_sequence,
+)
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 
 __all__ = [
@@ -71,27 +75,36 @@ def build_job_source_asset_links(
     provider_request_id: str | None = None,
 ) -> list[JobSourceAssetLink]:
     created = now or datetime.now(timezone.utc)
+    ordered = sort_assets_by_logical_sequence(assets)
     links: list[JobSourceAssetLink] = []
-    for index, asset in enumerate(assets):
+    for index, asset in enumerate(ordered):
         if asset.type == SourceAssetType.VIDEO:
             role = "video"
         elif _is_reference_asset(asset):
             role = "reference"
         else:
             role = "primary"
+        position = position_order_for_asset(asset, fallback_index=index)
+        seq = int(asset.sequence_number) if asset.sequence_number is not None else None
+        if seq is not None and position != seq:
+            raise ValueError(
+                f"position_order/sequence_number divergence asset_id={asset.id} "
+                f"position_order={position} sequence_number={seq}"
+            )
         links.append(
             JobSourceAssetLink(
                 id=_deterministic_link_id(
                     job_id=job_id,
                     source_asset_id=str(asset.id),
                     role=role,
-                    position=index,
+                    position=position,
                     provider_request_id=provider_request_id,
                 ),
                 job_id=job_id,
                 source_asset_id=str(asset.id),
                 asset_role=role,
-                position_order=index,
+                position_order=position,
+                sequence_number=seq,
                 checksum=None,
                 storage_key=(asset.storage_key or asset.storage_path or None),
                 mime_type=asset.mime_type or asset.content_type,

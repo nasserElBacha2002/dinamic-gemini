@@ -552,6 +552,21 @@ CREATE INDEX IF NOT EXISTS idx_offline_operation_deps_child
   ON offline_operation_dependencies(operation_id);
 `,
   },
+  {
+    version: 19,
+    name: 'ordered_capture_sequence',
+    sql: `
+ALTER TABLE capture_photos ADD COLUMN sequence_number INTEGER;
+ALTER TABLE capture_sessions ADD COLUMN backend_ordered_capture_session_id TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_photos_session_sequence
+  ON capture_photos(capture_session_id, sequence_number)
+  WHERE sequence_number IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_capture_sessions_ordered_capture
+  ON capture_sessions(backend_ordered_capture_session_id);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

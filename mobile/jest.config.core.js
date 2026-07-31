@@ -18,6 +18,7 @@ module.exports = {
     '<rootDir>/tests/detectionStability.integration.test.ts',
     '<rootDir>/tests/logging.test.ts',
     '<rootDir>/tests/captureState.test.ts',
+    '<rootDir>/tests/captureSequence.test.ts',
     '<rootDir>/tests/fase2UploadCore.test.ts',
     '<rootDir>/tests/fase3HardeningCore.test.ts',
     '<rootDir>/tests/featureFlags.test.ts',

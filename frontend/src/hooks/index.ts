@@ -30,6 +30,14 @@ export {
   useAisleSourceAssets,
 } from './useAisles';
 export {
+  useAisleLocations,
+  useAisleLocationLabels,
+  useCreateAisleLocation,
+  useUpdateAisleLocation,
+  useIssueAisleLocationLabel,
+  useInvalidateAisleLocationLabel,
+} from './useAisleLocations';
+export {
   useAislePositions,
   usePositionDetail,
   useAisleMergeResults,

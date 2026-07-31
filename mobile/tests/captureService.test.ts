@@ -7,7 +7,7 @@ import {
 } from '../src/features/capture/captureService';
 import { createLogger } from '../src/core/logging';
 import { collectNewSinceFloor } from '../src/core/incrementalScan';
-import { EMPTY_CURSOR, type CompositeCursor } from '../src/core/compositeCursor';
+import { EMPTY_CURSOR, compareCursor, cursorOf, type CompositeCursor } from '../src/core/compositeCursor';
 import type { GalleryImage } from '../src/domain/entities/galleryImage';
 import type { CapturePhotoStatus, CaptureSessionStatus } from '../src/domain/enums/photoStatus';
 import type { CaptureRepository, CreateCaptureSessionInput, CreateCaptureSessionResult, StabilityResultInput } from '../src/database/repositories/captureRepository';
@@ -61,6 +61,7 @@ function session(overrides: Partial<CaptureSessionRow> = {}): CaptureSessionRow 
     last_upload_error: null,
     last_processing_error: null,
     preparation_processing_mode: 'UNKNOWN',
+    backend_ordered_capture_session_id: null,
     created_at: now,
     updated_at: now,
     ...overrides,
@@ -94,6 +95,7 @@ function photo(status: CapturePhotoStatus): CapturePhotoRow {
     stable_at: null,
     excluded_at: null,
     client_file_id: null,
+    sequence_number: null,
     backend_asset_id: null,
     upload_status: 'not_queued',
     upload_progress: 0,
@@ -221,8 +223,44 @@ class FakeRepo {
     }
   }
 
-  async upsertPhoto(sessionId: string, img: GalleryImage, status: CapturePhotoStatus) {
-    this.photos.set(`${sessionId}:${img.assetId}`, { ...photo(status), capture_session_id: sessionId, asset_id: img.assetId });
+  async upsertPhoto(sessionId: string, img: GalleryImage, status: CapturePhotoStatus, _rejectionReason: string | null = null, sequenceNumber: number | null = null) {
+    const key = `${sessionId}:${img.assetId}`;
+    const existing = this.photos.get(key);
+    this.photos.set(key, {
+      ...photo(status),
+      ...existing,
+      capture_session_id: sessionId,
+      asset_id: img.assetId,
+      date_added: img.dateAdded,
+      id: key,
+      sequence_number: existing?.sequence_number ?? sequenceNumber,
+      status: existing?.status === 'excluded' ? 'excluded' : status,
+    });
+  }
+
+  async upsertAdmittedPhotosWithSequences(
+    sessionId: string,
+    images: readonly GalleryImage[],
+    status: CapturePhotoStatus = 'detected',
+  ) {
+    const ordered = [...images].sort((a, b) => compareCursor(cursorOf(a), cursorOf(b)));
+    let next = 0;
+    for (const p of this.photos.values()) {
+      if (p.capture_session_id === sessionId && p.sequence_number != null && p.sequence_number > next) {
+        next = p.sequence_number;
+      }
+    }
+    for (const img of ordered) {
+      const existing = this.photos.get(`${sessionId}:${img.assetId}`);
+      let seq = existing?.sequence_number ?? null;
+      if (seq == null) {
+        next += 1;
+        seq = next;
+      } else if (seq > next) {
+        next = seq;
+      }
+      await this.upsertPhoto(sessionId, img, status, null, seq);
+    }
   }
 
   async getPhoto(sessionId: string, assetId: string) {
@@ -401,6 +439,93 @@ describe('CaptureService corrections', () => {
 
     const detected = (await repo.listPhotos('session-1')).map((p) => p.asset_id).sort();
     expect(detected).toEqual(['101', '102', '103', '104', '105', '106', '107', '108']);
+
+    // Sequences assigned at persist in gallery order — not deferred to upload/stabilize.
+    const bySeq = (await repo.listPhotos('session-1'))
+      .slice()
+      .sort((a, b) => (a.sequence_number ?? 0) - (b.sequence_number ?? 0));
+    expect(bySeq.map((p) => p.sequence_number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(bySeq.map((p) => p.asset_id)).toEqual(['101', '102', '103', '104', '105', '106', '107', '108']);
+  });
+
+  it('assigns sequences at first persist even when stability completes out of order', async () => {
+    const repo = new FakeRepo();
+    repo.sessions.set('session-1', session({ status: 'active', initial_asset_id: '1', initial_date_added: 1 }));
+
+    const gallery: GalleryImage[] = [
+      { ...image, assetId: '30', mediaStoreNumericId: 30, dateAdded: 3000, uri: 'file://30.jpg', displayName: '30.jpg' },
+      { ...image, assetId: '10', mediaStoreNumericId: 10, dateAdded: 1000, uri: 'file://10.jpg', displayName: '10.jpg' },
+      { ...image, assetId: '20', mediaStoreNumericId: 20, dateAdded: 2000, uri: 'file://20.jpg', displayName: '20.jpg' },
+    ];
+
+    let resolveProbes: Array<(v: { ok: true; checks: number }) => void> = [];
+    const prober: CaptureStabilityProber = {
+      probe: jest.fn().mockImplementation(
+        () =>
+          new Promise<{ ok: true; checks: number }>((resolve) => {
+            resolveProbes.push(resolve);
+          }),
+      ),
+    };
+
+    const store: CaptureMediaStore = {
+      queryMostRecentPhoto: jest.fn().mockResolvedValue(null),
+      queryNewPhotosSince: jest.fn().mockResolvedValue({
+        images: gallery,
+        metrics: {
+          assetsRead: 3,
+          pagesQueried: 1,
+          assetsHydrated: 3,
+          newCandidates: 3,
+          durationMs: 1,
+        },
+      }),
+      subscribeToGalleryChanges: jest.fn().mockReturnValue({ remove: jest.fn() }),
+      fileExists: jest.fn().mockResolvedValue(true),
+    };
+
+    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+      mediaStore: store,
+      stabilityProber: prober,
+    });
+
+    await service.loadSession('session-1', true);
+    await service.requestScan();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Sequences already set before any probe resolves (gallery order).
+    const beforeStable = await repo.listPhotos('session-1');
+    expect(
+      beforeStable
+        .slice()
+        .sort((a, b) => (a.sequence_number ?? 0) - (b.sequence_number ?? 0))
+        .map((p) => ({ asset: p.asset_id, seq: p.sequence_number })),
+    ).toEqual([
+      { asset: '10', seq: 1 },
+      { asset: '20', seq: 2 },
+      { asset: '30', seq: 3 },
+    ]);
+
+    // Stabilize out of order: 30, then 10, then 20 (probes indexed in gallery order).
+    expect(resolveProbes.length).toBe(3);
+    resolveProbes[2]?.({ ok: true, checks: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    resolveProbes[0]?.({ ok: true, checks: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    resolveProbes[1]?.({ ok: true, checks: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const afterStable = await repo.listPhotos('session-1');
+    expect(
+      afterStable
+        .slice()
+        .sort((a, b) => (a.sequence_number ?? 0) - (b.sequence_number ?? 0))
+        .map((p) => ({ asset: p.asset_id, seq: p.sequence_number, status: p.status })),
+    ).toEqual([
+      { asset: '10', seq: 1, status: 'stable' },
+      { asset: '20', seq: 2, status: 'stable' },
+      { asset: '30', seq: 3, status: 'stable' },
+    ]);
   });
 
   it('keeps a photo excluded when stability resolves after exclusion', async () => {

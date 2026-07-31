@@ -190,6 +190,9 @@ from src.runtime.container.repository_builders import (
     build_result_evidence_repository,
     build_review_action_repository,
     build_server_reprocess_repository,
+    build_aisle_location_label_repository,
+    build_aisle_location_repository,
+    build_ordered_capture_session_repository,
     build_source_asset_repository,
     build_supplier_extraction_profile_repository,
     build_supplier_prompt_config_repository,
@@ -272,6 +275,9 @@ class AppContainer:
         self._capture_session_item_repo: CaptureSessionItemRepository | None = None
         self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = None
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
+        self._ordered_capture_session_repo = None
+        self._aisle_location_repo = None
+        self._aisle_location_label_repo = None
         self._code_scan_repo: CodeScanRepository | None = None
         self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
         self._authoritative_local_code_scan_repo = None
@@ -395,6 +401,9 @@ class AppContainer:
         self._capture_session_item_repo = None
         self._capture_session_confirm_repo = None
         self._capture_session_group_repo = None
+        self._ordered_capture_session_repo = None
+        self._aisle_location_repo = None
+        self._aisle_location_label_repo = None
         self._code_scan_repo = None
         self._preliminary_detection_repo = None
         self._authoritative_local_code_scan_repo = None
@@ -1090,6 +1099,30 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._capture_session_confirm_repo
+
+    def get_ordered_capture_session_repo(self):
+        if self._ordered_capture_session_repo is not None:
+            return self._ordered_capture_session_repo
+        self._ordered_capture_session_repo = build_ordered_capture_session_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._ordered_capture_session_repo
+
+    def get_aisle_location_repo(self):
+        if self._aisle_location_repo is not None:
+            return self._aisle_location_repo
+        self._aisle_location_repo = build_aisle_location_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._aisle_location_repo
+
+    def get_aisle_location_label_repo(self):
+        if self._aisle_location_label_repo is not None:
+            return self._aisle_location_label_repo
+        self._aisle_location_label_repo = build_aisle_location_label_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._aisle_location_label_repo
 
     def get_recompute_consolidated_counts_use_case(self) -> RecomputeConsolidatedCountsUseCase:
         return build_recompute_consolidated_counts_use_case(

@@ -143,6 +143,22 @@ export interface UploadAisleAssetsResponseDto {
   readonly errors: readonly UploadAisleAssetErrorDto[];
 }
 
+export interface OrderedCaptureSessionDto {
+  readonly id: string;
+  readonly inventory_id: string;
+  readonly aisle_id: string;
+  readonly status: string;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly client_id?: string | null;
+  readonly expected_asset_count?: number | null;
+  readonly uploaded_asset_count?: number;
+  readonly sequence_version?: number;
+  readonly sealed_at?: string | null;
+  readonly processing_started_at?: string | null;
+  readonly completed_at?: string | null;
+}
+
 export interface ProcessAisleRequestDto {
   readonly idempotency_key?: string;
   /** Job-only override. Omit to inherit aisle → inventory → client → system default. */

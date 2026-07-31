@@ -43,3 +43,9 @@ class SourceAsset:
     upload_batch_id: str | None = None
     #: Client file id within an upload batch for idempotency.
     upload_client_file_id: str | None = None
+    #: Ordered capture session (mobile sequence spine); null for legacy uploads.
+    ordered_capture_session_id: str | None = None
+    #: Logical capture order within the ordered session (1-based); null for legacy.
+    sequence_number: int | None = None
+    #: CLIENT_ASSIGNED | LEGACY_DERIVED | None (unset / pre-feature).
+    sequence_source: str | None = None

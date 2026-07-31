@@ -188,6 +188,15 @@ HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW = (
 )
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION = "Capture session group data consistency check failed; retry is not recommended until data is reviewed."
 
+# Phase 1 positioning foundation (ordered capture + aisle locations)
+HTTP_DETAIL_ORDERED_CAPTURE_SESSION_NOT_FOUND = "Ordered capture session not found"
+HTTP_DETAIL_ORDERED_CAPTURE_CONFLICT = "Ordered capture session conflict"
+HTTP_DETAIL_CAPTURE_SESSION_SEAL_REJECTED = "Ordered capture session seal rejected"
+HTTP_DETAIL_AISLE_LOCATION_NOT_FOUND = "Aisle location not found"
+HTTP_DETAIL_AISLE_LOCATION_CONFLICT = "Aisle location conflict"
+HTTP_DETAIL_AISLE_LOCATION_LABEL_NOT_FOUND = "Aisle location label not found"
+HTTP_DETAIL_AISLE_LOCATION_LABEL_CONFLICT = "Aisle location label conflict"
+
 # Supplier prompt configs (Phase D4)
 HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER = "provider_name is not supported"
 HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_MODEL = (

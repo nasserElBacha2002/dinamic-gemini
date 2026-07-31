@@ -69,6 +69,9 @@ def _list_migration_files() -> list[MigrationFile]:
         return []
     migration_files: list[MigrationFile] = []
     for path in sorted(_MIGRATIONS_DIR.glob("*.sql")):
+        # Manual rollback scripts co-located as ``*.down.sql`` are not UP migrations.
+        if path.name.endswith(".down.sql"):
+            continue
         stem = path.stem
         if "_" not in stem:
             continue

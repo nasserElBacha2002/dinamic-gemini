@@ -159,6 +159,22 @@ class SourceAssetRepository(ABC):
         """Return the asset for this aisle + client batch/file id pair, if any."""
         ...
 
+    def get_by_ordered_session_and_client_image_id(
+        self,
+        session_id: str,
+        client_image_id: str,
+    ) -> SourceAsset | None:
+        """Return the asset for this ordered session + client_image_id, if any."""
+        return None
+
+    def get_by_ordered_session_and_sequence(
+        self,
+        session_id: str,
+        sequence_number: int,
+    ) -> SourceAsset | None:
+        """Return the asset for this ordered session + sequence_number, if any."""
+        return None
+
 
 class PositionRepository(ABC):
     @abstractmethod
@@ -297,6 +313,29 @@ class JobRepository(ABC):
         """
         raise NotImplementedError(
             f"{type(self).__name__}.list_all_jobs is required for operational scans"
+        )
+
+    def get_by_ordered_capture_session(
+        self, ordered_capture_session_id: str, *, sequence_version: int
+    ) -> Job | None:
+        """Return the job pinned to ``(ordered_capture_session_id, sequence_version)``, or None.
+
+        Required on SqlJobRepository and MemoryJobRepository (Phase 1 ordered capture).
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__}.get_by_ordered_capture_session is required "
+            "for ordered-capture process idempotency"
+        )
+
+    def create_or_get_for_ordered_session(self, job: Job) -> tuple[Job, bool]:
+        """Insert job; on unique ``(session, version)`` return existing.
+
+        Returns ``(job, created)``. Requires ``job.ordered_capture_session_id`` and
+        ``job.sequence_version`` set. Required on SqlJobRepository and MemoryJobRepository.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__}.create_or_get_for_ordered_session is required "
+            "for ordered-capture process idempotency"
         )
 
     @abstractmethod
