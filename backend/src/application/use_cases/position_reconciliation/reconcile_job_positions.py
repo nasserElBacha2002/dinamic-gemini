@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from collections.abc import Sequence
 from uuid import uuid4
 
 from src.application.dto.access_principal import AccessPrincipal
@@ -55,6 +54,7 @@ from src.domain.position_reconciliation.entities import (
     ProductPositionAssignment,
     ReconciliationStatus,
 )
+
 
 @dataclass(frozen=True)
 class ReconcileJobPositionsCommand:

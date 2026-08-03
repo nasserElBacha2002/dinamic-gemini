@@ -243,7 +243,7 @@ def issue_aisle_location_label(
         _reject_legacy_positioning_writes()
         _require_aisle_location_domain_enabled()
         _require_aisle_location_labels_enabled()
-        req = body or IssueAisleLocationLabelRequest()
+        req = body or IssueAisleLocationLabelRequest(idempotency_key=None)
         label = use_case.execute(
             IssueAisleLocationLabelCommand(
                 location_id=location_id,
@@ -308,7 +308,7 @@ def invalidate_aisle_location_label(
         _reject_legacy_positioning_writes()
         _require_aisle_location_domain_enabled()
         _require_aisle_location_labels_enabled()
-        req = body or InvalidateAisleLocationLabelRequest()
+        req = body or InvalidateAisleLocationLabelRequest(reason=None)
         label = use_case.execute(
             InvalidateAisleLocationLabelCommand(
                 label_id=label_id,
@@ -508,7 +508,7 @@ def replace_aisle_location_label(
         _reject_legacy_positioning_writes()
         _require_aisle_location_domain_enabled()
         _require_aisle_location_labels_enabled()
-        req = body or ReplaceAisleLocationLabelRequest()
+        req = body or ReplaceAisleLocationLabelRequest(idempotency_key=None)
         label = use_case.execute(
             ReplaceAisleLocationLabelCommand(
                 inventory_id=inventory_id,

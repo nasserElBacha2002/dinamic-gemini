@@ -1989,6 +1989,37 @@ class LimitsAndSchemaSettings(BaseModel):
             "Existing overrides remain effective and readable when disabled."
         ),
     )
+    position_operational_ux_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_OPERATIONAL_UX_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: aisle positioning operational view + sequence APIs. "
+            "Env: POSITION_OPERATIONAL_UX_ENABLED (default true)."
+        ),
+    )
+    position_reprocessing_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_REPROCESSING_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: aisle-level positioning reprocess action. "
+            "Env: POSITION_REPROCESSING_ENABLED (default true)."
+        ),
+    )
+    position_processing_recovery_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_PROCESSING_RECOVERY_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: expose recover as an allowed positioning action when "
+            "processing-state is recoverable. Env: POSITION_PROCESSING_RECOVERY_ENABLED "
+            "(default true)."
+        ),
+    )
     position_results_enrichment_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("POSITION_RESULTS_ENRICHMENT_ENABLED", "true").strip().lower()

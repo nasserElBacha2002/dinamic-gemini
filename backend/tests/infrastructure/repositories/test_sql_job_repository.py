@@ -74,9 +74,9 @@ def test_save_insert_placeholder_count_matches_parameters_for_starting_job() -> 
     assert len(client.cursor_instance.executions) == 2
     insert_sql, insert_params = client.cursor_instance.executions[1]
     assert "INSERT INTO inventory_jobs" in insert_sql
-    # 36 base columns + claim_owner_id + 4 Phase 1 aisle identification snapshot columns
-    # + 3 Phase 3 lease fencing columns.
-    assert insert_sql.count("?") == len(insert_params) == 44
+    # Includes the ordered capture session id and sequence version added to the
+    # intentionally persisted job snapshot.
+    assert insert_sql.count("?") == len(insert_params) == 46
 
 
 def test_save_update_placeholder_count_matches_parameters() -> None:
@@ -88,9 +88,8 @@ def test_save_update_placeholder_count_matches_parameters() -> None:
     assert len(client.cursor_instance.executions) == 1
     update_sql, update_params = client.cursor_instance.executions[0]
     assert "UPDATE inventory_jobs" in update_sql
-    # 36 SET columns including claim_owner_id + WHERE id (id excluded from SET count previously 39)
-    # + 3 Phase 3 lease fencing columns.
-    assert update_sql.count("?") == len(update_params) == 43
+    # 44 SET columns, including ordered capture session/version, plus WHERE id.
+    assert update_sql.count("?") == len(update_params) == 45
 
 
 class _TxnCursor:

@@ -114,6 +114,8 @@ describe('operationalServices.mocked', () => {
       }),
       updateSessionStatus: jest.fn(),
       updateSessionUploadMeta: jest.fn(),
+      persistProcessAttempt: jest.fn(),
+      confirmProcessAttempt: jest.fn(),
     };
     const jobs = {
       getByBackendJobId: jest.fn().mockResolvedValue(null),

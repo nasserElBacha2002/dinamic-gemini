@@ -72,6 +72,7 @@ def main() -> int:
         return 2
     try:
         from src.database.migrations.runner import MigrationRunner
+
         from src.config import load_settings
 
         settings = load_settings()

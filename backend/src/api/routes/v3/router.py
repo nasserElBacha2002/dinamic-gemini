@@ -24,6 +24,7 @@ from . import (
     position_label_detections,
     position_overrides,
     position_reconciliation,
+    positioning_operational,
     positions,
     preliminary_detections,
     preliminary_reconciliations,
@@ -55,6 +56,7 @@ router.include_router(positions.router)
 router.include_router(position_label_detections.router)
 router.include_router(position_overrides.router)
 router.include_router(position_reconciliation.router)
+router.include_router(positioning_operational.router)
 router.include_router(image_results.router)
 router.include_router(processing_observability.router)
 router.include_router(reviews.router)

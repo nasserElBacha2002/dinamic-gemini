@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 pytest.importorskip("pyzbar")
 qrcode = pytest.importorskip("qrcode")

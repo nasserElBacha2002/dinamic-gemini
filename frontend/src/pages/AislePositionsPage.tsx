@@ -10,6 +10,9 @@ import { Alert, Box, Button, Tooltip, Typography } from '@mui/material';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import ImageSearchOutlinedIcon from '@mui/icons-material/ImageSearchOutlined';
 import JobPositionDetectionsPanel from '../features/positionLabels/JobPositionDetectionsPanel';
+import AislePositioningOperationalPanel from '../features/positioning/AislePositioningOperationalPanel';
+import AisleProcessingDialog from '../features/inventories/components/AisleProcessingDialog';
+import { useAisleProcessingFlow } from '../features/inventories/hooks/useAisleProcessingFlow';
 import { exportAisleOperationalCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
@@ -222,6 +225,17 @@ export default function AislePositionsPage() {
   const operationalJobId = aisleJobsQuery.data?.operational_job_id?.trim() || null;
   const inventory = inventoryQuery.data ?? null;
   const isTestInventory = inventory?.processing_mode === 'test';
+  const isProductionInventory = inventory?.processing_mode === 'production';
+  const processFlow = useAisleProcessingFlow({
+    inventoryId: inventoryId ?? '',
+    isProductionInventory,
+    onAfterSuccess: () => {
+      void aisleJobsQuery.refetch();
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.positions(inventoryId ?? '', aisleId ?? ''),
+      });
+    },
+  });
 
   /**
    * Browse selection: URL explicit → operational (display) → null (backend SoT).
@@ -872,6 +886,53 @@ export default function AislePositionsPage() {
         onClear={() => {
           if (pickedRunJobId) handleRunSelectionChange(pickedRunJobId);
         }}
+      />
+
+      {inventoryId && aisleId ? (
+        <AislePositioningOperationalPanel
+          inventoryId={inventoryId}
+          aisleId={aisleId}
+          onJobChanged={(jobId) => {
+            if (jobId) handleRunSelectionChange(jobId);
+            void aisleJobsQuery.refetch();
+          }}
+          onProcessRequested={() => {
+            if (!aisleId || !aisle) return;
+            void processFlow.requestProcess(aisleId, aisle.code, aisle.client_supplier_id ?? null, {
+              effectiveMode: aisle.effective_identification_mode ?? null,
+              source: aisle.identification_mode_source ?? null,
+              configured: aisle.identification_mode ?? null,
+            });
+          }}
+        />
+      ) : null}
+
+      <AisleProcessingDialog
+        open={Boolean(processFlow.dialogTarget)}
+        aisleCode={processFlow.dialogTarget?.aisleCode ?? null}
+        clientSupplierId={processFlow.dialogTarget?.clientSupplierId ?? null}
+        providerKey={processFlow.providerKey}
+        onProviderKeyChange={processFlow.setProviderKey}
+        modelKey={processFlow.modelKey}
+        onModelKeyChange={processFlow.setModelKey}
+        identificationMode={processFlow.identificationMode}
+        onIdentificationModeChange={processFlow.setIdentificationMode}
+        inheritedEffectiveMode={processFlow.dialogTarget?.effectiveIdentificationMode}
+        identificationModeSource={processFlow.dialogTarget?.identificationModeSource}
+        providerOptsQuery={processFlow.providerOptsQuery}
+        providerConfig={processFlow.providerConfig}
+        productionMode={processFlow.isProductionInventory}
+        productionOptionsLoading={processFlow.productionOptionsLoading}
+        productionProvidersReady={processFlow.productionProvidersReady}
+        productionProvidersUnavailable={processFlow.productionProvidersUnavailable}
+        onClose={processFlow.closeDialog}
+        onConfirm={() => void processFlow.confirmDialog()}
+        confirmDisabled={
+          processFlow.processingAisleId === processFlow.dialogTarget?.aisleId ||
+          processFlow.productionOptionsLoading ||
+          processFlow.productionProvidersUnavailable
+        }
+        confirmBusyLabel={processFlow.processingAisleId === processFlow.dialogTarget?.aisleId}
       />
 
       {pickedRunJobId ? (

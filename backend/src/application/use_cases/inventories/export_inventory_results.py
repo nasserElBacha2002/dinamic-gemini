@@ -103,7 +103,7 @@ def append_inventory_csv_rows_for_aisle(
         and not technical
     )
     partition_keys: dict[str, str] = {}
-    if export_enrichment:
+    if export_enrichment and reconciliation_repo is not None and slice_job is not None:
         partition_keys = build_partition_key_by_position_id(
             raw,
             product_record_repo=product_record_repo,
@@ -119,7 +119,7 @@ def append_inventory_csv_rows_for_aisle(
     )
     consolidated_sorted = sorted(consolidated, key=export_position_sort_key)
     views: dict = {}
-    if export_enrichment:
+    if export_enrichment and reconciliation_repo is not None and slice_job is not None:
         # Collect primary product ids first for a single batch read.
         primaries = []
         for p in consolidated_sorted:

@@ -8,7 +8,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable
 
-from src.application.errors import OrderedCaptureSessionConflictError, ProcessingRejectedUnsealedSessionError
+from src.application.errors import (
+    OrderedCaptureSessionConflictError,
+    ProcessingRejectedUnsealedSessionError,
+)
 from src.application.ports.repositories import JobRepository
 from src.domain.jobs.entities import Job
 from src.domain.ordered_capture.entities import (

@@ -7,14 +7,11 @@ from uuid import uuid4
 
 from src.application.ports.services import WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.ordered_capture_processing_reservation import (
     OrderedCaptureProcessingReservationService,
 )
-from src.infrastructure.persistence.memory_ordered_capture_processing_reservation_unit_of_work import (
-    build_memory_ordered_capture_processing_reservation_uow_factory,
-)
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.aisles.start_aisle_processing import (
     StartAisleProcessingCommand,
     StartAisleProcessingUseCase,
@@ -30,6 +27,9 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
+from src.infrastructure.persistence.memory_ordered_capture_processing_reservation_unit_of_work import (
+    build_memory_ordered_capture_processing_reservation_uow_factory,
+)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import (
     MemoryInventoryRepository,

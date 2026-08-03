@@ -25,6 +25,7 @@ import {
   reconciliationOutcomeLabel,
   type ReconciliationSummary,
 } from '../features/preliminaryReconciliation/reconciliationQueryService';
+import { PositioningOperationalPanel } from '../features/positioning/PositioningOperationalPanel';
 
 export interface ProcessingScreenProps {
   services: AppServices;
@@ -211,6 +212,14 @@ export function ProcessingScreen({
         />
       )}
       {view?.jobId ? <Text style={styles.muted}>Diagnóstico job: {view.jobId}</Text> : null}
+      {view?.inventoryId && view?.aisleId ? (
+        <PositioningOperationalPanel
+          services={services}
+          inventoryId={view.inventoryId}
+          aisleId={view.aisleId}
+          onError={onError}
+        />
+      ) : null}
       {reconciliationSummary ? (
         <View>
           <Text style={styles.row}>Comparación local vs servidor (diagnóstico)</Text>

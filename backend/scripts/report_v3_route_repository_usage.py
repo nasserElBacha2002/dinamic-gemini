@@ -10,30 +10,10 @@ Run from repo root or backend/:
 
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from pathlib import Path
-
-
-def _route_and_handler_before(text: str, pos: int) -> tuple[str, str]:
-    """Best-effort: last @router.METHOD("path") before pos, and first def name after it."""
-    before = text[:pos]
-    router_matches = list(
-        re.finditer(
-            r'@router\.(get|post|put|patch|delete)\(\s*(["\'])([^"\']+)\2',
-            before,
-            re.IGNORECASE,
-        )
-    )
-    if not router_matches:
-        return "", ""
-    rm = router_matches[-1]
-    route_str = f"{rm.group(1).upper()} {rm.group(3)}"
-    start = rm.end()
-    sub = text[start:pos]
-    dm = re.search(r"def\s+(\w+)\s*\(", sub)
-    handler = dm.group(1) if dm else "?"
-    return route_str, handler
 
 
 def _phase7_risk_hint(*, dep: str, route: str, handler: str) -> str:
@@ -46,6 +26,25 @@ def _phase7_risk_hint(*, dep: str, route: str, handler: str) -> str:
     if any(k in blob for k in ("cancel", "retry", "promote", "upload")):
         return "typically MEDIUM–HIGH — mutations"
     return "review manually (read paths may be SAFE)"
+
+
+def _route_handler(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+    """Return ``METHOD path`` for a FastAPI router handler, else ``None``."""
+    methods = {"get", "post", "put", "patch", "delete"}
+    for decorator in node.decorator_list:
+        if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+            continue
+        owner = decorator.func.value
+        if (
+            isinstance(owner, ast.Name)
+            and owner.id == "router"
+            and decorator.func.attr.lower() in methods
+            and decorator.args
+            and isinstance(decorator.args[0], ast.Constant)
+            and isinstance(decorator.args[0].value, str)
+        ):
+            return f"{decorator.func.attr.upper()} {decorator.args[0].value}"
+    return None
 
 
 def main() -> int:
@@ -65,17 +64,27 @@ def main() -> int:
     files_with_hits: set[str] = set()
     for path in sorted(routes_dir.glob("*.py")):
         text = path.read_text(encoding="utf-8")
-        hits = list(pattern.finditer(text))
+        lines = text.splitlines(keepends=True)
+        hits: list[tuple[re.Match[str], int, str, str]] = []
+        for node in ast.parse(text).body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            route = _route_handler(node)
+            if route is None:
+                continue
+            start_line = node.lineno
+            function_text = "".join(lines[start_line - 1 : node.end_lineno])
+            for match in pattern.finditer(function_text):
+                line_no = start_line + function_text[: match.start()].count("\n")
+                hits.append((match, line_no, route, node.name))
         if not hits:
             continue
         any_hits = True
         files_with_hits.add(path.name)
         print(f"\n{path.name}")
-        for m in hits:
+        for m, line_no, route, handler in hits:
             param = m.group(1)
             dep = m.group(2)
-            line_no = text[: m.start()].count("\n") + 1
-            route, handler = _route_and_handler_before(text, m.start())
             hint = _phase7_risk_hint(dep=dep, route=route, handler=handler)
             print(f"  L{line_no}: {param} = Depends({dep})")
             if route:

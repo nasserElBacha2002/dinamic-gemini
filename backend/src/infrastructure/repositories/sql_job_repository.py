@@ -23,7 +23,6 @@ from src.application.services.job_stale_reconciler import (
     STALE_RECONCILE_STATUSES,
 )
 from src.database.sqlserver import SqlServerClient
-from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.aisle.entities import AisleStatus
 from src.domain.aisle_identification.modes import CONFIGURATION_SNAPSHOT_VERSION
 from src.domain.jobs.claim import (
@@ -37,6 +36,7 @@ from src.domain.jobs.lease import (
     LeaseRenewalResult,
     LeaseWriteResult,
 )
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.sql_job_lease_store import SqlJobLeaseStore
 from src.infrastructure.repositories.sql_job_row_mapper import (
     JOB_SELECT_FIELDS as _JOB_SELECT_FIELDS,

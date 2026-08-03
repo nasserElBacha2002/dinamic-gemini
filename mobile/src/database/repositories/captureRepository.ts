@@ -12,7 +12,11 @@ import type { GalleryImage } from '../../domain/entities/galleryImage';
 import type { CapturePhotoStatus, CaptureSessionStatus } from '../../domain/enums/photoStatus';
 import type { PhotoUploadStatus } from '../../domain/enums/uploadStatus';
 import type { SQLiteDatabase } from '../database';
-import { runImmediateTransaction, withSqliteBusyRetry } from '../sqliteWriteGate';
+import {
+  runExclusiveDbWriteWithBusyRetry,
+  runImmediateTransaction,
+  withSqliteBusyRetry,
+} from '../sqliteWriteGate';
 import type { CapturePhotoRow, CaptureSessionRow } from '../schema/captureSchema';
 
 export interface CreateCaptureSessionInput {
@@ -148,22 +152,23 @@ export class CaptureRepository {
   }
 
   async updateSessionStatus(id: string, status: CaptureSessionStatus, finished = false): Promise<void> {
-    const current = await this.getSession(id);
-    if (!current) {
-      throw new Error(`Capture session not found: ${id}`);
-    }
-    if (!canTransitionSession(current.status, status)) {
-      throw new Error(`Invalid capture session transition: ${current.status} -> ${status}`);
-    }
-    await withSqliteBusyRetry(() =>
-      this.db.runAsync(
+    // Serialize with capture finish / offline enqueue / local scan writers.
+    await runExclusiveDbWriteWithBusyRetry(async () => {
+      const current = await this.getSession(id);
+      if (!current) {
+        throw new Error(`Capture session not found: ${id}`);
+      }
+      if (!canTransitionSession(current.status, status)) {
+        throw new Error(`Invalid capture session transition: ${current.status} -> ${status}`);
+      }
+      await this.db.runAsync(
         'UPDATE capture_sessions SET status = ?, finished_at = COALESCE(?, finished_at), updated_at = ? WHERE id = ?;',
         status,
         finished ? new Date().toISOString() : null,
         new Date().toISOString(),
         id,
-      ),
-    );
+      );
+    });
   }
 
   async markProcessStartFailed(

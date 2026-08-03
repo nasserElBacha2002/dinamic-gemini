@@ -98,6 +98,7 @@ class HarnessReport:
 
 def _connect():
     import pyodbc
+
     from src.config import load_settings
 
     settings = load_settings()

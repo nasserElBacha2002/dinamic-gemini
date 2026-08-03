@@ -78,6 +78,24 @@ JOB_FINALIZATION_FAILURES_TOTAL = "job_finalization_failures_total"
 JOB_RECOVERY_TOTAL = "job_recovery_total"
 JOB_RECOVERY_DURATION_SECONDS = "job_recovery_duration_seconds"
 
+# Positioning module (Phase 8)
+POSITION_LABEL_DETECTION_TOTAL = "position_label_detection_total"
+POSITION_LABEL_DETECTION_DURATION_SECONDS = "position_label_detection_duration_seconds"
+POSITION_LABEL_INVALID_SIGNATURE_TOTAL = "position_label_invalid_signature_total"
+POSITION_RECONCILIATION_TOTAL = "position_reconciliation_total"
+POSITION_RECONCILIATION_DURATION_SECONDS = "position_reconciliation_duration_seconds"
+POSITION_RECONCILIATION_CONFLICT_TOTAL = "position_reconciliation_conflict_total"
+POSITION_RECONCILIATION_UNASSIGNED_TOTAL = "position_reconciliation_unassigned_total"
+POSITION_OVERRIDE_TOTAL = "position_override_total"
+POSITION_OVERRIDE_CONFLICT_TOTAL = "position_override_conflict_total"
+POSITION_OVERRIDE_DURATION_SECONDS = "position_override_duration_seconds"
+POSITIONING_OPERATIONAL_VIEW_DURATION_SECONDS = "positioning_operational_view_duration_seconds"
+POSITIONING_REPROCESS_TOTAL = "positioning_reprocess_total"
+POSITIONING_REPROCESS_FAILURE_TOTAL = "positioning_reprocess_failure_total"
+PROCESSING_RECOVERY_TOTAL = "processing_recovery_total"
+PROCESSING_RECOVERY_FAILURE_TOTAL = "processing_recovery_failure_total"
+PROCESSING_STALE_JOBS_TOTAL = "processing_stale_jobs_total"
+
 
 def observe_http_request(
     *,
@@ -189,3 +207,89 @@ def record_finalization_stage(
     )
     if outcome != "ok":
         reg.inc(JOB_FINALIZATION_FAILURES_TOTAL, "Job finalization failures", labels)
+
+
+def record_positioning_operational_view(*, outcome: str, duration_seconds: float) -> None:
+    get_metrics_registry().observe(
+        POSITIONING_OPERATIONAL_VIEW_DURATION_SECONDS,
+        "Positioning operational view duration seconds",
+        duration_seconds,
+        {"outcome": (outcome or "unknown")[:64]},
+    )
+
+
+def record_positioning_reprocess(*, mode: str, outcome: str) -> None:
+    labels = {
+        "mode": (mode or "unknown")[:64],
+        "outcome": (outcome or "unknown")[:64],
+    }
+    reg = get_metrics_registry()
+    reg.inc(POSITIONING_REPROCESS_TOTAL, "Positioning reprocess requests", labels)
+    if outcome not in {"ok", "reused"}:
+        reg.inc(
+            POSITIONING_REPROCESS_FAILURE_TOTAL,
+            "Positioning reprocess failures",
+            labels,
+        )
+
+
+def record_processing_recovery(*, outcome: str, reason_code: str | None = None) -> None:
+    labels = {"outcome": (outcome or "unknown")[:64]}
+    if reason_code:
+        labels["reason_code"] = reason_code[:64]
+    reg = get_metrics_registry()
+    reg.inc(PROCESSING_RECOVERY_TOTAL, "Processing recovery attempts", labels)
+    if outcome not in {"ok", "noop"}:
+        reg.inc(
+            PROCESSING_RECOVERY_FAILURE_TOTAL,
+            "Processing recovery failures",
+            labels,
+        )
+
+
+def record_position_override(*, outcome: str, operation: str, duration_seconds: float) -> None:
+    labels = {
+        "outcome": (outcome or "unknown")[:64],
+        "operation": (operation or "unknown")[:64],
+    }
+    reg = get_metrics_registry()
+    reg.inc(POSITION_OVERRIDE_TOTAL, "Manual position override operations", labels)
+    reg.observe(
+        POSITION_OVERRIDE_DURATION_SECONDS,
+        "Manual position override duration seconds",
+        duration_seconds,
+        labels,
+    )
+    if outcome == "conflict":
+        reg.inc(POSITION_OVERRIDE_CONFLICT_TOTAL, "Manual position override conflicts", labels)
+
+
+def record_position_reconciliation(
+    *,
+    outcome: str,
+    duration_seconds: float,
+    unassigned: int | None = None,
+) -> None:
+    labels = {"outcome": (outcome or "unknown")[:64]}
+    reg = get_metrics_registry()
+    reg.inc(POSITION_RECONCILIATION_TOTAL, "Position reconciliation attempts", labels)
+    reg.observe(
+        POSITION_RECONCILIATION_DURATION_SECONDS,
+        "Position reconciliation duration seconds",
+        duration_seconds,
+        labels,
+    )
+    if outcome == "conflict":
+        reg.inc(
+            POSITION_RECONCILIATION_CONFLICT_TOTAL,
+            "Position reconciliation conflicts",
+            labels,
+        )
+    if unassigned is not None and unassigned > 0:
+        # Low-cardinality gauge-like counter increment per batch size bucket.
+        bucket = "1" if unassigned == 1 else "2_10" if unassigned <= 10 else "11_plus"
+        reg.inc(
+            POSITION_RECONCILIATION_UNASSIGNED_TOTAL,
+            "Unassigned products after reconciliation",
+            {**labels, "status": bucket},
+        )

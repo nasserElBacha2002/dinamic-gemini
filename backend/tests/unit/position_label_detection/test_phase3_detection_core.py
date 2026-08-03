@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import pytest
-
 from src.application.services.position_label_detection.code_classifier import CodeClassifier
 from src.application.services.position_label_detection.payload_parser import (
     PositionLabelPayloadParser,

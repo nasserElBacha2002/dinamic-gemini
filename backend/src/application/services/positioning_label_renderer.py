@@ -10,7 +10,7 @@ import hashlib
 import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
@@ -31,6 +31,7 @@ from src.application.services.positioning_label_presets import (
 from src.domain.aisle_location.payload import canonicalize_positioning_payload
 
 LabelFormat = Literal["PDF", "PNG"]
+PillowFont = ImageFont.ImageFont | ImageFont.FreeTypeFont
 
 _FONT_CANDIDATES = (
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -64,7 +65,7 @@ class RenderedPositioningLabel:
     marker_version: int
 
 
-def _load_font(size_px: int, *, bold: bool = True) -> ImageFont.ImageFont:
+def _load_font(size_px: int, *, bold: bool = True) -> PillowFont:
     for path in _FONT_CANDIDATES:
         if not Path(path).is_file():
             continue
@@ -82,7 +83,7 @@ def _fit_primary_font(
     max_width: int,
     dpi: int,
     tokens: LabelPrintTypographyTokens,
-) -> ImageFont.ImageFont:
+) -> PillowFont:
     size_pt = primary_value_font_size_pt(text, tokens)
     min_pt = tokens.primary_value_min_font_size_pt
     while size_pt >= min_pt:
@@ -95,7 +96,9 @@ def _fit_primary_font(
     return _load_font(pt_to_px(min_pt, dpi), bold=True)
 
 
-def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_width: int) -> list[str]:
+def _wrap_text(
+    draw: ImageDraw.ImageDraw, text: str, font: PillowFont, max_width: int
+) -> list[str]:
     words = (text or "").split()
     if not words:
         return [""]
@@ -159,7 +162,10 @@ class PositioningLabelRenderer:
         qr.add_data(qr_text)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-        return img.resize((marker_px, marker_px), Image.Resampling.NEAREST)
+        return cast(
+            Image.Image,
+            img.resize((marker_px, marker_px), Image.Resampling.NEAREST),
+        )
 
     def _render_png(
         self,
@@ -213,7 +219,10 @@ class PositioningLabelRenderer:
         )
         for line in _wrap_text(draw, position, primary_font, text_max_width):
             draw.text((x, y), line, fill="black", font=primary_font)
-            bbox = draw.textbbox((0, 0), line, font=primary_font)
+            bbox = cast(
+                tuple[int, int, int, int],
+                draw.textbbox((0, 0), line, font=primary_font),
+            )
             y += (bbox[3] - bbox[1]) + gap // 3
 
         footer_block = mm_to_px(12, preset.dpi)

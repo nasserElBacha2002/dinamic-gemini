@@ -28,12 +28,19 @@ def _bootstrap_dotenv_for_pytest() -> None:
 
 
 def _ensure_pytest_identification_flags() -> None:
-    """CI has no developer ``.env``; SYSTEM_DEFAULT is INTERNAL_OCR and needs the OCR flag on.
+    """CI has no developer ``.env``; SYSTEM_DEFAULT is CODE_SCAN and needs the scan flag on.
 
-    Unit tests that assert the disabled path pass ``internal_ocr_processing_enabled=False``
-    explicitly and do not depend on this env default.
+    Unit tests that assert the disabled path pass ``code_scan_processing_enabled=False``
+    (or INTERNAL_OCR flags) explicitly and do not depend on this env default.
     """
+    os.environ.setdefault("CODE_SCAN_PROCESSING_ENABLED", "true")
     os.environ.setdefault("INTERNAL_OCR_PROCESSING_ENABLED", "true")
+    # Production-policy tests set APP_ENV=production before reloading settings.
+    # Keep signing enabled while supplying test-only key material.
+    os.environ.setdefault(
+        "POSITIONING_LABEL_HMAC_SECRET",
+        "pytest-only-positioning-label-secret",
+    )
 
 
 # Import-time bootstrap runs before deeper ``conftest`` files import ``src.*`` (so cached Settings

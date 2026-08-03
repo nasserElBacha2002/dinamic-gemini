@@ -89,6 +89,26 @@ def _created_age_seconds(job: Job, *, now: datetime) -> float | None:
     return (now - started).total_seconds()
 
 
+def _active_job_view(
+    active: Job,
+    *,
+    state: str,
+    recoverable: bool,
+    can_start_new: bool,
+    failure_code: str | None,
+) -> AisleProcessingStateView:
+    return AisleProcessingStateView(
+        state=state,
+        job_id=active.id,
+        job_status=active.status.value,
+        idempotency_key=_idempotency_from_job(active),
+        recoverable=recoverable,
+        can_start_new=can_start_new,
+        updated_at=active.updated_at,
+        failure_code=failure_code,
+    )
+
+
 def _classify_active_job(
     active: Job,
     *,
@@ -96,51 +116,43 @@ def _classify_active_job(
     stale_after_seconds: int,
 ) -> AisleProcessingStateView:
     """Classify an active job using lease/heartbeat evidence — not age alone."""
-    idem = _idempotency_from_job(active)
-    base_kwargs = dict(
-        job_id=active.id,
-        job_status=active.status.value,
-        idempotency_key=idem,
-        updated_at=active.updated_at,
-    )
-
     # Worker launch failed while still STARTING/QUEUED → safe to recover.
     if (active.failure_code or "").strip() == WORKER_LAUNCH_FAILED:
-        return AisleProcessingStateView(
+        return _active_job_view(
+            active,
             state="RECOVERY_REQUIRED",
             recoverable=True,
             can_start_new=False,
             failure_code=WORKER_LAUNCH_FAILED,
-            **base_kwargs,
         )
 
     # Live lease → never mark recovery.
     if _has_active_lease(active, now=now):
-        return AisleProcessingStateView(
+        return _active_job_view(
+            active,
             state="RUNNING" if active.status is JobStatus.RUNNING else "STARTING",
             recoverable=False,
             can_start_new=False,
             failure_code=None,
-            **base_kwargs,
         )
 
     # RUNNING / CANCEL_REQUESTED without lease: heartbeat decides.
     if active.status in {JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED}:
         hb_age = _heartbeat_age_seconds(active, now=now)
         if hb_age is not None and hb_age > stale_after_seconds:
-            return AisleProcessingStateView(
+            return _active_job_view(
+                active,
                 state="RECOVERY_REQUIRED",
                 recoverable=True,
                 can_start_new=False,
                 failure_code="STALE_LEASE_OR_HEARTBEAT",
-                **base_kwargs,
             )
-        return AisleProcessingStateView(
+        return _active_job_view(
+            active,
             state="RUNNING",
             recoverable=False,
             can_start_new=False,
             failure_code=None,
-            **base_kwargs,
         )
 
     # QUEUED / STARTING without lease: age → suspected; no lease + old → recovery.
@@ -149,27 +161,27 @@ def _classify_active_job(
         # No owner / lease → recoverable orphan. If somehow claimed without expiry,
         # keep as suspected until recover inspects further.
         if not (active.claim_owner_id or "").strip() or active.lease_expires_at is None:
-            return AisleProcessingStateView(
+            return _active_job_view(
+                active,
                 state="RECOVERY_REQUIRED",
                 recoverable=True,
                 can_start_new=False,
                 failure_code="STALE_STARTING_OR_QUEUED",
-                **base_kwargs,
             )
-        return AisleProcessingStateView(
+        return _active_job_view(
+            active,
             state="SUSPECTED_STALE",
             recoverable=False,
             can_start_new=False,
             failure_code="SUSPECTED_STALE_STARTING_OR_QUEUED",
-            **base_kwargs,
         )
 
-    return AisleProcessingStateView(
+    return _active_job_view(
+        active,
         state="RUNNING" if active.status is JobStatus.RUNNING else "STARTING",
         recoverable=False,
         can_start_new=False,
         failure_code=None,
-        **base_kwargs,
     )
 
 

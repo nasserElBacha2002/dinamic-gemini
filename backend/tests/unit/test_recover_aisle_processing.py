@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any
 from unittest.mock import MagicMock
 
-from src.application.services.aisle_processing_state import AisleProcessingStateView
 from src.application.use_cases.recovery.recover_aisle_processing import (
     RecoverAisleProcessingCommand,
     RecoverAisleProcessingOutcome,

@@ -92,12 +92,7 @@ export default function App(): JSX.Element {
             userMessageForCode('LOCAL_DB_CORRUPTED'),
           );
         }
-        if (
-          created.config.flags.mobileLocalCodeScan ||
-          created.config.flags.mobileAuthoritativeLocalCodeScan
-        ) {
-          setIdentificationModePreference('CODE_SCAN');
-        }
+        setIdentificationModePreference(null);
         unsubscribeConnectivity = created.connectivity.subscribe((state) => {
           if (mounted) setConnectivity(state);
         });

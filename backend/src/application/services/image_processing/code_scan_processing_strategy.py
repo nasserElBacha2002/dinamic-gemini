@@ -26,6 +26,7 @@ import threading
 import time
 from collections import Counter
 from dataclasses import dataclass
+from typing import Any
 
 from src.application.ports.code_scanner import (
     CodeScanDetectionCandidate,
@@ -76,6 +77,10 @@ _PYZBAR_SYMBOLOGY_NORMALIZE = {
     "UPCA": "UPC_A",
     "UPCE": "UPC_E",
 }
+
+
+def _float_if_present(value: Any) -> float | None:
+    return float(value) if value is not None else None
 
 
 class CodeScanTimeoutError(RuntimeError):
@@ -369,10 +374,9 @@ class CodeScanProcessingStrategy:
                             normalized_value=(c.code_value or "").strip(),
                             bounding_box=c.bounding_box_json,
                             confidence=c.confidence,
-                            rotation_degrees=(
-                                float(c.metadata_json.get("rotation_degrees"))
+                            rotation_degrees=_float_if_present(
+                                c.metadata_json.get("rotation_degrees")
                                 if c.metadata_json is not None
-                                and c.metadata_json.get("rotation_degrees") is not None
                                 else None
                             ),
                             candidate_index=idx,
@@ -510,7 +514,7 @@ class CodeScanProcessingStrategy:
             )
             # Position QR(s) consumed by Phase 3 — not a product-code miss; do not drive
             # GLOBAL_EXTERNAL_FALLBACK with a misleading NO_CODE_SYMBOL_FOUND.
-            if position_only:
+            if position_only and position_meta is not None:
                 statuses = position_meta.get("position_statuses") or []
                 position_ok = any(
                     s in ("VALID", "SIGNATURE_VALIDATION_SKIPPED") for s in statuses

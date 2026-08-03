@@ -27,18 +27,10 @@ from src.application.errors import (
     NoSourceAssetsForAisleProcessingError,
     ProcessingRejectedUnsealedSessionError,
 )
-from src.application.services.ordered_capture_processing_reservation import (
-    OrderedCaptureProcessingReservationService,
-)
+from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.ordered_capture_session_repository import (
     OrderedCaptureSessionRepository,
 )
-from src.application.services.capture_sequence import (
-    sort_assets_by_logical_sequence,
-    validate_complete_sequence,
-)
-from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
-from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -54,6 +46,10 @@ from src.application.services.aisle_identification_execution import (
 )
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
+from src.application.services.capture_sequence import (
+    sort_assets_by_logical_sequence,
+    validate_complete_sequence,
+)
 from src.application.services.image_processing.ocr_client_field_rules import (
     ocr_client_rules_snapshot,
     resolve_ocr_client_field_rules,
@@ -63,6 +59,9 @@ from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.legacy_processing_guard import (
     reject_legacy_effective_mode_for_new_job,
 )
+from src.application.services.ordered_capture_processing_reservation import (
+    OrderedCaptureProcessingReservationService,
+)
 from src.application.services.process_aisle_execution_resolution import (
     resolve_process_aisle_execution_keys,
 )
@@ -70,6 +69,7 @@ from src.config import load_settings
 from src.domain.aisle_identification.modes import CONFIGURATION_SNAPSHOT_VERSION
 from src.domain.aisle_identification.resolver import resolve_aisle_identification_mode
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
 from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
 logger = logging.getLogger(__name__)

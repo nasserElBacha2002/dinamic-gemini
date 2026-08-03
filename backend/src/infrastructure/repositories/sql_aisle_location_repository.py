@@ -467,6 +467,9 @@ def _row_to_artifact(row: Any) -> AisleLocationLabelArtifact:
     except ValueError:
         status = AisleLocationLabelArtifactStatus.READY
     storage_key_raw = getattr(row, "storage_key", None)
+    created = _ensure_utc(getattr(row, "created_at", None))
+    if created is None:
+        raise ValueError("aisle_location_label_artifacts row missing created_at")
     return AisleLocationLabelArtifact(
         id=str(row.id),
         label_id=str(row.label_id),
@@ -480,7 +483,7 @@ def _row_to_artifact(row: Any) -> AisleLocationLabelArtifact:
         content_type=str(row.content_type),
         file_size_bytes=int(row.file_size_bytes),
         artifact_hash=str(row.artifact_hash),
-        created_at=_ensure_utc(row.created_at),
+        created_at=created,
         status=status,
         failure_code=optional_nonempty_db_str(getattr(row, "failure_code", None)),
         failure_detail=optional_nonempty_db_str(getattr(row, "failure_detail", None)),

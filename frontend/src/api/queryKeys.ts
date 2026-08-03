@@ -199,6 +199,12 @@ export const queryKeys = {
     list: (params: Record<string, string | number>) =>
       [...queryKeys.clients.all, 'list', params] as const,
     detail: (clientId: string) => [...queryKeys.clients.all, 'detail', clientId] as const,
+    positionLabels: {
+      all: (clientId: string) =>
+        [...queryKeys.clients.all, 'position-labels', clientId] as const,
+      list: (clientId: string, search: string) =>
+        [...queryKeys.clients.positionLabels.all(clientId), 'list', search] as const,
+    },
     suppliers: {
       all: (clientId: string) => [...queryKeys.clients.all, 'suppliers', clientId] as const,
       list: (clientId: string, params: Record<string, string | number>) =>

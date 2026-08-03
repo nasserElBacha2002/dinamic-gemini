@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 from src.domain.position_label_detection.entities import ImagePositionLabelDetection
 

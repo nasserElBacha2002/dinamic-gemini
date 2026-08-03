@@ -187,7 +187,10 @@ class AisleJobLaunchService:
 
         if created:
             try:
-                from src.observability.metrics.instruments import JOBS_CREATED_TOTAL, record_job_outcome
+                from src.observability.metrics.instruments import (
+                    JOBS_CREATED_TOTAL,
+                    record_job_outcome,
+                )
                 from src.observability.metrics.registry import get_metrics_registry
 
                 get_metrics_registry().inc(

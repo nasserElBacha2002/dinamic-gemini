@@ -6,7 +6,7 @@ import type { ScanMetrics } from '../../core/incrementalScan';
 import { emptyScanMetrics } from '../../core/incrementalScan';
 import type { CaptureMarker } from '../../domain/entities/captureMarker';
 import type { GalleryImage } from '../../domain/entities/galleryImage';
-import type { CapturePhotoStatus } from '../../domain/enums/photoStatus';
+import type { CapturePhotoStatus, CaptureSessionStatus } from '../../domain/enums/photoStatus';
 import { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import { cursorFromInitialMarker, cursorFromSession, imageFromPhotoRow } from '../../database/schema/captureSchema';
@@ -392,9 +392,7 @@ export class CaptureService {
     const resumeStatus: 'active' | 'paused' =
       current.status === 'paused' ? 'paused' : 'active';
 
-    if (current.status !== 'finishing') {
-      await this.repo.updateSessionStatus(sessionId, 'finishing');
-    }
+    await this.ensureSessionStatus(sessionId, 'finishing', ['active', 'paused', 'finishing']);
     this.autoScanEnabled = false;
     this.detachListener();
 
@@ -408,14 +406,17 @@ export class CaptureService {
       await this.reloadPhotos(sessionId);
       this.assertPhotosReadyForUpload();
 
+      // Re-assert finishing before review: concurrent writers / SQLite recovery can
+      // leave the row on `active`, which cannot jump directly to `review`.
+      await this.ensureSessionStatus(sessionId, 'finishing', ['active', 'paused', 'finishing']);
+      await this.repo.updateSessionStatus(sessionId, 'review');
+
       if (target === 'review') {
-        await this.repo.updateSessionStatus(sessionId, 'review');
         await this.loadSession(sessionId, false);
         this.logger.info('session_finish', { sessionId });
         return sessionId;
       }
 
-      await this.repo.updateSessionStatus(sessionId, 'review');
       await this.repo.updateSessionStatus(sessionId, 'uploading');
       this.clearCurrentSession();
       this.logger.info('session_finish', { sessionId, handoff: 'uploading' });
@@ -428,6 +429,36 @@ export class CaptureService {
         await this.loadSession(sessionId, resumeStatus === 'active');
       }
       throw error;
+    }
+  }
+
+  /**
+   * Idempotent session transition helper. Re-reads status and applies `to` when needed.
+   * Prevents illegal jumps (e.g. active → review) when a prior write did not stick.
+   */
+  private async ensureSessionStatus(
+    sessionId: string,
+    to: CaptureSessionStatus,
+    allowedFrom: readonly CaptureSessionStatus[],
+  ): Promise<void> {
+    const row = await this.repo.getSession(sessionId);
+    if (!row) {
+      throw new Error('No se encontró la captura local.');
+    }
+    if (row.status === to) {
+      return;
+    }
+    if (!allowedFrom.includes(row.status)) {
+      throw new Error(
+        `No se puede finalizar la captura desde el estado "${row.status}".`,
+      );
+    }
+    await this.repo.updateSessionStatus(sessionId, to);
+    const after = await this.repo.getSession(sessionId);
+    if (!after || after.status !== to) {
+      throw new Error(
+        'No se pudo actualizar el estado de la captura. Probá de nuevo; si persiste, reiniciá la app.',
+      );
     }
   }
 

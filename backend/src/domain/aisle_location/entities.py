@@ -5,10 +5,10 @@ Distinct from CV ``Position`` (detected product/pallet review unit in ``domain.p
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-import re
 
 
 class AisleLocationStatus(str, Enum):

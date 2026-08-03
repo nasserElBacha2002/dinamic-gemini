@@ -9,10 +9,10 @@ from src.application.services.position_reconciliation.aisle_position_overlay imp
     apply_aisle_position_to_summary,
 )
 from src.domain.position_reconciliation.entities import (
+    RECONCILIATION_VERSION,
     AssignmentSource,
     AssignmentStatus,
     ProductPositionAssignment,
-    RECONCILIATION_VERSION,
 )
 
 

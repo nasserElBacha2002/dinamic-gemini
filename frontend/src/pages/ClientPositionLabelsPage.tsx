@@ -15,11 +15,6 @@ import {
   DialogTitle,
   MenuItem,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from '@mui/material';
@@ -27,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/shell';
 import {
   BaseDialog,
+  DataTable,
   EmptyState,
   ErrorAlert,
   LoadingBlock,
@@ -43,6 +39,7 @@ import {
   listClientPositionLabels,
   type ClientPositionLabel,
 } from '../api/clientPositionLabelsApi';
+import { queryKeys } from '../api/queryKeys';
 import { getPositionLabelUiCapabilities } from '../features/positionLabels/positionLabelCapabilities';
 import { useClient } from '../hooks';
 
@@ -74,7 +71,7 @@ export default function ClientPositionLabelsPage() {
   const clientQuery = useClient(safeClientId || undefined, { enabled: Boolean(safeClientId) });
 
   const listQuery = useQuery({
-    queryKey: ['clients', safeClientId, 'position-labels', search],
+    queryKey: queryKeys.clients.positionLabels.list(safeClientId, search),
     queryFn: () =>
       listClientPositionLabels(safeClientId, {
         page: 1,
@@ -121,7 +118,7 @@ export default function ClientPositionLabelsPage() {
       setDescription('');
       setResultLabel(label);
       await queryClient.invalidateQueries({
-        queryKey: ['clients', safeClientId, 'position-labels'],
+        queryKey: queryKeys.clients.positionLabels.all(safeClientId),
       });
       showSnackbar(t('position_labels.created_snackbar'), 'success');
       if (caps.renderEnabled) {
@@ -142,7 +139,7 @@ export default function ClientPositionLabelsPage() {
       setInvalidateTarget(null);
       setInvalidateReason('');
       await queryClient.invalidateQueries({
-        queryKey: ['clients', safeClientId, 'position-labels'],
+        queryKey: queryKeys.clients.positionLabels.all(safeClientId),
       });
       showSnackbar(t('position_labels.invalidated_snackbar'), 'success');
     },
@@ -235,28 +232,34 @@ export default function ClientPositionLabelsPage() {
           />
         ) : null}
         {items.length > 0 ? (
-          <Table size="small" data-testid="position-labels-table">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('position_labels.col_name')}</TableCell>
-                <TableCell>{t('position_labels.col_description')}</TableCell>
-                <TableCell>{t('position_labels.col_id')}</TableCell>
-                <TableCell>{t('position_labels.col_status')}</TableCell>
-                <TableCell>{t('position_labels.col_created')}</TableCell>
-                <TableCell align="right">{t('position_labels.col_actions')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {items.map((label) => (
-                <TableRow key={label.id}>
-                  <TableCell>{label.name}</TableCell>
-                  <TableCell>{label.description || t('common.em_dash')}</TableCell>
-                  <TableCell>
+          <DataTable<ClientPositionLabel>
+            rows={items}
+            rowKey={(label) => label.id}
+            testId="position-labels-table"
+            columns={[
+              {
+                id: 'name',
+                label: t('position_labels.col_name'),
+                cell: (label) => label.name,
+              },
+              {
+                id: 'description',
+                label: t('position_labels.col_description'),
+                cell: (label) => label.description || t('common.em_dash'),
+              },
+              {
+                id: 'public_identifier',
+                label: t('position_labels.col_id'),
+                cell: (label) => (
                     <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
                       {label.public_identifier}
                     </Typography>
-                  </TableCell>
-                  <TableCell>
+                ),
+              },
+              {
+                id: 'status',
+                label: t('position_labels.col_status'),
+                cell: (label) => (
                     <StatusBadge
                       label={
                         label.status === 'ACTIVE'
@@ -265,9 +268,18 @@ export default function ClientPositionLabelsPage() {
                       }
                       semantic={statusSemantic(label.status)}
                     />
-                  </TableCell>
-                  <TableCell>{new Date(label.created_at).toLocaleString()}</TableCell>
-                  <TableCell align="right">
+                ),
+              },
+              {
+                id: 'created_at',
+                label: t('position_labels.col_created'),
+                cell: (label) => new Date(label.created_at).toLocaleString(),
+              },
+              {
+                id: 'actions',
+                label: t('position_labels.col_actions'),
+                align: 'right',
+                cell: (label) => (
                     <Stack direction="row" spacing={0.5} justifyContent="flex-end" flexWrap="wrap">
                       {caps.renderEnabled && label.status === 'ACTIVE' ? (
                         <>
@@ -291,11 +303,14 @@ export default function ClientPositionLabelsPage() {
                         </Button>
                       ) : null}
                     </Stack>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                ),
+              },
+            ]}
+            mobile={{
+              mode: 'horizontal-scroll',
+              reason: 'Position label actions require the complete operational row.',
+            }}
+          />
         ) : null}
       </SectionCard>
 

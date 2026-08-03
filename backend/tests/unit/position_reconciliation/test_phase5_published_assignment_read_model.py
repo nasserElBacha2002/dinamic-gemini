@@ -22,13 +22,13 @@ from src.application.services.position_reconciliation.result_position_enrichment
     view_to_position_payload,
 )
 from src.domain.position_reconciliation.entities import (
+    RECONCILIATION_VERSION,
     AssignmentSource,
     AssignmentStatus,
+    PositionReconciliation,
     ProductPositionAssignment,
     ReconciliationStatus,
-    RECONCILIATION_VERSION,
 )
-from src.domain.position_reconciliation.entities import PositionReconciliation
 
 
 def _assignment(

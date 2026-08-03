@@ -122,7 +122,9 @@ def position_to_operational_export_row_dict(
     position: Position,
     primary_product: ProductRecord | None,
     *,
-    position_assignment: PublishedPositionAssignmentView | None = None,
+    position_assignment: (
+        PublishedPositionAssignmentView | EffectiveProductPositionView | None
+    ) = None,
 ) -> dict[str, Any]:
     corrected = primary_product.corrected_quantity if primary_product is not None else None
     view = build_position_canonical_view(

@@ -215,7 +215,7 @@ class SqlOrderedCaptureSessionRepository(OrderedCaptureSessionRepository):
         now: datetime,
     ) -> OrderedCaptureSession | None:
         """CAS SEALED→PROCESSING with processing_job_id; idempotent if already linked."""
-        started = _ensure_utc(now)
+        started = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """

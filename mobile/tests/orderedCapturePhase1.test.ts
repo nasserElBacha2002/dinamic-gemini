@@ -133,8 +133,8 @@ describe('OrderedCaptureApi', () => {
   });
 });
 
-describe('migration v19', () => {
-  it('is present after v18', () => {
-    expect(MIGRATIONS[MIGRATIONS.length - 1]?.version).toBe(19);
+describe('migration v20', () => {
+  it('is present after v19', () => {
+    expect(MIGRATIONS[MIGRATIONS.length - 1]?.version).toBe(20);
   });
 });

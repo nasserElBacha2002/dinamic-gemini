@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_get_position_detail_use_case, get_result_evidence_query_service
+from src.api.dependencies import (
+    get_get_position_detail_use_case,
+    get_position_reconciliation_repo,
+    get_result_evidence_query_service,
+)
 from src.api.schemas.result_evidence_schemas import ResultEvidenceViewResponse
 from src.api.server import app
 from src.application.use_cases.positions.get_position_detail import (
@@ -23,6 +28,14 @@ def _fake_admin() -> AuthUser:
 
 
 NOW = datetime(2026, 6, 18, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _disable_persistent_position_enrichment():
+    """Keep this route-contract test independent of SQL reconciliation tables."""
+    app.dependency_overrides[get_position_reconciliation_repo] = lambda: None
+    yield
+    app.dependency_overrides.pop(get_position_reconciliation_repo, None)
 
 
 def _position() -> Position:

@@ -40,6 +40,7 @@ def group_summaries_by_position(
         view = views_by_result_id.get(product_id) if product_id else None
         name = view.position.name if view and view.position else None
         label_id = view.position.id if view and view.position else None
+        key: tuple[str | None, str | None]
         if name:
             key = (label_id, name)
         else:

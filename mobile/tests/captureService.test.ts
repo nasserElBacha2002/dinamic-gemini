@@ -279,6 +279,13 @@ class FakeRepo {
     this.photos.set(key, { ...row, status });
   }
 
+  async clearPhotoSequenceNumber(photoId: string) {
+    const row = this.photos.get(photoId);
+    if (row) {
+      this.photos.set(photoId, { ...row, sequence_number: null });
+    }
+  }
+
   async applyStabilityResult(input: StabilityResultInput) {
     const key = `${input.sessionId}:${input.assetId}`;
     const row = this.photos.get(key);

@@ -214,6 +214,12 @@ describe('UploadQueue phase1 corrections', () => {
           });
         },
       ),
+      clearPhotoSequenceNumber: jest.fn(async (photoId: string) => {
+        const current = photos.get(photoId);
+        if (current) {
+          photos.set(photoId, { ...current, sequence_number: null });
+        }
+      }),
       setPreparationProcessingMode: jest.fn(async (sessionId: string, mode: string) => {
         const s = sessions.get(sessionId);
         if (s) {

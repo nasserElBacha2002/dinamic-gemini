@@ -4,12 +4,6 @@ import {
   Alert,
   Box,
   CircularProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -20,6 +14,7 @@ import {
   type ProductPositionAssignmentDto,
 } from '../../api/positionReconciliationApi';
 import { ApiError } from '../../api/types';
+import { DataTable } from '../../components/ui';
 import { getPositionLabelUiCapabilities } from './positionLabelCapabilities';
 
 type AssignmentFilter = 'all' | 'assigned' | 'unassigned' | 'ambiguous';
@@ -110,34 +105,49 @@ export default function JobPositionAssignmentsPanel({
         </Typography>
       ) : null}
       {items.length > 0 ? (
-        <TableContainer>
-          <Table size="small" aria-label="Asignaciones de posición">
-            <TableHead>
-              <TableRow>
-                <TableCell>Producto</TableCell>
-                <TableCell>Foto (asset)</TableCell>
-                <TableCell>Secuencia</TableCell>
-                <TableCell>Posición asignada</TableCell>
-                <TableCell>Estado</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+        <DataTable<ProductPositionAssignmentDto>
+          rows={items}
+          rowKey={(item) => item.id}
+          columns={[
+            {
+              id: 'result_id',
+              label: 'Producto',
+              cell: (item) => (
+                <Typography component="span" sx={{ fontFamily: 'monospace', fontSize: 12 }}>
                     {item.result_id}
-                  </TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+                </Typography>
+              ),
+            },
+            {
+              id: 'source_asset_id',
+              label: 'Foto (asset)',
+              cell: (item) => (
+                <Typography component="span" sx={{ fontFamily: 'monospace', fontSize: 12 }}>
                     {item.source_asset_id}
-                  </TableCell>
-                  <TableCell>{item.sequence_number ?? 'Sin secuencia'}</TableCell>
-                  <TableCell>{item.position_name ?? 'Sin asignar'}</TableCell>
-                  <TableCell>{labelForPositionAssignmentStatus(item.assignment_status)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                </Typography>
+              ),
+            },
+            {
+              id: 'sequence_number',
+              label: 'Secuencia',
+              cell: (item) => item.sequence_number ?? 'Sin secuencia',
+            },
+            {
+              id: 'position_name',
+              label: 'Posición asignada',
+              cell: (item) => item.position_name ?? 'Sin asignar',
+            },
+            {
+              id: 'assignment_status',
+              label: 'Estado',
+              cell: (item) => labelForPositionAssignmentStatus(item.assignment_status),
+            },
+          ]}
+          mobile={{
+            mode: 'horizontal-scroll',
+            reason: 'Assignment evidence is reviewed across all columns.',
+          }}
+        />
       ) : null}
     </Box>
   );

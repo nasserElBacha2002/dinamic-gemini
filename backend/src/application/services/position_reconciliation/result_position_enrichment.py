@@ -91,14 +91,12 @@ def build_partition_key_by_position_id(
         if override_repo is not None
         else reader.load_for_job(job_id, result_ids=result_ids)
     )
-    return {
-        p.id: partition_key_from_assignment_view(
-            views.get(primary_by_position[p.id].id)
-            if primary_by_position[p.id] is not None
-            else None
-        )
-        for p in positions
-    }
+    partition_keys: dict[str, str] = {}
+    for position in positions:
+        primary = primary_by_position[position.id]
+        view = views.get(primary.id) if primary is not None else None
+        partition_keys[position.id] = partition_key_from_assignment_view(view)
+    return partition_keys
 
 
 def view_to_position_payload(
@@ -237,7 +235,7 @@ def matches_position_filters(
         ):
             return False
         if position_name and (
-            (effective.name if effective else "").strip().lower()
+            ((effective.name or "") if effective else "").strip().lower()
             != position_name.strip().lower()
         ):
             return False

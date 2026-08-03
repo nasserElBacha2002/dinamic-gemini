@@ -9,7 +9,8 @@ export function isSqliteMalformedError(error: unknown): boolean {
 export function isSqliteBusyError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
   return (
-    /database is locked|SQLITE_BUSY|error code\s*\u0005|error code\s*5\b/i.test(msg) ||
+    msg.includes(String.fromCharCode(5)) ||
+    /database is locked|SQLITE_BUSY|error code\s*5\b/i.test(msg) ||
     (/nativestatement\.finalizeasync/i.test(msg) && /locked|busy/i.test(msg))
   );
 }
