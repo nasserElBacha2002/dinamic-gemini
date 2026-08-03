@@ -645,3 +645,45 @@ class PositionLabelDetectionContextInvalidError(PositionLabelDetectionError):
 class PositionLabelDetectionConfigurationError(PositionLabelDetectionError):
     def __init__(self, message: str = "Position label detection is misconfigured") -> None:
         super().__init__(message, code="POSITION_LABEL_DETECTION_CONFIGURATION_ERROR")
+
+
+class PositionReconciliationError(Exception):
+    """Base error for Phase 4 reconciliation operations."""
+
+    code = "POSITION_RECONCILIATION_FAILED"
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        self.code = code or self.code
+        super().__init__(message)
+
+
+class PositionReconciliationNotReadyError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_NOT_READY"
+
+
+class PositionReconciliationAlreadyRunningError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_ALREADY_RUNNING"
+
+
+class PositionReconciliationInputChangedError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_INPUT_CHANGED"
+
+
+class PositionReconciliationSessionMismatchError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_SESSION_MISMATCH"
+
+
+class PositionReconciliationSequenceInvalidError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_SEQUENCE_INVALID"
+
+
+class PositionReconciliationFailedError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_FAILED"
+
+
+class PositionAssignmentNotFoundError(PositionReconciliationError):
+    code = "POSITION_ASSIGNMENT_NOT_FOUND"
+
+
+class PositionAssignmentAccessDeniedError(PositionReconciliationError):
+    code = "POSITION_ASSIGNMENT_ACCESS_DENIED"

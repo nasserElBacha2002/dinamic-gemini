@@ -107,6 +107,7 @@ class V3JobFinalizationService:
         artifact_manifest_store: ArtifactManifestStore | None,
         artifact_outbox_store: ArtifactPublicationOutboxStore | None,
         stage_recorder: FinalizationStageRecorder | None,
+        position_reconciliation_use_case=None,
     ) -> None:
         self._job_repo = job_repo
         self._clock = clock
@@ -118,6 +119,7 @@ class V3JobFinalizationService:
         self._artifact_manifest_store = artifact_manifest_store
         self._artifact_outbox_store = artifact_outbox_store
         self._stage_recorder = stage_recorder
+        self._position_reconciliation_use_case = position_reconciliation_use_case
 
     def finalize_success(self, req: V3JobFinalizationRequest) -> bool:
         """Persist domain, upload durables, finalize success. True => caller must return True (failure)."""
@@ -263,6 +265,43 @@ class V3JobFinalizationService:
                 },
             )
             return True
+
+        if self._position_reconciliation_use_case is not None:
+            try:
+                from src.application.use_cases.position_reconciliation.reconcile_job_positions import (
+                    ReconcileJobPositionsCommand,
+                )
+
+                self._position_reconciliation_use_case.execute(
+                    ReconcileJobPositionsCommand(
+                        inventory_id=req.aisle.inventory_id,
+                        job_id=req.job_id,
+                    )
+                )
+                logger.info(
+                    "event=position_reconciliation_auto_run_completed job_id=%s",
+                    req.job_id,
+                )
+            except Exception as reconciliation_error:
+                try:
+                    self._position_reconciliation_use_case.record_failure(
+                        inventory_id=req.aisle.inventory_id,
+                        job_id=req.job_id,
+                        failure_code=getattr(
+                            reconciliation_error,
+                            "code",
+                            "POSITION_RECONCILIATION_FAILED",
+                        ),
+                    )
+                except Exception:
+                    logger.exception(
+                        "event=position_reconciliation_failure_status_write_failed job_id=%s",
+                        req.job_id,
+                    )
+                logger.exception(
+                    "event=position_reconciliation_auto_run_failed job_id=%s",
+                    req.job_id,
+                )
 
         if req.lease is not None:
             assert_result = self._job_repo.assert_lease(req.lease, now=self._clock.now())

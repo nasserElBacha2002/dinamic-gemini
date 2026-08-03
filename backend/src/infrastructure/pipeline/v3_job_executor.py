@@ -177,6 +177,7 @@ class V3JobExecutor:
         artifact_publication_lease_seconds: int = 120,
         artifact_publication_backoff_seconds: tuple[int, ...] = DEFAULT_BACKOFF_SECONDS,
         job_source_asset_repo=None,
+        position_reconciliation_use_case=None,
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
@@ -343,6 +344,7 @@ class V3JobExecutor:
             artifact_manifest_store=artifact_manifest_store,
             artifact_outbox_store=artifact_publication_outbox_store,
             stage_recorder=self._stage_recorder,
+            position_reconciliation_use_case=position_reconciliation_use_case,
         )
         self._failure_handler = V3WorkerFailureHandler(state_service=self._state)
 

@@ -283,6 +283,7 @@ class AppContainer:
         self._aisle_location_label_artifact_repo = None
         self._client_position_label_repo = None
         self._image_position_label_detection_repo = None
+        self._position_reconciliation_repo = None
         self._code_scan_repo: CodeScanRepository | None = None
         self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
         self._authoritative_local_code_scan_repo = None
@@ -413,6 +414,7 @@ class AppContainer:
         self._aisle_location_label_artifact_repo = None
         self._client_position_label_repo = None
         self._image_position_label_detection_repo = None
+        self._position_reconciliation_repo = None
         self._code_scan_repo = None
         self._preliminary_detection_repo = None
         self._authoritative_local_code_scan_repo = None
@@ -1200,6 +1202,18 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._image_position_label_detection_repo
+
+    def get_position_reconciliation_repo(self):
+        if getattr(self, "_position_reconciliation_repo", None) is not None:
+            return self._position_reconciliation_repo
+        from src.runtime.container.repository_builders import (
+            build_position_reconciliation_repository,
+        )
+
+        self._position_reconciliation_repo = build_position_reconciliation_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._position_reconciliation_repo
 
     def get_recompute_consolidated_counts_use_case(self) -> RecomputeConsolidatedCountsUseCase:
         return build_recompute_consolidated_counts_use_case(

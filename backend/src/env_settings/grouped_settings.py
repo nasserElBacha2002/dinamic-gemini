@@ -1951,6 +1951,27 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: POSITION_LABEL_DETECTION_PERSISTENCE_ENABLED (default true)."
         ),
     )
+    position_reconciliation_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RECONCILIATION_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Phase 4 reconciliation feature gate (default true).",
+    )
+    position_reconciliation_persistence_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RECONCILIATION_PERSISTENCE_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Persist Phase 4 reconciliation revisions (default true).",
+    )
+    position_reconciliation_auto_run_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RECONCILIATION_AUTO_RUN_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Run Phase 4 best-effort after successful job finalization.",
+    )
     position_label_max_payload_bytes: int = Field(
         default_factory=lambda: int(
             os.getenv("POSITION_LABEL_MAX_PAYLOAD_BYTES", "4096") or "4096"

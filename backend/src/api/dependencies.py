@@ -2473,6 +2473,44 @@ def get_image_position_label_detection_repo():
     return get_app_container().get_image_position_label_detection_repo()
 
 
+def get_position_reconciliation_repo():
+    return get_app_container().get_position_reconciliation_repo()
+
+
+def get_reconcile_job_positions_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    job_source_asset_repo=Depends(get_job_source_asset_repo),
+    coverage_repo=Depends(get_job_image_coverage_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    detection_repo=Depends(get_image_position_label_detection_repo),
+    reconciliation_repo=Depends(get_position_reconciliation_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.position_reconciliation.reconcile_job_positions import (
+        ReconcileJobPositionsUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return ReconcileJobPositionsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        source_asset_repo=source_asset_repo,
+        job_source_asset_repo=job_source_asset_repo,
+        coverage_repo=coverage_repo,
+        product_record_repo=product_record_repo,
+        detection_repo=detection_repo,
+        reconciliation_repo=reconciliation_repo,
+        access_policy=access_policy,
+        enabled=settings.position_reconciliation_enabled,
+        persistence_enabled=settings.position_reconciliation_persistence_enabled,
+    )
+
+
 def get_render_aisle_location_label_use_case(
     location_repo=Depends(get_aisle_location_repo),
     label_repo=Depends(get_aisle_location_label_repo),

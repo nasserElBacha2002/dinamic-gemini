@@ -729,3 +729,28 @@ def build_image_position_label_detection_repository(
         build_sql=_sql,
         build_memory=_memory,
     )
+
+
+def build_position_reconciliation_repository(
+    build_repo: BuildSqlOrMemory[_RepoT],
+) -> _RepoT:
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_position_reconciliation_repository import (
+            SqlPositionReconciliationRepository,
+        )
+
+        return SqlPositionReconciliationRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_position_reconciliation_repository import (
+            MemoryPositionReconciliationRepository,
+        )
+
+        return MemoryPositionReconciliationRepository()
+
+    return build_repo(
+        backend_info_name="PositionReconciliationRepository",
+        sql_error_subject="position_reconciliation repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )

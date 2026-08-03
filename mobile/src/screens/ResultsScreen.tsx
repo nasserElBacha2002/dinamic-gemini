@@ -7,6 +7,10 @@ import {
   PositionLabelDetectionsApi,
   type ImagePositionDetectionDto,
 } from '../features/processing/positionLabelDetectionsApi';
+import {
+  formatPositionAssignmentLine,
+  PositionReconciliationApi,
+} from '../features/processing/positionReconciliationApi';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import { Button, ErrorText, styles } from '../ui';
@@ -38,6 +42,7 @@ export function ResultsScreen({
 }: ResultsScreenProps) {
   const [busy, setBusy] = useState(true);
   const [summary, setSummary] = useState<ProcessingResultSummary | null>(null);
+  const [assignmentLines, setAssignmentLines] = useState<readonly string[]>([]);
   const [positionLines, setPositionLines] = useState<readonly string[]>([]);
 
   const load = useCallback(() => {
@@ -52,8 +57,17 @@ export function ResultsScreen({
         const invId = inventory?.id?.trim() || result.inventoryId?.trim();
         const jobId = result.jobId?.trim();
         if (!invId || !jobId) {
+          setAssignmentLines([]);
           setPositionLines([]);
           return;
+        }
+        try {
+          const api = new PositionReconciliationApi(services.api);
+          const response = await api.listAssignmentsForJob(invId, jobId);
+          setAssignmentLines((response.items ?? []).map(formatPositionAssignmentLine));
+        } catch {
+          // Reconciliation is best-effort and may be disabled on the backend.
+          setAssignmentLines([]);
         }
         try {
           const api = new PositionLabelDetectionsApi(services.api);
@@ -69,6 +83,7 @@ export function ResultsScreen({
       })
       .catch((e) => {
         setSummary(null);
+        setAssignmentLines([]);
         setPositionLines([]);
         onError(e instanceof Error ? e.message : String(e));
       })
@@ -125,6 +140,16 @@ export function ResultsScreen({
       </Text>
       {summary.finishedAt ? <Text style={styles.row}>Finalizado: {summary.finishedAt}</Text> : null}
       {summary.jobId ? <Text style={styles.muted}>Diagnóstico job: {summary.jobId}</Text> : null}
+      {assignmentLines.length > 0 ? (
+        <View>
+          <Text style={styles.h2}>Asignaciones de posición</Text>
+          {assignmentLines.map((line, index) => (
+            <Text key={`${index}-${line}`} style={styles.row}>
+              {line}
+            </Text>
+          ))}
+        </View>
+      ) : null}
       {positionLines.length > 0 ? (
         <View>
           <Text style={styles.h2}>Etiquetas de posicionamiento</Text>

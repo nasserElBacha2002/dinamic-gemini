@@ -12,6 +12,7 @@ function parseEnvBool(value: unknown, defaultValue: boolean): boolean {
 export interface PositionLabelUiCapabilities {
   labelsEnabled: boolean;
   renderEnabled: boolean;
+  reconciliationEnabled: boolean;
 }
 
 export function getPositionLabelUiCapabilities(): PositionLabelUiCapabilities {
@@ -24,6 +25,10 @@ export function getPositionLabelUiCapabilities(): PositionLabelUiCapabilities {
     ),
     renderEnabled: parseEnvBool(
       import.meta.env.VITE_POSITION_LABEL_RENDER_ENABLED ?? renderFallback,
+      true
+    ),
+    reconciliationEnabled: parseEnvBool(
+      import.meta.env.VITE_POSITION_RECONCILIATION_ENABLED,
       true
     ),
   };

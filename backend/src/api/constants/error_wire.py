@@ -50,6 +50,14 @@ HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED = "aisle_id does not belong to the
 
 # Mapper normalizer + Category C job-read — generic job-not-found phrase (identical semantics).
 HTTP_DETAIL_JOB_NOT_FOUND = "Job not found"
+HTTP_DETAIL_POSITION_RECONCILIATION_NOT_READY = "Position reconciliation is not ready"
+HTTP_DETAIL_POSITION_RECONCILIATION_ALREADY_RUNNING = "Position reconciliation is already running"
+HTTP_DETAIL_POSITION_RECONCILIATION_INPUT_CHANGED = "Position reconciliation inputs changed"
+HTTP_DETAIL_POSITION_RECONCILIATION_SESSION_MISMATCH = "Job assets span multiple capture sessions"
+HTTP_DETAIL_POSITION_RECONCILIATION_SEQUENCE_INVALID = "Position reconciliation sequence is invalid"
+HTTP_DETAIL_POSITION_RECONCILIATION_FAILED = "Position reconciliation failed"
+HTTP_DETAIL_POSITION_ASSIGNMENT_NOT_FOUND = "Position assignment not found"
+HTTP_DETAIL_POSITION_ASSIGNMENT_ACCESS_DENIED = "Position assignment access denied"
 
 # Route-level validation / assets (duplicated literals, identical semantics).
 HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED = "Only format=csv is supported"

@@ -119,6 +119,31 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             event="worker.executor_bootstrap_started",
             details={"base_path": str(base_path)},
         )
+        position_reconciliation_use_case = None
+        settings = load_settings()
+        if (
+            settings.position_reconciliation_enabled
+            and settings.position_reconciliation_auto_run_enabled
+        ):
+            from src.application.use_cases.position_reconciliation.reconcile_job_positions import (
+                ReconcileJobPositionsUseCase,
+            )
+            from src.runtime.app_container import get_app_container
+
+            container = get_app_container()
+            position_reconciliation_use_case = ReconcileJobPositionsUseCase(
+                inventory_repo=get_inventory_repo(),
+                aisle_repo=get_aisle_repo(),
+                job_repo=job_repo,
+                source_asset_repo=get_source_asset_repo(),
+                job_source_asset_repo=get_job_source_asset_repo(),
+                coverage_repo=container.get_job_image_coverage_repo(),
+                product_record_repo=get_product_record_repo(),
+                detection_repo=container.get_image_position_label_detection_repo(),
+                reconciliation_repo=container.get_position_reconciliation_repo(),
+                enabled=True,
+                persistence_enabled=settings.position_reconciliation_persistence_enabled,
+            )
         executor = V3JobExecutor(
             job_repo=job_repo,
             aisle_repo=get_aisle_repo(),
@@ -145,6 +170,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             artifact_publication_outbox_store=get_artifact_publication_outbox_store(),
             artifact_staging_store=get_artifact_staging_store(),
             job_source_asset_repo=get_job_source_asset_repo(),
+            position_reconciliation_use_case=position_reconciliation_use_case,
         )
         append_worker_bootstrap_event(
             job_id=job_id,
