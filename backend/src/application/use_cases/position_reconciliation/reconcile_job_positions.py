@@ -245,11 +245,18 @@ class ReconcileJobPositionsUseCase:
         frames: list[OrderedImageFrame],
         sequence_sources: list[str],
     ) -> list[OrderedImageFrame]:
-        """For web uploads (position_order only), place position photos before item photos.
+        """For web uploads (position_order only), fix leading items before the first position.
 
-        Capture/link sequences are authoritative and must not be rewritten. When every
-        sequenced frame came from upload ``position_order``, arbitrary file-picker order
-        (item then position) would leave products ``UNASSIGNED_NO_PREVIOUS_POSITION``.
+        Capture/link sequences are authoritative and must not be rewritten.
+
+        When every sequenced frame came from upload ``position_order``, a common picker
+        mistake is *item then first position photo*, which leaves those products
+        ``UNASSIGNED_NO_PREVIOUS_POSITION``. Lift **only** the first position-establishing
+        frame ahead of those leading non-position frames.
+
+        Do **not** move every position photo before every item: that collapses an aisle
+        walk (pos1 → items → pos2 → items) into (pos1 → pos2 → all items) and forward-fill
+        then assigns the last position to every product.
         """
         if not frames:
             return frames
@@ -258,22 +265,33 @@ class ReconcileJobPositionsUseCase:
         if not all(source in {"position_order", "none"} for source in sequence_sources):
             return frames
 
-        ordered = [f for f in frames if f.sequence_number is not None]
+        ordered = sorted(
+            (f for f in frames if f.sequence_number is not None),
+            key=lambda f: (int(f.sequence_number or 0), f.source_asset_id),
+        )
         unordered = [f for f in frames if f.sequence_number is None]
         if not ordered:
             return frames
 
-        with_position = sorted(
-            (f for f in ordered if cls._frame_can_establish_position(f)),
-            key=lambda f: (int(f.sequence_number or 0), f.source_asset_id),
-        )
-        without_position = sorted(
-            (f for f in ordered if not cls._frame_can_establish_position(f)),
-            key=lambda f: (int(f.sequence_number or 0), f.source_asset_id),
-        )
-        resequenced: list[OrderedImageFrame] = []
-        for index, frame in enumerate(with_position + without_position):
-            resequenced.append(replace(frame, sequence_number=index))
+        first_pos_idx: int | None = None
+        for index, frame in enumerate(ordered):
+            if cls._frame_can_establish_position(frame):
+                first_pos_idx = index
+                break
+        if first_pos_idx is None or first_pos_idx == 0:
+            # Already starts with a position (or none) — keep interleaved walk intact.
+            resequenced = [
+                replace(frame, sequence_number=index) for index, frame in enumerate(ordered)
+            ]
+            return resequenced + unordered
+
+        leading = ordered[:first_pos_idx]
+        first_position = ordered[first_pos_idx]
+        rest = ordered[first_pos_idx + 1 :]
+        normalized = [first_position, *leading, *rest]
+        resequenced = [
+            replace(frame, sequence_number=index) for index, frame in enumerate(normalized)
+        ]
         return resequenced + unordered
 
     def execute(self, command: ReconcileJobPositionsCommand) -> ReconcileJobPositionsResult:
