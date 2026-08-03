@@ -8,11 +8,7 @@ from src.application.dto.access_principal import AccessPrincipal
 from src.application.ports.image_position_label_detection_repository import (
     ImagePositionLabelDetectionRepository,
 )
-from src.application.ports.repositories import (
-    AisleRepository,
-    InventoryRepository,
-    JobRepository,
-)
+from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.domain.position_label_detection.entities import ImagePositionLabelDetection
 
@@ -30,13 +26,11 @@ class ListJobPositionDetectionsUseCase:
         self,
         *,
         detection_repo: ImagePositionLabelDetectionRepository,
-        inventory_repo: InventoryRepository,
         job_repo: JobRepository,
         aisle_repo: AisleRepository,
         access_policy: InventoryAccessPolicy,
     ) -> None:
         self._detections = detection_repo
-        self._inventories = inventory_repo
         self._jobs = job_repo
         self._aisles = aisle_repo
         self._access = access_policy

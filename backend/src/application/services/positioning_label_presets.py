@@ -13,7 +13,7 @@ class PositioningLabelPreset:
     dpi: int
     marker_size_mm: float
     quiet_zone_mm: float
-    template_version: int = 1
+    template_version: int = 2
 
 
 _PRESETS: dict[str, PositioningLabelPreset] = {
@@ -24,7 +24,7 @@ _PRESETS: dict[str, PositioningLabelPreset] = {
         dpi=300,
         marker_size_mm=45.0,
         quiet_zone_mm=4.0,
-        template_version=1,
+        template_version=2,
     ),
     "MM_100X150": PositioningLabelPreset(
         code="MM_100x150",
@@ -33,7 +33,7 @@ _PRESETS: dict[str, PositioningLabelPreset] = {
         dpi=300,
         marker_size_mm=50.0,
         quiet_zone_mm=4.0,
-        template_version=1,
+        template_version=2,
     ),
     "A6": PositioningLabelPreset(
         code="A6",
@@ -42,7 +42,7 @@ _PRESETS: dict[str, PositioningLabelPreset] = {
         dpi=300,
         marker_size_mm=55.0,
         quiet_zone_mm=4.0,
-        template_version=1,
+        template_version=2,
     ),
     "A4_GRID": PositioningLabelPreset(
         code="A4_GRID",
@@ -51,7 +51,7 @@ _PRESETS: dict[str, PositioningLabelPreset] = {
         dpi=300,
         marker_size_mm=70.0,
         quiet_zone_mm=5.0,
-        template_version=1,
+        template_version=2,
     ),
     "THERMAL": PositioningLabelPreset(
         code="THERMAL",
@@ -60,7 +60,7 @@ _PRESETS: dict[str, PositioningLabelPreset] = {
         dpi=203,
         marker_size_mm=40.0,
         quiet_zone_mm=3.0,
-        template_version=1,
+        template_version=2,
     ),
 }
 

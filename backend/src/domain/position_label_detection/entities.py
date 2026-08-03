@@ -20,6 +20,7 @@ class PositionLabelDetectionStatus(str, Enum):
     MISSING_SIGNATURE = "MISSING_SIGNATURE"
     INVALID_SIGNATURE = "INVALID_SIGNATURE"
     UNKNOWN_KEY_VERSION = "UNKNOWN_KEY_VERSION"
+    SIGNATURE_VALIDATION_SKIPPED = "SIGNATURE_VALIDATION_SKIPPED"
     LABEL_NOT_FOUND = "LABEL_NOT_FOUND"
     LABEL_INVALIDATED = "LABEL_INVALIDATED"
     CLIENT_MISMATCH = "CLIENT_MISMATCH"
@@ -28,6 +29,7 @@ class PositionLabelDetectionStatus(str, Enum):
     PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
     DECODE_TIMEOUT = "DECODE_TIMEOUT"
     DETECTION_FAILED = "DETECTION_FAILED"
+    DETECTION_CONTEXT_INVALID = "DETECTION_CONTEXT_INVALID"
     NO_LABEL = "NO_LABEL"
     FEATURE_DISABLED = "FEATURE_DISABLED"
 
@@ -60,6 +62,7 @@ class DetectedCode:
     bounding_box: dict[str, Any] | None = None
     confidence: float | None = None
     rotation_degrees: float | None = None
+    candidate_index: int | None = None
 
 
 @dataclass

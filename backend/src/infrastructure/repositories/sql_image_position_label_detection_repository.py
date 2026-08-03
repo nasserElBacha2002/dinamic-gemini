@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -120,12 +121,14 @@ class SqlImagePositionLabelDetectionRepository:
             cur.execute(
                 _SELECT
                 + """
-                WHERE source_asset_id = ?
+                WHERE job_id = ?
+                  AND source_asset_id = ?
                   AND detector_version = ?
                   AND detection_status = ?
                   AND raw_payload_hash = ?
                 """,
                 (
+                    detection.job_id,
                     detection.source_asset_id,
                     detection.detector_version,
                     detection.detection_status.value,
@@ -135,13 +138,17 @@ class SqlImagePositionLabelDetectionRepository:
             existing = cur.fetchone()
             if existing is not None:
                 prev = _row_to_entity(existing)
+                # Preserve identity scope — never rewrite job/inventory/client/asset.
                 detection.id = prev.id
                 detection.created_at = prev.created_at
+                detection.job_id = prev.job_id
+                detection.inventory_id = prev.inventory_id
+                detection.client_id = prev.client_id
+                detection.source_asset_id = prev.source_asset_id
                 cur.execute(
                     """
                     UPDATE dbo.image_position_label_detections
-                    SET client_id = ?, inventory_id = ?, job_id = ?,
-                        client_image_id = ?, ordered_capture_session_id = ?,
+                    SET client_image_id = ?, ordered_capture_session_id = ?,
                         sequence_number = ?, position_label_id = ?, public_identifier = ?,
                         position_name_snapshot = ?, payload_version = ?, signature_status = ?,
                         confidence = ?, bounding_box_json = ?, rotation_degrees = ?,
@@ -149,9 +156,6 @@ class SqlImagePositionLabelDetectionRepository:
                     WHERE id = ?
                     """,
                     (
-                        detection.client_id,
-                        detection.inventory_id,
-                        detection.job_id,
                         detection.client_image_id,
                         detection.ordered_capture_session_id,
                         detection.sequence_number,
@@ -212,12 +216,14 @@ class SqlImagePositionLabelDetectionRepository:
                 cur.execute(
                     _SELECT
                     + """
-                    WHERE source_asset_id = ?
+                    WHERE job_id = ?
+                      AND source_asset_id = ?
                       AND detector_version = ?
                       AND detection_status = ?
                       AND raw_payload_hash = ?
                     """,
                     (
+                        detection.job_id,
                         detection.source_asset_id,
                         detection.detector_version,
                         detection.detection_status.value,
@@ -229,6 +235,139 @@ class SqlImagePositionLabelDetectionRepository:
                     raise
                 return _row_to_entity(raced)
             return detection
+
+    def replace_asset_detections_atomically(
+        self,
+        *,
+        job_id: str,
+        source_asset_id: str,
+        detector_version: str,
+        detections: Sequence[ImagePositionLabelDetection],
+    ) -> list[ImagePositionLabelDetection]:
+        with self._client.begin_transaction() as txn:
+            cur = txn.connection.cursor()
+            out: list[ImagePositionLabelDetection] = []
+            kept_ids: list[str] = []
+            for detection in detections:
+                hash_key = (detection.raw_payload_hash or "").strip() or (
+                    f"status:{detection.detection_status.value}"
+                )
+                detection.raw_payload_hash = hash_key
+                cur.execute(
+                    _SELECT
+                    + """
+                    WHERE job_id = ?
+                      AND source_asset_id = ?
+                      AND detector_version = ?
+                      AND detection_status = ?
+                      AND raw_payload_hash = ?
+                    """,
+                    (
+                        detection.job_id,
+                        detection.source_asset_id,
+                        detection.detector_version,
+                        detection.detection_status.value,
+                        hash_key,
+                    ),
+                )
+                existing = cur.fetchone()
+                if existing is not None:
+                    prev = _row_to_entity(existing)
+                    detection.id = prev.id
+                    detection.created_at = prev.created_at
+                    detection.job_id = prev.job_id
+                    detection.inventory_id = prev.inventory_id
+                    detection.client_id = prev.client_id
+                    detection.source_asset_id = prev.source_asset_id
+                    cur.execute(
+                        """
+                        UPDATE dbo.image_position_label_detections
+                        SET client_image_id = ?, ordered_capture_session_id = ?,
+                            sequence_number = ?, position_label_id = ?, public_identifier = ?,
+                            position_name_snapshot = ?, payload_version = ?, signature_status = ?,
+                            confidence = ?, bounding_box_json = ?, rotation_degrees = ?,
+                            detector_name = ?, metadata_json = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            detection.client_image_id,
+                            detection.ordered_capture_session_id,
+                            detection.sequence_number,
+                            detection.position_label_id,
+                            detection.public_identifier,
+                            detection.position_name_snapshot,
+                            detection.payload_version,
+                            detection.signature_status.value,
+                            detection.confidence,
+                            _json_dump(detection.bounding_box_json),
+                            detection.rotation_degrees,
+                            detection.detector_name,
+                            _json_dump(detection.metadata_json or None),
+                            detection.updated_at,
+                            detection.id,
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO dbo.image_position_label_detections (
+                            id, client_id, inventory_id, job_id, source_asset_id, client_image_id,
+                            ordered_capture_session_id, sequence_number, position_label_id,
+                            public_identifier, position_name_snapshot, payload_version,
+                            signature_status, detection_status, confidence, bounding_box_json,
+                            rotation_degrees, raw_payload_hash, detector_name, detector_version,
+                            metadata_json, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            detection.id,
+                            detection.client_id,
+                            detection.inventory_id,
+                            detection.job_id,
+                            detection.source_asset_id,
+                            detection.client_image_id,
+                            detection.ordered_capture_session_id,
+                            detection.sequence_number,
+                            detection.position_label_id,
+                            detection.public_identifier,
+                            detection.position_name_snapshot,
+                            detection.payload_version,
+                            detection.signature_status.value,
+                            detection.detection_status.value,
+                            detection.confidence,
+                            _json_dump(detection.bounding_box_json),
+                            detection.rotation_degrees,
+                            hash_key,
+                            detection.detector_name,
+                            detection.detector_version,
+                            _json_dump(detection.metadata_json or None),
+                            detection.created_at,
+                            detection.updated_at,
+                        ),
+                    )
+                out.append(detection)
+                kept_ids.append(detection.id)
+
+            if kept_ids:
+                placeholders = ",".join("?" for _ in kept_ids)
+                cur.execute(
+                    f"""
+                    DELETE FROM dbo.image_position_label_detections
+                    WHERE job_id = ? AND source_asset_id = ? AND detector_version = ?
+                      AND id NOT IN ({placeholders})
+                    """,
+                    (job_id, source_asset_id, detector_version, *kept_ids),
+                )
+            else:
+                cur.execute(
+                    """
+                    DELETE FROM dbo.image_position_label_detections
+                    WHERE job_id = ? AND source_asset_id = ? AND detector_version = ?
+                    """,
+                    (job_id, source_asset_id, detector_version),
+                )
+            txn.commit()
+            return out
 
     def list_by_job(self, job_id: str) -> list[ImagePositionLabelDetection]:
         with self._client.cursor() as cur:

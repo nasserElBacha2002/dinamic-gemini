@@ -57,6 +57,8 @@ export function labelForPositionDetectionStatus(status: string): string {
       return 'Payload no soportado';
     case 'AMBIGUOUS_POSITION_DETECTION':
       return 'Detección ambigua';
+    case 'SIGNATURE_VALIDATION_SKIPPED':
+      return 'Firma no validada';
     case 'LABEL_NOT_FOUND':
       return 'Etiqueta desconocida';
     default:

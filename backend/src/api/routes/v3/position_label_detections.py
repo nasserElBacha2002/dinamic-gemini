@@ -9,7 +9,6 @@ from src.api.dependencies import (
     get_aisle_repo,
     get_image_position_label_detection_repo,
     get_inventory_access_policy,
-    get_inventory_repo,
     get_job_repo,
 )
 from src.api.schemas.position_label_detection_schemas import (
@@ -41,7 +40,6 @@ def list_job_position_detections(
     job_id: str,
     principal: AccessPrincipal = Depends(get_access_principal),
     detection_repo=Depends(get_image_position_label_detection_repo),
-    inventory_repo=Depends(get_inventory_repo),
     job_repo=Depends(get_job_repo),
     aisle_repo=Depends(get_aisle_repo),
     access_policy=Depends(get_inventory_access_policy),
@@ -49,7 +47,6 @@ def list_job_position_detections(
     _require_detection_enabled()
     use_case = ListJobPositionDetectionsUseCase(
         detection_repo=detection_repo,
-        inventory_repo=inventory_repo,
         job_repo=job_repo,
         aisle_repo=aisle_repo,
         access_policy=access_policy,
@@ -74,7 +71,6 @@ def list_asset_position_detections(
     asset_id: str,
     principal: AccessPrincipal = Depends(get_access_principal),
     detection_repo=Depends(get_image_position_label_detection_repo),
-    inventory_repo=Depends(get_inventory_repo),
     job_repo=Depends(get_job_repo),
     aisle_repo=Depends(get_aisle_repo),
     access_policy=Depends(get_inventory_access_policy),
@@ -82,7 +78,6 @@ def list_asset_position_detections(
     _require_detection_enabled()
     use_case = ListJobPositionDetectionsUseCase(
         detection_repo=detection_repo,
-        inventory_repo=inventory_repo,
         job_repo=job_repo,
         aisle_repo=aisle_repo,
         access_policy=access_policy,

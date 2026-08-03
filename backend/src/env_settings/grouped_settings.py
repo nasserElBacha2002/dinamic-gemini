@@ -1963,16 +1963,21 @@ class LimitsAndSchemaSettings(BaseModel):
             os.getenv("POSITION_LABEL_MAX_CODES_PER_IMAGE", "32") or "32"
         ),
         ge=1,
-        description="Max decoded codes considered per image. Env: POSITION_LABEL_MAX_CODES_PER_IMAGE.",
-    )
-    position_label_decode_timeout_ms: int = Field(
-        default_factory=lambda: int(
-            os.getenv("POSITION_LABEL_DECODE_TIMEOUT_MS", "15000") or "15000"
-        ),
-        ge=100,
         description=(
-            "Soft decode budget for position-aware CODE_SCAN (ms). "
-            "Env: POSITION_LABEL_DECODE_TIMEOUT_MS."
+            "Max POSITION candidates validated/persisted per image "
+            "(does not drop item CODE_SCAN candidates). "
+            "Env: POSITION_LABEL_MAX_CODES_PER_IMAGE."
+        ),
+    )
+    position_label_persist_no_label: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_LABEL_PERSIST_NO_LABEL", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, persist a NO_LABEL row for images without position QR. "
+            "Default false (absence of rows means no detection). "
+            "Env: POSITION_LABEL_PERSIST_NO_LABEL."
         ),
     )
     legacy_image_order_enabled: bool = Field(

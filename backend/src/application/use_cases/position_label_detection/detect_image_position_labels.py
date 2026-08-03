@@ -51,14 +51,20 @@ class ImagePositionDetectionCommand:
 class ImagePositionDetectionResult:
     detections: tuple[ImagePositionLabelDetection, ...]
     item_codes: tuple[DetectedCode, ...]
+    position_candidate_indexes: tuple[int, ...]
     ambiguous: bool
     disabled: bool = False
+    context_invalid: bool = False
 
 
 class ImagePositionDetectionUseCase:
     """Classify decoded symbols and persist position-label detections.
 
     Does not decode images. Callers must pass codes from a shared CODE_SCAN pass.
+
+    ``POSITION_LABEL_MAX_CODES_PER_IMAGE`` limits how many POSITION candidates are
+    validated/persisted. Classification still runs on all codes so item candidates
+    are never dropped from the consolidator path.
     """
 
     def __init__(
@@ -73,6 +79,7 @@ class ImagePositionDetectionUseCase:
         detection_enabled: bool,
         persistence_enabled: bool,
         max_codes_per_image: int,
+        persist_no_label: bool = False,
         detector_name: str = DETECTOR_NAME,
         detector_version: str = DETECTOR_VERSION,
     ) -> None:
@@ -85,6 +92,7 @@ class ImagePositionDetectionUseCase:
         self._detection_enabled = bool(detection_enabled)
         self._persistence_enabled = bool(persistence_enabled)
         self._max_codes = max(1, int(max_codes_per_image))
+        self._persist_no_label = bool(persist_no_label)
         self._detector_name = detector_name
         self._detector_version = detector_version
 
@@ -104,15 +112,37 @@ class ImagePositionDetectionUseCase:
             return ImagePositionDetectionResult(
                 detections=(),
                 item_codes=tuple(command.codes),
+                position_candidate_indexes=(),
                 ambiguous=False,
                 disabled=True,
+            )
+
+        client_id = (command.client_id or "").strip()
+        if not client_id:
+            logger.info(
+                "position_label_detection_completed client_id=%s inventory_id=%s job_id=%s "
+                "asset_id=%s detection_status=%s detector_version=%s correlation_id=%s",
+                "",
+                command.inventory_id,
+                command.job_id,
+                command.source_asset_id,
+                PositionLabelDetectionStatus.DETECTION_CONTEXT_INVALID.value,
+                self._detector_version,
+                command.correlation_id,
+            )
+            return ImagePositionDetectionResult(
+                detections=(),
+                item_codes=tuple(command.codes),
+                position_candidate_indexes=(),
+                ambiguous=False,
+                context_invalid=True,
             )
 
         logger.info(
             "position_label_detection_started client_id=%s inventory_id=%s job_id=%s "
             "asset_id=%s client_image_id=%s sequence_number=%s detector_version=%s "
             "correlation_id=%s",
-            command.client_id,
+            client_id,
             command.inventory_id,
             command.job_id,
             command.source_asset_id,
@@ -122,43 +152,70 @@ class ImagePositionDetectionUseCase:
             command.correlation_id,
         )
 
-        codes = list(command.codes[: self._max_codes])
+        # Classify every decoded symbol — never drop item candidates via max_codes.
         item_codes: list[DetectedCode] = []
         position_codes: list[DetectedCode] = []
-        for code in codes:
-            kind = self._classifier.classify(code)
+        position_indexes: list[int] = []
+        for index, code in enumerate(command.codes):
+            indexed = DetectedCode(
+                symbology=code.symbology,
+                raw_value=code.raw_value,
+                normalized_value=code.normalized_value,
+                bounding_box=code.bounding_box,
+                confidence=code.confidence,
+                rotation_degrees=code.rotation_degrees,
+                candidate_index=code.candidate_index if code.candidate_index is not None else index,
+            )
+            kind = self._classifier.classify(indexed)
             if kind is ImageCodeKind.POSITION:
-                position_codes.append(code)
+                position_codes.append(indexed)
+                position_indexes.append(index)
                 logger.info(
                     "position_label_code_detected client_id=%s job_id=%s asset_id=%s "
-                    "symbology=%s detector_version=%s correlation_id=%s",
-                    command.client_id,
+                    "symbology=%s candidate_index=%s detector_version=%s correlation_id=%s",
+                    client_id,
                     command.job_id,
                     command.source_asset_id,
-                    code.symbology,
+                    indexed.symbology,
+                    indexed.candidate_index,
                     self._detector_version,
                     command.correlation_id,
                 )
             elif kind is ImageCodeKind.ITEM:
-                item_codes.append(code)
+                item_codes.append(indexed)
 
         now = self._clock.now()
         if isinstance(now, datetime) and now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
 
+        # Work on a command snapshot with required client_id.
+        scoped = ImagePositionDetectionCommand(
+            client_id=client_id,
+            inventory_id=command.inventory_id,
+            job_id=command.job_id,
+            source_asset_id=command.source_asset_id,
+            codes=command.codes,
+            client_image_id=command.client_image_id,
+            ordered_capture_session_id=command.ordered_capture_session_id,
+            sequence_number=command.sequence_number,
+            correlation_id=command.correlation_id,
+        )
+
         if not position_codes:
-            empty = self._build_row(
-                command,
-                now=now,
-                status=PositionLabelDetectionStatus.NO_LABEL,
-                signature_status=PositionLabelSignatureStatus.MISSING,
-                payload_hash=None,
-            )
-            saved = self._persist_many([empty])
+            detections: list[ImagePositionLabelDetection] = []
+            if self._persist_no_label:
+                empty = self._build_row(
+                    scoped,
+                    now=now,
+                    status=PositionLabelDetectionStatus.NO_LABEL,
+                    signature_status=PositionLabelSignatureStatus.MISSING,
+                    payload_hash=None,
+                )
+                detections = list(self._persist_many([empty]))
             logger.info(
                 "position_label_detection_completed client_id=%s job_id=%s asset_id=%s "
                 "detection_status=%s detector_version=%s correlation_id=%s",
-                command.client_id,
+                client_id,
                 command.job_id,
                 command.source_asset_id,
                 PositionLabelDetectionStatus.NO_LABEL.value,
@@ -166,14 +223,17 @@ class ImagePositionDetectionUseCase:
                 command.correlation_id,
             )
             return ImagePositionDetectionResult(
-                detections=tuple(saved),
+                detections=tuple(detections),
                 item_codes=tuple(item_codes),
+                position_candidate_indexes=tuple(position_indexes),
                 ambiguous=False,
             )
 
+        # Defensive cap applies only to POSITION evaluation, never to item_codes.
+        to_evaluate = position_codes[: self._max_codes]
         candidate_rows: list[ImagePositionLabelDetection] = []
-        for code in position_codes:
-            candidate_rows.append(self._evaluate_position_code(command, code, now=now))
+        for code in to_evaluate:
+            candidate_rows.append(self._evaluate_position_code(scoped, code, now=now))
 
         valid_label_ids = {
             (r.public_identifier or "").strip()
@@ -188,14 +248,13 @@ class ImagePositionDetectionUseCase:
             logger.info(
                 "position_label_ambiguous client_id=%s job_id=%s asset_id=%s "
                 "label_count=%s detector_version=%s correlation_id=%s",
-                command.client_id,
+                client_id,
                 command.job_id,
                 command.source_asset_id,
                 len(valid_label_ids),
                 self._detector_version,
                 command.correlation_id,
             )
-            # Replace valid rows with a single ambiguous audit row; keep invalids.
             kept = [
                 r
                 for r in candidate_rows
@@ -204,7 +263,7 @@ class ImagePositionDetectionUseCase:
             boxes = [r.bounding_box_json for r in candidate_rows if r.bounding_box_json]
             kept.append(
                 self._build_row(
-                    command,
+                    scoped,
                     now=now,
                     status=PositionLabelDetectionStatus.AMBIGUOUS_POSITION_DETECTION,
                     signature_status=PositionLabelSignatureStatus.VALID,
@@ -215,7 +274,6 @@ class ImagePositionDetectionUseCase:
             )
             candidate_rows = kept
         elif len(valid_label_ids) == 1:
-            # Consolidate duplicate identical valid codes into one row.
             label_id = next(iter(valid_label_ids))
             valids = [
                 r
@@ -234,7 +292,9 @@ class ImagePositionDetectionUseCase:
             primary = valids[0]
             if len(valids) > 1:
                 boxes = [v.bounding_box_json for v in valids if v.bounding_box_json]
-                primary.bounding_box_json = {"instances": boxes} if boxes else primary.bounding_box_json
+                primary.bounding_box_json = (
+                    {"instances": boxes} if boxes else primary.bounding_box_json
+                )
                 primary.metadata_json = {
                     **(primary.metadata_json or {}),
                     "duplicate_code_count": len(valids),
@@ -242,12 +302,21 @@ class ImagePositionDetectionUseCase:
                 }
             candidate_rows = [primary, *others]
 
+        if len(position_codes) > self._max_codes:
+            for row in candidate_rows:
+                row.metadata_json = {
+                    **(row.metadata_json or {}),
+                    "position_codes_truncated": True,
+                    "position_codes_total": len(position_codes),
+                    "position_codes_evaluated": len(to_evaluate),
+                }
+
         saved = self._persist_many(candidate_rows)
         status_summary = ",".join(sorted({d.detection_status.value for d in saved})) or "NONE"
         logger.info(
             "position_label_detection_completed client_id=%s job_id=%s asset_id=%s "
             "detection_status=%s detector_version=%s correlation_id=%s",
-            command.client_id,
+            client_id,
             command.job_id,
             command.source_asset_id,
             status_summary,
@@ -257,6 +326,7 @@ class ImagePositionDetectionUseCase:
         return ImagePositionDetectionResult(
             detections=tuple(saved),
             item_codes=tuple(item_codes),
+            position_candidate_indexes=tuple(position_indexes),
             ambiguous=ambiguous,
         )
 
@@ -354,7 +424,7 @@ class ImagePositionDetectionUseCase:
                 status=PositionLabelDetectionStatus.CLIENT_MISMATCH,
                 signature_status=validated.signature_status,
                 payload_hash=parsed.payload_hash,
-                public_identifier=None,  # no cross-tenant leak
+                public_identifier=None,
                 payload_version=parsed.version,
                 bounding_box_json=code.bounding_box,
                 rotation_degrees=code.rotation_degrees,
@@ -410,10 +480,16 @@ class ImagePositionDetectionUseCase:
     ) -> list[ImagePositionLabelDetection]:
         if not self._persistence_enabled:
             return rows
-        out: list[ImagePositionLabelDetection] = []
-        for row in rows:
-            out.append(self._repo.upsert_idempotent(row))
-        return out
+        if not rows:
+            return []
+        return list(
+            self._repo.replace_asset_detections_atomically(
+                job_id=rows[0].job_id,
+                source_asset_id=rows[0].source_asset_id,
+                detector_version=rows[0].detector_version,
+                detections=rows,
+            )
+        )
 
     def _build_row(
         self,

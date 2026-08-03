@@ -342,6 +342,7 @@ def test_use_case_position_plus_item_keeps_both() -> None:
     )
     assert len(result.item_codes) == 1
     assert result.item_codes[0].raw_value == "SKU|5"
+    assert result.position_candidate_indexes == (0,)
     assert len(result.detections) == 1
     assert result.detections[0].detection_status is PositionLabelDetectionStatus.VALID
     assert result.detections[0].sequence_number == 2
@@ -445,12 +446,147 @@ def test_use_case_label_not_found() -> None:
 
 
 def test_structured_error_codes() -> None:
-    from src.application.errors import (
-        PositionLabelAmbiguousError,
-        PositionLabelClientMismatchError,
-        PositionLabelInvalidSignatureError,
+    from src.application.errors import PositionLabelDetectionContextInvalidError
+
+    assert (
+        PositionLabelDetectionContextInvalidError().code
+        == "POSITION_LABEL_DETECTION_CONTEXT_INVALID"
     )
 
-    assert PositionLabelInvalidSignatureError().code == "POSITION_LABEL_INVALID_SIGNATURE"
-    assert PositionLabelClientMismatchError().code == "POSITION_LABEL_CLIENT_MISMATCH"
-    assert PositionLabelAmbiguousError().code == "POSITION_LABEL_AMBIGUOUS"
+
+def test_max_codes_does_not_drop_item_candidates() -> None:
+    use_case = ImagePositionDetectionUseCase(
+        classifier=CodeClassifier(max_payload_bytes=4096),
+        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
+        validator=PositionLabelValidationService(
+            signing=_signing(), signature_validation_enabled=True
+        ),
+        resolver=PositionLabelResolver(label_repo=MemoryClientPositionLabelRepository()),
+        repo=MemoryImagePositionLabelDetectionRepository(),
+        clock=_Clock(),
+        detection_enabled=True,
+        persistence_enabled=False,
+        max_codes_per_image=2,
+        persist_no_label=False,
+    )
+    codes = [
+        DetectedCode(symbology="QR_CODE", raw_value=f"ITEM{i}|1", normalized_value=f"ITEM{i}|1")
+        for i in range(40)
+    ]
+    result = use_case.execute(
+        ImagePositionDetectionCommand(
+            client_id="client-1",
+            inventory_id="inv-1",
+            job_id="job-1",
+            source_asset_id="asset-many",
+            codes=codes,
+        )
+    )
+    assert len(result.item_codes) == 40
+    assert result.position_candidate_indexes == ()
+    assert result.detections == ()
+
+
+def test_signature_disabled_is_not_operationally_valid() -> None:
+    import json
+
+    payload = _signed_payload("pos_skip")
+    validator = PositionLabelValidationService(
+        signing=_signing(), signature_validation_enabled=False
+    )
+    parsed = PositionLabelPayloadParser(max_payload_bytes=4096).parse(
+        json.dumps(payload, separators=(",", ":"))
+    )
+    result = validator.validate(parsed)
+    assert result.detection_status is PositionLabelDetectionStatus.SIGNATURE_VALIDATION_SKIPPED
+    assert result.signature_status.value == "SKIPPED"
+
+
+def test_missing_client_id_is_context_invalid() -> None:
+    use_case = ImagePositionDetectionUseCase(
+        classifier=CodeClassifier(max_payload_bytes=4096),
+        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
+        validator=PositionLabelValidationService(
+            signing=_signing(), signature_validation_enabled=True
+        ),
+        resolver=PositionLabelResolver(label_repo=MemoryClientPositionLabelRepository()),
+        repo=MemoryImagePositionLabelDetectionRepository(),
+        clock=_Clock(),
+        detection_enabled=True,
+        persistence_enabled=True,
+        max_codes_per_image=16,
+    )
+    result = use_case.execute(
+        ImagePositionDetectionCommand(
+            client_id="  ",
+            inventory_id="inv-1",
+            job_id="job-1",
+            source_asset_id="asset-1",
+            codes=[DetectedCode(symbology="QR_CODE", raw_value="SKU|1", normalized_value="SKU|1")],
+        )
+    )
+    assert result.context_invalid is True
+    assert result.detections == ()
+    assert len(result.item_codes) == 1
+
+
+def test_job_scoped_idempotency_preserves_history() -> None:
+    import json
+
+    repo_labels = MemoryClientPositionLabelRepository()
+    repo_det = MemoryImagePositionLabelDetectionRepository()
+    now = datetime(2026, 7, 31, tzinfo=timezone.utc)
+    payload = _signed_payload("pos_jobs")
+    repo_labels.save(
+        ClientPositionLabel(
+            id=str(uuid4()),
+            client_id="client-1",
+            public_identifier="pos_jobs",
+            name="J-01",
+            normalized_name="J-01",
+            status=ClientPositionLabelStatus.ACTIVE,
+            payload_version=1,
+            canonical_payload=payload,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    use_case = ImagePositionDetectionUseCase(
+        classifier=CodeClassifier(max_payload_bytes=4096),
+        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
+        validator=PositionLabelValidationService(
+            signing=_signing(), signature_validation_enabled=True
+        ),
+        resolver=PositionLabelResolver(label_repo=repo_labels),
+        repo=repo_det,
+        clock=_Clock(),
+        detection_enabled=True,
+        persistence_enabled=True,
+        max_codes_per_image=16,
+    )
+    raw = json.dumps(payload, separators=(",", ":"))
+    code = DetectedCode(symbology="QR_CODE", raw_value=raw, normalized_value=raw)
+    first = use_case.execute(
+        ImagePositionDetectionCommand(
+            client_id="client-1",
+            inventory_id="inv-1",
+            job_id="job-a",
+            source_asset_id="asset-shared",
+            codes=[code],
+        )
+    )
+    second = use_case.execute(
+        ImagePositionDetectionCommand(
+            client_id="client-1",
+            inventory_id="inv-1",
+            job_id="job-b",
+            source_asset_id="asset-shared",
+            codes=[code],
+        )
+    )
+    assert first.detections[0].job_id == "job-a"
+    assert second.detections[0].job_id == "job-b"
+    assert first.detections[0].id != second.detections[0].id
+    assert len(repo_det.list_by_job("job-a")) == 1
+    assert len(repo_det.list_by_job("job-b")) == 1
+

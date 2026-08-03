@@ -9,7 +9,18 @@ from src.domain.position_label_detection.entities import ImagePositionLabelDetec
 
 class ImagePositionLabelDetectionRepository(Protocol):
     def upsert_idempotent(self, detection: ImagePositionLabelDetection) -> ImagePositionLabelDetection:
-        """Insert or update by (source_asset_id, detector_version, raw_payload_hash)."""
+        """Insert or update by job-scoped identity (does not move rows across jobs)."""
+        ...
+
+    def replace_asset_detections_atomically(
+        self,
+        *,
+        job_id: str,
+        source_asset_id: str,
+        detector_version: str,
+        detections: Sequence[ImagePositionLabelDetection],
+    ) -> list[ImagePositionLabelDetection]:
+        """Replace all detections for one job/asset/detector revision in one transaction."""
         ...
 
     def list_by_job(self, job_id: str) -> Sequence[ImagePositionLabelDetection]: ...

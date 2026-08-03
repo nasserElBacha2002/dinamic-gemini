@@ -47,9 +47,9 @@ class PositionLabelValidationService:
             )
         if not self._signature_validation_enabled:
             return PositionLabelValidationResult(
-                detection_status=PositionLabelDetectionStatus.VALID,
+                detection_status=PositionLabelDetectionStatus.SIGNATURE_VALIDATION_SKIPPED,
                 signature_status=PositionLabelSignatureStatus.SKIPPED,
-                detail="signature validation disabled",
+                detail="signature validation disabled — not operationally VALID",
             )
         assert parsed.payload is not None
         key_version = int(parsed.key_version or 0)
