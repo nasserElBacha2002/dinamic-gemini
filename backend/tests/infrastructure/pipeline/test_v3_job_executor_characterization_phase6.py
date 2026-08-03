@@ -249,8 +249,10 @@ def test_characterization_successful_execution_call_order(tmp_path: Path) -> Non
                     assert executor.execute(tmp_path, job_id) is True
 
     assert call_order.index("mark_running") < call_order.index("begin_monitoring")
-    assert call_order.index("resolve_pipeline_inputs") < call_order.index("begin_monitoring")
-    assert call_order.index("begin_monitoring") < call_order.index("run_hybrid_pipeline")
+    # Heartbeat/monitoring must wrap input materialization so long GCS downloads
+    # cannot expire JOB_LEASE_DURATION_SEC before the first renew.
+    assert call_order.index("begin_monitoring") < call_order.index("resolve_pipeline_inputs")
+    assert call_order.index("resolve_pipeline_inputs") < call_order.index("run_hybrid_pipeline")
     assert call_order.index("run_hybrid_pipeline") < call_order.index("persist_domain_results")
     assert call_order.index("persist_domain_results") < call_order.index(
         "publish_durable_artifacts"

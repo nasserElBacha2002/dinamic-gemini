@@ -117,51 +117,65 @@ class V3JobMonitoringService:
         }
         monitor_started_at = time.monotonic()
 
+        def _renew_or_abort(
+            active_lease: JobLease,
+        ) -> tuple[JobLease | None, Job | None, bool]:
+            """Renew once. Returns (lease, job, ok). ok=False => caller must abort."""
+            current_job, renew = self._state.heartbeat_with_lease(
+                active_lease,
+                extension_seconds=req.lease_extension_seconds,
+            )
+            if renew.outcome != LeaseRenewalOutcome.RENEWED:
+                logger.info(
+                    "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s "
+                    "reason=%s outcome=%s",
+                    req.job_id,
+                    active_lease.owner_id,
+                    active_lease.fencing_token,
+                    renew.reason,
+                    renew.outcome.value,
+                )
+                # Do not mark job FAILED — another worker may continue.
+                return active_lease, current_job, False
+            next_lease = renew.lease if renew.lease is not None else active_lease
+            # After renew, remaining time must clear the configured safety margin.
+            margin = max(0, int(req.renewal_safety_margin_sec or 0))
+            if margin > 0 and next_lease is not None:
+                from datetime import datetime, timezone
+
+                now_utc = datetime.now(timezone.utc)
+                expires = next_lease.expires_at
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                remaining = (expires - now_utc).total_seconds()
+                if remaining < margin:
+                    logger.warning(
+                        "event=job_lease_renewal_margin_insufficient job_id=%s "
+                        "remaining_sec=%.1f margin_sec=%s",
+                        req.job_id,
+                        remaining,
+                        margin,
+                    )
+                    return next_lease, current_job, False
+            return next_lease, current_job, True
+
         def heartbeat_loop() -> None:
             active_lease = req.lease
+            # Renew immediately so long input materialization cannot burn the initial TTL
+            # before the first interval wait elapses.
+            if active_lease is not None:
+                active_lease, _job, ok = _renew_or_abort(active_lease)
+                if not ok:
+                    runtime_abort_event.set()
+                    stop_heartbeat.set()
+                    return
             while not stop_heartbeat.wait(self._heartbeat_interval_sec):
                 if active_lease is not None:
-                    current_job, renew = self._state.heartbeat_with_lease(
-                        active_lease,
-                        extension_seconds=req.lease_extension_seconds,
-                    )
-                    if renew.outcome != LeaseRenewalOutcome.RENEWED:
-                        logger.info(
-                            "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s "
-                            "reason=%s outcome=%s",
-                            req.job_id,
-                            active_lease.owner_id,
-                            active_lease.fencing_token,
-                            renew.reason,
-                            renew.outcome.value,
-                        )
-                        # Do not mark job FAILED — another worker may continue.
+                    active_lease, current_job, ok = _renew_or_abort(active_lease)
+                    if not ok:
                         runtime_abort_event.set()
                         stop_heartbeat.set()
                         break
-                    if renew.lease is not None:
-                        active_lease = renew.lease
-                    # After renew, remaining time must clear the configured safety margin.
-                    margin = max(0, int(req.renewal_safety_margin_sec or 0))
-                    if margin > 0 and active_lease is not None:
-                        from datetime import datetime, timezone
-
-                        now_utc = datetime.now(timezone.utc)
-                        expires = active_lease.expires_at
-                        if expires.tzinfo is None:
-                            expires = expires.replace(tzinfo=timezone.utc)
-                        remaining = (expires - now_utc).total_seconds()
-                        if remaining < margin:
-                            logger.warning(
-                                "event=job_lease_renewal_margin_insufficient job_id=%s "
-                                "remaining_sec=%.1f margin_sec=%s",
-                                req.job_id,
-                                remaining,
-                                margin,
-                            )
-                            runtime_abort_event.set()
-                            stop_heartbeat.set()
-                            break
                 else:
                     current_job = self._state.heartbeat(req.job_id)
                 if current_job is None:
