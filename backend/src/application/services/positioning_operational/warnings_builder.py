@@ -35,7 +35,7 @@ def transition_message_for_action(action: str | None, *, reason: str | None = No
         "INVALID_SIGNATURE": "La firma de la etiqueta de posición no es válida.",
         "CLIENT_MISMATCH": "La etiqueta no pertenece a este cliente.",
         "LEGACY_UNSIGNED_REQUIRES_REVIEW": (
-            "Etiqueta sin firma criptográfica: requiere revisión antes de usarse."
+            "Etiqueta sin firma criptográfica: la posición se aplicó y queda marcada para revisión."
         ),
         "NO_LABEL": "No se detectó etiqueta de posicionamiento en esta imagen.",
     }

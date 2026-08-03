@@ -77,6 +77,7 @@ class SequentialPositionReconciler:
         cleared_by_ambiguous = False
         cleared_by_invalid = False
         previous_sequence: int | None = None
+        current_unsigned_warning: tuple[str, ...] = ()
 
         for frame in ordered:
             sequence = int(frame.sequence_number or 0)
@@ -101,17 +102,32 @@ class SequentialPositionReconciler:
                     elif not detection.position_label_id:
                         action = PositionTransitionAction.KEEP_POSITION
                     elif signature != "VALID":
-                        # Only cryptographically valid signatures may SET_POSITION.
-                        # MISSING/SKIPPED/UNSIGNED remain visible but do not propagate.
+                        # VALID row with non-VALID signature is not a resolved unsigned
+                        # acceptance path — do not propagate position from it.
                         action = PositionTransitionAction.KEEP_POSITION
                         status = "LEGACY_UNSIGNED_REQUIRES_REVIEW"
+                elif status == "LEGACY_UNSIGNED_REQUIRES_REVIEW":
+                    if detection.client_id != expected_client_id:
+                        action = PositionTransitionAction.CLEAR_POSITION
+                        status = "CLIENT_MISMATCH"
+                    elif not detection.position_label_id:
+                        action = PositionTransitionAction.KEEP_POSITION
+                    else:
+                        # Resolved unsigned label (Phase 3 acceptance) sets position and
+                        # flags the assignment for operator review.
+                        action = PositionTransitionAction.SET_POSITION
 
                 if action is PositionTransitionAction.SET_POSITION:
                     current = detection
                     cleared_by_ambiguous = False
                     cleared_by_invalid = False
+                    if status == "LEGACY_UNSIGNED_REQUIRES_REVIEW":
+                        current_unsigned_warning = ("LEGACY_UNSIGNED_REQUIRES_REVIEW",)
+                    else:
+                        current_unsigned_warning = ()
                 elif action is PositionTransitionAction.CLEAR_POSITION:
                     current = None
+                    current_unsigned_warning = ()
                     if status == "AMBIGUOUS_POSITION_DETECTION":
                         cleared_by_ambiguous = True
                         cleared_by_invalid = False
@@ -119,6 +135,7 @@ class SequentialPositionReconciler:
                         cleared_by_invalid = True
                         cleared_by_ambiguous = False
 
+            item_warnings = gap_warning + current_unsigned_warning
             for item in sorted(frame.item_results, key=lambda ref: ref.result_id):
                 decisions.append(
                     self._decision(
@@ -127,7 +144,7 @@ class SequentialPositionReconciler:
                         current=current,
                         cleared_by_ambiguous=cleared_by_ambiguous,
                         cleared_by_invalid=cleared_by_invalid,
-                        warnings=gap_warning,
+                        warnings=item_warnings,
                     )
                 )
 
