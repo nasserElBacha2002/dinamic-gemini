@@ -483,9 +483,9 @@ export function UploadsScreen({
                 {photo.display_name}
               </Text>
               <Text style={styles.photoText}>{labelForUploadStatus(photo)}</Text>
-              {labelForLocalScanStatus(draft?.status) ? (
+              {labelForLocalScanStatus(draft?.status, draft?.error_code) ? (
                 <Text style={styles.muted} numberOfLines={2}>
-                  {labelForLocalScanStatus(draft?.status)}
+                  {labelForLocalScanStatus(draft?.status, draft?.error_code)}
                 </Text>
               ) : null}
               {detection ? (

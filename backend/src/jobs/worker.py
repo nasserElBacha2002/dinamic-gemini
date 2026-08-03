@@ -146,6 +146,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
                 detection_repo=container.get_image_position_label_detection_repo(),
                 reconciliation_repo=container.get_position_reconciliation_repo(),
                 clock=get_clock(),
+                position_repo=get_position_repo(),
                 readiness_policy=PositionReconciliationReadinessPolicy(
                     container.get_ordered_capture_session_repo()
                 ),

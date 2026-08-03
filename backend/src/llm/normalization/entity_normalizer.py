@@ -263,6 +263,10 @@ def _ensure_canonical_entity_keys(entity: dict[str, Any]) -> None:
                 entity[key] = False
             else:
                 entity[key] = None
+    # Claude (and others) often emit has_boxes: null following "use null when uncertain".
+    # Schema requires bool — treat unknown as false (no visible boxes asserted).
+    if entity.get("has_boxes") is None:
+        entity["has_boxes"] = False
 
 
 def _normalize_entity(

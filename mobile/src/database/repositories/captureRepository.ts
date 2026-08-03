@@ -12,6 +12,7 @@ import type { GalleryImage } from '../../domain/entities/galleryImage';
 import type { CapturePhotoStatus, CaptureSessionStatus } from '../../domain/enums/photoStatus';
 import type { PhotoUploadStatus } from '../../domain/enums/uploadStatus';
 import type { SQLiteDatabase } from '../database';
+import { runExclusiveDbWriteWithBusyRetry, withSqliteBusyRetry } from '../sqliteWriteGate';
 import type { CapturePhotoRow, CaptureSessionRow } from '../schema/captureSchema';
 
 export interface CreateCaptureSessionInput {
@@ -46,20 +47,22 @@ export class CaptureRepository {
   }
 
   async createSessionExclusive(input: CreateCaptureSessionInput): Promise<CreateCaptureSessionResult> {
-    await this.db.execAsync('BEGIN IMMEDIATE;');
-    try {
-      const existing = await this.findExclusiveCaptureSession();
-      if (existing) {
+    return runExclusiveDbWriteWithBusyRetry(async () => {
+      await this.db.execAsync('BEGIN IMMEDIATE;');
+      try {
+        const existing = await this.findExclusiveCaptureSession();
+        if (existing) {
+          await this.db.execAsync('COMMIT;');
+          return { session: existing, created: false };
+        }
+        const session = await this.insertSession(input, 'preparing');
         await this.db.execAsync('COMMIT;');
-        return { session: existing, created: false };
+        return { session, created: true };
+      } catch (e) {
+        await this.db.execAsync('ROLLBACK;');
+        throw e;
       }
-      const session = await this.insertSession(input, 'preparing');
-      await this.db.execAsync('COMMIT;');
-      return { session, created: true };
-    } catch (e) {
-      await this.db.execAsync('ROLLBACK;');
-      throw e;
-    }
+    });
   }
 
   private async insertSession(
@@ -160,13 +163,57 @@ export class CaptureRepository {
     if (!canTransitionSession(current.status, status)) {
       throw new Error(`Invalid capture session transition: ${current.status} -> ${status}`);
     }
+    await withSqliteBusyRetry(() =>
+      this.db.runAsync(
+        'UPDATE capture_sessions SET status = ?, finished_at = COALESCE(?, finished_at), updated_at = ? WHERE id = ?;',
+        status,
+        finished ? new Date().toISOString() : null,
+        new Date().toISOString(),
+        id,
+      ),
+    );
+  }
+
+  async markProcessStartFailed(
+    id: string,
+    patch: {
+      readonly errorCode: string;
+      readonly message: string;
+      readonly sessionStatus?: CaptureSessionStatus;
+      readonly clearBackendJobId?: boolean;
+    },
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const sessionStatus = patch.sessionStatus ?? 'uploading';
     await this.db.runAsync(
-      'UPDATE capture_sessions SET status = ?, finished_at = COALESCE(?, finished_at), updated_at = ? WHERE id = ?;',
-      status,
-      finished ? new Date().toISOString() : null,
-      new Date().toISOString(),
+      `UPDATE capture_sessions SET
+        processing_status = 'failed',
+        status = ?,
+        processing_finished_at = ?,
+        last_processing_error = ?,
+        backend_job_id = CASE WHEN ? THEN NULL ELSE backend_job_id END,
+        updated_at = ?
+       WHERE id = ?;`,
+      sessionStatus,
+      now,
+      `[${patch.errorCode}] ${patch.message}`.slice(0, 2000),
+      patch.clearBackendJobId ? 1 : 0,
+      now,
       id,
     );
+  }
+
+  async listSessionsStuckStarting(olderThanIso: string): Promise<CaptureSessionRow[]> {
+    const rows = await this.db.getAllAsync<CaptureSessionRow>(
+      `SELECT * FROM capture_sessions
+       WHERE processing_status = 'starting'
+         AND (backend_job_id IS NULL OR TRIM(backend_job_id) = '')
+         AND COALESCE(processing_started_at, created_at) < ?
+       ORDER BY updated_at ASC
+       LIMIT 50;`,
+      olderThanIso,
+    );
+    return rows;
   }
 
   async updateSessionUploadMeta(
@@ -336,29 +383,35 @@ export class CaptureRepository {
       return;
     }
     const ordered = sortByGalleryOrder(images);
-    await this.db.execAsync('BEGIN IMMEDIATE;');
-    try {
-      const maxRow = await this.db.getFirstAsync<{ m: number | null }>(
-        `SELECT MAX(sequence_number) AS m FROM capture_photos WHERE capture_session_id = ?;`,
-        sessionId,
-      );
-      let next = maxRow?.m ?? 0;
-      for (const image of ordered) {
-        const existing = await this.getPhoto(sessionId, image.assetId);
-        let sequenceNumber = existing?.sequence_number ?? null;
-        if (sequenceNumber == null) {
-          next += 1;
-          sequenceNumber = next;
-        } else if (sequenceNumber > next) {
-          next = sequenceNumber;
+    await runExclusiveDbWriteWithBusyRetry(async () => {
+      await this.db.execAsync('BEGIN IMMEDIATE;');
+      try {
+        const maxRow = await this.db.getFirstAsync<{ m: number | null }>(
+          `SELECT MAX(sequence_number) AS m FROM capture_photos
+           WHERE capture_session_id = ?
+             AND sequence_number IS NOT NULL
+             AND status != 'excluded'
+             AND upload_status NOT IN ('excluded', 'remote_deleted', 'remote_delete_pending');`,
+          sessionId,
+        );
+        let next = maxRow?.m ?? 0;
+        for (const image of ordered) {
+          const existing = await this.getPhoto(sessionId, image.assetId);
+          let sequenceNumber = existing?.sequence_number ?? null;
+          if (sequenceNumber == null) {
+            next += 1;
+            sequenceNumber = next;
+          } else if (sequenceNumber > next) {
+            next = sequenceNumber;
+          }
+          await this.upsertPhoto(sessionId, image, status, null, sequenceNumber);
         }
-        await this.upsertPhoto(sessionId, image, status, null, sequenceNumber);
+        await this.db.execAsync('COMMIT;');
+      } catch (e) {
+        await this.db.execAsync('ROLLBACK;');
+        throw e;
       }
-      await this.db.execAsync('COMMIT;');
-    } catch (e) {
-      await this.db.execAsync('ROLLBACK;');
-      throw e;
-    }
+    });
   }
 
   /**
@@ -382,21 +435,23 @@ export class CaptureRepository {
       throw new Error(`Invalid capture photo transition: ${current.status} -> ${status}`);
     }
     const now = new Date().toISOString();
-    await this.db.runAsync(
-      `UPDATE capture_photos
-       SET status = ?, stability_error = ?, stable_at = CASE WHEN ? = 'stable' THEN ? ELSE stable_at END,
-           excluded_at = CASE WHEN ? = 'excluded' THEN ? ELSE excluded_at END,
-           updated_at = ?
-       WHERE capture_session_id = ? AND asset_id = ?;`,
-      status,
-      error,
-      status,
-      now,
-      status,
-      now,
-      now,
-      sessionId,
-      assetId,
+    await withSqliteBusyRetry(() =>
+      this.db.runAsync(
+        `UPDATE capture_photos
+         SET status = ?, stability_error = ?, stable_at = CASE WHEN ? = 'stable' THEN ? ELSE stable_at END,
+             excluded_at = CASE WHEN ? = 'excluded' THEN ? ELSE excluded_at END,
+             updated_at = ?
+         WHERE capture_session_id = ? AND asset_id = ?;`,
+        status,
+        error,
+        status,
+        now,
+        status,
+        now,
+        now,
+        sessionId,
+        assetId,
+      ),
     );
   }
 
@@ -440,24 +495,98 @@ export class CaptureRepository {
     if (assignments.length === 0) {
       return;
     }
-    await this.db.execAsync('BEGIN IMMEDIATE;');
-    try {
-      const now = new Date().toISOString();
-      for (const a of assignments) {
-        await this.db.runAsync(
-          `UPDATE capture_photos
-           SET sequence_number = ?, updated_at = ?
-           WHERE id = ? AND sequence_number IS NULL;`,
-          a.sequenceNumber,
-          now,
-          a.id,
-        );
+    await runExclusiveDbWriteWithBusyRetry(async () => {
+      await this.db.execAsync('BEGIN IMMEDIATE;');
+      try {
+        const now = new Date().toISOString();
+        for (const a of assignments) {
+          await this.db.runAsync(
+            `UPDATE capture_photos
+             SET sequence_number = ?, updated_at = ?
+             WHERE id = ? AND sequence_number IS NULL;`,
+            a.sequenceNumber,
+            now,
+            a.id,
+          );
+        }
+        await this.db.execAsync('COMMIT;');
+      } catch (e) {
+        await this.db.execAsync('ROLLBACK;');
+        throw e;
       }
-      await this.db.execAsync('COMMIT;');
-    } catch (e) {
-      await this.db.execAsync('ROLLBACK;');
-      throw e;
+    });
+  }
+
+  /**
+   * Seal-time compaction after exclusions leave gaps (backend requires 1..N contiguous).
+   *
+   * Two-phase update: clear first, then assign. A single-pass UPDATE can hit
+   * ``UNIQUE(capture_session_id, sequence_number)`` when an excluded row still
+   * holds the target number, or when two active rows swap through the same value.
+   */
+  async applySequenceCompaction(
+    assignments: readonly { readonly id: string; readonly sequenceNumber: number }[],
+  ): Promise<number> {
+    if (assignments.length === 0) {
+      return 0;
     }
+    const now = new Date().toISOString();
+    await runExclusiveDbWriteWithBusyRetry(async () => {
+      await this.db.execAsync('BEGIN IMMEDIATE;');
+      try {
+        for (const a of assignments) {
+          await this.db.runAsync(
+            `UPDATE capture_photos
+             SET sequence_number = NULL, updated_at = ?
+             WHERE id = ?;`,
+            now,
+            a.id,
+          );
+        }
+        for (const a of assignments) {
+          await this.db.runAsync(
+            `UPDATE capture_photos
+             SET sequence_number = ?, updated_at = ?
+             WHERE id = ?;`,
+            a.sequenceNumber,
+            now,
+            a.id,
+          );
+        }
+        await this.db.execAsync('COMMIT;');
+      } catch (e) {
+        await this.db.execAsync('ROLLBACK;');
+        throw e;
+      }
+    });
+    return assignments.length;
+  }
+
+  /** Release sequence slots held by excluded / remote-deleted photos. */
+  async clearSequenceNumbersForExcluded(sessionId: string): Promise<number> {
+    const result = await this.db.runAsync(
+      `UPDATE capture_photos
+       SET sequence_number = NULL, updated_at = ?
+       WHERE capture_session_id = ?
+         AND sequence_number IS NOT NULL
+         AND (
+           status = 'excluded'
+           OR upload_status IN ('excluded', 'remote_deleted', 'remote_delete_pending')
+         );`,
+      new Date().toISOString(),
+      sessionId,
+    );
+    return result.changes ?? 0;
+  }
+
+  async clearPhotoSequenceNumber(photoId: string): Promise<void> {
+    await this.db.runAsync(
+      `UPDATE capture_photos
+       SET sequence_number = NULL, updated_at = ?
+       WHERE id = ?;`,
+      new Date().toISOString(),
+      photoId,
+    );
   }
 
   async setBackendOrderedCaptureSessionId(sessionId: string, orderedCaptureSessionId: string): Promise<void> {
@@ -497,7 +626,8 @@ export class CaptureRepository {
       'remote_deleted',
       'remote_delete_pending',
     ].includes(status);
-    await this.db.runAsync(
+    await withSqliteBusyRetry(() =>
+      this.db.runAsync(
       `UPDATE capture_photos SET
         upload_status = ?,
         upload_progress = COALESCE(?, upload_progress),
@@ -542,6 +672,7 @@ export class CaptureRepository {
       clearLease ? 1 : 0,
       now,
       photoId,
+      ),
     );
   }
 

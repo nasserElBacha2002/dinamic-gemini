@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Sequence
 from uuid import uuid4
 
 from src.application.dto.access_principal import AccessPrincipal
@@ -27,6 +28,7 @@ from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
     JobRepository,
+    PositionRepository,
     ProductRecordRepository,
     SourceAssetRepository,
 )
@@ -53,6 +55,7 @@ from src.domain.position_reconciliation.entities import (
     ProductPositionAssignment,
     ReconciliationStatus,
 )
+from src.domain.positions.entities import PositionReviewResolution
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,7 @@ class ReconcileJobPositionsUseCase:
         detection_repo: ImagePositionLabelDetectionRepository,
         reconciliation_repo: PositionReconciliationRepository,
         clock: Clock,
+        position_repo: PositionRepository | None = None,
         readiness_policy: PositionReconciliationReadinessPolicy | None = None,
         final_item_result_reader: JobFinalItemResultReader | None = None,
         access_policy: InventoryAccessPolicy | None = None,
@@ -102,6 +106,7 @@ class ReconcileJobPositionsUseCase:
         self._products = product_record_repo
         self._detections = detection_repo
         self._reconciliations = reconciliation_repo
+        self._positions = position_repo
         self._clock = clock
         self._readiness = readiness_policy or PositionReconciliationReadinessPolicy()
         self._result_reader = final_item_result_reader or JobFinalItemResultReader(
@@ -112,6 +117,38 @@ class ReconcileJobPositionsUseCase:
         self._reconciler = reconciler or SequentialPositionReconciler()
         self._enabled = enabled
         self._persistence_enabled = persistence_enabled
+
+    def _sync_corrected_position_codes(
+        self,
+        assignments: Sequence[ProductPositionAssignment],
+    ) -> None:
+        """Mirror ASSIGNED_AUTOMATIC aisle names onto position.corrected_position_code.
+
+        Skips rows already corrected by an operator (POSITION_CODE_CORRECTED). Does not
+        change review_resolution — this is a Phase 4 projection, not a manual review.
+        """
+        if self._positions is None:
+            return
+        now = self._clock.now()
+        for row in assignments:
+            if row.assignment_status is not AssignmentStatus.ASSIGNED_AUTOMATIC:
+                continue
+            name = (row.position_name_snapshot or "").strip()
+            if not name:
+                continue
+            product = self._products.get_by_id(row.result_id)
+            if product is None or not product.position_id:
+                continue
+            position = self._positions.get_by_id(product.position_id)
+            if position is None:
+                continue
+            if position.review_resolution is PositionReviewResolution.POSITION_CODE_CORRECTED:
+                continue
+            if (position.corrected_position_code or "").strip() == name:
+                continue
+            position.corrected_position_code = name
+            position.updated_at = now
+            self._positions.save(position)
 
     def record_failure(self, *, inventory_id: str, job_id: str, failure_code: str) -> None:
         """Best-effort durable FAILED state for auto-run failures before a RUNNING claim."""
@@ -189,7 +226,7 @@ class ReconcileJobPositionsUseCase:
                         if asset
                         else ordered_capture_session_id
                     ),
-                    sequence_number=asset.sequence_number if asset else link.sequence_number,
+                    sequence_number=self._resolve_sequence_number(asset=asset, link=link),
                     item_results=tuple(results_by_asset.get(link.source_asset_id, ())),
                     position_detections=tuple(
                         detections_by_asset.get(link.source_asset_id, ())
@@ -197,6 +234,23 @@ class ReconcileJobPositionsUseCase:
                 )
             )
         return frames, detections
+
+    @staticmethod
+    def _resolve_sequence_number(*, asset, link) -> int | None:
+        """Prefer capture sequence; fall back to job link order for system uploads.
+
+        Mobile ordered capture sets ``sequence_number``. Web/system aisle uploads often
+        only populate ``job_source_assets.position_order`` (0-based upload order). Without
+        that fallback every product stays ``UNASSIGNED_UNORDERED_ASSET`` and photo↔position
+        never appears in assignments.
+        """
+        if asset is not None and asset.sequence_number is not None:
+            return int(asset.sequence_number)
+        if link.sequence_number is not None:
+            return int(link.sequence_number)
+        if getattr(link, "position_order", None) is not None:
+            return int(link.position_order)
+        return None
 
     def execute(self, command: ReconcileJobPositionsCommand) -> ReconcileJobPositionsResult:
         if not self._enabled:
@@ -383,4 +437,5 @@ class ReconcileJobPositionsUseCase:
                 tuple(self._reconciliations.list_active_assignments(command.job_id)),
                 reused=True,
             )
+        self._sync_corrected_position_codes(assignments)
         return ReconcileJobPositionsResult(reconciliation, assignments)

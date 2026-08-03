@@ -19,6 +19,10 @@ import {
 import { visibleTraceabilityToApiStatus } from '../utils/traceabilityDisplay';
 import { formatDate } from '../../../utils/formatDate';
 import { deriveResultPriority } from '../utils/resultPriority';
+import {
+  formatAislePositionDisplay,
+  formatPositionAssignmentStatusLabel,
+} from '../utils/positionAssignmentDisplay';
 import type { ResultSummary } from '../types';
 
 function displaySku(r: ResultSummary): string {
@@ -120,8 +124,23 @@ export function buildResultsTableColumns(params: {
       label: t('results.table_column.position_code'),
       sortable: true,
       sortType: 'string',
-      sortAccessor: (r) => (r.positionCode ?? '').trim().toLowerCase(),
-      cell: (r) => (r.positionCode != null && r.positionCode.trim() !== '' ? r.positionCode : dash),
+      sortAccessor: (r) =>
+        (r.aislePositionName ?? r.positionCode ?? '').trim().toLowerCase(),
+      cell: (r) =>
+        formatAislePositionDisplay(t, {
+          aislePositionName: r.aislePositionName,
+          positionAssignmentStatus: r.positionAssignmentStatus,
+          positionCode: r.positionCode,
+          aislePositionAssigned: r.aislePositionAssigned,
+        }),
+    },
+    {
+      id: 'position_assignment_status',
+      label: t('results.table_column.position_assignment_status'),
+      sortable: true,
+      sortType: 'string',
+      sortAccessor: (r) => (r.positionAssignmentStatus ?? '').trim().toLowerCase(),
+      cell: (r) => formatPositionAssignmentStatusLabel(t, r.positionAssignmentStatus),
     },
     {
       id: 'qty',

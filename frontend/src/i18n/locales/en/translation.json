@@ -1497,6 +1497,8 @@
     "filtered_empty_message": "Filtered empty message",
     "filters": {
       "all": "All",
+      "with_position": "With position",
+      "without_position": "Without position",
       "invalid_traceability": "Invalid traceability",
       "low_confidence": "Low confidence",
       "missing_evidence": "Missing evidence",
@@ -1561,12 +1563,29 @@
     "sku_unknown": "Unknown",
     "table_column": {
       "evidence": "Evidence",
-      "position_code": "Position code",
+      "position_code": "Position",
+      "position_assignment_status": "Position status",
       "priority": "Priority",
       "quantity": "Quantity",
       "review_status": "Review status",
       "sku": "Sku",
       "updated": "Updated"
+    },
+    "position_assignment": {
+      "unassigned": "No position",
+      "no_reconciliation": "Position not processed",
+      "reason": "Reason",
+      "reconciliation": "Reconciliation {{version}}",
+      "stale_warning": "Stale revision",
+      "status": {
+        "assigned_automatic": "Automatic",
+        "unassigned_no_previous": "No previous label",
+        "unassigned_ambiguous": "Ambiguous",
+        "unassigned_invalid": "Invalid",
+        "unassigned_unordered": "Unordered image",
+        "no_reconciliation": "Not processed",
+        "stale": "Stale"
+      }
     },
     "table_review_aria": "Table review aria",
     "trend_empty_default": "Trend empty default",

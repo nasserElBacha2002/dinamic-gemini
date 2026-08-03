@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import type { ProcessingResultSummary } from '../features/processing/processingService';
 import {
@@ -9,11 +9,15 @@ import {
 } from '../features/processing/positionLabelDetectionsApi';
 import {
   formatPositionAssignmentLine,
+  labelForAssignmentReason,
   PositionReconciliationApi,
+  type ProductPositionAssignmentDto,
 } from '../features/processing/positionReconciliationApi';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import { Button, ErrorText, styles } from '../ui';
+
+type PositionFilter = 'all' | 'with_position' | 'without_position';
 
 export interface ResultsScreenProps {
   services: AppServices;
@@ -26,6 +30,10 @@ export interface ResultsScreenProps {
   onAisleRevision?: () => void;
   onAisleHistory?: () => void;
   onError: (message: string | null) => void;
+}
+
+function isAssigned(item: ProductPositionAssignmentDto): boolean {
+  return item.assignment_status === 'ASSIGNED_AUTOMATIC' && Boolean(item.position_name?.trim());
 }
 
 export function ResultsScreen({
@@ -42,8 +50,9 @@ export function ResultsScreen({
 }: ResultsScreenProps) {
   const [busy, setBusy] = useState(true);
   const [summary, setSummary] = useState<ProcessingResultSummary | null>(null);
-  const [assignmentLines, setAssignmentLines] = useState<readonly string[]>([]);
+  const [assignments, setAssignments] = useState<readonly ProductPositionAssignmentDto[]>([]);
   const [positionLines, setPositionLines] = useState<readonly string[]>([]);
+  const [filter, setFilter] = useState<PositionFilter>('all');
 
   const load = useCallback(() => {
     setBusy(true);
@@ -57,17 +66,17 @@ export function ResultsScreen({
         const invId = inventory?.id?.trim() || result.inventoryId?.trim();
         const jobId = result.jobId?.trim();
         if (!invId || !jobId) {
-          setAssignmentLines([]);
+          setAssignments([]);
           setPositionLines([]);
           return;
         }
         try {
           const api = new PositionReconciliationApi(services.api);
           const response = await api.listAssignmentsForJob(invId, jobId);
-          setAssignmentLines((response.items ?? []).map(formatPositionAssignmentLine));
+          setAssignments(response.items ?? []);
         } catch {
           // Reconciliation is best-effort and may be disabled on the backend.
-          setAssignmentLines([]);
+          setAssignments([]);
         }
         try {
           const api = new PositionLabelDetectionsApi(services.api);
@@ -83,7 +92,7 @@ export function ResultsScreen({
       })
       .catch((e) => {
         setSummary(null);
-        setAssignmentLines([]);
+        setAssignments([]);
         setPositionLines([]);
         onError(e instanceof Error ? e.message : String(e));
       })
@@ -93,6 +102,16 @@ export function ResultsScreen({
   useEffect(() => {
     load();
   }, [load]);
+
+  const filteredAssignments = useMemo(() => {
+    if (filter === 'with_position') {
+      return assignments.filter(isAssigned);
+    }
+    if (filter === 'without_position') {
+      return assignments.filter((item) => !isAssigned(item));
+    }
+    return assignments;
+  }, [assignments, filter]);
 
   if (busy && !summary) {
     return (
@@ -140,13 +159,40 @@ export function ResultsScreen({
       </Text>
       {summary.finishedAt ? <Text style={styles.row}>Finalizado: {summary.finishedAt}</Text> : null}
       {summary.jobId ? <Text style={styles.muted}>Diagnóstico job: {summary.jobId}</Text> : null}
-      {assignmentLines.length > 0 ? (
+      {assignments.length > 0 ? (
         <View>
           <Text style={styles.h2}>Asignaciones de posición</Text>
-          {assignmentLines.map((line, index) => (
-            <Text key={`${index}-${line}`} style={styles.row}>
-              {line}
-            </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            {(
+              [
+                ['all', 'Todos'],
+                ['with_position', 'Con posición'],
+                ['without_position', 'Sin posición'],
+              ] as const
+            ).map(([value, label]) => (
+              <Pressable key={value} onPress={() => setFilter(value)}>
+                <Text style={filter === value ? styles.h2 : styles.muted}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {filteredAssignments.map((item) => (
+            <View key={item.id} style={{ marginBottom: 8 }}>
+              <Text style={styles.row}>
+                Código: {item.result_id}
+              </Text>
+              <Text style={styles.row}>
+                Posición:{' '}
+                {isAssigned(item)
+                  ? item.position_name
+                  : 'Sin asignar'}
+              </Text>
+              {!isAssigned(item) ? (
+                <Text style={styles.muted}>
+                  Motivo: {labelForAssignmentReason(item.assignment_status)}
+                </Text>
+              ) : null}
+              <Text style={styles.muted}>{formatPositionAssignmentLine(item)}</Text>
+            </View>
           ))}
         </View>
       ) : null}

@@ -66,6 +66,8 @@ export interface AisleResultsTableSectionProps {
     qty_zero: number;
     invalid_traceability: number;
     missing_evidence: number;
+    with_position: number;
+    without_position: number;
   };
   sortedForTableLength: number;
   onClearFilterOnly: () => void;

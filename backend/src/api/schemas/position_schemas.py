@@ -169,6 +169,39 @@ class PositionTraceabilityBlock(BaseModel):
     )
 
 
+class ResultPositionRefResponse(BaseModel):
+    """Human aisle position label from published Phase 4 assignment (Phase 5)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: Optional[str] = Field(None, description="client_position_labels.id snapshot.")
+    name: Optional[str] = Field(None, description="Human label name (e.g. A-01).")
+
+
+class ResultPositionAssignmentResponse(BaseModel):
+    """Assignment status for a result row (Phase 5 read contract)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: Optional[str] = Field(
+        None,
+        description="ASSIGNED_AUTOMATIC | UNASSIGNED_* | NO_RECONCILIATION",
+    )
+    source: Optional[str] = Field(None, description="AUTOMATIC when assigned.")
+    reason: Optional[str] = None
+    reconciliation_id: Optional[str] = None
+    reconciliation_version: Optional[str] = None
+    reconciliation_status: Optional[str] = Field(
+        None, description="COMPLETED | STALE | … from published revision."
+    )
+    availability: Optional[str] = Field(
+        None,
+        description="AVAILABLE | UNASSIGNED | NO_RECONCILIATION | RECONCILIATION_STALE | FEATURE_DISABLED",
+    )
+    sequence_number: Optional[int] = None
+    source_asset_id: Optional[str] = None
+
+
 class PositionSummaryResponse(BaseModel):
     """One row in the per-aisle results list (Aisle Results / review entry).
 
@@ -256,6 +289,27 @@ class PositionSummaryResponse(BaseModel):
         description="Deprecated: use `traceability.source_image_original_filename`.",
     )
     position_code: str = Field(..., description="Effective position code (Audit Sprint 4.5).")
+    aisle_position_assigned: bool = Field(
+        False,
+        description=(
+            "True when Phase 4 reconciliation assigned an aisle position label to this result. "
+            "When true, ``position_code`` is the human aisle position name (e.g. 01/02)."
+        ),
+    )
+    position: Optional[ResultPositionRefResponse] = Field(
+        None,
+        description=(
+            "Phase 5: published aisle position from Phase 4 assignments. "
+            "Null when unassigned, no reconciliation, or enrichment disabled."
+        ),
+    )
+    position_assignment: Optional[ResultPositionAssignmentResponse] = Field(
+        None,
+        description=(
+            "Phase 5: assignment metadata from the published Phase 4 revision. "
+            "Null when enrichment is disabled."
+        ),
+    )
     job_id: Optional[str] = Field(
         None,
         description="Storage row inventory job id for this position; null = legacy. Exposed for multi-run clients (e.g. review queue detail).",
@@ -317,6 +371,38 @@ class PositionListResponse(PageMeta):
     result_context_source: str = Field(
         ...,
         description="explicit | operational | legacy",
+    )
+
+
+class ResultsByPositionGroupResponse(BaseModel):
+    """One group in GET …/positions/by-position (Phase 5)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    position: Optional[ResultPositionRefResponse] = None
+    label: str = Field(..., description="Human group label; 'Sin posición' when unassigned.")
+    product_count: int
+    total_quantity: int
+    items: list[PositionSummaryResponse] = Field(default_factory=list)
+
+
+class ResultsByPositionResponse(BaseModel):
+    """Grouped aisle results by published Phase 4 position."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    groups: list[ResultsByPositionGroupResponse]
+    result_job_id: Optional[str] = None
+    result_context_source: Optional[str] = None
+    assigned_results_count: int = 0
+    unassigned_results_count: int = 0
+    positions_count: int = 0
+    truncated: bool = Field(
+        False,
+        description=(
+            "True when the underlying fetch window was capped; group totals may be incomplete. "
+            "Do not treat assigned/unassigned counts as aisle-global when truncated."
+        ),
     )
 
 

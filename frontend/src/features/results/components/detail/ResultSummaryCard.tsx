@@ -16,6 +16,10 @@ import {
 } from '../../utils/evidenceReviewDisplay';
 import { visibleTraceabilityToApiStatus } from '../../utils/traceabilityDisplay';
 import { formatDate } from '../../../../utils/formatDate';
+import {
+  formatAislePositionDisplay,
+  formatPositionAssignmentStatusLabel,
+} from '../../utils/positionAssignmentDisplay';
 
 export interface ResultSummaryCardProps {
   result: ResultDetail;
@@ -75,8 +79,29 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
             {t('results.summary_position_code')}
           </Typography>
           <Typography variant="body1" fontWeight={700}>
-            {result.positionCode != null && result.positionCode.trim() !== '' ? result.positionCode : '—'}
+            {formatAislePositionDisplay(t, {
+              aislePositionName: result.aislePositionName,
+              positionAssignmentStatus: result.positionAssignmentStatus,
+              positionCode: result.positionCode,
+              aislePositionAssigned: result.aislePositionAssigned,
+            })}
           </Typography>
+          {result.positionAssignmentStatus ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              {formatPositionAssignmentStatusLabel(t, result.positionAssignmentStatus)}
+              {result.reconciliationVersion
+                ? ` · ${t('results.position_assignment.reconciliation', { version: result.reconciliationVersion })}`
+                : null}
+              {result.reconciliationStatus === 'STALE'
+                ? ` · ${t('results.position_assignment.stale_warning')}`
+                : null}
+            </Typography>
+          ) : null}
+          {result.positionAssignmentReason ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              {t('results.position_assignment.reason')}: {result.positionAssignmentReason}
+            </Typography>
+          ) : null}
         </Box>
 
         {hasManualOverride && systemQtyNum != null && (

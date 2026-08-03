@@ -96,6 +96,7 @@ from src.api.schemas.observability_job_schemas import (
 from src.api.schemas.processing_schemas import (
     AisleExecutionLogResponse,
     AisleJobsListResponse,
+    AisleProcessingStateResponse,
     AisleStatusResponse,
     ExecutionLogResponse,
     JobDetailResponse,
@@ -636,6 +637,40 @@ def get_aisle_status(
         return status_response_from_result(
             result,
             identification=api_fields_from_configuration(id_query.for_aisle(result.aisle)),
+        )
+    except AisleNotFoundError as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/processing-state",
+    response_model=AisleProcessingStateResponse,
+)
+def get_aisle_processing_state(
+    inventory_id: str,
+    aisle_id: str,
+    use_case: GetAisleProcessingStatusUseCase = Depends(get_get_aisle_processing_status_use_case),
+) -> AisleProcessingStateResponse:
+    """Authoritative aisle processing lifecycle for mobile + web (recovery-aware)."""
+    try:
+        from src.application.services.aisle_processing_state import resolve_aisle_processing_state
+
+        result = use_case.execute(inventory_id, aisle_id)
+        view = resolve_aisle_processing_state(
+            latest_job=result.latest_job,
+            recent_jobs=result.recent_jobs,
+            operational_job_id=getattr(result.aisle, "operational_job_id", None),
+        )
+        return AisleProcessingStateResponse(
+            state=view.state,
+            job_id=view.job_id,
+            job_status=view.job_status,
+            idempotency_key=view.idempotency_key,
+            recoverable=view.recoverable,
+            can_start_new=view.can_start_new,
+            updated_at=view.updated_at,
+            failure_code=view.failure_code,
         )
     except AisleNotFoundError as e:
         reraise_if_mapped(e)

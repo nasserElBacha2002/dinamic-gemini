@@ -528,6 +528,33 @@ describe('CaptureService corrections', () => {
     ]);
   });
 
+  it('rolls back finishing when finish is blocked by unstable photos', async () => {
+    const repo = new FakeRepo();
+    repo.sessions.set('session-1', session({ status: 'active' }));
+    repo.photos.set('session-1:100', photo('unstable'));
+    repo.photos.set('session-1:200', {
+      ...photo('stable'),
+      id: 'session-1:200',
+      asset_id: '200',
+      media_store_numeric_id: 200,
+    });
+
+    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+      mediaStore: mediaStore(),
+      stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
+      validationTimeoutMs: 10,
+    });
+    await service.loadSession('session-1', false);
+
+    await expect(service.finish()).rejects.toThrow(/Resolvé o excluí/);
+    expect((await repo.getSession('session-1'))?.status).toBe('active');
+
+    await service.exclude('100');
+    expect((await repo.getPhoto('session-1', '100'))?.status).toBe('excluded');
+    await expect(service.finish()).resolves.toBeUndefined();
+    expect((await repo.getSession('session-1'))?.status).toBe('review');
+  });
+
   it('keeps a photo excluded when stability resolves after exclusion', async () => {
     const repo = new FakeRepo();
     repo.sessions.set('session-1', session({ status: 'paused' }));

@@ -1979,6 +1979,36 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Fail job finalization when Phase 4 reconciliation fails (default false).",
     )
+    position_results_enrichment_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RESULTS_ENRICHMENT_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: expose published Phase 4 assignments on result reads. "
+            "Env: POSITION_RESULTS_ENRICHMENT_ENABLED (default true)."
+        ),
+    )
+    position_results_export_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RESULTS_EXPORT_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: include position assignment columns in CSV/XLSX exports. "
+            "Env: POSITION_RESULTS_EXPORT_ENABLED (default true)."
+        ),
+    )
+    position_results_filters_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RESULTS_FILTERS_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: honor with_position / position_* query filters on result lists. "
+            "Env: POSITION_RESULTS_FILTERS_ENABLED (default true)."
+        ),
+    )
     position_label_max_payload_bytes: int = Field(
         default_factory=lambda: int(
             os.getenv("POSITION_LABEL_MAX_PAYLOAD_BYTES", "4096") or "4096"

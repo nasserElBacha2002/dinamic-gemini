@@ -115,6 +115,7 @@ export default function JobPositionAssignmentsPanel({
             <TableHead>
               <TableRow>
                 <TableCell>Producto</TableCell>
+                <TableCell>Foto (asset)</TableCell>
                 <TableCell>Secuencia</TableCell>
                 <TableCell>Posición asignada</TableCell>
                 <TableCell>Estado</TableCell>
@@ -123,7 +124,12 @@ export default function JobPositionAssignmentsPanel({
             <TableBody>
               {items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>{item.result_id}</TableCell>
+                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+                    {item.result_id}
+                  </TableCell>
+                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>
+                    {item.source_asset_id}
+                  </TableCell>
                   <TableCell>{item.sequence_number ?? 'Sin secuencia'}</TableCell>
                   <TableCell>{item.position_name ?? 'Sin asignar'}</TableCell>
                   <TableCell>{labelForPositionAssignmentStatus(item.assignment_status)}</TableCell>

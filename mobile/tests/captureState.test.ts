@@ -27,6 +27,8 @@ describe('capture state transitions', () => {
     expect(canTransitionSession('paused', 'finishing')).toBe(true);
     expect(canTransitionSession('finishing', 'review')).toBe(true);
     expect(canTransitionSession('finishing', 'uploading')).toBe(true);
+    expect(canTransitionSession('finishing', 'active')).toBe(true);
+    expect(canTransitionSession('finishing', 'paused')).toBe(true);
     expect(canTransitionSession('completed', 'active')).toBe(false);
   });
 

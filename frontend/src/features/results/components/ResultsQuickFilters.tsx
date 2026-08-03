@@ -18,6 +18,8 @@ export default function ResultsQuickFilters({ value, onChange, counts }: Results
   const filterOptions = useMemo(
     (): { value: ResultsFilterKind; label: string }[] => [
       { value: 'all', label: t('results.filters.all') },
+      { value: 'with_position', label: t('results.filters.with_position') },
+      { value: 'without_position', label: t('results.filters.without_position') },
       { value: 'needs_review', label: t('results.filters.needs_review') },
       { value: 'low_confidence', label: t('results.filters.low_confidence') },
       { value: 'qty_zero', label: t('results.filters.qty_zero') },

@@ -26,7 +26,11 @@ describe('ProcessingService', () => {
     getSession: jest.fn(),
     updateSessionStatus: jest.fn(),
     updateSessionUploadMeta: jest.fn(),
+    markProcessStartFailed: jest.fn(async () => undefined),
+    listSessionsStuckStarting: jest.fn(async () => []),
     setPreparationProcessingMode: jest.fn(async () => undefined),
+    clearSequenceNumbersForExcluded: jest.fn(async () => 0),
+    applySequenceCompaction: jest.fn(async () => 0),
   };
   const jobs = {
     getByBackendJobId: jest.fn(),
@@ -264,6 +268,11 @@ describe('ProcessingService', () => {
     expect(uploadQueue.rebindOrderedCaptureUploads).toHaveBeenCalledWith('session-1', ['p1']);
     expect(orderedCapture.sealSession).not.toHaveBeenCalled();
     expect(api.post).not.toHaveBeenCalled();
+    expect(repo.markProcessStartFailed).toHaveBeenCalled();
+    expect(repo.updateSessionUploadMeta).not.toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ processingStatus: 'starting' }),
+    );
   });
 
   it('startProcess rejects concurrent double start with lock', async () => {

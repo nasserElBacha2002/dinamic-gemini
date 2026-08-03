@@ -98,8 +98,13 @@ class SequentialPositionReconciler:
                     elif signature == "INVALID":
                         action = PositionTransitionAction.CLEAR_POSITION
                         status = "INVALID_SIGNATURE"
-                    elif signature != "VALID" or not detection.position_label_id:
+                    elif not detection.position_label_id:
                         action = PositionTransitionAction.KEEP_POSITION
+                    elif signature != "VALID":
+                        # Only cryptographically valid signatures may SET_POSITION.
+                        # MISSING/SKIPPED/UNSIGNED remain visible but do not propagate.
+                        action = PositionTransitionAction.KEEP_POSITION
+                        status = "LEGACY_UNSIGNED_REQUIRES_REVIEW"
 
                 if action is PositionTransitionAction.SET_POSITION:
                     current = detection

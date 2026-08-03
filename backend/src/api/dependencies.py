@@ -497,6 +497,7 @@ def get_export_inventory_results_use_case(
         position_repo=position_repo,
         product_record_repo=product_record_repo,
         result_context_resolver=result_context_resolver,
+        reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
     )
 
 
@@ -513,6 +514,7 @@ def get_export_aisle_results_csv_use_case(
         position_repo=position_repo,
         product_record_repo=product_record_repo,
         result_context_resolver=result_context_resolver,
+        reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
     )
 
 
@@ -2488,6 +2490,7 @@ def get_reconcile_job_positions_use_case(
     detection_repo=Depends(get_image_position_label_detection_repo),
     reconciliation_repo=Depends(get_position_reconciliation_repo),
     ordered_session_repo=Depends(get_ordered_capture_session_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
     access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
     clock: Clock = Depends(get_clock),
 ):
@@ -2511,6 +2514,7 @@ def get_reconcile_job_positions_use_case(
         detection_repo=detection_repo,
         reconciliation_repo=reconciliation_repo,
         clock=clock,
+        position_repo=position_repo,
         readiness_policy=PositionReconciliationReadinessPolicy(ordered_session_repo),
         access_policy=access_policy,
         enabled=settings.position_reconciliation_enabled,

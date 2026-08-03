@@ -440,6 +440,9 @@ export class UploadQueue {
       errorMessage: null,
       nextRetryAt: null,
     });
+    if (photo.sequence_number == null) {
+      await this.repo.assignMissingSequenceNumbers(photo.capture_session_id);
+    }
     this.cancelledWhileUploading.delete(photoId);
     this.emit();
     emitObservability(this.obs?.reporter, {
@@ -458,6 +461,7 @@ export class UploadQueue {
     }
     if (['not_queued', 'queued', 'preparing', 'retryable_error', 'permanent_error'].includes(photo.upload_status)) {
       await this.repo.setPhotoUploadStatus(photoId, 'excluded');
+      await this.repo.clearPhotoSequenceNumber(photoId);
       await cleanupTransformUri(photo.local_transform_uri);
       this.emit();
       return;
@@ -481,6 +485,7 @@ export class UploadQueue {
         });
       }
       await this.repo.setPhotoUploadStatus(photoId, 'excluded');
+      await this.repo.clearPhotoSequenceNumber(photoId);
       if (photo.local_transform_uri) {
         this.pendingTransformCleanup.add(photo.local_transform_uri);
       }
@@ -495,6 +500,7 @@ export class UploadQueue {
       return { ok: false, reason: 'Foto no cargada en backend.' };
     }
     await this.repo.setPhotoUploadStatus(photoId, 'remote_delete_pending');
+    await this.repo.clearPhotoSequenceNumber(photoId);
     try {
       if (this.options.authoritativeExclusion && photo.backend_asset_id) {
         try {

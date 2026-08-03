@@ -462,6 +462,15 @@ def test_export_operational_csv_aligns_with_public_contract_fields() -> None:
             "source_image_id": "img-1",
             "primary_evidence_id": "ev-1",
             "updated_at": NOW.isoformat(),
+            "position_label_id": "",
+            "position_name": "",
+            "position_assignment_status": "",
+            "position_assignment_reason": "",
+            "position_assignment_source": "",
+            "reconciliation_id": "",
+            "reconciliation_version": "",
+            "sequence_number": "",
+            "source_asset_id": "",
         }
     ]
 

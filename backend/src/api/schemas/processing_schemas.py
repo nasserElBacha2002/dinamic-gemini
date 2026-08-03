@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.schemas.aisle_schemas import AisleResponse
 from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
@@ -332,6 +332,24 @@ class AisleStatusResponse(BaseModel):
     latest_job: Optional[JobSummary] = None
     operational_job_id: Optional[str] = None
     recent_jobs: list[JobSummary] = Field(default_factory=list)
+
+
+class AisleProcessingStateResponse(BaseModel):
+    """Shared mobile/web contract for aisle processing lifecycle (recovery-aware)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    state: str = Field(
+        ...,
+        description="IDLE | STARTING | RUNNING | COMPLETED | FAILED | STALE | RECOVERY_REQUIRED",
+    )
+    job_id: Optional[str] = None
+    job_status: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    recoverable: bool = False
+    can_start_new: bool = True
+    updated_at: Optional[datetime] = None
+    failure_code: Optional[str] = None
 
 
 class AisleJobsListResponse(BaseModel):

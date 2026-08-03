@@ -37,7 +37,7 @@ import {
 } from './processingMode';
 import { processingRunStore } from './processingRun';
 import { validateCompleteSequence } from '../../core/captureSequenceValidation';
-
+import { compactSequenceAssignments } from '../../core/captureSequence';
 export type { ProcessingReadiness } from './processingReadiness';
 export type { AisleIdentificationMode } from './processingMode';
 
@@ -79,6 +79,15 @@ export interface ProcessingObservability {
 export interface ProcessingAuthoritativeGate {
   readonly flags: FeatureFlags;
   readonly confirmed: ConfirmedLocalResultRepository;
+  /** Optional: skip position-label photos from product confirmation gate. */
+  readonly drafts?: {
+    listForPhoto(photoId: string): Promise<
+      readonly {
+        readonly status: string;
+        readonly error_code: string | null;
+      }[]
+    >;
+  };
 }
 
 export class ProcessingService {
@@ -153,6 +162,13 @@ export class ProcessingService {
     const byPhoto = new Map(confirmed.map((c) => [c.capture_photo_id, c]));
     const missing: string[] = [];
     for (const photo of uploaded) {
+      if (gate.drafts) {
+        const drafts = await gate.drafts.listForPhoto(photo.id);
+        if (drafts.some((d) => d.error_code === 'POSITION_LABEL_DETECTED')) {
+          // Position labels are resolved server-side; no product confirmation required.
+          continue;
+        }
+      }
       const row = byPhoto.get(photo.id);
       if (!row || row.sync_status !== 'SYNCED') {
         missing.push(photo.display_name || photo.id);
@@ -185,17 +201,55 @@ export class ProcessingService {
     const localUploaded = photos.filter(
       (p) => p.upload_status === 'uploaded' && p.sequence_number != null && p.backend_asset_id,
     );
-    const expectedAssetCount = localUploaded.length;
-    if (expectedAssetCount < 1) {
+    if (localUploaded.length < 1) {
       return {
         ok: false,
         reason: 'No hay fotos subidas con secuencia para sellar la sesión ordenada.',
       };
     }
 
+    // After exclusions, sequences may have gaps (e.g. 1,2,3,5,6). Compact to 1..N
+    // and rebind so the backend seal validator accepts the set.
+    await this.repo.clearSequenceNumbersForExcluded(session.id);
+    const compaction = compactSequenceAssignments(localUploaded);
+    if (compaction.length > 0) {
+      await this.repo.applySequenceCompaction(compaction);
+      const rebound = await this.uploadQueue.rebindOrderedCaptureUploads(
+        session.id,
+        compaction.map((c) => c.id),
+      );
+      return {
+        ok: false,
+        reason:
+          rebound.requeued > 0
+            ? `Se reordenó la secuencia tras exclusiones (${rebound.requeued} foto(s)). ` +
+              'Esperá a que terminen de resubir e intentá Procesar de nuevo.'
+            : 'Se reordenó la secuencia local; reintentá Procesar.',
+      };
+    }
+
+    const expectedAssetCount = localUploaded.length;
+    const localAssetIds = new Set(localUploaded.map((p) => p.backend_asset_id as string));
+
     try {
       const remote = await this.assetsApi.listAssets(session.inventory_id, session.aisle_id);
-      const sessionAssets = remote.filter((a) => (a.ordered_capture_session_id || '') === orderedId);
+      const sessionAssetsAll = remote.filter(
+        (a) => (a.ordered_capture_session_id || '') === orderedId,
+      );
+      // Leftover remote assets from excluded photos break seal (max seq > count).
+      const orphans = sessionAssetsAll.filter((a) => !localAssetIds.has(a.id));
+      for (const orphan of orphans) {
+        try {
+          await this.assetsApi.deleteAsset(session.inventory_id, session.aisle_id, orphan.id);
+        } catch (e) {
+          this.logger.warn('ordered_capture_orphan_delete_failed', {
+            sessionId: session.id,
+            assetId: orphan.id,
+            error: String(e),
+          });
+        }
+      }
+      const sessionAssets = sessionAssetsAll.filter((a) => localAssetIds.has(a.id));
       const remoteReasons = validateCompleteSequence(sessionAssets, expectedAssetCount, {
         requireClientImageId: false,
       });
@@ -327,6 +381,21 @@ export class ProcessingService {
         return { ok: true, jobId: recoveredRemote.id, reason: null };
       }
 
+      // Preflight (compact / rebind / seal) must complete before durable STARTING.
+      // Otherwise a recoverable seal failure leaves the session stuck "Iniciando".
+      const sealed = await this.sealOrderedCaptureBeforeProcess(session);
+      if (!sealed.ok) {
+        const needsReupload = /reencolar|resubir|reordenó/i.test(sealed.reason ?? '');
+        await this.repo.markProcessStartFailed(sessionId, {
+          errorCode: 'PROCESS_PREFLIGHT_FAILED',
+          message: sealed.reason ?? 'No se pudo completar la preparación previa al procesamiento.',
+          sessionStatus: needsReupload ? 'uploading' : 'ready_to_process',
+          clearBackendJobId: true,
+        });
+        await processingRunStore.markTerminal(run.id, 'failed');
+        return { ok: false, jobId: null, reason: sealed.reason };
+      }
+
       await this.repo.updateSessionUploadMeta(sessionId, {
         processingStatus: 'starting',
         processingStartedAt: new Date().toISOString(),
@@ -336,12 +405,6 @@ export class ProcessingService {
         await this.repo.updateSessionStatus(sessionId, 'processing');
       } catch {
         // already processing
-      }
-
-      const sealed = await this.sealOrderedCaptureBeforeProcess(session);
-      if (!sealed.ok) {
-        await processingRunStore.markTerminal(run.id, 'failed');
-        return { ok: false, jobId: null, reason: sealed.reason };
       }
 
       const path =
@@ -425,6 +488,14 @@ export class ProcessingService {
             return { ok: true, jobId: recovered.id, reason: null };
           }
           // Keep run active so a manual retry reuses the same idempotency key.
+          // Do not leave durable STARTING without a confirmed job_id.
+          await this.repo.markProcessStartFailed(sessionId, {
+            errorCode: 'PROCESS_RESPONSE_LOST',
+            message:
+              'No se pudo confirmar el inicio del procesamiento. Verificá la conexión e intentá nuevamente.',
+            sessionStatus: 'uploading',
+            clearBackendJobId: true,
+          });
           return {
             ok: false,
             jobId: null,
@@ -434,6 +505,12 @@ export class ProcessingService {
           };
         }
         if (e instanceof ApiError) {
+          await this.repo.markProcessStartFailed(sessionId, {
+            errorCode: e.code ?? `HTTP_${e.status ?? 'ERROR'}`,
+            message: mapProcessStartErrorMessage(e),
+            sessionStatus: 'uploading',
+            clearBackendJobId: true,
+          });
           await processingRunStore.markTerminal(run.id, 'failed');
           return {
             ok: false,
@@ -441,6 +518,12 @@ export class ProcessingService {
             reason: mapProcessStartErrorMessage(e),
           };
         }
+        await this.repo.markProcessStartFailed(sessionId, {
+          errorCode: 'PROCESS_START_FAILED',
+          message: String(e),
+          sessionStatus: 'uploading',
+          clearBackendJobId: true,
+        });
         await processingRunStore.markTerminal(run.id, 'failed');
         return {
           ok: false,
@@ -609,6 +692,55 @@ export class ProcessingService {
     errorMessage?: string | null,
   ): Promise<void> {
     await this.persistJob(sessionId, inventoryId, aisleId, backendJobId, remoteStatus, errorMessage);
+  }
+
+  /**
+   * Bootstrap recovery: sessions left in durable STARTING without a confirmed backend job
+   * (crash / seal failure / lost response) must not block reprocess forever.
+   */
+  async recoverStuckStartingSessions(options?: {
+    readonly ttlMs?: number;
+  }): Promise<{ recovered: number }> {
+    const ttlMs = options?.ttlMs ?? 2 * 60 * 1000;
+    const cutoff = new Date(Date.now() - ttlMs).toISOString();
+    const stuck = await this.repo.listSessionsStuckStarting(cutoff);
+    let recovered = 0;
+    for (const session of stuck) {
+      try {
+        const remote = await this.findActiveRemoteJob(
+          session.inventory_id,
+          session.aisle_id,
+          // Prefer linking any active aisle job; attempt key may be unknown after crash.
+          '',
+        );
+        if (remote) {
+          await this.persistJob(
+            session.id,
+            session.inventory_id,
+            session.aisle_id,
+            remote.id,
+            remote.status,
+          );
+          recovered += 1;
+          continue;
+        }
+        await this.repo.markProcessStartFailed(session.id, {
+          errorCode: 'STUCK_STARTING_TTL',
+          message:
+            'El inicio local quedó incompleto sin job confirmado. Podés volver a procesar.',
+          sessionStatus: 'ready_to_process',
+          clearBackendJobId: true,
+        });
+        recovered += 1;
+      } catch (e) {
+        this.logger.warn('recovery', {
+          sessionId: session.id,
+          error: String(e),
+          reason: 'stuck_starting_recovery_failed',
+        });
+      }
+    }
+    return { recovered };
   }
 
   private async findActiveRemoteJob(

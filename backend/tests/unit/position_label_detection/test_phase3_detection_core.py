@@ -26,6 +26,7 @@ from src.application.use_cases.position_label_detection.detect_image_position_la
 from src.domain.aisle_location.payload import build_positioning_label_payload
 from src.domain.client_position_label.entities import (
     ClientPositionLabel,
+    ClientPositionLabelSignatureStatus,
     ClientPositionLabelStatus,
 )
 from src.domain.position_label_detection.entities import (
@@ -285,6 +286,60 @@ def test_parser_missing_signature_and_payload_too_large() -> None:
     # Parser floors max_payload_bytes at 256 bytes.
     huge = PositionLabelPayloadParser(max_payload_bytes=256).parse("x" * 300)
     assert huge.status is PositionLabelDetectionStatus.PAYLOAD_TOO_LARGE
+
+
+def test_unsigned_active_label_accepted_when_qr_missing_signature() -> None:
+    """Labels created without HMAC (UNSIGNED) must still resolve by label_id."""
+    repo_labels = MemoryClientPositionLabelRepository()
+    repo_det = MemoryImagePositionLabelDetectionRepository()
+    now = datetime(2026, 7, 31, tzinfo=timezone.utc)
+    payload = build_positioning_label_payload(public_label_id="pos_unsigned", version=1)
+    repo_labels.save(
+        ClientPositionLabel(
+            id=str(uuid4()),
+            client_id="client-1",
+            public_identifier="pos_unsigned",
+            name="U-01",
+            normalized_name="U-01",
+            status=ClientPositionLabelStatus.ACTIVE,
+            payload_version=1,
+            canonical_payload=payload,
+            created_at=now,
+            updated_at=now,
+            signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
+        )
+    )
+    use_case = ImagePositionDetectionUseCase(
+        classifier=CodeClassifier(max_payload_bytes=4096),
+        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
+        validator=PositionLabelValidationService(
+            signing=_signing(), signature_validation_enabled=True
+        ),
+        resolver=PositionLabelResolver(label_repo=repo_labels),
+        repo=repo_det,
+        clock=_Clock(),
+        detection_enabled=True,
+        persistence_enabled=True,
+        max_codes_per_image=16,
+    )
+    raw = '{"type":"DINAMIC_POSITION","version":1,"label_id":"pos_unsigned"}'
+    result = use_case.execute(
+        ImagePositionDetectionCommand(
+            client_id="client-1",
+            inventory_id="inv-1",
+            job_id="job-1",
+            source_asset_id="asset-u",
+            codes=[
+                DetectedCode(symbology="QR_CODE", raw_value=raw, normalized_value=raw, candidate_index=0)
+            ],
+        )
+    )
+    assert result.position_candidate_indexes == (0,)
+    assert len(result.detections) == 1
+    assert result.detections[0].detection_status is PositionLabelDetectionStatus.VALID
+    assert result.detections[0].public_identifier == "pos_unsigned"
+
+
 def test_use_case_position_plus_item_keeps_both() -> None:
     import json
 

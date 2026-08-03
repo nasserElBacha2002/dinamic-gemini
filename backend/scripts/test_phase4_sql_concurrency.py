@@ -329,6 +329,56 @@ def scenario_failed_attempt_preserves_publication() -> ScenarioResult:
         )
 
 
+def _cleanup_harness_rows() -> str:
+    """Best-effort delete of p4conc-* rows so harnesses do not pollute the UI."""
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        # Match harness ids only (p4conc-*) — avoid broad name patterns.
+        cur.execute("SELECT id FROM clients WHERE id LIKE ?", (f"{_PREFIX}-%",))
+        client_ids = [str(r[0]) for r in cur.fetchall()]
+        if not client_ids:
+            return "cleanup=none"
+        ph = ",".join("?" * len(client_ids))
+        cur.execute(f"SELECT id FROM inventories WHERE client_id IN ({ph})", client_ids)
+        inv_ids = [str(r[0]) for r in cur.fetchall()]
+        aisle_ids: list[str] = []
+        if inv_ids:
+            iph = ",".join("?" * len(inv_ids))
+            cur.execute(f"SELECT id FROM aisles WHERE inventory_id IN ({iph})", inv_ids)
+            aisle_ids = [str(r[0]) for r in cur.fetchall()]
+        job_ids: list[str] = []
+        if aisle_ids:
+            aph = ",".join("?" * len(aisle_ids))
+            cur.execute(f"SELECT id FROM inventory_jobs WHERE target_id IN ({aph})", aisle_ids)
+            job_ids = [str(r[0]) for r in cur.fetchall()]
+        if job_ids:
+            jph = ",".join("?" * len(job_ids))
+            cur.execute(
+                f"DELETE FROM dbo.product_position_assignments WHERE job_id IN ({jph})",
+                job_ids,
+            )
+            cur.execute(
+                f"DELETE FROM dbo.position_reconciliations WHERE job_id IN ({jph})",
+                job_ids,
+            )
+        if aisle_ids:
+            aph = ",".join("?" * len(aisle_ids))
+            cur.execute(f"DELETE FROM inventory_jobs WHERE target_id IN ({aph})", aisle_ids)
+            cur.execute(f"DELETE FROM aisles WHERE id IN ({aph})", aisle_ids)
+        if inv_ids:
+            iph = ",".join("?" * len(inv_ids))
+            cur.execute(f"DELETE FROM inventories WHERE id IN ({iph})", inv_ids)
+        cur.execute(f"DELETE FROM clients WHERE id IN ({ph})", client_ids)
+        conn.commit()
+        return f"cleanup=clients:{len(client_ids)} inventories:{len(inv_ids)}"
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        return f"cleanup_error={exc}"
+    finally:
+        conn.close()
+
+
 def main() -> int:
     _clear_polluted()
     layers = _load_dotenv()
@@ -340,6 +390,7 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         report.status = "FAIL"
         report.notes.append(f"error={exc}\n{traceback.format_exc()}")
+    report.notes.append(_cleanup_harness_rows())
     report.write()
     return 0 if report.status == "PASS" else 1
 

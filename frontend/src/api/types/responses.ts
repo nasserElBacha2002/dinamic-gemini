@@ -1207,6 +1207,25 @@ export interface PositionSummary {
   created_at: string;
   updated_at: string;
   position_code: string;
+  /** Phase 4: true when reconciliation assigned an aisle position label (01/02…). */
+  aisle_position_assigned?: boolean;
+  /** Phase 5: published aisle position from Phase 4 assignments (null when unassigned / absent). */
+  position?: {
+    id?: string | null;
+    name?: string | null;
+  } | null;
+  /** Phase 5: assignment metadata from the published Phase 4 revision. */
+  position_assignment?: {
+    status?: string | null;
+    source?: string | null;
+    reason?: string | null;
+    reconciliation_id?: string | null;
+    reconciliation_version?: string | null;
+    reconciliation_status?: string | null;
+    availability?: string | null;
+    sequence_number?: number | null;
+    source_asset_id?: string | null;
+  } | null;
   /** @deprecated Legacy raw technical snapshot. Active frontend flows should use `technical_snapshot` instead and not rely on this field. */
   detected_summary_json?: Record<string, unknown> | null;
   /** Sprint 2 — prefer nested blocks when present; flat fields below remain for backward compatibility. */

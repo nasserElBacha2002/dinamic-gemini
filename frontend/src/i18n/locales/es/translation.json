@@ -2223,6 +2223,8 @@
     "filtered_empty_message": "Filtered empty message",
     "filters": {
       "all": "Todos",
+      "with_position": "Con posición",
+      "without_position": "Sin posición",
       "invalid_traceability": "Trazabilidad inválida",
       "low_confidence": "Confianza baja",
       "missing_evidence": "Sin evidencia",
@@ -2287,12 +2289,29 @@
     "sku_unknown": "Desconocido",
     "table_column": {
       "evidence": "Evidencia",
-      "position_code": "Código de posición",
+      "position_code": "Posición",
+      "position_assignment_status": "Estado de posición",
       "priority": "Prioridad",
       "quantity": "Cantidad",
       "review_status": "Estado de revisión",
       "sku": "SKU",
       "updated": "Actualizado"
+    },
+    "position_assignment": {
+      "unassigned": "Sin posición",
+      "no_reconciliation": "Posición no procesada",
+      "reason": "Motivo",
+      "reconciliation": "Reconciliación {{version}}",
+      "stale_warning": "Revisión desactualizada",
+      "status": {
+        "assigned_automatic": "Automática",
+        "unassigned_no_previous": "Sin etiqueta previa",
+        "unassigned_ambiguous": "Ambigua",
+        "unassigned_invalid": "Inválida",
+        "unassigned_unordered": "Sin secuencia",
+        "no_reconciliation": "No procesada",
+        "stale": "Desactualizada"
+      }
     },
     "table_review_aria": "Abrir revisión rápida de {{sku}}",
     "trend_empty_default": "Sin tendencias",

@@ -139,6 +139,50 @@ def test_clear_policies(status, signature, client_id):
     assert row.warnings == ("SEQUENCE_GAP",)
 
 
+def test_missing_signature_does_not_set_position():
+    """Unsigned labels must not SET_POSITION (LEGACY_UNSIGNED_REQUIRES_REVIEW)."""
+    row = reconcile(
+        [
+            frame(
+                1,
+                items=["r1"],
+                detections=[detection(signature="MISSING")],
+            ),
+        ]
+    )[0]
+    assert row.assignment_status is AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION
+    assert row.position_label_id is None
+
+
+def test_skipped_signature_does_not_set_position():
+    row = reconcile(
+        [
+            frame(
+                1,
+                items=["r1"],
+                detections=[detection(signature="SKIPPED")],
+            ),
+        ]
+    )[0]
+    assert row.assignment_status is AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION
+    assert row.position_label_id is None
+
+
+def test_unknown_signature_keeps_prior_position():
+    rows = reconcile(
+        [
+            frame(1, detections=[detection()]),
+            frame(
+                2,
+                items=["r1"],
+                detections=[detection(signature="UNKNOWN_KEY", label_id="ignored")],
+            ),
+        ]
+    )
+    assert rows[0].assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
+    assert rows[0].position_label_id == "label-1"
+
+
 def test_unordered_asset_is_excluded():
     row = reconcile([frame(None, asset="unordered", items=["r1"])])[0]
     assert row.assignment_status is AssignmentStatus.UNASSIGNED_UNORDERED_ASSET

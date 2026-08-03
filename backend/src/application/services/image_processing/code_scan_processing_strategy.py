@@ -502,6 +502,41 @@ class CodeScanProcessingStrategy:
             CodeConsolidationStatus.NO_DETECTIONS,
             CodeConsolidationStatus.NO_VALID_CODE,
         ):
+            position_only = bool(
+                position_meta
+                and position_meta.get("position_candidate_indexes")
+                and not item_candidates
+                and consolidated.status is CodeConsolidationStatus.NO_DETECTIONS
+            )
+            # Position QR(s) consumed by Phase 3 — not a product-code miss; do not drive
+            # GLOBAL_EXTERNAL_FALLBACK with a misleading NO_CODE_SYMBOL_FOUND.
+            if position_only:
+                statuses = position_meta.get("position_statuses") or []
+                position_ok = any(
+                    s in ("VALID", "SIGNATURE_VALIDATION_SKIPPED") for s in statuses
+                )
+                error_code = (
+                    "POSITION_LABEL_ONLY"
+                    if position_ok
+                    else "POSITION_LABEL_UNRESOLVED"
+                )
+                self._metrics.increment("code_scan.position_only")
+                result = ImageProcessingResult(
+                    job_id=context.job_id,
+                    asset_id=context.asset_id,
+                    status=ImageResultStatus.UNRECOGNIZED,
+                    processing_mode=mode,
+                    resolved_by=STRATEGY_KEY,
+                    evidence=evidence,
+                    warnings=list(consolidated.warnings),
+                    error_code=error_code,
+                    execution_scope=ExecutionScope.SINGLE_ASSET,
+                    logical_asset_attempt=False,
+                    processing_duration_ms=duration_ms,
+                )
+                self._finalize_asset_event(context, result)
+                return result
+
             self._metrics.increment("code_scan.unrecognized")
             result = ImageProcessingResult(
                 job_id=context.job_id,

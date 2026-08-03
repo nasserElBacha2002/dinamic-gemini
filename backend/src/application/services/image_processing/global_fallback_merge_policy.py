@@ -23,6 +23,8 @@ class InternalAssetEvidence:
     internal_code: str | None
     quantity: float | None
     resolved_internal: bool = False
+    #: When set (e.g. POSITION_LABEL_ONLY), asset does not justify GLOBAL_BATCH.
+    last_error_code: str | None = None
 
 
 @dataclass(frozen=True)

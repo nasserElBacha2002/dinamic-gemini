@@ -15,12 +15,14 @@ from src.application.ports.image_position_label_detection_repository import (
 )
 from src.application.services.position_label_detection.code_classifier import CodeClassifier
 from src.application.services.position_label_detection.payload_parser import (
+    ParsedPositionLabelPayload,
     PositionLabelPayloadParser,
 )
 from src.application.services.position_label_detection.resolver import PositionLabelResolver
 from src.application.services.position_label_detection.validation_service import (
     PositionLabelValidationService,
 )
+from src.domain.client_position_label.entities import ClientPositionLabelSignatureStatus
 from src.domain.position_label_detection.entities import (
     DETECTOR_NAME,
     DETECTOR_VERSION,
@@ -338,6 +340,18 @@ class ImagePositionDetectionUseCase:
         now: datetime,
     ) -> ImagePositionLabelDetection:
         parsed = self._parser.parse(code.raw_value)
+        if parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE and parsed.label_id:
+            # Labels created while HMAC was unconfigured are stored UNSIGNED with the same
+            # {type,version,label_id} payload. Accept ACTIVE unsigned DB matches so detection
+            # and Phase 4 reconciliation can proceed without forcing a reprint.
+            unsigned = self._try_resolve_unsigned_label(
+                command=command,
+                code=code,
+                parsed=parsed,
+                now=now,
+            )
+            if unsigned is not None:
+                return unsigned
         if parsed.status is not PositionLabelDetectionStatus.VALID:
             logger.info(
                 "position_label_validation_failed client_id=%s job_id=%s asset_id=%s "
@@ -473,6 +487,61 @@ class ImagePositionDetectionUseCase:
             bounding_box_json=code.bounding_box,
             rotation_degrees=code.rotation_degrees,
             confidence=code.confidence,
+        )
+
+    def _try_resolve_unsigned_label(
+        self,
+        *,
+        command: ImagePositionDetectionCommand,
+        code: DetectedCode,
+        parsed: ParsedPositionLabelPayload,
+        now: datetime,
+    ) -> ImagePositionLabelDetection | None:
+        assert parsed.label_id is not None
+        resolved = self._resolver.resolve(
+            public_label_id=parsed.label_id,
+            expected_client_id=command.client_id,
+        )
+        if resolved.detection_status is not PositionLabelDetectionStatus.VALID:
+            return None
+        assert resolved.label is not None
+        label = resolved.label
+        if label.signature_status is not ClientPositionLabelSignatureStatus.UNSIGNED:
+            return None
+        # Stored unsigned payloads are {type, version, label_id} — match QR content.
+        stored = label.canonical_payload or {}
+        if stored.get("signature"):
+            return None
+        if (stored.get("type") or "").strip() != "DINAMIC_POSITION":
+            return None
+        if (stored.get("label_id") or "").strip() != parsed.label_id.strip():
+            return None
+        logger.info(
+            "position_label_resolved_unsigned client_id=%s job_id=%s asset_id=%s label_id=%s "
+            "detection_status=%s detector_version=%s correlation_id=%s",
+            command.client_id,
+            command.job_id,
+            command.source_asset_id,
+            label.public_identifier,
+            PositionLabelDetectionStatus.VALID.value,
+            self._detector_version,
+            command.correlation_id,
+        )
+        return self._build_row(
+            command,
+            now=now,
+            status=PositionLabelDetectionStatus.VALID,
+            signature_status=PositionLabelSignatureStatus.MISSING,
+            payload_hash=parsed.payload_hash or label.payload_hash,
+            public_identifier=label.public_identifier,
+            position_label_id=label.id,
+            position_name_snapshot=label.name,
+            payload_version=parsed.version or label.payload_version,
+            bounding_box_json=code.bounding_box,
+            rotation_degrees=code.rotation_degrees,
+            confidence=code.confidence,
+            detail="unsigned_label_accepted",
+            metadata={"unsigned_acceptance": True},
         )
 
     def _persist_many(

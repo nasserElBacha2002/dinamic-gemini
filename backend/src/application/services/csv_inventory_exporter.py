@@ -35,6 +35,15 @@ INVENTORY_RESULTS_CSV_FIELDS: tuple[str, ...] = (
     "source_image_id",
     "primary_evidence_id",
     "updated_at",
+    "position_label_id",
+    "position_name",
+    "position_assignment_status",
+    "position_assignment_reason",
+    "position_assignment_source",
+    "reconciliation_id",
+    "reconciliation_version",
+    "sequence_number",
+    "source_asset_id",
 )
 
 INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS: tuple[str, ...] = (

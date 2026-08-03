@@ -6,7 +6,9 @@
  * defensive recovery for legacy NULL rows only.
  *
  * Gallery order contract: date_added ASC, asset_id ASC (via compareCursor).
- * Existing sequence_number values are never recalculated.
+ * Existing sequence_number values are never recalculated — except
+ * {@link compactSequenceAssignments}, which is used at seal time after exclusions
+ * leave gaps (backend seal requires contiguous 1..N).
  */
 import { compareCursor, cursorOf } from './compositeCursor';
 
@@ -39,6 +41,31 @@ export function nextSequenceAssignments(
     assignments.push({ id: photo.id, sequenceNumber: next });
   }
   return assignments;
+}
+
+/**
+ * Compact sequences to contiguous 1..N preserving relative order.
+ * Returns only rows that need an update (empty when already contiguous).
+ */
+export function compactSequenceAssignments(
+  photos: readonly { readonly id: string; readonly sequence_number: number | null }[],
+): readonly { readonly id: string; readonly sequenceNumber: number }[] {
+  const ordered = [...photos]
+    .filter((p) => p.sequence_number != null)
+    .sort((a, b) => {
+      const sa = Number(a.sequence_number);
+      const sb = Number(b.sequence_number);
+      if (sa !== sb) return sa - sb;
+      return a.id.localeCompare(b.id);
+    });
+  const out: { id: string; sequenceNumber: number }[] = [];
+  ordered.forEach((photo, index) => {
+    const target = index + 1;
+    if (Number(photo.sequence_number) !== target) {
+      out.push({ id: photo.id, sequenceNumber: target });
+    }
+  });
+  return out;
 }
 
 /**

@@ -387,32 +387,48 @@ export class CaptureService {
       );
     }
 
+    // Remember pre-finish status so gate failures can restore a usable capture state.
+    // Sessions already stuck in `finishing` (legacy) resume as active.
+    const resumeStatus: 'active' | 'paused' =
+      current.status === 'paused' ? 'paused' : 'active';
+
     if (current.status !== 'finishing') {
       await this.repo.updateSessionStatus(sessionId, 'finishing');
     }
     this.autoScanEnabled = false;
     this.detachListener();
-    await this.loadSession(sessionId, false);
-    await this.coordinator.request();
-    await this.runScanOnce(sessionId, true);
-    await this.waitForActiveValidations(sessionId, this.validationTimeoutMs);
-    await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
-    await this.stopForeground();
-    await this.reloadPhotos(sessionId);
-    this.assertPhotosReadyForUpload();
 
-    if (target === 'review') {
-      await this.repo.updateSessionStatus(sessionId, 'review');
+    try {
       await this.loadSession(sessionId, false);
-      this.logger.info('session_finish', { sessionId });
-      return sessionId;
-    }
+      await this.coordinator.request();
+      await this.runScanOnce(sessionId, true);
+      await this.waitForActiveValidations(sessionId, this.validationTimeoutMs);
+      await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
+      await this.stopForeground();
+      await this.reloadPhotos(sessionId);
+      this.assertPhotosReadyForUpload();
 
-    await this.repo.updateSessionStatus(sessionId, 'review');
-    await this.repo.updateSessionStatus(sessionId, 'uploading');
-    this.clearCurrentSession();
-    this.logger.info('session_finish', { sessionId, handoff: 'uploading' });
-    return sessionId;
+      if (target === 'review') {
+        await this.repo.updateSessionStatus(sessionId, 'review');
+        await this.loadSession(sessionId, false);
+        this.logger.info('session_finish', { sessionId });
+        return sessionId;
+      }
+
+      await this.repo.updateSessionStatus(sessionId, 'review');
+      await this.repo.updateSessionStatus(sessionId, 'uploading');
+      this.clearCurrentSession();
+      this.logger.info('session_finish', { sessionId, handoff: 'uploading' });
+      return sessionId;
+    } catch (error) {
+      // Keep capture operable after unresolved unstable/undecodable (or other gate) failures.
+      const stillFinishing = (await this.repo.getSession(sessionId))?.status === 'finishing';
+      if (stillFinishing) {
+        await this.repo.updateSessionStatus(sessionId, resumeStatus);
+        await this.loadSession(sessionId, resumeStatus === 'active');
+      }
+      throw error;
+    }
   }
 
   private assertPhotosReadyForUpload(): void {
@@ -446,6 +462,10 @@ export class CaptureService {
     const sessionId = this.requireSessionId();
     this.bumpValidationVersion(sessionId, assetId);
     await this.repo.updatePhotoStatus(sessionId, assetId, 'excluded');
+    const photo = await this.repo.getPhoto(sessionId, assetId);
+    if (photo) {
+      await this.repo.clearPhotoSequenceNumber(photo.id);
+    }
     await this.reloadPhotos(sessionId);
   }
 

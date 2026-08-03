@@ -77,6 +77,18 @@ export interface ResultSummary {
   id: string;
   sku: string | null;
   positionCode: string | null;
+  /** Phase 4: true when an aisle position label was assigned to this result. */
+  aislePositionAssigned?: boolean;
+  /** Phase 5: human aisle position name from published assignments (null = sin posición). */
+  aislePositionName?: string | null;
+  /** Phase 5: assignment status code (ASSIGNED_AUTOMATIC | UNASSIGNED_* | NO_RECONCILIATION). */
+  positionAssignmentStatus?: string | null;
+  positionAssignmentReason?: string | null;
+  positionAssignmentSource?: string | null;
+  reconciliationId?: string | null;
+  reconciliationVersion?: string | null;
+  reconciliationStatus?: string | null;
+  positionSequenceNumber?: number | null;
   detectedQty: number | null;
   /** v3.2.2: corrected_quantity from backend (may be null). */
   correctedQty: number | null;
@@ -132,6 +144,15 @@ export interface ResultDetail {
   id: string;
   sku: string | null;
   positionCode: string | null;
+  aislePositionAssigned?: boolean;
+  aislePositionName?: string | null;
+  positionAssignmentStatus?: string | null;
+  positionAssignmentReason?: string | null;
+  positionAssignmentSource?: string | null;
+  reconciliationId?: string | null;
+  reconciliationVersion?: string | null;
+  reconciliationStatus?: string | null;
+  positionSequenceNumber?: number | null;
   detectedQty: number | null;
   correctedQty: number | null;
   /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */

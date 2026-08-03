@@ -10,8 +10,6 @@ import { Alert, Box, Button, Tooltip, Typography } from '@mui/material';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import ImageSearchOutlinedIcon from '@mui/icons-material/ImageSearchOutlined';
 import JobPositionDetectionsPanel from '../features/positionLabels/JobPositionDetectionsPanel';
-import JobPositionAssignmentsPanel from '../features/positionLabels/JobPositionAssignmentsPanel';
-import JobPositionSequenceDiagnosticsPanel from '../features/positionLabels/JobPositionSequenceDiagnosticsPanel';
 import { exportAisleOperationalCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
@@ -437,6 +435,14 @@ export default function AislePositionsPage() {
   const missingEvidenceCount = useMemo(
     () => results.reduce((n, r) => n + (r.hasEvidence ? 0 : 1), 0),
     [results]
+  );
+  const withPositionCount = useMemo(
+    () => results.reduce((n, r) => n + (r.aislePositionAssigned ? 1 : 0), 0),
+    [results]
+  );
+  const withoutPositionCount = useMemo(
+    () => results.length - withPositionCount,
+    [results.length, withPositionCount]
   );
 
   const filteredByKind = useMemo(() => filterResults(results, filter), [results, filter]);
@@ -879,8 +885,6 @@ export default function AislePositionsPage() {
             }}
           />
           <JobPositionDetectionsPanel inventoryId={inventoryId} jobId={pickedRunJobId} />
-          <JobPositionAssignmentsPanel inventoryId={inventoryId} jobId={pickedRunJobId} />
-          <JobPositionSequenceDiagnosticsPanel inventoryId={inventoryId} jobId={pickedRunJobId} />
         </Box>
       ) : null}
 
@@ -954,6 +958,8 @@ export default function AislePositionsPage() {
                 }}
                 counts={{
                   all: kpi.total,
+                  with_position: withPositionCount,
+                  without_position: withoutPositionCount,
                   needs_review: kpi.needsReview,
                   low_confidence: kpi.lowConfidence,
                   qty_zero: kpi.qtyZero,
@@ -989,6 +995,8 @@ export default function AislePositionsPage() {
           }}
           counts={{
             all: kpi.total,
+            with_position: withPositionCount,
+            without_position: withoutPositionCount,
             needs_review: kpi.needsReview,
             low_confidence: kpi.lowConfidence,
             qty_zero: kpi.qtyZero,

@@ -527,6 +527,9 @@ def _openai_parse_validate_global_analysis_json(
         )
 
     try:
+        from src.llm.normalization.entity_normalizer import normalize_llm_response
+
+        data = normalize_llm_response(data, provider=prov)
         validate_global_analysis_structure_v21(data)
     except GlobalAnalysisValidationError as e:
         raise LLMProviderError(

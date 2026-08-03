@@ -65,7 +65,10 @@ function draftStatusFromConsolidation(
     case 'NO_DETECTIONS':
       return 'UNRESOLVED';
     case 'NO_VALID_CODE':
-      return parsedError === 'PLAIN_UNVERIFIED_PAYLOAD' ? 'DETECTED_UNVERIFIED' : 'INVALID';
+      return parsedError === 'PLAIN_UNVERIFIED_PAYLOAD' ||
+        parsedError === 'POSITION_LABEL_DETECTED'
+        ? 'DETECTED_UNVERIFIED'
+        : 'INVALID';
     case 'MULTIPLE_DISTINCT_CODES':
     case 'QUANTITY_CONFLICT':
       return 'AMBIGUOUS';
