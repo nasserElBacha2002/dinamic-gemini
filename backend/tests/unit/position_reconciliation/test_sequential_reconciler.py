@@ -139,8 +139,8 @@ def test_clear_policies(status, signature, client_id):
     assert row.warnings == ("SEQUENCE_GAP",)
 
 
-def test_missing_signature_does_not_set_position():
-    """Unsigned labels must not SET_POSITION (LEGACY_UNSIGNED_REQUIRES_REVIEW)."""
+def test_missing_signature_on_valid_row_does_not_set_position():
+    """VALID detection with non-VALID signature must not SET_POSITION."""
     row = reconcile(
         [
             frame(
@@ -152,6 +152,24 @@ def test_missing_signature_does_not_set_position():
     )[0]
     assert row.assignment_status is AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION
     assert row.position_label_id is None
+
+
+def test_resolved_legacy_unsigned_sets_position_with_review_warning():
+    """Phase 3 accepted unsigned labels establish position and flag review."""
+    row = reconcile(
+        [
+            frame(
+                1,
+                detections=[
+                    detection(status="LEGACY_UNSIGNED_REQUIRES_REVIEW", signature="MISSING")
+                ],
+            ),
+            frame(2, items=["r1"]),
+        ]
+    )[0]
+    assert row.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
+    assert row.position_label_id == "label-1"
+    assert "LEGACY_UNSIGNED_REQUIRES_REVIEW" in row.warnings
 
 
 def test_skipped_signature_does_not_set_position():

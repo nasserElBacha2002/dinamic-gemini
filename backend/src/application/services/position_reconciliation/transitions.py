@@ -35,6 +35,15 @@ _KEEP_STATUSES = frozenset(
         "DUPLICATE",
         "DUPLICATE_POSITION_CODES",
         "SIGNATURE_VALIDATION_SKIPPED",
+    }
+)
+
+# Resolved unsigned labels (matched to a stored client label) establish position so
+# product↔position association works for the common unsigned-label printer path.
+# Assignment rows carry LEGACY_UNSIGNED_REQUIRES_REVIEW in warnings for operator review.
+_SET_STATUSES = frozenset(
+    {
+        "VALID",
         "LEGACY_UNSIGNED_REQUIRES_REVIEW",
     }
 )
@@ -47,7 +56,7 @@ def resolve_position_transition(
 
     raw = detection_status.value if isinstance(detection_status, Enum) else detection_status
     status = str(raw).strip().upper()
-    if status == "VALID":
+    if status in _SET_STATUSES:
         return PositionTransitionAction.SET_POSITION
     if status in _CLEAR_STATUSES:
         return PositionTransitionAction.CLEAR_POSITION

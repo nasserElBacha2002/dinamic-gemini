@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import uuid4
 
 from src.application.dto.access_principal import AccessPrincipal
@@ -180,9 +180,14 @@ class ReconcileJobPositionsUseCase:
                     detector_version=detection.detector_version,
                 )
             )
-        frames = []
+        frames: list[OrderedImageFrame] = []
+        sequence_sources: list[str] = []
         for link in links:
             asset = source_assets.get(link.source_asset_id)
+            sequence_number, sequence_source = self._resolve_sequence_number(
+                asset=asset, link=link
+            )
+            sequence_sources.append(sequence_source)
             frames.append(
                 OrderedImageFrame(
                     source_asset_id=link.source_asset_id,
@@ -192,31 +197,84 @@ class ReconcileJobPositionsUseCase:
                         if asset
                         else ordered_capture_session_id
                     ),
-                    sequence_number=self._resolve_sequence_number(asset=asset, link=link),
+                    sequence_number=sequence_number,
                     item_results=tuple(results_by_asset.get(link.source_asset_id, ())),
                     position_detections=tuple(
                         detections_by_asset.get(link.source_asset_id, ())
                     ),
                 )
             )
+        frames = self._normalize_system_upload_frame_order(frames, sequence_sources)
         return frames, detections
 
     @staticmethod
-    def _resolve_sequence_number(*, asset, link) -> int | None:
+    def _resolve_sequence_number(*, asset, link) -> tuple[int | None, str]:
         """Prefer capture sequence; fall back to job link order for system uploads.
 
         Mobile ordered capture sets ``sequence_number``. Web/system aisle uploads often
         only populate ``job_source_assets.position_order`` (0-based upload order). Without
         that fallback every product stays ``UNASSIGNED_UNORDERED_ASSET`` and photo↔position
         never appears in assignments.
+
+        Returns ``(sequence_number, source)`` where source is one of
+        ``capture`` | ``link`` | ``position_order`` | ``none``.
         """
         if asset is not None and asset.sequence_number is not None:
-            return int(asset.sequence_number)
+            return int(asset.sequence_number), "capture"
         if link.sequence_number is not None:
-            return int(link.sequence_number)
+            return int(link.sequence_number), "link"
         if getattr(link, "position_order", None) is not None:
-            return int(link.position_order)
-        return None
+            return int(link.position_order), "position_order"
+        return None, "none"
+
+    @staticmethod
+    def _frame_can_establish_position(frame: OrderedImageFrame) -> bool:
+        for detection in frame.position_detections:
+            status = (
+                detection.detection_status.value
+                if hasattr(detection.detection_status, "value")
+                else str(detection.detection_status)
+            ).strip().upper()
+            if status in {"VALID", "LEGACY_UNSIGNED_REQUIRES_REVIEW"} and detection.position_label_id:
+                return True
+        return False
+
+    @classmethod
+    def _normalize_system_upload_frame_order(
+        cls,
+        frames: list[OrderedImageFrame],
+        sequence_sources: list[str],
+    ) -> list[OrderedImageFrame]:
+        """For web uploads (position_order only), place position photos before item photos.
+
+        Capture/link sequences are authoritative and must not be rewritten. When every
+        sequenced frame came from upload ``position_order``, arbitrary file-picker order
+        (item then position) would leave products ``UNASSIGNED_NO_PREVIOUS_POSITION``.
+        """
+        if not frames:
+            return frames
+        if any(source in {"capture", "link"} for source in sequence_sources):
+            return frames
+        if not all(source in {"position_order", "none"} for source in sequence_sources):
+            return frames
+
+        ordered = [f for f in frames if f.sequence_number is not None]
+        unordered = [f for f in frames if f.sequence_number is None]
+        if not ordered:
+            return frames
+
+        with_position = sorted(
+            (f for f in ordered if cls._frame_can_establish_position(f)),
+            key=lambda f: (int(f.sequence_number or 0), f.source_asset_id),
+        )
+        without_position = sorted(
+            (f for f in ordered if not cls._frame_can_establish_position(f)),
+            key=lambda f: (int(f.sequence_number or 0), f.source_asset_id),
+        )
+        resequenced: list[OrderedImageFrame] = []
+        for index, frame in enumerate(with_position + without_position):
+            resequenced.append(replace(frame, sequence_number=index))
+        return resequenced + unordered
 
     def execute(self, command: ReconcileJobPositionsCommand) -> ReconcileJobPositionsResult:
         if not self._enabled:

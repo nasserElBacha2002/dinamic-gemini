@@ -19,7 +19,7 @@ from src.domain.position_reconciliation.entities import PositionTransitionAction
         ("CLIENT_MISMATCH", PositionTransitionAction.CLEAR_POSITION),
         ("LABEL_INVALIDATED", PositionTransitionAction.CLEAR_POSITION),
         ("AMBIGUOUS_POSITION_DETECTION", PositionTransitionAction.CLEAR_POSITION),
-        ("LEGACY_UNSIGNED_REQUIRES_REVIEW", PositionTransitionAction.KEEP_POSITION),
+        ("LEGACY_UNSIGNED_REQUIRES_REVIEW", PositionTransitionAction.SET_POSITION),
     ],
 )
 def test_transition_table(status, expected):
