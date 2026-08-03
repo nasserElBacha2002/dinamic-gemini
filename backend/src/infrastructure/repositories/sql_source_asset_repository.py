@@ -32,6 +32,23 @@ def _is_upload_idempotency_key_duplicate(exc: pyodbc.IntegrityError) -> bool:
     return "uq_source_assets_aisle_upload_batch_client" in str(exc).lower()
 
 
+def _is_ordered_sequence_duplicate(exc: pyodbc.IntegrityError) -> bool:
+    return "uq_source_assets_ordered_session_sequence" in str(exc).lower()
+
+
+def _is_ordered_client_file_duplicate(exc: pyodbc.IntegrityError) -> bool:
+    return "uq_source_assets_ordered_session_client_file" in str(exc).lower()
+
+
+_ASSET_SELECT_COLS = """
+id, aisle_id, type, original_filename, storage_path,
+storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+mime_type, uploaded_at, metadata_json, capture_session_item_id,
+upload_batch_id, upload_client_file_id,
+ordered_capture_session_id, sequence_number, sequence_source
+"""
+
+
 def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
@@ -100,6 +117,10 @@ def _row_to_asset(row) -> SourceAsset:
     cap_item = optional_nonempty_db_str(getattr(row, "capture_session_item_id", None))
     upload_batch = optional_nonempty_db_str(getattr(row, "upload_batch_id", None))
     upload_client = optional_nonempty_db_str(getattr(row, "upload_client_file_id", None))
+    ordered_session = optional_nonempty_db_str(getattr(row, "ordered_capture_session_id", None))
+    seq_raw = getattr(row, "sequence_number", None)
+    sequence_number = int(seq_raw) if seq_raw is not None else None
+    sequence_source = optional_nonempty_db_str(getattr(row, "sequence_source", None))
     return SourceAsset(
         id=aid,
         aisle_id=normalize_db_str(getattr(row, "aisle_id", None)),
@@ -118,6 +139,9 @@ def _row_to_asset(row) -> SourceAsset:
         capture_session_item_id=cap_item,
         upload_batch_id=upload_batch,
         upload_client_file_id=upload_client,
+        ordered_capture_session_id=ordered_session,
+        sequence_number=sequence_number,
+        sequence_source=sequence_source,
     )
 
 
@@ -140,7 +164,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     storage_provider = ?, storage_bucket = ?, storage_key = ?,
                     content_type = ?, file_size_bytes = ?, etag = ?,
                     mime_type = ?, uploaded_at = ?, metadata_json = ?,
-                    capture_session_item_id = ?, upload_batch_id = ?, upload_client_file_id = ?
+                    capture_session_item_id = ?, upload_batch_id = ?, upload_client_file_id = ?,
+                    ordered_capture_session_id = ?, sequence_number = ?, sequence_source = ?
                 WHERE id = ?
                 """,
                 (
@@ -160,6 +185,9 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     asset.capture_session_item_id,
                     asset.upload_batch_id,
                     asset.upload_client_file_id,
+                    asset.ordered_capture_session_id,
+                    asset.sequence_number,
+                    asset.sequence_source,
                     asset.id,
                 ),
             )
@@ -171,9 +199,10 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                             id, aisle_id, type, original_filename, storage_path,
                             storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
                             mime_type, uploaded_at, metadata_json, capture_session_item_id,
-                            upload_batch_id, upload_client_file_id
+                            upload_batch_id, upload_client_file_id,
+                            ordered_capture_session_id, sequence_number, sequence_source
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             asset.id,
@@ -193,6 +222,9 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                             asset.capture_session_item_id,
                             asset.upload_batch_id,
                             asset.upload_client_file_id,
+                            asset.ordered_capture_session_id,
+                            asset.sequence_number,
+                            asset.sequence_source,
                         ),
                     )
                 except pyodbc.IntegrityError as exc:
@@ -201,6 +233,20 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                             "Duplicate upload idempotency key for this aisle "
                             f"(aisle_id={asset.aisle_id}, upload_batch_id={asset.upload_batch_id}, "
                             f"upload_client_file_id={asset.upload_client_file_id})"
+                        ) from exc
+                    if _is_ordered_sequence_duplicate(exc):
+                        from src.application.errors import OrderedCaptureSessionConflictError
+
+                        raise OrderedCaptureSessionConflictError(
+                            "Duplicate ordered capture sequence",
+                            code="ORDERED_CAPTURE_SEQUENCE_CONFLICT",
+                        ) from exc
+                    if _is_ordered_client_file_duplicate(exc):
+                        from src.application.errors import OrderedCaptureSessionConflictError
+
+                        raise OrderedCaptureSessionConflictError(
+                            "Duplicate client_image_id in ordered capture session",
+                            code="ORDERED_CAPTURE_CLIENT_IMAGE_CONFLICT",
                         ) from exc
                     raise
 
@@ -211,7 +257,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
                        mime_type, uploaded_at, metadata_json, capture_session_item_id,
-                       upload_batch_id, upload_client_file_id
+                       upload_batch_id, upload_client_file_id,
+                       ordered_capture_session_id, sequence_number, sequence_source
                 FROM source_assets WHERE id = ?
                 """,
                 (asset_id,),
@@ -220,6 +267,26 @@ class SqlSourceAssetRepository(SourceAssetRepository):
         if not row:
             return None
         return _row_to_asset(row)
+
+    def get_by_ids(self, asset_ids: Sequence[str]) -> dict[str, SourceAsset]:
+        ids = tuple(dict.fromkeys(asset_id for asset_id in asset_ids if asset_id))
+        if not ids:
+            return {}
+        placeholders = ",".join("?" * len(ids))
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, aisle_id, type, original_filename, storage_path,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id,
+                       upload_batch_id, upload_client_file_id,
+                       ordered_capture_session_id, sequence_number, sequence_source
+                FROM source_assets WHERE id IN ({placeholders})
+                """,
+                ids,
+            )
+            assets = [_row_to_asset(row) for row in cur.fetchall()]
+        return {asset.id: asset for asset in assets}
 
     def delete_by_id(self, asset_id: str) -> bool:
         with self._client.cursor() as cur:
@@ -236,7 +303,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
                        mime_type, uploaded_at, metadata_json, capture_session_item_id,
-                       upload_batch_id, upload_client_file_id
+                       upload_batch_id, upload_client_file_id,
+                       ordered_capture_session_id, sequence_number, sequence_source
                 FROM source_assets WHERE capture_session_item_id = ?
                 """,
                 (cid,),
@@ -263,11 +331,57 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
                        mime_type, uploaded_at, metadata_json, capture_session_item_id,
-                       upload_batch_id, upload_client_file_id
+                       upload_batch_id, upload_client_file_id,
+                       ordered_capture_session_id, sequence_number, sequence_source
                 FROM source_assets
                 WHERE aisle_id = ? AND upload_batch_id = ? AND upload_client_file_id = ?
                 """,
                 (aid, batch, client),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return _row_to_asset(row)
+
+    def get_by_ordered_session_and_client_image_id(
+        self,
+        session_id: str,
+        client_image_id: str,
+    ) -> SourceAsset | None:
+        sid = (session_id or "").strip()
+        cid = (client_image_id or "").strip()
+        if not sid or not cid:
+            return None
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_ASSET_SELECT_COLS}
+                FROM source_assets
+                WHERE ordered_capture_session_id = ? AND upload_client_file_id = ?
+                """,  # nosec B608
+                (sid, cid),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return _row_to_asset(row)
+
+    def get_by_ordered_session_and_sequence(
+        self,
+        session_id: str,
+        sequence_number: int,
+    ) -> SourceAsset | None:
+        sid = (session_id or "").strip()
+        if not sid:
+            return None
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_ASSET_SELECT_COLS}
+                FROM source_assets
+                WHERE ordered_capture_session_id = ? AND sequence_number = ?
+                """,  # nosec B608
+                (sid, int(sequence_number)),
             )
             row = cur.fetchone()
         if not row:
@@ -281,8 +395,15 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
                        mime_type, uploaded_at, metadata_json, capture_session_item_id,
-                       upload_batch_id, upload_client_file_id
-                FROM source_assets WHERE aisle_id = ? ORDER BY uploaded_at ASC
+                       upload_batch_id, upload_client_file_id,
+                       ordered_capture_session_id, sequence_number, sequence_source
+                FROM source_assets WHERE aisle_id = ?
+                ORDER BY
+                    CASE WHEN sequence_number IS NULL THEN 1 ELSE 0 END ASC,
+                    sequence_number ASC,
+                    upload_client_file_id ASC,
+                    uploaded_at ASC,
+                    id ASC
                 """,
                 (aisle_id,),
             )

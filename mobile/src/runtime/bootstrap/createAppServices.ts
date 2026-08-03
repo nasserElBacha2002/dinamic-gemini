@@ -18,6 +18,7 @@ import {
 import { runHealthChecks, type HealthCheckResult } from '../../features/support/healthChecks';
 import { cleanupTransformTemps, getStorageStatus } from '../../features/support/storageCleanup';
 import { AisleAssetsApi } from '../../features/upload/aisleAssetsApi';
+import { OrderedCaptureApi } from '../../features/upload/orderedCaptureApi';
 import { UploadLimitsService } from '../../features/upload/uploadLimitsService';
 import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
@@ -143,6 +144,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const config = loadAppConfig();
   const configError = validateAppConfig(config);
   const logger = createLogger();
+  if (config.isDevelopment && config.apiBaseUrl) {
+    logger.info('mobile_api_base_url', { apiBaseUrl: config.apiBaseUrl });
+  }
   const tokenStorage = createMirroredTokenStorage(secureTokenStorage, config);
   const api = new ApiClient({
     config,
@@ -173,6 +177,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const backgroundUpload = asBackgroundUploadScheduler(backgroundWork);
   const uploadLimits = new UploadLimitsService(api, logger);
   const assetsApi = new AisleAssetsApi(api);
+  const orderedCaptureApi = new OrderedCaptureApi(api);
   const observability = createObservabilityStack({
     enabled: config.flags.uploadObservabilityEnabled,
     logger,
@@ -336,11 +341,14 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       localCodeScan,
       preliminarySync,
       authoritativeSync: authoritativeLocalSync,
+      orderedCapture: orderedCaptureApi,
       authoritativeExclusion: config.flags.mobileAuthoritativeAisleFinalization
         ? authoritativeAisleFinalization
         : null,
     },
   );
+
+  let photoStableChain: Promise<void> = Promise.resolve();
 
   const capture = new CaptureService(captureRepo, createForegroundService(), logger, {
     mediaStore: {
@@ -352,8 +360,19 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       probe: (uri) => probeStability(uri),
     },
     onPhotoStable: (sessionId, photoId) => {
-      void uploadQueue.enqueuePhoto(sessionId, photoId);
-      void offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
+      // Serialize upload + offline enqueue: parallel fire-and-forget stampedes SQLite
+      // (database is locked) when many photos stabilize during "Finalizar captura".
+      photoStableChain = photoStableChain
+        .then(async () => {
+          await uploadQueue.enqueuePhoto(sessionId, photoId);
+          await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
+        })
+        .catch((error) => {
+          logger.warn('recovery', {
+            where: 'on_photo_stable_chain',
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
     },
     observability: obsWire,
   });
@@ -368,7 +387,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     obsWire
       ? { reporter: obsWire.reporter, marks: obsWire.marks, connectivity }
       : null,
-    { flags: config.flags, confirmed: confirmedLocalResults },
+    { flags: config.flags, confirmed: confirmedLocalResults, drafts: localDetectionDrafts },
+    orderedCaptureApi,
   );
   const jobMonitor = new JobMonitor(api, jobRepo, captureRepo, logger, {
     backgroundPolling: config.flags.backgroundJobPolling,
@@ -484,6 +504,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     });
     void uploadQueue.restoreAndStart();
     void jobMonitor.restorePendingJobs();
+    void processing.recoverStuckStartingSessions().catch(() => {
+      // best-effort — never block bootstrap
+    });
     if (config.flags.mobilePreliminaryDetectionSync) {
       void preliminarySync.syncPending().catch(() => {
         // best-effort — never block bootstrap

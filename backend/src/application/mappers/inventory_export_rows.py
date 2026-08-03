@@ -15,8 +15,15 @@ from src.application.mappers.position_canonical_view import (
     build_position_canonical_view,
     resolve_effective_position_code,
 )
+from src.application.services.position_reconciliation.published_assignment_read_model import (
+    PublishedPositionAssignmentView,
+)
+from src.application.services.position_reconciliation.result_position_enrichment import (
+    export_fields_from_view,
+)
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import Inventory
+from src.domain.position_overrides.entities import EffectiveProductPositionView
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 
@@ -93,6 +100,10 @@ def position_to_export_row_dict(
     aisle_sequence: int,
     position: Position,
     primary_product: ProductRecord | None,
+    *,
+    position_assignment: (
+        PublishedPositionAssignmentView | EffectiveProductPositionView | None
+    ) = None,
 ) -> dict[str, Any]:
     return position_to_operational_export_row_dict(
         inventory,
@@ -100,6 +111,7 @@ def position_to_export_row_dict(
         aisle_sequence,
         position,
         primary_product,
+        position_assignment=position_assignment,
     )
 
 
@@ -109,6 +121,10 @@ def position_to_operational_export_row_dict(
     aisle_sequence: int,
     position: Position,
     primary_product: ProductRecord | None,
+    *,
+    position_assignment: (
+        PublishedPositionAssignmentView | EffectiveProductPositionView | None
+    ) = None,
 ) -> dict[str, Any]:
     corrected = primary_product.corrected_quantity if primary_product is not None else None
     view = build_position_canonical_view(
@@ -117,6 +133,11 @@ def position_to_operational_export_row_dict(
         corrected_quantity=corrected,
     )
     updated: datetime = position.updated_at
+    enrichment = export_fields_from_view(position_assignment)
+    # Prefer published Phase 4 name for position_code when assigned (same SoT as API).
+    position_code = export_position_code(position)
+    if enrichment.get("position_name"):
+        position_code = str(enrichment["position_name"])
     return {
         "inventory_id": inventory.id,
         "inventory_name": inventory.name,
@@ -126,7 +147,7 @@ def position_to_operational_export_row_dict(
         "position_id": position.id,
         "position_status": view.review.status,
         "needs_review": view.review.needs_review,
-        "position_code": export_position_code(position),
+        "position_code": position_code,
         "product_sku": view.product.public_sku or "",
         "product_display_label": view.product.display_label or "",
         "barcode": view.product.barcode or "",
@@ -139,6 +160,7 @@ def position_to_operational_export_row_dict(
         "source_image_id": view.traceability.source_image_id or "",
         "primary_evidence_id": view.review.primary_evidence_id or "",
         "updated_at": updated.isoformat(),
+        **enrichment,
     }
 
 

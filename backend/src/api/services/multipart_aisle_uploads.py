@@ -94,6 +94,8 @@ async def read_spooled_multipart_upload_files(
     *,
     upload_batch_id: str | None = None,
     client_file_ids: list[str] | None = None,
+    ordered_capture_session_id: str | None = None,
+    sequence_numbers: list[str] | None = None,
     policy: UploadRequestLimitPolicy | None = None,
     require_usable: bool = True,
 ) -> list[UploadedFile]:
@@ -116,6 +118,20 @@ async def read_spooled_multipart_upload_files(
         file_count=len(usable),
     )
     batch_id = _parse_upload_batch_id(upload_batch_id)
+    session_id = (ordered_capture_session_id or "").strip() or None
+    seqs = _parse_sequence_numbers(values=sequence_numbers, file_count=len(usable))
+    if session_id and any(s is None for s in seqs):
+        raise StructuredApiHttpError(
+            422,
+            error_code="SEQUENCE_NUMBER_REQUIRED",
+            detail="sequence_numbers required for every file when ordered_capture_session_id is set",
+        )
+    if any(s is not None for s in seqs) and not session_id:
+        raise StructuredApiHttpError(
+            422,
+            error_code="ORDERED_CAPTURE_SESSION_REQUIRED",
+            detail="ordered_capture_session_id required when sequence_numbers are provided",
+        )
 
     uploaded: list[UploadedFile] = []
     total_bytes = 0
@@ -124,7 +140,7 @@ async def read_spooled_multipart_upload_files(
             try:
                 # Prefer Starlette's underlying spool/file handle over buffering into BytesIO.
                 source = getattr(u, "file", None) or BytesIO(await u.read())
-                spooled, size, _digest = spool_upload_to_tempfile(
+                spooled, size, digest = spool_upload_to_tempfile(
                     source,
                     max_file_bytes=limit_policy.max_file_size_bytes,
                 )
@@ -140,6 +156,9 @@ async def read_spooled_multipart_upload_files(
                     client_file_id=client_ids[idx],
                     upload_batch_id=batch_id,
                     size_bytes=size,
+                    content_sha256=digest,
+                    ordered_capture_session_id=session_id,
+                    sequence_number=seqs[idx],
                 )
             )
     except (UploadFileTooLargeError, UploadRequestTooLargeError):
@@ -150,16 +169,61 @@ async def read_spooled_multipart_upload_files(
     return uploaded
 
 
+def _parse_sequence_numbers(
+    *,
+    values: list[str] | None,
+    file_count: int,
+) -> list[int | None]:
+    if not values:
+        return [None] * file_count
+    if len(values) == 1 and "," in values[0]:
+        raw_parts = values[0].split(",")
+    else:
+        raw_parts = values
+    if len(raw_parts) != file_count:
+        raise StructuredApiHttpError(
+            422,
+            error_code="SEQUENCE_NUMBERS_MISMATCH",
+            detail="sequence_numbers count must match files count",
+        )
+    out: list[int | None] = []
+    for part in raw_parts:
+        text = (part or "").strip()
+        if not text:
+            out.append(None)
+            continue
+        try:
+            n = int(text)
+        except ValueError as exc:
+            raise StructuredApiHttpError(
+                422,
+                error_code="SEQUENCE_NUMBER_INVALID",
+                detail="sequence_numbers must be positive integers",
+            ) from exc
+        if n < 1:
+            raise StructuredApiHttpError(
+                422,
+                error_code="SEQUENCE_NUMBER_INVALID",
+                detail="sequence_numbers must be >= 1",
+            )
+        out.append(n)
+    return out
+
+
 async def read_uploaded_files_for_aisle_asset_upload(
     files: list[UploadFile],
     *,
     upload_batch_id: str | None = None,
     client_file_ids: list[str] | None = None,
+    ordered_capture_session_id: str | None = None,
+    sequence_numbers: list[str] | None = None,
 ) -> list[UploadedFile]:
     """Skip empty parts; 422 if the request has no usable file parts (same rules as the route)."""
     return await read_spooled_multipart_upload_files(
         files,
         upload_batch_id=upload_batch_id,
         client_file_ids=client_file_ids,
+        ordered_capture_session_id=ordered_capture_session_id,
+        sequence_numbers=sequence_numbers,
         require_usable=True,
     )

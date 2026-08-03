@@ -1,0 +1,689 @@
+"""SQL Server aisle location + positioning label repositories."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Sequence
+from datetime import datetime, timezone
+from typing import Any
+
+import pyodbc
+
+from src.application.errors import IdempotencyKeyReusedError
+from src.application.ports.aisle_location_repository import (
+    AisleLocationLabelRepository,
+    AisleLocationRepository,
+)
+from src.database.sqlserver import SqlServerClient
+from src.domain.aisle_location.artifact_entities import (
+    AisleLocationLabelArtifact,
+    AisleLocationLabelArtifactStatus,
+)
+from src.domain.aisle_location.entities import AisleLocation, AisleLocationStatus
+from src.domain.aisle_location.label_entities import (
+    AisleLocationLabel,
+    AisleLocationLabelStatus,
+    PositioningLabelSignatureStatus,
+)
+from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
+
+
+def _is_label_client_idempotency_unique_violation(exc: pyodbc.IntegrityError) -> bool:
+    return "uq_aisle_location_labels_client_idempotency" in str(exc).lower()
+
+
+def _is_artifact_identity_unique_violation(exc: pyodbc.IntegrityError) -> bool:
+    return "uq_aisle_location_label_artifacts_identity" in str(exc).lower()
+
+
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt
+    return dt.replace(tzinfo=timezone.utc)
+
+
+def _row_to_location(row) -> AisleLocation:
+    status_raw = normalize_db_str(getattr(row, "status", None)) or "ACTIVE"
+    try:
+        status = AisleLocationStatus(status_raw)
+    except ValueError:
+        status = AisleLocationStatus.ACTIVE
+    created = _ensure_utc(getattr(row, "created_at", None))
+    updated = _ensure_utc(getattr(row, "updated_at", None))
+    if created is None or updated is None:
+        raise ValueError("aisle_locations row missing timestamps")
+    return AisleLocation(
+        id=normalize_db_str(getattr(row, "id", None)),
+        client_id=normalize_db_str(getattr(row, "client_id", None)),
+        aisle_id=normalize_db_str(getattr(row, "aisle_id", None)),
+        code=normalize_db_str(getattr(row, "code", None)),
+        normalized_code=normalize_db_str(getattr(row, "normalized_code", None)),
+        status=status,
+        created_at=created,
+        updated_at=updated,
+        display_name=optional_nonempty_db_str(getattr(row, "display_name", None)),
+        description=optional_nonempty_db_str(getattr(row, "description", None)),
+        created_by=optional_nonempty_db_str(getattr(row, "created_by", None)),
+        public_identifier=normalize_db_str(getattr(row, "public_identifier", None)) or "",
+    )
+
+
+def _parse_payload(raw: object) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    parsed = json.loads(text)
+    if not isinstance(parsed, dict):
+        raise ValueError("payload_json must be an object")
+    return parsed
+
+
+def _row_to_label(row) -> AisleLocationLabel:
+    status_raw = normalize_db_str(getattr(row, "status", None)) or "ACTIVE"
+    try:
+        status = AisleLocationLabelStatus(status_raw)
+    except ValueError:
+        status = AisleLocationLabelStatus.ACTIVE
+    sig_raw = normalize_db_str(getattr(row, "signature_status", None)) or "NOT_IMPLEMENTED"
+    try:
+        signature_status = PositioningLabelSignatureStatus(sig_raw)
+    except ValueError:
+        signature_status = PositioningLabelSignatureStatus.NOT_IMPLEMENTED
+    generated = _ensure_utc(getattr(row, "generated_at", None))
+    if generated is None:
+        raise ValueError("aisle_location_labels row missing generated_at")
+    return AisleLocationLabel(
+        id=normalize_db_str(getattr(row, "id", None)),
+        client_id=normalize_db_str(getattr(row, "client_id", None)),
+        location_id=normalize_db_str(getattr(row, "location_id", None)),
+        public_identifier=normalize_db_str(getattr(row, "public_identifier", None)),
+        payload_version=int(getattr(row, "payload_version", 1) or 1),
+        marker_version=int(getattr(row, "marker_version", 1) or 1),
+        template_version=int(getattr(row, "template_version", 1) or 1),
+        status=status,
+        payload=_parse_payload(getattr(row, "payload_json", None)),
+        generated_at=generated,
+        payload_hash=optional_nonempty_db_str(getattr(row, "payload_hash", None)),
+        signature_status=signature_status,
+        generated_by=optional_nonempty_db_str(getattr(row, "generated_by", None)),
+        invalidated_at=_ensure_utc(getattr(row, "invalidated_at", None)),
+        invalidation_reason=optional_nonempty_db_str(getattr(row, "invalidation_reason", None)),
+        replaced_by_label_id=optional_nonempty_db_str(
+            getattr(row, "replaced_by_label_id", None)
+        ),
+        replaced_at=_ensure_utc(getattr(row, "replaced_at", None)),
+        idempotency_key=optional_nonempty_db_str(getattr(row, "idempotency_key", None)),
+        idempotency_request_hash=optional_nonempty_db_str(
+            getattr(row, "idempotency_request_hash", None)
+        ),
+    )
+
+
+_LOC_SELECT = """
+SELECT id, client_id, aisle_id, code, normalized_code, display_name, description,
+       status, created_by, created_at, updated_at, public_identifier
+FROM aisle_locations
+"""
+
+_LABEL_SELECT = """
+SELECT id, client_id, location_id, public_identifier, payload_version, marker_version,
+       template_version, status, payload_json, payload_hash, signature_status,
+       generated_by, generated_at, invalidated_at, invalidation_reason, replaced_by_label_id,
+       replaced_at, idempotency_key, idempotency_request_hash
+FROM aisle_location_labels
+"""
+
+
+class SqlAisleLocationRepository(AisleLocationRepository):
+    def __init__(self, client: SqlServerClient) -> None:
+        self._client = client
+
+    def save(self, location: AisleLocation) -> None:
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE aisle_locations
+                SET client_id = ?, aisle_id = ?, code = ?, normalized_code = ?,
+                    display_name = ?, description = ?, status = ?, created_by = ?,
+                    public_identifier = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    location.client_id,
+                    location.aisle_id,
+                    location.code,
+                    location.normalized_code,
+                    location.display_name,
+                    location.description,
+                    location.status.value,
+                    location.created_by,
+                    location.public_identifier,
+                    _ensure_utc(location.updated_at),
+                    location.id,
+                ),
+            )
+            if cur.rowcount == 0:
+                cur.execute(
+                    """
+                    INSERT INTO aisle_locations (
+                        id, client_id, aisle_id, code, normalized_code, display_name,
+                        description, status, created_by, created_at, updated_at,
+                        public_identifier
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        location.id,
+                        location.client_id,
+                        location.aisle_id,
+                        location.code,
+                        location.normalized_code,
+                        location.display_name,
+                        location.description,
+                        location.status.value,
+                        location.created_by,
+                        _ensure_utc(location.created_at),
+                        _ensure_utc(location.updated_at),
+                        location.public_identifier,
+                    ),
+                )
+
+    def get_by_id(self, location_id: str) -> AisleLocation | None:
+        with self._client.cursor() as cur:
+            cur.execute(_LOC_SELECT + " WHERE id = ?", (location_id,))
+            row = cur.fetchone()
+        return _row_to_location(row) if row else None
+
+    def get_by_public_identifier(self, public_identifier: str) -> AisleLocation | None:
+        pub = (public_identifier or "").strip()
+        if not pub:
+            return None
+        with self._client.cursor() as cur:
+            cur.execute(_LOC_SELECT + " WHERE public_identifier = ?", (pub,))
+            row = cur.fetchone()
+        return _row_to_location(row) if row else None
+
+    def get_active_by_normalized_code(
+        self,
+        *,
+        client_id: str,
+        aisle_id: str,
+        normalized_code: str,
+    ) -> AisleLocation | None:
+        with self._client.cursor() as cur:
+            cur.execute(
+                _LOC_SELECT
+                + " WHERE client_id = ? AND aisle_id = ? AND normalized_code = ?"
+                + " AND status = 'ACTIVE'",
+                (client_id, aisle_id, normalized_code),
+            )
+            row = cur.fetchone()
+        return _row_to_location(row) if row else None
+
+    def list_by_aisle(
+        self,
+        aisle_id: str,
+        *,
+        status: str | None = None,
+        search: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[AisleLocation]:
+        clauses = ["aisle_id = ?"]
+        params: list[Any] = [aisle_id]
+        if status:
+            clauses.append("status = ?")
+            params.append(status.upper())
+        if search and search.strip():
+            clauses.append(
+                "(LOWER(code) LIKE ? OR LOWER(ISNULL(display_name,'')) LIKE ?"
+                " OR LOWER(ISNULL(description,'')) LIKE ?)"
+            )
+            like = f"%{search.strip().lower()}%"
+            params.extend([like, like, like])
+        where = " AND ".join(clauses)
+        params.extend([int(offset), int(limit)])
+        sql = (
+            _LOC_SELECT
+            + f" WHERE {where} ORDER BY normalized_code ASC, id ASC"
+            + " OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"
+        )
+        with self._client.cursor() as cur:
+            cur.execute(sql, params)  # nosec B608
+            rows = cur.fetchall()
+        return [_row_to_location(r) for r in rows]
+
+    def count_by_aisle(
+        self,
+        aisle_id: str,
+        *,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        clauses = ["aisle_id = ?"]
+        params: list[Any] = [aisle_id]
+        if status:
+            clauses.append("status = ?")
+            params.append(status.upper())
+        if search and search.strip():
+            clauses.append(
+                "(LOWER(code) LIKE ? OR LOWER(ISNULL(display_name,'')) LIKE ?"
+                " OR LOWER(ISNULL(description,'')) LIKE ?)"
+            )
+            like = f"%{search.strip().lower()}%"
+            params.extend([like, like, like])
+        where = " AND ".join(clauses)
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"SELECT COUNT(*) AS cnt FROM aisle_locations WHERE {where}",  # nosec B608
+                params,
+            )
+            row = cur.fetchone()
+        return int(getattr(row, "cnt", 0) or 0)
+
+
+class SqlAisleLocationLabelRepository(AisleLocationLabelRepository):
+    def __init__(self, client: SqlServerClient) -> None:
+        self._client = client
+
+    def save(self, label: AisleLocationLabel) -> None:
+        payload_str = json.dumps(label.payload, ensure_ascii=False, sort_keys=True)
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE aisle_location_labels
+                SET client_id = ?, location_id = ?, public_identifier = ?,
+                    payload_version = ?, marker_version = ?, template_version = ?,
+                    status = ?, payload_json = ?, payload_hash = ?, signature_status = ?,
+                    generated_by = ?, invalidated_at = ?, invalidation_reason = ?,
+                    replaced_by_label_id = ?, replaced_at = ?,
+                    idempotency_key = ?, idempotency_request_hash = ?
+                WHERE id = ?
+                """,
+                (
+                    label.client_id,
+                    label.location_id,
+                    label.public_identifier,
+                    label.payload_version,
+                    label.marker_version,
+                    label.template_version,
+                    label.status.value,
+                    payload_str,
+                    label.payload_hash,
+                    label.signature_status.value,
+                    label.generated_by,
+                    _ensure_utc(label.invalidated_at),
+                    label.invalidation_reason,
+                    label.replaced_by_label_id,
+                    _ensure_utc(label.replaced_at),
+                    label.idempotency_key,
+                    label.idempotency_request_hash,
+                    label.id,
+                ),
+            )
+            if cur.rowcount == 0:
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO aisle_location_labels (
+                            id, client_id, location_id, public_identifier, payload_version,
+                            marker_version, template_version, status, payload_json, payload_hash,
+                            signature_status, generated_by, generated_at, invalidated_at,
+                            invalidation_reason, replaced_by_label_id, replaced_at,
+                            idempotency_key, idempotency_request_hash
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            label.id,
+                            label.client_id,
+                            label.location_id,
+                            label.public_identifier,
+                            label.payload_version,
+                            label.marker_version,
+                            label.template_version,
+                            label.status.value,
+                            payload_str,
+                            label.payload_hash,
+                            label.signature_status.value,
+                            label.generated_by,
+                            _ensure_utc(label.generated_at),
+                            _ensure_utc(label.invalidated_at),
+                            label.invalidation_reason,
+                            label.replaced_by_label_id,
+                            _ensure_utc(label.replaced_at),
+                            label.idempotency_key,
+                            label.idempotency_request_hash,
+                        ),
+                    )
+                except pyodbc.IntegrityError as exc:
+                    if _is_label_client_idempotency_unique_violation(exc):
+                        raise IdempotencyKeyReusedError(
+                            "IDEMPOTENCY_KEY_REUSED: key already registered"
+                        ) from exc
+                    raise
+
+    def get_by_id(self, label_id: str) -> AisleLocationLabel | None:
+        with self._client.cursor() as cur:
+            cur.execute(_LABEL_SELECT + " WHERE id = ?", (label_id,))
+            row = cur.fetchone()
+        return _row_to_label(row) if row else None
+
+    def get_by_public_identifier(self, public_identifier: str) -> AisleLocationLabel | None:
+        with self._client.cursor() as cur:
+            cur.execute(
+                _LABEL_SELECT + " WHERE public_identifier = ?",
+                (public_identifier,),
+            )
+            row = cur.fetchone()
+        return _row_to_label(row) if row else None
+
+    def get_by_client_idempotency_key(
+        self, client_id: str, idempotency_key: str
+    ) -> AisleLocationLabel | None:
+        cid = (client_id or "").strip()
+        key = (idempotency_key or "").strip()
+        if not cid or not key:
+            return None
+        with self._client.cursor() as cur:
+            cur.execute(
+                _LABEL_SELECT + " WHERE client_id = ? AND idempotency_key = ?",
+                (cid, key),
+            )
+            row = cur.fetchone()
+        return _row_to_label(row) if row else None
+
+    def list_by_location(
+        self,
+        location_id: str,
+        *,
+        status: str | None = None,
+    ) -> Sequence[AisleLocationLabel]:
+        with self._client.cursor() as cur:
+            if status:
+                cur.execute(
+                    _LABEL_SELECT
+                    + " WHERE location_id = ? AND status = ?"
+                    + " ORDER BY generated_at DESC",
+                    (location_id, status.upper()),
+                )
+            else:
+                cur.execute(
+                    _LABEL_SELECT
+                    + " WHERE location_id = ? ORDER BY generated_at DESC",
+                    (location_id,),
+                )
+            rows = cur.fetchall()
+        return [_row_to_label(r) for r in rows]
+
+    def list_active_labels_by_location_ids(
+        self, location_ids: Sequence[str]
+    ) -> dict[str, AisleLocationLabel]:
+        ids = [lid for lid in location_ids if (lid or "").strip()]
+        if not ids:
+            return {}
+        placeholders = ", ".join("?" for _ in ids)
+        sql = f"""
+WITH ranked AS (
+    SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY location_id ORDER BY generated_at DESC
+           ) AS rn
+    FROM aisle_location_labels
+    WHERE location_id IN ({placeholders}) AND status = 'ACTIVE'
+)
+SELECT id, client_id, location_id, public_identifier, payload_version, marker_version,
+       template_version, status, payload_json, payload_hash, signature_status,
+       generated_by, generated_at, invalidated_at, invalidation_reason, replaced_by_label_id,
+       replaced_at, idempotency_key, idempotency_request_hash
+FROM ranked
+WHERE rn = 1
+"""  # nosec B608
+        with self._client.cursor() as cur:
+            cur.execute(sql, ids)
+            rows = cur.fetchall()
+        result: dict[str, AisleLocationLabel] = {}
+        for row in rows:
+            label = _row_to_label(row)
+            result[label.location_id] = label
+        return result
+
+
+_ARTIFACT_SELECT = """
+SELECT id, label_id, format, preset, template_version, marker_version,
+       storage_provider, storage_bucket, storage_key, content_type,
+       file_size_bytes, artifact_hash, created_at, status, failure_code,
+       failure_detail, updated_at, render_owner
+FROM aisle_location_label_artifacts
+"""
+
+
+def _row_to_artifact(row: Any) -> AisleLocationLabelArtifact:
+    status_raw = normalize_db_str(getattr(row, "status", None)) or "READY"
+    try:
+        status = AisleLocationLabelArtifactStatus(status_raw)
+    except ValueError:
+        status = AisleLocationLabelArtifactStatus.READY
+    storage_key_raw = getattr(row, "storage_key", None)
+    created = _ensure_utc(getattr(row, "created_at", None))
+    if created is None:
+        raise ValueError("aisle_location_label_artifacts row missing created_at")
+    return AisleLocationLabelArtifact(
+        id=str(row.id),
+        label_id=str(row.label_id),
+        format=str(row.format),
+        preset=str(row.preset),
+        template_version=int(row.template_version),
+        marker_version=int(row.marker_version),
+        storage_provider=str(row.storage_provider),
+        storage_bucket=str(row.storage_bucket) if row.storage_bucket is not None else None,
+        storage_key=str(storage_key_raw) if storage_key_raw is not None else None,
+        content_type=str(row.content_type),
+        file_size_bytes=int(row.file_size_bytes),
+        artifact_hash=str(row.artifact_hash),
+        created_at=created,
+        status=status,
+        failure_code=optional_nonempty_db_str(getattr(row, "failure_code", None)),
+        failure_detail=optional_nonempty_db_str(getattr(row, "failure_detail", None)),
+        updated_at=_ensure_utc(getattr(row, "updated_at", None)),
+        render_owner=optional_nonempty_db_str(getattr(row, "render_owner", None)),
+    )
+
+
+class SqlAisleLocationLabelArtifactRepository:
+    def __init__(self, client: SqlServerClient) -> None:
+        self._client = client
+
+    def save(self, artifact: AisleLocationLabelArtifact) -> None:
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE aisle_location_label_artifacts
+                SET label_id = ?, format = ?, preset = ?, template_version = ?,
+                    marker_version = ?, storage_provider = ?, storage_bucket = ?,
+                    storage_key = ?, content_type = ?, file_size_bytes = ?,
+                    artifact_hash = ?, created_at = ?, status = ?,
+                    failure_code = ?, failure_detail = ?, updated_at = ?,
+                    render_owner = ?
+                WHERE id = ?
+                """,
+                (
+                    artifact.label_id,
+                    artifact.format,
+                    artifact.preset,
+                    int(artifact.template_version),
+                    int(artifact.marker_version),
+                    artifact.storage_provider,
+                    artifact.storage_bucket,
+                    artifact.storage_key,
+                    artifact.content_type,
+                    int(artifact.file_size_bytes),
+                    artifact.artifact_hash,
+                    _ensure_utc(artifact.created_at),
+                    artifact.status.value,
+                    artifact.failure_code,
+                    artifact.failure_detail,
+                    _ensure_utc(artifact.updated_at),
+                    artifact.render_owner,
+                    artifact.id,
+                ),
+            )
+            if cur.rowcount and cur.rowcount > 0:
+                return
+            cur.execute(
+                """
+                INSERT INTO aisle_location_label_artifacts (
+                    id, label_id, format, preset, template_version, marker_version,
+                    storage_provider, storage_bucket, storage_key, content_type,
+                    file_size_bytes, artifact_hash, created_at, status,
+                    failure_code, failure_detail, updated_at, render_owner
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    artifact.id,
+                    artifact.label_id,
+                    artifact.format,
+                    artifact.preset,
+                    int(artifact.template_version),
+                    int(artifact.marker_version),
+                    artifact.storage_provider,
+                    artifact.storage_bucket,
+                    artifact.storage_key,
+                    artifact.content_type,
+                    int(artifact.file_size_bytes),
+                    artifact.artifact_hash,
+                    _ensure_utc(artifact.created_at),
+                    artifact.status.value,
+                    artifact.failure_code,
+                    artifact.failure_detail,
+                    _ensure_utc(artifact.updated_at),
+                    artifact.render_owner,
+                ),
+            )
+
+    def get_by_id(self, artifact_id: str) -> AisleLocationLabelArtifact | None:
+        with self._client.cursor() as cur:
+            cur.execute(_ARTIFACT_SELECT + " WHERE id = ?", (artifact_id,))
+            row = cur.fetchone()
+        return _row_to_artifact(row) if row else None
+
+    def get_by_identity(
+        self,
+        *,
+        label_id: str,
+        format: str,
+        preset: str,
+        template_version: int,
+        marker_version: int,
+    ) -> AisleLocationLabelArtifact | None:
+        with self._client.cursor() as cur:
+            cur.execute(
+                _ARTIFACT_SELECT
+                + """
+                WHERE label_id = ? AND format = ? AND preset = ?
+                  AND template_version = ? AND marker_version = ?
+                """,
+                (
+                    label_id,
+                    format.upper(),
+                    preset,
+                    int(template_version),
+                    int(marker_version),
+                ),
+            )
+            row = cur.fetchone()
+        return _row_to_artifact(row) if row else None
+
+    def list_by_label(self, label_id: str) -> Sequence[AisleLocationLabelArtifact]:
+        with self._client.cursor() as cur:
+            cur.execute(
+                _ARTIFACT_SELECT + " WHERE label_id = ? ORDER BY created_at DESC",
+                (label_id,),
+            )
+            rows = cur.fetchall()
+        return [_row_to_artifact(r) for r in rows]
+
+    def reserve_or_get(
+        self,
+        *,
+        artifact: AisleLocationLabelArtifact,
+    ) -> tuple[AisleLocationLabelArtifact, bool]:
+        try:
+            with self._client.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO aisle_location_label_artifacts (
+                        id, label_id, format, preset, template_version, marker_version,
+                        storage_provider, storage_bucket, storage_key, content_type,
+                        file_size_bytes, artifact_hash, created_at, status,
+                        failure_code, failure_detail, updated_at, render_owner
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        artifact.id,
+                        artifact.label_id,
+                        artifact.format,
+                        artifact.preset,
+                        int(artifact.template_version),
+                        int(artifact.marker_version),
+                        artifact.storage_provider,
+                        artifact.storage_bucket,
+                        artifact.storage_key,
+                        artifact.content_type,
+                        int(artifact.file_size_bytes),
+                        artifact.artifact_hash,
+                        _ensure_utc(artifact.created_at),
+                        artifact.status.value,
+                        artifact.failure_code,
+                        artifact.failure_detail,
+                        _ensure_utc(artifact.updated_at),
+                        artifact.render_owner,
+                    ),
+                )
+            return artifact, True
+        except pyodbc.IntegrityError as exc:
+            if not _is_artifact_identity_unique_violation(exc):
+                raise
+        existing = self.get_by_identity(
+            label_id=artifact.label_id,
+            format=artifact.format,
+            preset=artifact.preset,
+            template_version=artifact.template_version,
+            marker_version=artifact.marker_version,
+        )
+        if existing is None:
+            raise RuntimeError(
+                "artifact identity unique violation but row not found"
+            ) from None
+        return existing, False
+
+    def claim_for_render(
+        self,
+        *,
+        artifact_id: str,
+        render_owner: str,
+        now: datetime,
+    ) -> AisleLocationLabelArtifact | None:
+        now_utc = _ensure_utc(now)
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE aisle_location_label_artifacts
+                SET status = ?, render_owner = ?, updated_at = ?
+                WHERE id = ? AND status IN (?, ?)
+                """,
+                (
+                    AisleLocationLabelArtifactStatus.RENDERING.value,
+                    render_owner,
+                    now_utc,
+                    artifact_id,
+                    AisleLocationLabelArtifactStatus.PENDING.value,
+                    AisleLocationLabelArtifactStatus.FAILED.value,
+                ),
+            )
+            if not cur.rowcount:
+                return None
+        return self.get_by_id(artifact_id)
+

@@ -25,6 +25,7 @@ import javax.net.ssl.SSLException
 /**
  * Multipart contract must match TS AisleAssetsApi.uploadBatch:
  * - fields: upload_batch_id, client_file_ids (repeated), files (repeated)
+ * - optional Phase 1: ordered_capture_session_id + sequence_numbers (one per file)
  * - headers: Authorization Bearer, optional X-API-Key, Accept application/json
  */
 class MultipartUploader(
@@ -68,6 +69,34 @@ class MultipartUploader(
     builder.addFormDataPart(UploadContracts.MULTIPART_FIELD_BATCH, uploadBatchId)
     for (p in photos) {
       builder.addFormDataPart(UploadContracts.MULTIPART_FIELD_CLIENT_IDS, p.clientFileId)
+    }
+    val orderedSessionId = photos
+      .mapNotNull { it.orderedCaptureSessionId?.takeIf { id -> id.isNotBlank() } }
+      .firstOrNull()
+    if (orderedSessionId != null) {
+      builder.addFormDataPart(UploadContracts.MULTIPART_FIELD_ORDERED_SESSION, orderedSessionId)
+      for (p in photos) {
+        val seq = p.sequenceNumber
+        if (seq == null || seq < 1) {
+          return Result(
+            httpStatus = 0,
+            uploaded = emptyList(),
+            errors = listOf(
+              UploadSqliteStore.UploadErr(
+                p.clientFileId,
+                "SEQUENCE_NUMBER_REQUIRED",
+                "sequence_number required for ordered capture upload",
+              ),
+            ),
+            rawErrorCode = "SEQUENCE_NUMBER_REQUIRED",
+            rawMessage = "sequence_number required for ordered capture upload",
+          )
+        }
+        builder.addFormDataPart(
+          UploadContracts.MULTIPART_FIELD_SEQUENCE_NUMBERS,
+          seq.toString(),
+        )
+      }
     }
     for (p in photos) {
       val fileUri = p.transformUri?.takeIf { it.isNotBlank() } ?: p.uri
@@ -197,6 +226,54 @@ class MultipartUploader(
     } catch (e: Exception) {
       val classified = classifyTransport(e, false)
       RefreshResult(null, classified.rawErrorCode, classified.rawMessage)
+    }
+  }
+
+  fun sealOrderedCaptureSession(
+    orderedCaptureSessionId: String,
+    expectedAssetCount: Int,
+    sequenceVersion: Int,
+    accessToken: String,
+  ): ProcessResult {
+    val path = UploadContracts.sealOrderedCapturePath(orderedCaptureSessionId)
+    val url = apiBaseUrl.trimEnd('/') + path
+    val payload = JSONObject()
+      .put("expected_asset_count", expectedAssetCount)
+      .put("sequence_version", sequenceVersion)
+    val body = payload.toString().toRequestBody("application/json".toMediaType())
+    val reqBuilder = Request.Builder()
+      .url(url)
+      .post(body)
+      .header("Accept", "application/json")
+      .header("Authorization", "Bearer $accessToken")
+    if (!apiKey.isNullOrBlank()) {
+      reqBuilder.header("X-API-Key", apiKey)
+    }
+    return try {
+      client.newCall(reqBuilder.build()).execute().use { resp ->
+        val text = resp.body?.string().orEmpty()
+        // Identical seal returns 2xx from backend — no body-text "already" heuristic.
+        // 409 is an error unless an explicit idempotent-seal success code is present.
+        if (resp.code in 200..299) {
+          return ProcessResult(resp.code, "sealed", null, null)
+        }
+        val code = extractCode(text) ?: "CAPTURE_SESSION_SEAL_REJECTED"
+        if (isIdempotentSealSuccess(resp.code, code)) {
+          return ProcessResult(resp.code, "sealed", null, null)
+        }
+        if (code == "STRATEGY_DISABLED") {
+          return ProcessResult(resp.code, "disabled", null, null)
+        }
+        ProcessResult(
+          httpStatus = resp.code,
+          jobId = null,
+          errorCode = code,
+          errorMessage = extractMessage(text, resp.code),
+        )
+      }
+    } catch (e: Exception) {
+      val classified = classifyTransport(e, false)
+      ProcessResult(0, null, classified.rawErrorCode, classified.rawMessage)
     }
   }
 
@@ -379,6 +456,23 @@ class MultipartUploader(
 
   companion object {
     private const val TAG = "MultipartUploader"
+
+    /**
+     * Explicit structured codes that mean "seal already applied successfully".
+     * Backend identical-seal returns 200 today — keep this empty unless a real
+     * idempotent-success code is wired. Body-text heuristics are intentionally absent.
+     */
+    private val IDEMPOTENT_SEAL_SUCCESS_CODES: Set<String> = emptySet()
+
+    /**
+     * Seal success: any 2xx, or 409 only when [code] is an explicit idempotent-seal success code.
+     */
+    @JvmStatic
+    fun isIdempotentSealSuccess(httpStatus: Int, code: String?): Boolean {
+      if (httpStatus in 200..299) return true
+      if (httpStatus == 409 && code != null && code in IDEMPOTENT_SEAL_SUCCESS_CODES) return true
+      return false
+    }
 
     fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
       .connectTimeout(30, TimeUnit.SECONDS)

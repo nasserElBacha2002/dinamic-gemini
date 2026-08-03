@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from src.application.errors import PositionReconciliationError
 from src.application.ports.artifact_manifest_store import ArtifactManifestStore
 from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
 from src.application.ports.clock import Clock
@@ -107,6 +108,8 @@ class V3JobFinalizationService:
         artifact_manifest_store: ArtifactManifestStore | None,
         artifact_outbox_store: ArtifactPublicationOutboxStore | None,
         stage_recorder: FinalizationStageRecorder | None,
+        position_reconciliation_use_case=None,
+        position_reconciliation_required: bool = False,
     ) -> None:
         self._job_repo = job_repo
         self._clock = clock
@@ -118,6 +121,70 @@ class V3JobFinalizationService:
         self._artifact_manifest_store = artifact_manifest_store
         self._artifact_outbox_store = artifact_outbox_store
         self._stage_recorder = stage_recorder
+        self._position_reconciliation_use_case = position_reconciliation_use_case
+        self._position_reconciliation_required = position_reconciliation_required
+
+    def run_position_reconciliation_auto(
+        self,
+        *,
+        inventory_id: str,
+        job_id: str,
+        allow_in_finalization: bool = False,
+    ) -> None:
+        """Best-effort Phase 4 reconciliation after a successful job terminalization.
+
+        Used by LLM finalization and CODE_SCAN/INTERNAL_OCR success paths. When
+        ``position_reconciliation_required`` is true, domain errors are re-raised.
+        """
+        if self._position_reconciliation_use_case is None:
+            return
+        try:
+            from src.application.use_cases.position_reconciliation.reconcile_job_positions import (
+                ReconcileJobPositionsCommand,
+            )
+
+            result = self._position_reconciliation_use_case.execute(
+                ReconcileJobPositionsCommand(
+                    inventory_id=inventory_id,
+                    job_id=job_id,
+                    allow_in_finalization=allow_in_finalization,
+                )
+            )
+            if not getattr(result, "dry_run", False):
+                logger.info(
+                    "event=position_reconciliation_auto_run_completed job_id=%s",
+                    job_id,
+                )
+        except Exception as reconciliation_error:
+            try:
+                self._position_reconciliation_use_case.record_failure(
+                    inventory_id=inventory_id,
+                    job_id=job_id,
+                    failure_code=getattr(
+                        reconciliation_error,
+                        "code",
+                        "POSITION_RECONCILIATION_FAILED",
+                    ),
+                )
+            except Exception:
+                logger.exception(
+                    "event=position_reconciliation_failure_status_write_failed job_id=%s",
+                    job_id,
+                )
+            if isinstance(reconciliation_error, PositionReconciliationError):
+                logger.warning(
+                    "event=position_reconciliation_auto_run_not_ready job_id=%s code=%s error=%s",
+                    job_id,
+                    reconciliation_error.code,
+                    reconciliation_error,
+                )
+            else:
+                logger.exception(
+                    "event=position_reconciliation_auto_run_failed job_id=%s",
+                    job_id,
+                )
+            if self._position_reconciliation_required:
+                raise
 
     def finalize_success(self, req: V3JobFinalizationRequest) -> bool:
         """Persist domain, upload durables, finalize success. True => caller must return True (failure)."""
@@ -263,6 +330,12 @@ class V3JobFinalizationService:
                 },
             )
             return True
+
+        self.run_position_reconciliation_auto(
+            inventory_id=req.aisle.inventory_id,
+            job_id=req.job_id,
+            allow_in_finalization=True,
+        )
 
         if req.lease is not None:
             assert_result = self._job_repo.assert_lease(req.lease, now=self._clock.now())

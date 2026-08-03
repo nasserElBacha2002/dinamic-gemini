@@ -23,7 +23,7 @@ from src.domain.jobs.finalization import (
     FinalizationStatus,
     LastCompletedFinalizationStep,
 )
-from src.infrastructure.repositories.db_row_text import normalize_db_str
+from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,8 @@ JOB_SELECT_FIELDS = (
     "finalization_status, current_finalization_step, last_completed_finalization_step, "
     "finalization_error_code, finalization_error_metadata, finalization_started_at, "
     "finalization_completed_at, domain_persisted_at, artifacts_published_at, "
-    "lease_fencing_token, lease_expires_at, lease_acquired_at"
+    "lease_fencing_token, lease_expires_at, lease_acquired_at, "
+    "ordered_capture_session_id, sequence_version"
 )
 
 
@@ -201,6 +202,14 @@ def row_to_job(row: Any) -> Job:
         lease_fencing_token=int(getattr(row, "lease_fencing_token", 0) or 0),
         lease_expires_at=ensure_utc(getattr(row, "lease_expires_at", None)),
         lease_acquired_at=ensure_utc(getattr(row, "lease_acquired_at", None)),
+        ordered_capture_session_id=optional_nonempty_db_str(
+            getattr(row, "ordered_capture_session_id", None)
+        ),
+        sequence_version=(
+            int(getattr(row, "sequence_version"))
+            if getattr(row, "sequence_version", None) is not None
+            else None
+        ),
     )
 
 

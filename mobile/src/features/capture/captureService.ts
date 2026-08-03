@@ -6,7 +6,7 @@ import type { ScanMetrics } from '../../core/incrementalScan';
 import { emptyScanMetrics } from '../../core/incrementalScan';
 import type { CaptureMarker } from '../../domain/entities/captureMarker';
 import type { GalleryImage } from '../../domain/entities/galleryImage';
-import type { CapturePhotoStatus } from '../../domain/enums/photoStatus';
+import type { CapturePhotoStatus, CaptureSessionStatus } from '../../domain/enums/photoStatus';
 import { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import { cursorFromInitialMarker, cursorFromSession, imageFromPhotoRow } from '../../database/schema/captureSchema';
@@ -387,32 +387,79 @@ export class CaptureService {
       );
     }
 
-    if (current.status !== 'finishing') {
-      await this.repo.updateSessionStatus(sessionId, 'finishing');
-    }
+    // Remember pre-finish status so gate failures can restore a usable capture state.
+    // Sessions already stuck in `finishing` (legacy) resume as active.
+    const resumeStatus: 'active' | 'paused' =
+      current.status === 'paused' ? 'paused' : 'active';
+
+    await this.ensureSessionStatus(sessionId, 'finishing', ['active', 'paused', 'finishing']);
     this.autoScanEnabled = false;
     this.detachListener();
-    await this.loadSession(sessionId, false);
-    await this.coordinator.request();
-    await this.runScanOnce(sessionId, true);
-    await this.waitForActiveValidations(sessionId, this.validationTimeoutMs);
-    await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
-    await this.stopForeground();
-    await this.reloadPhotos(sessionId);
-    this.assertPhotosReadyForUpload();
 
-    if (target === 'review') {
-      await this.repo.updateSessionStatus(sessionId, 'review');
+    try {
       await this.loadSession(sessionId, false);
-      this.logger.info('session_finish', { sessionId });
-      return sessionId;
-    }
+      await this.coordinator.request();
+      await this.runScanOnce(sessionId, true);
+      await this.waitForActiveValidations(sessionId, this.validationTimeoutMs);
+      await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
+      await this.stopForeground();
+      await this.reloadPhotos(sessionId);
+      this.assertPhotosReadyForUpload();
 
-    await this.repo.updateSessionStatus(sessionId, 'review');
-    await this.repo.updateSessionStatus(sessionId, 'uploading');
-    this.clearCurrentSession();
-    this.logger.info('session_finish', { sessionId, handoff: 'uploading' });
-    return sessionId;
+      // Re-assert finishing before review: concurrent writers / SQLite recovery can
+      // leave the row on `active`, which cannot jump directly to `review`.
+      await this.ensureSessionStatus(sessionId, 'finishing', ['active', 'paused', 'finishing']);
+      await this.repo.updateSessionStatus(sessionId, 'review');
+
+      if (target === 'review') {
+        await this.loadSession(sessionId, false);
+        this.logger.info('session_finish', { sessionId });
+        return sessionId;
+      }
+
+      await this.repo.updateSessionStatus(sessionId, 'uploading');
+      this.clearCurrentSession();
+      this.logger.info('session_finish', { sessionId, handoff: 'uploading' });
+      return sessionId;
+    } catch (error) {
+      // Keep capture operable after unresolved unstable/undecodable (or other gate) failures.
+      const stillFinishing = (await this.repo.getSession(sessionId))?.status === 'finishing';
+      if (stillFinishing) {
+        await this.repo.updateSessionStatus(sessionId, resumeStatus);
+        await this.loadSession(sessionId, resumeStatus === 'active');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Idempotent session transition helper. Re-reads status and applies `to` when needed.
+   * Prevents illegal jumps (e.g. active → review) when a prior write did not stick.
+   */
+  private async ensureSessionStatus(
+    sessionId: string,
+    to: CaptureSessionStatus,
+    allowedFrom: readonly CaptureSessionStatus[],
+  ): Promise<void> {
+    const row = await this.repo.getSession(sessionId);
+    if (!row) {
+      throw new Error('No se encontró la captura local.');
+    }
+    if (row.status === to) {
+      return;
+    }
+    if (!allowedFrom.includes(row.status)) {
+      throw new Error(
+        `No se puede finalizar la captura desde el estado "${row.status}".`,
+      );
+    }
+    await this.repo.updateSessionStatus(sessionId, to);
+    const after = await this.repo.getSession(sessionId);
+    if (!after || after.status !== to) {
+      throw new Error(
+        'No se pudo actualizar el estado de la captura. Probá de nuevo; si persiste, reiniciá la app.',
+      );
+    }
   }
 
   private assertPhotosReadyForUpload(): void {
@@ -446,6 +493,10 @@ export class CaptureService {
     const sessionId = this.requireSessionId();
     this.bumpValidationVersion(sessionId, assetId);
     await this.repo.updatePhotoStatus(sessionId, assetId, 'excluded');
+    const photo = await this.repo.getPhoto(sessionId, assetId);
+    if (photo) {
+      await this.repo.clearPhotoSequenceNumber(photo.id);
+    }
     await this.reloadPhotos(sessionId);
   }
 
@@ -545,8 +596,10 @@ export class CaptureService {
     for (const rejected of result.rejected) {
       this.logger.info('photo_ignored', { assetId: rejected.assetId, reason: rejected.reason });
     }
+    // Assign sequence_number at first persist (gallery order), before stability/prep.
+    // Multi-admit and single (direct) capture share this transactional path.
+    await this.repo.upsertAdmittedPhotosWithSequences(sessionId, result.admitted, 'detected');
     for (const image of result.admitted) {
-      await this.repo.upsertPhoto(sessionId, image, 'detected');
       await this.repo.updatePhotoStatus(sessionId, image.assetId, 'waiting_stability');
       this.scheduleValidation(sessionId, image);
     }

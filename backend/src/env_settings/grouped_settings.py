@@ -1765,6 +1765,330 @@ class LimitsAndSchemaSettings(BaseModel):
         le=1.0,
         description="Confidence when time falls back to ingest clock (Sprint 3). Env: V3_CAPTURE_TIME_CONFIDENCE_FALLBACK.",
     )
+    ordered_capture_sessions_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("ORDERED_CAPTURE_SESSIONS_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 1 positioning: enable ordered capture session create/seal API. "
+            "Default true; set ORDERED_CAPTURE_SESSIONS_ENABLED=false to disable rollout."
+        ),
+    )
+    client_sequence_required: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CLIENT_SEQUENCE_REQUIRED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, uploads without client sequence_number are rejected for new clients "
+            "(enforced on upload path, not Phase 1 API). Env: CLIENT_SEQUENCE_REQUIRED (default false)."
+        ),
+    )
+    aisle_location_domain_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("AISLE_LOCATION_DOMAIN_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 1 positioning: enable aisle location CRUD API. "
+            "Env: AISLE_LOCATION_DOMAIN_ENABLED (default true)."
+        ),
+    )
+    aisle_location_labels_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("AISLE_LOCATION_LABELS_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 1 positioning: enable aisle location label issue/list/invalidate API. "
+            "Env: AISLE_LOCATION_LABELS_ENABLED (default true)."
+        ),
+    )
+    aisle_location_label_render_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("AISLE_LOCATION_LABEL_RENDER_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 2 positioning: enable label render/preview/download/batch API. "
+            "Env: AISLE_LOCATION_LABEL_RENDER_ENABLED (default true)."
+        ),
+    )
+    position_labels_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "POSITION_LABELS_ENABLED",
+                os.getenv("AISLE_LOCATION_LABELS_ENABLED", "true"),
+            )
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Enable client-scoped positioning labels API. "
+            "Env: POSITION_LABELS_ENABLED (falls back to AISLE_LOCATION_LABELS_ENABLED)."
+        ),
+    )
+    position_label_render_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "POSITION_LABEL_RENDER_ENABLED",
+                os.getenv("AISLE_LOCATION_LABEL_RENDER_ENABLED", "true"),
+            )
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Enable client-scoped positioning label render/preview/download. "
+            "Env: POSITION_LABEL_RENDER_ENABLED "
+            "(falls back to AISLE_LOCATION_LABEL_RENDER_ENABLED)."
+        ),
+    )
+    positioning_label_hmac_secret: str = Field(
+        default_factory=lambda: (os.getenv("POSITIONING_LABEL_HMAC_SECRET", "") or "").strip(),
+        description=(
+            "Backend-only HMAC-SHA256 secret for DINAMIC_POSITION signatures. "
+            "Env: POSITIONING_LABEL_HMAC_SECRET (never ship to clients)."
+        ),
+    )
+    positioning_label_hmac_key_version: int = Field(
+        default_factory=lambda: int(os.getenv("POSITIONING_LABEL_HMAC_KEY_VERSION", "1") or "1"),
+        ge=1,
+        description="Active HMAC key version. Env: POSITIONING_LABEL_HMAC_KEY_VERSION.",
+    )
+    positioning_label_hmac_previous_secrets: str = Field(
+        default_factory=lambda: (
+            os.getenv("POSITIONING_LABEL_HMAC_PREVIOUS_SECRETS", "") or ""
+        ).strip(),
+        description=(
+            "Optional rotation verify material as comma-separated version:secret. "
+            "Env: POSITIONING_LABEL_HMAC_PREVIOUS_SECRETS."
+        ),
+    )
+    positioning_label_signing_required: bool = Field(
+        default_factory=lambda: (
+            (
+                os.getenv("POSITIONING_LABEL_SIGNING_REQUIRED", "").strip().lower()
+                in ("1", "true", "yes")
+            )
+            if os.getenv("POSITIONING_LABEL_SIGNING_REQUIRED") is not None
+            and os.getenv("POSITIONING_LABEL_SIGNING_REQUIRED", "").strip() != ""
+            else (
+                (os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "development")
+                .strip()
+                .lower()
+                in ("production", "prod")
+            )
+        ),
+        description=(
+            "When true, label issue fails if POSITIONING_LABEL_HMAC_SECRET is missing. "
+            "Defaults to true when APP_ENV=production; otherwise false unless explicitly set. "
+            "Env: POSITIONING_LABEL_SIGNING_REQUIRED."
+        ),
+    )
+    positioning_label_hmac_min_secret_length: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITIONING_LABEL_HMAC_MIN_SECRET_LENGTH", "16") or "16"
+        ),
+        ge=8,
+        description=(
+            "Minimum HMAC secret length when signing is required. "
+            "Env: POSITIONING_LABEL_HMAC_MIN_SECRET_LENGTH (default 16)."
+        ),
+    )
+    position_label_max_batch_size: int = Field(
+        default_factory=lambda: int(os.getenv("POSITION_LABEL_MAX_BATCH_SIZE", "200") or "200"),
+        ge=1,
+        description="Max locations per sync batch render. Env: POSITION_LABEL_MAX_BATCH_SIZE.",
+    )
+    position_label_max_pdf_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_LABEL_MAX_PDF_BYTES", str(50 * 1024 * 1024))
+            or str(50 * 1024 * 1024)
+        ),
+        ge=1024,
+        description="Max batch PDF size in bytes. Env: POSITION_LABEL_MAX_PDF_BYTES.",
+    )
+    position_label_batch_sync_limit: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_LABEL_BATCH_SYNC_LIMIT", "200") or "200"
+        ),
+        ge=1,
+        description=(
+            "Alias/ cap for sync batch size (same role as POSITION_LABEL_MAX_BATCH_SIZE). "
+            "Env: POSITION_LABEL_BATCH_SYNC_LIMIT."
+        ),
+    )
+    position_label_detection_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_LABEL_DETECTION_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: detect DINAMIC_POSITION codes during CODE_SCAN. "
+            "Env: POSITION_LABEL_DETECTION_ENABLED (default true)."
+        ),
+    )
+    position_label_signature_validation_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_LABEL_SIGNATURE_VALIDATION_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: verify HMAC on DINAMIC_POSITION payloads. "
+            "Env: POSITION_LABEL_SIGNATURE_VALIDATION_ENABLED (default true)."
+        ),
+    )
+    position_label_detection_persistence_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_LABEL_DETECTION_PERSISTENCE_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: persist image_position_label_detections rows. "
+            "Env: POSITION_LABEL_DETECTION_PERSISTENCE_ENABLED (default true)."
+        ),
+    )
+    position_reconciliation_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RECONCILIATION_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Phase 4 reconciliation feature gate (default true).",
+    )
+    position_reconciliation_persistence_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RECONCILIATION_PERSISTENCE_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Persist Phase 4 reconciliation revisions (default true).",
+    )
+    position_reconciliation_auto_run_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RECONCILIATION_AUTO_RUN_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Run Phase 4 best-effort after successful job finalization.",
+    )
+    position_reconciliation_required: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RECONCILIATION_REQUIRED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Fail job finalization when Phase 4 reconciliation fails (default false).",
+    )
+    position_manual_overrides_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_MANUAL_OVERRIDES_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6 manual position override write gate (default false). "
+            "Existing overrides remain effective and readable when disabled."
+        ),
+    )
+    position_operational_ux_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_OPERATIONAL_UX_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: aisle positioning operational view + sequence APIs. "
+            "Env: POSITION_OPERATIONAL_UX_ENABLED (default true)."
+        ),
+    )
+    position_reprocessing_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_REPROCESSING_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: aisle-level positioning reprocess action. "
+            "Env: POSITION_REPROCESSING_ENABLED (default true)."
+        ),
+    )
+    position_processing_recovery_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_PROCESSING_RECOVERY_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: expose recover as an allowed positioning action when "
+            "processing-state is recoverable. Env: POSITION_PROCESSING_RECOVERY_ENABLED "
+            "(default true)."
+        ),
+    )
+    position_results_enrichment_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RESULTS_ENRICHMENT_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: expose published Phase 4 assignments on result reads. "
+            "Env: POSITION_RESULTS_ENRICHMENT_ENABLED (default true)."
+        ),
+    )
+    position_results_export_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RESULTS_EXPORT_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: include position assignment columns in CSV/XLSX exports. "
+            "Env: POSITION_RESULTS_EXPORT_ENABLED (default true)."
+        ),
+    )
+    position_results_filters_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RESULTS_FILTERS_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: honor with_position / position_* query filters on result lists. "
+            "Env: POSITION_RESULTS_FILTERS_ENABLED (default true)."
+        ),
+    )
+    position_label_max_payload_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_LABEL_MAX_PAYLOAD_BYTES", "4096") or "4096"
+        ),
+        ge=256,
+        description="Max DINAMIC_POSITION payload size. Env: POSITION_LABEL_MAX_PAYLOAD_BYTES.",
+    )
+    position_label_max_codes_per_image: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_LABEL_MAX_CODES_PER_IMAGE", "32") or "32"
+        ),
+        ge=1,
+        description=(
+            "Max POSITION candidates validated/persisted per image "
+            "(does not drop item CODE_SCAN candidates). "
+            "Env: POSITION_LABEL_MAX_CODES_PER_IMAGE."
+        ),
+    )
+    position_label_persist_no_label: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_LABEL_PERSIST_NO_LABEL", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, persist a NO_LABEL row for images without position QR. "
+            "Default false (absence of rows means no detection). "
+            "Env: POSITION_LABEL_PERSIST_NO_LABEL."
+        ),
+    )
+    legacy_image_order_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("LEGACY_IMAGE_ORDER_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Allow legacy image-order derivation when client sequence is absent "
+            "(upload/process path). Env: LEGACY_IMAGE_ORDER_ENABLED (default true)."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_upload_size_relationship(self) -> Self:

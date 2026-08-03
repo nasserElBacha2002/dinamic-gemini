@@ -161,6 +161,31 @@ class AppSettings(
             raise ValueError(spec.credential_missing_message)
         return self
 
+    @model_validator(mode="after")
+    def validate_positioning_label_signing_when_render_enabled(self) -> Self:
+        """Fail closed when render is on, signing is required, and secret is missing/short."""
+        render_enabled = bool(
+            getattr(self, "position_label_render_enabled", False)
+            or getattr(self, "aisle_location_label_render_enabled", False)
+        )
+        signing_required = bool(getattr(self, "positioning_label_signing_required", False))
+        if not (render_enabled and signing_required):
+            return self
+        secret = str(getattr(self, "positioning_label_hmac_secret", "") or "").strip()
+        min_len = int(getattr(self, "positioning_label_hmac_min_secret_length", 16) or 16)
+        if not secret:
+            raise ValueError(
+                "POSITIONING_LABEL_HMAC_SECRET is required when "
+                "POSITION_LABEL_RENDER_ENABLED=true and "
+                "POSITIONING_LABEL_SIGNING_REQUIRED=true"
+            )
+        if len(secret) < min_len:
+            raise ValueError(
+                f"POSITIONING_LABEL_HMAC_SECRET must be at least {min_len} characters "
+                "when positioning label signing is required"
+            )
+        return self
+
     @property
     def sqlserver_effective_connection_string(self) -> str:
         """Canonical ODBC connection string (``SQLSERVER_CONNECTION_STRING`` or built from split vars)."""

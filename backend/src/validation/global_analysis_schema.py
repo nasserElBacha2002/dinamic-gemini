@@ -198,6 +198,9 @@ def validate_global_analysis_structure_v21(data: dict[str, Any]) -> None:
 
         if "has_boxes" not in e:
             raise GlobalAnalysisValidationError(f"{prefix} missing 'has_boxes'")
+        # Providers may emit null for uncertain booleans; coerce before type check.
+        if e["has_boxes"] is None:
+            e["has_boxes"] = False
         if not isinstance(e["has_boxes"], bool):
             raise GlobalAnalysisValidationError(f"{prefix}.has_boxes must be a boolean")
 

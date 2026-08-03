@@ -16,6 +16,11 @@ import {
 } from '../../utils/evidenceReviewDisplay';
 import { visibleTraceabilityToApiStatus } from '../../utils/traceabilityDisplay';
 import { formatDate } from '../../../../utils/formatDate';
+import {
+  formatAislePositionDisplay,
+  formatAutomaticPositionSecondary,
+  formatPositionAssignmentStatusLabel,
+} from '../../utils/positionAssignmentDisplay';
 
 export interface ResultSummaryCardProps {
   result: ResultDetail;
@@ -33,6 +38,11 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
   const correctedQtyNum = toNumeric(result.correctedQty);
   const resolvedQtyNum = toNumeric(result.resolvedQty);
   const systemQtyNum = toNumeric(result.systemQty);
+  const automaticPositionSecondary = formatAutomaticPositionSecondary(t, {
+    effectivePositionName: result.aislePositionName,
+    automaticPositionName: result.automaticPosition?.name,
+    positionAssignmentSource: result.positionAssignmentSource,
+  });
 
   const visibleQtyNum = correctedQtyNum ?? resolvedQtyNum;
   const hasManualOverride = correctedQtyNum != null;
@@ -75,8 +85,35 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
             {t('results.summary_position_code')}
           </Typography>
           <Typography variant="body1" fontWeight={700}>
-            {result.positionCode != null && result.positionCode.trim() !== '' ? result.positionCode : '—'}
+            {formatAislePositionDisplay(t, {
+              aislePositionName: result.aislePositionName,
+              positionAssignmentStatus: result.positionAssignmentStatus,
+              positionAssignmentSource: result.positionAssignmentSource,
+              positionCode: result.positionCode,
+              aislePositionAssigned: result.aislePositionAssigned,
+            })}
           </Typography>
+          {automaticPositionSecondary ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              {automaticPositionSecondary}
+            </Typography>
+          ) : null}
+          {result.positionAssignmentStatus ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              {formatPositionAssignmentStatusLabel(t, result.positionAssignmentStatus)}
+              {result.reconciliationVersion
+                ? ` · ${t('results.position_assignment.reconciliation', { version: result.reconciliationVersion })}`
+                : null}
+              {result.reconciliationStatus === 'STALE'
+                ? ` · ${t('results.position_assignment.stale_warning')}`
+                : null}
+            </Typography>
+          ) : null}
+          {result.positionAssignmentReason ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              {t('results.position_assignment.reason')}: {result.positionAssignmentReason}
+            </Typography>
+          ) : null}
         </Box>
 
         {hasManualOverride && systemQtyNum != null && (

@@ -177,6 +177,7 @@ class V3JobExecutor:
         artifact_publication_lease_seconds: int = 120,
         artifact_publication_backoff_seconds: tuple[int, ...] = DEFAULT_BACKOFF_SECONDS,
         job_source_asset_repo=None,
+        position_reconciliation_use_case=None,
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
@@ -343,6 +344,8 @@ class V3JobExecutor:
             artifact_manifest_store=artifact_manifest_store,
             artifact_outbox_store=artifact_publication_outbox_store,
             stage_recorder=self._stage_recorder,
+            position_reconciliation_use_case=position_reconciliation_use_case,
+            position_reconciliation_required=load_settings().position_reconciliation_required,
         )
         self._failure_handler = V3WorkerFailureHandler(state_service=self._state)
 
@@ -615,6 +618,9 @@ class V3JobExecutor:
             st = states_by_asset.get(aid)
             status = st.status.value if st is not None and st.status is not None else None
             last = (st.last_strategy or "").upper() if st is not None else ""
+            last_error = None
+            if st is not None:
+                last_error = getattr(st, "error_code", None)
             code = None
             qty = None
             resolved = False
@@ -638,6 +644,7 @@ class V3JobExecutor:
                 internal_code=str(code).strip() if code else None,
                 quantity=float(qty) if isinstance(qty, (int, float)) else None,
                 resolved_internal=bool(resolved),
+                last_error_code=str(last_error).strip() if last_error else None,
             )
             order_keys.append(
                 AssetOrderKey(
@@ -1199,6 +1206,10 @@ class V3JobExecutor:
             return True
         try:
             self._state.finalize_code_scan_success(job_id, aisle, lease=lease)
+            self._finalization_service.run_position_reconciliation_auto(
+                inventory_id=aisle.inventory_id,
+                job_id=job_id,
+            )
             _publish_job_event(
                 "job.completed",
                 message="CODE_SCAN job completed",
@@ -1636,6 +1647,10 @@ class V3JobExecutor:
                 logger.warning("internal_ocr.aborted_before_success_finalization job_id=%s", job_id)
                 return True
             self._state.finalize_code_scan_success(job_id, aisle, lease=lease)
+            self._finalization_service.run_position_reconciliation_auto(
+                inventory_id=aisle.inventory_id,
+                job_id=job_id,
+            )
         except JobLeaseLostError:
             raise
         except Exception as exc:

@@ -12,6 +12,8 @@ const VALID_FILTERS: ResultsFilterKind[] = [
   'qty_zero',
   'invalid_traceability',
   'missing_evidence',
+  'with_position',
+  'without_position',
 ];
 
 function isResultsFilterKind(value: unknown): value is ResultsFilterKind {

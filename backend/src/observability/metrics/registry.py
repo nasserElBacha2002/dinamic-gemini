@@ -38,6 +38,7 @@ _ALLOWED_LABEL_KEYS = frozenset(
         "host_group",
         "error_class",
         "failure_code",
+        "mode",
     }
 )
 

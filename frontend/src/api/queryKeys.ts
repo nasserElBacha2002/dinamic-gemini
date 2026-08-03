@@ -68,6 +68,16 @@ export const queryKeys = {
     /** Source assets (uploaded photos/videos) for one aisle. */
     aisleSourceAssets: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'source-assets', aisleId] as const,
+    /** Physical aisle locations (positioning labels — not CV positions). */
+    aisleLocations: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'locations', aisleId] as const,
+    aisleLocationsList: (
+      inventoryId: string,
+      aisleId: string,
+      params: Record<string, string | number>
+    ) => [...queryKeys.inventories.aisleLocations(inventoryId, aisleId), params] as const,
+    aisleLocationLabels: (inventoryId: string, locationId: string) =>
+      [...queryKeys.inventories.all, 'locations', inventoryId, locationId, 'labels'] as const,
     aisleCodeScans: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'code-scans', aisleId] as const,
     aisleCodeScanSummary: (inventoryId: string, aisleId: string) =>
@@ -189,6 +199,12 @@ export const queryKeys = {
     list: (params: Record<string, string | number>) =>
       [...queryKeys.clients.all, 'list', params] as const,
     detail: (clientId: string) => [...queryKeys.clients.all, 'detail', clientId] as const,
+    positionLabels: {
+      all: (clientId: string) =>
+        [...queryKeys.clients.all, 'position-labels', clientId] as const,
+      list: (clientId: string, search: string) =>
+        [...queryKeys.clients.positionLabels.all(clientId), 'list', search] as const,
+    },
     suppliers: {
       all: (clientId: string) => [...queryKeys.clients.all, 'suppliers', clientId] as const,
       list: (clientId: string, params: Record<string, string | number>) =>

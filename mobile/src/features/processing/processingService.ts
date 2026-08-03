@@ -3,7 +3,7 @@ import { mapProcessingPersistence, toProcessingState } from '../../core/processi
 import { normalizePreparationProcessingMode } from '../../core/imagePreparationPolicy';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
-import type { CapturePhotoRow } from '../../database/schema/captureSchema';
+import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import {
   createMonotonicClock,
@@ -18,14 +18,17 @@ import { ApiError } from '../../services/api/apiClient';
 import type { ApiClient } from '../../services/api/apiClient';
 import type {
   AisleJobsResponseDto,
+  AisleProcessingStateResponseDto,
   AisleStatusResponseDto,
   MergeResultsResponseDto,
   ProcessAisleResponseDto,
+  RecoverAisleProcessingResponseDto,
 } from '../../services/api/types';
 import type { ConnectivityService } from '../../services/connectivity/connectivity';
 import { createId } from '../../shared/createId';
 import type { UploadQueue } from '../upload/uploadQueue';
 import type { AisleAssetsApi } from '../upload/aisleAssetsApi';
+import type { OrderedCaptureApi } from '../upload/orderedCaptureApi';
 import type { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { computeProcessingReadiness, type ProcessingReadiness } from './processingReadiness';
 import {
@@ -35,7 +38,8 @@ import {
   type AisleIdentificationMode,
 } from './processingMode';
 import { processingRunStore } from './processingRun';
-
+import { validateCompleteSequence } from '../../core/captureSequenceValidation';
+import { compactSequenceAssignments } from '../../core/captureSequence';
 export type { ProcessingReadiness } from './processingReadiness';
 export type { AisleIdentificationMode } from './processingMode';
 
@@ -77,6 +81,15 @@ export interface ProcessingObservability {
 export interface ProcessingAuthoritativeGate {
   readonly flags: FeatureFlags;
   readonly confirmed: ConfirmedLocalResultRepository;
+  /** Optional: skip position-label photos from product confirmation gate. */
+  readonly drafts?: {
+    listForPhoto(photoId: string): Promise<
+      readonly {
+        readonly status: string;
+        readonly error_code: string | null;
+      }[]
+    >;
+  };
 }
 
 export class ProcessingService {
@@ -92,6 +105,7 @@ export class ProcessingService {
     private readonly logger: Logger,
     private readonly observability: ProcessingObservability | null = null,
     private readonly authoritativeGate: ProcessingAuthoritativeGate | null = null,
+    private readonly orderedCapture: OrderedCaptureApi | null = null,
   ) {}
 
   async readiness(sessionId: string): Promise<ProcessingReadiness> {
@@ -150,6 +164,13 @@ export class ProcessingService {
     const byPhoto = new Map(confirmed.map((c) => [c.capture_photo_id, c]));
     const missing: string[] = [];
     for (const photo of uploaded) {
+      if (gate.drafts) {
+        const drafts = await gate.drafts.listForPhoto(photo.id);
+        if (drafts.some((d) => d.error_code === 'POSITION_LABEL_DETECTED')) {
+          // Position labels are resolved server-side; no product confirmation required.
+          continue;
+        }
+      }
       const row = byPhoto.get(photo.id);
       if (!row || row.sync_status !== 'SYNCED') {
         missing.push(photo.display_name || photo.id);
@@ -162,6 +183,141 @@ export class ProcessingService {
       };
     }
     return { ready: true, reason: null };
+  }
+
+  /**
+   * Seal the backend ordered-capture session before POST /process.
+   * No-op when no ordered session was created for this capture.
+   *
+   * Preflights against remote assets so we can rebind orphans (uploaded without
+   * ordered_capture_session_id) instead of failing with a generic seal error.
+   */
+  private async sealOrderedCaptureBeforeProcess(
+    session: CaptureSessionRow,
+  ): Promise<{ ok: boolean; reason: string | null }> {
+    const orderedId = session.backend_ordered_capture_session_id;
+    if (!orderedId || !this.orderedCapture) {
+      return { ok: true, reason: null };
+    }
+    const photos = await this.repo.listPhotos(session.id);
+    const localUploaded = photos.filter(
+      (p) => p.upload_status === 'uploaded' && p.sequence_number != null && p.backend_asset_id,
+    );
+    if (localUploaded.length < 1) {
+      return {
+        ok: false,
+        reason: 'No hay fotos subidas con secuencia para sellar la sesión ordenada.',
+      };
+    }
+
+    // After exclusions, sequences may have gaps (e.g. 1,2,3,5,6). Compact to 1..N
+    // and rebind so the backend seal validator accepts the set.
+    await this.repo.clearSequenceNumbersForExcluded(session.id);
+    const compaction = compactSequenceAssignments(localUploaded);
+    if (compaction.length > 0) {
+      await this.repo.applySequenceCompaction(compaction);
+      const rebound = await this.uploadQueue.rebindOrderedCaptureUploads(
+        session.id,
+        compaction.map((c) => c.id),
+      );
+      return {
+        ok: false,
+        reason:
+          rebound.requeued > 0
+            ? `Se reordenó la secuencia tras exclusiones (${rebound.requeued} foto(s)). ` +
+              'Esperá a que terminen de resubir e intentá Procesar de nuevo.'
+            : 'Se reordenó la secuencia local; reintentá Procesar.',
+      };
+    }
+
+    const expectedAssetCount = localUploaded.length;
+    const localAssetIds = new Set(localUploaded.map((p) => p.backend_asset_id as string));
+
+    try {
+      const remote = await this.assetsApi.listAssets(session.inventory_id, session.aisle_id);
+      const sessionAssetsAll = remote.filter(
+        (a) => (a.ordered_capture_session_id || '') === orderedId,
+      );
+      // Leftover remote assets from excluded photos break seal (max seq > count).
+      const orphans = sessionAssetsAll.filter((a) => !localAssetIds.has(a.id));
+      for (const orphan of orphans) {
+        try {
+          await this.assetsApi.deleteAsset(session.inventory_id, session.aisle_id, orphan.id);
+        } catch (e) {
+          this.logger.warn('ordered_capture_orphan_delete_failed', {
+            sessionId: session.id,
+            assetId: orphan.id,
+            error: String(e),
+          });
+        }
+      }
+      const sessionAssets = sessionAssetsAll.filter((a) => localAssetIds.has(a.id));
+      const remoteReasons = validateCompleteSequence(sessionAssets, expectedAssetCount, {
+        requireClientImageId: false,
+      });
+      if (remoteReasons.length > 0) {
+        const orphanPhotoIds = localUploaded
+          .filter((p) => {
+            const asset = remote.find((a) => a.id === p.backend_asset_id);
+            return (
+              !asset ||
+              (asset.ordered_capture_session_id || '') !== orderedId ||
+              asset.sequence_number !== p.sequence_number
+            );
+          })
+          .map((p) => p.id);
+        if (orphanPhotoIds.length > 0) {
+          const rebound = await this.uploadQueue.rebindOrderedCaptureUploads(
+            session.id,
+            orphanPhotoIds,
+          );
+          if (rebound.ok && rebound.requeued > 0) {
+            return {
+              ok: false,
+              reason:
+                `Algunas fotos no quedaron vinculadas a la secuencia ordenada (${rebound.requeued}). ` +
+                'Se reencolaron para resubir; esperá a que terminen e intentá Procesar de nuevo.',
+            };
+          }
+        }
+        return {
+          ok: false,
+          reason: `No se pudo sellar la sesión ordenada: ${remoteReasons.join('; ')}`,
+        };
+      }
+    } catch (e) {
+      this.logger.warn('ordered_capture_seal_preflight_failed', {
+        sessionId: session.id,
+        error: String(e),
+      });
+      // Fall through to seal; server remains authoritative.
+    }
+
+    try {
+      await this.orderedCapture.sealSession(orderedId, {
+        expected_asset_count: expectedAssetCount,
+        sequence_version: 1,
+      });
+      return { ok: true, reason: null };
+    } catch (e) {
+      if (e instanceof ApiError && (e.code === 'STRATEGY_DISABLED' || e.status === 422)) {
+        // Already sealed or feature disabled — continue to process when safe.
+        const detail = (e.message || '').toLowerCase();
+        if (e.code === 'STRATEGY_DISABLED') {
+          return { ok: true, reason: null };
+        }
+        if (detail.includes('already') || detail.includes('sealed')) {
+          return { ok: true, reason: null };
+        }
+      }
+      return {
+        ok: false,
+        reason:
+          e instanceof ApiError
+            ? `No se pudo sellar la sesión ordenada: ${e.message}`
+            : `No se pudo sellar la sesión ordenada: ${String(e)}`,
+      };
+    }
   }
 
   async validateBeforeProcess(sessionId: string): Promise<{ ok: boolean; reason: string | null }> {
@@ -217,6 +373,7 @@ export class ProcessingService {
       const recoveredRemote = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
       if (recoveredRemote) {
         await processingRunStore.attachBackendJob(run.id, recoveredRemote.id);
+        await this.repo.confirmProcessAttempt(sessionId, recoveredRemote.id);
         await this.persistJob(
           sessionId,
           session.inventory_id,
@@ -225,6 +382,21 @@ export class ProcessingService {
           recoveredRemote.status,
         );
         return { ok: true, jobId: recoveredRemote.id, reason: null };
+      }
+
+      // Preflight (compact / rebind / seal) must complete before durable STARTING.
+      // Otherwise a recoverable seal failure leaves the session stuck "Iniciando".
+      const sealed = await this.sealOrderedCaptureBeforeProcess(session);
+      if (!sealed.ok) {
+        const needsReupload = /reencolar|resubir|reordenó/i.test(sealed.reason ?? '');
+        await this.repo.markProcessStartFailed(sessionId, {
+          errorCode: 'PROCESS_PREFLIGHT_FAILED',
+          message: sealed.reason ?? 'No se pudo completar la preparación previa al procesamiento.',
+          sessionStatus: needsReupload ? 'uploading' : 'ready_to_process',
+          clearBackendJobId: true,
+        });
+        await processingRunStore.markTerminal(run.id, 'failed');
+        return { ok: false, jobId: null, reason: sealed.reason };
       }
 
       await this.repo.updateSessionUploadMeta(sessionId, {
@@ -238,11 +410,18 @@ export class ProcessingService {
         // already processing
       }
 
+      const processAttemptId = createId();
+      const processRequestedAt = new Date().toISOString();
+      await this.repo.persistProcessAttempt(sessionId, {
+        processAttemptId,
+        processIdempotencyKey: idempotencyKey,
+        processRequestedAt,
+      });
+
       const path =
         `/api/v3/inventories/${encodeURIComponent(session.inventory_id)}` +
         `/aisles/${encodeURIComponent(session.aisle_id)}/process`;
       const body = buildProcessAisleRequestBody(idempotencyKey, identificationMode);
-      const processAttemptId = createId();
       const uploadsCompletedToProcessMs =
         this.observability?.marks.takeElapsedMs(sessionMarkKey(sessionId, 'all_uploads_completed')) ?? null;
       const processStartedAt = this.clock.nowMs();
@@ -262,6 +441,7 @@ export class ProcessingService {
         });
         const processRequestMs = Math.max(0, Math.round(this.clock.nowMs() - processStartedAt));
         await processingRunStore.attachBackendJob(run.id, response.job_id);
+        await this.repo.confirmProcessAttempt(sessionId, response.job_id);
         await this.persistJob(sessionId, session.inventory_id, session.aisle_id, response.job_id, 'queued');
         this.observability?.marks.mark(sessionMarkKey(sessionId, 'process_requested'));
         this.observability?.marks.mark(sessionMarkKey(sessionId, `job:${response.job_id}:queued`));
@@ -307,6 +487,7 @@ export class ProcessingService {
           const recovered = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
           if (recovered) {
             await processingRunStore.attachBackendJob(run.id, recovered.id);
+            await this.repo.confirmProcessAttempt(sessionId, recovered.id);
             await this.persistJob(sessionId, session.inventory_id, session.aisle_id, recovered.id, recovered.status);
             return { ok: true, jobId: recovered.id, reason: null };
           }
@@ -315,10 +496,19 @@ export class ProcessingService {
           const recovered = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
           if (recovered) {
             await processingRunStore.attachBackendJob(run.id, recovered.id);
+            await this.repo.confirmProcessAttempt(sessionId, recovered.id);
             await this.persistJob(sessionId, session.inventory_id, session.aisle_id, recovered.id, recovered.status);
             return { ok: true, jobId: recovered.id, reason: null };
           }
           // Keep run active so a manual retry reuses the same idempotency key.
+          // Do not leave durable STARTING without a confirmed job_id.
+          await this.repo.markProcessStartFailed(sessionId, {
+            errorCode: 'PROCESS_RESPONSE_LOST',
+            message:
+              'No se pudo confirmar el inicio del procesamiento. Verificá la conexión e intentá nuevamente.',
+            sessionStatus: 'uploading',
+            clearBackendJobId: true,
+          });
           return {
             ok: false,
             jobId: null,
@@ -328,6 +518,12 @@ export class ProcessingService {
           };
         }
         if (e instanceof ApiError) {
+          await this.repo.markProcessStartFailed(sessionId, {
+            errorCode: e.code ?? `HTTP_${e.status ?? 'ERROR'}`,
+            message: mapProcessStartErrorMessage(e),
+            sessionStatus: 'uploading',
+            clearBackendJobId: true,
+          });
           await processingRunStore.markTerminal(run.id, 'failed');
           return {
             ok: false,
@@ -335,6 +531,12 @@ export class ProcessingService {
             reason: mapProcessStartErrorMessage(e),
           };
         }
+        await this.repo.markProcessStartFailed(sessionId, {
+          errorCode: 'PROCESS_START_FAILED',
+          message: String(e),
+          sessionStatus: 'uploading',
+          clearBackendJobId: true,
+        });
         await processingRunStore.markTerminal(run.id, 'failed');
         return {
           ok: false,
@@ -494,6 +696,26 @@ export class ProcessingService {
     );
   }
 
+  async getAisleProcessingState(
+    inventoryId: string,
+    aisleId: string,
+  ): Promise<AisleProcessingStateResponseDto> {
+    return this.api.get<AisleProcessingStateResponseDto>(
+      `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/processing-state`,
+    );
+  }
+
+  async recoverAisleProcessing(
+    inventoryId: string,
+    aisleId: string,
+    body: { readonly reason?: string; readonly dry_run?: boolean } = {},
+  ): Promise<RecoverAisleProcessingResponseDto> {
+    return this.api.post<RecoverAisleProcessingResponseDto>(
+      `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/processing/recover`,
+      { reason: body.reason ?? 'mobile_stuck_starting', dry_run: body.dry_run ?? false },
+    );
+  }
+
   async applyRemoteStatus(
     sessionId: string,
     inventoryId: string,
@@ -505,35 +727,167 @@ export class ProcessingService {
     await this.persistJob(sessionId, inventoryId, aisleId, backendJobId, remoteStatus, errorMessage);
   }
 
+  /**
+   * Bootstrap recovery: sessions left in durable STARTING without a confirmed backend job
+   * (crash / seal failure / lost response) must not block reprocess forever.
+   */
+  async recoverStuckStartingSessions(options?: {
+    readonly ttlMs?: number;
+  }): Promise<{ recovered: number }> {
+    const ttlMs = options?.ttlMs ?? 2 * 60 * 1000;
+    const cutoff = new Date(Date.now() - ttlMs).toISOString();
+    const stuck = await this.repo.listSessionsStuckStarting(cutoff);
+    let recovered = 0;
+    for (const session of stuck) {
+      try {
+        await this.repo.touchRecoveryCheck(session.id);
+        const idempotencyKey = session.process_idempotency_key?.trim() ?? '';
+
+        let processingState: AisleProcessingStateResponseDto | null = null;
+        try {
+          processingState = await this.getAisleProcessingState(session.inventory_id, session.aisle_id);
+        } catch (e) {
+          this.logger.warn('recovery', {
+            sessionId: session.id,
+            error: String(e),
+            reason: 'processing_state_unavailable',
+          });
+        }
+
+        if (processingState?.recoverable && processingState.job_id) {
+          try {
+            const recoverResult = await this.recoverAisleProcessing(
+              session.inventory_id,
+              session.aisle_id,
+              { reason: 'mobile_stuck_starting' },
+            );
+            processingState = recoverResult.processing_state;
+          } catch (e) {
+            this.logger.warn('recovery', {
+              sessionId: session.id,
+              error: String(e),
+              reason: 'processing_recover_failed',
+            });
+          }
+        }
+
+        const activeRemote = this.extractActiveRemoteFromState(processingState);
+        if (activeRemote && idempotencyKey) {
+          if (processingState?.idempotency_key === idempotencyKey) {
+            await this.persistJob(
+              session.id,
+              session.inventory_id,
+              session.aisle_id,
+              activeRemote.id,
+              activeRemote.status,
+            );
+            await this.repo.confirmProcessAttempt(session.id, activeRemote.id);
+            recovered += 1;
+            continue;
+          }
+          await this.repo.markProcessStartFailed(session.id, {
+            errorCode: 'REMOTE_JOB_EXISTS_NOT_OWNED',
+            message:
+              'Hay un procesamiento activo en el servidor que no corresponde a este intento local. ' +
+              'Revisá el pasillo antes de volver a procesar.',
+            sessionStatus: 'ready_to_process',
+            clearBackendJobId: true,
+          });
+          recovered += 1;
+          continue;
+        }
+
+        if (idempotencyKey) {
+          const remote = await this.findActiveRemoteJob(
+            session.inventory_id,
+            session.aisle_id,
+            idempotencyKey,
+          );
+          if (remote) {
+            await this.persistJob(
+              session.id,
+              session.inventory_id,
+              session.aisle_id,
+              remote.id,
+              remote.status,
+            );
+            await this.repo.confirmProcessAttempt(session.id, remote.id);
+            recovered += 1;
+            continue;
+          }
+        }
+
+        if (activeRemote && !idempotencyKey) {
+          await this.repo.markProcessStartFailed(session.id, {
+            errorCode: 'REMOTE_JOB_EXISTS_NOT_OWNED',
+            message:
+              'Hay un procesamiento activo en el servidor sin identidad local confirmada. ' +
+              'No se adoptó el job remoto automáticamente.',
+            sessionStatus: 'ready_to_process',
+            clearBackendJobId: true,
+          });
+          recovered += 1;
+          continue;
+        }
+
+        await this.repo.markProcessStartFailed(session.id, {
+          errorCode: 'STUCK_STARTING_TTL',
+          message:
+            'El inicio local quedó incompleto sin job confirmado. Podés volver a procesar.',
+          sessionStatus: 'ready_to_process',
+          clearBackendJobId: true,
+        });
+        recovered += 1;
+      } catch (e) {
+        this.logger.warn('recovery', {
+          sessionId: session.id,
+          error: String(e),
+          reason: 'stuck_starting_recovery_failed',
+        });
+      }
+    }
+    return { recovered };
+  }
+
+  private extractActiveRemoteFromState(
+    state: AisleProcessingStateResponseDto | null,
+  ): { id: string; status: string } | null {
+    if (!state?.job_id?.trim()) {
+      return null;
+    }
+    const status = (state.job_status ?? state.state ?? 'queued').toLowerCase();
+    if (!['queued', 'starting', 'running', 'cancel_requested'].includes(status)) {
+      return null;
+    }
+    return { id: state.job_id, status: state.job_status ?? state.state };
+  }
+
   private async findActiveRemoteJob(
     inventoryId: string,
     aisleId: string,
     idempotencyKey: string,
   ): Promise<{ id: string; status: string } | null> {
+    const key = idempotencyKey.trim();
+    if (!key) {
+      return null;
+    }
     try {
-      const status = await this.api.get<AisleStatusResponseDto>(
-        `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/status`,
-      );
-      const candidates = [
-        status.latest_job,
-        ...status.recent_jobs,
-      ].filter(Boolean) as { id: string; status: string }[];
-      const active = candidates.find((j) =>
-        ['queued', 'starting', 'running', 'cancel_requested'].includes(j.status.toLowerCase()),
-      );
-      if (active) return active;
+      const state = await this.getAisleProcessingState(inventoryId, aisleId);
+      if (state.job_id && state.idempotency_key === key) {
+        return { id: state.job_id, status: state.job_status ?? state.state ?? 'queued' };
+      }
+
       const jobs = await this.api.get<AisleJobsResponseDto>(
         `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/jobs?limit=20`,
       );
       const byKey = jobs.jobs.find((j) => {
         const payload = (j as { payload_json?: { idempotency_key?: string } }).payload_json;
-        return payload?.idempotency_key === idempotencyKey;
+        return payload?.idempotency_key === key;
       });
-      if (byKey) return { id: byKey.id, status: byKey.status };
-      const activeListed = jobs.jobs.find((j) =>
-        ['queued', 'starting', 'running', 'cancel_requested'].includes(j.status.toLowerCase()),
-      );
-      return activeListed ? { id: activeListed.id, status: activeListed.status } : null;
+      if (byKey) {
+        return { id: byKey.id, status: byKey.status };
+      }
+      return null;
     } catch {
       return null;
     }

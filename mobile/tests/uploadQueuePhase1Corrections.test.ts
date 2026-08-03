@@ -71,6 +71,12 @@ function session(id: string, overrides: Partial<CaptureSessionRow> = {}): Captur
     last_upload_error: null,
     last_processing_error: null,
     preparation_processing_mode: 'UNKNOWN',
+    backend_ordered_capture_session_id: null,
+    process_attempt_id: null,
+    process_idempotency_key: null,
+    process_requested_at: null,
+    process_confirmed_at: null,
+    last_recovery_check_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,
@@ -107,6 +113,7 @@ function photo(
     stable_at: new Date().toISOString(),
     excluded_at: null,
     client_file_id: `cf-${id}`,
+    sequence_number: 1,
     backend_asset_id: null,
     upload_status: 'queued',
     upload_progress: 0,
@@ -207,6 +214,12 @@ describe('UploadQueue phase1 corrections', () => {
           });
         },
       ),
+      clearPhotoSequenceNumber: jest.fn(async (photoId: string) => {
+        const current = photos.get(photoId);
+        if (current) {
+          photos.set(photoId, { ...current, sequence_number: null });
+        }
+      }),
       setPreparationProcessingMode: jest.fn(async (sessionId: string, mode: string) => {
         const s = sessions.get(sessionId);
         if (s) {
@@ -226,6 +239,16 @@ describe('UploadQueue phase1 corrections', () => {
       updateSessionUploadMeta: jest.fn(async () => undefined),
       listStableNotQueued: jest.fn(async () => []),
       ensureClientFileId: jest.fn(async (_s: string, _a: string, id: string) => id),
+      assignMissingSequenceNumbers: jest.fn(async () => undefined),
+      setBackendOrderedCaptureSessionId: jest.fn(async (sessionId: string, orderedId: string) => {
+        const s = sessions.get(sessionId);
+        if (s) {
+          sessions.set(sessionId, {
+            ...s,
+            backend_ordered_capture_session_id: s.backend_ordered_capture_session_id ?? orderedId,
+          });
+        }
+      }),
     };
 
     let activeUploads = 0;
@@ -489,6 +512,55 @@ describe('UploadQueue phase1 corrections', () => {
     await queue.setSessionPreparationMode('s1', 'INTERNAL_OCR');
     expect(repo.setPreparationProcessingMode).toHaveBeenCalledWith('s1', 'INTERNAL_OCR');
     expect(sessions.get('s1')?.preparation_processing_mode).toBe('INTERNAL_OCR');
+    await queue.dispose();
+  });
+
+  it('requeues an excluded photo without creating a duplicate row', async () => {
+    const s1 = session('s1');
+    const p1 = photo('p1', 's1', { upload_status: 'excluded' });
+    const { queue, photos } = buildHarness({
+      sessions: [s1],
+      photosBySession: { s1: [p1] },
+    });
+    const first = await queue.requeueExcludedPhoto('p1');
+    expect(first.ok).toBe(true);
+    expect(photos.get('p1')?.upload_status).toBe('not_queued');
+    const second = await queue.requeueExcludedPhoto('p1');
+    expect(second.ok).toBe(false);
+    expect(second.reason).toBe('EXCLUDED_PHOTO_ALREADY_RESTORED');
+    expect([...photos.keys()]).toEqual(['p1']);
+    await queue.dispose();
+  });
+
+  it('retrySession re-queues stuck queued/not_queued photos and clears pause', async () => {
+    const s1 = session('s1');
+    const { queue, photos, repo } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [
+          photo('p1', 's1', { upload_status: 'queued' }),
+          photo('p2', 's1', {
+            upload_status: 'not_queued',
+            upload_size: null,
+            local_transform_uri: null,
+          }),
+        ],
+      },
+    });
+    (repo.listStableNotQueued as jest.Mock).mockImplementation(async (sessionId: string) =>
+      [...photos.values()].filter(
+        (p) =>
+          p.capture_session_id === sessionId &&
+          p.status === 'stable' &&
+          p.upload_status === 'not_queued',
+      ),
+    );
+    await queue.pause('auth');
+    expect(queue.getSnapshot().pauseReason).toBe('auth');
+    await queue.retrySession('s1');
+    expect(queue.getSnapshot().pauseReason).toBeNull();
+    expect(photos.get('p1')?.upload_status).toBe('queued');
+    expect(photos.get('p2')?.upload_status).toBe('queued');
     await queue.dispose();
   });
 });

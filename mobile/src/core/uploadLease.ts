@@ -25,6 +25,8 @@ export const UPLOAD_CODE_PROCESS_PENDING = 'PROCESS_PENDING';
 export const UPLOAD_MULTIPART_FIELD_BATCH = 'upload_batch_id';
 export const UPLOAD_MULTIPART_FIELD_CLIENT_IDS = 'client_file_ids';
 export const UPLOAD_MULTIPART_FIELD_FILES = 'files';
+export const UPLOAD_MULTIPART_FIELD_ORDERED_SESSION = 'ordered_capture_session_id';
+export const UPLOAD_MULTIPART_FIELD_SEQUENCE_NUMBERS = 'sequence_numbers';
 
 export function isUploadLeaseActive(
   leaseExpiresAt: string | null | undefined,

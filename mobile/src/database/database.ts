@@ -2,9 +2,17 @@ import * as SQLite from 'expo-sqlite';
 
 import { MIGRATIONS, validateMigrations } from './migrations/migrations';
 import { isSqliteMalformedError } from './sqliteErrors';
+import { SQLITE_BUSY_TIMEOUT_MS, __resetSqliteWriteGateForTests } from './sqliteWriteGate';
 
 export type SQLiteDatabase = Awaited<ReturnType<typeof SQLite.openDatabaseAsync>>;
-export { isSqliteMalformedError } from './sqliteErrors';
+export { isSqliteMalformedError, isSqliteBusyError } from './sqliteErrors';
+export {
+  runExclusiveDbWrite,
+  runExclusiveDbWriteWithBusyRetry,
+  runImmediateTransaction,
+  withSqliteBusyRetry,
+  SQLITE_BUSY_TIMEOUT_MS,
+} from './sqliteWriteGate';
 
 export const MOBILE_DB_NAME = 'dinamic_mobile.db';
 
@@ -22,6 +30,7 @@ export function consumeDatabaseRecoveryFlag(): boolean {
 export function __resetDatabaseSingletonForTests(): void {
   dbPromise = null;
   recoveredFromCorruption = false;
+  __resetSqliteWriteGateForTests();
 }
 
 async function probeDatabase(db: SQLiteDatabase): Promise<void> {
@@ -38,6 +47,10 @@ async function probeDatabase(db: SQLiteDatabase): Promise<void> {
 
 async function openMigratedDatabase(): Promise<SQLiteDatabase> {
   const db = await SQLite.openDatabaseAsync(MOBILE_DB_NAME);
+  // Reduce "database is locked" under concurrent upload/scan writers.
+  await db.execAsync('PRAGMA journal_mode = WAL;');
+  await db.execAsync(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
+  await db.execAsync('PRAGMA synchronous = NORMAL;');
   await probeDatabase(db);
   await migrate(db);
   return db;
@@ -78,6 +91,8 @@ export async function getDatabase(): Promise<SQLiteDatabase> {
 export async function migrate(db: SQLiteDatabase): Promise<void> {
   validateMigrations();
   await db.execAsync('PRAGMA foreign_keys = ON;');
+  await db.execAsync('PRAGMA journal_mode = WAL;');
+  await db.execAsync(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
   await db.execAsync(
     'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, applied_at TEXT NOT NULL);',
   );

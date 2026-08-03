@@ -173,17 +173,22 @@ from src.runtime.container.repository_backend import (
     resolve_repository_backend_mode,
 )
 from src.runtime.container.repository_builders import (
+    build_aisle_location_label_repository,
+    build_aisle_location_repository,
     build_aisle_repository,
     build_aisle_revision_repository,
     build_authoritative_aisle_finalization_repository,
     build_authoritative_local_code_scan_repository,
+    build_client_position_label_repository,
     build_client_repository,
     build_client_supplier_repository,
     build_code_scan_repository,
     build_evidence_repository,
     build_inventory_repository,
     build_job_repository,
+    build_manual_position_override_repository,
     build_mobile_preliminary_detection_repository,
+    build_ordered_capture_session_repository,
     build_position_repository,
     build_preliminary_detection_reconciliation_repository,
     build_product_record_repository,
@@ -272,6 +277,15 @@ class AppContainer:
         self._capture_session_item_repo: CaptureSessionItemRepository | None = None
         self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = None
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
+        self._ordered_capture_session_repo = None
+        self._ordered_capture_processing_reservation = None
+        self._aisle_location_repo = None
+        self._aisle_location_label_repo = None
+        self._aisle_location_label_artifact_repo = None
+        self._client_position_label_repo = None
+        self._manual_position_override_repo = None
+        self._image_position_label_detection_repo = None
+        self._position_reconciliation_repo = None
         self._code_scan_repo: CodeScanRepository | None = None
         self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
         self._authoritative_local_code_scan_repo = None
@@ -395,6 +409,15 @@ class AppContainer:
         self._capture_session_item_repo = None
         self._capture_session_confirm_repo = None
         self._capture_session_group_repo = None
+        self._ordered_capture_session_repo = None
+        self._ordered_capture_processing_reservation = None
+        self._aisle_location_repo = None
+        self._aisle_location_label_repo = None
+        self._aisle_location_label_artifact_repo = None
+        self._client_position_label_repo = None
+        self._manual_position_override_repo = None
+        self._image_position_label_detection_repo = None
+        self._position_reconciliation_repo = None
         self._code_scan_repo = None
         self._preliminary_detection_repo = None
         self._authoritative_local_code_scan_repo = None
@@ -1090,6 +1113,118 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._capture_session_confirm_repo
+
+    def get_ordered_capture_session_repo(self):
+        if self._ordered_capture_session_repo is not None:
+            return self._ordered_capture_session_repo
+        self._ordered_capture_session_repo = build_ordered_capture_session_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._ordered_capture_session_repo
+
+    def get_ordered_capture_processing_reservation(self):
+        """SEALED→PROCESSING + unique job reservation (SQL TX or memory lock)."""
+        if self._ordered_capture_processing_reservation is not None:
+            return self._ordered_capture_processing_reservation
+        from src.application.services.ordered_capture_processing_reservation import (
+            OrderedCaptureProcessingReservationService,
+        )
+        from src.infrastructure.persistence.memory_ordered_capture_processing_reservation_unit_of_work import (
+            build_memory_ordered_capture_processing_reservation_uow_factory,
+        )
+        from src.infrastructure.persistence.sql_ordered_capture_processing_reservation_unit_of_work import (
+            build_sql_ordered_capture_processing_reservation_uow_factory,
+        )
+        from src.infrastructure.repositories.memory_ordered_capture_session_repository import (
+            MemoryOrderedCaptureSessionRepository,
+        )
+
+        if self.is_sql_repository_backend():
+            uow_factory = build_sql_ordered_capture_processing_reservation_uow_factory(
+                self._get_v3_sql_client()
+            )
+        else:
+            session_repo = self.get_ordered_capture_session_repo()
+            if not isinstance(session_repo, MemoryOrderedCaptureSessionRepository):
+                raise RuntimeError(
+                    "Memory ordered-capture reservation requires MemoryOrderedCaptureSessionRepository"
+                )
+            uow_factory = build_memory_ordered_capture_processing_reservation_uow_factory(
+                job_repo=self.get_job_repo(),
+                session_repo=session_repo,
+            )
+        self._ordered_capture_processing_reservation = OrderedCaptureProcessingReservationService(
+            uow_factory=uow_factory
+        )
+        return self._ordered_capture_processing_reservation
+
+    def get_aisle_location_repo(self):
+        if self._aisle_location_repo is not None:
+            return self._aisle_location_repo
+        self._aisle_location_repo = build_aisle_location_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._aisle_location_repo
+
+    def get_aisle_location_label_repo(self):
+        if self._aisle_location_label_repo is not None:
+            return self._aisle_location_label_repo
+        self._aisle_location_label_repo = build_aisle_location_label_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._aisle_location_label_repo
+
+    def get_aisle_location_label_artifact_repo(self):
+        if getattr(self, "_aisle_location_label_artifact_repo", None) is not None:
+            return self._aisle_location_label_artifact_repo
+        from src.runtime.container.repository_builders import (
+            build_aisle_location_label_artifact_repository,
+        )
+
+        self._aisle_location_label_artifact_repo = build_aisle_location_label_artifact_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._aisle_location_label_artifact_repo
+
+    def get_client_position_label_repo(self):
+        if getattr(self, "_client_position_label_repo", None) is not None:
+            return self._client_position_label_repo
+        self._client_position_label_repo = build_client_position_label_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._client_position_label_repo
+
+    def get_manual_position_override_repo(self):
+        if getattr(self, "_manual_position_override_repo", None) is not None:
+            return self._manual_position_override_repo
+        self._manual_position_override_repo = build_manual_position_override_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._manual_position_override_repo
+
+    def get_image_position_label_detection_repo(self):
+        if getattr(self, "_image_position_label_detection_repo", None) is not None:
+            return self._image_position_label_detection_repo
+        from src.runtime.container.repository_builders import (
+            build_image_position_label_detection_repository,
+        )
+
+        self._image_position_label_detection_repo = build_image_position_label_detection_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._image_position_label_detection_repo
+
+    def get_position_reconciliation_repo(self):
+        if getattr(self, "_position_reconciliation_repo", None) is not None:
+            return self._position_reconciliation_repo
+        from src.runtime.container.repository_builders import (
+            build_position_reconciliation_repository,
+        )
+
+        self._position_reconciliation_repo = build_position_reconciliation_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._position_reconciliation_repo
 
     def get_recompute_consolidated_counts_use_case(self) -> RecomputeConsolidatedCountsUseCase:
         return build_recompute_consolidated_counts_use_case(

@@ -119,6 +119,10 @@ export interface SourceAssetDto {
   readonly mime_type: string;
   readonly uploaded_at: string;
   readonly file_size_bytes?: number | null;
+  readonly ordered_capture_session_id?: string | null;
+  readonly sequence_number?: number | null;
+  readonly sequence_source?: string | null;
+  readonly upload_client_file_id?: string | null;
 }
 
 export interface UploadAisleAssetUploadedDto {
@@ -141,6 +145,22 @@ export interface UploadAisleAssetsResponseDto {
   readonly batch_id: string | null;
   readonly uploaded: readonly UploadAisleAssetUploadedDto[];
   readonly errors: readonly UploadAisleAssetErrorDto[];
+}
+
+export interface OrderedCaptureSessionDto {
+  readonly id: string;
+  readonly inventory_id: string;
+  readonly aisle_id: string;
+  readonly status: string;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly client_id?: string | null;
+  readonly expected_asset_count?: number | null;
+  readonly uploaded_asset_count?: number;
+  readonly sequence_version?: number;
+  readonly sealed_at?: string | null;
+  readonly processing_started_at?: string | null;
+  readonly completed_at?: string | null;
 }
 
 export interface ProcessAisleRequestDto {
@@ -182,6 +202,30 @@ export interface AisleStatusResponseDto {
 export interface AisleJobsResponseDto {
   readonly operational_job_id: string | null;
   readonly jobs: readonly JobSummaryDto[];
+}
+
+export interface AisleProcessingStateResponseDto {
+  readonly state: string;
+  readonly job_id: string | null;
+  readonly job_status: string | null;
+  readonly idempotency_key: string | null;
+  readonly recoverable: boolean;
+  readonly can_start_new: boolean;
+  readonly updated_at: string | null;
+  readonly failure_code: string | null;
+}
+
+export interface RecoverAisleProcessingRequestDto {
+  readonly reason?: string;
+  readonly dry_run?: boolean;
+}
+
+export interface RecoverAisleProcessingResponseDto {
+  readonly outcome: string;
+  readonly job_id: string | null;
+  readonly new_job_id: string | null;
+  readonly detail: string | null;
+  readonly processing_state: AisleProcessingStateResponseDto;
 }
 
 export interface MergeResultItemDto {

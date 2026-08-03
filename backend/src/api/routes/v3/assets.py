@@ -124,6 +124,8 @@ async def upload_aisle_assets(
     files: list[UploadFile] = File(..., description="One or more image or video files"),
     upload_batch_id: str | None = Form(default=None),
     client_file_ids: list[str] | None = Form(default=None),
+    ordered_capture_session_id: str | None = Form(default=None),
+    sequence_numbers: list[str] | None = Form(default=None),
 ) -> UploadAisleAssetsResponse:
     """Upload one or more assets (photos/videos) to an aisle. Aisle transitions to assets_uploaded."""
     # Client scope enforced by ``require_inventory_client_scope`` before application spool.
@@ -133,6 +135,8 @@ async def upload_aisle_assets(
             files,
             upload_batch_id=upload_batch_id,
             client_file_ids=client_file_ids,
+            ordered_capture_session_id=ordered_capture_session_id,
+            sequence_numbers=sequence_numbers,
         )
     except Exception as e:
         reraise_if_mapped(e)
@@ -152,6 +156,8 @@ async def upload_aisle_assets(
                 asset_id=a.id,
                 filename=a.original_filename,
                 status="uploaded",
+                sequence_number=a.sequence_number,
+                ordered_capture_session_id=a.ordered_capture_session_id,
             )
             for a in batch.assets
         ]

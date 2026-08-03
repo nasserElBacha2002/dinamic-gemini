@@ -165,7 +165,11 @@ export function CaptureScreen({
           </View>
           <Button
             label="Finalizar captura"
-            disabled={sessionStatus !== 'active' && sessionStatus !== 'paused'}
+            disabled={
+              sessionStatus !== 'active' &&
+              sessionStatus !== 'paused' &&
+              sessionStatus !== 'finishing'
+            }
             onPress={() => void services.capture.finish().then(onReview).catch((e) => onError(messageOf(e)))}
           />
         </View>

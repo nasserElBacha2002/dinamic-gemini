@@ -35,6 +35,7 @@ from src.domain.jobs.lease import (
     LeaseRenewalResult,
     LeaseWriteOutcome,
 )
+from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
 from src.infrastructure.pipeline.job_finalization_tracker import (
     JobFinalizationTracker,
     report_finalization_failure,
@@ -76,6 +77,35 @@ class V3JobExecutionStateService:
 
     def reconcile_inventory_for_aisle(self, aisle: Aisle) -> None:
         self._inventory_status_reconciler.reconcile(aisle.inventory_id)
+
+    def _maybe_sync_ordered_session_terminal(
+        self,
+        job: Job,
+        *,
+        terminal_status: OrderedCaptureSessionStatus,
+        now,
+    ) -> None:
+        """Best-effort: COMPLETED/FAILED on the pinned ordered capture session."""
+        try:
+            from src.application.services.ordered_capture_session_lifecycle import (
+                sync_ordered_session_terminal_from_job,
+            )
+            from src.runtime.app_container import get_app_container
+
+            session_repo = get_app_container().get_ordered_capture_session_repo()
+            sync_ordered_session_terminal_from_job(
+                session_repo,
+                job,
+                terminal_status=terminal_status,
+                now=now,
+            )
+        except Exception:
+            logger.warning(
+                "ordered_session_terminal_sync_failed job_id=%s wanted=%s",
+                job.id,
+                terminal_status.value,
+                exc_info=True,
+            )
 
     def mark_running(
         self,
@@ -428,6 +458,11 @@ class V3JobExecutionStateService:
                 )
         else:
             self._job_repo.save(job)
+        self._maybe_sync_ordered_session_terminal(
+            job,
+            terminal_status=OrderedCaptureSessionStatus.COMPLETED,
+            now=completion_now,
+        )
 
         self._promote_operational_result(job_id, aisle)
         aisle.mark_processed(completion_now)
@@ -511,8 +546,18 @@ class V3JobExecutionStateService:
                     fencing_token=lease.fencing_token,
                     reason=write.reason,
                 )
+            self._maybe_sync_ordered_session_terminal(
+                job,
+                terminal_status=OrderedCaptureSessionStatus.COMPLETED,
+                now=completion_now,
+            )
             return
         self._job_repo.save(job)
+        self._maybe_sync_ordered_session_terminal(
+            job,
+            terminal_status=OrderedCaptureSessionStatus.COMPLETED,
+            now=completion_now,
+        )
 
     def _promote_operational_result(self, job_id: str, aisle: Aisle) -> str:
         inv = self._inventory_repo.get_by_id(aisle.inventory_id)
@@ -589,6 +634,11 @@ class V3JobExecutionStateService:
         )
         job.error_message = job.failure_message
         self._job_repo.save(job)
+        self._maybe_sync_ordered_session_terminal(
+            job,
+            terminal_status=OrderedCaptureSessionStatus.FAILED,
+            now=now,
+        )
         return True
 
     def try_transition_to_succeeded(self, job_id: str) -> Job | None:
@@ -712,6 +762,13 @@ class V3JobExecutionStateService:
                 )
                 return False
             won = True
+            job = self._job_repo.get_by_id(job_id)
+            if job is not None:
+                self._maybe_sync_ordered_session_terminal(
+                    job,
+                    terminal_status=OrderedCaptureSessionStatus.FAILED,
+                    now=now,
+                )
         else:
             won = self.try_transition_to_failed(
                 job_id, error_message, failure_code=failure_code

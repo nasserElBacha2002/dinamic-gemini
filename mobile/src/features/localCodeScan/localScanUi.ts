@@ -2,9 +2,15 @@ import type { LocalDetectionDraftRow } from '../../database/repositories/localDe
 import type { LocalDetectionDraftStatus } from '../../database/repositories/localDetectionDraftRepository';
 
 /** Operational-only copy — never presents local result as authoritative. */
-export function labelForLocalScanStatus(status: LocalDetectionDraftStatus | null | undefined): string | null {
+export function labelForLocalScanStatus(
+  status: LocalDetectionDraftStatus | null | undefined,
+  errorCode?: string | null,
+): string | null {
   if (!status || status === 'NOT_APPLICABLE') {
     return null;
+  }
+  if (errorCode === 'POSITION_LABEL_DETECTED') {
+    return 'Etiqueta de posición detectada — se resolverá en servidor';
   }
   switch (status) {
     case 'PENDING':
@@ -34,6 +40,11 @@ export function formatLocalScanDetection(draft: Pick<
 > | null | undefined): string | null {
   if (!draft || draft.status === 'NOT_APPLICABLE') {
     return null;
+  }
+  if (draft.error_code === 'POSITION_LABEL_DETECTED') {
+    return draft.detected_symbology
+      ? `${draft.detected_symbology} · Etiqueta de posición`
+      : 'Etiqueta de posición';
   }
   const parts: string[] = [];
   if (draft.internal_code) {

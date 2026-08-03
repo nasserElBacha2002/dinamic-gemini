@@ -555,3 +555,147 @@ class AuthoritativeSessionNotReadyError(Exception):
     def __init__(self, message: str, *, reasons: tuple[str, ...] = ()) -> None:
         super().__init__(message)
         self.reasons = reasons
+
+
+# --- Phase 1 positioning foundation (ordered capture + aisle locations) ---
+
+
+class OrderedCaptureSessionNotFoundError(Exception):
+    def __init__(self, session_id: str) -> None:
+        self.session_id = session_id
+        super().__init__(f"Ordered capture session not found: {session_id}")
+
+
+class OrderedCaptureSessionConflictError(Exception):
+    def __init__(self, message: str, *, code: str = "ORDERED_CAPTURE_CONFLICT") -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class OrderedCaptureSealRejectedError(Exception):
+    def __init__(self, message: str, *, reasons: list[str] | None = None) -> None:
+        self.reasons = list(reasons or [])
+        self.code = "CAPTURE_SESSION_SEAL_REJECTED"
+        super().__init__(message)
+
+
+class ProcessingRejectedUnsealedSessionError(Exception):
+    def __init__(self, message: str) -> None:
+        self.code = "PROCESSING_REJECTED_UNSEALED_SESSION"
+        super().__init__(message)
+
+
+class AisleLocationNotFoundError(Exception):
+    def __init__(self, location_id: str) -> None:
+        self.location_id = location_id
+        super().__init__(f"Aisle location not found: {location_id}")
+
+
+class AisleLocationConflictError(Exception):
+    def __init__(self, message: str, *, code: str = "AISLE_LOCATION_CONFLICT") -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class AisleLocationLabelNotFoundError(Exception):
+    def __init__(self, label_id: str) -> None:
+        self.label_id = label_id
+        super().__init__(f"Aisle location label not found: {label_id}")
+
+
+class AisleLocationLabelConflictError(Exception):
+    def __init__(self, message: str, *, code: str = "AISLE_LOCATION_LABEL_CONFLICT") -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class ClientPositionLabelNotFoundError(Exception):
+    def __init__(self, label_id: str) -> None:
+        self.label_id = label_id
+        super().__init__(f"Position label not found: {label_id}")
+
+
+class ClientPositionLabelConflictError(Exception):
+    def __init__(self, message: str, *, code: str = "POSITION_LABEL_CONFLICT") -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class ClientPositionLabelAccessDeniedError(Exception):
+    def __init__(self, message: str = "Position label access denied") -> None:
+        self.code = "POSITION_LABEL_ACCESS_DENIED"
+        super().__init__(message)
+
+
+class PositionLabelDetectionError(Exception):
+    """Hard Phase 3 contract / context failure (not soft detection status rows)."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        self.code = code
+        super().__init__(message)
+
+
+class PositionLabelDetectionContextInvalidError(PositionLabelDetectionError):
+    def __init__(
+        self, message: str = "Position label detection context is invalid (missing client_id)"
+    ) -> None:
+        super().__init__(message, code="POSITION_LABEL_DETECTION_CONTEXT_INVALID")
+
+
+class PositionLabelDetectionConfigurationError(PositionLabelDetectionError):
+    def __init__(self, message: str = "Position label detection is misconfigured") -> None:
+        super().__init__(message, code="POSITION_LABEL_DETECTION_CONFIGURATION_ERROR")
+
+
+class PositionReconciliationError(Exception):
+    """Base error for Phase 4 reconciliation operations."""
+
+    code = "POSITION_RECONCILIATION_FAILED"
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        self.code = code or self.code
+        super().__init__(message)
+
+
+class PositionReconciliationNotReadyError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_NOT_READY"
+
+
+class PositionReconciliationAlreadyRunningError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_ALREADY_RUNNING"
+
+
+class PositionReconciliationInputChangedError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_INPUT_CHANGED"
+
+
+class PositionReconciliationConcurrentUpdateError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_CONCURRENT_UPDATE"
+
+
+class PositionReconciliationResultsIncompleteError(PositionReconciliationNotReadyError):
+    code = "POSITION_RECONCILIATION_RESULTS_INCOMPLETE"
+
+
+class PositionReconciliationDetectionsIncompleteError(PositionReconciliationNotReadyError):
+    code = "POSITION_RECONCILIATION_DETECTIONS_INCOMPLETE"
+
+
+class PositionReconciliationSessionMismatchError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_SESSION_MISMATCH"
+
+
+class PositionReconciliationSequenceInvalidError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_SEQUENCE_INVALID"
+
+
+class PositionReconciliationFailedError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_FAILED"
+
+
+class PositionAssignmentNotFoundError(PositionReconciliationError):
+    code = "POSITION_ASSIGNMENT_NOT_FOUND"
+
+
+class PositionAssignmentAccessDeniedError(PositionReconciliationError):
+    code = "POSITION_ASSIGNMENT_ACCESS_DENIED"

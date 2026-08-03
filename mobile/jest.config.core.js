@@ -18,6 +18,7 @@ module.exports = {
     '<rootDir>/tests/detectionStability.integration.test.ts',
     '<rootDir>/tests/logging.test.ts',
     '<rootDir>/tests/captureState.test.ts',
+    '<rootDir>/tests/captureSequence.test.ts',
     '<rootDir>/tests/fase2UploadCore.test.ts',
     '<rootDir>/tests/fase3HardeningCore.test.ts',
     '<rootDir>/tests/featureFlags.test.ts',
@@ -29,6 +30,8 @@ module.exports = {
     '<rootDir>/tests/processingReadiness.test.ts',
     '<rootDir>/tests/labelPayloadContracts.test.ts',
     '<rootDir>/tests/databaseCorruption.test.ts',
+    '<rootDir>/tests/databaseMigrations.test.ts',
+    '<rootDir>/tests/processingService.test.ts',
     '<rootDir>/tests/offlineOperationsPhase9.test.ts',
   ],
   moduleNameMapper: {

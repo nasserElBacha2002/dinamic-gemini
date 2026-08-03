@@ -13,6 +13,8 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import pyodbc
+
 from src.application.ports.repositories import JobRepository
 from src.application.services.job_claim_helpers import classify_claim_after_cas_miss
 from src.application.services.job_stale_reconciler import (
@@ -34,6 +36,7 @@ from src.domain.jobs.lease import (
     LeaseRenewalResult,
     LeaseWriteResult,
 )
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.sql_job_lease_store import SqlJobLeaseStore
 from src.infrastructure.repositories.sql_job_row_mapper import (
     JOB_SELECT_FIELDS as _JOB_SELECT_FIELDS,
@@ -54,9 +57,30 @@ logger = logging.getLogger(__name__)
 TARGET_ID_BATCH_SIZE = 500
 
 
+def _is_ordered_session_version_unique_violation(exc: BaseException) -> bool:
+    """True for unique index ``UQ_inventory_jobs_ordered_session_version`` (2627/2601)."""
+    msg = str(exc).lower()
+    if "uq_inventory_jobs_ordered_session_version" in msg:
+        return True
+    args = getattr(exc, "args", ()) or ()
+    for item in args:
+        blob = str(item).lower()
+        if "uq_inventory_jobs_ordered_session_version" in blob:
+            return True
+        if ("2627" in blob or "2601" in blob) and (
+            "ordered_session" in blob or "sequence_version" in blob
+        ):
+            return True
+    cause = getattr(exc, "__cause__", None)
+    if cause is not None and cause is not exc:
+        return _is_ordered_session_version_unique_violation(cause)
+    return False
+
+
 class SqlJobRepository(JobRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
         self._lease_store = SqlJobLeaseStore(client, self.get_by_id)
 
     def save(self, job: Job) -> None:
@@ -76,7 +100,7 @@ class SqlJobRepository(JobRepository):
             if job.finalization_error_metadata
             else None
         )
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 UPDATE inventory_jobs
@@ -94,7 +118,8 @@ class SqlJobRepository(JobRepository):
                     last_completed_finalization_step = ?, finalization_error_code = ?,
                     finalization_error_metadata = ?, finalization_started_at = ?,
                     finalization_completed_at = ?, domain_persisted_at = ?, artifacts_published_at = ?,
-                    lease_fencing_token = ?, lease_expires_at = ?, lease_acquired_at = ?
+                    lease_fencing_token = ?, lease_expires_at = ?, lease_acquired_at = ?,
+                    ordered_capture_session_id = ?, sequence_version = ?
                 WHERE id = ?
                 """,
                 (
@@ -140,6 +165,8 @@ class SqlJobRepository(JobRepository):
                     int(job.lease_fencing_token or 0),
                     _ensure_utc(job.lease_expires_at),
                     _ensure_utc(job.lease_acquired_at),
+                    job.ordered_capture_session_id,
+                    job.sequence_version,
                     job.id,
                 ),
             )
@@ -158,9 +185,10 @@ class SqlJobRepository(JobRepository):
                         finalization_status, current_finalization_step, last_completed_finalization_step,
                         finalization_error_code, finalization_error_metadata, finalization_started_at,
                         finalization_completed_at, domain_persisted_at, artifacts_published_at,
-                        lease_fencing_token, lease_expires_at, lease_acquired_at)
+                        lease_fencing_token, lease_expires_at, lease_acquired_at,
+                        ordered_capture_session_id, sequence_version)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,
@@ -207,6 +235,8 @@ class SqlJobRepository(JobRepository):
                         int(job.lease_fencing_token or 0),
                         _ensure_utc(job.lease_expires_at),
                         _ensure_utc(job.lease_acquired_at),
+                        job.ordered_capture_session_id,
+                        job.sequence_version,
                     ),
                 )
 
@@ -246,7 +276,7 @@ class SqlJobRepository(JobRepository):
         return self.get_by_id(job_id)
 
     def get_by_id(self, job_id: str) -> Job | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE id = ?",  # nosec B608
                 (job_id,),
@@ -255,6 +285,48 @@ class SqlJobRepository(JobRepository):
         if not row:
             return None
         return _row_to_job(row)
+
+    def get_by_ordered_capture_session(
+        self, ordered_capture_session_id: str, *, sequence_version: int
+    ) -> Job | None:
+        session_id = (ordered_capture_session_id or "").strip()
+        if not session_id:
+            return None
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                f"""
+                SELECT {_JOB_SELECT_FIELDS}
+                FROM inventory_jobs
+                WHERE ordered_capture_session_id = ? AND sequence_version = ?
+                """,  # nosec B608
+                (session_id, int(sequence_version)),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return _row_to_job(row)
+
+    def create_or_get_for_ordered_session(self, job: Job) -> tuple[Job, bool]:
+        session_id = (job.ordered_capture_session_id or "").strip()
+        if not session_id or job.sequence_version is None:
+            raise ValueError(
+                "create_or_get_for_ordered_session requires "
+                "ordered_capture_session_id and sequence_version"
+            )
+        job.ordered_capture_session_id = session_id
+        job.sequence_version = int(job.sequence_version)
+        try:
+            self.save(job)
+            return job, True
+        except pyodbc.IntegrityError as exc:
+            if not _is_ordered_session_version_unique_violation(exc):
+                raise
+            existing = self.get_by_ordered_capture_session(
+                session_id, sequence_version=int(job.sequence_version)
+            )
+            if existing is None:
+                raise
+            return existing, False
 
     def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         with self._client.cursor() as cur:

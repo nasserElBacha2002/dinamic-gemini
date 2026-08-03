@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -97,6 +97,23 @@ describe('SQLite migrations', () => {
     expect(v18?.name).toBe('offline_operations_claim_and_payload_hash');
     expect(v18?.sql).toContain('payload_hash');
     expect(v18?.sql).toContain('lease_expires_at');
+  });
+
+  it('adds v19 ordered capture sequence_number and backend session id', () => {
+    const v19 = MIGRATIONS.find((m) => m.version === 19);
+    expect(v19?.name).toBe('ordered_capture_sequence');
+    expect(v19?.sql).toContain('ALTER TABLE capture_photos ADD COLUMN sequence_number');
+    expect(v19?.sql).toContain('backend_ordered_capture_session_id');
+    expect(v19?.sql).toContain('idx_capture_photos_session_sequence');
+  });
+
+  it('adds v20 process attempt identity columns on capture_sessions', () => {
+    const v20 = MIGRATIONS.find((m) => m.version === 20);
+    expect(v20?.name).toBe('capture_session_process_attempt_identity');
+    expect(v20?.sql).toContain('process_attempt_id');
+    expect(v20?.sql).toContain('process_idempotency_key');
+    expect(v20?.sql).toContain('process_confirmed_at');
+    expect(v20?.sql).toContain('last_recovery_check_at');
   });
 });
 

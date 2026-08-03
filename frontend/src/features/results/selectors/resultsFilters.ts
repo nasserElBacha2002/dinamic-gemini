@@ -12,7 +12,9 @@ export type ResultsFilterKind =
   | 'low_confidence'
   | 'qty_zero'
   | 'invalid_traceability'
-  | 'missing_evidence';
+  | 'missing_evidence'
+  | 'with_position'
+  | 'without_position';
 
 /**
  * Filter results by the given filter kind.
@@ -37,6 +39,10 @@ export function filterResults(
       }
       case 'low_confidence':
         return r.confidence != null && r.confidence < LOW_CONFIDENCE_THRESHOLD;
+      case 'with_position':
+        return r.aislePositionAssigned === true;
+      case 'without_position':
+        return r.aislePositionAssigned !== true;
       default:
         return true;
     }

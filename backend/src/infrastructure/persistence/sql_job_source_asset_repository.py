@@ -36,8 +36,9 @@ class SqlJobSourceAssetRepository:
                         id, job_id, source_asset_id, asset_role, position_order,
                         checksum, storage_key, mime_type, size_bytes, width, height,
                         stage, provider_request_id, created_at, original_filename,
-                        transformation, source_parent_id, artifact_id, snapshot_version
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        transformation, source_parent_id, artifact_id, snapshot_version,
+                        sequence_number
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         link.id,
@@ -59,6 +60,7 @@ class SqlJobSourceAssetRepository:
                         link.source_parent_id,
                         link.artifact_id,
                         int(link.snapshot_version),
+                        link.sequence_number,
                     ),
                 )
 
@@ -69,10 +71,14 @@ class SqlJobSourceAssetRepository:
                 SELECT id, job_id, source_asset_id, asset_role, position_order,
                        checksum, storage_key, mime_type, size_bytes, width, height,
                        stage, provider_request_id, created_at, original_filename,
-                       transformation, source_parent_id, artifact_id, snapshot_version
+                       transformation, source_parent_id, artifact_id, snapshot_version,
+                       sequence_number
                 FROM job_source_assets
                 WHERE job_id = ?
-                ORDER BY position_order ASC, asset_role ASC, id ASC
+                ORDER BY
+                    CASE WHEN sequence_number IS NULL THEN 1 ELSE 0 END ASC,
+                    sequence_number ASC,
+                    position_order ASC, asset_role ASC, id ASC
                 """,
                 (job_id,),
             )
@@ -122,4 +128,7 @@ def _row_to_link(row: Any) -> JobSourceAssetLink:
         ),
         artifact_id=(str(_g("artifact_id", 17)) if _g("artifact_id", 17) is not None else None),
         snapshot_version=int(snapshot_version) if snapshot_version is not None else 1,
+        sequence_number=(
+            int(_g("sequence_number", 19)) if _g("sequence_number", 19) is not None else None
+        ),
     )

@@ -25,8 +25,12 @@ from src.application.errors import (
     AisleInactiveError,
     InventoryNotFoundError,
     NoSourceAssetsForAisleProcessingError,
+    ProcessingRejectedUnsealedSessionError,
 )
 from src.application.ports.contracts import ProcessAislePayload
+from src.application.ports.ordered_capture_session_repository import (
+    OrderedCaptureSessionRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -42,6 +46,10 @@ from src.application.services.aisle_identification_execution import (
 )
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
+from src.application.services.capture_sequence import (
+    sort_assets_by_logical_sequence,
+    validate_complete_sequence,
+)
 from src.application.services.image_processing.ocr_client_field_rules import (
     ocr_client_rules_snapshot,
     resolve_ocr_client_field_rules,
@@ -51,6 +59,9 @@ from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.legacy_processing_guard import (
     reject_legacy_effective_mode_for_new_job,
 )
+from src.application.services.ordered_capture_processing_reservation import (
+    OrderedCaptureProcessingReservationService,
+)
 from src.application.services.process_aisle_execution_resolution import (
     resolve_process_aisle_execution_keys,
 )
@@ -58,6 +69,7 @@ from src.config import load_settings
 from src.domain.aisle_identification.modes import CONFIGURATION_SNAPSHOT_VERSION
 from src.domain.aisle_identification.resolver import resolve_aisle_identification_mode
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
 from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
 logger = logging.getLogger(__name__)
@@ -103,6 +115,8 @@ class StartAisleProcessingCommand:
     idempotency_key: str | None = None
     #: Authenticated principal (required for user-facing process starts).
     principal: AccessPrincipal | None = None
+    #: When set, process requires a SEALED ordered capture session (Phase 1).
+    ordered_capture_session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,6 +194,8 @@ class StartAisleProcessingUseCase:
         extraction_profile_repo=None,
         client_supplier_repo: ClientSupplierRepository | None = None,
         supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
+        ordered_session_repo: OrderedCaptureSessionRepository | None = None,
+        ordered_processing_reservation: OrderedCaptureProcessingReservationService | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -192,6 +208,61 @@ class StartAisleProcessingUseCase:
         self._extraction_profile_repo = extraction_profile_repo
         self._client_supplier_repo = client_supplier_repo
         self._supplier_prompt_config_repo = supplier_prompt_config_repo
+        self._ordered_session_repo = ordered_session_repo
+        self._ordered_processing_reservation = ordered_processing_reservation
+
+    def _mark_ordered_session_processing(
+        self,
+        sealed_session,
+        job: Job,
+    ) -> None:
+        """SEALED → PROCESSING after job persist; leave alone if already PROCESSING."""
+        if self._ordered_session_repo is None:
+            return
+        current = self._ordered_session_repo.get_by_id(sealed_session.id) or sealed_session
+        if current.status != OrderedCaptureSessionStatus.SEALED:
+            return
+        now = job.started_at or job.created_at
+        current.status = OrderedCaptureSessionStatus.PROCESSING
+        current.processing_started_at = now
+        current.processing_job_id = job.id
+        current.updated_at = now
+        self._ordered_session_repo.save(current)
+        logger.info(
+            "processing_started_for_sealed_session capture_session_id=%s job_id=%s "
+            "sequence_version=%s",
+            current.id,
+            job.id,
+            current.sequence_version,
+        )
+
+    def _return_existing_ordered_job(
+        self,
+        *,
+        sealed_session,
+        aisle,
+        existing_job: Job,
+    ) -> StartAisleProcessingResult:
+        job = self._launch_service.ensure_worker_launched_if_needed(
+            existing_job,
+            aisle,
+            log_prefix="job.start_requested",
+        )
+        self._mark_ordered_session_processing(sealed_session, job)
+        logger.info(
+            "processing_started_for_sealed_session idempotent "
+            "capture_session_id=%s job_id=%s session_status=%s",
+            sealed_session.id,
+            job.id,
+            sealed_session.status.value,
+        )
+        return StartAisleProcessingResult(
+            job_id=job.id,
+            identification_mode=job.identification_mode.value,
+            identification_mode_source=job.identification_mode_source.value,
+            execution_strategy=job.execution_strategy.value,
+            configuration_snapshot_version=job.configuration_snapshot_version,
+        )
 
     def execute(self, command: StartAisleProcessingCommand) -> StartAisleProcessingResult:
         if command.principal is None:
@@ -222,7 +293,7 @@ class StartAisleProcessingUseCase:
                 f"Aisle {command.aisle_id} is inactive; reactivate before processing."
             )
 
-        aisle_assets = self._asset_repo.list_by_aisle(command.aisle_id)
+        aisle_assets = list(self._asset_repo.list_by_aisle(command.aisle_id))
         if not aisle_assets:
             logger.info(
                 "aisle.process_rejected_no_source_assets inventory_id=%s aisle_id=%s",
@@ -234,6 +305,131 @@ class StartAisleProcessingUseCase:
             )
 
         settings = load_settings()
+        ordered_session_id = (command.ordered_capture_session_id or "").strip() or None
+        sealed_session = None
+        if not ordered_session_id:
+            # Auto-detect: if aisle has CLIENT_ASSIGNED sequenced assets, require an explicit sealed session.
+            sequenced = [
+                a
+                for a in aisle_assets
+                if a.sequence_source == "CLIENT_ASSIGNED" and a.ordered_capture_session_id
+            ]
+            if sequenced:
+                session_ids = {a.ordered_capture_session_id for a in sequenced}
+                if len(session_ids) == 1:
+                    ordered_session_id = next(iter(session_ids))
+                else:
+                    raise ProcessingRejectedUnsealedSessionError(
+                        "Aisle has assets from multiple ordered capture sessions; "
+                        "pass ordered_capture_session_id explicitly"
+                    )
+
+        if ordered_session_id:
+            if self._ordered_session_repo is None:
+                raise ProcessingRejectedUnsealedSessionError(
+                    "Ordered capture session processing is not configured"
+                )
+            sealed_session = self._ordered_session_repo.get_by_id(ordered_session_id)
+            if sealed_session is None:
+                raise ProcessingRejectedUnsealedSessionError(
+                    f"Ordered capture session not found: {ordered_session_id}"
+                )
+            if (
+                sealed_session.aisle_id != command.aisle_id
+                or sealed_session.inventory_id != command.inventory_id
+            ):
+                raise ProcessingRejectedUnsealedSessionError(
+                    "Ordered capture session does not match inventory/aisle"
+                )
+            session_status = sealed_session.status
+            if session_status in (
+                OrderedCaptureSessionStatus.OPEN,
+                OrderedCaptureSessionStatus.UPLOADING,
+            ):
+                logger.info(
+                    "processing_rejected_unsealed_session capture_session_id=%s status=%s",
+                    sealed_session.id,
+                    session_status.value,
+                )
+                raise ProcessingRejectedUnsealedSessionError(
+                    "Capture session must be SEALED before processing "
+                    f"(status={session_status.value})"
+                )
+
+            existing_ordered = self._job_repo.get_by_ordered_capture_session(
+                sealed_session.id,
+                sequence_version=int(sealed_session.sequence_version),
+            )
+
+            if session_status == OrderedCaptureSessionStatus.FAILED:
+                if existing_ordered is not None:
+                    return self._return_existing_ordered_job(
+                        sealed_session=sealed_session,
+                        aisle=aisle,
+                        existing_job=existing_ordered,
+                    )
+                raise ProcessingRejectedUnsealedSessionError(
+                    "Capture session is FAILED; reseal a new session before processing "
+                    f"(status={session_status.value})"
+                )
+
+            if session_status in (
+                OrderedCaptureSessionStatus.PROCESSING,
+                OrderedCaptureSessionStatus.COMPLETED,
+            ):
+                if existing_ordered is not None:
+                    return self._return_existing_ordered_job(
+                        sealed_session=sealed_session,
+                        aisle=aisle,
+                        existing_job=existing_ordered,
+                    )
+                raise ProcessingRejectedUnsealedSessionError(
+                    "Capture session has no job for this sequence version "
+                    f"(status={session_status.value})"
+                )
+
+            if session_status != OrderedCaptureSessionStatus.SEALED:
+                logger.info(
+                    "processing_rejected_unsealed_session capture_session_id=%s status=%s",
+                    sealed_session.id,
+                    session_status.value,
+                )
+                raise ProcessingRejectedUnsealedSessionError(
+                    "Capture session must be SEALED before processing "
+                    f"(status={session_status.value})"
+                )
+            session_assets = [
+                a
+                for a in aisle_assets
+                if (a.ordered_capture_session_id or "") == sealed_session.id
+            ]
+            expected = int(sealed_session.expected_asset_count or 0)
+            reasons = validate_complete_sequence(session_assets, expected_count=expected)
+            if reasons:
+                raise ProcessingRejectedUnsealedSessionError(
+                    "Sealed session sequence incomplete: " + "; ".join(reasons)
+                )
+            # Prefer session assets only for this job's traversal order.
+            aisle_assets = sort_assets_by_logical_sequence(session_assets)
+            if existing_ordered is not None:
+                return self._return_existing_ordered_job(
+                    sealed_session=sealed_session,
+                    aisle=aisle,
+                    existing_job=existing_ordered,
+                )
+        elif bool(getattr(settings, "legacy_image_order_enabled", True)):
+            logger.info(
+                "aisle.process_legacy_image_order inventory_id=%s aisle_id=%s "
+                "sequence_source=LEGACY note=uploaded_at_order_not_authoritative",
+                command.inventory_id,
+                command.aisle_id,
+            )
+            aisle_assets = sort_assets_by_logical_sequence(aisle_assets)
+        else:
+            raise ProcessingRejectedUnsealedSessionError(
+                "Legacy image order disabled; provide a sealed ordered capture session"
+            )
+
         if bool(
             getattr(settings, "server_skip_remote_code_scan_for_local_authority", False)
         ):
@@ -610,6 +806,9 @@ class StartAisleProcessingUseCase:
         payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
         if command.idempotency_key and str(command.idempotency_key).strip():
             payload["idempotency_key"] = str(command.idempotency_key).strip()
+        if sealed_session is not None:
+            payload["ordered_capture_session_id"] = sealed_session.id
+            payload["sequence_version"] = int(sealed_session.sequence_version)
         try:
             from src.application.use_cases.recovery.recover_stale_job import (
                 ensure_payload_correlation,
@@ -621,6 +820,57 @@ class StartAisleProcessingUseCase:
             payload = ensure_payload_correlation(dict(payload), corr)  # type: ignore[assignment]
         except Exception:
             logger.warning("correlation inject failed aisle_id=%s", command.aisle_id, exc_info=True)
+
+        if sealed_session is not None:
+            # Ordered path: reserve SEALED→PROCESSING + unique job in one transaction,
+            # then launch worker only after commit.
+            if self._ordered_processing_reservation is None:
+                raise ProcessingRejectedUnsealedSessionError(
+                    "Ordered capture session processing reservation is not configured"
+                )
+            job_template = self._launch_service.build_attempt_job(
+                aisle=aisle,
+                payload=payload,
+                attempt_count=1,
+                retry_of_job_id=None,
+                provider_name=pipeline_key,
+                model_name=model_name,
+                prompt_key=prompt_key,
+                identification_mode=resolution.effective_mode,
+                identification_mode_source=resolution.source,
+                configuration_snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
+                execution_strategy=execution_strategy,
+                engine_params_json=engine_params_json,
+            )
+            reservation = self._ordered_processing_reservation.reserve(
+                job_template,
+                sealed_session,
+                now=job_template.started_at or job_template.created_at,
+            )
+            job = reservation.job
+            if reservation.created:
+                job = self._launch_service.launch_persisted_attempt(
+                    job,
+                    aisle,
+                    log_prefix="job.start_requested",
+                    retry_of_job_id=None,
+                )
+            else:
+                job = self._launch_service.ensure_worker_launched_if_needed(
+                    job,
+                    aisle,
+                    log_prefix="job.start_requested",
+                    retry_of_job_id=None,
+                )
+            return StartAisleProcessingResult(
+                job_id=job.id,
+                identification_mode=job.identification_mode.value,
+                identification_mode_source=job.identification_mode_source.value,
+                execution_strategy=job.execution_strategy.value,
+                configuration_snapshot_version=job.configuration_snapshot_version,
+            )
+
+        # Legacy (non-ordered) path: create and launch unchanged.
         job = self._launch_service.create_and_launch_attempt(
             aisle=aisle,
             payload=payload,

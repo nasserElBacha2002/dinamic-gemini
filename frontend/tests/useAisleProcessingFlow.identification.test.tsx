@@ -18,6 +18,14 @@ import {
 
 const mutateAsyncMock = vi.fn().mockResolvedValue({ job_id: 'job-1' });
 
+vi.mock('../src/api/aislesApi', () => ({
+  getAisleProcessingState: vi.fn().mockResolvedValue({
+    state: 'IDLE',
+    can_start_new: true,
+  }),
+  recoverAisleProcessing: vi.fn(),
+}));
+
 const providerOptionsData = {
   mode: 'test' as const,
   default_provider_key: 'gemini',

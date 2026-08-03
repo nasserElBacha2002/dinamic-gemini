@@ -104,6 +104,18 @@ vi.mock('../src/api/client', async (importOriginal) => {
   };
 });
 
+vi.mock('../src/api/aislesApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/api/aislesApi')>();
+  return {
+    ...actual,
+    getAisleProcessingState: vi.fn().mockResolvedValue({
+      state: 'IDLE',
+      can_start_new: true,
+    }),
+    recoverAisleProcessing: vi.fn(),
+  };
+});
+
 function emptyExecutionLog(overrides: Partial<ExecutionLogResponse> = {}): ExecutionLogResponse {
   return {
     inventory_id: 'inv-1',

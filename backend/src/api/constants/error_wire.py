@@ -50,6 +50,17 @@ HTTP_DETAIL_ANALYTICS_SCOPE_VALIDATION_FAILED = "aisle_id does not belong to the
 
 # Mapper normalizer + Category C job-read — generic job-not-found phrase (identical semantics).
 HTTP_DETAIL_JOB_NOT_FOUND = "Job not found"
+HTTP_DETAIL_POSITION_RECONCILIATION_NOT_READY = "Position reconciliation is not ready"
+HTTP_DETAIL_POSITION_RECONCILIATION_ALREADY_RUNNING = "Position reconciliation is already running"
+HTTP_DETAIL_POSITION_RECONCILIATION_INPUT_CHANGED = "Position reconciliation inputs changed"
+HTTP_DETAIL_POSITION_RECONCILIATION_SESSION_MISMATCH = "Job assets span multiple capture sessions"
+HTTP_DETAIL_POSITION_RECONCILIATION_SEQUENCE_INVALID = "Position reconciliation sequence is invalid"
+HTTP_DETAIL_POSITION_RECONCILIATION_CONCURRENT_UPDATE = (
+    "Position reconciliation concurrent update conflict"
+)
+HTTP_DETAIL_POSITION_RECONCILIATION_FAILED = "Position reconciliation failed"
+HTTP_DETAIL_POSITION_ASSIGNMENT_NOT_FOUND = "Position assignment not found"
+HTTP_DETAIL_POSITION_ASSIGNMENT_ACCESS_DENIED = "Position assignment access denied"
 
 # Route-level validation / assets (duplicated literals, identical semantics).
 HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED = "Only format=csv is supported"
@@ -187,6 +198,19 @@ HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW = (
     "Materialize this capture session group before preview."
 )
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION = "Capture session group data consistency check failed; retry is not recommended until data is reviewed."
+
+# Phase 1 positioning foundation (ordered capture + aisle locations)
+HTTP_DETAIL_ORDERED_CAPTURE_SESSION_NOT_FOUND = "Ordered capture session not found"
+HTTP_DETAIL_ORDERED_CAPTURE_CONFLICT = "Ordered capture session conflict"
+HTTP_DETAIL_CAPTURE_SESSION_SEAL_REJECTED = "Ordered capture session seal rejected"
+HTTP_DETAIL_AISLE_LOCATION_NOT_FOUND = "Aisle location not found"
+HTTP_DETAIL_AISLE_LOCATION_CONFLICT = "Aisle location conflict"
+HTTP_DETAIL_AISLE_LOCATION_LABEL_NOT_FOUND = "Aisle location label not found"
+HTTP_DETAIL_AISLE_LOCATION_LABEL_CONFLICT = "Aisle location label conflict"
+HTTP_DETAIL_POSITION_LABEL_NOT_FOUND = "Position label not found"
+HTTP_DETAIL_POSITION_LABEL_ACCESS_DENIED = "Position label access denied"
+HTTP_DETAIL_POSITION_LABEL_CONFLICT = "Position label conflict"
+HTTP_DETAIL_POSITION_LABEL_SIGNING_NOT_CONFIGURED = "Position label signing is not configured"
 
 # Supplier prompt configs (Phase D4)
 HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER = "provider_name is not supported"

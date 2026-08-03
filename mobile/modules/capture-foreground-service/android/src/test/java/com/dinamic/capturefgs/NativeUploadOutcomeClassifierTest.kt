@@ -67,13 +67,17 @@ class UploadContractsTest {
     assertEquals("dinamic-upload-queue", UploadContracts.UNIQUE_QUEUE_NAME)
     assertEquals("upload_batch_id", UploadContracts.MULTIPART_FIELD_BATCH)
     assertEquals("client_file_ids", UploadContracts.MULTIPART_FIELD_CLIENT_IDS)
+    assertEquals("ordered_capture_session_id", UploadContracts.MULTIPART_FIELD_ORDERED_SESSION)
+    assertEquals("sequence_numbers", UploadContracts.MULTIPART_FIELD_SEQUENCE_NUMBERS)
     assertEquals("files", UploadContracts.MULTIPART_FIELD_FILES)
-    assertEquals(7, UploadContracts.MIN_SCHEMA_VERSION)
+    assertEquals(19, UploadContracts.MIN_SCHEMA_VERSION)
     assertTrue(UploadContracts.LEASE_TTL_MS >= 60_000L)
     val assets = UploadContracts.assetsPath("inv", "aisle")
     assertTrue(assets.contains("/api/v3/inventories/inv/aisles/aisle/assets"))
     val process = UploadContracts.processPath("inv", "aisle")
     assertTrue(process.contains("/process"))
+    val seal = UploadContracts.sealOrderedCapturePath("sess-1")
+    assertTrue(seal.contains("/ordered-capture-sessions/sess-1/seal"))
   }
 
   @Test
@@ -86,5 +90,27 @@ class UploadContractsTest {
       androidx.work.NetworkType.UNMETERED,
       DinamicUploadWorker.networkTypeFor(false),
     )
+  }
+}
+
+class SealOutcomeContractTest {
+  @Test
+  fun `2xx is seal success`() {
+    assertTrue(MultipartUploader.isIdempotentSealSuccess(200, null))
+    assertTrue(MultipartUploader.isIdempotentSealSuccess(204, "anything"))
+  }
+
+  @Test
+  fun `409 with already in message is NOT success without explicit code`() {
+    // Body-text heuristics removed; incompatible seal conflicts must fail.
+    assertEquals(false, MultipartUploader.isIdempotentSealSuccess(409, "ORDERED_CAPTURE_CONFLICT"))
+    assertEquals(false, MultipartUploader.isIdempotentSealSuccess(409, "CAPTURE_SESSION_SEAL_CONFLICT"))
+    assertEquals(false, MultipartUploader.isIdempotentSealSuccess(409, null))
+  }
+
+  @Test
+  fun `non-2xx non-idempotent codes are not success`() {
+    assertEquals(false, MultipartUploader.isIdempotentSealSuccess(500, "SERVER_ERROR"))
+    assertEquals(false, MultipartUploader.isIdempotentSealSuccess(422, "STRATEGY_DISABLED"))
   }
 }

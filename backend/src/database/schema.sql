@@ -543,6 +543,414 @@ BEGIN
 END;
 GO
 
+-- Phase 1 positioning foundation (mirror 0074 + 0075) — ordered capture + aisle locations.
+-- Single block only; do not duplicate Phase 1 positioning DDL elsewhere in this file.
+IF OBJECT_ID('dbo.ordered_capture_sessions', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ordered_capture_sessions (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        expected_asset_count INT NULL,
+        uploaded_asset_count INT NOT NULL
+            CONSTRAINT DF_ordered_capture_sessions_uploaded DEFAULT (0),
+        sequence_version INT NOT NULL
+            CONSTRAINT DF_ordered_capture_sessions_seq_ver DEFAULT (1),
+        created_by VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        sealed_at DATETIME2 NULL,
+        processing_started_at DATETIME2 NULL,
+        completed_at DATETIME2 NULL,
+        CONSTRAINT PK_ordered_capture_sessions PRIMARY KEY (id),
+        CONSTRAINT FK_ordered_capture_sessions_inventory
+            FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id),
+        CONSTRAINT FK_ordered_capture_sessions_aisle
+            FOREIGN KEY (aisle_id) REFERENCES dbo.aisles(id),
+        CONSTRAINT CK_ordered_capture_sessions_status CHECK (
+            status IN ('OPEN', 'UPLOADING', 'SEALED', 'PROCESSING', 'COMPLETED', 'FAILED')
+        ),
+        CONSTRAINT CK_ordered_capture_sessions_counts CHECK (
+            uploaded_asset_count >= 0
+            AND (expected_asset_count IS NULL OR expected_asset_count >= 1)
+            AND sequence_version >= 1
+        )
+    );
+END
+GO
+
+-- Drop obsolete open_aisle_key if a failed 0075 draft left it (SQL Server
+-- forbids computed columns in filtered-index predicates — error 10609).
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+      AND name = N'open_aisle_key'
+)
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = N'UQ_ordered_capture_sessions_one_open_per_aisle'
+          AND object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+    )
+        DROP INDEX UQ_ordered_capture_sessions_one_open_per_aisle
+            ON dbo.ordered_capture_sessions;
+
+    ALTER TABLE dbo.ordered_capture_sessions DROP COLUMN open_aisle_key;
+END
+GO
+
+-- 0075: tighten expected_asset_count CHECK (>= 1 when set).
+IF EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_ordered_capture_sessions_counts'
+      AND parent_object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+)
+    ALTER TABLE dbo.ordered_capture_sessions
+        DROP CONSTRAINT CK_ordered_capture_sessions_counts;
+GO
+
+IF OBJECT_ID(N'dbo.ordered_capture_sessions', N'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.check_constraints
+        WHERE name = N'CK_ordered_capture_sessions_counts'
+          AND parent_object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+   )
+    ALTER TABLE dbo.ordered_capture_sessions
+        ADD CONSTRAINT CK_ordered_capture_sessions_counts CHECK (
+            uploaded_asset_count >= 0
+            AND (expected_asset_count IS NULL OR expected_asset_count >= 1)
+            AND sequence_version >= 1
+        );
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_ordered_capture_sessions_aisle_status'
+      AND object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+)
+    CREATE NONCLUSTERED INDEX IX_ordered_capture_sessions_aisle_status
+        ON dbo.ordered_capture_sessions(aisle_id, status, updated_at DESC);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_ordered_capture_sessions_inventory'
+      AND object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+)
+    CREATE NONCLUSTERED INDEX IX_ordered_capture_sessions_inventory
+        ON dbo.ordered_capture_sessions(inventory_id, created_at DESC);
+GO
+
+-- One OPEN/UPLOADING session per aisle (exclusion pattern; no IN/OR in filter).
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_ordered_capture_sessions_one_open_per_aisle'
+      AND object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_ordered_capture_sessions_one_open_per_aisle
+        ON dbo.ordered_capture_sessions(aisle_id)
+        WHERE status <> 'SEALED'
+          AND status <> 'PROCESSING'
+          AND status <> 'COMPLETED'
+          AND status <> 'FAILED';
+GO
+
+-- 0076: SEALED→PROCESSING reservation link (nullable FK to inventory_jobs).
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+      AND name = N'processing_job_id'
+)
+    ALTER TABLE dbo.ordered_capture_sessions ADD processing_job_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ordered_capture_sessions_processing_job'
+)
+BEGIN
+    ALTER TABLE dbo.ordered_capture_sessions
+        ADD CONSTRAINT FK_ordered_capture_sessions_processing_job
+        FOREIGN KEY (processing_job_id)
+        REFERENCES dbo.inventory_jobs(id);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_ordered_capture_sessions_processing_job'
+      AND object_id = OBJECT_ID(N'dbo.ordered_capture_sessions')
+)
+    CREATE NONCLUSTERED INDEX IX_ordered_capture_sessions_processing_job
+        ON dbo.ordered_capture_sessions(processing_job_id)
+        WHERE processing_job_id IS NOT NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.source_assets') AND name = N'ordered_capture_session_id'
+)
+    ALTER TABLE dbo.source_assets ADD ordered_capture_session_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.source_assets') AND name = N'sequence_number'
+)
+    ALTER TABLE dbo.source_assets ADD sequence_number INT NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.source_assets') AND name = N'sequence_source'
+)
+    ALTER TABLE dbo.source_assets ADD sequence_source VARCHAR(32) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.source_assets') AND name = N'upload_batch_id'
+)
+    ALTER TABLE dbo.source_assets ADD upload_batch_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.source_assets') AND name = N'upload_client_file_id'
+)
+    ALTER TABLE dbo.source_assets ADD upload_client_file_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_source_assets_ordered_capture_session'
+)
+BEGIN
+    ALTER TABLE dbo.source_assets
+        ADD CONSTRAINT FK_source_assets_ordered_capture_session
+        FOREIGN KEY (ordered_capture_session_id)
+        REFERENCES dbo.ordered_capture_sessions(id);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_source_assets_sequence_source'
+)
+    ALTER TABLE dbo.source_assets
+        ADD CONSTRAINT CK_source_assets_sequence_source CHECK (
+            sequence_source IS NULL
+            OR sequence_source IN ('CLIENT_ASSIGNED', 'LEGACY_DERIVED')
+        );
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_source_assets_sequence_number_positive'
+)
+    ALTER TABLE dbo.source_assets
+        ADD CONSTRAINT CK_source_assets_sequence_number_positive CHECK (
+            sequence_number IS NULL OR sequence_number >= 1
+        );
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_source_assets_ordered_session_sequence'
+      AND object_id = OBJECT_ID(N'dbo.source_assets')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_source_assets_ordered_session_sequence
+        ON dbo.source_assets(ordered_capture_session_id, sequence_number)
+        WHERE ordered_capture_session_id IS NOT NULL AND sequence_number IS NOT NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_source_assets_ordered_session_client_file'
+      AND object_id = OBJECT_ID(N'dbo.source_assets')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_source_assets_ordered_session_client_file
+        ON dbo.source_assets(ordered_capture_session_id, upload_client_file_id)
+        WHERE ordered_capture_session_id IS NOT NULL AND upload_client_file_id IS NOT NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_source_assets_ordered_session_sequence'
+      AND object_id = OBJECT_ID(N'dbo.source_assets')
+)
+    CREATE NONCLUSTERED INDEX IX_source_assets_ordered_session_sequence
+        ON dbo.source_assets(ordered_capture_session_id, sequence_number)
+        WHERE ordered_capture_session_id IS NOT NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.inventory_jobs') AND name = N'ordered_capture_session_id'
+)
+    ALTER TABLE dbo.inventory_jobs ADD ordered_capture_session_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.inventory_jobs') AND name = N'sequence_version'
+)
+    ALTER TABLE dbo.inventory_jobs ADD sequence_version INT NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_inventory_jobs_ordered_capture_session'
+)
+BEGIN
+    ALTER TABLE dbo.inventory_jobs
+        ADD CONSTRAINT FK_inventory_jobs_ordered_capture_session
+        FOREIGN KEY (ordered_capture_session_id)
+        REFERENCES dbo.ordered_capture_sessions(id);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_inventory_jobs_ordered_session_version'
+      AND object_id = OBJECT_ID(N'dbo.inventory_jobs')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_inventory_jobs_ordered_session_version
+        ON dbo.inventory_jobs(ordered_capture_session_id, sequence_version)
+        WHERE ordered_capture_session_id IS NOT NULL AND sequence_version IS NOT NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.job_source_assets') AND name = N'sequence_number'
+)
+    ALTER TABLE dbo.job_source_assets ADD sequence_number INT NULL;
+GO
+
+IF OBJECT_ID('dbo.aisle_locations', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.aisle_locations (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        code NVARCHAR(128) NOT NULL,
+        normalized_code NVARCHAR(128) NOT NULL,
+        display_name NVARCHAR(256) NULL,
+        description NVARCHAR(1024) NULL,
+        status VARCHAR(32) NOT NULL,
+        created_by VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_aisle_locations PRIMARY KEY (id),
+        CONSTRAINT FK_aisle_locations_client FOREIGN KEY (client_id) REFERENCES dbo.clients(id),
+        CONSTRAINT FK_aisle_locations_aisle FOREIGN KEY (aisle_id) REFERENCES dbo.aisles(id),
+        CONSTRAINT CK_aisle_locations_status CHECK (status IN ('ACTIVE', 'INACTIVE'))
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_aisle_locations_client_aisle_normalized_code_active'
+      AND object_id = OBJECT_ID(N'dbo.aisle_locations')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_aisle_locations_client_aisle_normalized_code_active
+        ON dbo.aisle_locations(client_id, aisle_id, normalized_code)
+        WHERE status = 'ACTIVE';
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_aisle_locations_aisle_status'
+      AND object_id = OBJECT_ID(N'dbo.aisle_locations')
+)
+    CREATE NONCLUSTERED INDEX IX_aisle_locations_aisle_status
+        ON dbo.aisle_locations(aisle_id, status, normalized_code);
+GO
+
+IF OBJECT_ID('dbo.aisle_location_labels', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.aisle_location_labels (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NOT NULL,
+        location_id VARCHAR(36) NOT NULL,
+        public_identifier VARCHAR(64) NOT NULL,
+        payload_version INT NOT NULL
+            CONSTRAINT DF_aisle_location_labels_payload_ver DEFAULT (1),
+        marker_version INT NOT NULL
+            CONSTRAINT DF_aisle_location_labels_marker_ver DEFAULT (1),
+        template_version INT NOT NULL
+            CONSTRAINT DF_aisle_location_labels_template_ver DEFAULT (1),
+        status VARCHAR(32) NOT NULL,
+        payload_json NVARCHAR(MAX) NOT NULL,
+        payload_hash VARCHAR(128) NULL,
+        signature_status VARCHAR(32) NOT NULL
+            CONSTRAINT DF_aisle_location_labels_sig DEFAULT ('NOT_IMPLEMENTED'),
+        generated_by VARCHAR(128) NULL,
+        generated_at DATETIME2 NOT NULL,
+        invalidated_at DATETIME2 NULL,
+        invalidation_reason NVARCHAR(512) NULL,
+        replaced_by_label_id VARCHAR(36) NULL,
+        idempotency_key VARCHAR(128) NULL,
+        idempotency_request_hash VARCHAR(64) NULL,
+        CONSTRAINT PK_aisle_location_labels PRIMARY KEY (id),
+        CONSTRAINT FK_aisle_location_labels_client FOREIGN KEY (client_id) REFERENCES dbo.clients(id),
+        CONSTRAINT FK_aisle_location_labels_location FOREIGN KEY (location_id) REFERENCES dbo.aisle_locations(id),
+        CONSTRAINT CK_aisle_location_labels_status CHECK (
+            status IN ('ACTIVE', 'REPLACED', 'INVALIDATED', 'ARCHIVED')
+        ),
+        CONSTRAINT CK_aisle_location_labels_signature_status CHECK (
+            signature_status IN ('NOT_IMPLEMENTED', 'UNSIGNED', 'SIGNED')
+        )
+    );
+END
+GO
+
+-- 0075 additive path when aisle_location_labels already exists without idempotency cols.
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_location_labels')
+      AND name = N'idempotency_key'
+)
+    ALTER TABLE dbo.aisle_location_labels ADD idempotency_key VARCHAR(128) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_location_labels')
+      AND name = N'idempotency_request_hash'
+)
+    ALTER TABLE dbo.aisle_location_labels ADD idempotency_request_hash VARCHAR(64) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_aisle_location_labels_public_identifier'
+      AND object_id = OBJECT_ID(N'dbo.aisle_location_labels')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_aisle_location_labels_public_identifier
+        ON dbo.aisle_location_labels(public_identifier);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_aisle_location_labels_location_status'
+      AND object_id = OBJECT_ID(N'dbo.aisle_location_labels')
+)
+    CREATE NONCLUSTERED INDEX IX_aisle_location_labels_location_status
+        ON dbo.aisle_location_labels(location_id, status, generated_at DESC);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_aisle_location_labels_client_idempotency'
+      AND object_id = OBJECT_ID(N'dbo.aisle_location_labels')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_aisle_location_labels_client_idempotency
+        ON dbo.aisle_location_labels(client_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL;
+GO
+
 -- v3.0 — Positions (Épica 6, Documento técnico §7.4)
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'positions')
 BEGIN

@@ -24,6 +24,15 @@ class SourceAssetResponse(BaseModel):
         default=None,
         description="Byte size when known from storage metadata (may be null for legacy rows).",
     )
+    ordered_capture_session_id: str | None = None
+    sequence_number: int | None = Field(
+        default=None,
+        description="Logical capture order (1-based). Source of truth when CLIENT_ASSIGNED.",
+    )
+    sequence_source: str | None = Field(
+        default=None,
+        description="CLIENT_ASSIGNED | LEGACY_DERIVED | null",
+    )
 
 
 class AisleAssetUploadError(BaseModel):
@@ -39,6 +48,8 @@ class AisleAssetUploadItemResponse(BaseModel):
     asset_id: str
     filename: str
     status: str = "uploaded"
+    sequence_number: int | None = None
+    ordered_capture_session_id: str | None = None
 
 
 class UploadAisleAssetsResponse(BaseModel):

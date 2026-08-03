@@ -77,6 +77,8 @@ const VALID_FILTERS: readonly ResultsFilterKind[] = [
   'qty_zero',
   'invalid_traceability',
   'missing_evidence',
+  'with_position',
+  'without_position',
 ] as const;
 
 const VALID_TABLE_SORT: readonly AisleResultsTableSortMode[] = ['photo', 'priority'] as const;

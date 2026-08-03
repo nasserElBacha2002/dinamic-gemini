@@ -5,6 +5,10 @@ Priority (highest first):
 
 Null overrides mean “inherit from the next level” and must not be treated as a mode.
 
+Position-label detection (Phase 3) runs inside CODE_SCAN execution. Prefer configuring
+CODE_SCAN explicitly on client/inventory/aisle (or request override) when positioning
+is required — do not change SYSTEM_DEFAULT globally for that purpose.
+
 New job starts reject effective LEGACY_LLM after resolution (see
 ``reject_legacy_effective_mode_for_new_job``). Historical jobs that stored LEGACY
 remain readable; historical retries may re-execute that snapshot.

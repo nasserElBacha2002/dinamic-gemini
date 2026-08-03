@@ -7,6 +7,7 @@ import type {
   OfflineOperationStatus,
   OfflineOperationType,
 } from '../../features/offlineOperations/offlineOperationTypes';
+import { runExclusiveDbWriteWithBusyRetry } from '../sqliteWriteGate';
 
 export type EnqueueOfflineOperationInput = {
   readonly operationId: string;
@@ -76,61 +77,9 @@ export class OfflineOperationRepository {
 
     let result: EnqueueResult = { kind: 'created', operationId: input.operationId };
 
-    await this.db.withExclusiveTransactionAsync(async (txn) => {
-      const existing = await txn.getFirstAsync<{
-        operation_id: string;
-        payload_hash: string | null;
-      }>(
-        `SELECT operation_id, payload_hash FROM offline_operations
-         WHERE idempotency_key = ? LIMIT 1;`,
-        input.idempotencyKey,
-      );
-      if (existing) {
-        if (existing.payload_hash && existing.payload_hash !== payloadHash) {
-          result = {
-            kind: 'payload_conflict',
-            operationId: existing.operation_id,
-            code: 'IDEMPOTENCY_PAYLOAD_CONFLICT',
-          };
-          return;
-        }
-        result = { kind: 'existing', operationId: existing.operation_id };
-        return;
-      }
-
-      const insert = await txn.runAsync(
-        `INSERT OR IGNORE INTO offline_operations (
-           operation_id, operation_type, entity_type, entity_id,
-           inventory_id, aisle_id, asset_id, session_id,
-           payload_json, payload_version, payload_hash, idempotency_key, status, priority,
-           attempt_count, max_attempts, next_retry_at, last_attempt_at,
-           last_error_code, last_error_message, requires_network, requires_auth,
-           owner_token, lease_expires_at, heartbeat_at,
-           created_at, updated_at, completed_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL, ?, ?, NULL);`,
-        input.operationId,
-        input.operationType,
-        input.entityType,
-        input.entityId,
-        input.inventoryId ?? null,
-        input.aisleId ?? null,
-        input.assetId ?? null,
-        input.sessionId ?? null,
-        input.payloadJson,
-        payloadVersion,
-        payloadHash,
-        input.idempotencyKey,
-        input.status ?? 'READY',
-        input.priority ?? 100,
-        input.maxAttempts ?? 12,
-        input.requiresNetwork === false ? 0 : 1,
-        input.requiresAuth === false ? 0 : 1,
-        input.nowIso,
-        input.nowIso,
-      );
-
-      if ((insert?.changes ?? 0) === 0) {
-        const raced = await txn.getFirstAsync<{
+    await runExclusiveDbWriteWithBusyRetry(async () => {
+      await this.db.withExclusiveTransactionAsync(async (txn) => {
+        const existing = await txn.getFirstAsync<{
           operation_id: string;
           payload_hash: string | null;
         }>(
@@ -138,43 +87,97 @@ export class OfflineOperationRepository {
            WHERE idempotency_key = ? LIMIT 1;`,
           input.idempotencyKey,
         );
-        if (raced?.payload_hash && raced.payload_hash !== payloadHash) {
+        if (existing) {
+          if (existing.payload_hash && existing.payload_hash !== payloadHash) {
+            result = {
+              kind: 'payload_conflict',
+              operationId: existing.operation_id,
+              code: 'IDEMPOTENCY_PAYLOAD_CONFLICT',
+            };
+            return;
+          }
+          result = { kind: 'existing', operationId: existing.operation_id };
+          return;
+        }
+
+        const insert = await txn.runAsync(
+          `INSERT OR IGNORE INTO offline_operations (
+             operation_id, operation_type, entity_type, entity_id,
+             inventory_id, aisle_id, asset_id, session_id,
+             payload_json, payload_version, payload_hash, idempotency_key, status, priority,
+             attempt_count, max_attempts, next_retry_at, last_attempt_at,
+             last_error_code, last_error_message, requires_network, requires_auth,
+             owner_token, lease_expires_at, heartbeat_at,
+             created_at, updated_at, completed_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL, ?, ?, NULL);`,
+          input.operationId,
+          input.operationType,
+          input.entityType,
+          input.entityId,
+          input.inventoryId ?? null,
+          input.aisleId ?? null,
+          input.assetId ?? null,
+          input.sessionId ?? null,
+          input.payloadJson,
+          payloadVersion,
+          payloadHash,
+          input.idempotencyKey,
+          input.status ?? 'READY',
+          input.priority ?? 100,
+          input.maxAttempts ?? 12,
+          input.requiresNetwork === false ? 0 : 1,
+          input.requiresAuth === false ? 0 : 1,
+          input.nowIso,
+          input.nowIso,
+        );
+
+        if ((insert?.changes ?? 0) === 0) {
+          const raced = await txn.getFirstAsync<{
+            operation_id: string;
+            payload_hash: string | null;
+          }>(
+            `SELECT operation_id, payload_hash FROM offline_operations
+             WHERE idempotency_key = ? LIMIT 1;`,
+            input.idempotencyKey,
+          );
+          if (raced?.payload_hash && raced.payload_hash !== payloadHash) {
+            result = {
+              kind: 'payload_conflict',
+              operationId: raced.operation_id,
+              code: 'IDEMPOTENCY_PAYLOAD_CONFLICT',
+            };
+            return;
+          }
           result = {
-            kind: 'payload_conflict',
-            operationId: raced.operation_id,
-            code: 'IDEMPOTENCY_PAYLOAD_CONFLICT',
+            kind: 'existing',
+            operationId: raced?.operation_id ?? input.operationId,
           };
           return;
         }
-        result = {
-          kind: 'existing',
-          operationId: raced?.operation_id ?? input.operationId,
-        };
-        return;
-      }
 
-      for (const dep of deps) {
+        for (const dep of deps) {
+          await txn.runAsync(
+            `INSERT OR IGNORE INTO offline_operation_dependencies
+               (operation_id, depends_on_operation_id, created_at)
+             VALUES (?, ?, ?);`,
+            input.operationId,
+            dep,
+            input.nowIso,
+          );
+        }
+
+        const eventId = `${input.operationId}:offline_operation_created:${input.nowIso}`;
         await txn.runAsync(
-          `INSERT OR IGNORE INTO offline_operation_dependencies
-             (operation_id, depends_on_operation_id, created_at)
-           VALUES (?, ?, ?);`,
+          `INSERT INTO offline_operation_events (event_id, operation_id, event_name, detail_json, created_at)
+           VALUES (?, ?, ?, ?, ?);`,
+          eventId,
           input.operationId,
-          dep,
+          'offline_operation_created',
+          null,
           input.nowIso,
         );
-      }
-
-      const eventId = `${input.operationId}:offline_operation_created:${input.nowIso}`;
-      await txn.runAsync(
-        `INSERT INTO offline_operation_events (event_id, operation_id, event_name, detail_json, created_at)
-         VALUES (?, ?, ?, ?, ?);`,
-        eventId,
-        input.operationId,
-        'offline_operation_created',
-        null,
-        input.nowIso,
-      );
-      result = { kind: 'created', operationId: input.operationId };
+        result = { kind: 'created', operationId: input.operationId };
+      });
     });
 
     return result;

@@ -74,6 +74,8 @@ class ProcessAislePayload(TypedDict, total=False):
 
     aisle_id: str
     idempotency_key: str
+    ordered_capture_session_id: str
+    sequence_version: int
 
 
 # --- Position list query (PositionRepository) ---

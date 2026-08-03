@@ -34,6 +34,14 @@ export interface CaptureSessionRow {
   readonly last_processing_error: string | null;
   /** Preparation profile hint: CODE_SCAN | INTERNAL_OCR | LEGACY_LLM | UNKNOWN */
   readonly preparation_processing_mode: string;
+  /** Backend ordered-capture session id (Phase 1 positioning). */
+  readonly backend_ordered_capture_session_id: string | null;
+  /** Durable process attempt identity (survives app restart). */
+  readonly process_attempt_id: string | null;
+  readonly process_idempotency_key: string | null;
+  readonly process_requested_at: string | null;
+  readonly process_confirmed_at: string | null;
+  readonly last_recovery_check_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -63,6 +71,8 @@ export interface CapturePhotoRow {
   readonly stable_at: string | null;
   readonly excluded_at: string | null;
   readonly client_file_id: string | null;
+  /** Monotonic gallery order within the capture session; set once before upload. */
+  readonly sequence_number: number | null;
   readonly backend_asset_id: string | null;
   readonly upload_status: PhotoUploadStatus;
   readonly upload_progress: number;

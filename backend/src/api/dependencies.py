@@ -16,8 +16,17 @@ environment where the default is wrong for your deployment.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import Depends
+
+if TYPE_CHECKING:
+    from src.application.use_cases.recovery.recover_aisle_processing import (
+        RecoverAisleProcessingUseCase,
+    )
+    from src.application.use_cases.recovery.recover_stale_job import (
+        RecoverStaleJobUseCase,
+    )
 
 from src.application.dto.access_principal import AccessPrincipal
 from src.application.ports.capture_repositories import (
@@ -162,6 +171,8 @@ from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
+    get_aisle_location_label_repo,
+    get_aisle_location_repo,
     get_aisle_repo,
     get_analytics_repo,
     get_capture_session_confirm_repo,
@@ -178,6 +189,8 @@ from src.runtime.v3_deps import (
     get_job_repo,
     get_metrics_calculator,
     get_mobile_preliminary_detection_repo,
+    get_ordered_capture_processing_reservation,
+    get_ordered_capture_session_repo,
     get_position_repo,
     get_preliminary_detection_reconciliation_repo,
     get_product_record_repo,
@@ -301,6 +314,13 @@ def require_inventory_client_scope(
         reraise_if_mapped(e)
         raise
     return principal
+
+
+def get_access_principal(
+    user: AuthUser = Depends(get_current_admin),
+) -> AccessPrincipal:
+    """FastAPI dependency: AuthUser → AccessPrincipal (no inventory scope check)."""
+    return access_principal_from_auth_user(user)
 
 
 def get_inventory_access_policy(
@@ -486,6 +506,9 @@ def get_export_inventory_results_use_case(
         position_repo=position_repo,
         product_record_repo=product_record_repo,
         result_context_resolver=result_context_resolver,
+        reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
+        override_repo=get_app_container().get_manual_position_override_repo(),
+        label_repo=get_app_container().get_client_position_label_repo(),
     )
 
 
@@ -502,6 +525,9 @@ def get_export_aisle_results_csv_use_case(
         position_repo=position_repo,
         product_record_repo=product_record_repo,
         result_context_resolver=result_context_resolver,
+        reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
+        override_repo=get_app_container().get_manual_position_override_repo(),
+        label_repo=get_app_container().get_client_position_label_repo(),
     )
 
 
@@ -723,6 +749,8 @@ def get_start_aisle_processing_use_case(
     supplier_prompt_config_repo: SupplierPromptConfigRepository = Depends(
         get_supplier_prompt_config_repo
     ),
+    ordered_session_repo=Depends(get_ordered_capture_session_repo),
+    ordered_processing_reservation=Depends(get_ordered_capture_processing_reservation),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
         inventory_repo=inventory_repo,
@@ -736,6 +764,8 @@ def get_start_aisle_processing_use_case(
         extraction_profile_repo=extraction_profile_repo,
         client_supplier_repo=client_supplier_repo,
         supplier_prompt_config_repo=supplier_prompt_config_repo,
+        ordered_session_repo=ordered_session_repo,
+        ordered_processing_reservation=ordered_processing_reservation,
     )
 
 
@@ -763,6 +793,46 @@ def get_cancel_aisle_job_use_case(
     )
 
 
+def get_recover_stale_job_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    launch_service: AisleJobLaunchService = Depends(get_aisle_job_launch_service),
+    clock: Clock = Depends(get_clock),
+) -> RecoverStaleJobUseCase:
+    from src.application.use_cases.recovery.recover_stale_job import RecoverStaleJobUseCase
+
+    return RecoverStaleJobUseCase(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        launch_service=launch_service,
+        clock=clock,
+    )
+
+
+def get_recover_aisle_processing_use_case(
+    status_use_case: GetAisleProcessingStatusUseCase = Depends(
+        get_get_aisle_processing_status_use_case
+    ),
+    recover_stale: RecoverStaleJobUseCase = Depends(get_recover_stale_job_use_case),
+    cancel_job: CancelAisleJobUseCase = Depends(get_cancel_aisle_job_use_case),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    clock: Clock = Depends(get_clock),
+) -> RecoverAisleProcessingUseCase:
+    from src.application.use_cases.recovery.recover_aisle_processing import (
+        RecoverAisleProcessingUseCase,
+    )
+
+    return RecoverAisleProcessingUseCase(
+        status_use_case=status_use_case,
+        recover_stale=recover_stale,
+        cancel_job=cancel_job,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        clock=clock,
+    )
+
+
 def get_retry_aisle_job_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
@@ -784,6 +854,7 @@ def get_upload_aisle_assets_use_case(
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
     access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    ordered_session_repo=Depends(get_ordered_capture_session_repo),
 ) -> UploadAisleAssetsUseCase:
     from src.application.services.upload_request_limits import UploadRequestLimitPolicy
     from src.config import load_settings
@@ -796,6 +867,7 @@ def get_upload_aisle_assets_use_case(
         status_reconciler=status_reconciler,
         access_policy=access_policy,
         upload_policy=UploadRequestLimitPolicy.from_settings(load_settings()),
+        ordered_session_repo=ordered_session_repo,
     )
 
 
@@ -1335,13 +1407,18 @@ def get_list_aisle_positions_use_case(
 ) -> ListAislePositionsUseCase:
     from src.config import load_settings
 
+    settings = load_settings()
     return ListAislePositionsUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         position_repo=position_repo,
         result_context_resolver=result_context_resolver,
         product_record_repo=product_record_repo,
-        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+        positions_aisle_raw_cap=settings.v3_positions_aisle_raw_cap,
+        reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
+        position_enrichment_enabled=settings.position_results_enrichment_enabled,
+        override_repo=get_app_container().get_manual_position_override_repo(),
+        label_repo=get_app_container().get_client_position_label_repo(),
     )
 
 
@@ -1647,6 +1724,10 @@ def _build_processing_idempotency_service(c):
     )
 
     return ProcessingActionIdempotencyService(c.get_processing_action_idempotency_repo())
+
+
+def get_processing_action_idempotency_service():
+    return _build_processing_idempotency_service(get_app_container())
 
 
 def _build_processing_event_publisher(c):
@@ -2292,5 +2373,597 @@ def get_materialize_capture_session_use_case(
         asset_repo=asset_repo,
         artifact_storage=artifact_storage,
         status_reconciler=status_reconciler,
+        clock=clock,
+    )
+
+
+def get_create_ordered_capture_session_use_case(
+    session_repo=Depends(get_ordered_capture_session_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.ordered_capture.manage_ordered_capture_session import (
+        CreateOrderedCaptureSessionUseCase,
+    )
+
+    return CreateOrderedCaptureSessionUseCase(
+        session_repo=session_repo,
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_get_ordered_capture_session_use_case(
+    session_repo=Depends(get_ordered_capture_session_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.ordered_capture.manage_ordered_capture_session import (
+        GetOrderedCaptureSessionUseCase,
+    )
+
+    return GetOrderedCaptureSessionUseCase(
+        session_repo=session_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_seal_ordered_capture_session_use_case(
+    session_repo=Depends(get_ordered_capture_session_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.ordered_capture.manage_ordered_capture_session import (
+        SealOrderedCaptureSessionUseCase,
+    )
+
+    return SealOrderedCaptureSessionUseCase(
+        session_repo=session_repo,
+        asset_repo=asset_repo,
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_create_aisle_location_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        CreateAisleLocationUseCase,
+    )
+
+    return CreateAisleLocationUseCase(
+        location_repo=location_repo,
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_list_aisle_locations_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        ListAisleLocationsUseCase,
+    )
+
+    return ListAisleLocationsUseCase(
+        location_repo=location_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_get_aisle_location_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        GetAisleLocationUseCase,
+    )
+
+    return GetAisleLocationUseCase(
+        location_repo=location_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_update_aisle_location_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        UpdateAisleLocationUseCase,
+    )
+
+    return UpdateAisleLocationUseCase(
+        location_repo=location_repo,
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_issue_aisle_location_label_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.services.positioning_label_signing import (
+        PositioningLabelSigningConfig,
+        PositioningLabelSigningService,
+        parse_previous_secrets,
+    )
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        IssueAisleLocationLabelUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    signing = PositioningLabelSigningService(
+        PositioningLabelSigningConfig(
+            secret=settings.positioning_label_hmac_secret or None,
+            key_version=int(settings.positioning_label_hmac_key_version),
+            previous_secrets=parse_previous_secrets(
+                settings.positioning_label_hmac_previous_secrets
+            ),
+            required=bool(settings.positioning_label_signing_required),
+        )
+    )
+    return IssueAisleLocationLabelUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        access_policy=access_policy,
+        clock=clock,
+        signing=signing,
+    )
+
+
+def get_aisle_location_label_artifact_repo():
+    return get_app_container().get_aisle_location_label_artifact_repo()
+
+
+def get_image_position_label_detection_repo():
+    return get_app_container().get_image_position_label_detection_repo()
+
+
+def get_position_reconciliation_repo():
+    return get_app_container().get_position_reconciliation_repo()
+
+
+def get_client_position_label_repo():
+    return get_app_container().get_client_position_label_repo()
+
+
+def get_manual_position_override_repo():
+    return get_app_container().get_manual_position_override_repo()
+
+
+def get_position_override_scope_resolver(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.services.position_overrides.position_override_scope import (
+        PositionOverrideScopeResolver,
+    )
+
+    return PositionOverrideScopeResolver(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=position_repo,
+        product_repo=product_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_effective_position_reader(
+    label_repo=Depends(get_client_position_label_repo),
+    override_repo=Depends(get_manual_position_override_repo),
+    reconciliation_repo=Depends(get_position_reconciliation_repo),
+):
+    from src.application.services.position_overrides.effective_position_reader import (
+        EffectivePositionReader,
+    )
+    from src.application.services.position_reconciliation.published_assignment_reader import (
+        PublishedPositionAssignmentReader,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    automatic_reader = PublishedPositionAssignmentReader(
+        reconciliation_repo=reconciliation_repo,
+        enrichment_enabled=settings.position_results_enrichment_enabled,
+    )
+    effective_reader = EffectivePositionReader(
+        automatic_reader=automatic_reader,
+        override_repo=override_repo,
+        label_repo=label_repo,
+    )
+    return effective_reader
+
+
+def get_manage_position_override_use_case(
+    label_repo=Depends(get_client_position_label_repo),
+    override_repo=Depends(get_manual_position_override_repo),
+    effective_reader=Depends(get_effective_position_reader),
+    scope_resolver=Depends(get_position_override_scope_resolver),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.position_overrides.manage import (
+        ManagePositionOverrideUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return ManagePositionOverrideUseCase(
+        label_repo=label_repo,
+        override_repo=override_repo,
+        effective_reader=effective_reader,
+        scope_resolver=scope_resolver,
+        writes_enabled=settings.position_manual_overrides_enabled,
+        clock=clock,
+    )
+
+
+def get_list_position_override_history_use_case(
+    override_repo=Depends(get_manual_position_override_repo),
+    reconciliation_repo=Depends(get_position_reconciliation_repo),
+    scope_resolver=Depends(get_position_override_scope_resolver),
+    effective_reader=Depends(get_effective_position_reader),
+):
+    from src.application.use_cases.position_overrides.manage import (
+        ListPositionOverrideHistoryUseCase,
+    )
+
+    return ListPositionOverrideHistoryUseCase(
+        override_repo=override_repo,
+        reconciliation_repo=reconciliation_repo,
+        scope_resolver=scope_resolver,
+        effective_reader=effective_reader,
+    )
+
+
+def get_reconcile_job_positions_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    job_source_asset_repo=Depends(get_job_source_asset_repo),
+    coverage_repo=Depends(get_job_image_coverage_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    detection_repo=Depends(get_image_position_label_detection_repo),
+    reconciliation_repo=Depends(get_position_reconciliation_repo),
+    ordered_session_repo=Depends(get_ordered_capture_session_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.services.position_reconciliation.readiness import (
+        PositionReconciliationReadinessPolicy,
+    )
+    from src.application.use_cases.position_reconciliation.reconcile_job_positions import (
+        ReconcileJobPositionsUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return ReconcileJobPositionsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        source_asset_repo=source_asset_repo,
+        job_source_asset_repo=job_source_asset_repo,
+        coverage_repo=coverage_repo,
+        product_record_repo=product_record_repo,
+        detection_repo=detection_repo,
+        reconciliation_repo=reconciliation_repo,
+        clock=clock,
+        position_repo=position_repo,
+        readiness_policy=PositionReconciliationReadinessPolicy(ordered_session_repo),
+        access_policy=access_policy,
+        enabled=settings.position_reconciliation_enabled,
+        persistence_enabled=settings.position_reconciliation_persistence_enabled,
+    )
+
+
+def get_aisle_operational_positioning_view_use_case(
+    status_use_case: GetAisleProcessingStatusUseCase = Depends(
+        get_get_aisle_processing_status_use_case
+    ),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    reconciliation_repo=Depends(get_position_reconciliation_repo),
+    detection_repo=Depends(get_image_position_label_detection_repo),
+    override_repo=Depends(get_manual_position_override_repo),
+    label_repo=Depends(get_client_position_label_repo),
+    job_source_asset_repo=Depends(get_job_source_asset_repo),
+    coverage_repo=Depends(get_job_image_coverage_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.positioning_operational.get_aisle_operational_view import (
+        GetAisleOperationalPositioningViewUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return GetAisleOperationalPositioningViewUseCase(
+        status_use_case=status_use_case,
+        inventory_repo=inventory_repo,
+        access_policy=access_policy,
+        reconciliation_repo=reconciliation_repo,
+        detection_repo=detection_repo,
+        override_repo=override_repo,
+        label_repo=label_repo,
+        job_source_asset_repo=job_source_asset_repo,
+        coverage_repo=coverage_repo,
+        product_record_repo=product_record_repo,
+        clock=clock,
+        operational_ux_enabled=settings.position_operational_ux_enabled,
+        reprocessing_enabled=settings.position_reprocessing_enabled,
+        recovery_enabled=settings.position_processing_recovery_enabled,
+        overrides_enabled=settings.position_manual_overrides_enabled,
+        enrichment_enabled=settings.position_results_enrichment_enabled,
+    )
+
+
+def get_aisle_positioning_sequence_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    reconciliation_repo=Depends(get_position_reconciliation_repo),
+    detection_repo=Depends(get_image_position_label_detection_repo),
+    job_source_asset_repo=Depends(get_job_source_asset_repo),
+    override_repo=Depends(get_manual_position_override_repo),
+    label_repo=Depends(get_client_position_label_repo),
+    coverage_repo=Depends(get_job_image_coverage_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+):
+    from src.application.use_cases.positioning_operational.get_aisle_positioning_sequence import (
+        GetAislePositioningSequenceUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return GetAislePositioningSequenceUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        access_policy=access_policy,
+        reconciliation_repo=reconciliation_repo,
+        detection_repo=detection_repo,
+        job_source_asset_repo=job_source_asset_repo,
+        override_repo=override_repo,
+        label_repo=label_repo,
+        coverage_repo=coverage_repo,
+        product_record_repo=product_record_repo,
+        enrichment_enabled=settings.position_results_enrichment_enabled,
+    )
+
+
+def get_reprocess_aisle_positioning_use_case(
+    status_use_case: GetAisleProcessingStatusUseCase = Depends(
+        get_get_aisle_processing_status_use_case
+    ),
+    start_processing=Depends(get_start_aisle_processing_use_case),
+    reconcile=Depends(get_reconcile_job_positions_use_case),
+    clock: Clock = Depends(get_clock),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    idempotency=Depends(get_processing_action_idempotency_service),
+    override_repo=Depends(get_manual_position_override_repo),
+    reconciliation_repo=Depends(get_position_reconciliation_repo),
+):
+    from src.application.use_cases.positioning_operational.reprocess_aisle_positioning import (
+        ReprocessAislePositioningUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return ReprocessAislePositioningUseCase(
+        status_use_case=status_use_case,
+        start_processing=start_processing,
+        reconcile=reconcile,
+        clock=clock,
+        access_policy=access_policy,
+        idempotency=idempotency,
+        override_repo=override_repo,
+        reconciliation_repo=reconciliation_repo,
+        reprocessing_enabled=settings.position_reprocessing_enabled,
+    )
+
+
+def get_render_aisle_location_label_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    artifact_repo=Depends(get_aisle_location_label_artifact_repo),
+    inventory_repo=Depends(get_inventory_repo),
+    aisle_repo=Depends(get_aisle_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.services.positioning_label_renderer import PositioningLabelRenderer
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        RenderAisleLocationLabelUseCase,
+    )
+
+    container = get_app_container()
+    return RenderAisleLocationLabelUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        artifact_repo=artifact_repo,
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        artifact_store=container.get_artifact_store(),
+        renderer=PositioningLabelRenderer(),
+        access_policy=access_policy,
+        clock=clock,
+    )
+
+
+def get_download_aisle_location_label_use_case(
+    render_uc=Depends(get_render_aisle_location_label_use_case),
+    label_repo=Depends(get_aisle_location_label_repo),
+):
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        DownloadAisleLocationLabelUseCase,
+    )
+
+    return DownloadAisleLocationLabelUseCase(
+        render_use_case=render_uc,
+        label_repo=label_repo,
+        artifact_store=get_app_container().get_artifact_store(),
+    )
+
+
+def get_get_aisle_location_label_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        GetAisleLocationLabelUseCase,
+    )
+
+    return GetAisleLocationLabelUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_replace_aisle_location_label_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.ports.aisle_location_repository import (
+        AisleLocationLabelReplaceUnitOfWork,
+    )
+    from src.application.services.positioning_label_signing import (
+        PositioningLabelSigningConfig,
+        PositioningLabelSigningService,
+        parse_previous_secrets,
+    )
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        ReplaceAisleLocationLabelUseCase,
+    )
+    from src.config import load_settings
+    from src.infrastructure.persistence.sql_aisle_location_label_replace_uow import (
+        MemoryAisleLocationLabelReplaceUnitOfWork,
+        SqlAisleLocationLabelReplaceUnitOfWork,
+    )
+    from src.infrastructure.repositories.memory_aisle_location_repository import (
+        MemoryAisleLocationLabelRepository,
+    )
+
+    settings = load_settings()
+    signing = PositioningLabelSigningService(
+        PositioningLabelSigningConfig(
+            secret=settings.positioning_label_hmac_secret or None,
+            key_version=int(settings.positioning_label_hmac_key_version),
+            previous_secrets=parse_previous_secrets(
+                settings.positioning_label_hmac_previous_secrets
+            ),
+            required=bool(settings.positioning_label_signing_required),
+        )
+    )
+    container = get_app_container()
+    replace_uow: AisleLocationLabelReplaceUnitOfWork
+    if container.is_sql_repository_backend():
+        replace_uow = SqlAisleLocationLabelReplaceUnitOfWork(container._get_v3_sql_client())
+    else:
+        if not isinstance(label_repo, MemoryAisleLocationLabelRepository):
+            raise RuntimeError(
+                "Memory replace UoW requires MemoryAisleLocationLabelRepository"
+            )
+        replace_uow = MemoryAisleLocationLabelReplaceUnitOfWork(label_repo)
+    return ReplaceAisleLocationLabelUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        replace_uow=replace_uow,
+        access_policy=access_policy,
+        clock=clock,
+        signing=signing,
+    )
+
+
+def get_batch_render_aisle_location_labels_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    issue_uc=Depends(get_issue_aisle_location_label_use_case),
+    inventory_repo=Depends(get_inventory_repo),
+    aisle_repo=Depends(get_aisle_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.services.positioning_label_renderer import PositioningLabelRenderer
+    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
+        BatchRenderAisleLocationLabelsUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    max_batch = min(
+        int(settings.position_label_max_batch_size),
+        int(settings.position_label_batch_sync_limit),
+    )
+    return BatchRenderAisleLocationLabelsUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        issue_use_case=issue_uc,
+        access_policy=access_policy,
+        renderer=PositioningLabelRenderer(),
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        artifact_store=get_app_container().get_artifact_store(),
+        clock=clock,
+        max_batch_size=max_batch,
+        max_pdf_bytes=int(settings.position_label_max_pdf_bytes),
+    )
+
+
+def get_list_aisle_location_labels_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        ListAisleLocationLabelsUseCase,
+    )
+
+    return ListAisleLocationLabelsUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_invalidate_aisle_location_label_use_case(
+    location_repo=Depends(get_aisle_location_repo),
+    label_repo=Depends(get_aisle_location_label_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
+        InvalidateAisleLocationLabelUseCase,
+    )
+
+    return InvalidateAisleLocationLabelUseCase(
+        location_repo=location_repo,
+        label_repo=label_repo,
+        access_policy=access_policy,
         clock=clock,
     )

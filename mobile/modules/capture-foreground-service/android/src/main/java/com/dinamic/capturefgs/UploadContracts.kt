@@ -9,7 +9,8 @@ object UploadContracts {
   const val WORK_TAG = "dinamic-upload"
   const val NOTIFICATION_CHANNEL_ID = "dinamic_upload_wm"
   const val NOTIFICATION_ID = 42002
-  const val MIN_SCHEMA_VERSION = 7
+  /** Requires v19 ordered-capture columns for native multipart parity with JS. */
+  const val MIN_SCHEMA_VERSION = 19
 
   const val OWNER_NATIVE = "native"
   const val OWNER_JS = "js"
@@ -18,6 +19,8 @@ object UploadContracts {
 
   const val MULTIPART_FIELD_BATCH = "upload_batch_id"
   const val MULTIPART_FIELD_CLIENT_IDS = "client_file_ids"
+  const val MULTIPART_FIELD_ORDERED_SESSION = "ordered_capture_session_id"
+  const val MULTIPART_FIELD_SEQUENCE_NUMBERS = "sequence_numbers"
   const val MULTIPART_FIELD_FILES = "files"
 
   const val CODE_AUTH_REQUIRED = "AUTH_REQUIRED"
@@ -37,6 +40,9 @@ object UploadContracts {
 
   fun processPath(inventoryId: String, aisleId: String): String =
     "/api/v3/inventories/$inventoryId/aisles/$aisleId/process"
+
+  fun sealOrderedCapturePath(orderedCaptureSessionId: String): String =
+    "/api/v3/inventories/ordered-capture-sessions/$orderedCaptureSessionId/seal"
 
   fun backgroundProcessIdempotencyKey(sessionId: String): String =
     "mobile-process-bg:$sessionId"

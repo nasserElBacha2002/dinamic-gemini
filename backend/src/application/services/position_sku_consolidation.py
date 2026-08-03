@@ -48,15 +48,20 @@ def consolidate_positions_by_sku(
     positions: Sequence[Position],
     *,
     enabled: bool = True,
+    partition_key_by_position_id: dict[str, str] | None = None,
 ) -> list[Position]:
-    """Merge raw positions with the same aisle + SKU into one representative row (in-place summary update).
+    """Merge raw positions with the same aisle + SKU (+ optional partition) into one row.
 
     When ``enabled`` is False, returns raw positions in list order (no merge) — used for photo-focused
     aisle review so rows stay one-to-one with detections.
+
+    ``partition_key_by_position_id`` (Phase 5): when provided, positions with the same SKU but
+    different aisle-position assignments stay separate (key includes the partition string).
     """
     if not enabled:
         return list(positions)
-    by_key: dict[tuple[str, str], list[Position]] = {}
+    partitions = partition_key_by_position_id or {}
+    by_key: dict[tuple[str, str, str], list[Position]] = {}
     standalone: list[Position] = []
     for p in positions:
         summary = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
@@ -65,12 +70,13 @@ def consolidate_positions_by_sku(
         if not internal_code:
             standalone.append(p)
             continue
-        key = (p.aisle_id, internal_code)
+        partition = partitions.get(p.id, "")
+        key = (p.aisle_id, internal_code, partition)
         by_key.setdefault(key, []).append(p)
 
     consolidated: list[Position] = []
 
-    for (_aisle_id, _sku), group in by_key.items():
+    for (_aisle_id, _sku, _partition), group in by_key.items():
         if len(group) == 1:
             consolidated.append(group[0])
             continue

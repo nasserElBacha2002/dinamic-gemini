@@ -160,6 +160,10 @@ from fastapi import HTTPException
 
 from src.api.constants.error_wire import (
     HTTP_DETAIL_AISLE_INACTIVE,
+    HTTP_DETAIL_AISLE_LOCATION_CONFLICT,
+    HTTP_DETAIL_AISLE_LOCATION_LABEL_CONFLICT,
+    HTTP_DETAIL_AISLE_LOCATION_LABEL_NOT_FOUND,
+    HTTP_DETAIL_AISLE_LOCATION_NOT_FOUND,
     HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_CODE_SCAN,
     HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
     HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
@@ -187,6 +191,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_NO_ITEMS_FOR_GROUPING,
     HTTP_DETAIL_CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
     HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
+    HTTP_DETAIL_CAPTURE_SESSION_SEAL_REJECTED,
     HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
     HTTP_DETAIL_CLIENT_NOT_FOUND,
     HTTP_DETAIL_CLIENT_SUPPLIER_CLIENT_MISMATCH,
@@ -204,7 +209,22 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_INVENTORY_NOT_FOUND,
     HTTP_DETAIL_JOB_NOT_FOUND,
     HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
+    HTTP_DETAIL_ORDERED_CAPTURE_CONFLICT,
+    HTTP_DETAIL_ORDERED_CAPTURE_SESSION_NOT_FOUND,
+    HTTP_DETAIL_POSITION_ASSIGNMENT_ACCESS_DENIED,
+    HTTP_DETAIL_POSITION_ASSIGNMENT_NOT_FOUND,
+    HTTP_DETAIL_POSITION_LABEL_ACCESS_DENIED,
+    HTTP_DETAIL_POSITION_LABEL_CONFLICT,
+    HTTP_DETAIL_POSITION_LABEL_NOT_FOUND,
+    HTTP_DETAIL_POSITION_LABEL_SIGNING_NOT_CONFIGURED,
     HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
+    HTTP_DETAIL_POSITION_RECONCILIATION_ALREADY_RUNNING,
+    HTTP_DETAIL_POSITION_RECONCILIATION_CONCURRENT_UPDATE,
+    HTTP_DETAIL_POSITION_RECONCILIATION_FAILED,
+    HTTP_DETAIL_POSITION_RECONCILIATION_INPUT_CHANGED,
+    HTTP_DETAIL_POSITION_RECONCILIATION_NOT_READY,
+    HTTP_DETAIL_POSITION_RECONCILIATION_SEQUENCE_INVALID,
+    HTTP_DETAIL_POSITION_RECONCILIATION_SESSION_MISMATCH,
     HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
     HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_ACTIVATION_FAILED,
     HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_NOT_FOUND,
@@ -227,6 +247,10 @@ from src.api.errors.structured_api_http import (
     AISLE_HAS_NO_SOURCE_ASSETS_FOR_CODE_SCAN,
     AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
     AISLE_INACTIVE,
+    AISLE_LOCATION_CONFLICT,
+    AISLE_LOCATION_LABEL_CONFLICT,
+    AISLE_LOCATION_LABEL_NOT_FOUND,
+    AISLE_LOCATION_NOT_FOUND,
     AISLE_NOT_FOUND,
     AISLE_NOT_FOUND_FOR_ASSIGNMENT,
     AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
@@ -255,6 +279,7 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_NOT_ACCEPTING_UPLOADS,
     CAPTURE_SESSION_NOT_FOUND,
     CAPTURE_SESSION_PREVIEW_NOT_ALLOWED,
+    CAPTURE_SESSION_SEAL_REJECTED,
     CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
     CAPTURE_SESSION_STATUS_FILTER_INVALID,
     CLIENT_NOT_FOUND,
@@ -281,8 +306,23 @@ from src.api.errors.structured_api_http import (
     MANUAL_RESULT_ALREADY_EXISTS,
     MANUAL_RESULT_NOT_ALLOWED_FOR_ASSET_TYPE,
     OPEN_CAPTURE_SESSION_EXISTS,
+    ORDERED_CAPTURE_CONFLICT,
+    ORDERED_CAPTURE_SESSION_NOT_FOUND,
     PHOTOS_JOB_REQUIRED,
+    POSITION_ASSIGNMENT_ACCESS_DENIED,
+    POSITION_ASSIGNMENT_NOT_FOUND,
+    POSITION_LABEL_ACCESS_DENIED,
+    POSITION_LABEL_CONFLICT,
+    POSITION_LABEL_NOT_FOUND,
+    POSITION_LABEL_SIGNING_NOT_CONFIGURED,
     POSITION_NOT_FOUND,
+    POSITION_RECONCILIATION_ALREADY_RUNNING,
+    POSITION_RECONCILIATION_CONCURRENT_UPDATE,
+    POSITION_RECONCILIATION_FAILED,
+    POSITION_RECONCILIATION_INPUT_CHANGED,
+    POSITION_RECONCILIATION_NOT_READY,
+    POSITION_RECONCILIATION_SEQUENCE_INVALID,
+    POSITION_RECONCILIATION_SESSION_MISMATCH,
     PRODUCT_NOT_FOUND,
     PROVIDER_INCOMPATIBLE_WITH_JOB,
     SUPPLIER_EXTRACTION_PROFILE_ACTIVATION_FAILED,
@@ -308,6 +348,10 @@ from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 from src.application.errors import (
     ActiveJobExistsError,
     AisleInactiveError,
+    AisleLocationConflictError,
+    AisleLocationLabelConflictError,
+    AisleLocationLabelNotFoundError,
+    AisleLocationNotFoundError,
     AisleNotFoundError,
     AisleNotFoundForAssignmentError,
     AisleSourceAssetMutationBlockedError,
@@ -340,6 +384,9 @@ from src.application.errors import (
     CaptureSessionStagingFileTooLargeError,
     CaptureSessionStatusFilterInvalidError,
     ClientNotFoundError,
+    ClientPositionLabelAccessDeniedError,
+    ClientPositionLabelConflictError,
+    ClientPositionLabelNotFoundError,
     ClientSupplierClientMismatchError,
     ClientSupplierNotFoundError,
     ClientSupplierRequiredForAisleError,
@@ -373,13 +420,26 @@ from src.application.errors import (
     NoSourceAssetsForAisleProcessingError,
     NoSourceAssetsForCodeScanError,
     OpenCaptureSessionExistsError,
+    OrderedCaptureSealRejectedError,
+    OrderedCaptureSessionConflictError,
+    OrderedCaptureSessionNotFoundError,
     PhotosJobRequiredError,
+    PositionAssignmentAccessDeniedError,
+    PositionAssignmentNotFoundError,
     PositionDeletedError,
     PositionNotFoundError,
+    PositionReconciliationAlreadyRunningError,
+    PositionReconciliationConcurrentUpdateError,
+    PositionReconciliationFailedError,
+    PositionReconciliationInputChangedError,
+    PositionReconciliationNotReadyError,
+    PositionReconciliationSequenceInvalidError,
+    PositionReconciliationSessionMismatchError,
     PositionResultContextMismatchError,
     ProcessingObservabilityDisabledError,
     ProcessingProviderIncompatibleWithJobError,
     ProcessingProviderNotConfiguredError,
+    ProcessingRejectedUnsealedSessionError,
     ProductNotFoundError,
     ReviewMutationNotAllowedError,
     SourceAssetNotFoundForAisleError,
@@ -401,6 +461,7 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
+from src.application.services.positioning_label_signing import PositioningLabelSigningError
 from src.application.services.upload_request_limits import (
     UploadFileTooLargeError,
     UploadRequestTooLargeError,
@@ -501,6 +562,25 @@ def _structured_detail(
     return _map
 
 
+def _structured_detail_with_exc_code(
+    status_code: int,
+    *,
+    default_error_code: str,
+    allowed_codes: frozenset[str],
+    detail: Callable[[BaseException], str],
+) -> Callable[[BaseException], HTTPException]:
+    """Prefer ``exc.code`` on the wire when it is in ``allowed_codes``; else default."""
+
+    def _map(exc: BaseException) -> HTTPException:
+        raw = getattr(exc, "code", None)
+        error_code = (
+            raw if isinstance(raw, str) and raw in allowed_codes else default_error_code
+        )
+        return StructuredApiHttpError(status_code, error_code=error_code, detail=detail(exc))
+
+    return _map
+
+
 def _plain_http(status_code: int) -> Callable[[BaseException], HTTPException]:
     """Legacy branch: ``HTTPException`` with ``detail=str(exc)``."""
 
@@ -554,6 +634,51 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     ),
     AisleNotFoundError: _structured_fixed(
         404, error_code=AISLE_NOT_FOUND, detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY
+    ),
+    PositionReconciliationNotReadyError: _structured_fixed(
+        409,
+        error_code=POSITION_RECONCILIATION_NOT_READY,
+        detail=HTTP_DETAIL_POSITION_RECONCILIATION_NOT_READY,
+    ),
+    PositionReconciliationAlreadyRunningError: _structured_fixed(
+        409,
+        error_code=POSITION_RECONCILIATION_ALREADY_RUNNING,
+        detail=HTTP_DETAIL_POSITION_RECONCILIATION_ALREADY_RUNNING,
+    ),
+    PositionReconciliationInputChangedError: _structured_fixed(
+        409,
+        error_code=POSITION_RECONCILIATION_INPUT_CHANGED,
+        detail=HTTP_DETAIL_POSITION_RECONCILIATION_INPUT_CHANGED,
+    ),
+    PositionReconciliationSessionMismatchError: _structured_fixed(
+        422,
+        error_code=POSITION_RECONCILIATION_SESSION_MISMATCH,
+        detail=HTTP_DETAIL_POSITION_RECONCILIATION_SESSION_MISMATCH,
+    ),
+    PositionReconciliationSequenceInvalidError: _structured_fixed(
+        422,
+        error_code=POSITION_RECONCILIATION_SEQUENCE_INVALID,
+        detail=HTTP_DETAIL_POSITION_RECONCILIATION_SEQUENCE_INVALID,
+    ),
+    PositionReconciliationConcurrentUpdateError: _structured_fixed(
+        409,
+        error_code=POSITION_RECONCILIATION_CONCURRENT_UPDATE,
+        detail=HTTP_DETAIL_POSITION_RECONCILIATION_CONCURRENT_UPDATE,
+    ),
+    PositionReconciliationFailedError: _structured_fixed(
+        500,
+        error_code=POSITION_RECONCILIATION_FAILED,
+        detail=HTTP_DETAIL_POSITION_RECONCILIATION_FAILED,
+    ),
+    PositionAssignmentNotFoundError: _structured_fixed(
+        404,
+        error_code=POSITION_ASSIGNMENT_NOT_FOUND,
+        detail=HTTP_DETAIL_POSITION_ASSIGNMENT_NOT_FOUND,
+    ),
+    PositionAssignmentAccessDeniedError: _structured_fixed(
+        403,
+        error_code=POSITION_ASSIGNMENT_ACCESS_DENIED,
+        detail=HTTP_DETAIL_POSITION_ASSIGNMENT_ACCESS_DENIED,
     ),
     PositionNotFoundError: _structured_fixed(
         404, error_code=POSITION_NOT_FOUND, detail=HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE
@@ -937,6 +1062,119 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         500,
         error_code=IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE,
         detail=lambda e: str(e) or "Image processing repositories are unavailable.",
+    ),
+    OrderedCaptureSessionNotFoundError: _structured_fixed(
+        404,
+        error_code=ORDERED_CAPTURE_SESSION_NOT_FOUND,
+        detail=HTTP_DETAIL_ORDERED_CAPTURE_SESSION_NOT_FOUND,
+    ),
+    OrderedCaptureSessionConflictError: _structured_detail_with_exc_code(
+        409,
+        default_error_code=ORDERED_CAPTURE_CONFLICT,
+        allowed_codes=frozenset(
+            {
+                "ORDERED_CAPTURE_CONFLICT",
+                "ORDERED_CAPTURE_AISLE_MISMATCH",
+                "CAPTURE_SESSION_SEAL_CONFLICT",
+                "CAPTURE_SESSION_SEQUENCE_VERSION_MISMATCH",
+                "SEQUENCE_NUMBER_REQUIRED",
+                "CLIENT_IMAGE_ID_REQUIRED",
+                "ORDERED_CAPTURE_SESSION_SEALED",
+                "ORDERED_CAPTURE_OPEN_SESSION_EXISTS",
+                "ORDERED_CAPTURE_SEQUENCE_CONFLICT",
+                "ORDERED_CAPTURE_CLIENT_IMAGE_CONFLICT",
+                "ORDERED_CAPTURE_NOT_CONFIGURED",
+            }
+        ),
+        detail=lambda e: str(e) or HTTP_DETAIL_ORDERED_CAPTURE_CONFLICT,
+    ),
+    OrderedCaptureSealRejectedError: _structured_detail(
+        422,
+        error_code=CAPTURE_SESSION_SEAL_REJECTED,
+        detail=lambda e: str(e) or HTTP_DETAIL_CAPTURE_SESSION_SEAL_REJECTED,
+    ),
+    ProcessingRejectedUnsealedSessionError: _structured_detail(
+        409,
+        error_code="PROCESSING_REJECTED_UNSEALED_SESSION",
+        detail=lambda e: str(e) or "Capture session must be sealed before processing",
+    ),
+    AisleLocationNotFoundError: _structured_fixed(
+        404,
+        error_code=AISLE_LOCATION_NOT_FOUND,
+        detail=HTTP_DETAIL_AISLE_LOCATION_NOT_FOUND,
+    ),
+    AisleLocationConflictError: _structured_detail_with_exc_code(
+        409,
+        default_error_code=AISLE_LOCATION_CONFLICT,
+        allowed_codes=frozenset(
+            {
+                "AISLE_LOCATION_CONFLICT",
+                "AISLE_LOCATION_CODE_REQUIRED",
+                "AISLE_LOCATION_CODE_CONFLICT",
+                "AISLE_LOCATION_INACTIVE",
+                "AISLE_LOCATION_PUBLIC_ID_REQUIRED",
+                "AISLE_LOCATION_LABEL_BATCH_EMPTY",
+            }
+        ),
+        detail=lambda e: str(e) or HTTP_DETAIL_AISLE_LOCATION_CONFLICT,
+    ),
+    AisleLocationLabelNotFoundError: _structured_fixed(
+        404,
+        error_code=AISLE_LOCATION_LABEL_NOT_FOUND,
+        detail=HTTP_DETAIL_AISLE_LOCATION_LABEL_NOT_FOUND,
+    ),
+    AisleLocationLabelConflictError: _structured_detail_with_exc_code(
+        409,
+        default_error_code=AISLE_LOCATION_LABEL_CONFLICT,
+        allowed_codes=frozenset(
+            {
+                "AISLE_LOCATION_LABEL_CONFLICT",
+                "AISLE_LOCATION_LABEL_INVALIDATED",
+                "AISLE_LOCATION_LABEL_FORMAT_INVALID",
+                "AISLE_LOCATION_LABEL_BATCH_FORMAT",
+                "POSITION_LABEL_FORMAT_UNSUPPORTED",
+                "POSITION_LABEL_RENDER_CONFLICT",
+                "POSITION_LABEL_RENDER_FAILED",
+                "POSITION_LABEL_ARTIFACT_NOT_READY",
+                "POSITION_LABEL_REPLACE_CONFLICT",
+                "POSITION_LABEL_BATCH_CONFLICT",
+                "POSITION_LABEL_BATCH_TOO_LARGE",
+                "POSITION_LABEL_SIGNING_REQUIRED",
+            }
+        ),
+        detail=lambda e: str(e) or HTTP_DETAIL_AISLE_LOCATION_LABEL_CONFLICT,
+    ),
+    ClientPositionLabelNotFoundError: _structured_fixed(
+        404,
+        error_code=POSITION_LABEL_NOT_FOUND,
+        detail=HTTP_DETAIL_POSITION_LABEL_NOT_FOUND,
+    ),
+    ClientPositionLabelAccessDeniedError: _structured_fixed(
+        403,
+        error_code=POSITION_LABEL_ACCESS_DENIED,
+        detail=HTTP_DETAIL_POSITION_LABEL_ACCESS_DENIED,
+    ),
+    ClientPositionLabelConflictError: _structured_detail_with_exc_code(
+        409,
+        default_error_code=POSITION_LABEL_CONFLICT,
+        allowed_codes=frozenset(
+            {
+                "POSITION_LABEL_CONFLICT",
+                "POSITION_LABEL_NAME_REQUIRED",
+                "POSITION_LABEL_NAME_CONFLICT",
+                "POSITION_LABEL_ALREADY_INVALIDATED",
+                "POSITION_LABEL_FORMAT_UNSUPPORTED",
+                "POSITION_LABEL_RENDER_FAILED",
+                "POSITION_LABEL_CLIENT_MISMATCH",
+                "POSITION_LABEL_IDEMPOTENCY_CONFLICT",
+            }
+        ),
+        detail=lambda e: str(e) or HTTP_DETAIL_POSITION_LABEL_CONFLICT,
+    ),
+    PositioningLabelSigningError: _structured_fixed(
+        503,
+        error_code=POSITION_LABEL_SIGNING_NOT_CONFIGURED,
+        detail=HTTP_DETAIL_POSITION_LABEL_SIGNING_NOT_CONFIGURED,
     ),
 }
 

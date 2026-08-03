@@ -23,6 +23,7 @@ from src.api.dependencies import (
     get_artifact_publication_outbox_store,
     get_artifact_storage,
     get_cancel_aisle_job_use_case,
+    get_clock,
     get_compare_aisle_runs_use_case,
     get_compare_many_aisle_runs_use_case,
     get_create_aisle_use_case,
@@ -41,6 +42,7 @@ from src.api.dependencies import (
     get_list_aisles_with_status_use_case,
     get_observability_inventory_guard,
     get_promote_aisle_operational_job_use_case,
+    get_recover_aisle_processing_use_case,
     get_resolve_aisle_job_for_inventory_read_use_case,
     get_result_evidence_query_service,
     get_retry_aisle_job_use_case,
@@ -96,12 +98,15 @@ from src.api.schemas.observability_job_schemas import (
 from src.api.schemas.processing_schemas import (
     AisleExecutionLogResponse,
     AisleJobsListResponse,
+    AisleProcessingStateResponse,
     AisleStatusResponse,
     ExecutionLogResponse,
     JobDetailResponse,
     JobSummary,
     ProcessAisleRequest,
     ProcessAisleResponse,
+    RecoverAisleProcessingRequest,
+    RecoverAisleProcessingResponse,
 )
 from src.api.schemas.result_evidence_schemas import JobTraceabilityResponse
 from src.api.services.identification_mode_response import api_fields_from_configuration
@@ -636,6 +641,92 @@ def get_aisle_status(
         return status_response_from_result(
             result,
             identification=api_fields_from_configuration(id_query.for_aisle(result.aisle)),
+        )
+    except AisleNotFoundError as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/processing-state",
+    response_model=AisleProcessingStateResponse,
+)
+def get_aisle_processing_state(
+    inventory_id: str,
+    aisle_id: str,
+    use_case: GetAisleProcessingStatusUseCase = Depends(get_get_aisle_processing_status_use_case),
+    clock=Depends(get_clock),
+) -> AisleProcessingStateResponse:
+    """Authoritative aisle processing lifecycle for mobile + web (recovery-aware)."""
+    try:
+        from src.application.services.aisle_processing_state import resolve_aisle_processing_state
+
+        result = use_case.execute(inventory_id, aisle_id)
+        view = resolve_aisle_processing_state(
+            latest_job=result.latest_job,
+            recent_jobs=result.recent_jobs,
+            operational_job_id=getattr(result.aisle, "operational_job_id", None),
+            clock=clock,
+        )
+        return AisleProcessingStateResponse(
+            state=view.state,
+            job_id=view.job_id,
+            job_status=view.job_status,
+            idempotency_key=view.idempotency_key,
+            recoverable=view.recoverable,
+            can_start_new=view.can_start_new,
+            updated_at=view.updated_at,
+            failure_code=view.failure_code,
+        )
+    except AisleNotFoundError as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/processing/recover",
+    response_model=RecoverAisleProcessingResponse,
+)
+def recover_aisle_processing(
+    inventory_id: str,
+    aisle_id: str,
+    body: RecoverAisleProcessingRequest | None = Body(default=None),
+    use_case=Depends(get_recover_aisle_processing_use_case),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+) -> RecoverAisleProcessingResponse:
+    """Recover orphan/stale aisle processing using lease/heartbeat evidence."""
+    from src.application.use_cases.recovery.recover_aisle_processing import (
+        RecoverAisleProcessingCommand,
+    )
+
+    req = body or RecoverAisleProcessingRequest()
+    actor = principal.actor_id or "api"
+    try:
+        result = use_case.execute(
+            RecoverAisleProcessingCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                actor=str(actor),
+                reason=req.reason,
+                dry_run=req.dry_run,
+            )
+        )
+        view = result.processing_state
+        return RecoverAisleProcessingResponse(
+            outcome=result.outcome.value,
+            job_id=result.job_id,
+            new_job_id=result.new_job_id,
+            detail=result.detail,
+            processing_state=AisleProcessingStateResponse(
+                state=view.state,
+                job_id=view.job_id,
+                job_status=view.job_status,
+                idempotency_key=view.idempotency_key,
+                recoverable=view.recoverable,
+                can_start_new=view.can_start_new,
+                updated_at=view.updated_at,
+                failure_code=view.failure_code,
+            ),
         )
     except AisleNotFoundError as e:
         reraise_if_mapped(e)

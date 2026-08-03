@@ -621,6 +621,10 @@ def _parsed_v21_from_json_text(
         data["total_entities_detected"] = len(entities)
 
     try:
+        # Coerce null has_boxes / fill canonical keys before strict schema validate.
+        from src.llm.normalization.entity_normalizer import normalize_llm_response
+
+        data = normalize_llm_response(data, provider="claude")
         validate_global_analysis_structure_v21(data)
     except GlobalAnalysisValidationError as e:
         raise LLMProviderError(

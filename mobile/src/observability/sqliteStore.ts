@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from '../database/database';
 import { isSqliteMalformedError } from '../database/sqliteErrors';
+import { runExclusiveDbWriteWithBusyRetry } from '../database/sqliteWriteGate';
 import type { ObservabilityEvent, ObservabilityReporter } from './types';
 
 export interface ObservabilityEventRow {
@@ -48,16 +49,18 @@ export class SqliteObservabilityStore {
     if (rows.length === 0) {
       return;
     }
-    await this.db.execAsync('BEGIN;');
-    try {
-      for (const row of rows) {
-        await this.insert(row.event, row.id);
+    await runExclusiveDbWriteWithBusyRetry(async () => {
+      await this.db.execAsync('BEGIN;');
+      try {
+        for (const row of rows) {
+          await this.insert(row.event, row.id);
+        }
+        await this.db.execAsync('COMMIT;');
+      } catch (e) {
+        await this.db.execAsync('ROLLBACK;');
+        throw e;
       }
-      await this.db.execAsync('COMMIT;');
-    } catch (e) {
-      await this.db.execAsync('ROLLBACK;');
-      throw e;
-    }
+    });
   }
 
   async listRecent(limit = 2000): Promise<ObservabilityEventRow[]> {

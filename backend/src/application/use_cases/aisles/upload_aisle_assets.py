@@ -21,9 +21,15 @@ from src.application.errors import (
     AisleInactiveError,
     DuplicateUploadIdempotencyKeyError,
     EmptyUploadError,
+    IdempotencyKeyReusedError,
+    OrderedCaptureSessionConflictError,
+    OrderedCaptureSessionNotFoundError,
     UnsupportedAssetTypeError,
 )
 from src.application.ports.clock import Clock
+from src.application.ports.ordered_capture_session_repository import (
+    OrderedCaptureSessionRepository,
+)
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
@@ -34,7 +40,9 @@ from src.application.services.upload_request_limits import (
     UploadRequestLimitPolicy,
     assert_file_size,
 )
+from src.application.services.upload_stream_io import measure_fileobj_size, sha256_fileobj
 from src.domain.assets.entities import SourceAsset
+from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +50,7 @@ _CODE_UNSUPPORTED_ASSET_TYPE = "UNSUPPORTED_ASSET_TYPE"
 _CODE_ZERO_BYTE_FILE = "ZERO_BYTE_FILE"
 _CODE_UPLOAD_FILE_TOO_LARGE = "UPLOAD_FILE_TOO_LARGE"
 _CODE_PERSIST_FAILED = "ASSET_PERSIST_FAILED"
+_CODE_IDEMPOTENCY_KEY_REUSED = "IDEMPOTENCY_KEY_REUSED"
 
 _DETAIL_ZERO_BYTE_FILE = "Empty or zero-byte files are not allowed"
 _DETAIL_UPLOAD_FILE_TOO_LARGE = "File exceeds maximum upload size"
@@ -85,6 +94,7 @@ class UploadAisleAssetsUseCase:
         access_policy: InventoryAccessPolicy,
         *,
         upload_policy: UploadRequestLimitPolicy | None = None,
+        ordered_session_repo: OrderedCaptureSessionRepository | None = None,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
@@ -93,6 +103,7 @@ class UploadAisleAssetsUseCase:
         self._status_reconciler = status_reconciler
         self._access_policy = access_policy
         self._policy = upload_policy or UploadRequestLimitPolicy()
+        self._ordered_session_repo = ordered_session_repo
         self._materializer = AisleSourceAssetMaterializer(
             aisle_repo=aisle_repo,
             asset_repo=asset_repo,
@@ -113,6 +124,51 @@ class UploadAisleAssetsUseCase:
                 return uf.upload_batch_id.strip()
         return None
 
+    @staticmethod
+    def _incoming_content_sha256(uf: UploadedFile) -> str | None:
+        digest = (uf.content_sha256 or "").strip() or None
+        if digest:
+            return digest
+        try:
+            return sha256_fileobj(uf.file_obj)
+        except Exception:
+            return None
+
+    @classmethod
+    def _assert_ordered_idempotent_compatible(
+        cls,
+        existing: SourceAsset,
+        uf: UploadedFile,
+    ) -> None:
+        if existing.sequence_number != uf.sequence_number:
+            raise IdempotencyKeyReusedError(
+                "IDEMPOTENCY_KEY_REUSED: same client_image_id with a different sequence_number"
+            )
+        stored_hash = None
+        if isinstance(existing.metadata_json, dict):
+            raw = existing.metadata_json.get("content_sha256")
+            if isinstance(raw, str) and raw.strip():
+                stored_hash = raw.strip()
+        incoming_hash = cls._incoming_content_sha256(uf)
+        if stored_hash and incoming_hash:
+            if stored_hash != incoming_hash:
+                raise IdempotencyKeyReusedError(
+                    "IDEMPOTENCY_KEY_REUSED: same client_image_id with a different content fingerprint"
+                )
+            return
+        existing_size = existing.file_size_bytes
+        incoming_size = uf.size_bytes
+        if incoming_size is None:
+            try:
+                incoming_size = measure_fileobj_size(uf.file_obj)
+            except Exception:
+                incoming_size = None
+        if existing_size is not None and incoming_size is not None:
+            if int(existing_size) != int(incoming_size):
+                raise IdempotencyKeyReusedError(
+                    "IDEMPOTENCY_KEY_REUSED: same client_image_id with a different content fingerprint"
+                )
+
     def _try_idempotent_existing(
         self,
         *,
@@ -121,14 +177,132 @@ class UploadAisleAssetsUseCase:
         batch_id: str | None,
     ) -> SourceAsset | None:
         client_id = (uf.client_file_id or "").strip()
+        session_id = (uf.ordered_capture_session_id or "").strip()
+        if session_id and client_id:
+            existing = self._asset_repo.get_by_ordered_session_and_client_image_id(
+                session_id, client_id
+            )
+            if existing is not None:
+                self._assert_ordered_idempotent_compatible(existing, uf)
+                logger.info(
+                    "image_upload_idempotent_hit aisle_id=%s capture_session_id=%s "
+                    "client_image_id=%s sequence_number=%s image_id=%s",
+                    aisle_id,
+                    session_id,
+                    client_id,
+                    existing.sequence_number,
+                    existing.id,
+                )
+                return existing
         resolved_batch = (batch_id or uf.upload_batch_id or "").strip()
         if not client_id or not resolved_batch:
             return None
-        return self._asset_repo.get_by_upload_idempotency_key(
+        existing = self._asset_repo.get_by_upload_idempotency_key(
             aisle_id,
             resolved_batch,
             client_id,
         )
+        if existing is None:
+            return None
+        return self._bind_ordered_capture_on_idempotent_hit(
+            aisle_id=aisle_id, existing=existing, uf=uf
+        )
+
+    def _bind_ordered_capture_on_idempotent_hit(
+        self,
+        *,
+        aisle_id: str,
+        existing: SourceAsset,
+        uf: UploadedFile,
+    ) -> SourceAsset:
+        """Attach ordered-session metadata when a legacy idempotent row lacks it.
+
+        Mobile can race: first upload lands without ``ordered_capture_session_id``,
+        then a retry with session+sequence must not leave an unsequenced orphan
+        (seal would fail with incomplete sequence).
+        """
+        session_id = (uf.ordered_capture_session_id or "").strip()
+        if not session_id or uf.sequence_number is None:
+            return existing
+        stored_session = (existing.ordered_capture_session_id or "").strip()
+        if stored_session:
+            if stored_session != session_id:
+                raise IdempotencyKeyReusedError(
+                    "IDEMPOTENCY_KEY_REUSED: same client_image_id already bound to a "
+                    "different ordered_capture_session_id"
+                )
+            self._assert_ordered_idempotent_compatible(existing, uf)
+            return existing
+        self._assert_ordered_session_accepts_upload(aisle_id=aisle_id, uf=uf)
+        conflict = self._asset_repo.get_by_ordered_session_and_sequence(
+            session_id, int(uf.sequence_number)
+        )
+        if conflict is not None and conflict.id != existing.id:
+            raise IdempotencyKeyReusedError(
+                "IDEMPOTENCY_KEY_REUSED: sequence_number already taken in ordered session"
+            )
+        existing.ordered_capture_session_id = session_id
+        existing.sequence_number = int(uf.sequence_number)
+        existing.sequence_source = "CLIENT_ASSIGNED"
+        self._asset_repo.save(existing)
+        logger.info(
+            "image_upload_idempotent_ordered_bind aisle_id=%s capture_session_id=%s "
+            "client_image_id=%s sequence_number=%s image_id=%s",
+            aisle_id,
+            session_id,
+            (uf.client_file_id or "").strip(),
+            existing.sequence_number,
+            existing.id,
+        )
+        return existing
+
+    def _metadata_for_upload(self, uf: UploadedFile) -> dict[str, str] | None:
+        digest = self._incoming_content_sha256(uf)
+        if not digest:
+            return None
+        uf.content_sha256 = digest
+        return {"content_sha256": digest}
+
+    def _assert_ordered_session_accepts_upload(
+        self,
+        *,
+        aisle_id: str,
+        uf: UploadedFile,
+    ) -> None:
+        session_id = (uf.ordered_capture_session_id or "").strip()
+        if not session_id:
+            return
+        if self._ordered_session_repo is None:
+            raise OrderedCaptureSessionConflictError(
+                "Ordered capture sessions are not configured on this server",
+                code="ORDERED_CAPTURE_NOT_CONFIGURED",
+            )
+        session = self._ordered_session_repo.get_by_id(session_id)
+        if session is None:
+            raise OrderedCaptureSessionNotFoundError(session_id)
+        if session.aisle_id != aisle_id:
+            raise OrderedCaptureSessionConflictError(
+                "ordered_capture_session_id does not belong to this aisle",
+                code="ORDERED_CAPTURE_AISLE_MISMATCH",
+            )
+        if session.status not in (
+            OrderedCaptureSessionStatus.OPEN,
+            OrderedCaptureSessionStatus.UPLOADING,
+        ):
+            raise OrderedCaptureSessionConflictError(
+                f"Cannot upload to session in status {session.status.value}",
+                code="ORDERED_CAPTURE_SESSION_SEALED",
+            )
+        if uf.sequence_number is None:
+            raise OrderedCaptureSessionConflictError(
+                "sequence_number is required for ordered capture uploads",
+                code="SEQUENCE_NUMBER_REQUIRED",
+            )
+        if not (uf.client_file_id or "").strip():
+            raise OrderedCaptureSessionConflictError(
+                "client_image_id is required for ordered capture uploads",
+                code="CLIENT_IMAGE_ID_REQUIRED",
+            )
 
     def _ingest_one_file(
         self,
@@ -140,9 +314,43 @@ class UploadAisleAssetsUseCase:
         batch_id: str | None,
     ) -> tuple[SourceAsset | None, AisleAssetUploadFileError | None]:
         fname = self._wire_filename(uf)
-        existing = self._try_idempotent_existing(aisle_id=aisle_id, uf=uf, batch_id=batch_id)
+        try:
+            existing = self._try_idempotent_existing(aisle_id=aisle_id, uf=uf, batch_id=batch_id)
+        except IdempotencyKeyReusedError as exc:
+            logger.info(
+                "image_upload_idempotency_conflict aisle_id=%s file_index=%d detail=%s",
+                aisle_id,
+                file_index,
+                exc,
+            )
+            return None, AisleAssetUploadFileError(
+                filename=fname,
+                code=_CODE_IDEMPOTENCY_KEY_REUSED,
+                detail=str(exc),
+                file_index=file_index,
+                client_file_id=uf.client_file_id,
+            )
         if existing is not None:
             return existing, None
+        try:
+            self._assert_ordered_session_accepts_upload(aisle_id=aisle_id, uf=uf)
+        except (
+            OrderedCaptureSessionNotFoundError,
+            OrderedCaptureSessionConflictError,
+        ) as exc:
+            logger.info(
+                "image_upload_conflict aisle_id=%s file_index=%d detail=%s",
+                aisle_id,
+                file_index,
+                exc,
+            )
+            return None, AisleAssetUploadFileError(
+                filename=fname,
+                code=getattr(exc, "code", "ORDERED_CAPTURE_CONFLICT"),
+                detail=str(exc),
+                file_index=file_index,
+                client_file_id=uf.client_file_id,
+            )
         try:
             if uf.size_bytes is not None:
                 assert_file_size(uf.size_bytes, self._policy)
@@ -181,7 +389,7 @@ class UploadAisleAssetsUseCase:
                 aisle_id=aisle_id,
                 uploaded=uf,
                 now=now,
-                metadata_json=None,
+                metadata_json=self._metadata_for_upload(uf),
                 upload_batch_id=batch_id or uf.upload_batch_id,
                 upload_client_file_id=uf.client_file_id,
             )
@@ -214,7 +422,18 @@ class UploadAisleAssetsUseCase:
                 fname,
                 exc,
             )
-            existing = self._try_idempotent_existing(aisle_id=aisle_id, uf=uf, batch_id=batch_id)
+            try:
+                existing = self._try_idempotent_existing(
+                    aisle_id=aisle_id, uf=uf, batch_id=batch_id
+                )
+            except IdempotencyKeyReusedError as idem_exc:
+                return None, AisleAssetUploadFileError(
+                    filename=fname,
+                    code=_CODE_IDEMPOTENCY_KEY_REUSED,
+                    detail=str(idem_exc),
+                    file_index=file_index,
+                    client_file_id=uf.client_file_id,
+                )
             if existing is not None:
                 return existing, None
             logger.error(
@@ -228,6 +447,43 @@ class UploadAisleAssetsUseCase:
                 filename=fname,
                 code=_CODE_PERSIST_FAILED,
                 detail=_DETAIL_ASSET_PERSIST_FAILED,
+                file_index=file_index,
+                client_file_id=uf.client_file_id,
+            )
+        except OrderedCaptureSessionConflictError as exc:
+            # Unique race on ordered client_image_id — re-read winner and fingerprint-check.
+            session_id = (uf.ordered_capture_session_id or "").strip()
+            client_id = (uf.client_file_id or "").strip()
+            if (
+                session_id
+                and client_id
+                and exc.code == "ORDERED_CAPTURE_CLIENT_IMAGE_CONFLICT"
+            ):
+                try:
+                    raced = self._asset_repo.get_by_ordered_session_and_client_image_id(
+                        session_id, client_id
+                    )
+                    if raced is not None:
+                        self._assert_ordered_idempotent_compatible(raced, uf)
+                        return raced, None
+                except IdempotencyKeyReusedError as idem_exc:
+                    return None, AisleAssetUploadFileError(
+                        filename=fname,
+                        code=_CODE_IDEMPOTENCY_KEY_REUSED,
+                        detail=str(idem_exc),
+                        file_index=file_index,
+                        client_file_id=uf.client_file_id,
+                    )
+            logger.info(
+                "image_upload_conflict aisle_id=%s file_index=%d detail=%s",
+                aisle_id,
+                file_index,
+                exc,
+            )
+            return None, AisleAssetUploadFileError(
+                filename=fname,
+                code=exc.code,
+                detail=str(exc),
                 file_index=file_index,
                 client_file_id=uf.client_file_id,
             )
@@ -278,7 +534,36 @@ class UploadAisleAssetsUseCase:
         errors: list[AisleAssetUploadFileError] = []
         n_files = len(files)
         logger.info("Uploading %d file(s) to aisle %s", n_files, aisle_id)
+        session_ids = {
+            (uf.ordered_capture_session_id or "").strip()
+            for uf in files
+            if (uf.ordered_capture_session_id or "").strip()
+        }
+        for session_id in session_ids:
+            if self._ordered_session_repo is None:
+                continue
+            session = self._ordered_session_repo.get_by_id(session_id)
+            if session is None:
+                continue
+            if session.status == OrderedCaptureSessionStatus.OPEN:
+                session.status = OrderedCaptureSessionStatus.UPLOADING
+                session.updated_at = now
+                self._ordered_session_repo.save(session)
+                logger.info(
+                    "capture_session_uploading capture_session_id=%s aisle_id=%s",
+                    session.id,
+                    aisle_id,
+                )
         for file_index, uf in enumerate(files):
+            logger.info(
+                "image_upload_started aisle_id=%s file_index=%d capture_session_id=%s "
+                "sequence_number=%s client_image_id=%s",
+                aisle_id,
+                file_index,
+                uf.ordered_capture_session_id,
+                uf.sequence_number,
+                uf.client_file_id,
+            )
             asset, err = self._ingest_one_file(
                 aisle_id=aisle_id,
                 uf=uf,

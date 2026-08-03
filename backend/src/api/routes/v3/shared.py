@@ -853,6 +853,9 @@ def asset_to_response(asset: SourceAsset) -> SourceAssetResponse:
         mime_type=asset.mime_type,
         uploaded_at=asset.uploaded_at,
         file_size_bytes=asset.file_size_bytes,
+        ordered_capture_session_id=asset.ordered_capture_session_id,
+        sequence_number=asset.sequence_number,
+        sequence_source=asset.sequence_source,
     )
 
 
@@ -926,6 +929,9 @@ def _position_summary_response_from_view(
         has_evidence=view.review.has_evidence,
         source_image_original_filename=view.traceability.source_image_original_filename,
         position_code=view.position_code,
+        aisle_position_assigned=False,
+        position=None,
+        position_assignment=None,
         job_id=p.job_id,
         creation_source=p.creation_source.value
         if hasattr(p, "creation_source") and p.creation_source is not None

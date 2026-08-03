@@ -71,10 +71,11 @@ function normalizeEnvironment(raw: string): AppEnvironment {
 
 /** Pure resolver: testable without Expo native modules. */
 export function resolveAppConfig(extra: RawAppExtra | null | undefined): AppConfig {
-  const apiBaseUrl = (asString(extra?.apiBaseUrl) || fromProcessEnv('DINAMIC_API_BASE_URL')).replace(
-    /\/+$/,
-    '',
-  );
+  const apiBaseUrl = (
+    asString(extra?.apiBaseUrl) ||
+    fromProcessEnv('DINAMIC_API_BASE_URL') ||
+    fromProcessEnv('EXPO_PUBLIC_API_BASE_URL')
+  ).replace(/\/+$/, '');
   const apiKey = asString(extra?.apiKey) || fromProcessEnv('DINAMIC_API_KEY') || null;
   const environment = normalizeEnvironment(
     asString(extra?.environment) || fromProcessEnv('DINAMIC_ENVIRONMENT'),
@@ -95,7 +96,10 @@ export function resolveAppConfig(extra: RawAppExtra | null | undefined): AppConf
 
 export function validateAppConfig(config: AppConfig): string | null {
   if (!config.apiBaseUrl) {
-    return 'Falta configurar DINAMIC_API_BASE_URL.';
+    return (
+      'Falta configurar DINAMIC_API_BASE_URL (o EXPO_PUBLIC_API_BASE_URL). ' +
+      'Android emulator: http://10.0.2.2:<port> · dispositivo físico: http://<IP-LAN>:<port>.'
+    );
   }
   try {
     const parsed = new URL(config.apiBaseUrl);

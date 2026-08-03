@@ -97,7 +97,10 @@ const config: ExpoConfig = {
     ],
   ],
   extra: {
-    apiBaseUrl: process.env.DINAMIC_API_BASE_URL ?? '',
+    apiBaseUrl:
+      process.env.DINAMIC_API_BASE_URL?.trim() ||
+      process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ||
+      '',
     apiKey: process.env.DINAMIC_API_KEY ?? '',
     environment,
     versionName,

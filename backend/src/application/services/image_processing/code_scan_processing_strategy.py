@@ -26,6 +26,7 @@ import threading
 import time
 from collections import Counter
 from dataclasses import dataclass
+from typing import Any
 
 from src.application.ports.code_scanner import (
     CodeScanDetectionCandidate,
@@ -76,6 +77,10 @@ _PYZBAR_SYMBOLOGY_NORMALIZE = {
     "UPCA": "UPC_A",
     "UPCE": "UPC_E",
 }
+
+
+def _float_if_present(value: Any) -> float | None:
+    return float(value) if value is not None else None
 
 
 class CodeScanTimeoutError(RuntimeError):
@@ -154,6 +159,7 @@ class CodeScanProcessingStrategy:
         config: CodeScanConfig,
         metrics: CodeScanMetrics | None = None,
         event_publisher: ProcessingEventPublisher | None = None,
+        position_detection=None,
     ) -> None:
         self._scanner = scanner
         self._reader = content_reader
@@ -162,6 +168,7 @@ class CodeScanProcessingStrategy:
         self._config = config
         self._metrics = metrics or CodeScanMetrics()
         self._events = event_publisher
+        self._position_detection = position_detection
 
     def _publish_asset_event(
         self,
@@ -332,11 +339,133 @@ class CodeScanProcessingStrategy:
                 metadata={"symbol_count": symbol_count},
             )
 
-        detections = self._to_detection_inputs(candidates)
+        item_candidates = candidates
+        position_meta: dict | None = None
+        if self._position_detection is not None:
+            position_started = time.monotonic()
+            try:
+                from src.application.use_cases.position_label_detection.detect_image_position_labels import (
+                    ImagePositionDetectionCommand,
+                )
+                from src.domain.position_label_detection.entities import DetectedCode
+
+                client_id = (context.client_id or "").strip()
+                if not client_id:
+                    self._metrics.increment("position_label_detection_context_invalid_total")
+                    logger.info(
+                        "position_label_detection_context_invalid job_id=%s asset_id=%s "
+                        "code=POSITION_LABEL_DETECTION_CONTEXT_INVALID",
+                        context.job_id,
+                        context.asset_id,
+                    )
+                    position_meta = {
+                        "position_detection_count": 0,
+                        "position_ambiguous": False,
+                        "position_statuses": ["DETECTION_CONTEXT_INVALID"],
+                        "position_detection_duration_ms": int(
+                            (time.monotonic() - position_started) * 1000
+                        ),
+                    }
+                else:
+                    detected_codes = [
+                        DetectedCode(
+                            symbology=symbology_for_candidate(c),
+                            raw_value=c.code_value,
+                            normalized_value=(c.code_value or "").strip(),
+                            bounding_box=c.bounding_box_json,
+                            confidence=c.confidence,
+                            rotation_degrees=_float_if_present(
+                                c.metadata_json.get("rotation_degrees")
+                                if c.metadata_json is not None
+                                else None
+                            ),
+                            candidate_index=idx,
+                        )
+                        for idx, c in enumerate(candidates)
+                    ]
+                    pos_result = self._position_detection.execute(
+                        ImagePositionDetectionCommand(
+                            client_id=client_id,
+                            inventory_id=context.inventory_id,
+                            job_id=context.job_id,
+                            source_asset_id=context.asset_id,
+                            codes=detected_codes,
+                            client_image_id=getattr(asset, "upload_client_file_id", None),
+                            ordered_capture_session_id=getattr(
+                                asset, "ordered_capture_session_id", None
+                            ),
+                            sequence_number=getattr(asset, "sequence_number", None),
+                            correlation_id=context.job_id,
+                        )
+                    )
+                    position_indexes = set(pos_result.position_candidate_indexes)
+                    # Exclude only POSITION candidates by stable index — never by raw_value alone.
+                    if pos_result.disabled or pos_result.context_invalid:
+                        item_candidates = candidates
+                    else:
+                        item_candidates = [
+                            c
+                            for idx, c in enumerate(candidates)
+                            if idx not in position_indexes
+                        ]
+                    position_duration_ms = int((time.monotonic() - position_started) * 1000)
+                    position_meta = {
+                        "position_detection_count": len(pos_result.detections),
+                        "position_ambiguous": pos_result.ambiguous,
+                        "position_statuses": [
+                            d.detection_status.value for d in pos_result.detections
+                        ],
+                        "position_detection_duration_ms": position_duration_ms,
+                        "position_candidate_indexes": list(
+                            pos_result.position_candidate_indexes
+                        ),
+                    }
+                    self._metrics.increment("position_label_detection_total")
+                    self._metrics.increment(
+                        "position_label_detection_duration", amount=position_duration_ms
+                    )
+                    if any(d.detection_status.value == "VALID" for d in pos_result.detections):
+                        self._metrics.increment("position_label_detection_valid_total")
+                    if pos_result.ambiguous:
+                        self._metrics.increment("position_label_detection_ambiguous_total")
+                    if any(
+                        d.detection_status.value == "CLIENT_MISMATCH"
+                        for d in pos_result.detections
+                    ):
+                        self._metrics.increment("position_label_client_mismatch_total")
+                    if any(
+                        d.detection_status.value
+                        in (
+                            "INVALID_SIGNATURE",
+                            "CLIENT_MISMATCH",
+                            "LABEL_INVALIDATED",
+                            "LABEL_NOT_FOUND",
+                            "UNSUPPORTED_VERSION",
+                            "UNSUPPORTED_LEGACY_PAYLOAD",
+                            "MISSING_SIGNATURE",
+                            "PAYLOAD_TOO_LARGE",
+                            "SIGNATURE_VALIDATION_SKIPPED",
+                        )
+                        for d in pos_result.detections
+                    ):
+                        self._metrics.increment("position_label_detection_invalid_total")
+            except Exception:
+                # Position detection must not cancel item CODE_SCAN.
+                self._metrics.increment("position_label_detection_failed_total")
+                logger.exception(
+                    "position_label_detection_failed job_id=%s asset_id=%s",
+                    context.job_id,
+                    context.asset_id,
+                )
+                item_candidates = candidates
+
+        detections = self._to_detection_inputs(item_candidates)
         consolidated = self._consolidator.consolidate(detections)
 
         duration_ms = int((time.monotonic() - started) * 1000)
         evidence = self._build_evidence(consolidated, detections)
+        if position_meta:
+            evidence = {**(evidence or {}), "position_label_detection": position_meta}
         # Never apply OCR/supplier text-profile validation here. Profile rules are for
         # INTERNAL_OCR; AI fallback uses prompts. CODE_SCAN is consolidator-only.
 
@@ -377,6 +506,41 @@ class CodeScanProcessingStrategy:
             CodeConsolidationStatus.NO_DETECTIONS,
             CodeConsolidationStatus.NO_VALID_CODE,
         ):
+            position_only = bool(
+                position_meta
+                and position_meta.get("position_candidate_indexes")
+                and not item_candidates
+                and consolidated.status is CodeConsolidationStatus.NO_DETECTIONS
+            )
+            # Position QR(s) consumed by Phase 3 — not a product-code miss; do not drive
+            # GLOBAL_EXTERNAL_FALLBACK with a misleading NO_CODE_SYMBOL_FOUND.
+            if position_only and position_meta is not None:
+                statuses = position_meta.get("position_statuses") or []
+                position_ok = any(
+                    s in ("VALID", "SIGNATURE_VALIDATION_SKIPPED") for s in statuses
+                )
+                error_code = (
+                    "POSITION_LABEL_ONLY"
+                    if position_ok
+                    else "POSITION_LABEL_UNRESOLVED"
+                )
+                self._metrics.increment("code_scan.position_only")
+                result = ImageProcessingResult(
+                    job_id=context.job_id,
+                    asset_id=context.asset_id,
+                    status=ImageResultStatus.UNRECOGNIZED,
+                    processing_mode=mode,
+                    resolved_by=STRATEGY_KEY,
+                    evidence=evidence,
+                    warnings=list(consolidated.warnings),
+                    error_code=error_code,
+                    execution_scope=ExecutionScope.SINGLE_ASSET,
+                    logical_asset_attempt=False,
+                    processing_duration_ms=duration_ms,
+                )
+                self._finalize_asset_event(context, result)
+                return result
+
             self._metrics.increment("code_scan.unrecognized")
             result = ImageProcessingResult(
                 job_id=context.job_id,

@@ -22,6 +22,14 @@ FALLBACK_ELIGIBLE_INTERNAL_STATUSES = frozenset(
     }
 )
 
+# Position-only CODE_SCAN outcomes: QR was a DINAMIC_POSITION label, not a product miss.
+FALLBACK_SKIP_ERROR_CODES = frozenset(
+    {
+        "POSITION_LABEL_ONLY",
+        "POSITION_LABEL_UNRESOLVED",
+    }
+)
+
 
 @dataclass(frozen=True)
 class GlobalFallbackEligibilityDecision:
@@ -56,6 +64,9 @@ def evaluate_global_fallback_eligibility(
     resolved = 0
     eligible = 0
     for ev in evidence_by_asset.values():
+        skip_code = (ev.last_error_code or "").strip().upper()
+        if skip_code in FALLBACK_SKIP_ERROR_CODES:
+            continue
         if ev.resolved_internal and ev.internal_code and _qty_ok(ev.quantity):
             resolved += 1
             continue

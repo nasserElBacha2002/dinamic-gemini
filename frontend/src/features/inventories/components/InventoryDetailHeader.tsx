@@ -3,7 +3,11 @@ import { Box, Button, Menu, MenuItem, Typography } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ROUTE_HOME, pathToInventoryAnalyticsCompare } from '../../../constants/appRoutes';
+import {
+  ROUTE_HOME,
+  pathToInventoryAnalyticsCompare,
+  pathToInventoryPhysicalLocations,
+} from '../../../constants/appRoutes';
 import type { Inventory } from '../../../api/types';
 import { PageHeader, type PageHeaderBreadcrumb } from '../../../components/shell';
 import { StatusBadge } from '../../../components/ui';
@@ -67,6 +71,14 @@ export default function InventoryDetailHeader({
             </Button>
           ) : null}
           <InventoryExportMenu inventoryId={inventoryId} />
+          <Button
+            variant="outlined"
+            size="small"
+            data-testid="inventory-open-physical-locations"
+            onClick={() => navigate(pathToInventoryPhysicalLocations(inventoryId))}
+          >
+            {t('aisle_locations.hub_title')}
+          </Button>
           {onEditName ? (
             <>
               <Button

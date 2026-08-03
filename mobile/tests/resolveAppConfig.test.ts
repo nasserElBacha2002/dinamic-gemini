@@ -40,6 +40,13 @@ describe('resolveAppConfig', () => {
     expect(config.apiBaseUrl).toBe('http://10.0.2.2:8000');
   });
 
+  it('accepts EXPO_PUBLIC_API_BASE_URL as alias when DINAMIC is unset', () => {
+    delete process.env.DINAMIC_API_BASE_URL;
+    process.env.EXPO_PUBLIC_API_BASE_URL = 'http://10.0.2.2:8000/';
+    const config = resolveAppConfig(undefined);
+    expect(config.apiBaseUrl).toBe('http://10.0.2.2:8000');
+  });
+
   it('prefers Expo extra over process.env', () => {
     process.env.DINAMIC_API_BASE_URL = 'http://from-env:8000';
     const config = resolveAppConfig({ apiBaseUrl: 'http://from-extra:8000' });
@@ -48,7 +55,7 @@ describe('resolveAppConfig', () => {
 
   it('reports a clear error when the base URL is missing', () => {
     const config = resolveAppConfig({});
-    expect(validateAppConfig(config)).toBe('Falta configurar DINAMIC_API_BASE_URL.');
+    expect(validateAppConfig(config)).toMatch(/Falta configurar DINAMIC_API_BASE_URL/);
   });
 
   it('rejects non-http protocols', () => {

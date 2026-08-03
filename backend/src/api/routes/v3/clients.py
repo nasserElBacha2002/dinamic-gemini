@@ -161,6 +161,8 @@ from src.domain.client_supplier.extraction_profile import (
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 
+from . import client_position_labels
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -168,6 +170,8 @@ router = APIRouter(
     tags=["clients-v3"],
     dependencies=[Depends(get_current_admin)],
 )
+
+router.include_router(client_position_labels.router)
 
 
 def _to_response(client: Client) -> ClientResponse:

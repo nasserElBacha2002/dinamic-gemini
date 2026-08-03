@@ -120,6 +120,53 @@ export async function startAisleProcessing(
   );
 }
 
+export type AisleProcessingState = {
+  state: string;
+  job_id: string | null;
+  job_status: string | null;
+  idempotency_key: string | null;
+  recoverable: boolean;
+  can_start_new: boolean;
+  updated_at: string | null;
+  failure_code: string | null;
+};
+
+export type RecoverAisleProcessingResponse = {
+  outcome: string;
+  job_id: string | null;
+  new_job_id: string | null;
+  detail: string | null;
+  processing_state: AisleProcessingState;
+};
+
+/** Shared mobile/web lifecycle contract before starting aisle processing. */
+export async function getAisleProcessingState(
+  inventoryId: string,
+  aisleId: string
+): Promise<AisleProcessingState> {
+  return apiRequestJson<AisleProcessingState>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/processing-state`
+  );
+}
+
+/** Recover orphan/stale aisle jobs using lease/heartbeat evidence. */
+export async function recoverAisleProcessing(
+  inventoryId: string,
+  aisleId: string,
+  options?: { reason?: string; dryRun?: boolean }
+): Promise<RecoverAisleProcessingResponse> {
+  return apiRequestJson<RecoverAisleProcessingResponse>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/processing/recover`,
+    {
+      method: 'POST',
+      body: {
+        reason: options?.reason ?? 'web_client_recover',
+        dry_run: options?.dryRun === true,
+      },
+    }
+  );
+}
+
 export async function runAisleMerge(
   inventoryId: string,
   aisleId: string,

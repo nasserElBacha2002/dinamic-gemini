@@ -4,17 +4,24 @@ import { FlatList, Image, Text, View } from 'react-native';
 import { ProcessAisleConfirmModal } from '../components/ProcessAisleConfirmModal';
 import { hasForeignUploadLease, UPLOAD_WORKER_OWNER_JS } from '../core/uploadLease';
 import type { LocalDetectionDraftRow } from '../database/repositories/localDetectionDraftRepository';
+import type { ConfirmedLocalResultRow } from '../database/repositories/confirmedLocalResultRepository';
 import type { CapturePhotoRow } from '../database/schema/captureSchema';
 import {
   formatLocalScanDetection,
   labelForLocalScanStatus,
   labelForPreliminarySyncStatus,
 } from '../features/localCodeScan/localScanUi';
+import {
+  countExcludedPhotos,
+  countPendingLocalResults,
+  formatShortDate as formatLocalResultStamp,
+} from '../features/processing/aisleProcessDialogHelpers';
 import type { AisleIdentificationMode } from '../features/processing/processingMode';
 import {
   labelForIdentificationMode,
   preferenceFromSelection,
 } from '../features/processing/processingMode';
+import { describeProcessButtonBlock } from '../features/upload/describeProcessButtonBlock';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, SmallButton, messageOf, styles } from '../ui';
 
@@ -46,9 +53,13 @@ function labelForUploadStatus(photo: CapturePhotoRow): string {
     case 'uploaded':
       return 'Completado';
     case 'retryable_error':
-      return 'Reintentando';
+      return photo.last_upload_error_message
+        ? `Error de carga: ${photo.last_upload_error_message}`
+        : 'Reintentando';
     case 'permanent_error':
-      return 'Error';
+      return photo.last_upload_error_message
+        ? `Error: ${photo.last_upload_error_message}`
+        : 'Error';
     case 'excluded':
       return 'Excluida';
     case 'remote_delete_pending':
@@ -149,6 +160,8 @@ export interface UploadsScreenProps {
   onLocalReview?: () => void;
   /** Phase 6: open authoritative finalize summary. */
   onAuthoritativeFinalize?: () => void;
+  onViewAisleResults?: () => void;
+  onExcludedPhotos?: () => void;
 }
 
 export function UploadsScreen({
@@ -161,6 +174,8 @@ export function UploadsScreen({
   onError,
   onLocalReview,
   onAuthoritativeFinalize,
+  onViewAisleResults,
+  onExcludedPhotos,
 }: UploadsScreenProps) {
   const [progress, setProgress] = useState<Awaited<
     ReturnType<AppServices['uploadQueue']['getSessionProgress']>
@@ -180,6 +195,9 @@ export function UploadsScreen({
     unresolved: number;
   } | null>(null);
   const [authSyncPending, setAuthSyncPending] = useState(0);
+  const [localResults, setLocalResults] = useState<ConfirmedLocalResultRow[]>([]);
+  const [uploadLocalBusy, setUploadLocalBusy] = useState(false);
+  const [uploadLocalMessage, setUploadLocalMessage] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void services.uploadQueue.getSessionProgress(sessionId).then(setProgress);
@@ -217,12 +235,14 @@ export function UploadsScreen({
     }
     if (services.config.flags.mobileAuthoritativeLocalCodeScan) {
       void services.confirmedLocalResults.listForSession(sessionId).then((rows) => {
+        setLocalResults(rows);
         setAuthSyncPending(
           rows.filter((r) => r.sync_status === 'PENDING' || r.sync_status === 'RETRY_SCHEDULED')
             .length,
         );
       });
     } else {
+      setLocalResults([]);
       setAuthSyncPending(0);
     }
   }, [services, sessionId]);
@@ -280,6 +300,15 @@ export function UploadsScreen({
       .finally(() => setRetrying(false));
   };
 
+  const resumeQueue = () => {
+    onError(null);
+    void services.uploadQueue
+      .resume()
+      .then(() => services.uploadQueue.enqueueSession(sessionId))
+      .then(() => refresh())
+      .catch((e) => onError(messageOf(e)));
+  };
+
   const confirmAndStart = (selection: import('../features/processing/processingMode').IdentificationModeSelection) => {
     if (busy) return;
     setBusy(true);
@@ -305,6 +334,50 @@ export function UploadsScreen({
       })
       .finally(() => setBusy(false));
   };
+
+  const uploadLocalResults = (resultId?: string | null) => {
+    if (uploadLocalBusy) return;
+    setUploadLocalBusy(true);
+    setUploadLocalMessage(null);
+    setConfirmError(null);
+    const selected = (resultId ?? '').trim();
+    const syncPromise = selected
+      ? services.authoritativeLocalSync.syncResults([selected])
+      : services.authoritativeLocalSync.syncPendingForSession(sessionId);
+    void syncPromise
+      .then((summary) => {
+        const row = selected
+          ? localResults.find((r) => r.id === selected)
+          : localResults.find((r) => r.sync_status !== 'SYNCED');
+        if (summary.synced > 0 && row) {
+          setUploadLocalMessage(
+            `Resultado del ${formatLocalResultStamp(row.confirmed_at)} subido correctamente`,
+          );
+        } else if (summary.retry > 0) {
+          setUploadLocalMessage('La subida quedó pendiente y se reintentará');
+        } else if (summary.conflict > 0) {
+          setUploadLocalMessage(
+            'El servidor ya tiene una versión diferente de este resultado',
+          );
+        } else if (summary.attempted === 0) {
+          setUploadLocalMessage('No hay resultados pendientes de este pasillo para subir');
+        } else {
+          setUploadLocalMessage(
+            `Subida pasillo: ${summary.synced} ok · ${summary.retry} reintento · ${summary.conflict} conflicto · ${summary.failed_terminal} fallidos`,
+          );
+        }
+        refresh();
+      })
+      .catch((e) => {
+        const msg = messageOf(e);
+        setConfirmError(msg);
+        onError(msg);
+      })
+      .finally(() => setUploadLocalBusy(false));
+  };
+
+  const pendingLocalResultCount = countPendingLocalResults(localResults);
+  const excludedPhotoCount = countExcludedPhotos(photos);
 
   return (
     <>
@@ -365,6 +438,9 @@ export function UploadsScreen({
                 disabled={retrying}
                 onPress={retryAll}
               />
+              {pendingUploads > 0 ? (
+                <SmallButton label="Reanudar cola" onPress={resumeQueue} />
+              ) : null}
               <SmallButton label="Actualizar" onPress={refresh} />
             </View>
             {onLocalReview &&
@@ -386,7 +462,12 @@ export function UploadsScreen({
             />
             {!ready ? (
               <Text style={styles.muted}>
-                El procesamiento se habilita cuando no queden cargas pendientes ni errores recuperables.
+                {describeProcessButtonBlock({
+                  ready,
+                  photos: uploadPhotos,
+                  pendingUploads,
+                  uploadedCount,
+                })}
               </Text>
             ) : null}
           </View>
@@ -402,9 +483,9 @@ export function UploadsScreen({
                 {photo.display_name}
               </Text>
               <Text style={styles.photoText}>{labelForUploadStatus(photo)}</Text>
-              {labelForLocalScanStatus(draft?.status) ? (
+              {labelForLocalScanStatus(draft?.status, draft?.error_code) ? (
                 <Text style={styles.muted} numberOfLines={2}>
-                  {labelForLocalScanStatus(draft?.status)}
+                  {labelForLocalScanStatus(draft?.status, draft?.error_code)}
                 </Text>
               ) : null}
               {detection ? (
@@ -451,15 +532,34 @@ export function UploadsScreen({
         aisleName={progress?.aisleName ?? ''}
         uploadedCount={progress?.uploaded ?? 0}
         pendingCount={progress?.pending ?? 0}
+        pendingLocalResultCount={pendingLocalResultCount}
+        excludedPhotoCount={excludedPhotoCount}
+        localResults={localResults}
         preference={identificationModePreference}
         busy={busy}
         error={confirmError}
+        uploadLocalBusy={uploadLocalBusy}
+        uploadLocalMessage={uploadLocalMessage}
+        allowUploadLocalResults={Boolean(
+          services.config.flags.mobileAuthoritativeLocalCodeScan,
+        )}
         onClose={() => {
-          if (busy) return;
+          if (busy || uploadLocalBusy) return;
           setConfirmVisible(false);
           setConfirmError(null);
+          setUploadLocalMessage(null);
         }}
         onConfirm={confirmAndStart}
+        onUploadLocalResults={uploadLocalResults}
+        onViewResults={() => {
+          setConfirmVisible(false);
+          if (onViewAisleResults) onViewAisleResults();
+          else onProcess();
+        }}
+        onExcludedPhotos={() => {
+          setConfirmVisible(false);
+          onExcludedPhotos?.();
+        }}
       />
     </>
   );

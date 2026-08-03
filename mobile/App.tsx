@@ -24,6 +24,9 @@ import { ServerReprocessScreen } from './src/screens/ServerReprocessScreen';
 import { AisleRevisionScreen } from './src/screens/AisleRevisionScreen';
 import { AisleHistoryScreen } from './src/screens/AisleHistoryScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
+import { ExcludedPhotosScreen } from './src/screens/ExcludedPhotosScreen';
+import { AisleResultsListScreen } from './src/screens/AisleResultsListScreen';
+import { ClientPositionLabelsScreen } from './src/screens/ClientPositionLabelsScreen';
 import type { AisleIdentificationMode } from './src/features/processing/processingMode';
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
 import { processingRunStore } from './src/features/processing/processingRun';
@@ -43,6 +46,9 @@ type Screen =
   | 'aisle-history'
   | 'processing'
   | 'results'
+  | 'aisle-results-list'
+  | 'excluded-photos'
+  | 'position-labels'
   | 'diagnostic';
 
 export default function App(): JSX.Element {
@@ -86,12 +92,7 @@ export default function App(): JSX.Element {
             userMessageForCode('LOCAL_DB_CORRUPTED'),
           );
         }
-        if (
-          created.config.flags.mobileLocalCodeScan ||
-          created.config.flags.mobileAuthoritativeLocalCodeScan
-        ) {
-          setIdentificationModePreference('CODE_SCAN');
-        }
+        setIdentificationModePreference(null);
         unsubscribeConnectivity = created.connectivity.subscribe((state) => {
           if (mounted) setConnectivity(state);
         });
@@ -320,6 +321,17 @@ export default function App(): JSX.Element {
               },
             ])
           }
+          {...(selectedInventory.client_id
+            ? { onOpenPositionLabels: () => setScreen('position-labels') }
+            : {})}
+        />
+      ) : null}
+      {screen === 'position-labels' && selectedInventory?.client_id ? (
+        <ClientPositionLabelsScreen
+          services={services}
+          clientId={selectedInventory.client_id}
+          clientName={selectedInventory.name}
+          onBack={() => setScreen('aisles')}
         />
       ) : null}
       {screen === 'capture' && (capture?.context || (selectedInventory && selectedAisle)) ? (
@@ -407,6 +419,8 @@ export default function App(): JSX.Element {
           onError={setError}
           onLocalReview={() => setScreen('local-result-review')}
           onAuthoritativeFinalize={() => setScreen('authoritative-finalize')}
+          onViewAisleResults={() => setScreen('aisle-results-list')}
+          onExcludedPhotos={() => setScreen('excluded-photos')}
         />
       ) : null}
       {screen === 'authoritative-finalize' &&
@@ -442,6 +456,30 @@ export default function App(): JSX.Element {
           onBack={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onAnotherAisle={() => setScreen('inventories')}
           onViewResults={() => setScreen('results')}
+          onViewAisleResults={() => setScreen('aisle-results-list')}
+          onExcludedPhotos={() => setScreen('excluded-photos')}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'aisle-results-list' && workSessionId ? (
+        <AisleResultsListScreen
+          services={services}
+          sessionId={workSessionId}
+          inventoryName={selectedInventory?.name ?? ''}
+          aisleName={selectedAisle?.code ?? ''}
+          onBack={() => setScreen('uploads')}
+          onViewServerResult={() => setScreen('results')}
+          onUploadLocal={() => undefined}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'excluded-photos' && workSessionId ? (
+        <ExcludedPhotosScreen
+          services={services}
+          sessionId={workSessionId}
+          inventoryName={selectedInventory?.name ?? ''}
+          aisleName={selectedAisle?.code ?? ''}
+          onBack={() => setScreen('uploads')}
           onError={setError}
         />
       ) : null}

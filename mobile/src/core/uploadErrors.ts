@@ -11,7 +11,30 @@ export type UploadErrorClass =
   | 'permanent'
   | 'unknown';
 
+export const LOCAL_DB_BUSY = 'LOCAL_DB_BUSY';
+
+/** Detect SQLite contention / nested-tx errors that must not look like network failures. */
+export function classifyLocalDbUploadFailure(message: string | null | undefined): string | null {
+  const m = String(message ?? '').toLowerCase();
+  if (!m) {
+    return null;
+  }
+  if (
+    m.includes('database is locked') ||
+    m.includes('cannot start a transaction within a transaction') ||
+    m.includes('cannot rollback') ||
+    m.includes('nativestatement.finalizeasync') ||
+    m.includes('nativedatabase.execasync')
+  ) {
+    return LOCAL_DB_BUSY;
+  }
+  return null;
+}
+
 export function classifyUploadHttpError(status: number | null, code: string | null): UploadErrorClass {
+  if (code === LOCAL_DB_BUSY) {
+    return 'retryable';
+  }
   if (status === null) {
     return 'retryable';
   }

@@ -340,6 +340,33 @@ class DinamicUploadWorker(
     val uploader = MultipartUploader(session.apiBaseUrl, session.apiKey)
     for (s in ready) {
       store.markProcessPending(db, s.sessionId)
+      val orderedId = s.orderedCaptureSessionId?.takeIf { it.isNotBlank() }
+      if (orderedId != null) {
+        if (s.expectedAssetCount < 1) {
+          store.markProcessFailed(
+            db,
+            s.sessionId,
+            "CAPTURE_SESSION_SEAL_REJECTED",
+            "Sesión ordenada sin fotos secuenciadas",
+          )
+          continue
+        }
+        val seal = uploader.sealOrderedCaptureSession(
+          orderedId,
+          s.expectedAssetCount,
+          1,
+          session.accessToken,
+        )
+        if (seal.jobId == null && seal.errorCode != null) {
+          store.markProcessFailed(
+            db,
+            s.sessionId,
+            seal.errorCode,
+            seal.errorMessage ?: "seal failed",
+          )
+          continue
+        }
+      }
       val idempotency = "mobile-process:${s.sessionId}"
       val mode = s.preparationProcessingMode
         ?.takeIf { it == "CODE_SCAN" || it == "INTERNAL_OCR" }

@@ -29,6 +29,18 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
     ) {
       return { titleKey: 'routes.analytics_compare.title', subtitleKey: 'routes.analytics_compare.subtitle' };
     }
+    if (matchPath(ROUTE_MATCH.aisleLocations, pathname)) {
+      return {
+        titleKey: 'routes.physical_locations.title',
+        subtitleKey: 'routes.physical_locations.subtitle',
+      };
+    }
+    if (matchPath(ROUTE_MATCH.inventoryPhysicalLocations, pathname)) {
+      return {
+        titleKey: 'routes.physical_locations_hub.title',
+        subtitleKey: 'routes.physical_locations_hub.subtitle',
+      };
+    }
     if (matchPath(ROUTE_MATCH.aislePositions, pathname)) {
       return { titleKey: 'routes.aisle_results.title', subtitleKey: 'routes.aisle_results.subtitle' };
     }
@@ -55,6 +67,12 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
     return {
       titleKey: 'routes.client_supplier_detail.title',
       subtitleKey: 'routes.client_supplier_detail.subtitle',
+    };
+  }
+  if (matchPath(ROUTE_MATCH.clientPhysicalLocations, pathname)) {
+    return {
+      titleKey: 'position_labels.title',
+      subtitleKey: 'position_labels.subtitle',
     };
   }
   if (matchPath(ROUTE_MATCH.clientDetail, pathname)) {

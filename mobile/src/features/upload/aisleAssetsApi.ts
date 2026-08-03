@@ -19,12 +19,22 @@ export class AisleAssetsApi {
     readonly uploadBatchId: string;
     readonly clientFileIds: readonly string[];
     readonly files: readonly LocalUploadFile[];
+    readonly orderedCaptureSessionId?: string | null;
+    readonly sequenceNumbers?: readonly number[];
     readonly signal?: AbortSignal;
   }): Promise<UploadAisleAssetsResponseDto> {
     const form = new FormData();
     form.append('upload_batch_id', input.uploadBatchId);
     for (const id of input.clientFileIds) {
       form.append('client_file_ids', id);
+    }
+    if (input.orderedCaptureSessionId) {
+      form.append('ordered_capture_session_id', input.orderedCaptureSessionId);
+    }
+    if (input.sequenceNumbers && input.sequenceNumbers.length > 0) {
+      for (const n of input.sequenceNumbers) {
+        form.append('sequence_numbers', String(n));
+      }
     }
     for (const file of input.files) {
       form.append('files', {

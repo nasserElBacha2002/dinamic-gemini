@@ -23,6 +23,10 @@ export type LogEvent =
   | 'upload_limits_refreshed'
   | 'upload_limits_fallback'
   | 'upload_enqueue_missing_batch'
+  | 'upload_missing_sequence_number'
+  | 'ordered_capture_ensure_on_enqueue_failed'
+  | 'ordered_capture_seal_preflight_failed'
+  | 'ordered_capture_orphan_delete_failed'
   | 'error'
   | 'job_started'
   | 'job_status_changed'
@@ -32,6 +36,7 @@ export type LogEvent =
   | 'storage_cleanup'
   | 'work_scheduled'
   | 'health_check'
+  | 'mobile_api_base_url'
   | 'aisle_blocked';
 
 export interface LogRecord {

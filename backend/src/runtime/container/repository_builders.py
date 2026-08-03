@@ -571,3 +571,211 @@ def build_preliminary_detection_reconciliation_repository(
         build_sql=_sql,
         build_memory=_memory,
     )
+
+
+def build_ordered_capture_session_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    """Phase 1 positioning: ordered capture sessions (mobile sequence spine)."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_ordered_capture_session_repository import (
+            SqlOrderedCaptureSessionRepository,
+        )
+
+        return SqlOrderedCaptureSessionRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_ordered_capture_session_repository import (
+            MemoryOrderedCaptureSessionRepository,
+        )
+
+        return MemoryOrderedCaptureSessionRepository()
+
+    return build_repo(
+        backend_info_name="OrderedCaptureSessionRepository",
+        sql_error_subject="ordered_capture_session repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_aisle_location_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    """Phase 1 positioning: physical aisle locations."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_aisle_location_repository import (
+            SqlAisleLocationRepository,
+        )
+
+        return SqlAisleLocationRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_aisle_location_repository import (
+            MemoryAisleLocationRepository,
+        )
+
+        return MemoryAisleLocationRepository()
+
+    return build_repo(
+        backend_info_name="AisleLocationRepository",
+        sql_error_subject="aisle_location repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_aisle_location_label_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    """Phase 1 positioning: aisle location labels."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_aisle_location_repository import (
+            SqlAisleLocationLabelRepository,
+        )
+
+        return SqlAisleLocationLabelRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_aisle_location_repository import (
+            MemoryAisleLocationLabelRepository,
+        )
+
+        return MemoryAisleLocationLabelRepository()
+
+    return build_repo(
+        backend_info_name="AisleLocationLabelRepository",
+        sql_error_subject="aisle_location_label repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_aisle_location_label_artifact_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    """Phase 2 positioning: rendered label artifacts."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_aisle_location_repository import (
+            SqlAisleLocationLabelArtifactRepository,
+        )
+
+        return SqlAisleLocationLabelArtifactRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_aisle_location_repository import (
+            MemoryAisleLocationLabelArtifactRepository,
+        )
+
+        return MemoryAisleLocationLabelArtifactRepository()
+
+    return build_repo(
+        backend_info_name="AisleLocationLabelArtifactRepository",
+        sql_error_subject="aisle_location_label_artifact repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_client_position_label_repository(
+    build_repo: BuildSqlOrMemory[_RepoT],
+) -> _RepoT:
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_client_position_label_repository import (
+            SqlClientPositionLabelRepository,
+        )
+
+        return SqlClientPositionLabelRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_client_position_label_repository import (
+            MemoryClientPositionLabelRepository,
+        )
+
+        return MemoryClientPositionLabelRepository()
+
+    return build_repo(
+        backend_info_name="ClientPositionLabelRepository",
+        sql_error_subject="client_position_label repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_manual_position_override_repository(
+    build_repo: BuildSqlOrMemory[_RepoT],
+) -> _RepoT:
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_manual_position_override_repository import (
+            SqlManualPositionOverrideRepository,
+        )
+
+        return SqlManualPositionOverrideRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_manual_position_override_repository import (
+            MemoryManualPositionOverrideRepository,
+        )
+
+        return MemoryManualPositionOverrideRepository()
+
+    return build_repo(
+        backend_info_name="ManualPositionOverrideRepository",
+        sql_error_subject="manual position override repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_image_position_label_detection_repository(
+    build_repo: BuildSqlOrMemory[_RepoT],
+) -> _RepoT:
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_image_position_label_detection_repository import (
+            SqlImagePositionLabelDetectionRepository,
+        )
+
+        return SqlImagePositionLabelDetectionRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_image_position_label_detection_repository import (
+            MemoryImagePositionLabelDetectionRepository,
+        )
+
+        return MemoryImagePositionLabelDetectionRepository()
+
+    return build_repo(
+        backend_info_name="ImagePositionLabelDetectionRepository",
+        sql_error_subject="image_position_label_detection repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_position_reconciliation_repository(
+    build_repo: BuildSqlOrMemory[_RepoT],
+) -> _RepoT:
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_position_reconciliation_repository import (
+            SqlPositionReconciliationRepository,
+        )
+
+        return SqlPositionReconciliationRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_position_reconciliation_repository import (
+            MemoryPositionReconciliationRepository,
+        )
+
+        return MemoryPositionReconciliationRepository()
+
+    return build_repo(
+        backend_info_name="PositionReconciliationRepository",
+        sql_error_subject="position_reconciliation repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )

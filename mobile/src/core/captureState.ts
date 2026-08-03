@@ -16,7 +16,8 @@ const SESSION_TRANSITIONS: Readonly<Record<CaptureSessionStatus, readonly Captur
   // not via direct active/paused → uploading jumps.
   active: ['paused', 'finishing', 'failed', 'cancelled'],
   paused: ['active', 'finishing', 'failed', 'cancelled'],
-  finishing: ['review', 'uploading', 'failed', 'cancelled'],
+  // Gate failures (unstable/undecodable) roll back to active/paused so capture can continue.
+  finishing: ['review', 'uploading', 'active', 'paused', 'failed', 'cancelled'],
   review: ['uploading', 'upload_review', 'ready_to_process', 'completed', 'cancelled', 'failed'],
   uploading: ['upload_review', 'ready_to_process', 'failed', 'cancelled'],
   upload_review: ['uploading', 'ready_to_process', 'failed', 'cancelled'],

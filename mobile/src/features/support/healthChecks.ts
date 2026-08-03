@@ -33,7 +33,9 @@ export async function runHealthChecks(input: {
     id: 'config',
     label: 'Configuración',
     status: input.config.apiBaseUrl ? 'ok' : 'fail',
-    detail: `${input.config.environment} · v${input.config.versionName} (${input.config.versionCode}) · ${input.config.gitSha}`,
+    detail: input.config.isDevelopment
+      ? `API ${input.config.apiBaseUrl || '(sin URL)'} · ${input.config.environment} · v${input.config.versionName}`
+      : `${input.config.environment} · v${input.config.versionName} (${input.config.versionCode}) · ${input.config.gitSha}`,
   });
 
   const conn = input.connectivity.getState();

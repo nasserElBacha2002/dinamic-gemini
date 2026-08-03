@@ -20,6 +20,7 @@ export interface AislesScreenProps {
   onOpenWork: (work: LocalAisleWork) => void;
   onBack: () => void;
   onCancelCapture: () => void;
+  onOpenPositionLabels?: () => void;
 }
 
 export function AislesScreen({
@@ -33,6 +34,7 @@ export function AislesScreen({
   onOpenWork,
   onBack,
   onCancelCapture,
+  onOpenPositionLabels,
 }: AislesScreenProps) {
   const [items, setItems] = useState<AisleDto[]>([]);
   const [busy, setBusy] = useState(false);
@@ -81,6 +83,12 @@ export function AislesScreen({
               <Button label="Buscar" onPress={load} />
               <SmallButton label="+ Crear pasillo" onPress={openCreate} />
             </View>
+            {onOpenPositionLabels && inventory.client_id ? (
+              <SmallButton
+                label="Etiquetas de posicionamiento"
+                onPress={onOpenPositionLabels}
+              />
+            ) : null}
           </View>
         }
         renderItem={({ item: aisle }) => {

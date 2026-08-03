@@ -35,6 +35,7 @@ export type PayloadParseErrorCode =
   | 'CODE_LENGTH_OUT_OF_RANGE'
   | 'CODE_CONTROL_CHARACTERS'
   | 'PLAIN_UNVERIFIED_PAYLOAD'
+  | 'POSITION_LABEL_DETECTED'
   | 'QUANTITY_MISSING'
   | 'QUANTITY_NOT_POSITIVE'
   | 'QUANTITY_ABOVE_MAX'
@@ -81,8 +82,23 @@ function detectFormat(raw: string): LabelPayloadFormat {
 }
 
 /** True when a PLAIN decode is not a trustworthy inventory internal code. */
+export function isDinamicPositionPayload(raw: string): boolean {
+  const text = (raw ?? '').trim();
+  if (!text.startsWith('{')) return false;
+  try {
+    const parsed = JSON.parse(text) as { type?: unknown };
+    return parsed != null && typeof parsed === 'object' && parsed.type === 'DINAMIC_POSITION';
+  } catch {
+    return false;
+  }
+}
+
+/** True when a PLAIN decode is not a trustworthy inventory internal code. */
 export function isRejectedPlainPayload(code: string, raw: string): boolean {
   const text = (raw ?? '').trim();
+  if (isDinamicPositionPayload(text)) {
+    return true;
+  }
   if (text.includes('\n') && !LABELED_CODE_PATTERN.test(text)) {
     // Multiline free text without labeled marker — unverified.
     return true;
@@ -175,6 +191,9 @@ export function parseEncodedLabelPayload(
   } else if (hasControlChars(code)) {
     warnings.push('CODE_CONTROL_CHARACTERS');
     code = null;
+  } else if (format === 'PLAIN' && isDinamicPositionPayload(rawValue)) {
+    warnings.push('POSITION_LABEL_DETECTED');
+    code = null;
   } else if (format === 'PLAIN' && isRejectedPlainPayload(code, rawValue)) {
     warnings.push('PLAIN_UNVERIFIED_PAYLOAD');
     code = null;
@@ -206,6 +225,7 @@ export function parseEncodedLabelPayload(
         'NO_INTERNAL_CODE',
         'CODE_LENGTH_OUT_OF_RANGE',
         'CODE_CONTROL_CHARACTERS',
+        'POSITION_LABEL_DETECTED',
         'PLAIN_UNVERIFIED_PAYLOAD',
       ].includes(w),
     ) ?? 'NO_INTERNAL_CODE') as PayloadParseErrorCode;

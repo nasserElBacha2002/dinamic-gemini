@@ -24,6 +24,10 @@ class UploadSqliteStore(private val context: Context) {
     val mimeType: String,
     val uploadSize: Long,
     val uploadAttempts: Int,
+    /** Backend ordered-capture session id when Phase 1 sequencing is active. */
+    val orderedCaptureSessionId: String?,
+    /** Logical 1-based capture sequence; required when orderedCaptureSessionId is set. */
+    val sequenceNumber: Int?,
   )
 
   data class UploadOk(val clientFileId: String, val assetId: String)
@@ -34,6 +38,8 @@ class UploadSqliteStore(private val context: Context) {
     val inventoryId: String,
     val aisleId: String,
     val preparationProcessingMode: String?,
+    val orderedCaptureSessionId: String?,
+    val expectedAssetCount: Int,
   )
 
   sealed class OpenResult {
@@ -92,7 +98,8 @@ class UploadSqliteStore(private val context: Context) {
     val sql = """
       SELECT p.id, p.capture_session_id, s.inventory_id, s.aisle_id, s.upload_batch_id,
              p.client_file_id, p.uri, p.local_transform_uri, p.display_name, p.mime_type,
-             p.upload_size, p.upload_attempts
+             p.upload_size, p.upload_attempts,
+             s.backend_ordered_capture_session_id, p.sequence_number
       FROM capture_photos p
       INNER JOIN capture_sessions s ON s.id = p.capture_session_id
       WHERE p.status = 'stable'
@@ -101,6 +108,10 @@ class UploadSqliteStore(private val context: Context) {
         AND p.upload_size IS NOT NULL AND p.upload_size > 0
         AND p.client_file_id IS NOT NULL
         AND s.upload_batch_id IS NOT NULL
+        AND (
+          s.backend_ordered_capture_session_id IS NULL
+          OR p.sequence_number IS NOT NULL
+        )
         AND COALESCE(p.last_upload_error_code, '') != '${UploadContracts.CODE_UPLOAD_REPREPARE_REQUIRED}'
         AND (p.next_retry_at IS NULL OR p.next_retry_at <= ?)
         AND (
@@ -128,6 +139,8 @@ class UploadSqliteStore(private val context: Context) {
             mimeType = c.getString(9) ?: "image/jpeg",
             uploadSize = c.getLong(10),
             uploadAttempts = c.getInt(11),
+            orderedCaptureSessionId = if (c.isNull(12)) null else c.getString(12),
+            sequenceNumber = if (c.isNull(13)) null else c.getInt(13),
           ),
         )
       }
@@ -434,7 +447,14 @@ class UploadSqliteStore(private val context: Context) {
 
   fun listSessionsReadyForProcess(db: SQLiteDatabase): List<SessionForProcess> {
     val sql = """
-      SELECT s.id, s.inventory_id, s.aisle_id, s.preparation_processing_mode
+      SELECT s.id, s.inventory_id, s.aisle_id, s.preparation_processing_mode,
+             s.backend_ordered_capture_session_id,
+             (
+               SELECT COUNT(*) FROM capture_photos p
+               WHERE p.capture_session_id = s.id
+                 AND p.upload_status = 'uploaded'
+                 AND p.sequence_number IS NOT NULL
+             ) AS expected_asset_count
       FROM capture_sessions s
       WHERE s.upload_batch_id IS NOT NULL
         AND (s.backend_job_id IS NULL OR s.backend_job_id = '')
@@ -459,6 +479,8 @@ class UploadSqliteStore(private val context: Context) {
             inventoryId = c.getString(1),
             aisleId = c.getString(2),
             preparationProcessingMode = c.getString(3),
+            orderedCaptureSessionId = if (c.isNull(4)) null else c.getString(4),
+            expectedAssetCount = if (c.isNull(5)) 0 else c.getInt(5),
           ),
         )
       }
