@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from enum import Enum
 
-from src.application.errors import PositionReconciliationSessionMismatchError
+from src.application.errors import (
+    PositionReconciliationSequenceInvalidError,
+    PositionReconciliationSessionMismatchError,
+)
 from src.application.services.position_reconciliation.transitions import (
     resolve_position_transition,
 )
@@ -40,6 +43,18 @@ class SequentialPositionReconciler:
             raise PositionReconciliationSessionMismatchError(
                 "Job assets belong to multiple ordered capture sessions"
             )
+
+        source_by_sequence: dict[int, str] = {}
+        for frame in frames:
+            if frame.sequence_number is None:
+                continue
+            sequence = int(frame.sequence_number)
+            existing = source_by_sequence.setdefault(sequence, frame.source_asset_id)
+            if existing != frame.source_asset_id:
+                raise PositionReconciliationSequenceInvalidError(
+                    f"Sequence {sequence} maps to multiple source assets: "
+                    f"{existing}, {frame.source_asset_id}"
+                )
 
         ordered = sorted(
             (frame for frame in frames if frame.sequence_number is not None),

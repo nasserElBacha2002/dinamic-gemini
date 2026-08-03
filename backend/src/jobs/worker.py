@@ -124,7 +124,11 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
         if (
             settings.position_reconciliation_enabled
             and settings.position_reconciliation_auto_run_enabled
+            and settings.position_reconciliation_persistence_enabled
         ):
+            from src.application.services.position_reconciliation.readiness import (
+                PositionReconciliationReadinessPolicy,
+            )
             from src.application.use_cases.position_reconciliation.reconcile_job_positions import (
                 ReconcileJobPositionsUseCase,
             )
@@ -141,6 +145,10 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
                 product_record_repo=get_product_record_repo(),
                 detection_repo=container.get_image_position_label_detection_repo(),
                 reconciliation_repo=container.get_position_reconciliation_repo(),
+                clock=get_clock(),
+                readiness_policy=PositionReconciliationReadinessPolicy(
+                    container.get_ordered_capture_session_repo()
+                ),
                 enabled=True,
                 persistence_enabled=settings.position_reconciliation_persistence_enabled,
             )

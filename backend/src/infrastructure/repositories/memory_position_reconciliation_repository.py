@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import datetime, timezone
 from threading import RLock
 
+from src.application.errors import (
+    PositionReconciliationConcurrentUpdateError,
+    PositionReconciliationInputChangedError,
+)
 from src.domain.position_reconciliation.entities import (
     AssignmentStatus,
     PositionReconciliation,
@@ -21,41 +24,122 @@ class MemoryPositionReconciliationRepository:
         self._assignments: dict[str, ProductPositionAssignment] = {}
         self._lock = RLock()
 
-    def get_active_by_job(self, job_id: str) -> PositionReconciliation | None:
+    def get_published_by_job(self, job_id: str) -> PositionReconciliation | None:
         with self._lock:
             return next(
                 (
                     row
                     for row in self._reconciliations.values()
-                    if row.job_id == job_id and row.is_active
+                    if row.job_id == job_id
+                    and row.is_active
+                    and row.status is ReconciliationStatus.COMPLETED
                 ),
                 None,
             )
+
+    def get_active_by_job(self, job_id: str) -> PositionReconciliation | None:
+        return self.get_published_by_job(job_id)
+
+    def get_last_attempt_by_job(self, job_id: str) -> PositionReconciliation | None:
+        with self._lock:
+            rows = [row for row in self._reconciliations.values() if row.job_id == job_id]
+            return max(rows, key=lambda row: (row.created_at, row.id), default=None)
 
     def get_by_id(self, reconciliation_id: str) -> PositionReconciliation | None:
         with self._lock:
             return self._reconciliations.get(reconciliation_id)
 
     def mark_stale(self, job_id: str) -> PositionReconciliation | None:
+        """Deprecated: publication remains active until a replacement is published."""
         with self._lock:
-            row = self.get_active_by_job(job_id)
-            if row is None:
-                return None
-            row.status = ReconciliationStatus.STALE
-            row.updated_at = datetime.now(timezone.utc)
-            return row
+            return self.get_published_by_job(job_id)
 
     def begin_or_get_running(
         self, reconciliation: PositionReconciliation
     ) -> PositionReconciliation:
         with self._lock:
-            active = self.get_active_by_job(reconciliation.job_id)
-            if active is not None and active.status in {
-                ReconciliationStatus.RUNNING,
-                ReconciliationStatus.COMPLETED,
-            }:
-                return active
+            active_attempt = next(
+                (
+                    row
+                    for row in self._reconciliations.values()
+                    if row.job_id == reconciliation.job_id and row.is_active
+                ),
+                None,
+            )
+            if (
+                active_attempt is not None
+                and active_attempt.status is not ReconciliationStatus.COMPLETED
+            ):
+                active_attempt.is_active = False
+                active_attempt.superseded_at = reconciliation.started_at
+                active_attempt.updated_at = reconciliation.started_at
+            published = self.get_published_by_job(reconciliation.job_id)
+            if published is not None and published.input_fingerprint == reconciliation.input_fingerprint:
+                return published
+            running = next(
+                (
+                    row
+                    for row in self._reconciliations.values()
+                    if row.job_id == reconciliation.job_id
+                    and row.status is ReconciliationStatus.RUNNING
+                    and row.input_fingerprint == reconciliation.input_fingerprint
+                ),
+                None,
+            )
+            if running is not None:
+                return running
+            reconciliation.is_active = False
             self._reconciliations[reconciliation.id] = reconciliation
+            return reconciliation
+
+    def record_failed_attempt(
+        self, attempt: PositionReconciliation
+    ) -> PositionReconciliation:
+        with self._lock:
+            attempt.status = ReconciliationStatus.FAILED
+            attempt.is_active = False
+            self._reconciliations[attempt.id] = attempt
+            return attempt
+
+    def publish_completed_revision_atomically(
+        self,
+        reconciliation: PositionReconciliation,
+        assignments: Sequence[ProductPositionAssignment],
+        previous_active_id: str | None,
+        expected_input_fingerprint: str,
+    ) -> PositionReconciliation:
+        with self._lock:
+            if reconciliation.input_fingerprint != expected_input_fingerprint:
+                raise PositionReconciliationInputChangedError(
+                    "Reconciliation fingerprint changed before publication"
+                )
+            active = self.get_published_by_job(reconciliation.job_id)
+            if active is not None and active.input_fingerprint == expected_input_fingerprint:
+                return active
+            active_id = active.id if active else None
+            if previous_active_id is not None and active_id != previous_active_id:
+                raise PositionReconciliationConcurrentUpdateError(
+                    "Published reconciliation changed during processing"
+                )
+            if previous_active_id is None and active_id is not None:
+                raise PositionReconciliationConcurrentUpdateError(
+                    "A reconciliation was published during processing"
+                )
+            now = reconciliation.updated_at
+            if active is not None:
+                active.is_active = False
+                active.superseded_at = now
+                active.updated_at = now
+            for assignment_id, assignment_row in tuple(self._assignments.items()):
+                if assignment_row.job_id == reconciliation.job_id and assignment_row.is_active:
+                    self._assignments[assignment_id] = replace(
+                        assignment_row, is_active=False, superseded_at=now, updated_at=now
+                    )
+            reconciliation.status = ReconciliationStatus.COMPLETED
+            reconciliation.is_active = True
+            self._reconciliations[reconciliation.id] = reconciliation
+            for assignment in assignments:
+                self._assignments[assignment.id] = assignment
             return reconciliation
 
     def persist_revision_atomically(
@@ -64,30 +148,12 @@ class MemoryPositionReconciliationRepository:
         assignments: Sequence[ProductPositionAssignment],
         previous_active_id: str | None,
     ) -> PositionReconciliation:
-        with self._lock:
-            now = reconciliation.updated_at
-            old_reconciliations = dict(self._reconciliations)
-            old_assignments = dict(self._assignments)
-            try:
-                for recon in self._reconciliations.values():
-                    if recon.job_id == reconciliation.job_id and recon.is_active:
-                        recon.is_active = False
-                        recon.superseded_at = now
-                        recon.updated_at = now
-                for assignment_id, assignment_row in tuple(self._assignments.items()):
-                    if assignment_row.job_id == reconciliation.job_id and assignment_row.is_active:
-                        self._assignments[assignment_id] = replace(
-                            assignment_row, is_active=False, superseded_at=now, updated_at=now
-                        )
-                reconciliation.is_active = True
-                self._reconciliations[reconciliation.id] = reconciliation
-                for assignment in assignments:
-                    self._assignments[assignment.id] = assignment
-            except Exception:
-                self._reconciliations = old_reconciliations
-                self._assignments = old_assignments
-                raise
-            return reconciliation
+        return self.publish_completed_revision_atomically(
+            reconciliation,
+            assignments,
+            previous_active_id,
+            reconciliation.input_fingerprint,
+        )
 
     def list_active_assignments(self, job_id: str) -> list[ProductPositionAssignment]:
         with self._lock:

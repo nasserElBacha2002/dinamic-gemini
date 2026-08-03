@@ -1,6 +1,8 @@
 """Phase 4 position reconciliation services."""
 
 from src.application.services.position_reconciliation.fingerprint import (
+    PositionReconciliationInputSnapshot,
+    build_fingerprint_from_frames,
     compute_input_fingerprint,
 )
 from src.application.services.position_reconciliation.sequential_reconciler import (
@@ -12,6 +14,8 @@ from src.application.services.position_reconciliation.transitions import (
 
 __all__ = [
     "SequentialPositionReconciler",
+    "PositionReconciliationInputSnapshot",
+    "build_fingerprint_from_frames",
     "compute_input_fingerprint",
     "resolve_position_transition",
 ]

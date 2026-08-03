@@ -12,7 +12,17 @@ from src.domain.position_reconciliation.entities import (
 
 
 class PositionReconciliationRepository(Protocol):
-    def get_active_by_job(self, job_id: str) -> PositionReconciliation | None: ...
+    def get_published_by_job(self, job_id: str) -> PositionReconciliation | None:
+        """Return the active COMPLETED revision."""
+        ...
+
+    def get_last_attempt_by_job(self, job_id: str) -> PositionReconciliation | None:
+        """Return the most recent attempt by creation time, regardless of status."""
+        ...
+
+    def get_active_by_job(self, job_id: str) -> PositionReconciliation | None:
+        """Backward-compatible alias for get_published_by_job."""
+        ...
 
     def get_by_id(self, reconciliation_id: str) -> PositionReconciliation | None: ...
 
@@ -20,6 +30,20 @@ class PositionReconciliationRepository(Protocol):
 
     def begin_or_get_running(
         self, reconciliation: PositionReconciliation
+    ) -> PositionReconciliation: ...
+
+    def record_failed_attempt(
+        self, attempt: PositionReconciliation
+    ) -> PositionReconciliation:
+        """Insert a non-active FAILED attempt without replacing the publication."""
+        ...
+
+    def publish_completed_revision_atomically(
+        self,
+        reconciliation: PositionReconciliation,
+        assignments: Sequence[ProductPositionAssignment],
+        previous_active_id: str | None,
+        expected_input_fingerprint: str,
     ) -> PositionReconciliation: ...
 
     def persist_revision_atomically(

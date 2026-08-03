@@ -7,6 +7,10 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
+from src.application.errors import (
+    PositionReconciliationConcurrentUpdateError,
+    PositionReconciliationInputChangedError,
+)
 from src.database.sqlserver import SqlServerClient
 from src.domain.position_reconciliation.entities import (
     AssignmentSource,
@@ -142,9 +146,26 @@ class SqlPositionReconciliationRepository:
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
 
-    def get_active_by_job(self, job_id: str) -> PositionReconciliation | None:
+    def get_published_by_job(self, job_id: str) -> PositionReconciliation | None:
         with self._client.cursor() as cur:
-            cur.execute(_RECONCILIATION_SELECT + " WHERE job_id = ? AND is_active = 1", (job_id,))
+            cur.execute(
+                _RECONCILIATION_SELECT
+                + " WHERE job_id = ? AND is_active = 1 AND status = 'COMPLETED'",
+                (job_id,),
+            )
+            row = cur.fetchone()
+            return _reconciliation(row) if row else None
+
+    def get_active_by_job(self, job_id: str) -> PositionReconciliation | None:
+        return self.get_published_by_job(job_id)
+
+    def get_last_attempt_by_job(self, job_id: str) -> PositionReconciliation | None:
+        with self._client.cursor() as cur:
+            cur.execute(
+                "SELECT TOP 1 " + _RECONCILIATION_SELECT.split("SELECT ", 1)[1]
+                + " WHERE job_id = ? ORDER BY created_at DESC, id DESC",
+                (job_id,),
+            )
             row = cur.fetchone()
             return _reconciliation(row) if row else None
 
@@ -155,14 +176,8 @@ class SqlPositionReconciliationRepository:
             return _reconciliation(row) if row else None
 
     def mark_stale(self, job_id: str) -> PositionReconciliation | None:
-        now = datetime.now(timezone.utc)
-        with self._client.cursor() as cur:
-            cur.execute(
-                "UPDATE dbo.position_reconciliations SET status = 'STALE', updated_at = ? "
-                "WHERE job_id = ? AND is_active = 1",
-                (now, job_id),
-            )
-        return self.get_active_by_job(job_id)
+        """Deprecated: publication remains active until a replacement is published."""
+        return self.get_published_by_job(job_id)
 
     def begin_or_get_running(
         self, reconciliation: PositionReconciliation
@@ -176,33 +191,103 @@ class SqlPositionReconciliationRepository:
             )
             row = cur.fetchone()
             if row is not None:
-                active = _reconciliation(row)
-                if active.status in {ReconciliationStatus.RUNNING, ReconciliationStatus.COMPLETED}:
+                published = _reconciliation(row)
+                if (
+                    published.status is ReconciliationStatus.COMPLETED
+                    and published.input_fingerprint == reconciliation.input_fingerprint
+                ):
                     txn.commit()
-                    return active
-                cur.execute(
-                    "UPDATE dbo.position_reconciliations SET is_active = 0, superseded_at = ?, "
-                    "updated_at = ? WHERE id = ?",
-                    (reconciliation.started_at, reconciliation.started_at, active.id),
-                )
+                    return published
+                if published.status is not ReconciliationStatus.COMPLETED:
+                    cur.execute(
+                        "UPDATE dbo.position_reconciliations SET is_active = 0, "
+                        "superseded_at = ?, updated_at = ? WHERE id = ?",
+                        (
+                            reconciliation.started_at,
+                            reconciliation.started_at,
+                            published.id,
+                        ),
+                    )
+            cur.execute(
+                _RECONCILIATION_SELECT
+                + " WITH (UPDLOCK, HOLDLOCK) WHERE job_id = ? AND status = 'RUNNING' "
+                "AND input_fingerprint = ? ORDER BY created_at DESC",
+                (reconciliation.job_id, reconciliation.input_fingerprint),
+            )
+            running_row = cur.fetchone()
+            if running_row is not None:
+                txn.commit()
+                return _reconciliation(running_row)
+            reconciliation.is_active = False
             _insert_reconciliation(cur, reconciliation)
             txn.commit()
             return reconciliation
 
-    def persist_revision_atomically(
+    def record_failed_attempt(
+        self, attempt: PositionReconciliation
+    ) -> PositionReconciliation:
+        attempt.status = ReconciliationStatus.FAILED
+        attempt.is_active = False
+        with self._client.begin_transaction() as txn:
+            cur = txn.connection.cursor()
+            cur.execute(
+                "SELECT id FROM dbo.position_reconciliations WITH (UPDLOCK, HOLDLOCK) WHERE id = ?",
+                (attempt.id,),
+            )
+            if cur.fetchone() is None:
+                _insert_reconciliation(cur, attempt)
+            else:
+                cur.execute(
+                    "UPDATE dbo.position_reconciliations SET status = 'FAILED', failure_code = ?, "
+                    "completed_at = ?, metadata_json = ?, is_active = 0, updated_at = ? WHERE id = ?",
+                    (
+                        attempt.failure_code,
+                        attempt.completed_at,
+                        json.dumps(attempt.metadata_json, separators=(",", ":"))
+                        if attempt.metadata_json
+                        else None,
+                        attempt.updated_at,
+                        attempt.id,
+                    ),
+                )
+            txn.commit()
+        return attempt
+
+    def publish_completed_revision_atomically(
         self,
         reconciliation: PositionReconciliation,
         assignments: Sequence[ProductPositionAssignment],
         previous_active_id: str | None,
+        expected_input_fingerprint: str,
     ) -> PositionReconciliation:
+        if reconciliation.input_fingerprint != expected_input_fingerprint:
+            raise PositionReconciliationInputChangedError(
+                "Reconciliation fingerprint changed before publication"
+            )
         with self._client.begin_transaction() as txn:
             cur = txn.connection.cursor()
             now = reconciliation.updated_at
             cur.execute(
-                "UPDATE dbo.position_reconciliations SET is_active = 0, superseded_at = ?, "
-                "updated_at = ? WHERE job_id = ? AND is_active = 1 AND id <> ?",
-                (now, now, reconciliation.job_id, reconciliation.id),
+                _RECONCILIATION_SELECT
+                + " WITH (UPDLOCK, HOLDLOCK) WHERE job_id = ? AND is_active = 1",
+                (reconciliation.job_id,),
             )
+            active_row = cur.fetchone()
+            active = _reconciliation(active_row) if active_row else None
+            if active is not None and active.input_fingerprint == expected_input_fingerprint:
+                txn.commit()
+                return active
+            active_id = active.id if active else None
+            if active_id != previous_active_id:
+                raise PositionReconciliationConcurrentUpdateError(
+                    "Published reconciliation changed during processing"
+                )
+            if active is not None:
+                cur.execute(
+                    "UPDATE dbo.position_reconciliations SET is_active = 0, superseded_at = ?, "
+                    "updated_at = ? WHERE id = ?",
+                    (now, now, active.id),
+                )
             cur.execute(
                 "UPDATE dbo.product_position_assignments SET is_active = 0, superseded_at = ?, "
                 "updated_at = ? WHERE job_id = ? AND is_active = 1",
@@ -277,6 +362,19 @@ class SqlPositionReconciliationRepository:
                 )
             txn.commit()
         return reconciliation
+
+    def persist_revision_atomically(
+        self,
+        reconciliation: PositionReconciliation,
+        assignments: Sequence[ProductPositionAssignment],
+        previous_active_id: str | None,
+    ) -> PositionReconciliation:
+        return self.publish_completed_revision_atomically(
+            reconciliation,
+            assignments,
+            previous_active_id,
+            reconciliation.input_fingerprint,
+        )
 
     def list_active_assignments(self, job_id: str) -> list[ProductPositionAssignment]:
         with self._client.cursor() as cur:

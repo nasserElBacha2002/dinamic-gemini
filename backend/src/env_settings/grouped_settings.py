@@ -1972,6 +1972,13 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Run Phase 4 best-effort after successful job finalization.",
     )
+    position_reconciliation_required: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_RECONCILIATION_REQUIRED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Fail job finalization when Phase 4 reconciliation fails (default false).",
+    )
     position_label_max_payload_bytes: int = Field(
         default_factory=lambda: int(
             os.getenv("POSITION_LABEL_MAX_PAYLOAD_BYTES", "4096") or "4096"

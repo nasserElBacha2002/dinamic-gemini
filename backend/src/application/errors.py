@@ -669,6 +669,18 @@ class PositionReconciliationInputChangedError(PositionReconciliationError):
     code = "POSITION_RECONCILIATION_INPUT_CHANGED"
 
 
+class PositionReconciliationConcurrentUpdateError(PositionReconciliationError):
+    code = "POSITION_RECONCILIATION_CONCURRENT_UPDATE"
+
+
+class PositionReconciliationResultsIncompleteError(PositionReconciliationNotReadyError):
+    code = "POSITION_RECONCILIATION_RESULTS_INCOMPLETE"
+
+
+class PositionReconciliationDetectionsIncompleteError(PositionReconciliationNotReadyError):
+    code = "POSITION_RECONCILIATION_DETECTIONS_INCOMPLETE"
+
+
 class PositionReconciliationSessionMismatchError(PositionReconciliationError):
     code = "POSITION_RECONCILIATION_SESSION_MISMATCH"
 

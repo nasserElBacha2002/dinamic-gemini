@@ -33,7 +33,7 @@ class GetJobPositionReconciliationUseCase:
         self, command: GetJobPositionReconciliationCommand
     ) -> PositionReconciliation | None:
         self._access.require_inventory(command.inventory_id, command.principal)
-        row = self._repository.get_active_by_job(command.job_id)
+        row = self._repository.get_published_by_job(command.job_id)
         if row is None or row.inventory_id != command.inventory_id:
             return None
         return row

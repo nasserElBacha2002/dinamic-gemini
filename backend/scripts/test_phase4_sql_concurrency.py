@@ -100,7 +100,10 @@ def _run_parallel(fn_a: Callable[[], Any], fn_b: Callable[[], Any]) -> tuple[Any
         try:
             out[key] = fn()
         except Exception as exc:  # noqa: BLE001
-            errors.append(f"{key}: {exc}\n{traceback.format_exc()}")
+            errors.append(
+                f"{key}: exception_type={type(exc).__name__} message={exc}\n"
+                f"{traceback.format_exc()}"
+            )
 
     t1 = threading.Thread(target=wrap, args=("a", fn_a))
     t2 = threading.Thread(target=wrap, args=("b", fn_b))
@@ -189,14 +192,14 @@ def scenario_one_active_revision() -> ScenarioResult:
         repo = SqlPositionReconciliationRepository(
             SqlServerClient(load_settings().require_sqlserver_connection_string())
         )
-        previous = repo.get_active_by_job(ids["job_id"])
+        previous = repo.get_published_by_job(ids["job_id"])
         row = PositionReconciliation(
             id=str(uuid.uuid4()),
             client_id=ids["client_id"],
             inventory_id=ids["inventory_id"],
             job_id=ids["job_id"],
             ordered_capture_session_id=None,
-            input_fingerprint=f"fp-{marker}-{tag}",
+            input_fingerprint=f"fp-{tag}",
             status=ReconciliationStatus.COMPLETED,
             started_at=now,
             completed_at=now,
@@ -212,8 +215,11 @@ def scenario_one_active_revision() -> ScenarioResult:
             is_active=True,
             metadata_json={"marker": marker},
         )
-        return repo.persist_revision_atomically(
-            row, (), previous.id if previous else None
+        return repo.publish_completed_revision_atomically(
+            row,
+            (),
+            previous.id if previous else None,
+            expected_input_fingerprint=row.input_fingerprint,
         ).id
 
     a, b, errors = _run_parallel(lambda: persist_one("a"), lambda: persist_one("b"))
@@ -233,7 +239,11 @@ def scenario_one_active_revision() -> ScenarioResult:
             (ids["job_id"],),
         )
         total = int(cur.fetchone()[0])
-        ok = active == 1 and total >= 1 and not (a is None and b is None and errors)
+        structured_errors = all(
+            "PositionReconciliationAlreadyRunningError" in error for error in errors
+        )
+        converged = a is not None and b is not None and a == b and not errors
+        ok = active == 1 and total >= 1 and (converged or structured_errors)
         return ScenarioResult(
             name=name,
             ok=ok,
@@ -244,12 +254,88 @@ def scenario_one_active_revision() -> ScenarioResult:
         conn.close()
 
 
+def scenario_failed_attempt_preserves_publication() -> ScenarioResult:
+    name = "failed_attempt_preserves_published_revision"
+    tag = uuid.uuid4().hex[:10]
+    try:
+        ids = _seed(tag)
+        from src.config import load_settings
+        from src.database.sqlserver import SqlServerClient
+        from src.domain.position_reconciliation.entities import (
+            PositionReconciliation,
+            ReconciliationStatus,
+        )
+        from src.infrastructure.repositories.sql_position_reconciliation_repository import (
+            SqlPositionReconciliationRepository,
+        )
+
+        repo = SqlPositionReconciliationRepository(
+            SqlServerClient(load_settings().require_sqlserver_connection_string())
+        )
+        now = datetime.now(timezone.utc)
+        published = PositionReconciliation(
+            id=str(uuid.uuid4()),
+            client_id=ids["client_id"],
+            inventory_id=ids["inventory_id"],
+            job_id=ids["job_id"],
+            ordered_capture_session_id=None,
+            input_fingerprint=f"published-{tag}",
+            status=ReconciliationStatus.COMPLETED,
+            started_at=now,
+            completed_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        repo.publish_completed_revision_atomically(
+            published, (), None, published.input_fingerprint
+        )
+        assignments_before = len(repo.list_active_assignments(ids["job_id"]))
+        failed = PositionReconciliation(
+            id=str(uuid.uuid4()),
+            client_id=ids["client_id"],
+            inventory_id=ids["inventory_id"],
+            job_id=ids["job_id"],
+            ordered_capture_session_id=None,
+            input_fingerprint=f"failed-{tag}",
+            status=ReconciliationStatus.FAILED,
+            started_at=now,
+            completed_at=now,
+            failure_code="HARNESS_FAILURE",
+            created_at=now,
+            updated_at=now,
+            is_active=False,
+        )
+        repo.record_failed_attempt(failed)
+        current = repo.get_published_by_job(ids["job_id"])
+        assignments_after = len(repo.list_active_assignments(ids["job_id"]))
+        ok = (
+            current is not None
+            and current.id == published.id
+            and assignments_after == assignments_before
+        )
+        return ScenarioResult(
+            name=name,
+            ok=ok,
+            detail=(
+                f"published_id={current.id if current else None} "
+                f"assignments_before={assignments_before} assignments_after={assignments_after}"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return ScenarioResult(
+            name=name,
+            ok=False,
+            error=f"exception_type={type(exc).__name__} message={exc}",
+        )
+
+
 def main() -> int:
     _clear_polluted()
     layers = _load_dotenv()
     report = HarnessReport(notes=[f"dotenv={layers}"])
     try:
         report.results.append(scenario_one_active_revision())
+        report.results.append(scenario_failed_attempt_preserves_publication())
         report.status = "PASS" if all(r.ok for r in report.results) else "FAIL"
     except Exception as exc:  # noqa: BLE001
         report.status = "FAIL"

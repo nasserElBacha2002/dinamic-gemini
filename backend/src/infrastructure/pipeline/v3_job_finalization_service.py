@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from src.application.errors import PositionReconciliationError
 from src.application.ports.artifact_manifest_store import ArtifactManifestStore
 from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
 from src.application.ports.clock import Clock
@@ -108,6 +109,7 @@ class V3JobFinalizationService:
         artifact_outbox_store: ArtifactPublicationOutboxStore | None,
         stage_recorder: FinalizationStageRecorder | None,
         position_reconciliation_use_case=None,
+        position_reconciliation_required: bool = False,
     ) -> None:
         self._job_repo = job_repo
         self._clock = clock
@@ -120,6 +122,7 @@ class V3JobFinalizationService:
         self._artifact_outbox_store = artifact_outbox_store
         self._stage_recorder = stage_recorder
         self._position_reconciliation_use_case = position_reconciliation_use_case
+        self._position_reconciliation_required = position_reconciliation_required
 
     def finalize_success(self, req: V3JobFinalizationRequest) -> bool:
         """Persist domain, upload durables, finalize success. True => caller must return True (failure)."""
@@ -272,16 +275,18 @@ class V3JobFinalizationService:
                     ReconcileJobPositionsCommand,
                 )
 
-                self._position_reconciliation_use_case.execute(
+                result = self._position_reconciliation_use_case.execute(
                     ReconcileJobPositionsCommand(
                         inventory_id=req.aisle.inventory_id,
                         job_id=req.job_id,
+                        allow_in_finalization=True,
                     )
                 )
-                logger.info(
-                    "event=position_reconciliation_auto_run_completed job_id=%s",
-                    req.job_id,
-                )
+                if not getattr(result, "dry_run", False):
+                    logger.info(
+                        "event=position_reconciliation_auto_run_completed job_id=%s",
+                        req.job_id,
+                    )
             except Exception as reconciliation_error:
                 try:
                     self._position_reconciliation_use_case.record_failure(
@@ -298,10 +303,20 @@ class V3JobFinalizationService:
                         "event=position_reconciliation_failure_status_write_failed job_id=%s",
                         req.job_id,
                     )
-                logger.exception(
-                    "event=position_reconciliation_auto_run_failed job_id=%s",
-                    req.job_id,
-                )
+                if isinstance(reconciliation_error, PositionReconciliationError):
+                    logger.warning(
+                        "event=position_reconciliation_auto_run_not_ready job_id=%s code=%s error=%s",
+                        req.job_id,
+                        reconciliation_error.code,
+                        reconciliation_error,
+                    )
+                else:
+                    logger.exception(
+                        "event=position_reconciliation_auto_run_failed job_id=%s",
+                        req.job_id,
+                    )
+                if self._position_reconciliation_required:
+                    raise
 
         if req.lease is not None:
             assert_result = self._job_repo.assert_lease(req.lease, now=self._clock.now())

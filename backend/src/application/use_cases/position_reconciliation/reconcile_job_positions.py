@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from uuid import uuid4
 
 from src.application.dto.access_principal import AccessPrincipal
@@ -15,6 +14,7 @@ from src.application.errors import (
     PositionReconciliationInputChangedError,
     PositionReconciliationNotReadyError,
 )
+from src.application.ports.clock import Clock
 from src.application.ports.image_position_label_detection_repository import (
     ImagePositionLabelDetectionRepository,
 )
@@ -32,7 +32,13 @@ from src.application.ports.repositories import (
 )
 from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.position_reconciliation.fingerprint import (
-    compute_input_fingerprint,
+    build_fingerprint_from_frames,
+)
+from src.application.services.position_reconciliation.job_final_item_result_reader import (
+    JobFinalItemResultReader,
+)
+from src.application.services.position_reconciliation.readiness import (
+    PositionReconciliationReadinessPolicy,
 )
 from src.application.services.position_reconciliation.sequential_reconciler import (
     SequentialPositionReconciler,
@@ -55,6 +61,7 @@ class ReconcileJobPositionsCommand:
     job_id: str
     principal: AccessPrincipal | None = None
     force_new_revision: bool = False
+    allow_in_finalization: bool = False
 
 
 @dataclass(frozen=True)
@@ -62,6 +69,7 @@ class ReconcileJobPositionsResult:
     reconciliation: PositionReconciliation
     assignments: tuple[ProductPositionAssignment, ...]
     reused: bool = False
+    dry_run: bool = False
 
 
 class ReconcileJobPositionsUseCase:
@@ -77,6 +85,9 @@ class ReconcileJobPositionsUseCase:
         product_record_repo: ProductRecordRepository,
         detection_repo: ImagePositionLabelDetectionRepository,
         reconciliation_repo: PositionReconciliationRepository,
+        clock: Clock,
+        readiness_policy: PositionReconciliationReadinessPolicy | None = None,
+        final_item_result_reader: JobFinalItemResultReader | None = None,
         access_policy: InventoryAccessPolicy | None = None,
         reconciler: SequentialPositionReconciler | None = None,
         enabled: bool = True,
@@ -91,6 +102,12 @@ class ReconcileJobPositionsUseCase:
         self._products = product_record_repo
         self._detections = detection_repo
         self._reconciliations = reconciliation_repo
+        self._clock = clock
+        self._readiness = readiness_policy or PositionReconciliationReadinessPolicy()
+        self._result_reader = final_item_result_reader or JobFinalItemResultReader(
+            coverage_repo=coverage_repo,
+            product_record_repo=product_record_repo,
+        )
         self._access = access_policy
         self._reconciler = reconciler or SequentialPositionReconciler()
         self._enabled = enabled
@@ -105,8 +122,8 @@ class ReconcileJobPositionsUseCase:
         job = self._jobs.get_by_id(job_id)
         if inventory is None or not inventory.client_id or job is None:
             return
-        previous = self._reconciliations.get_active_by_job(job_id)
-        now = datetime.now(timezone.utc)
+        previous = self._reconciliations.get_last_attempt_by_job(job_id)
+        now = self._clock.now()
         failed = PositionReconciliation(
             id=str(uuid4()),
             client_id=inventory.client_id,
@@ -122,10 +139,64 @@ class ReconcileJobPositionsUseCase:
             created_at=now,
             updated_at=now,
             metadata_json={"events": ["POSITION_RECONCILIATION_FAILED"]},
+            is_active=False,
         )
-        self._reconciliations.persist_revision_atomically(
-            failed, (), previous.id if previous else None
+        self._reconciliations.record_failed_attempt(failed)
+
+    def _load_frames(
+        self,
+        *,
+        job_id: str,
+        aisle_id: str,
+        ordered_capture_session_id: str | None,
+        links,
+    ) -> tuple[list[OrderedImageFrame], list]:
+        asset_ids = tuple(link.source_asset_id for link in links)
+        source_assets = self._assets.get_by_ids(asset_ids)
+        result_refs = self._result_reader.list_for_job(
+            job_id=job_id,
+            aisle_id=aisle_id,
+            asset_ids=asset_ids,
         )
+        results_by_asset: dict[str, list[ItemResultRef]] = {}
+        for ref in result_refs:
+            results_by_asset.setdefault(ref.source_asset_id, []).append(
+                ItemResultRef(result_id=ref.result_id)
+            )
+        detections = list(self._detections.list_by_job(job_id))
+        detections_by_asset: dict[str, list[PositionDetectionRef]] = {}
+        for detection in detections:
+            detections_by_asset.setdefault(detection.source_asset_id, []).append(
+                PositionDetectionRef(
+                    id=detection.id,
+                    client_id=detection.client_id,
+                    detection_status=detection.detection_status,
+                    signature_status=detection.signature_status,
+                    position_label_id=detection.position_label_id,
+                    position_name_snapshot=detection.position_name_snapshot,
+                    detector_version=detection.detector_version,
+                )
+            )
+        frames = []
+        for link in links:
+            asset = source_assets.get(link.source_asset_id)
+            frames.append(
+                OrderedImageFrame(
+                    source_asset_id=link.source_asset_id,
+                    client_image_id=asset.upload_client_file_id if asset else None,
+                    ordered_capture_session_id=(
+                        asset.ordered_capture_session_id
+                        if asset
+                        else ordered_capture_session_id
+                    ),
+                    sequence_number=asset.sequence_number if asset else link.sequence_number,
+                    item_results=tuple(results_by_asset.get(link.source_asset_id, ())),
+                    position_detections=tuple(
+                        detections_by_asset.get(link.source_asset_id, ())
+                    ),
+                )
+            )
+        return frames, detections
 
     def execute(self, command: ReconcileJobPositionsCommand) -> ReconcileJobPositionsResult:
         if not self._enabled:
@@ -150,78 +221,29 @@ class ReconcileJobPositionsUseCase:
             )
 
         links = self._job_assets.list_for_job(command.job_id)
-        source_assets = {
-            link.source_asset_id: self._assets.get_by_id(link.source_asset_id) for link in links
-        }
-        asset_ids = tuple(link.source_asset_id for link in links)
-        positions_by_asset = self._coverage.load_positions_for_assets(
+        self._readiness.require_ready(
+            job,
+            inventory_id=command.inventory_id,
+            aisle=aisle,
+            links=links,
+            allow_in_finalization=command.allow_in_finalization,
+        )
+        frames, detections = self._load_frames(
             job_id=command.job_id,
             aisle_id=job.target_id,
-            source_asset_ids=asset_ids,
+            ordered_capture_session_id=job.ordered_capture_session_id,
+            links=links,
         )
-        all_position_ids = [
-            position.id for positions in positions_by_asset.values() for position in positions
-        ]
-        products = self._products.list_by_position_ids(all_position_ids)
-        products_by_position: dict[str, list[ItemResultRef]] = {}
-        for product in products:
-            products_by_position.setdefault(product.position_id, []).append(
-                ItemResultRef(result_id=product.id)
-            )
 
-        detections = list(self._detections.list_by_job(command.job_id))
-        detections_by_asset: dict[str, list[PositionDetectionRef]] = {}
-        for detection in detections:
-            detections_by_asset.setdefault(detection.source_asset_id, []).append(
-                PositionDetectionRef(
-                    id=detection.id,
-                    client_id=detection.client_id,
-                    detection_status=detection.detection_status,
-                    signature_status=detection.signature_status,
-                    position_label_id=detection.position_label_id,
-                    position_name_snapshot=detection.position_name_snapshot,
-                    detector_version=detection.detector_version,
-                )
-            )
-
-        frames: list[OrderedImageFrame] = []
-        for link in links:
-            asset = source_assets.get(link.source_asset_id)
-            frame_items = tuple(
-                item
-                for position in positions_by_asset.get(link.source_asset_id, ())
-                for item in products_by_position.get(position.id, ())
-            )
-            frames.append(
-                OrderedImageFrame(
-                    source_asset_id=link.source_asset_id,
-                    client_image_id=(asset.upload_client_file_id if asset is not None else None),
-                    ordered_capture_session_id=(
-                        asset.ordered_capture_session_id
-                        if asset is not None
-                        else job.ordered_capture_session_id
-                    ),
-                    sequence_number=(
-                        asset.sequence_number if asset is not None else link.sequence_number
-                    ),
-                    item_results=frame_items,
-                    position_detections=tuple(detections_by_asset.get(link.source_asset_id, ())),
-                )
-            )
-
-        decisions = self._reconciler.reconcile(frames, expected_client_id=inventory.client_id)
         sessions = {
             frame.ordered_capture_session_id for frame in frames if frame.ordered_capture_session_id
         }
         session_id = next(iter(sessions), job.ordered_capture_session_id)
-        detector_version = ",".join(sorted({row.detector_version for row in detections}))
-        fingerprint = compute_input_fingerprint(
-            ordered_capture_session_id=session_id,
+        fingerprint = build_fingerprint_from_frames(
+            frames,
             sequence_version=job.sequence_version,
-            position_detection_version=detector_version,
-            result_ids=(decision.result_id for decision in decisions),
         )
-        active = self._reconciliations.get_active_by_job(command.job_id)
+        active = self._reconciliations.get_published_by_job(command.job_id)
         if active is not None and active.status is ReconciliationStatus.COMPLETED:
             if active.input_fingerprint == fingerprint and not command.force_new_revision:
                 return ReconcileJobPositionsResult(
@@ -235,14 +257,9 @@ class ReconcileJobPositionsUseCase:
                 raise PositionReconciliationInputChangedError(
                     "Completed reconciliation inputs changed; retry explicitly"
                 )
-            if self._persistence_enabled:
-                self._reconciliations.mark_stale(command.job_id)
-        if active is not None and active.status is ReconciliationStatus.RUNNING:
-            raise PositionReconciliationAlreadyRunningError(
-                f"Reconciliation is already running for job {command.job_id}"
-            )
 
-        now = datetime.now(timezone.utc)
+        decisions = self._reconciler.reconcile(frames, expected_client_id=inventory.client_id)
+        now = self._clock.now()
         reconciliation = PositionReconciliation(
             id=str(uuid4()),
             client_id=inventory.client_id,
@@ -274,7 +291,7 @@ class ReconcileJobPositionsUseCase:
                     f"Reconciliation is already running for job {command.job_id}"
                 )
 
-        completed_at = datetime.now(timezone.utc)
+        completed_at = self._clock.now()
         assignments = tuple(
             ProductPositionAssignment(
                 id=str(uuid4()),
@@ -316,8 +333,54 @@ class ReconcileJobPositionsUseCase:
             "events": ["POSITION_RECONCILIATION_COMPLETED"],
             "detector_versions": sorted({row.detector_version for row in detections}),
         }
-        if self._persistence_enabled:
-            self._reconciliations.persist_revision_atomically(
-                reconciliation, assignments, active.id if active else None
+        if not self._persistence_enabled:
+            reconciliation.is_active = False
+            reconciliation.metadata_json["dry_run"] = True
+            return ReconcileJobPositionsResult(
+                reconciliation,
+                assignments,
+                dry_run=True,
+            )
+
+        publish_job = self._jobs.get_by_id(command.job_id)
+        if publish_job is None:
+            reconciliation.status = ReconciliationStatus.FAILED
+            reconciliation.failure_code = PositionReconciliationInputChangedError.code
+            reconciliation.completed_at = self._clock.now()
+            reconciliation.updated_at = reconciliation.completed_at
+            self._reconciliations.record_failed_attempt(reconciliation)
+            raise PositionReconciliationInputChangedError(
+                "Job disappeared before reconciliation publication"
+            )
+        publish_frames, _ = self._load_frames(
+            job_id=command.job_id,
+            aisle_id=job.target_id,
+            ordered_capture_session_id=publish_job.ordered_capture_session_id,
+            links=self._job_assets.list_for_job(command.job_id),
+        )
+        publish_fingerprint = build_fingerprint_from_frames(
+            publish_frames,
+            sequence_version=publish_job.sequence_version,
+        )
+        if publish_fingerprint != fingerprint:
+            reconciliation.status = ReconciliationStatus.FAILED
+            reconciliation.failure_code = PositionReconciliationInputChangedError.code
+            reconciliation.completed_at = self._clock.now()
+            reconciliation.updated_at = reconciliation.completed_at
+            self._reconciliations.record_failed_attempt(reconciliation)
+            raise PositionReconciliationInputChangedError(
+                "Position reconciliation inputs changed before publication"
+            )
+        published = self._reconciliations.publish_completed_revision_atomically(
+            reconciliation,
+            assignments,
+            active.id if active else None,
+            expected_input_fingerprint=fingerprint,
+        )
+        if published.id != reconciliation.id:
+            return ReconcileJobPositionsResult(
+                published,
+                tuple(self._reconciliations.list_active_assignments(command.job_id)),
+                reused=True,
             )
         return ReconcileJobPositionsResult(reconciliation, assignments)

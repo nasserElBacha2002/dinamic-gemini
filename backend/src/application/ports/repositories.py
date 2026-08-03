@@ -132,6 +132,14 @@ class SourceAssetRepository(ABC):
     @abstractmethod
     def get_by_id(self, asset_id: str) -> SourceAsset | None: ...
 
+    def get_by_ids(self, asset_ids: Sequence[str]) -> dict[str, SourceAsset]:
+        """Batch load source assets; implementations should override to avoid N+1 I/O."""
+        return {
+            asset_id: asset
+            for asset_id in dict.fromkeys(asset_ids)
+            if (asset := self.get_by_id(asset_id)) is not None
+        }
+
     @abstractmethod
     def delete_by_id(self, asset_id: str) -> bool:
         """Delete the row by primary key. Returns True if a row was removed."""

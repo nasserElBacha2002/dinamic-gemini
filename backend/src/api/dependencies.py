@@ -180,8 +180,8 @@ from src.runtime.v3_deps import (
     get_job_repo,
     get_metrics_calculator,
     get_mobile_preliminary_detection_repo,
-    get_ordered_capture_session_repo,
     get_ordered_capture_processing_reservation,
+    get_ordered_capture_session_repo,
     get_position_repo,
     get_preliminary_detection_reconciliation_repo,
     get_product_record_repo,
@@ -2487,8 +2487,13 @@ def get_reconcile_job_positions_use_case(
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     detection_repo=Depends(get_image_position_label_detection_repo),
     reconciliation_repo=Depends(get_position_reconciliation_repo),
+    ordered_session_repo=Depends(get_ordered_capture_session_repo),
     access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    clock: Clock = Depends(get_clock),
 ):
+    from src.application.services.position_reconciliation.readiness import (
+        PositionReconciliationReadinessPolicy,
+    )
     from src.application.use_cases.position_reconciliation.reconcile_job_positions import (
         ReconcileJobPositionsUseCase,
     )
@@ -2505,6 +2510,8 @@ def get_reconcile_job_positions_use_case(
         product_record_repo=product_record_repo,
         detection_repo=detection_repo,
         reconciliation_repo=reconciliation_repo,
+        clock=clock,
+        readiness_policy=PositionReconciliationReadinessPolicy(ordered_session_repo),
         access_policy=access_policy,
         enabled=settings.position_reconciliation_enabled,
         persistence_enabled=settings.position_reconciliation_persistence_enabled,

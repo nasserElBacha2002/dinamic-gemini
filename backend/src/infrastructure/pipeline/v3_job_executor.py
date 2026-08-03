@@ -345,6 +345,7 @@ class V3JobExecutor:
             artifact_outbox_store=artifact_publication_outbox_store,
             stage_recorder=self._stage_recorder,
             position_reconciliation_use_case=position_reconciliation_use_case,
+            position_reconciliation_required=load_settings().position_reconciliation_required,
         )
         self._failure_handler = V3WorkerFailureHandler(state_service=self._state)
 

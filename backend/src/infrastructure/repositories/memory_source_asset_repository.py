@@ -46,6 +46,13 @@ class MemorySourceAssetRepository(SourceAssetRepository):
     def get_by_id(self, asset_id: str) -> SourceAsset | None:
         return self._store.get(asset_id)
 
+    def get_by_ids(self, asset_ids: Sequence[str]) -> dict[str, SourceAsset]:
+        return {
+            asset_id: self._store[asset_id]
+            for asset_id in dict.fromkeys(asset_ids)
+            if asset_id in self._store
+        }
+
     def delete_by_id(self, asset_id: str) -> bool:
         if asset_id in self._store:
             del self._store[asset_id]

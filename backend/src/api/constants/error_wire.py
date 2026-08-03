@@ -55,6 +55,9 @@ HTTP_DETAIL_POSITION_RECONCILIATION_ALREADY_RUNNING = "Position reconciliation i
 HTTP_DETAIL_POSITION_RECONCILIATION_INPUT_CHANGED = "Position reconciliation inputs changed"
 HTTP_DETAIL_POSITION_RECONCILIATION_SESSION_MISMATCH = "Job assets span multiple capture sessions"
 HTTP_DETAIL_POSITION_RECONCILIATION_SEQUENCE_INVALID = "Position reconciliation sequence is invalid"
+HTTP_DETAIL_POSITION_RECONCILIATION_CONCURRENT_UPDATE = (
+    "Position reconciliation concurrent update conflict"
+)
 HTTP_DETAIL_POSITION_RECONCILIATION_FAILED = "Position reconciliation failed"
 HTTP_DETAIL_POSITION_ASSIGNMENT_NOT_FOUND = "Position assignment not found"
 HTTP_DETAIL_POSITION_ASSIGNMENT_ACCESS_DENIED = "Position assignment access denied"

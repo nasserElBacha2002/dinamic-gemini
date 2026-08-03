@@ -1,6 +1,9 @@
 import pytest
 
-from src.application.errors import PositionReconciliationSessionMismatchError
+from src.application.errors import (
+    PositionReconciliationSequenceInvalidError,
+    PositionReconciliationSessionMismatchError,
+)
 from src.application.services.position_reconciliation.sequential_reconciler import (
     SequentialPositionReconciler,
 )
@@ -144,6 +147,11 @@ def test_unordered_asset_is_excluded():
 def test_two_sessions_raise():
     with pytest.raises(PositionReconciliationSessionMismatchError):
         reconcile([frame(1, session="one"), frame(2, session="two")])
+
+
+def test_duplicate_sequence_for_different_assets_raises():
+    with pytest.raises(PositionReconciliationSequenceInvalidError):
+        reconcile([frame(1, asset="asset-a"), frame(1, asset="asset-b")])
 
 
 def test_decisions_are_deterministic():

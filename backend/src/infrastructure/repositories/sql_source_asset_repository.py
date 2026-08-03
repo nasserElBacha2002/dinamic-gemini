@@ -268,6 +268,26 @@ class SqlSourceAssetRepository(SourceAssetRepository):
             return None
         return _row_to_asset(row)
 
+    def get_by_ids(self, asset_ids: Sequence[str]) -> dict[str, SourceAsset]:
+        ids = tuple(dict.fromkeys(asset_id for asset_id in asset_ids if asset_id))
+        if not ids:
+            return {}
+        placeholders = ",".join("?" * len(ids))
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, aisle_id, type, original_filename, storage_path,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id,
+                       upload_batch_id, upload_client_file_id,
+                       ordered_capture_session_id, sequence_number, sequence_source
+                FROM source_assets WHERE id IN ({placeholders})
+                """,
+                ids,
+            )
+            assets = [_row_to_asset(row) for row in cur.fetchall()]
+        return {asset.id: asset for asset in assets}
+
     def delete_by_id(self, asset_id: str) -> bool:
         with self._client.cursor() as cur:
             cur.execute("DELETE FROM source_assets WHERE id = ?", (asset_id,))
