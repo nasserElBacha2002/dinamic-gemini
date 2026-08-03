@@ -2326,6 +2326,7 @@
       "reason_text": "Detalle del motivo",
       "submit": "Guardar corrección",
       "unavailable": "No se puede corregir esta fila porque falta el job o la versión actual.",
+      "no_labels": "No se encontraron etiquetas activas",
       "actions": {
         "assign": "Asignar posición",
         "change": "Cambiar posición",

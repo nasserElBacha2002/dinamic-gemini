@@ -127,6 +127,16 @@ class SqlClientPositionLabelRepository:
             row = cur.fetchone()
         return _row_to_label(row) if row else None
 
+    def get_by_ids(self, label_ids: list[str]) -> dict[str, ClientPositionLabel]:
+        ids = list(dict.fromkeys(label_id for label_id in label_ids if label_id))
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        with self._client.cursor() as cur:
+            cur.execute(_LABEL_SELECT + f" WHERE id IN ({placeholders})", tuple(ids))
+            rows = [_row_to_label(row) for row in cur.fetchall()]
+        return {row.id: row for row in rows}
+
     def get_by_public_identifier(self, public_identifier: str) -> ClientPositionLabel | None:
         pub = (public_identifier or "").strip()
         if not pub:

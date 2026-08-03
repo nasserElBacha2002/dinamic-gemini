@@ -15,6 +15,9 @@ from src.application.services.inventory_access_policy import InventoryAccessPoli
 from src.application.services.position_overrides.effective_position_reader import (
     EffectivePositionReader,
 )
+from src.application.services.position_overrides.position_override_scope import (
+    PositionOverrideScopeResolver,
+)
 from src.application.services.position_reconciliation.published_assignment_read_model import (
     PositionReadAvailability,
     PublishedPositionAssignmentView,
@@ -53,6 +56,14 @@ class DictRepo:
     def get_by_id(self, row_id):
         return self.rows.get(row_id)
 
+    def get_by_ids(self, row_ids):
+        return {row_id: self.rows[row_id] for row_id in row_ids if row_id in self.rows}
+
+
+class FixedClock:
+    def now(self):
+        return NOW
+
 
 class AutomaticReader:
     def __init__(self, view):
@@ -62,9 +73,15 @@ class AutomaticReader:
         return {result_id: replace(self.view, result_id=result_id) for result_id in result_ids or []}
 
 
-def automatic_view(position_id="auto", name="A-01", reconciliation_id="recon-1"):
+def automatic_view(
+    position_id="auto",
+    name="A-01",
+    reconciliation_id="recon-1",
+    assignment_id="assignment-1",
+):
     return PublishedPositionAssignmentView(
         result_id="result-1",
+        assignment_id=assignment_id,
         availability=PositionReadAvailability.AVAILABLE,
         position=PublishedPositionRef(id=position_id, name=name),
         assignment_status="ASSIGNED_AUTOMATIC",
@@ -188,17 +205,20 @@ def setup():
     )
 
     def manager(enabled=True):
-        return ManagePositionOverrideUseCase(
-            inventory_repo=inventory_repo,
+        scope_resolver = PositionOverrideScopeResolver(
             aisle_repo=DictRepo(aisle),
             job_repo=DictRepo(job),
             position_repo=DictRepo(position),
             product_repo=DictRepo(product),
+            access_policy=InventoryAccessPolicy(inventory_repo),
+        )
+        return ManagePositionOverrideUseCase(
             label_repo=label_repo,
             override_repo=override_repo,
             effective_reader=effective_reader,
-            access_policy=InventoryAccessPolicy(inventory_repo),
+            scope_resolver=scope_resolver,
             writes_enabled=enabled,
+            clock=FixedClock(),
         )
 
     return manager, override_repo, effective_reader
@@ -231,7 +251,14 @@ def test_effective_reader_manual_priority_and_automatic_change_warning(setup):
         created_at=NOW,
         updated_at=NOW,
     )
-    repo.insert_revision_atomically(manual, expected_active_version=0)
+    repo.insert_revision_atomically(
+        manual,
+        expected_effective_version=0,
+        expected_automatic_reconciliation_id="recon-0",
+        expected_automatic_assignment_id=None,
+        expected_active_override_id=None,
+        expected_active_override_version=None,
+    )
     reader = EffectivePositionReader(
         automatic_reader=AutomaticReader(automatic_view(reconciliation_id="recon-2")),
         override_repo=repo,
@@ -246,7 +273,8 @@ def test_effective_reader_manual_priority_and_automatic_change_warning(setup):
 def test_assign_change_remove_and_restore(setup):
     manager, repo, _ = setup
     created = manager().execute(command(action=PositionOverrideAction.ASSIGN_POSITION))
-    assert created.effective.effective_position.name == "B-01"
+    assert created.current_effective.effective_position.name == "B-01"
+    assert created.revision.automatic_assignment_id == "assignment-1"
     changed = manager().execute(
         command(action=PositionOverrideAction.CHANGE_POSITION, expected=1, key="key-2")
     )
@@ -254,13 +282,28 @@ def test_assign_change_remove_and_restore(setup):
     removed = manager().execute(
         command(action=PositionOverrideAction.REMOVE_POSITION, expected=2, key="key-3")
     )
-    assert removed.effective.effective_status == "UNASSIGNED_MANUAL"
+    assert removed.current_effective.effective_status == "UNASSIGNED_MANUAL"
     restored = manager().execute(
         command(action=PositionOverrideAction.RESTORE_AUTOMATIC, expected=3, key="key-4")
     )
-    assert restored.effective.effective_source is EffectivePositionSource.AUTOMATIC
+    assert restored.current_effective.effective_source is EffectivePositionSource.AUTOMATIC
+    assert restored.current_effective.version == 4
     assert repo.get_active("job-1", "result-1") is None
-    assert len(repo.list_history("job-1", "result-1")) == 4
+    with pytest.raises(PositionOverrideConflictError):
+        manager().execute(
+            command(action=PositionOverrideAction.ASSIGN_POSITION, expected=0, key="stale")
+        )
+    next_manual = manager().execute(
+        command(action=PositionOverrideAction.ASSIGN_POSITION, expected=4, key="key-5")
+    )
+    assert [
+        created.revision.version,
+        changed.revision.version,
+        removed.revision.version,
+        restored.revision.version,
+        next_manual.revision.version,
+    ] == [1, 2, 3, 4, 5]
+    assert len(repo.list_history("job-1", "result-1")) == 5
 
 
 def test_version_conflict(setup):
@@ -276,6 +319,70 @@ def test_idempotency_returns_same_revision(setup):
     second = manager().execute(command())
     assert second.revision.id == first.revision.id
     assert len(repo.list_history("job-1", "result-1")) == 1
+
+
+def test_replay_returns_original_revision_and_current_effective(setup):
+    manager, _, _ = setup
+    first = manager().execute(command())
+    manager().execute(command(expected=1, key="key-2"))
+    replay = manager().execute(command())
+    assert replay.revision.id == first.revision.id
+    assert replay.current_effective.version == 2
+
+
+def test_memory_cas_rejects_automatic_reconciliation_change():
+    repo = MemoryManualPositionOverrideRepository()
+    revision = ManualProductPositionOverride(
+        id="override-cas",
+        client_id="client-1",
+        inventory_id="inventory-1",
+        aisle_id="aisle-1",
+        job_id="job-1",
+        result_id="result-1",
+        source_asset_id="asset-1",
+        automatic_assignment_id="assignment-1",
+        automatic_reconciliation_id="recon-1",
+        previous_effective_position_label_id="auto",
+        new_position_label_id="label-b",
+        new_position_name_snapshot="B-01",
+        override_action=PositionOverrideAction.CHANGE_POSITION,
+        reason_code=PositionOverrideReasonCode.PRODUCT_MOVED,
+        reason_text=None,
+        created_by_user_id="user-1",
+        created_by_role="company_admin",
+        idempotency_key="cas-key",
+        version=1,
+        is_active=True,
+        superseded_override_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    repo.observe_automatic_state("job-1", "result-1", "recon-2", "assignment-2")
+    with pytest.raises(PositionOverrideConflictError) as exc_info:
+        repo.insert_revision_atomically(
+            revision,
+            expected_effective_version=0,
+            expected_automatic_reconciliation_id="recon-1",
+            expected_automatic_assignment_id="assignment-1",
+            expected_active_override_id=None,
+            expected_active_override_version=None,
+        )
+    assert exc_info.value.metadata["current_version"] == 0
+
+
+def test_effective_reader_uses_batch_override_lookup(setup, monkeypatch):
+    _, repo, reader = setup
+    calls = 0
+
+    def fail_get_active(*args):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("get_active must not be used by batch reader")
+
+    monkeypatch.setattr(repo, "get_active", fail_get_active)
+    view = reader.load_for_job("job-1", result_ids=["result-1"])["result-1"]
+    assert view.version == 0
+    assert calls == 0
 
 
 def test_other_requires_reason_text(setup):

@@ -15,6 +15,10 @@ from src.domain.position_overrides.entities import ManualProductPositionOverride
 class MemoryManualPositionOverrideRepository:
     def __init__(self) -> None:
         self._rows: dict[str, ManualProductPositionOverride] = {}
+        self._effective_versions: dict[tuple[str, str], int] = {}
+        self._automatic_states: dict[
+            tuple[str, str], tuple[str | None, str | None]
+        ] = {}
         self._lock = RLock()
 
     def get_active(
@@ -28,6 +32,38 @@ class MemoryManualPositionOverrideRepository:
             ),
             None,
         )
+
+    def list_active_for_results(
+        self, job_id: str, result_ids: list[str]
+    ) -> dict[str, ManualProductPositionOverride]:
+        wanted = set(result_ids)
+        return {
+            row.result_id: row
+            for row in self._rows.values()
+            if row.job_id == job_id and row.result_id in wanted and row.is_active
+        }
+
+    def get_effective_versions(
+        self, job_id: str, result_ids: list[str]
+    ) -> dict[str, int]:
+        return {
+            result_id: self._effective_versions.get((job_id, result_id), 0)
+            for result_id in dict.fromkeys(result_ids)
+        }
+
+    def observe_automatic_state(
+        self,
+        job_id: str,
+        result_id: str,
+        reconciliation_id: str | None,
+        assignment_id: str | None,
+    ) -> None:
+        """Record the latest automatic state seen by the in-memory read model."""
+        with self._lock:
+            self._automatic_states[(job_id, result_id)] = (
+                reconciliation_id,
+                assignment_id,
+            )
 
     def list_history(
         self, job_id: str, result_id: str
@@ -55,7 +91,11 @@ class MemoryManualPositionOverrideRepository:
         self,
         revision: ManualProductPositionOverride,
         *,
-        expected_active_version: int,
+        expected_effective_version: int,
+        expected_automatic_reconciliation_id: str | None,
+        expected_automatic_assignment_id: str | None,
+        expected_active_override_id: str | None,
+        expected_active_override_version: int | None,
     ) -> ManualProductPositionOverride:
         with self._lock:
             replay = self.get_by_idempotency_key(
@@ -74,11 +114,38 @@ class MemoryManualPositionOverrideRepository:
                 raise PositionOverrideIdempotencyConflictError(
                     "Idempotency key was already used for another override request."
                 )
-            active = self.get_active(revision.job_id, revision.result_id)
-            current = active.version if active else 0
-            if current != expected_active_version:
+            key = (revision.job_id, revision.result_id)
+            current = self._effective_versions.get(key, 0)
+            if current != expected_effective_version:
                 raise PositionOverrideConflictError(
                     "The effective position changed.",
+                    current_version=current,
+                )
+            automatic_state = self._automatic_states.get(
+                key,
+                (
+                    revision.automatic_reconciliation_id,
+                    revision.automatic_assignment_id,
+                ),
+            )
+            if automatic_state != (
+                expected_automatic_reconciliation_id,
+                expected_automatic_assignment_id,
+            ):
+                raise PositionOverrideConflictError(
+                    "The automatic position assignment changed.",
+                    current_version=current,
+                )
+            active = self.get_active(revision.job_id, revision.result_id)
+            current_active = (
+                (active.id, active.version) if active is not None else (None, None)
+            )
+            if current_active != (
+                expected_active_override_id,
+                expected_active_override_version,
+            ):
+                raise PositionOverrideConflictError(
+                    "The active manual override changed.",
                     current_version=current,
                 )
             if active is not None:
@@ -88,5 +155,8 @@ class MemoryManualPositionOverrideRepository:
                     updated_at=revision.created_at,
                     deactivated_at=revision.created_at,
                 )
-            self._rows[revision.id] = revision
-            return revision
+            next_version = current + 1
+            saved = replace(revision, version=next_version)
+            self._rows[saved.id] = saved
+            self._effective_versions[key] = next_version
+            return saved

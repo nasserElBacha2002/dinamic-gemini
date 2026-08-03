@@ -20,6 +20,7 @@ BEGIN
         override_action VARCHAR(32) NOT NULL,
         reason_code VARCHAR(64) NOT NULL,
         reason_text NVARCHAR(1000) NULL,
+        -- External JWT subject: deliberately no FK; application validates non-empty value.
         created_by_user_id VARCHAR(128) NOT NULL,
         created_by_role VARCHAR(64) NOT NULL,
         idempotency_key VARCHAR(128) NOT NULL,
@@ -75,25 +76,83 @@ BEGIN
 END
 GO
 
-CREATE UNIQUE NONCLUSTERED INDEX UQ_manual_position_override_active
-    ON dbo.manual_product_position_overrides(job_id, result_id) WHERE is_active = 1;
+IF OBJECT_ID(N'dbo.product_position_effective_versions', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.product_position_effective_versions (
+        job_id VARCHAR(36) NOT NULL,
+        result_id VARCHAR(36) NOT NULL,
+        version INT NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_product_position_effective_versions PRIMARY KEY (job_id, result_id),
+        CONSTRAINT FK_ppev_job FOREIGN KEY (job_id) REFERENCES dbo.inventory_jobs(id),
+        CONSTRAINT FK_ppev_result FOREIGN KEY (result_id) REFERENCES dbo.product_records(id),
+        CONSTRAINT CK_ppev_version CHECK (version > 0)
+    );
+END
 GO
-CREATE UNIQUE NONCLUSTERED INDEX UQ_manual_position_override_idempotency
-    ON dbo.manual_product_position_overrides(client_id, idempotency_key);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_manual_position_override_active'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_manual_position_override_active
+        ON dbo.manual_product_position_overrides(job_id, result_id) WHERE is_active = 1;
 GO
-CREATE NONCLUSTERED INDEX IX_mppo_job_result
-    ON dbo.manual_product_position_overrides(job_id, result_id, version DESC);
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_manual_position_override_idempotency'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_manual_position_override_idempotency
+        ON dbo.manual_product_position_overrides(client_id, idempotency_key);
 GO
-CREATE NONCLUSTERED INDEX IX_mppo_new_label
-    ON dbo.manual_product_position_overrides(new_position_label_id)
-    WHERE new_position_label_id IS NOT NULL;
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_mppo_job_result_version'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_mppo_job_result_version
+        ON dbo.manual_product_position_overrides(job_id, result_id, version);
 GO
-CREATE NONCLUSTERED INDEX IX_mppo_created_by
-    ON dbo.manual_product_position_overrides(created_by_user_id);
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_job_result'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_job_result
+        ON dbo.manual_product_position_overrides(job_id, result_id, version DESC);
 GO
-CREATE NONCLUSTERED INDEX IX_mppo_created_at
-    ON dbo.manual_product_position_overrides(created_at);
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_new_label'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_new_label
+        ON dbo.manual_product_position_overrides(new_position_label_id)
+        WHERE new_position_label_id IS NOT NULL;
 GO
-CREATE NONCLUSTERED INDEX IX_mppo_active_reason
-    ON dbo.manual_product_position_overrides(is_active, reason_code);
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_created_by'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_created_by
+        ON dbo.manual_product_position_overrides(created_by_user_id);
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_created_at'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_created_at
+        ON dbo.manual_product_position_overrides(created_at);
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_active_reason'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_active_reason
+        ON dbo.manual_product_position_overrides(is_active, reason_code);
 GO

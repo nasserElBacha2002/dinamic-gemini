@@ -1600,6 +1600,7 @@
       "reason_text": "Reason details",
       "submit": "Save correction",
       "unavailable": "This row cannot be corrected because its job or current version is unavailable.",
+      "no_labels": "No active labels found",
       "actions": {
         "assign": "Assign position",
         "change": "Change position",

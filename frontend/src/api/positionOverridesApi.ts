@@ -65,7 +65,8 @@ export interface EffectivePosition {
 
 export interface PositionOverrideMutationResponse {
   revision: PositionOverrideRevision;
-  effective: EffectivePosition;
+  /** Effective position after the mutation or on idempotent replay (always current). */
+  current_effective: EffectivePosition;
 }
 
 export interface PositionHistoryResponse {

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Autocomplete,
   Button,
   CircularProgress,
   Dialog,
@@ -22,7 +23,10 @@ import {
   type PositionOverrideAction,
   type PositionOverrideReasonCode,
 } from '../../../../api/positionOverridesApi';
-import { listClientPositionLabels } from '../../../../api/clientPositionLabelsApi';
+import {
+  listClientPositionLabels,
+  type ClientPositionLabel,
+} from '../../../../api/clientPositionLabelsApi';
 import { getVisibleErrorMessage } from '../../../../utils/apiErrors';
 import type { ResultDetail } from '../../types';
 
@@ -48,6 +52,22 @@ function newIdempotencyKey(): string {
   return `position-override-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function commandFingerprint(args: {
+  action: DialogAction;
+  positionLabelId: string;
+  reasonCode: PositionOverrideReasonCode;
+  reasonText: string;
+  expectedVersion: number | null | undefined;
+}): string {
+  return [
+    args.action,
+    args.positionLabelId,
+    args.reasonCode,
+    args.reasonText.trim(),
+    String(args.expectedVersion ?? ''),
+  ].join('|');
+}
+
 export interface PositionOverrideDialogProps {
   open: boolean;
   inventoryId: string;
@@ -67,39 +87,103 @@ export default function PositionOverrideDialog({
 }: PositionOverrideDialogProps) {
   const { t } = useTranslation();
   const [action, setAction] = useState<DialogAction>('CHANGE_POSITION');
-  const [positionLabelId, setPositionLabelId] = useState('');
+  const [selectedLabel, setSelectedLabel] = useState<ClientPositionLabel | null>(
+    null
+  );
+  const [labelSearch, setLabelSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [reasonCode, setReasonCode] =
     useState<PositionOverrideReasonCode>('WRONG_POSITION_DETECTED');
   const [reasonText, setReasonText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey());
+  const lastFingerprintRef = useRef<string>('');
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(labelSearch.trim()), 250);
+    return () => window.clearTimeout(handle);
+  }, [labelSearch]);
 
   const labelsQuery = useQuery({
-    queryKey: ['client-position-labels', clientId, 'active', 'position-override'],
+    queryKey: [
+      'client-position-labels',
+      clientId,
+      'active',
+      'position-override-search',
+      debouncedSearch,
+    ],
     queryFn: () =>
-      listClientPositionLabels(clientId, { status: 'active', page: 1, page_size: 200 }),
+      listClientPositionLabels(clientId, {
+        status: 'active',
+        page: 1,
+        page_size: 50,
+        search: debouncedSearch || null,
+      }),
     enabled: open && Boolean(clientId),
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
 
   const labels = useMemo(
-    () => (labelsQuery.data?.items ?? []).filter((label) => label.status.toLowerCase() === 'active'),
+    () =>
+      (labelsQuery.data?.items ?? []).filter(
+        (label) => label.status.toLowerCase() === 'active'
+      ),
     [labelsQuery.data?.items]
   );
 
   useEffect(() => {
     if (!open) return;
     setAction(result.aislePositionId ? 'CHANGE_POSITION' : 'ASSIGN_POSITION');
-    setPositionLabelId(result.aislePositionId ?? '');
+    setSelectedLabel(
+      result.aislePositionId
+        ? ({
+            id: result.aislePositionId,
+            public_identifier: result.aislePositionId,
+            name: result.aislePositionName ?? result.aislePositionId,
+            description: null,
+            status: 'active',
+            client_id: clientId,
+            created_at: '',
+            updated_at: '',
+            available_formats: [],
+          } satisfies ClientPositionLabel)
+        : null
+    );
+    setLabelSearch('');
+    setDebouncedSearch('');
     setReasonCode('WRONG_POSITION_DETECTED');
     setReasonText('');
     setError(null);
-  }, [open, result]);
+    setIdempotencyKey(newIdempotencyKey());
+    lastFingerprintRef.current = '';
+  }, [open, result, clientId]);
 
   const needsPosition = action === 'ASSIGN_POSITION' || action === 'CHANGE_POSITION';
   const expectedVersion = result.positionAssignmentVersion;
   const jobId = result.storageJobId?.trim() ?? '';
   const reasonTextRequired = reasonCode === 'OTHER';
+  const positionLabelId = selectedLabel?.id ?? '';
+  const fingerprint = commandFingerprint({
+    action,
+    positionLabelId,
+    reasonCode,
+    reasonText,
+    expectedVersion,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    if (!lastFingerprintRef.current) {
+      lastFingerprintRef.current = fingerprint;
+      return;
+    }
+    if (lastFingerprintRef.current !== fingerprint) {
+      lastFingerprintRef.current = fingerprint;
+      setIdempotencyKey(newIdempotencyKey());
+    }
+  }, [fingerprint, open]);
+
   const valid =
     Boolean(jobId) &&
     expectedVersion != null &&
@@ -107,14 +191,14 @@ export default function PositionOverrideDialog({
     (!reasonTextRequired || Boolean(reasonText.trim()));
 
   const handleSubmit = async () => {
-    if (!valid || expectedVersion == null) return;
+    if (!valid || expectedVersion == null || submitting) return;
     setSubmitting(true);
     setError(null);
     const common = {
       reason_code: reasonCode,
       reason_text: reasonText.trim() || null,
       expected_version: expectedVersion,
-      idempotency_key: newIdempotencyKey(),
+      idempotency_key: idempotencyKey,
     };
     try {
       if (action === 'RESTORE_AUTOMATIC') {
@@ -126,6 +210,7 @@ export default function PositionOverrideDialog({
           position_label_id: needsPosition ? positionLabelId : null,
         });
       }
+      setIdempotencyKey(newIdempotencyKey());
       await onSuccess();
       onClose();
     } catch (cause) {
@@ -153,6 +238,7 @@ export default function PositionOverrideDialog({
               value={action}
               label={t('results.position_override.action_label')}
               onChange={(event) => setAction(event.target.value as DialogAction)}
+              disabled={submitting}
             >
               <MenuItem value="ASSIGN_POSITION">
                 {t('results.position_override.actions.assign')}
@@ -173,24 +259,39 @@ export default function PositionOverrideDialog({
           </FormControl>
 
           {needsPosition ? (
-            <FormControl fullWidth disabled={!clientId || labelsQuery.isLoading}>
-              <InputLabel id="position-override-label-label">
-                {t('results.position_override.position_label')}
-              </InputLabel>
-              <Select
-                labelId="position-override-label-label"
-                value={positionLabelId}
-                label={t('results.position_override.position_label')}
-                onChange={(event) => setPositionLabelId(event.target.value)}
-              >
-                {labels.map((label) => (
-                  <MenuItem key={label.id} value={label.id}>
-                    {label.name}
-                  </MenuItem>
-                ))}
-              </Select>
-              {labelsQuery.isLoading ? <CircularProgress size={20} sx={{ mt: 1 }} /> : null}
-            </FormControl>
+            <Autocomplete
+              options={labels}
+              loading={labelsQuery.isLoading || labelsQuery.isFetching}
+              value={selectedLabel}
+              onChange={(_event, value) => setSelectedLabel(value)}
+              inputValue={labelSearch}
+              onInputChange={(_event, value, reason) => {
+                if (reason === 'input' || reason === 'clear') {
+                  setLabelSearch(value);
+                }
+              }}
+              getOptionLabel={(option) => option.name}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              disabled={!clientId || submitting}
+              noOptionsText={t('results.position_override.no_labels')}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={t('results.position_override.position_label')}
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {labelsQuery.isFetching ? (
+                          <CircularProgress color="inherit" size={16} />
+                        ) : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+            />
           ) : null}
 
           <FormControl fullWidth>
@@ -204,6 +305,7 @@ export default function PositionOverrideDialog({
               onChange={(event) =>
                 setReasonCode(event.target.value as PositionOverrideReasonCode)
               }
+              disabled={submitting}
             >
               {REASON_CODES.map((code) => (
                 <MenuItem key={code} value={code}>
@@ -222,6 +324,7 @@ export default function PositionOverrideDialog({
               value={reasonText}
               onChange={(event) => setReasonText(event.target.value)}
               inputProps={{ maxLength: 1000 }}
+              disabled={submitting}
             />
           ) : null}
         </Stack>
@@ -230,7 +333,11 @@ export default function PositionOverrideDialog({
         <Button onClick={onClose} disabled={submitting}>
           {t('common.cancel')}
         </Button>
-        <Button variant="contained" onClick={() => void handleSubmit()} disabled={!valid || submitting}>
+        <Button
+          variant="contained"
+          onClick={() => void handleSubmit()}
+          disabled={!valid || submitting}
+        >
           {submitting ? t('common.loading') : t('results.position_override.submit')}
         </Button>
       </DialogActions>

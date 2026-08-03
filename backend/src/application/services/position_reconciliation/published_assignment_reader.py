@@ -73,6 +73,7 @@ class PublishedPositionAssignmentReader:
                 continue
             by_result[rid] = PublishedPositionAssignmentView(
                 result_id=rid,
+                assignment_id=None,
                 availability=(
                     PositionReadAvailability.RECONCILIATION_STALE
                     if status_value == ReconciliationStatus.STALE.value

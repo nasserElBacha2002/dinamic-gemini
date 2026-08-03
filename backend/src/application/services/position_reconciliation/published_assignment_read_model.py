@@ -38,6 +38,7 @@ class PublishedPositionAssignmentView:
     """Stable read contract for one inventory result (product_record / result_id)."""
 
     result_id: str
+    assignment_id: str | None
     availability: PositionReadAvailability
     position: PublishedPositionRef | None
     assignment_status: str | None
@@ -88,6 +89,7 @@ def map_assignment_to_view(
     )
     return PublishedPositionAssignmentView(
         result_id=assignment.result_id,
+        assignment_id=assignment.id,
         availability=availability,
         position=position,
         assignment_status=assignment.assignment_status.value,
@@ -105,6 +107,7 @@ def map_assignment_to_view(
 def no_reconciliation_view(result_id: str) -> PublishedPositionAssignmentView:
     return PublishedPositionAssignmentView(
         result_id=result_id,
+        assignment_id=None,
         availability=PositionReadAvailability.NO_RECONCILIATION,
         position=None,
         assignment_status="NO_RECONCILIATION",
@@ -122,6 +125,7 @@ def no_reconciliation_view(result_id: str) -> PublishedPositionAssignmentView:
 def feature_disabled_view(result_id: str) -> PublishedPositionAssignmentView:
     return PublishedPositionAssignmentView(
         result_id=result_id,
+        assignment_id=None,
         availability=PositionReadAvailability.FEATURE_DISABLED,
         position=None,
         assignment_status=None,

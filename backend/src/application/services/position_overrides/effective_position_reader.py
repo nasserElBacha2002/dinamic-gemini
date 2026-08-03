@@ -25,13 +25,6 @@ from src.domain.position_overrides.entities import (
 )
 
 
-def _automatic_version(value: str | None) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
 class EffectivePositionReader:
     def __init__(
         self,
@@ -51,16 +44,32 @@ class EffectivePositionReader:
         result_ids: Sequence[str],
         active_result_ids: set[str] | None = None,
     ) -> dict[str, EffectiveProductPositionView]:
-        automatic = self._automatic_reader.load_for_job(job_id, result_ids=result_ids)
+        requested_ids = list(dict.fromkeys(result_ids))
+        automatic = self._automatic_reader.load_for_job(
+            job_id, result_ids=requested_ids
+        )
+        overrides = self._override_repo.list_active_for_results(job_id, requested_ids)
+        versions = self._override_repo.get_effective_versions(job_id, requested_ids)
+        label_ids = [
+            row.new_position_label_id
+            for row in overrides.values()
+            if row.new_position_label_id
+        ]
+        labels = (
+            self._label_repo.get_by_ids(label_ids)
+            if self._label_repo is not None and label_ids
+            else {}
+        )
         output: dict[str, EffectiveProductPositionView] = {}
-        for result_id in result_ids:
+        for result_id in requested_ids:
             auto = automatic[result_id]
             auto_position = (
                 PositionOverridePositionRef(auto.position.id, auto.position.name)
                 if auto.position
                 else None
             )
-            override = self._override_repo.get_active(job_id, result_id)
+            override = overrides.get(result_id)
+            effective_version = versions.get(result_id, 0)
             warnings: list[str] = []
             if auto.availability is PositionReadAvailability.RECONCILIATION_STALE:
                 warnings.append("RECONCILIATION_STALE")
@@ -89,8 +98,9 @@ class EffectivePositionReader:
                     manual_override=None,
                     reconciliation_status=auto.reconciliation_status,
                     warnings=tuple(warnings),
-                    version=_automatic_version(auto.reconciliation_version),
+                    version=effective_version,
                     automatic_reconciliation_id=auto.reconciliation_id,
+                    automatic_assignment_id=auto.assignment_id,
                     source_asset_id=auto.source_asset_id,
                 )
                 continue
@@ -104,7 +114,7 @@ class EffectivePositionReader:
             if active_result_ids is not None and result_id not in active_result_ids:
                 warnings.append("MANUAL_OVERRIDE_ORPHANED")
             if override.new_position_label_id and self._label_repo is not None:
-                label = self._label_repo.get_by_id(override.new_position_label_id)
+                label = labels.get(override.new_position_label_id)
                 if label is None or label.status is not ClientPositionLabelStatus.ACTIVE:
                     warnings.append("MANUAL_POSITION_INVALIDATED")
 
@@ -127,8 +137,9 @@ class EffectivePositionReader:
                 manual_override=override,
                 reconciliation_status=auto.reconciliation_status,
                 warnings=tuple(dict.fromkeys(warnings)),
-                version=override.version,
+                version=effective_version,
                 automatic_reconciliation_id=auto.reconciliation_id,
+                automatic_assignment_id=auto.assignment_id,
                 source_asset_id=auto.source_asset_id,
             )
         return output

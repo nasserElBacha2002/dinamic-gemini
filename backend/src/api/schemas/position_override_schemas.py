@@ -64,6 +64,8 @@ class EffectivePositionResponse(BaseModel):
     status: str
     automatic_position: PositionRefResponse | None
     automatic_assignment_status: str | None
+    automatic_assignment_id: str | None
+    automatic_reconciliation_id: str | None
     reconciliation_status: str | None
     manual_override: ManualOverrideResponse | None
     warnings: list[str]
@@ -72,7 +74,7 @@ class EffectivePositionResponse(BaseModel):
 
 class PositionOverrideMutationResponse(BaseModel):
     revision: ManualOverrideResponse
-    effective: EffectivePositionResponse
+    current_effective: EffectivePositionResponse
 
 
 class PositionHistoryResponse(BaseModel):
@@ -142,6 +144,8 @@ def effective_to_response(row: EffectiveProductPositionView) -> EffectivePositio
             else None
         ),
         automatic_assignment_status=row.automatic_assignment_status,
+        automatic_assignment_id=row.automatic_assignment_id,
+        automatic_reconciliation_id=row.automatic_reconciliation_id,
         reconciliation_status=row.reconciliation_status,
         manual_override=(
             override_to_response(row.manual_override) if row.manual_override else None

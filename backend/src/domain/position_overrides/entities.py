@@ -80,4 +80,5 @@ class EffectiveProductPositionView:
     warnings: tuple[str, ...]
     version: int
     automatic_reconciliation_id: str | None = None
+    automatic_assignment_id: str | None = None
     source_asset_id: str | None = None

@@ -18,6 +18,13 @@ class MemoryClientPositionLabelRepository:
     def get_by_id(self, label_id: str) -> ClientPositionLabel | None:
         return self._labels.get(label_id)
 
+    def get_by_ids(self, label_ids: list[str]) -> dict[str, ClientPositionLabel]:
+        return {
+            label_id: self._labels[label_id]
+            for label_id in dict.fromkeys(label_ids)
+            if label_id in self._labels
+        }
+
     def get_by_public_identifier(self, public_identifier: str) -> ClientPositionLabel | None:
         pub = (public_identifier or "").strip()
         if not pub:

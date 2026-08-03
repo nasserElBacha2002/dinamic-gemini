@@ -16,8 +16,17 @@ environment where the default is wrong for your deployment.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import Depends
+
+if TYPE_CHECKING:
+    from src.application.use_cases.recovery.recover_aisle_processing import (
+        RecoverAisleProcessingUseCase,
+    )
+    from src.application.use_cases.recovery.recover_stale_job import (
+        RecoverStaleJobUseCase,
+    )
 
 from src.application.dto.access_principal import AccessPrincipal
 from src.application.ports.capture_repositories import (
@@ -789,7 +798,7 @@ def get_recover_stale_job_use_case(
     job_repo: JobRepository = Depends(get_job_repo),
     launch_service: AisleJobLaunchService = Depends(get_aisle_job_launch_service),
     clock: Clock = Depends(get_clock),
-) -> "RecoverStaleJobUseCase":
+) -> RecoverStaleJobUseCase:
     from src.application.use_cases.recovery.recover_stale_job import RecoverStaleJobUseCase
 
     return RecoverStaleJobUseCase(
@@ -804,12 +813,12 @@ def get_recover_aisle_processing_use_case(
     status_use_case: GetAisleProcessingStatusUseCase = Depends(
         get_get_aisle_processing_status_use_case
     ),
-    recover_stale: "RecoverStaleJobUseCase" = Depends(get_recover_stale_job_use_case),
+    recover_stale: RecoverStaleJobUseCase = Depends(get_recover_stale_job_use_case),
     cancel_job: CancelAisleJobUseCase = Depends(get_cancel_aisle_job_use_case),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
     clock: Clock = Depends(get_clock),
-) -> "RecoverAisleProcessingUseCase":
+) -> RecoverAisleProcessingUseCase:
     from src.application.use_cases.recovery.recover_aisle_processing import (
         RecoverAisleProcessingUseCase,
     )
@@ -2536,25 +2545,36 @@ def get_manual_position_override_repo():
     return get_app_container().get_manual_position_override_repo()
 
 
-def get_manage_position_override_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+def get_position_override_scope_resolver(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
     product_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.services.position_overrides.position_override_scope import (
+        PositionOverrideScopeResolver,
+    )
+
+    return PositionOverrideScopeResolver(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=position_repo,
+        product_repo=product_repo,
+        access_policy=access_policy,
+    )
+
+
+def get_effective_position_reader(
     label_repo=Depends(get_client_position_label_repo),
     override_repo=Depends(get_manual_position_override_repo),
     reconciliation_repo=Depends(get_position_reconciliation_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
 ):
     from src.application.services.position_overrides.effective_position_reader import (
         EffectivePositionReader,
     )
     from src.application.services.position_reconciliation.published_assignment_reader import (
         PublishedPositionAssignmentReader,
-    )
-    from src.application.use_cases.position_overrides.manage import (
-        ManagePositionOverrideUseCase,
     )
     from src.config import load_settings
 
@@ -2568,17 +2588,47 @@ def get_manage_position_override_use_case(
         override_repo=override_repo,
         label_repo=label_repo,
     )
+    return effective_reader
+
+
+def get_manage_position_override_use_case(
+    label_repo=Depends(get_client_position_label_repo),
+    override_repo=Depends(get_manual_position_override_repo),
+    effective_reader=Depends(get_effective_position_reader),
+    scope_resolver=Depends(get_position_override_scope_resolver),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.position_overrides.manage import (
+        ManagePositionOverrideUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
     return ManagePositionOverrideUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        job_repo=job_repo,
-        position_repo=position_repo,
-        product_repo=product_repo,
         label_repo=label_repo,
         override_repo=override_repo,
         effective_reader=effective_reader,
-        access_policy=access_policy,
+        scope_resolver=scope_resolver,
         writes_enabled=settings.position_manual_overrides_enabled,
+        clock=clock,
+    )
+
+
+def get_list_position_override_history_use_case(
+    override_repo=Depends(get_manual_position_override_repo),
+    reconciliation_repo=Depends(get_position_reconciliation_repo),
+    scope_resolver=Depends(get_position_override_scope_resolver),
+    effective_reader=Depends(get_effective_position_reader),
+):
+    from src.application.use_cases.position_overrides.manage import (
+        ListPositionOverrideHistoryUseCase,
+    )
+
+    return ListPositionOverrideHistoryUseCase(
+        override_repo=override_repo,
+        reconciliation_repo=reconciliation_repo,
+        scope_resolver=scope_resolver,
+        effective_reader=effective_reader,
     )
 
 

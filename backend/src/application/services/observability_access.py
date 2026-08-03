@@ -27,6 +27,29 @@ CAP_DOWNLOAD_ARTIFACTS = "observability.download_artifacts"
 CAP_VIEW_ARTIFACT_PREVIEW = "observability.view_artifact_preview"
 CAP_CANCEL_RETRY = "observability.cancel_retry"
 CAP_FINALIZATION_RECOVERY = "observability.finalization_recovery"
+CAP_POSITION_OVERRIDE_VIEW = "position_overrides:view"
+CAP_POSITION_OVERRIDE_CREATE = "position_overrides:create"
+CAP_POSITION_OVERRIDE_REMOVE = "position_overrides:remove"
+CAP_POSITION_OVERRIDE_RESTORE = "position_overrides:restore"
+CAP_POSITION_OVERRIDE_AUDIT = "position_overrides:audit"
+
+_POSITION_OVERRIDE_ALL = frozenset(
+    {
+        CAP_POSITION_OVERRIDE_VIEW,
+        CAP_POSITION_OVERRIDE_CREATE,
+        CAP_POSITION_OVERRIDE_REMOVE,
+        CAP_POSITION_OVERRIDE_RESTORE,
+        CAP_POSITION_OVERRIDE_AUDIT,
+    }
+)
+_POSITION_OVERRIDE_SUPERVISOR = frozenset(
+    {
+        CAP_POSITION_OVERRIDE_VIEW,
+        CAP_POSITION_OVERRIDE_CREATE,
+        CAP_POSITION_OVERRIDE_REMOVE,
+        CAP_POSITION_OVERRIDE_RESTORE,
+    }
+)
 
 ROLE_PLATFORM_ADMIN = "platform_admin"
 ROLE_COMPANY_ADMIN = "company_admin"
@@ -45,6 +68,7 @@ _ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
             CAP_DOWNLOAD_ARTIFACTS,
             CAP_VIEW_ARTIFACT_PREVIEW,
             CAP_CANCEL_RETRY,
+            CAP_POSITION_OVERRIDE_VIEW,
         }
     ),
     ROLE_COMPANY_ADMIN: frozenset(
@@ -55,6 +79,7 @@ _ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
             CAP_DOWNLOAD_ARTIFACTS,
             CAP_VIEW_ARTIFACT_PREVIEW,
             CAP_CANCEL_RETRY,
+            *_POSITION_OVERRIDE_ALL,
         }
     ),
     ROLE_PLATFORM_ADMIN: frozenset(
@@ -67,11 +92,18 @@ _ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
             CAP_VIEW_ARTIFACT_PREVIEW,
             CAP_CANCEL_RETRY,
             CAP_FINALIZATION_RECOVERY,
+            *_POSITION_OVERRIDE_ALL,
         }
     ),
 }
 # Legacy alias shares platform_admin capabilities.
 _ROLE_CAPABILITIES[ROLE_ADMINISTRATOR_LEGACY] = _ROLE_CAPABILITIES[ROLE_PLATFORM_ADMIN]
+_ROLE_CAPABILITIES["admin"] = _ROLE_CAPABILITIES[ROLE_PLATFORM_ADMIN]
+_ROLE_CAPABILITIES["supervisor"] = _POSITION_OVERRIDE_SUPERVISOR
+_ROLE_CAPABILITIES["responsable"] = _POSITION_OVERRIDE_SUPERVISOR
+_ROLE_CAPABILITIES["reader"] = frozenset({CAP_POSITION_OVERRIDE_VIEW})
+_ROLE_CAPABILITIES["lector"] = frozenset({CAP_POSITION_OVERRIDE_VIEW})
+_ROLE_CAPABILITIES["operador"] = frozenset({CAP_POSITION_OVERRIDE_VIEW})
 
 
 class ObservabilityAuthError(Exception):

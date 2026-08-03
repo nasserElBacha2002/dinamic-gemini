@@ -12,6 +12,14 @@ class ManualPositionOverrideRepository(Protocol):
         self, job_id: str, result_id: str
     ) -> ManualProductPositionOverride | None: ...
 
+    def list_active_for_results(
+        self, job_id: str, result_ids: list[str]
+    ) -> dict[str, ManualProductPositionOverride]: ...
+
+    def get_effective_versions(
+        self, job_id: str, result_ids: list[str]
+    ) -> dict[str, int]: ...
+
     def list_history(
         self, job_id: str, result_id: str
     ) -> list[ManualProductPositionOverride]: ...
@@ -24,5 +32,9 @@ class ManualPositionOverrideRepository(Protocol):
         self,
         revision: ManualProductPositionOverride,
         *,
-        expected_active_version: int,
+        expected_effective_version: int,
+        expected_automatic_reconciliation_id: str | None,
+        expected_automatic_assignment_id: str | None,
+        expected_active_override_id: str | None,
+        expected_active_override_version: int | None,
     ) -> ManualProductPositionOverride: ...

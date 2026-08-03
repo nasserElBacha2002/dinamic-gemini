@@ -8,9 +8,8 @@ from fastapi.responses import JSONResponse
 
 from src.api.dependencies import (
     get_access_principal,
+    get_list_position_override_history_use_case,
     get_manage_position_override_use_case,
-    get_manual_position_override_repo,
-    get_position_reconciliation_repo,
 )
 from src.api.schemas.position_override_schemas import (
     PositionHistoryResponse,
@@ -82,7 +81,7 @@ def create_position_override(
         return _error_response(exc)
     return PositionOverrideMutationResponse(
         revision=override_to_response(result.revision),
-        effective=effective_to_response(result.effective),
+        current_effective=effective_to_response(result.current_effective),
     )
 
 
@@ -119,7 +118,7 @@ def restore_automatic_position(
         return _error_response(exc)
     return PositionOverrideMutationResponse(
         revision=override_to_response(result.revision),
-        effective=effective_to_response(result.effective),
+        current_effective=effective_to_response(result.current_effective),
     )
 
 
@@ -132,18 +131,12 @@ def get_position_history(
     job_id: str,
     result_id: str,
     principal: AccessPrincipal = Depends(get_access_principal),
-    manager: ManagePositionOverrideUseCase = Depends(
-        get_manage_position_override_use_case
+    use_case: ListPositionOverrideHistoryUseCase = Depends(
+        get_list_position_override_history_use_case
     ),
-    override_repo=Depends(get_manual_position_override_repo),
-    reconciliation_repo=Depends(get_position_reconciliation_repo),
 ):
     try:
-        effective, automatic_rows, manual_rows = ListPositionOverrideHistoryUseCase(
-            override_repo=override_repo,
-            reconciliation_repo=reconciliation_repo,
-            manager=manager,
-        ).execute(
+        effective, automatic_rows, manual_rows = use_case.execute(
             inventory_id=inventory_id,
             job_id=job_id,
             result_id=result_id,
