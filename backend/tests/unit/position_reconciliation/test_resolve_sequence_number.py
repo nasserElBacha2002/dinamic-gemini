@@ -96,6 +96,117 @@ def test_system_upload_reorders_position_photo_before_item():
     assert [f.sequence_number for f in out] == [0, 1]
 
 
+def test_system_upload_preserves_interleaved_position_walk():
+    """pos1 → items → pos2 → items must NOT collapse to all positions first.
+
+    Regression: old normalize put every position photo before every item, so forward-fill
+    assigned the last position (02) to products that belonged to 01.
+    """
+    from src.domain.position_reconciliation.entities import (
+        ItemResultRef,
+        OrderedImageFrame,
+        PositionDetectionRef,
+    )
+
+    def _pos(asset_id: str, seq: int, label: str) -> OrderedImageFrame:
+        return OrderedImageFrame(
+            source_asset_id=asset_id,
+            ordered_capture_session_id=None,
+            sequence_number=seq,
+            position_detections=(
+                PositionDetectionRef(
+                    id=f"d-{asset_id}",
+                    client_id="c1",
+                    detection_status="LEGACY_UNSIGNED_REQUIRES_REVIEW",
+                    signature_status="MISSING",
+                    position_label_id=label,
+                ),
+            ),
+        )
+
+    def _item(asset_id: str, seq: int) -> OrderedImageFrame:
+        return OrderedImageFrame(
+            source_asset_id=asset_id,
+            ordered_capture_session_id=None,
+            sequence_number=seq,
+            item_results=(ItemResultRef(result_id=f"r-{asset_id}"),),
+        )
+
+    frames = [
+        _pos("pasillo01", 0, "label-01"),
+        _item("item-a", 1),
+        _item("item-b", 2),
+        _pos("pasillo02", 3, "label-02"),
+        _item("item-c", 4),
+        _item("item-d", 5),
+    ]
+    sources = ["position_order"] * len(frames)
+    out = ReconcileJobPositionsUseCase._normalize_system_upload_frame_order(frames, sources)
+    assert [f.source_asset_id for f in out] == [
+        "pasillo01",
+        "item-a",
+        "item-b",
+        "pasillo02",
+        "item-c",
+        "item-d",
+    ]
+    assert [f.sequence_number for f in out] == list(range(6))
+
+
+def test_system_upload_lifts_only_first_position_when_items_lead():
+    """Leading items before the first position lift that position only; later walk stays."""
+    from src.domain.position_reconciliation.entities import (
+        ItemResultRef,
+        OrderedImageFrame,
+        PositionDetectionRef,
+    )
+
+    def _pos(asset_id: str, seq: int, label: str) -> OrderedImageFrame:
+        return OrderedImageFrame(
+            source_asset_id=asset_id,
+            ordered_capture_session_id=None,
+            sequence_number=seq,
+            position_detections=(
+                PositionDetectionRef(
+                    id=f"d-{asset_id}",
+                    client_id="c1",
+                    detection_status="VALID",
+                    signature_status="VALID",
+                    position_label_id=label,
+                ),
+            ),
+        )
+
+    def _item(asset_id: str, seq: int) -> OrderedImageFrame:
+        return OrderedImageFrame(
+            source_asset_id=asset_id,
+            ordered_capture_session_id=None,
+            sequence_number=seq,
+            item_results=(ItemResultRef(result_id=f"r-{asset_id}"),),
+        )
+
+    frames = [
+        _item("lead-1", 0),
+        _item("lead-2", 1),
+        _pos("pasillo01", 2, "label-01"),
+        _item("mid", 3),
+        _pos("pasillo02", 4, "label-02"),
+        _item("tail", 5),
+    ]
+    out = ReconcileJobPositionsUseCase._normalize_system_upload_frame_order(
+        frames,
+        ["position_order"] * len(frames),
+    )
+    assert [f.source_asset_id for f in out] == [
+        "pasillo01",
+        "lead-1",
+        "lead-2",
+        "mid",
+        "pasillo02",
+        "tail",
+    ]
+
+
 def test_capture_sequence_is_not_reordered():
     from src.domain.position_reconciliation.entities import (
         ItemResultRef,

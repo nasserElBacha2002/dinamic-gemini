@@ -1708,75 +1708,9 @@ class V3JobExecutor:
             str(v3_base),
         )
 
-        resolved_in = self._v3_resolve_pipeline_inputs_or_abort(
-            _V3PipelineInputRequest(
-                job_id=job_id,
-                aisle=aisle,
-                aisle_id=aisle_id,
-                assets=assets,
-                v3_base=v3_base,
-                job_dir=job_dir,
-                settings=settings,
-            )
-        )
-        if resolved_in is None:
-            return True
-        analysis_context, job_input, video_path = resolved_in
-
-        snapshot_required = bool(settings.observability_input_snapshot_required)
-        try:
-            from src.application.errors import InputSnapshotPersistError
-            from src.application.services.job_source_asset_snapshot import (
-                persist_job_source_asset_snapshot_checked,
-            )
-
-            snapshot_result = persist_job_source_asset_snapshot_checked(
-                self._job_source_asset_repo,
-                job_id=job_id,
-                assets=assets,
-                stage="SOURCE_ASSETS_RESOLVED",
-                required=snapshot_required,
-            )
-        except InputSnapshotPersistError as exc:
-            logger.error(
-                "job_source_asset_snapshot_failed_required job_id=%s code=%s err=%s",
-                job_id,
-                exc.code,
-                exc,
-            )
-            self._state.fail_job_and_aisle(job_id, aisle, str(exc), failure_code=exc.code)
-            return True
-        except Exception as exc:
-            if snapshot_required:
-                logger.error(
-                    "job_source_asset_snapshot_unexpected_error job_id=%s err=%s", job_id, exc
-                )
-                self._state.fail_job_and_aisle(
-                    job_id,
-                    aisle,
-                    f"Input snapshot build failed: {exc}",
-                    failure_code="INPUT_SNAPSHOT_PERSIST_FAILED",
-                )
-                return True
-            logger.exception(
-                "job_source_asset_snapshot_unexpected_error job_id=%s (continuing, not required)",
-                job_id,
-            )
-        else:
-            if not snapshot_result.ok:
-                logger.warning(
-                    "job_source_asset_snapshot_failed_not_required job_id=%s warning=%s",
-                    job_id,
-                    snapshot_result.warning,
-                )
-                current_job = self._job_repo.get_by_id(job_id)
-                if current_job is not None:
-                    result_json = dict(current_job.result_json or {})
-                    result_json["input_snapshot_failed"] = True
-                    result_json["input_snapshot_warning"] = snapshot_result.warning
-                    current_job.result_json = result_json
-                    self._job_repo.save(current_job)
-
+        # Start lease heartbeat BEFORE GCS/local input materialization. Downloading many
+        # large photos can exceed JOB_LEASE_DURATION_SEC (default 60s); without renewal the
+        # worker loses the lease mid-run and the job stays RUNNING/processing forever.
         monitoring_req = V3JobMonitoringRequest(
             base_path=base_path,
             job_id=job_id,
@@ -1795,6 +1729,89 @@ class V3JobExecutor:
         with self._monitoring_service.session(monitoring_req) as rt:
 
             lease = prep.lease
+
+            # Leave startup_confirmed so the startup-progress watchdog does not treat
+            # long input downloads as a hung spawn.
+            self._state.update_runtime_status(
+                job_id,
+                stage="InputMaterialization",
+                substep="pipeline_input_resolve",
+            )
+
+            resolved_in = self._v3_resolve_pipeline_inputs_or_abort(
+                _V3PipelineInputRequest(
+                    job_id=job_id,
+                    aisle=aisle,
+                    aisle_id=aisle_id,
+                    assets=assets,
+                    v3_base=v3_base,
+                    job_dir=job_dir,
+                    settings=settings,
+                )
+            )
+            if resolved_in is None:
+                return True
+            analysis_context, job_input, video_path = resolved_in
+
+            snapshot_required = bool(settings.observability_input_snapshot_required)
+            try:
+                from src.application.errors import InputSnapshotPersistError
+                from src.application.services.job_source_asset_snapshot import (
+                    persist_job_source_asset_snapshot_checked,
+                )
+
+                snapshot_result = persist_job_source_asset_snapshot_checked(
+                    self._job_source_asset_repo,
+                    job_id=job_id,
+                    assets=assets,
+                    stage="SOURCE_ASSETS_RESOLVED",
+                    required=snapshot_required,
+                )
+            except InputSnapshotPersistError as exc:
+                logger.error(
+                    "job_source_asset_snapshot_failed_required job_id=%s code=%s err=%s",
+                    job_id,
+                    exc.code,
+                    exc,
+                )
+                self._state.fail_job_and_aisle(
+                    job_id, aisle, str(exc), failure_code=exc.code, lease=lease
+                )
+                return True
+            except Exception as exc:
+                if snapshot_required:
+                    logger.error(
+                        "job_source_asset_snapshot_unexpected_error job_id=%s err=%s",
+                        job_id,
+                        exc,
+                    )
+                    self._state.fail_job_and_aisle(
+                        job_id,
+                        aisle,
+                        f"Input snapshot build failed: {exc}",
+                        failure_code="INPUT_SNAPSHOT_PERSIST_FAILED",
+                        lease=lease,
+                    )
+                    return True
+                logger.exception(
+                    "job_source_asset_snapshot_unexpected_error job_id=%s "
+                    "(continuing, not required)",
+                    job_id,
+                )
+            else:
+                if not snapshot_result.ok:
+                    logger.warning(
+                        "job_source_asset_snapshot_failed_not_required job_id=%s warning=%s",
+                        job_id,
+                        snapshot_result.warning,
+                    )
+                    current_job = self._job_repo.get_by_id(job_id)
+                    if current_job is not None:
+                        result_json = dict(current_job.result_json or {})
+                        result_json["input_snapshot_failed"] = True
+                        result_json["input_snapshot_warning"] = snapshot_result.warning
+                        current_job.result_json = result_json
+                        self._job_repo.save(current_job)
 
             def execution_observer(
                 stage: str, substep: str | None, event: str, details: dict[str, Any] | None

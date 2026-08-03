@@ -81,3 +81,73 @@ def test_heartbeat_lease_lost_sets_abort_without_failing_job(tmp_path: Path) -> 
 
     state.fail_job_and_aisle.assert_not_called()
     assert state.heartbeat_with_lease.called
+
+
+def test_heartbeat_renews_immediately_on_session_start(tmp_path: Path) -> None:
+    """Lease must renew before the first interval wait (input materialization window)."""
+    now = datetime(2026, 7, 28, 12, 0, 0, tzinfo=timezone.utc)
+    lease = JobLease(
+        job_id="job-1",
+        owner_id="owner-a",
+        fencing_token=1,
+        acquired_at=now,
+        expires_at=now + timedelta(seconds=60),
+    )
+    renewed = JobLease(
+        job_id="job-1",
+        owner_id="owner-a",
+        fencing_token=1,
+        acquired_at=now,
+        expires_at=now + timedelta(seconds=120),
+    )
+    job = Job(
+        id="job-1",
+        job_type="process_aisle",
+        target_type="aisle",
+        target_id="aisle-1",
+        status=JobStatus.RUNNING,
+        payload_json={},
+        created_at=now,
+        updated_at=now,
+        attempt_count=1,
+        execution_id="ex-1",
+        current_substep="processing",
+    )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A1",
+        status=AisleStatus.PROCESSING,
+        created_at=now,
+        updated_at=now,
+    )
+
+    state = MagicMock()
+    state.heartbeat_with_lease.return_value = (
+        job,
+        LeaseRenewalResult(outcome=LeaseRenewalOutcome.RENEWED, lease=renewed),
+    )
+
+    monitoring = V3JobMonitoringService(
+        state_service=state,
+        # Long interval: if immediate renew is missing, this would not call yet.
+        heartbeat_interval_sec=60.0,
+        startup_progress_timeout_sec=3600.0,
+    )
+    req = V3JobMonitoringRequest(
+        base_path=tmp_path,
+        job_id="job-1",
+        job_dir=tmp_path / "job-1",
+        job=job,
+        aisle=aisle,
+        aisle_id="aisle-1",
+        lease=lease,
+        lease_extension_seconds=60,
+    )
+    (tmp_path / "job-1").mkdir(parents=True, exist_ok=True)
+
+    with monitoring.session(req):
+        deadline = time.monotonic() + 1.0
+        while not state.heartbeat_with_lease.called and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert state.heartbeat_with_lease.called
