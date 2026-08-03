@@ -18,9 +18,11 @@ import { ApiError } from '../../services/api/apiClient';
 import type { ApiClient } from '../../services/api/apiClient';
 import type {
   AisleJobsResponseDto,
+  AisleProcessingStateResponseDto,
   AisleStatusResponseDto,
   MergeResultsResponseDto,
   ProcessAisleResponseDto,
+  RecoverAisleProcessingResponseDto,
 } from '../../services/api/types';
 import type { ConnectivityService } from '../../services/connectivity/connectivity';
 import { createId } from '../../shared/createId';
@@ -371,6 +373,7 @@ export class ProcessingService {
       const recoveredRemote = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
       if (recoveredRemote) {
         await processingRunStore.attachBackendJob(run.id, recoveredRemote.id);
+        await this.repo.confirmProcessAttempt(sessionId, recoveredRemote.id);
         await this.persistJob(
           sessionId,
           session.inventory_id,
@@ -407,11 +410,18 @@ export class ProcessingService {
         // already processing
       }
 
+      const processAttemptId = createId();
+      const processRequestedAt = new Date().toISOString();
+      await this.repo.persistProcessAttempt(sessionId, {
+        processAttemptId,
+        processIdempotencyKey: idempotencyKey,
+        processRequestedAt,
+      });
+
       const path =
         `/api/v3/inventories/${encodeURIComponent(session.inventory_id)}` +
         `/aisles/${encodeURIComponent(session.aisle_id)}/process`;
       const body = buildProcessAisleRequestBody(idempotencyKey, identificationMode);
-      const processAttemptId = createId();
       const uploadsCompletedToProcessMs =
         this.observability?.marks.takeElapsedMs(sessionMarkKey(sessionId, 'all_uploads_completed')) ?? null;
       const processStartedAt = this.clock.nowMs();
@@ -431,6 +441,7 @@ export class ProcessingService {
         });
         const processRequestMs = Math.max(0, Math.round(this.clock.nowMs() - processStartedAt));
         await processingRunStore.attachBackendJob(run.id, response.job_id);
+        await this.repo.confirmProcessAttempt(sessionId, response.job_id);
         await this.persistJob(sessionId, session.inventory_id, session.aisle_id, response.job_id, 'queued');
         this.observability?.marks.mark(sessionMarkKey(sessionId, 'process_requested'));
         this.observability?.marks.mark(sessionMarkKey(sessionId, `job:${response.job_id}:queued`));
@@ -476,6 +487,7 @@ export class ProcessingService {
           const recovered = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
           if (recovered) {
             await processingRunStore.attachBackendJob(run.id, recovered.id);
+            await this.repo.confirmProcessAttempt(sessionId, recovered.id);
             await this.persistJob(sessionId, session.inventory_id, session.aisle_id, recovered.id, recovered.status);
             return { ok: true, jobId: recovered.id, reason: null };
           }
@@ -484,6 +496,7 @@ export class ProcessingService {
           const recovered = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
           if (recovered) {
             await processingRunStore.attachBackendJob(run.id, recovered.id);
+            await this.repo.confirmProcessAttempt(sessionId, recovered.id);
             await this.persistJob(sessionId, session.inventory_id, session.aisle_id, recovered.id, recovered.status);
             return { ok: true, jobId: recovered.id, reason: null };
           }
@@ -683,6 +696,26 @@ export class ProcessingService {
     );
   }
 
+  async getAisleProcessingState(
+    inventoryId: string,
+    aisleId: string,
+  ): Promise<AisleProcessingStateResponseDto> {
+    return this.api.get<AisleProcessingStateResponseDto>(
+      `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/processing-state`,
+    );
+  }
+
+  async recoverAisleProcessing(
+    inventoryId: string,
+    aisleId: string,
+    body: { readonly reason?: string; readonly dry_run?: boolean } = {},
+  ): Promise<RecoverAisleProcessingResponseDto> {
+    return this.api.post<RecoverAisleProcessingResponseDto>(
+      `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/processing/recover`,
+      { reason: body.reason ?? 'mobile_stuck_starting', dry_run: body.dry_run ?? false },
+    );
+  }
+
   async applyRemoteStatus(
     sessionId: string,
     inventoryId: string,
@@ -707,23 +740,96 @@ export class ProcessingService {
     let recovered = 0;
     for (const session of stuck) {
       try {
-        const remote = await this.findActiveRemoteJob(
-          session.inventory_id,
-          session.aisle_id,
-          // Prefer linking any active aisle job; attempt key may be unknown after crash.
-          '',
-        );
-        if (remote) {
-          await this.persistJob(
-            session.id,
-            session.inventory_id,
-            session.aisle_id,
-            remote.id,
-            remote.status,
-          );
+        await this.repo.touchRecoveryCheck(session.id);
+        const idempotencyKey = session.process_idempotency_key?.trim() ?? '';
+
+        let processingState: AisleProcessingStateResponseDto | null = null;
+        try {
+          processingState = await this.getAisleProcessingState(session.inventory_id, session.aisle_id);
+        } catch (e) {
+          this.logger.warn('recovery', {
+            sessionId: session.id,
+            error: String(e),
+            reason: 'processing_state_unavailable',
+          });
+        }
+
+        if (processingState?.recoverable && processingState.job_id) {
+          try {
+            const recoverResult = await this.recoverAisleProcessing(
+              session.inventory_id,
+              session.aisle_id,
+              { reason: 'mobile_stuck_starting' },
+            );
+            processingState = recoverResult.processing_state;
+          } catch (e) {
+            this.logger.warn('recovery', {
+              sessionId: session.id,
+              error: String(e),
+              reason: 'processing_recover_failed',
+            });
+          }
+        }
+
+        const activeRemote = this.extractActiveRemoteFromState(processingState);
+        if (activeRemote && idempotencyKey) {
+          if (processingState?.idempotency_key === idempotencyKey) {
+            await this.persistJob(
+              session.id,
+              session.inventory_id,
+              session.aisle_id,
+              activeRemote.id,
+              activeRemote.status,
+            );
+            await this.repo.confirmProcessAttempt(session.id, activeRemote.id);
+            recovered += 1;
+            continue;
+          }
+          await this.repo.markProcessStartFailed(session.id, {
+            errorCode: 'REMOTE_JOB_EXISTS_NOT_OWNED',
+            message:
+              'Hay un procesamiento activo en el servidor que no corresponde a este intento local. ' +
+              'Revisá el pasillo antes de volver a procesar.',
+            sessionStatus: 'ready_to_process',
+            clearBackendJobId: true,
+          });
           recovered += 1;
           continue;
         }
+
+        if (idempotencyKey) {
+          const remote = await this.findActiveRemoteJob(
+            session.inventory_id,
+            session.aisle_id,
+            idempotencyKey,
+          );
+          if (remote) {
+            await this.persistJob(
+              session.id,
+              session.inventory_id,
+              session.aisle_id,
+              remote.id,
+              remote.status,
+            );
+            await this.repo.confirmProcessAttempt(session.id, remote.id);
+            recovered += 1;
+            continue;
+          }
+        }
+
+        if (activeRemote && !idempotencyKey) {
+          await this.repo.markProcessStartFailed(session.id, {
+            errorCode: 'REMOTE_JOB_EXISTS_NOT_OWNED',
+            message:
+              'Hay un procesamiento activo en el servidor sin identidad local confirmada. ' +
+              'No se adoptó el job remoto automáticamente.',
+            sessionStatus: 'ready_to_process',
+            clearBackendJobId: true,
+          });
+          recovered += 1;
+          continue;
+        }
+
         await this.repo.markProcessStartFailed(session.id, {
           errorCode: 'STUCK_STARTING_TTL',
           message:
@@ -743,35 +849,45 @@ export class ProcessingService {
     return { recovered };
   }
 
+  private extractActiveRemoteFromState(
+    state: AisleProcessingStateResponseDto | null,
+  ): { id: string; status: string } | null {
+    if (!state?.job_id?.trim()) {
+      return null;
+    }
+    const status = (state.job_status ?? state.state ?? 'queued').toLowerCase();
+    if (!['queued', 'starting', 'running', 'cancel_requested'].includes(status)) {
+      return null;
+    }
+    return { id: state.job_id, status: state.job_status ?? state.state };
+  }
+
   private async findActiveRemoteJob(
     inventoryId: string,
     aisleId: string,
     idempotencyKey: string,
   ): Promise<{ id: string; status: string } | null> {
+    const key = idempotencyKey.trim();
+    if (!key) {
+      return null;
+    }
     try {
-      const status = await this.api.get<AisleStatusResponseDto>(
-        `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/status`,
-      );
-      const candidates = [
-        status.latest_job,
-        ...status.recent_jobs,
-      ].filter(Boolean) as { id: string; status: string }[];
-      const active = candidates.find((j) =>
-        ['queued', 'starting', 'running', 'cancel_requested'].includes(j.status.toLowerCase()),
-      );
-      if (active) return active;
+      const state = await this.getAisleProcessingState(inventoryId, aisleId);
+      if (state.job_id && state.idempotency_key === key) {
+        return { id: state.job_id, status: state.job_status ?? state.state ?? 'queued' };
+      }
+
       const jobs = await this.api.get<AisleJobsResponseDto>(
         `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/jobs?limit=20`,
       );
       const byKey = jobs.jobs.find((j) => {
         const payload = (j as { payload_json?: { idempotency_key?: string } }).payload_json;
-        return payload?.idempotency_key === idempotencyKey;
+        return payload?.idempotency_key === key;
       });
-      if (byKey) return { id: byKey.id, status: byKey.status };
-      const activeListed = jobs.jobs.find((j) =>
-        ['queued', 'starting', 'running', 'cancel_requested'].includes(j.status.toLowerCase()),
-      );
-      return activeListed ? { id: activeListed.id, status: activeListed.status } : null;
+      if (byKey) {
+        return { id: byKey.id, status: byKey.status };
+      }
+      return null;
     } catch {
       return null;
     }

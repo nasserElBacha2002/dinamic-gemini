@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 
 from src.domain.jobs.entities import Job, JobStatus
 
@@ -16,6 +16,12 @@ _ACTIVE = {
 }
 _TERMINAL_OK = {JobStatus.SUCCEEDED}
 _TERMINAL_FAIL = {JobStatus.FAILED, JobStatus.CANCELED, JobStatus.TIMED_OUT}
+
+WORKER_LAUNCH_FAILED = "WORKER_LAUNCH_FAILED"
+
+
+class _Clock(Protocol):
+    def now(self) -> datetime: ...
 
 
 @dataclass(frozen=True)
@@ -46,14 +52,142 @@ def _failure_code(job: Job) -> str | None:
     return None
 
 
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _has_active_lease(job: Job, *, now: datetime) -> bool:
+    if job.status not in (
+        JobStatus.RUNNING,
+        JobStatus.STARTING,
+        JobStatus.CANCEL_REQUESTED,
+    ):
+        return False
+    if not (job.claim_owner_id or "").strip():
+        return False
+    exp = _aware(job.lease_expires_at)
+    if exp is None:
+        return False
+    return exp >= now
+
+
+def _heartbeat_age_seconds(job: Job, *, now: datetime) -> float | None:
+    reference = _aware(job.last_heartbeat_at) or _aware(job.updated_at)
+    if reference is None:
+        return None
+    return (now - reference).total_seconds()
+
+
+def _created_age_seconds(job: Job, *, now: datetime) -> float | None:
+    started = _aware(job.started_at) or _aware(job.created_at)
+    if started is None:
+        return None
+    return (now - started).total_seconds()
+
+
+def _classify_active_job(
+    active: Job,
+    *,
+    now: datetime,
+    stale_after_seconds: int,
+) -> AisleProcessingStateView:
+    """Classify an active job using lease/heartbeat evidence — not age alone."""
+    idem = _idempotency_from_job(active)
+    base_kwargs = dict(
+        job_id=active.id,
+        job_status=active.status.value,
+        idempotency_key=idem,
+        updated_at=active.updated_at,
+    )
+
+    # Worker launch failed while still STARTING/QUEUED → safe to recover.
+    if (active.failure_code or "").strip() == WORKER_LAUNCH_FAILED:
+        return AisleProcessingStateView(
+            state="RECOVERY_REQUIRED",
+            recoverable=True,
+            can_start_new=False,
+            failure_code=WORKER_LAUNCH_FAILED,
+            **base_kwargs,
+        )
+
+    # Live lease → never mark recovery.
+    if _has_active_lease(active, now=now):
+        return AisleProcessingStateView(
+            state="RUNNING" if active.status is JobStatus.RUNNING else "STARTING",
+            recoverable=False,
+            can_start_new=False,
+            failure_code=None,
+            **base_kwargs,
+        )
+
+    # RUNNING / CANCEL_REQUESTED without lease: heartbeat decides.
+    if active.status in {JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED}:
+        hb_age = _heartbeat_age_seconds(active, now=now)
+        if hb_age is not None and hb_age > stale_after_seconds:
+            return AisleProcessingStateView(
+                state="RECOVERY_REQUIRED",
+                recoverable=True,
+                can_start_new=False,
+                failure_code="STALE_LEASE_OR_HEARTBEAT",
+                **base_kwargs,
+            )
+        return AisleProcessingStateView(
+            state="RUNNING",
+            recoverable=False,
+            can_start_new=False,
+            failure_code=None,
+            **base_kwargs,
+        )
+
+    # QUEUED / STARTING without lease: age → suspected; no lease + old → recovery.
+    created_age = _created_age_seconds(active, now=now)
+    if created_age is not None and created_age > stale_after_seconds:
+        # No owner / lease → recoverable orphan. If somehow claimed without expiry,
+        # keep as suspected until recover inspects further.
+        if not (active.claim_owner_id or "").strip() or active.lease_expires_at is None:
+            return AisleProcessingStateView(
+                state="RECOVERY_REQUIRED",
+                recoverable=True,
+                can_start_new=False,
+                failure_code="STALE_STARTING_OR_QUEUED",
+                **base_kwargs,
+            )
+        return AisleProcessingStateView(
+            state="SUSPECTED_STALE",
+            recoverable=False,
+            can_start_new=False,
+            failure_code="SUSPECTED_STALE_STARTING_OR_QUEUED",
+            **base_kwargs,
+        )
+
+    return AisleProcessingStateView(
+        state="RUNNING" if active.status is JobStatus.RUNNING else "STARTING",
+        recoverable=False,
+        can_start_new=False,
+        failure_code=None,
+        **base_kwargs,
+    )
+
+
 def resolve_aisle_processing_state(
     *,
     latest_job: Job | None,
     recent_jobs: tuple[Job, ...] | list[Job],
     operational_job_id: str | None,
     stale_after_seconds: int = 900,
+    clock: _Clock | None = None,
+    now: datetime | None = None,
 ) -> AisleProcessingStateView:
     """Map aisle jobs to a shared mobile/web processing-state contract."""
+    if now is None:
+        now = clock.now() if clock is not None else datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
     candidates: list[Job] = []
     if latest_job is not None:
         candidates.append(latest_job)
@@ -63,34 +197,10 @@ def resolve_aisle_processing_state(
 
     active = next((j for j in candidates if j.status in _ACTIVE), None)
     if active is not None:
-        started = active.started_at or active.created_at
-        if started is not None and active.status in {JobStatus.QUEUED, JobStatus.STARTING}:
-            now = datetime.now(timezone.utc)
-            started_aware = started if started.tzinfo else started.replace(tzinfo=timezone.utc)
-            age_s = (now - started_aware).total_seconds()
-            if age_s > stale_after_seconds:
-                return AisleProcessingStateView(
-                    state="RECOVERY_REQUIRED",
-                    job_id=active.id,
-                    job_status=active.status.value,
-                    idempotency_key=_idempotency_from_job(active),
-                    recoverable=True,
-                    can_start_new=False,
-                    updated_at=active.updated_at,
-                    failure_code="STALE_STARTING_OR_QUEUED",
-                )
-        return AisleProcessingStateView(
-            state="RUNNING" if active.status is JobStatus.RUNNING else "STARTING",
-            job_id=active.id,
-            job_status=active.status.value,
-            idempotency_key=_idempotency_from_job(active),
-            recoverable=False,
-            can_start_new=False,
-            updated_at=active.updated_at,
-            failure_code=None,
+        return _classify_active_job(
+            active, now=now, stale_after_seconds=stale_after_seconds
         )
 
-    # Prefer operational pointer when terminal.
     terminal: Job | None = None
     if operational_job_id:
         terminal = next((j for j in candidates if j.id == operational_job_id), None)

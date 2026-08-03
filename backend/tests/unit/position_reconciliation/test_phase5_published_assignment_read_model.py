@@ -17,6 +17,7 @@ from src.application.services.position_reconciliation.result_position_enrichment
     apply_published_assignment_to_summary,
     export_fields_from_view,
     matches_position_filters,
+    partition_key_from_assignment_view,
     view_to_position_assignment_payload,
     view_to_position_payload,
 )
@@ -176,3 +177,25 @@ def test_apply_enrichment_to_summary():
     assert out.aisle_position_assigned is True
     assert out.position == {"id": "label1", "name": "02"}
     assert out.position_assignment["status"] == "ASSIGNED_AUTOMATIC"
+
+
+def test_partition_key_from_assignment_view():
+    assigned = map_assignment_to_view(
+        _assignment(
+            result_id="r1",
+            status=AssignmentStatus.ASSIGNED_AUTOMATIC,
+            name="A-01",
+        ),
+        reconciliation_status=ReconciliationStatus.COMPLETED,
+    )
+    assert partition_key_from_assignment_view(assigned) == "label1|ASSIGNED_AUTOMATIC|TEST_REASON"
+    unassigned = map_assignment_to_view(
+        _assignment(
+            result_id="r2",
+            status=AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION,
+            name=None,
+        ),
+        reconciliation_status=ReconciliationStatus.COMPLETED,
+    )
+    assert partition_key_from_assignment_view(unassigned) == "|UNASSIGNED_NO_PREVIOUS_POSITION|TEST_REASON"
+    assert partition_key_from_assignment_view(None) == ""

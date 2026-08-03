@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+  getAisleProcessingState,
+  recoverAisleProcessing,
+} from '../../../api/aislesApi';
 import { ApiError, type AisleIdentificationMode } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { useAppSnackbar } from '../../../components/ui';
@@ -202,6 +206,23 @@ export function useAisleProcessingFlow({
     setProcessError(null);
     setProcessingAisleId(dialogTarget.aisleId);
     try {
+      // Authoritative lifecycle (shared with mobile): consult processing-state before start.
+      let state = await getAisleProcessingState(inventoryId, dialogTarget.aisleId);
+      if (state.state === 'RECOVERY_REQUIRED' || state.state === 'SUSPECTED_STALE') {
+        const recovered = await recoverAisleProcessing(inventoryId, dialogTarget.aisleId, {
+          reason: 'web_client_pre_process_recover',
+        });
+        state = recovered.processing_state;
+      }
+      if (!state.can_start_new || state.state === 'STARTING' || state.state === 'RUNNING') {
+        setProcessError(
+          t('aisle.process_already_in_progress', {
+            defaultValue: 'El pasillo ya tiene un procesamiento en curso.',
+          })
+        );
+        return;
+      }
+
       await processMutation.mutateAsync({
         aisleId: dialogTarget.aisleId,
         providerName: providerKey.trim() === '' ? null : providerKey.trim().toLowerCase(),
@@ -224,6 +245,7 @@ export function useAisleProcessingFlow({
     }
   }, [
     dialogTarget,
+    inventoryId,
     modelKey,
     onAfterSuccess,
     onBeforeProcessMutation,

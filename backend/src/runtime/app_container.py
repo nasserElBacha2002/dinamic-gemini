@@ -193,6 +193,7 @@ from src.runtime.container.repository_builders import (
     build_aisle_location_label_repository,
     build_aisle_location_repository,
     build_client_position_label_repository,
+    build_manual_position_override_repository,
     build_ordered_capture_session_repository,
     build_source_asset_repository,
     build_supplier_extraction_profile_repository,
@@ -282,6 +283,7 @@ class AppContainer:
         self._aisle_location_label_repo = None
         self._aisle_location_label_artifact_repo = None
         self._client_position_label_repo = None
+        self._manual_position_override_repo = None
         self._image_position_label_detection_repo = None
         self._position_reconciliation_repo = None
         self._code_scan_repo: CodeScanRepository | None = None
@@ -413,6 +415,7 @@ class AppContainer:
         self._aisle_location_label_repo = None
         self._aisle_location_label_artifact_repo = None
         self._client_position_label_repo = None
+        self._manual_position_override_repo = None
         self._image_position_label_detection_repo = None
         self._position_reconciliation_repo = None
         self._code_scan_repo = None
@@ -1190,6 +1193,14 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._client_position_label_repo
+
+    def get_manual_position_override_repo(self):
+        if getattr(self, "_manual_position_override_repo", None) is not None:
+            return self._manual_position_override_repo
+        self._manual_position_override_repo = build_manual_position_override_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._manual_position_override_repo
 
     def get_image_position_label_detection_repo(self):
         if getattr(self, "_image_position_label_detection_repo", None) is not None:

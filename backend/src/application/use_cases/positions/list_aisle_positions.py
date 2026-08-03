@@ -16,7 +16,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.application.errors import InventoryNotFoundError
+from src.application.ports.client_position_label_repository import (
+    ClientPositionLabelRepository,
+)
 from src.application.ports.contracts import PositionListQuery
+from src.application.ports.manual_position_override_repository import (
+    ManualPositionOverrideRepository,
+)
+from src.application.ports.position_reconciliation_repository import (
+    PositionReconciliationRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
@@ -25,6 +34,9 @@ from src.application.ports.repositories import (
 )
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.display_primary_product import select_display_primary_product
+from src.application.services.position_reconciliation.result_position_enrichment import (
+    build_partition_key_by_position_id,
+)
 from src.application.services.position_sku_consolidation import (
     canonical_internal_code_lower,
     consolidate_positions_by_sku,
@@ -55,6 +67,8 @@ class ListAislePositionsCommand:
     #: When False, skip SKU merge (photo-accurate review rows). Ignored when ``sort_by`` is
     #: ``photo_sequence`` (merge is always off for that mode).
     consolidate_by_sku: bool = True
+    #: Page through SQL until exhausted (position filters / by-position). Avoids silent raw_cap cuts.
+    fetch_all_raw: bool = False
 
 
 @dataclass(frozen=True)
@@ -144,6 +158,10 @@ class ListAislePositionsUseCase:
         product_record_repo: ProductRecordRepository,
         *,
         positions_aisle_raw_cap: int,
+        reconciliation_repo: PositionReconciliationRepository | None = None,
+        position_enrichment_enabled: bool = False,
+        override_repo: ManualPositionOverrideRepository | None = None,
+        label_repo: ClientPositionLabelRepository | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -151,6 +169,10 @@ class ListAislePositionsUseCase:
         self._resolver = result_context_resolver
         self._product_record_repo = product_record_repo
         self._raw_cap = max(1, int(positions_aisle_raw_cap))
+        self._reconciliation_repo = reconciliation_repo
+        self._position_enrichment_enabled = position_enrichment_enabled
+        self._override_repo = override_repo
+        self._label_repo = label_repo
 
     def execute(self, command: ListAislePositionsCommand) -> ListAislePositionsResult:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
@@ -164,23 +186,49 @@ class ListAislePositionsUseCase:
         )
 
         ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=command.job_id)
-        raw_q = PositionListQuery(
-            status=command.status,
-            needs_review=command.needs_review,
-            min_confidence=command.min_confidence,
-            sku_filter=command.sku_filter,
-            page=1,
-            page_size=self._raw_cap,
-            sort_by="created_at",
-            sort_dir="asc",
-            job_id=ctx.job_id_for_slice,
-        )
-        # Bounded raw load within the resolved job slice only — not an unscoped "all rows in aisle" read.
-        raw_positions = list(self._position_repo.list_by_aisle_query(command.aisle_id, raw_q))
-        raw_truncated = len(raw_positions) >= self._raw_cap
+        page_size_raw = max(1, self._raw_cap)
+        raw_positions: list[Position] = []
+        raw_truncated = False
+        if command.fetch_all_raw:
+            page_idx = 1
+            while True:
+                raw_q = PositionListQuery(
+                    status=command.status,
+                    needs_review=command.needs_review,
+                    min_confidence=command.min_confidence,
+                    sku_filter=command.sku_filter,
+                    page=page_idx,
+                    page_size=page_size_raw,
+                    sort_by="created_at",
+                    sort_dir="asc",
+                    job_id=ctx.job_id_for_slice,
+                )
+                batch = list(self._position_repo.list_by_aisle_query(command.aisle_id, raw_q))
+                raw_positions.extend(batch)
+                if len(batch) < page_size_raw:
+                    break
+                page_idx += 1
+                # Safety: extreme aisles — still report truncation past 50 pages.
+                if page_idx > 50:
+                    raw_truncated = True
+                    break
+        else:
+            raw_q = PositionListQuery(
+                status=command.status,
+                needs_review=command.needs_review,
+                min_confidence=command.min_confidence,
+                sku_filter=command.sku_filter,
+                page=1,
+                page_size=page_size_raw,
+                sort_by="created_at",
+                sort_dir="asc",
+                job_id=ctx.job_id_for_slice,
+            )
+            raw_positions = list(self._position_repo.list_by_aisle_query(command.aisle_id, raw_q))
+            raw_truncated = len(raw_positions) >= self._raw_cap
         logger.info(
             "v3.list_aisle_positions raw_fetch inventory_id=%s aisle_id=%s job_slice=%r "
-            "context=%s rows=%d cap=%d truncated=%s",
+            "context=%s rows=%d cap=%d truncated=%s fetch_all=%s",
             command.inventory_id,
             command.aisle_id,
             ctx.job_id_for_slice,
@@ -188,6 +236,7 @@ class ListAislePositionsUseCase:
             len(raw_positions),
             self._raw_cap,
             raw_truncated,
+            command.fetch_all_raw,
         )
 
         sort_key = (command.sort_by or "created_at").strip().lower()
@@ -199,9 +248,22 @@ class ListAislePositionsUseCase:
             )
             effective_consolidate = False
 
+        partition_keys: dict[str, str] = {}
+        if effective_consolidate and self._position_enrichment_enabled:
+            partition_keys = build_partition_key_by_position_id(
+                raw_positions,
+                product_record_repo=self._product_record_repo,
+                reconciliation_repo=self._reconciliation_repo,
+                job_id=ctx.job_id_for_slice,
+                enrichment_enabled=self._position_enrichment_enabled,
+                override_repo=self._override_repo,
+                label_repo=self._label_repo,
+            )
+
         consolidated = consolidate_positions_by_sku(
             raw_positions,
             enabled=effective_consolidate,
+            partition_key_by_position_id=partition_keys or None,
         )
         reverse = (command.sort_dir or "asc").strip().lower() == "desc"
         consolidated_sorted = sorted(

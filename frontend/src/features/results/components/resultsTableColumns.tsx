@@ -130,6 +130,7 @@ export function buildResultsTableColumns(params: {
         formatAislePositionDisplay(t, {
           aislePositionName: r.aislePositionName,
           positionAssignmentStatus: r.positionAssignmentStatus,
+          positionAssignmentSource: r.positionAssignmentSource,
           positionCode: r.positionCode,
           aislePositionAssigned: r.aislePositionAssigned,
         }),

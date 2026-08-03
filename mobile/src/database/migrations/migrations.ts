@@ -567,6 +567,20 @@ CREATE INDEX IF NOT EXISTS idx_capture_sessions_ordered_capture
   ON capture_sessions(backend_ordered_capture_session_id);
 `,
   },
+  {
+    version: 20,
+    name: 'capture_session_process_attempt_identity',
+    sql: `
+ALTER TABLE capture_sessions ADD COLUMN process_attempt_id TEXT;
+ALTER TABLE capture_sessions ADD COLUMN process_idempotency_key TEXT;
+ALTER TABLE capture_sessions ADD COLUMN process_requested_at TEXT;
+ALTER TABLE capture_sessions ADD COLUMN process_confirmed_at TEXT;
+ALTER TABLE capture_sessions ADD COLUMN last_recovery_check_at TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_capture_sessions_process_idempotency_key
+  ON capture_sessions(process_idempotency_key);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

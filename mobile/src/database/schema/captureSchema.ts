@@ -36,6 +36,12 @@ export interface CaptureSessionRow {
   readonly preparation_processing_mode: string;
   /** Backend ordered-capture session id (Phase 1 positioning). */
   readonly backend_ordered_capture_session_id: string | null;
+  /** Durable process attempt identity (survives app restart). */
+  readonly process_attempt_id: string | null;
+  readonly process_idempotency_key: string | null;
+  readonly process_requested_at: string | null;
+  readonly process_confirmed_at: string | null;
+  readonly last_recovery_check_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }

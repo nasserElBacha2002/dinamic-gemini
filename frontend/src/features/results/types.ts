@@ -72,6 +72,23 @@ export type ReviewStatus =
   | 'INVALID'
   | 'NOT_COUNTABLE';
 
+export interface ResultPositionRef {
+  id?: string | null;
+  name?: string | null;
+}
+
+export interface ResultManualPositionOverride {
+  id: string;
+  action: string;
+  reasonCode: string;
+  reasonText?: string | null;
+  positionLabelId?: string | null;
+  positionName?: string | null;
+  createdAt: string;
+  version: number;
+  isActive: boolean;
+}
+
 /** Summary row for the results list (table). */
 export interface ResultSummary {
   id: string;
@@ -80,11 +97,17 @@ export interface ResultSummary {
   /** Phase 4: true when an aisle position label was assigned to this result. */
   aislePositionAssigned?: boolean;
   /** Phase 5: human aisle position name from published assignments (null = sin posición). */
+  aislePositionId?: string | null;
   aislePositionName?: string | null;
   /** Phase 5: assignment status code (ASSIGNED_AUTOMATIC | UNASSIGNED_* | NO_RECONCILIATION). */
   positionAssignmentStatus?: string | null;
   positionAssignmentReason?: string | null;
   positionAssignmentSource?: string | null;
+  automaticPosition?: ResultPositionRef | null;
+  automaticAssignmentStatus?: string | null;
+  manualPositionOverride?: ResultManualPositionOverride | null;
+  positionAssignmentWarnings?: string[];
+  positionAssignmentVersion?: number;
   reconciliationId?: string | null;
   reconciliationVersion?: string | null;
   reconciliationStatus?: string | null;
@@ -145,10 +168,16 @@ export interface ResultDetail {
   sku: string | null;
   positionCode: string | null;
   aislePositionAssigned?: boolean;
+  aislePositionId?: string | null;
   aislePositionName?: string | null;
   positionAssignmentStatus?: string | null;
   positionAssignmentReason?: string | null;
   positionAssignmentSource?: string | null;
+  automaticPosition?: ResultPositionRef | null;
+  automaticAssignmentStatus?: string | null;
+  manualPositionOverride?: ResultManualPositionOverride | null;
+  positionAssignmentWarnings?: string[];
+  positionAssignmentVersion?: number;
   reconciliationId?: string | null;
   reconciliationVersion?: string | null;
   reconciliationStatus?: string | null;

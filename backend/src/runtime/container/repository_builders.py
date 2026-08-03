@@ -706,6 +706,31 @@ def build_client_position_label_repository(
     )
 
 
+def build_manual_position_override_repository(
+    build_repo: BuildSqlOrMemory[_RepoT],
+) -> _RepoT:
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_manual_position_override_repository import (
+            SqlManualPositionOverrideRepository,
+        )
+
+        return SqlManualPositionOverrideRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_manual_position_override_repository import (
+            MemoryManualPositionOverrideRepository,
+        )
+
+        return MemoryManualPositionOverrideRepository()
+
+    return build_repo(
+        backend_info_name="ManualPositionOverrideRepository",
+        sql_error_subject="manual position override repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
 def build_image_position_label_detection_repository(
     build_repo: BuildSqlOrMemory[_RepoT],
 ) -> _RepoT:

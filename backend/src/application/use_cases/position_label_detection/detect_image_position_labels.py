@@ -523,14 +523,14 @@ class ImagePositionDetectionUseCase:
             command.job_id,
             command.source_asset_id,
             label.public_identifier,
-            PositionLabelDetectionStatus.VALID.value,
+            PositionLabelDetectionStatus.LEGACY_UNSIGNED_REQUIRES_REVIEW.value,
             self._detector_version,
             command.correlation_id,
         )
         return self._build_row(
             command,
             now=now,
-            status=PositionLabelDetectionStatus.VALID,
+            status=PositionLabelDetectionStatus.LEGACY_UNSIGNED_REQUIRES_REVIEW,
             signature_status=PositionLabelSignatureStatus.MISSING,
             payload_hash=parsed.payload_hash or label.payload_hash,
             public_identifier=label.public_identifier,

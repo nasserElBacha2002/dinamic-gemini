@@ -23,6 +23,7 @@ from src.application.services.position_reconciliation.result_position_enrichment
 )
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import Inventory
+from src.domain.position_overrides.entities import EffectiveProductPositionView
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 
@@ -100,7 +101,9 @@ def position_to_export_row_dict(
     position: Position,
     primary_product: ProductRecord | None,
     *,
-    position_assignment: PublishedPositionAssignmentView | None = None,
+    position_assignment: (
+        PublishedPositionAssignmentView | EffectiveProductPositionView | None
+    ) = None,
 ) -> dict[str, Any]:
     return position_to_operational_export_row_dict(
         inventory,

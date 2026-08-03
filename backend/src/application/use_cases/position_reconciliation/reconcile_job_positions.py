@@ -55,8 +55,6 @@ from src.domain.position_reconciliation.entities import (
     ProductPositionAssignment,
     ReconciliationStatus,
 )
-from src.domain.positions.entities import PositionReviewResolution
-
 
 @dataclass(frozen=True)
 class ReconcileJobPositionsCommand:
@@ -117,38 +115,6 @@ class ReconcileJobPositionsUseCase:
         self._reconciler = reconciler or SequentialPositionReconciler()
         self._enabled = enabled
         self._persistence_enabled = persistence_enabled
-
-    def _sync_corrected_position_codes(
-        self,
-        assignments: Sequence[ProductPositionAssignment],
-    ) -> None:
-        """Mirror ASSIGNED_AUTOMATIC aisle names onto position.corrected_position_code.
-
-        Skips rows already corrected by an operator (POSITION_CODE_CORRECTED). Does not
-        change review_resolution — this is a Phase 4 projection, not a manual review.
-        """
-        if self._positions is None:
-            return
-        now = self._clock.now()
-        for row in assignments:
-            if row.assignment_status is not AssignmentStatus.ASSIGNED_AUTOMATIC:
-                continue
-            name = (row.position_name_snapshot or "").strip()
-            if not name:
-                continue
-            product = self._products.get_by_id(row.result_id)
-            if product is None or not product.position_id:
-                continue
-            position = self._positions.get_by_id(product.position_id)
-            if position is None:
-                continue
-            if position.review_resolution is PositionReviewResolution.POSITION_CODE_CORRECTED:
-                continue
-            if (position.corrected_position_code or "").strip() == name:
-                continue
-            position.corrected_position_code = name
-            position.updated_at = now
-            self._positions.save(position)
 
     def record_failure(self, *, inventory_id: str, job_id: str, failure_code: str) -> None:
         """Best-effort durable FAILED state for auto-run failures before a RUNNING claim."""
@@ -437,5 +403,4 @@ class ReconcileJobPositionsUseCase:
                 tuple(self._reconciliations.list_active_assignments(command.job_id)),
                 reused=True,
             )
-        self._sync_corrected_position_codes(assignments)
         return ReconcileJobPositionsResult(reconciliation, assignments)

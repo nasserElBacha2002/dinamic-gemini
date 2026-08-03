@@ -32,6 +32,12 @@ from src.application.mappers.inventory_export_rows import (
     position_to_operational_export_row_dict,
     position_to_technical_export_row_dict,
 )
+from src.application.ports.client_position_label_repository import (
+    ClientPositionLabelRepository,
+)
+from src.application.ports.manual_position_override_repository import (
+    ManualPositionOverrideRepository,
+)
 from src.application.ports.position_reconciliation_repository import (
     PositionReconciliationRepository,
 )
@@ -47,8 +53,14 @@ from src.application.services.csv_inventory_exporter import (
     CsvInventoryExporter,
 )
 from src.application.services.display_primary_product import select_display_primary_product
+from src.application.services.position_overrides.effective_position_reader import (
+    EffectivePositionReader,
+)
 from src.application.services.position_reconciliation.published_assignment_reader import (
     PublishedPositionAssignmentReader,
+)
+from src.application.services.position_reconciliation.result_position_enrichment import (
+    build_partition_key_by_position_id,
 )
 from src.application.services.position_sku_consolidation import consolidate_positions_by_sku
 from src.application.services.result_context_resolver import ResultContextResolver
@@ -71,6 +83,8 @@ def append_inventory_csv_rows_for_aisle(
     product_record_repo: ProductRecordRepository,
     technical: bool,
     reconciliation_repo: PositionReconciliationRepository | None = None,
+    override_repo: ManualPositionOverrideRepository | None = None,
+    label_repo: ClientPositionLabelRepository | None = None,
 ) -> None:
     """Append consolidated CSV row dicts for one aisle (same slice rules as ``ListAislePositions``)."""
     ctx = resolver.resolve(aisle=aisle, explicit_job_id=explicit_job_id)
@@ -80,8 +94,6 @@ def append_inventory_csv_rows_for_aisle(
         raw = [p for p in candidates if p.job_id is None]
     else:
         raw = [p for p in candidates if p.job_id == slice_job]
-    consolidated = consolidate_positions_by_sku(raw)
-    consolidated_sorted = sorted(consolidated, key=export_position_sort_key)
     settings = load_settings()
     export_enrichment = (
         settings.position_results_export_enabled
@@ -90,6 +102,22 @@ def append_inventory_csv_rows_for_aisle(
         and slice_job is not None
         and not technical
     )
+    partition_keys: dict[str, str] = {}
+    if export_enrichment:
+        partition_keys = build_partition_key_by_position_id(
+            raw,
+            product_record_repo=product_record_repo,
+            reconciliation_repo=reconciliation_repo,
+            job_id=slice_job,
+            enrichment_enabled=True,
+            override_repo=override_repo,
+            label_repo=label_repo,
+        )
+    consolidated = consolidate_positions_by_sku(
+        raw,
+        partition_key_by_position_id=partition_keys or None,
+    )
+    consolidated_sorted = sorted(consolidated, key=export_position_sort_key)
     views: dict = {}
     if export_enrichment:
         # Collect primary product ids first for a single batch read.
@@ -102,7 +130,15 @@ def append_inventory_csv_rows_for_aisle(
             reconciliation_repo=reconciliation_repo,
             enrichment_enabled=True,
         )
-        views = reader.load_for_job(slice_job, result_ids=result_ids)
+        views = (
+            EffectivePositionReader(
+                automatic_reader=reader,
+                override_repo=override_repo,
+                label_repo=label_repo,
+            ).load_for_job(slice_job, result_ids=result_ids)
+            if override_repo is not None
+            else reader.load_for_job(slice_job, result_ids=result_ids)
+        )
         for p, primary in zip(consolidated_sorted, primaries):
             assignment = views.get(primary.id) if primary is not None else None
             rows.append(
@@ -137,6 +173,8 @@ class ExportInventoryResultsUseCase:
         product_record_repo: ProductRecordRepository,
         result_context_resolver: ResultContextResolver,
         reconciliation_repo: PositionReconciliationRepository | None = None,
+        override_repo: ManualPositionOverrideRepository | None = None,
+        label_repo: ClientPositionLabelRepository | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -144,6 +182,8 @@ class ExportInventoryResultsUseCase:
         self._product_record_repo = product_record_repo
         self._resolver = result_context_resolver
         self._reconciliation_repo = reconciliation_repo
+        self._override_repo = override_repo
+        self._label_repo = label_repo
 
     def execute_csv(self, inventory_id: str, *, technical: bool = False) -> str:
         inv = self._inventory_repo.get_by_id(inventory_id)
@@ -182,6 +222,8 @@ class ExportInventoryResultsUseCase:
                 product_record_repo=self._product_record_repo,
                 technical=technical,
                 reconciliation_repo=self._reconciliation_repo,
+                override_repo=self._override_repo,
+                label_repo=self._label_repo,
             )
 
         fieldnames = (
@@ -205,6 +247,8 @@ class ExportAisleResultsCsvUseCase:
         product_record_repo: ProductRecordRepository,
         result_context_resolver: ResultContextResolver,
         reconciliation_repo: PositionReconciliationRepository | None = None,
+        override_repo: ManualPositionOverrideRepository | None = None,
+        label_repo: ClientPositionLabelRepository | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -212,6 +256,8 @@ class ExportAisleResultsCsvUseCase:
         self._product_record_repo = product_record_repo
         self._resolver = result_context_resolver
         self._reconciliation_repo = reconciliation_repo
+        self._override_repo = override_repo
+        self._label_repo = label_repo
 
     def execute_csv(
         self,
@@ -243,6 +289,8 @@ class ExportAisleResultsCsvUseCase:
             product_record_repo=self._product_record_repo,
             technical=technical,
             reconciliation_repo=self._reconciliation_repo,
+            override_repo=self._override_repo,
+            label_repo=self._label_repo,
         )
         fieldnames = (
             INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS if technical else INVENTORY_RESULTS_CSV_FIELDS

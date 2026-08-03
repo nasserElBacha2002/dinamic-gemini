@@ -9,6 +9,7 @@ export { isSqliteMalformedError, isSqliteBusyError } from './sqliteErrors';
 export {
   runExclusiveDbWrite,
   runExclusiveDbWriteWithBusyRetry,
+  runImmediateTransaction,
   withSqliteBusyRetry,
   SQLITE_BUSY_TIMEOUT_MS,
 } from './sqliteWriteGate';

@@ -204,6 +204,30 @@ export interface AisleJobsResponseDto {
   readonly jobs: readonly JobSummaryDto[];
 }
 
+export interface AisleProcessingStateResponseDto {
+  readonly state: string;
+  readonly job_id: string | null;
+  readonly job_status: string | null;
+  readonly idempotency_key: string | null;
+  readonly recoverable: boolean;
+  readonly can_start_new: boolean;
+  readonly updated_at: string | null;
+  readonly failure_code: string | null;
+}
+
+export interface RecoverAisleProcessingRequestDto {
+  readonly reason?: string;
+  readonly dry_run?: boolean;
+}
+
+export interface RecoverAisleProcessingResponseDto {
+  readonly outcome: string;
+  readonly job_id: string | null;
+  readonly new_job_id: string | null;
+  readonly detail: string | null;
+  readonly processing_state: AisleProcessingStateResponseDto;
+}
+
 export interface MergeResultItemDto {
   readonly id: string;
   readonly position_id: string | null;

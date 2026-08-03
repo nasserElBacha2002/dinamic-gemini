@@ -2,6 +2,7 @@ import { processingRunStore, buildProcessRunIdempotencyKey } from '../src/featur
 import { processIdempotencyKey, ProcessingService } from '../src/features/processing/processingService';
 import { createLogger } from '../src/core/logging';
 import { ApiError } from '../src/services/api/apiClient';
+import type { CaptureSessionRow } from '../src/database/schema/captureSchema';
 
 jest.mock('@react-native-async-storage/async-storage', () => {
   const mem = new Map<string, string>();
@@ -27,7 +28,10 @@ describe('ProcessingService', () => {
     updateSessionStatus: jest.fn(),
     updateSessionUploadMeta: jest.fn(),
     markProcessStartFailed: jest.fn(async () => undefined),
-    listSessionsStuckStarting: jest.fn(async () => []),
+    listSessionsStuckStarting: jest.fn(async (): Promise<CaptureSessionRow[]> => []),
+    persistProcessAttempt: jest.fn(async () => undefined),
+    confirmProcessAttempt: jest.fn(async () => undefined),
+    touchRecoveryCheck: jest.fn(async () => undefined),
     setPreparationProcessingMode: jest.fn(async () => undefined),
     clearSequenceNumbersForExcluded: jest.fn(async () => 0),
     applySequenceCompaction: jest.fn(async () => 0),
@@ -100,7 +104,8 @@ describe('ProcessingService', () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 
-  it('recovers existing job on 409 without creating another', async () => {
+  it('recovers existing job on 409 when idempotency key matches', async () => {
+    const run = await processingRunStore.getOrCreateForStart('session-1', null);
     repo.listPhotos.mockResolvedValue([
       { status: 'stable', upload_status: 'uploaded', backend_asset_id: 'asset-1' },
     ]);
@@ -113,11 +118,18 @@ describe('ProcessingService', () => {
     });
     assetsApi.listAssets.mockResolvedValue([{ id: 'asset-1' }]);
     jobs.getByBackendJobId.mockResolvedValue(null);
-    api.get.mockResolvedValue({
-      latest_job: { id: 'job-existing', status: 'running' },
-      recent_jobs: [],
-      operational_job_id: 'job-existing',
-      aisle: {},
+    api.get.mockImplementation((url: string) => {
+      if (url.includes('processing-state')) {
+        return Promise.resolve({
+          state: 'RUNNING',
+          job_id: 'job-existing',
+          job_status: 'running',
+          idempotency_key: run.idempotencyKey,
+          recoverable: false,
+          can_start_new: false,
+        });
+      }
+      return Promise.resolve({ jobs: [], operational_job_id: null });
     });
     api.post.mockRejectedValue(new ApiError('active', 409, 'ACTIVE_JOB_EXISTS'));
     const service = new ProcessingService(api as never, repo as never, jobs as never, uploadQueue as never, assetsApi as never, logger);
@@ -139,7 +151,19 @@ describe('ProcessingService', () => {
     });
     assetsApi.listAssets.mockResolvedValue([{ id: 'asset-1' }]);
     jobs.getByBackendJobId.mockResolvedValue(null);
-    api.get.mockResolvedValue({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    api.get.mockImplementation((url: string) => {
+      if (url.includes('processing-state')) {
+        return Promise.resolve({
+          state: 'IDLE',
+          job_id: null,
+          job_status: null,
+          idempotency_key: null,
+          recoverable: false,
+          can_start_new: true,
+        });
+      }
+      return Promise.resolve({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    });
     api.post.mockResolvedValue({ job_id: 'job-new', identification_mode: 'CODE_SCAN' });
     const service = new ProcessingService(
       api as never,
@@ -157,6 +181,13 @@ describe('ProcessingService', () => {
     expect(api.post.mock.calls[0][2]).toEqual({
       headers: { 'Idempotency-Key': body.idempotency_key },
     });
+    expect(repo.persistProcessAttempt).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({
+        processIdempotencyKey: body.idempotency_key,
+      }),
+    );
+    expect(repo.confirmProcessAttempt).toHaveBeenCalledWith('session-1', 'job-new');
   });
 
   it('startProcess omits identification_mode when inheriting', async () => {
@@ -172,7 +203,19 @@ describe('ProcessingService', () => {
     });
     assetsApi.listAssets.mockResolvedValue([{ id: 'asset-1' }]);
     jobs.getByBackendJobId.mockResolvedValue(null);
-    api.get.mockResolvedValue({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    api.get.mockImplementation((url: string) => {
+      if (url.includes('processing-state')) {
+        return Promise.resolve({
+          state: 'IDLE',
+          job_id: null,
+          job_status: null,
+          idempotency_key: null,
+          recoverable: false,
+          can_start_new: true,
+        });
+      }
+      return Promise.resolve({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    });
     api.post.mockResolvedValue({ job_id: 'job-new' });
     const service = new ProcessingService(
       api as never,
@@ -201,7 +244,19 @@ describe('ProcessingService', () => {
     });
     assetsApi.listAssets.mockResolvedValue([{ id: 'asset-1' }]);
     jobs.getByBackendJobId.mockResolvedValue(null);
-    api.get.mockResolvedValue({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    api.get.mockImplementation((url: string) => {
+      if (url.includes('processing-state')) {
+        return Promise.resolve({
+          state: 'IDLE',
+          job_id: null,
+          job_status: null,
+          idempotency_key: null,
+          recoverable: false,
+          can_start_new: true,
+        });
+      }
+      return Promise.resolve({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    });
     api.post.mockRejectedValue(
       new ApiError('blocked', 422, 'LEGACY_PROCESSING_MODE_NOT_ALLOWED_FOR_NEW_CONFIGURATION'),
     );
@@ -249,7 +304,19 @@ describe('ProcessingService', () => {
       { id: 'asset-2', ordered_capture_session_id: 'ocs-1', sequence_number: 2 },
     ]);
     jobs.getByBackendJobId.mockResolvedValue(null);
-    api.get.mockResolvedValue({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    api.get.mockImplementation((url: string) => {
+      if (url.includes('processing-state')) {
+        return Promise.resolve({
+          state: 'IDLE',
+          job_id: null,
+          job_status: null,
+          idempotency_key: null,
+          recoverable: false,
+          can_start_new: true,
+        });
+      }
+      return Promise.resolve({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    });
     const orderedCapture = { sealSession: jest.fn() };
     const service = new ProcessingService(
       api as never,
@@ -337,5 +404,59 @@ describe('ProcessingService', () => {
     expect(summary.loadState).toBe('error');
     expect(summary.positions).toBeNull();
     expect(summary.pendingReview).toBeNull();
+  });
+
+  it('recoverStuckStartingSessions links remote job when idempotency key matches', async () => {
+    repo.listSessionsStuckStarting.mockResolvedValue([
+      {
+        id: 'session-stuck',
+        inventory_id: 'inv-1',
+        aisle_id: 'aisle-1',
+        process_idempotency_key: 'mobile-process:session-stuck:run-1',
+        process_attempt_id: 'attempt-1',
+      } as CaptureSessionRow,
+    ]);
+    api.get.mockResolvedValue({
+      state: 'RUNNING',
+      job_id: 'job-owned',
+      job_status: 'running',
+      idempotency_key: 'mobile-process:session-stuck:run-1',
+      recoverable: false,
+      can_start_new: false,
+    });
+    jobs.getByBackendJobId.mockResolvedValue(null);
+    const service = new ProcessingService(api as never, repo as never, jobs as never, uploadQueue as never, assetsApi as never, logger);
+    const result = await service.recoverStuckStartingSessions();
+    expect(result.recovered).toBe(1);
+    expect(repo.confirmProcessAttempt).toHaveBeenCalledWith('session-stuck', 'job-owned');
+    expect(repo.markProcessStartFailed).not.toHaveBeenCalled();
+  });
+
+  it('recoverStuckStartingSessions marks REMOTE_JOB_EXISTS_NOT_OWNED when key mismatches', async () => {
+    repo.listSessionsStuckStarting.mockResolvedValue([
+      {
+        id: 'session-stuck',
+        inventory_id: 'inv-1',
+        aisle_id: 'aisle-1',
+        process_idempotency_key: 'mobile-process:session-stuck:run-1',
+        process_attempt_id: 'attempt-1',
+      } as CaptureSessionRow,
+    ]);
+    api.get.mockResolvedValue({
+      state: 'RUNNING',
+      job_id: 'job-other',
+      job_status: 'running',
+      idempotency_key: 'mobile-process:other:run-9',
+      recoverable: false,
+      can_start_new: false,
+    });
+    const service = new ProcessingService(api as never, repo as never, jobs as never, uploadQueue as never, assetsApi as never, logger);
+    const result = await service.recoverStuckStartingSessions();
+    expect(result.recovered).toBe(1);
+    expect(repo.markProcessStartFailed).toHaveBeenCalledWith(
+      'session-stuck',
+      expect.objectContaining({ errorCode: 'REMOTE_JOB_EXISTS_NOT_OWNED' }),
+    );
+    expect(repo.confirmProcessAttempt).not.toHaveBeenCalled();
   });
 });

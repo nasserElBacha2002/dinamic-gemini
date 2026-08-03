@@ -1979,6 +1979,16 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Fail job finalization when Phase 4 reconciliation fails (default false).",
     )
+    position_manual_overrides_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_MANUAL_OVERRIDES_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6 manual position override write gate (default false). "
+            "Existing overrides remain effective and readable when disabled."
+        ),
+    )
     position_results_enrichment_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("POSITION_RESULTS_ENRICHMENT_ENABLED", "true").strip().lower()

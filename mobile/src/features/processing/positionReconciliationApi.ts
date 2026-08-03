@@ -26,6 +26,15 @@ export interface ProductPositionAssignmentDto {
   readonly assignment_source: string | null;
   readonly reconciliation_id: string;
   readonly reconciliation_version: string;
+  /** Phase 6 enrichment when the server returns the effective result assignment. */
+  readonly position?: {
+    readonly id: string | null;
+    readonly name: string | null;
+  } | null;
+  readonly position_assignment?: {
+    readonly source: 'AUTOMATIC' | 'MANUAL' | 'NONE' | string | null;
+    readonly status?: string | null;
+  } | null;
 }
 
 export interface ProductPositionAssignmentListResponse {

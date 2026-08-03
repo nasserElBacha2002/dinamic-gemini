@@ -498,6 +498,8 @@ def get_export_inventory_results_use_case(
         product_record_repo=product_record_repo,
         result_context_resolver=result_context_resolver,
         reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
+        override_repo=get_app_container().get_manual_position_override_repo(),
+        label_repo=get_app_container().get_client_position_label_repo(),
     )
 
 
@@ -515,6 +517,8 @@ def get_export_aisle_results_csv_use_case(
         product_record_repo=product_record_repo,
         result_context_resolver=result_context_resolver,
         reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
+        override_repo=get_app_container().get_manual_position_override_repo(),
+        label_repo=get_app_container().get_client_position_label_repo(),
     )
 
 
@@ -774,6 +778,46 @@ def get_cancel_aisle_job_use_case(
     clock: Clock = Depends(get_clock),
 ) -> CancelAisleJobUseCase:
     return CancelAisleJobUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        clock=clock,
+    )
+
+
+def get_recover_stale_job_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    launch_service: AisleJobLaunchService = Depends(get_aisle_job_launch_service),
+    clock: Clock = Depends(get_clock),
+) -> "RecoverStaleJobUseCase":
+    from src.application.use_cases.recovery.recover_stale_job import RecoverStaleJobUseCase
+
+    return RecoverStaleJobUseCase(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        launch_service=launch_service,
+        clock=clock,
+    )
+
+
+def get_recover_aisle_processing_use_case(
+    status_use_case: GetAisleProcessingStatusUseCase = Depends(
+        get_get_aisle_processing_status_use_case
+    ),
+    recover_stale: "RecoverStaleJobUseCase" = Depends(get_recover_stale_job_use_case),
+    cancel_job: CancelAisleJobUseCase = Depends(get_cancel_aisle_job_use_case),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    clock: Clock = Depends(get_clock),
+) -> "RecoverAisleProcessingUseCase":
+    from src.application.use_cases.recovery.recover_aisle_processing import (
+        RecoverAisleProcessingUseCase,
+    )
+
+    return RecoverAisleProcessingUseCase(
+        status_use_case=status_use_case,
+        recover_stale=recover_stale,
+        cancel_job=cancel_job,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
         clock=clock,
@@ -1354,13 +1398,18 @@ def get_list_aisle_positions_use_case(
 ) -> ListAislePositionsUseCase:
     from src.config import load_settings
 
+    settings = load_settings()
     return ListAislePositionsUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         position_repo=position_repo,
         result_context_resolver=result_context_resolver,
         product_record_repo=product_record_repo,
-        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+        positions_aisle_raw_cap=settings.v3_positions_aisle_raw_cap,
+        reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
+        position_enrichment_enabled=settings.position_results_enrichment_enabled,
+        override_repo=get_app_container().get_manual_position_override_repo(),
+        label_repo=get_app_container().get_client_position_label_repo(),
     )
 
 
@@ -2477,6 +2526,60 @@ def get_image_position_label_detection_repo():
 
 def get_position_reconciliation_repo():
     return get_app_container().get_position_reconciliation_repo()
+
+
+def get_client_position_label_repo():
+    return get_app_container().get_client_position_label_repo()
+
+
+def get_manual_position_override_repo():
+    return get_app_container().get_manual_position_override_repo()
+
+
+def get_manage_position_override_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    label_repo=Depends(get_client_position_label_repo),
+    override_repo=Depends(get_manual_position_override_repo),
+    reconciliation_repo=Depends(get_position_reconciliation_repo),
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+):
+    from src.application.services.position_overrides.effective_position_reader import (
+        EffectivePositionReader,
+    )
+    from src.application.services.position_reconciliation.published_assignment_reader import (
+        PublishedPositionAssignmentReader,
+    )
+    from src.application.use_cases.position_overrides.manage import (
+        ManagePositionOverrideUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    automatic_reader = PublishedPositionAssignmentReader(
+        reconciliation_repo=reconciliation_repo,
+        enrichment_enabled=settings.position_results_enrichment_enabled,
+    )
+    effective_reader = EffectivePositionReader(
+        automatic_reader=automatic_reader,
+        override_repo=override_repo,
+        label_repo=label_repo,
+    )
+    return ManagePositionOverrideUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=position_repo,
+        product_repo=product_repo,
+        label_repo=label_repo,
+        override_repo=override_repo,
+        effective_reader=effective_reader,
+        access_policy=access_policy,
+        writes_enabled=settings.position_manual_overrides_enabled,
+    )
 
 
 def get_reconcile_job_positions_use_case(

@@ -1574,17 +1574,49 @@
     "position_assignment": {
       "unassigned": "No position",
       "no_reconciliation": "Position not processed",
+      "manual_marker": "(manual)",
+      "automatic_secondary": "Automatic: {{position}}",
       "reason": "Reason",
       "reconciliation": "Reconciliation {{version}}",
       "stale_warning": "Stale revision",
       "status": {
         "assigned_automatic": "Automatic",
+        "assigned_manual": "Manually assigned",
+        "unassigned_manual": "Manually removed",
         "unassigned_no_previous": "No previous label",
         "unassigned_ambiguous": "Ambiguous",
         "unassigned_invalid": "Invalid",
         "unassigned_unordered": "Unordered image",
         "no_reconciliation": "Not processed",
         "stale": "Stale"
+      }
+    },
+    "position_override": {
+      "title": "Correct position",
+      "open_action": "Correct position",
+      "action_label": "Action",
+      "position_label": "Active position",
+      "reason_code": "Reason",
+      "reason_text": "Reason details",
+      "submit": "Save correction",
+      "unavailable": "This row cannot be corrected because its job or current version is unavailable.",
+      "actions": {
+        "assign": "Assign position",
+        "change": "Change position",
+        "remove": "Remove position",
+        "restore": "Restore automatic"
+      },
+      "reasons": {
+        "WRONG_POSITION_DETECTED": "Wrong position detected",
+        "PRODUCT_MOVED": "Product moved",
+        "SEQUENCE_ERROR": "Sequence error",
+        "POSITION_LABEL_NOT_VISIBLE": "Position label not visible",
+        "POSITION_LABEL_INVALID": "Invalid position label",
+        "AMBIGUOUS_IMAGE": "Ambiguous image",
+        "MISSING_POSITION_LABEL": "Missing position label",
+        "OPERATOR_VERIFICATION": "Operator verification",
+        "DATA_CORRECTION": "Data correction",
+        "OTHER": "Other"
       }
     },
     "table_review_aria": "Table review aria",

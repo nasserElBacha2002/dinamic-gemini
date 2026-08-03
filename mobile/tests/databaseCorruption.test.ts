@@ -2,6 +2,7 @@ import { isSqliteBusyError, isSqliteMalformedError } from '../src/database/sqlit
 import {
   __resetSqliteWriteGateForTests,
   runExclusiveDbWrite,
+  runImmediateTransaction,
   withSqliteBusyRetry,
 } from '../src/database/sqliteWriteGate';
 
@@ -76,5 +77,92 @@ describe('sqliteWriteGate', () => {
         { maxAttempts: 2, baseDelayMs: 1 },
       ),
     ).rejects.toThrow(/database is locked/);
+  });
+
+  describe('runImmediateTransaction', () => {
+    it('retries when BEGIN IMMEDIATE is busy', async () => {
+      let beginAttempts = 0;
+      const db = {
+        execAsync: jest.fn(async (sql: string) => {
+          if (sql.startsWith('BEGIN')) {
+            beginAttempts += 1;
+            if (beginAttempts < 2) {
+              throw new Error('Error code 5: database is locked');
+            }
+          }
+        }),
+      };
+      let workRuns = 0;
+      const result = await runImmediateTransaction(
+        db,
+        async () => {
+          workRuns += 1;
+          return 'done';
+        },
+        { maxAttempts: 5, baseDelayMs: 1 },
+      );
+      expect(result).toBe('done');
+      expect(beginAttempts).toBe(2);
+      expect(workRuns).toBe(1);
+      expect(db.execAsync).toHaveBeenCalledWith('COMMIT;');
+    });
+
+    it('rolls back and retries when busy after BEGIN succeeds', async () => {
+      let workAttempts = 0;
+      let commitAttempts = 0;
+      const db = {
+        execAsync: jest.fn(async (sql: string) => {
+          if (sql.startsWith('BEGIN')) {
+            return;
+          }
+          if (sql === 'ROLLBACK;') {
+            return;
+          }
+          if (sql === 'COMMIT;') {
+            commitAttempts += 1;
+            if (commitAttempts < 2) {
+              throw new Error('database is locked');
+            }
+          }
+        }),
+      };
+      const result = await runImmediateTransaction(
+        db,
+        async () => {
+          workAttempts += 1;
+          return 'done';
+        },
+        { maxAttempts: 5, baseDelayMs: 1 },
+      );
+      expect(result).toBe('done');
+      expect(workAttempts).toBe(2);
+      expect(db.execAsync).toHaveBeenCalledWith('ROLLBACK;');
+    });
+
+    it('does not infinite-retry on non-busy errors', async () => {
+      let workAttempts = 0;
+      const db = {
+        execAsync: jest.fn(async (sql: string) => {
+          if (sql.startsWith('BEGIN')) {
+            return;
+          }
+          if (sql === 'ROLLBACK;') {
+            return;
+          }
+        }),
+      };
+      await expect(
+        runImmediateTransaction(
+          db,
+          async () => {
+            workAttempts += 1;
+            throw new Error('UNIQUE constraint failed');
+          },
+          { maxAttempts: 5, baseDelayMs: 1 },
+        ),
+      ).rejects.toThrow(/UNIQUE constraint failed/);
+      expect(workAttempts).toBe(1);
+      expect(db.execAsync).toHaveBeenCalledWith('ROLLBACK;');
+    });
   });
 });

@@ -169,6 +169,17 @@ class MemoryPositionReconciliationRepository:
                 ),
             )
 
+    def list_result_assignment_history(
+        self, job_id: str, result_id: str
+    ) -> list[ProductPositionAssignment]:
+        with self._lock:
+            rows = [
+                row
+                for row in self._assignments.values()
+                if row.job_id == job_id and row.result_id == result_id
+            ]
+            return sorted(rows, key=lambda row: (row.created_at, row.id), reverse=True)
+
     def list_unassigned(self, job_id: str) -> list[ProductPositionAssignment]:
         return [
             row

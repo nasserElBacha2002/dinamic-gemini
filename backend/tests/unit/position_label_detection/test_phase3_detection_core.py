@@ -33,6 +33,7 @@ from src.domain.position_label_detection.entities import (
     DetectedCode,
     ImageCodeKind,
     PositionLabelDetectionStatus,
+    PositionLabelSignatureStatus,
 )
 from src.infrastructure.repositories.memory_client_position_label_repository import (
     MemoryClientPositionLabelRepository,
@@ -336,7 +337,11 @@ def test_unsigned_active_label_accepted_when_qr_missing_signature() -> None:
     )
     assert result.position_candidate_indexes == (0,)
     assert len(result.detections) == 1
-    assert result.detections[0].detection_status is PositionLabelDetectionStatus.VALID
+    assert (
+        result.detections[0].detection_status
+        is PositionLabelDetectionStatus.LEGACY_UNSIGNED_REQUIRES_REVIEW
+    )
+    assert result.detections[0].signature_status is PositionLabelSignatureStatus.MISSING
     assert result.detections[0].public_identifier == "pos_unsigned"
 
 

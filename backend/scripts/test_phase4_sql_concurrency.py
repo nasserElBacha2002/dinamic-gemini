@@ -390,7 +390,11 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         report.status = "FAIL"
         report.notes.append(f"error={exc}\n{traceback.format_exc()}")
-    report.notes.append(_cleanup_harness_rows())
+    cleanup_note = _cleanup_harness_rows()
+    report.notes.append(cleanup_note)
+    if cleanup_note.startswith("cleanup_error="):
+        report.status = "FAIL"
+        report.notes.append("cleanup_failure_forces_FAIL")
     report.write()
     return 0 if report.status == "PASS" else 1
 

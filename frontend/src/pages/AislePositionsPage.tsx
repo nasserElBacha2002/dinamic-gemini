@@ -1072,8 +1072,12 @@ export default function AislePositionsPage() {
       <QuickReviewDrawer
         open={Boolean(quickContext)}
         context={quickContext}
+        clientId={inventory?.client_id}
         onClose={() => setQuickContext(null)}
         onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
+        onPositionOverrideSuccess={async () => {
+          await refetch();
+        }}
       />
 
       <EditAisleCodeDialog

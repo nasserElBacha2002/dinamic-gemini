@@ -7,6 +7,7 @@
 
 import type {
   PositionSummary,
+  ManualPositionOverrideSummary,
   PositionDetailResponse,
   EvidenceSummary,
   ReviewActionSummary,
@@ -24,6 +25,23 @@ import type {
   TraceabilityArtifactMetadata,
 } from '../types';
 import { isLegacyEvidenceDisplayable } from '../utils/evidenceEligibility';
+
+function mapManualPositionOverride(
+  value: ManualPositionOverrideSummary | null | undefined
+) {
+  if (!value) return null;
+  return {
+    id: value.id,
+    action: value.action,
+    reasonCode: value.reason_code,
+    reasonText: value.reason_text ?? null,
+    positionLabelId: value.position_label_id ?? null,
+    positionName: value.position_name ?? null,
+    createdAt: value.created_at,
+    version: value.version,
+    isActive: value.is_active ?? true,
+  };
+}
 
 /** Backend traceability is lowercase; visible model uses uppercase.
  * Unknown/missing → UNVALIDATED (document-only fallback: backend sends valid|missing|invalid|unvalidated). */
@@ -159,10 +177,18 @@ export function mapPositionSummaryToResultSummary(
     sku,
     positionCode: p.position_code ?? null,
     aislePositionAssigned: p.aisle_position_assigned === true,
+    aislePositionId: p.position?.id ?? null,
     aislePositionName: p.position?.name ?? null,
     positionAssignmentStatus: p.position_assignment?.status ?? null,
     positionAssignmentReason: p.position_assignment?.reason ?? null,
     positionAssignmentSource: p.position_assignment?.source ?? null,
+    automaticPosition: p.position_assignment?.automatic_position ?? null,
+    automaticAssignmentStatus: p.position_assignment?.automatic_assignment_status ?? null,
+    manualPositionOverride: mapManualPositionOverride(
+      p.position_assignment?.manual_override
+    ),
+    positionAssignmentWarnings: p.position_assignment?.warnings ?? [],
+    positionAssignmentVersion: p.position_assignment?.version,
     reconciliationId: p.position_assignment?.reconciliation_id ?? null,
     reconciliationVersion: p.position_assignment?.reconciliation_version ?? null,
     reconciliationStatus: p.position_assignment?.reconciliation_status ?? null,
@@ -322,10 +348,19 @@ export function mapPositionDetailToResultDetail(
     sku,
     positionCode: position.position_code ?? null,
     aislePositionAssigned: position.aisle_position_assigned === true,
+    aislePositionId: position.position?.id ?? null,
     aislePositionName: position.position?.name ?? null,
     positionAssignmentStatus: position.position_assignment?.status ?? null,
     positionAssignmentReason: position.position_assignment?.reason ?? null,
     positionAssignmentSource: position.position_assignment?.source ?? null,
+    automaticPosition: position.position_assignment?.automatic_position ?? null,
+    automaticAssignmentStatus:
+      position.position_assignment?.automatic_assignment_status ?? null,
+    manualPositionOverride: mapManualPositionOverride(
+      position.position_assignment?.manual_override
+    ),
+    positionAssignmentWarnings: position.position_assignment?.warnings ?? [],
+    positionAssignmentVersion: position.position_assignment?.version,
     reconciliationId: position.position_assignment?.reconciliation_id ?? null,
     reconciliationVersion: position.position_assignment?.reconciliation_version ?? null,
     reconciliationStatus: position.position_assignment?.reconciliation_status ?? null,

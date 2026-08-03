@@ -22,6 +22,7 @@ from . import (
     inventories,
     ordered_capture,
     position_label_detections,
+    position_overrides,
     position_reconciliation,
     positions,
     preliminary_detections,
@@ -52,6 +53,7 @@ router.include_router(preliminary_detections.router)
 router.include_router(preliminary_reconciliations.router)
 router.include_router(positions.router)
 router.include_router(position_label_detections.router)
+router.include_router(position_overrides.router)
 router.include_router(position_reconciliation.router)
 router.include_router(image_results.router)
 router.include_router(processing_observability.router)

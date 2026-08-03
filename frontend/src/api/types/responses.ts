@@ -1196,6 +1196,27 @@ export interface PositionTechnicalSnapshot {
   audit?: Record<string, unknown> | null;
 }
 
+export interface PositionAssignmentRef {
+  id?: string | null;
+  name?: string | null;
+}
+
+export interface ManualPositionOverrideSummary {
+  id: string;
+  action: string;
+  reason_code: string;
+  reason_text?: string | null;
+  position_label_id?: string | null;
+  position_name?: string | null;
+  created_by_user_id?: string | null;
+  created_by_role?: string | null;
+  created_at: string;
+  deactivated_at?: string | null;
+  version: number;
+  /** Enriched result rows only include the active override, so this may be omitted. */
+  is_active?: boolean;
+}
+
 /** Position summary for frontend consumers. `detected_summary_json` is a legacy technical snapshot and is no longer expected from active frontend APIs. */
 export interface PositionSummary {
   id: string;
@@ -1217,7 +1238,12 @@ export interface PositionSummary {
   /** Phase 5: assignment metadata from the published Phase 4 revision. */
   position_assignment?: {
     status?: string | null;
-    source?: string | null;
+    source?: 'AUTOMATIC' | 'MANUAL' | 'NONE' | string | null;
+    automatic_position?: PositionAssignmentRef | null;
+    automatic_assignment_status?: string | null;
+    manual_override?: ManualPositionOverrideSummary | null;
+    warnings?: string[];
+    version?: number;
     reason?: string | null;
     reconciliation_id?: string | null;
     reconciliation_version?: string | null;

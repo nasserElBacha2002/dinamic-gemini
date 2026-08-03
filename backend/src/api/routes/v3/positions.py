@@ -35,6 +35,9 @@ from src.api.schemas.position_schemas import (
 )
 from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.services.display_primary_product import select_display_primary_product
+from src.application.services.position_overrides.effective_position_reader import (
+    EffectivePositionReader,
+)
 from src.application.services.position_reconciliation.group_results_by_position import (
     group_summaries_by_position,
 )
@@ -56,6 +59,7 @@ from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsUseCase,
 )
 from src.config import load_settings
+from src.runtime.app_container import get_app_container
 
 from .shared import (
     evidence_to_response,
@@ -87,6 +91,11 @@ class _ListAislePositionsQuery:
     position_assignment_status: str | None
     position_name: str | None
     unassigned_reason: str | None
+    position_source: str | None
+    has_manual_override: bool | None
+    manual_reason_code: str | None
+    manual_position_invalidated: bool | None
+    automatic_changed_after_override: bool | None
 
 
 def _list_aisle_positions_query_dep(
@@ -153,6 +162,13 @@ def _list_aisle_positions_query_dep(
         None,
         description="Phase 5: filter by unassigned reason or UNASSIGNED_* status code.",
     ),
+    position_source: str | None = Query(
+        None, pattern="^(AUTOMATIC|MANUAL|NONE)$"
+    ),
+    has_manual_override: bool | None = Query(None),
+    manual_reason_code: str | None = Query(None),
+    manual_position_invalidated: bool | None = Query(None),
+    automatic_changed_after_override: bool | None = Query(None),
 ) -> _ListAislePositionsQuery:
     # One FastAPI Query() per public query param — arity fixed by OpenAPI; cannot merge without changing contract.
     return _ListAislePositionsQuery(
@@ -184,6 +200,15 @@ def _list_aisle_positions_query_dep(
             if unassigned_reason and str(unassigned_reason).strip()
             else None
         ),
+        position_source=position_source,
+        has_manual_override=has_manual_override,
+        manual_reason_code=(
+            manual_reason_code.strip().upper()
+            if manual_reason_code and manual_reason_code.strip()
+            else None
+        ),
+        manual_position_invalidated=manual_position_invalidated,
+        automatic_changed_after_override=automatic_changed_after_override,
     )
 
 
@@ -200,7 +225,12 @@ def _load_assignment_views(
         reconciliation_repo=reconciliation_repo,
         enrichment_enabled=settings.position_results_enrichment_enabled,
     )
-    return reader.load_for_job(job_id, result_ids=result_ids)
+    container = get_app_container()
+    return EffectivePositionReader(
+        automatic_reader=reader,
+        override_repo=container.get_manual_position_override_repo(),
+        label_repo=container.get_client_position_label_repo(),
+    ).load_for_job(job_id, result_ids=result_ids)
 
 
 def _position_summaries_for_list(
@@ -213,6 +243,11 @@ def _position_summaries_for_list(
     position_assignment_status: str | None = None,
     position_name: str | None = None,
     unassigned_reason: str | None = None,
+    position_source: str | None = None,
+    has_manual_override: bool | None = None,
+    manual_reason_code: str | None = None,
+    manual_position_invalidated: bool | None = None,
+    automatic_changed_after_override: bool | None = None,
 ) -> list[Any]:
     """Build position summary list from list use-case result (Phase 5 enrichment)."""
     settings = load_settings()
@@ -231,6 +266,11 @@ def _position_summaries_for_list(
             position_assignment_status,
             position_name,
             unassigned_reason,
+            position_source,
+            has_manual_override,
+            manual_reason_code,
+            manual_position_invalidated,
+            automatic_changed_after_override,
         )
     )
     summaries = []
@@ -244,6 +284,11 @@ def _position_summaries_for_list(
             position_assignment_status=position_assignment_status,
             position_name=position_name,
             unassigned_reason=unassigned_reason,
+            position_source=position_source,
+            has_manual_override=has_manual_override,
+            manual_reason_code=manual_reason_code,
+            manual_position_invalidated=manual_position_invalidated,
+            automatic_changed_after_override=automatic_changed_after_override,
         ):
             continue
         corrected_quantity = primary.corrected_quantity if primary is not None else None
@@ -288,17 +333,19 @@ def list_aisle_positions(
                 params.position_assignment_status,
                 params.position_name,
                 params.unassigned_reason,
+                params.position_source,
+                params.has_manual_override,
+                params.manual_reason_code,
+                params.manual_position_invalidated,
+                params.automatic_changed_after_override,
             )
         )
-        # Phase 5: SKU-only merge can attribute quantities to the wrong aisle position.
-        # Prefer one row per detection when enrichment is on (SKU+position stay distinct).
         consolidate = params.consolidate_by_sku
-        if settings.position_results_enrichment_enabled and consolidate:
-            consolidate = False
+        raw_cap = settings.v3_positions_aisle_raw_cap
 
-        # Position filters must run before pagination totals — load the full window first.
+        # Position filters / full-set enrichment: page through SQL (fetch_all_raw).
         fetch_page = 1 if filters_requested else params.page
-        fetch_size = 500 if filters_requested else params.page_size
+        fetch_size = raw_cap if filters_requested else params.page_size
         cmd = ListAislePositionsCommand(
             inventory_id=inventory_id,
             aisle_id=aisle_id,
@@ -312,6 +359,7 @@ def list_aisle_positions(
             sort_dir=params.sort_dir,
             job_id=params.job_id,
             consolidate_by_sku=consolidate,
+            fetch_all_raw=filters_requested,
         )
         result = use_case.execute(cmd)
         summaries = _position_summaries_for_list(
@@ -323,6 +371,11 @@ def list_aisle_positions(
             position_assignment_status=params.position_assignment_status,
             position_name=params.position_name,
             unassigned_reason=params.unassigned_reason,
+            position_source=params.position_source,
+            has_manual_override=params.has_manual_override,
+            manual_reason_code=params.manual_reason_code,
+            manual_position_invalidated=params.manual_position_invalidated,
+            automatic_changed_after_override=params.automatic_changed_after_override,
         )
         if filters_requested:
             total_items = len(summaries)
@@ -374,22 +427,27 @@ def list_aisle_positions_by_position(
     page_size: int = Query(
         500,
         ge=1,
-        le=500,
-        description="Max consolidated rows to group (default/max 500).",
+        le=100_000,
+        description=(
+            "Max consolidated rows to group. The server loads up to "
+            "V3_POSITIONS_AISLE_RAW_CAP raw rows before grouping."
+        ),
     ),
 ) -> ResultsByPositionResponse:
     """Group aisle results by published Phase 4 position (Phase 5). Includes 'Sin posición'."""
     try:
+        raw_cap = load_settings().v3_positions_aisle_raw_cap
+        fetch_size = raw_cap
         cmd = ListAislePositionsCommand(
             inventory_id=inventory_id,
             aisle_id=aisle_id,
             page=1,
-            page_size=page_size,
+            page_size=fetch_size,
             sort_by="created_at",
             sort_dir="asc",
             job_id=job_id.strip() if job_id and str(job_id).strip() else None,
-            # Do not SKU-merge across distinct aisle positions.
-            consolidate_by_sku=False,
+            consolidate_by_sku=True,
+            fetch_all_raw=True,
         )
         result = use_case.execute(cmd)
         summaries = _position_summaries_for_list(
@@ -427,7 +485,7 @@ def list_aisle_positions_by_position(
             )
             for b in buckets
         ]
-        truncated = bool(result.raw_fetch_truncated) or result.total_items >= page_size
+        truncated = bool(result.raw_fetch_truncated) or result.total_items >= fetch_size
         return ResultsByPositionResponse(
             groups=groups,
             result_job_id=result.resolved_job_id,

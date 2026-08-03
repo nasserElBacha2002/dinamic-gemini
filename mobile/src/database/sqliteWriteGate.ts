@@ -76,3 +76,83 @@ export async function withSqliteBusyRetry<T>(
 export async function runExclusiveDbWriteWithBusyRetry<T>(fn: () => Promise<T>): Promise<T> {
   return runExclusiveDbWrite(() => withSqliteBusyRetry(fn));
 }
+
+export interface SqliteExecDb {
+  execAsync(sql: string): Promise<void>;
+}
+
+async function tryRollback(db: SqliteExecDb): Promise<boolean> {
+  try {
+    await db.execAsync('ROLLBACK;');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function busyRetryDelay(attempt: number, baseDelayMs: number): Promise<void> {
+  const jitter = Math.floor(Math.random() * 40);
+  return sleep(baseDelayMs * attempt + jitter);
+}
+
+/**
+ * BEGIN IMMEDIATE transaction with safe busy retry semantics.
+ *
+ * - Retries when BEGIN IMMEDIATE fails with SQLITE_BUSY.
+ * - After BEGIN succeeds, any error triggers ROLLBACK; full retry only when rollback
+ *   succeeded AND the error was SQLITE_BUSY (avoids re-running non-idempotent work).
+ * - COMMIT failures follow the same rollback-then-retry rule; never re-execute work
+ *   without a confirmed rollback.
+ */
+export async function runImmediateTransaction<T>(
+  db: SqliteExecDb,
+  work: () => Promise<T>,
+  options?: {
+    readonly maxAttempts?: number;
+    readonly baseDelayMs?: number;
+  },
+): Promise<T> {
+  const maxAttempts = options?.maxAttempts ?? SQLITE_BUSY_RETRY_ATTEMPTS;
+  const baseDelayMs = options?.baseDelayMs ?? SQLITE_BUSY_RETRY_BASE_DELAY_MS;
+
+  return runExclusiveDbWrite(async () => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await db.execAsync('BEGIN IMMEDIATE;');
+      } catch (beginError) {
+        lastError = beginError;
+        if (isSqliteBusyError(beginError) && attempt < maxAttempts) {
+          await busyRetryDelay(attempt, baseDelayMs);
+          continue;
+        }
+        throw beginError;
+      }
+
+      try {
+        const result = await work();
+        try {
+          await db.execAsync('COMMIT;');
+          return result;
+        } catch (commitError) {
+          lastError = commitError;
+          const rolledBack = await tryRollback(db);
+          if (isSqliteBusyError(commitError) && rolledBack && attempt < maxAttempts) {
+            await busyRetryDelay(attempt, baseDelayMs);
+            continue;
+          }
+          throw commitError;
+        }
+      } catch (workError) {
+        lastError = workError;
+        const rolledBack = await tryRollback(db);
+        if (isSqliteBusyError(workError) && rolledBack && attempt < maxAttempts) {
+          await busyRetryDelay(attempt, baseDelayMs);
+          continue;
+        }
+        throw workError;
+      }
+    }
+    throw lastError;
+  });
+}

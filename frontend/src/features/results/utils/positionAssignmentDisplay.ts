@@ -9,12 +9,17 @@ export function formatAislePositionDisplay(
   args: {
     aislePositionName: string | null | undefined;
     positionAssignmentStatus: string | null | undefined;
+    positionAssignmentSource?: string | null;
     positionCode: string | null | undefined;
     aislePositionAssigned?: boolean;
   }
 ): string {
   const name = (args.aislePositionName ?? '').trim();
-  if (name) return name;
+  if (name) {
+    return args.positionAssignmentSource === 'MANUAL'
+      ? `${name} ${t('results.position_assignment.manual_marker')}`
+      : name;
+  }
   const status = (args.positionAssignmentStatus ?? '').trim();
   if (status === 'NO_RECONCILIATION') {
     return t('results.position_assignment.no_reconciliation');
@@ -34,6 +39,10 @@ export function formatPositionAssignmentStatusLabel(
   switch (s) {
     case 'ASSIGNED_AUTOMATIC':
       return t('results.position_assignment.status.assigned_automatic');
+    case 'ASSIGNED_MANUAL':
+      return t('results.position_assignment.status.assigned_manual');
+    case 'UNASSIGNED_MANUAL':
+      return t('results.position_assignment.status.unassigned_manual');
     case 'UNASSIGNED_NO_PREVIOUS_POSITION':
       return t('results.position_assignment.status.unassigned_no_previous');
     case 'UNASSIGNED_AFTER_AMBIGUOUS_POSITION':
@@ -49,4 +58,19 @@ export function formatPositionAssignmentStatusLabel(
     default:
       return s || t('common.em_dash');
   }
+}
+
+export function formatAutomaticPositionSecondary(
+  t: TFunction,
+  args: {
+    effectivePositionName: string | null | undefined;
+    automaticPositionName: string | null | undefined;
+    positionAssignmentSource: string | null | undefined;
+  }
+): string | null {
+  if (args.positionAssignmentSource !== 'MANUAL') return null;
+  const automatic = (args.automaticPositionName ?? '').trim();
+  const effective = (args.effectivePositionName ?? '').trim();
+  if (!automatic || automatic === effective) return null;
+  return t('results.position_assignment.automatic_secondary', { position: automatic });
 }

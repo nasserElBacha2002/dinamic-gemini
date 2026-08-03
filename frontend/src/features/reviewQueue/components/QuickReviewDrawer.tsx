@@ -21,6 +21,7 @@ import {
   ResultDetailEmptyState,
 } from '../../results/components/detail';
 import PositionCodeScanEvidenceSection from '../../aisle-code-scans/components/PositionCodeScanEvidenceSection';
+import PositionOverrideDialog from '../../results/components/detail/PositionOverrideDialog';
 import type { QuickReviewContext } from '../quickReviewContext';
 import { ConfirmDialog, DrawerHeader, useAppSnackbar } from '../../../components/ui';
 
@@ -67,6 +68,8 @@ export interface QuickReviewDrawerProps {
   onClose: () => void;
   /** Opens aisle code scan drawer from evidence empty state (aisle results only). */
   onOpenCodeScan?: () => void;
+  clientId?: string | null;
+  onPositionOverrideSuccess?: () => void | Promise<void>;
 }
 
 export default function QuickReviewDrawer({
@@ -74,16 +77,23 @@ export default function QuickReviewDrawer({
   context,
   onClose,
   onOpenCodeScan,
+  clientId,
+  onPositionOverrideSuccess,
 }: QuickReviewDrawerProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
   const [activePositionId, setActivePositionId] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [positionOverrideOpen, setPositionOverrideOpen] = useState(false);
+  const positionOverridesEnabled = ['1', 'true', 'yes', 'on'].includes(
+    String(import.meta.env.VITE_POSITION_MANUAL_OVERRIDES_ENABLED ?? '').trim().toLowerCase()
+  );
 
   /** Clear in-drawer navigation when the drawer closes or the table opens a different row. */
   useEffect(() => {
     if (!open) {
       setActivePositionId('');
+      setPositionOverrideOpen(false);
       return;
     }
     if (context?.positionId) {
@@ -319,6 +329,22 @@ export default function QuickReviewDrawer({
               {result ? (
                 <Stack spacing={3}>
                   <ResultSummaryCard result={result} />
+                  {positionOverridesEnabled ? (
+                    <Box>
+                      <Button
+                        variant="outlined"
+                        onClick={() => setPositionOverrideOpen(true)}
+                        disabled={
+                          actionLoading ||
+                          !clientId ||
+                          !result.storageJobId ||
+                          result.positionAssignmentVersion == null
+                        }
+                      >
+                        {t('results.position_override.open_action')}
+                      </Button>
+                    </Box>
+                  ) : null}
 
                   {navContext && navContext.total > 1 ? (
                     <ResultDetailNavigation
@@ -385,6 +411,19 @@ export default function QuickReviewDrawer({
         errorMessage={invalidConfirmError}
         onConfirm={() => void handleInvalidConfirm()}
       />
+      {result && clientId ? (
+        <PositionOverrideDialog
+          open={open && positionOverrideOpen}
+          inventoryId={inventoryId}
+          clientId={clientId}
+          result={result}
+          onClose={() => setPositionOverrideOpen(false)}
+          onSuccess={async () => {
+            await refetch();
+            await onPositionOverrideSuccess?.();
+          }}
+        />
+      ) : null}
     </>
   );
 }

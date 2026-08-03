@@ -2300,17 +2300,49 @@
     "position_assignment": {
       "unassigned": "Sin posición",
       "no_reconciliation": "Posición no procesada",
+      "manual_marker": "(manual)",
+      "automatic_secondary": "Automática: {{position}}",
       "reason": "Motivo",
       "reconciliation": "Reconciliación {{version}}",
       "stale_warning": "Revisión desactualizada",
       "status": {
         "assigned_automatic": "Automática",
+        "assigned_manual": "Asignada manualmente",
+        "unassigned_manual": "Quitada manualmente",
         "unassigned_no_previous": "Sin etiqueta previa",
         "unassigned_ambiguous": "Ambigua",
         "unassigned_invalid": "Inválida",
         "unassigned_unordered": "Sin secuencia",
         "no_reconciliation": "No procesada",
         "stale": "Desactualizada"
+      }
+    },
+    "position_override": {
+      "title": "Corregir posición",
+      "open_action": "Corregir posición",
+      "action_label": "Acción",
+      "position_label": "Posición activa",
+      "reason_code": "Motivo",
+      "reason_text": "Detalle del motivo",
+      "submit": "Guardar corrección",
+      "unavailable": "No se puede corregir esta fila porque falta el job o la versión actual.",
+      "actions": {
+        "assign": "Asignar posición",
+        "change": "Cambiar posición",
+        "remove": "Quitar posición",
+        "restore": "Restaurar automática"
+      },
+      "reasons": {
+        "WRONG_POSITION_DETECTED": "Posición detectada incorrecta",
+        "PRODUCT_MOVED": "Producto movido",
+        "SEQUENCE_ERROR": "Error de secuencia",
+        "POSITION_LABEL_NOT_VISIBLE": "Etiqueta de posición no visible",
+        "POSITION_LABEL_INVALID": "Etiqueta de posición inválida",
+        "AMBIGUOUS_IMAGE": "Imagen ambigua",
+        "MISSING_POSITION_LABEL": "Falta la etiqueta de posición",
+        "OPERATOR_VERIFICATION": "Verificación del operador",
+        "DATA_CORRECTION": "Corrección de datos",
+        "OTHER": "Otro"
       }
     },
     "table_review_aria": "Abrir revisión rápida de {{sku}}",

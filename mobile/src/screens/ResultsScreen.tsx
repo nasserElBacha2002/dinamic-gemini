@@ -33,7 +33,14 @@ export interface ResultsScreenProps {
 }
 
 function isAssigned(item: ProductPositionAssignmentDto): boolean {
-  return item.assignment_status === 'ASSIGNED_AUTOMATIC' && Boolean(item.position_name?.trim());
+  return Boolean(effectivePositionName(item));
+}
+
+function effectivePositionName(item: ProductPositionAssignmentDto): string | null {
+  const effective = item.position?.name?.trim();
+  if (effective) return effective;
+  const automatic = item.position_name?.trim();
+  return automatic || null;
 }
 
 export function ResultsScreen({
@@ -183,9 +190,12 @@ export function ResultsScreen({
               <Text style={styles.row}>
                 Posición:{' '}
                 {isAssigned(item)
-                  ? item.position_name
+                  ? effectivePositionName(item)
                   : 'Sin asignar'}
               </Text>
+              {item.position_assignment?.source === 'MANUAL' ? (
+                <Text style={styles.muted}>Manual</Text>
+              ) : null}
               {!isAssigned(item) ? (
                 <Text style={styles.muted}>
                   Motivo: {labelForAssignmentReason(item.assignment_status)}

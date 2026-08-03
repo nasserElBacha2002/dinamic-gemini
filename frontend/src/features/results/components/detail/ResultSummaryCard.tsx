@@ -18,6 +18,7 @@ import { visibleTraceabilityToApiStatus } from '../../utils/traceabilityDisplay'
 import { formatDate } from '../../../../utils/formatDate';
 import {
   formatAislePositionDisplay,
+  formatAutomaticPositionSecondary,
   formatPositionAssignmentStatusLabel,
 } from '../../utils/positionAssignmentDisplay';
 
@@ -37,6 +38,11 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
   const correctedQtyNum = toNumeric(result.correctedQty);
   const resolvedQtyNum = toNumeric(result.resolvedQty);
   const systemQtyNum = toNumeric(result.systemQty);
+  const automaticPositionSecondary = formatAutomaticPositionSecondary(t, {
+    effectivePositionName: result.aislePositionName,
+    automaticPositionName: result.automaticPosition?.name,
+    positionAssignmentSource: result.positionAssignmentSource,
+  });
 
   const visibleQtyNum = correctedQtyNum ?? resolvedQtyNum;
   const hasManualOverride = correctedQtyNum != null;
@@ -82,10 +88,16 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
             {formatAislePositionDisplay(t, {
               aislePositionName: result.aislePositionName,
               positionAssignmentStatus: result.positionAssignmentStatus,
+              positionAssignmentSource: result.positionAssignmentSource,
               positionCode: result.positionCode,
               aislePositionAssigned: result.aislePositionAssigned,
             })}
           </Typography>
+          {automaticPositionSecondary ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              {automaticPositionSecondary}
+            </Typography>
+          ) : null}
           {result.positionAssignmentStatus ? (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
               {formatPositionAssignmentStatusLabel(t, result.positionAssignmentStatus)}

@@ -44,6 +44,19 @@ INVENTORY_RESULTS_CSV_FIELDS: tuple[str, ...] = (
     "reconciliation_version",
     "sequence_number",
     "source_asset_id",
+    "effective_position_label_id",
+    "effective_position_name",
+    "effective_position_source",
+    "effective_position_status",
+    "automatic_position_label_id",
+    "automatic_position_name",
+    "manual_override_id",
+    "manual_override_action",
+    "manual_override_reason_code",
+    "manual_override_reason_text",
+    "manual_override_created_by",
+    "manual_override_created_at",
+    "manual_override_version",
 )
 
 INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS: tuple[str, ...] = (

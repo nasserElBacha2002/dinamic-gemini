@@ -385,6 +385,17 @@ class SqlPositionReconciliationRepository:
             )
             return [_assignment(row) for row in cur.fetchall()]
 
+    def list_result_assignment_history(
+        self, job_id: str, result_id: str
+    ) -> list[ProductPositionAssignment]:
+        with self._client.cursor() as cur:
+            cur.execute(
+                _ASSIGNMENT_SELECT
+                + " WHERE job_id = ? AND result_id = ? ORDER BY created_at DESC, id DESC",
+                (job_id, result_id),
+            )
+            return [_assignment(row) for row in cur.fetchall()]
+
     def list_unassigned(self, job_id: str) -> list[ProductPositionAssignment]:
         with self._client.cursor() as cur:
             cur.execute(

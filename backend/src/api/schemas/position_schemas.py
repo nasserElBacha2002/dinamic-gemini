@@ -200,6 +200,11 @@ class ResultPositionAssignmentResponse(BaseModel):
     )
     sequence_number: Optional[int] = None
     source_asset_id: Optional[str] = None
+    automatic_position: Optional[ResultPositionRefResponse] = None
+    automatic_assignment_status: Optional[str] = None
+    manual_override: Optional[dict[str, Any]] = None
+    warnings: list[str] = Field(default_factory=list)
+    version: int = 0
 
 
 class PositionSummaryResponse(BaseModel):
