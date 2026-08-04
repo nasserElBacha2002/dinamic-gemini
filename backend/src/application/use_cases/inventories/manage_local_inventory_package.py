@@ -265,7 +265,26 @@ class ConfirmLocalInventoryPackage:
         # so a re-confirm (or fix deploy) still fills Resultados del pasillo.
         if duplicate and self._position_materializer is not None:
             self._ensure_aisle_positions_from_productive(inventory_id, confirmed)
+            self._mark_package_aisles_processed(confirmed)
         return confirmed, duplicate
+
+    def _mark_package_aisles_processed(self, package: LocalInventoryPackage) -> None:
+        now = self._clock.now()
+        aisle_ids: set[str] = set()
+        if package.aisle_id:
+            aisle_ids.add(package.aisle_id)
+        for r in self._result_writer.list_for_inventory(package.inventory_id):
+            if r.import_id == package.csv_import_id:
+                aisle_ids.add(r.aisle_id)
+        for aisle_id in aisle_ids:
+            aisle = self._aisle_repo.get_by_id(aisle_id)
+            if aisle is None:
+                continue
+            self._materializer.mark_aisle_processed_after_local_import(
+                aisle=aisle,
+                inventory_id=package.inventory_id,
+                now=now,
+            )
 
     def _ensure_aisle_positions_from_productive(
         self,
@@ -350,6 +369,12 @@ class ConfirmLocalInventoryPackage:
             aisle = self._aisle_repo.get_by_id(aisle_id)
             if aisle is not None:
                 self._materializer.finalize_aisle_after_source_assets_changed(
+                    aisle=aisle,
+                    inventory_id=record.inventory_id,
+                    now=now,
+                )
+                aisle = self._aisle_repo.get_by_id(aisle_id) or aisle
+                self._materializer.mark_aisle_processed_after_local_import(
                     aisle=aisle,
                     inventory_id=record.inventory_id,
                     now=now,

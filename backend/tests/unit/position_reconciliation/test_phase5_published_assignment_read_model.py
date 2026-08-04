@@ -179,6 +179,31 @@ def test_apply_enrichment_to_summary():
     assert out.position_assignment["status"] == "ASSIGNED_AUTOMATIC"
 
 
+def test_apply_enrichment_without_view_uses_detection_position_code():
+    class _Summary:
+        def __init__(self) -> None:
+            self.id = "pos-uuid-1"
+            self.position_code = "pos_n4IajJ53NSnsTOnO"
+            self.aisle_position_assigned = False
+            self.position = None
+            self.position_assignment = None
+
+        def model_copy(self, *, update):
+            out = _Summary()
+            out.id = self.id
+            for k, v in update.items():
+                setattr(out, k, v)
+            return out
+
+    out = apply_published_assignment_to_summary(
+        _Summary(),
+        primary_product_id="r1",
+        views_by_result_id={},
+    )
+    assert out.position_code == "pos_n4IajJ53NSnsTOnO"
+    assert out.aisle_position_assigned is True
+
+
 def test_partition_key_from_assignment_view():
     assigned = map_assignment_to_view(
         _assignment(

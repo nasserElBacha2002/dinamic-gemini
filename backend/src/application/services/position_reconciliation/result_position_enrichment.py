@@ -195,6 +195,12 @@ def apply_published_assignment_to_summary(
     code = getattr(summary, "position_code", None)
     if assigned and position_payload and position_payload.get("name"):
         code = position_payload["name"]
+    elif view is None:
+        # No published reconciliation: treat barcode / corrected position_code as assigned
+        # (local CSV import and legacy detection codes).
+        raw = str(code).strip() if code is not None else ""
+        sid = str(getattr(summary, "id", "") or "").strip()
+        assigned = bool(raw) and raw != sid
 
     updates = {
         "position_code": code if code is not None else getattr(summary, "position_code", ""),

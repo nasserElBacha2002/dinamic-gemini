@@ -308,6 +308,10 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
     assert len(products) == 1
     assert products[0].sku == "SKU-1"
 
+    aisle_after = aisle_repo.get_by_id("aisle-1")
+    assert aisle_after is not None
+    assert aisle_after.status == AisleStatus.PROCESSED
+
     # Re-confirm backfills positions idempotently for already-confirmed packages
     again, again_dup = confirm.execute(
         inventory_id="inventory-1",
@@ -318,6 +322,7 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
     assert again_dup is True
     assert again.status == "CONFIRMED"
     assert len(position_repo.list_by_aisle("aisle-1", job_id=None)) == 1
+    assert aisle_repo.get_by_id("aisle-1").status == AisleStatus.PROCESSED
 
 
 def test_preview_rejects_inventory_mismatch(tmp_path: Path) -> None:

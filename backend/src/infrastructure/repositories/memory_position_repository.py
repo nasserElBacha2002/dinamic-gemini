@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
-from src.domain.positions.entities import Position
+from src.domain.positions.entities import Position, PositionStatus
 
 
 class MemoryPositionRepository(PositionRepository):
@@ -43,6 +43,8 @@ class MemoryPositionRepository(PositionRepository):
                 positions = [p for p in positions if p.job_id == job_id]
         if status is not None:
             positions = [p for p in positions if (p.status.value == status)]
+        else:
+            positions = [p for p in positions if p.status != PositionStatus.DELETED]
         if needs_review is not None:
             positions = [p for p in positions if p.needs_review == needs_review]
         if min_confidence is not None:

@@ -170,12 +170,16 @@ class ConfirmLocalCsvImport:
         clock: Clock,
         enabled: bool,
         position_materializer: LocalCsvPositionMaterializer | None = None,
+        aisle_repo: AisleRepository | None = None,
+        status_reconciler: object | None = None,
     ) -> None:
         self._import_repo = import_repo
         self._result_writer = result_writer
         self._clock = clock
         self._enabled = enabled
         self._position_materializer = position_materializer
+        self._aisle_repo = aisle_repo
+        self._status_reconciler = status_reconciler
 
     def execute(
         self,
@@ -201,13 +205,32 @@ class ConfirmLocalCsvImport:
             apply_productive=self._apply_productive,
             clock_now=self._clock.now,
         )
-        if duplicate and self._position_materializer is not None:
-            results = tuple(
-                r for r in self._result_writer.list_for_inventory(inventory_id) if r.import_id == confirmed.id
-            )
-            if results:
+        results = tuple(
+            r for r in self._result_writer.list_for_inventory(inventory_id) if r.import_id == confirmed.id
+        )
+        if self._position_materializer is not None and results:
+            # Fresh confirm already materializes in _apply_productive; duplicate path needs this.
+            if duplicate:
                 self._position_materializer.materialize(results, now=self._clock.now())
+            self._mark_aisles_processed(inventory_id, results)
         return confirmed, duplicate
+
+    def _mark_aisles_processed(
+        self,
+        inventory_id: str,
+        results: tuple,
+    ) -> None:
+        if self._aisle_repo is None:
+            return
+        now = self._clock.now()
+        for aisle_id in {r.aisle_id for r in results}:
+            aisle = self._aisle_repo.get_by_id(aisle_id)
+            if aisle is None:
+                continue
+            aisle.mark_processed(now)
+            self._aisle_repo.save(aisle)
+        if self._status_reconciler is not None:
+            self._status_reconciler.reconcile(inventory_id)  # type: ignore[attr-defined]
 
     def _apply_productive(
         self,

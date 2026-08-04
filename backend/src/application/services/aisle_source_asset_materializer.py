@@ -190,3 +190,15 @@ class AisleSourceAssetMaterializer:
         aisle.mark_assets_uploaded(now)
         self._aisle_repo.save(aisle)
         self._status_reconciler.reconcile(inventory_id)
+
+    def mark_aisle_processed_after_local_import(
+        self,
+        *,
+        aisle: Aisle,
+        inventory_id: str,
+        now: datetime,
+    ) -> None:
+        """After local CSV/package results are applied, treat the aisle as processed."""
+        aisle.mark_processed(now)
+        self._aisle_repo.save(aisle)
+        self._status_reconciler.reconcile(inventory_id)

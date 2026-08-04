@@ -955,6 +955,8 @@ def get_confirm_local_csv_import_use_case(
     clock: Clock = Depends(get_clock),
     position_repo: PositionRepository = Depends(get_position_repo),
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ):
     from src.application.services.local_csv_position_materializer import (
         LocalCsvPositionMaterializer,
@@ -975,6 +977,8 @@ def get_confirm_local_csv_import_use_case(
             position_repo=position_repo,
             product_record_repo=product_record_repo,
         ),
+        aisle_repo=aisle_repo,
+        status_reconciler=status_reconciler,
     )
 
 

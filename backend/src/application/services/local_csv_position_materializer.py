@@ -23,6 +23,17 @@ SUMMARY_IMPORT_ROW_ID = "local_csv_import_row_id"
 SUMMARY_PRODUCTIVE_ID = "local_csv_productive_result_id"
 SUMMARY_INGESTION_SOURCE = "ingestion_source"
 
+# Position-marker photos are capture context, not inventory line items.
+_POSITION_MARKER_SOURCES = frozenset({"LOCAL_POSITION_LABEL"})
+
+
+def is_inventory_line_result(result: LocalCsvProductiveResult) -> bool:
+    """True when the productive row should appear in aisle results as a counted item."""
+    source = (result.detection_source or "").strip().upper()
+    if source in _POSITION_MARKER_SOURCES:
+        return False
+    return True
+
 
 def position_id_for_productive(productive_id: str) -> str:
     return str(uuid.uuid5(_LOCAL_CSV_POSITION_NS, f"local-csv-pos:{productive_id}"))
@@ -107,12 +118,45 @@ class LocalCsvPositionMaterializer:
         *,
         now: datetime,
     ) -> int:
-        """Create or refresh positions for each productive row. Returns rows written."""
+        """Create or refresh inventory line positions. Returns rows written.
+
+        ``LOCAL_POSITION_LABEL`` (and similar markers) are skipped — they only
+        supply ``position_code`` for later product rows and must not appear as items.
+        Previously materialized marker rows are retired (status=deleted).
+        """
         written = 0
         for result in results:
+            if not is_inventory_line_result(result):
+                self._retire_marker_row(result, now=now)
+                continue
             self._materialize_one(result, now=now)
             written += 1
         return written
+
+    def _retire_marker_row(self, result: LocalCsvProductiveResult, *, now: datetime) -> None:
+        position_id = position_id_for_productive(result.id)
+        existing = self._position_repo.get_by_id(position_id)
+        if existing is None:
+            return
+        if existing.status == PositionStatus.DELETED:
+            return
+        retired = Position(
+            id=existing.id,
+            aisle_id=existing.aisle_id,
+            status=PositionStatus.DELETED,
+            confidence=existing.confidence,
+            needs_review=False,
+            primary_evidence_id=existing.primary_evidence_id,
+            created_at=existing.created_at,
+            updated_at=now,
+            review_resolution=existing.review_resolution,
+            detected_summary_json=existing.detected_summary_json,
+            corrected_summary_json=existing.corrected_summary_json,
+            corrected_position_code=existing.corrected_position_code,
+            job_id=existing.job_id,
+            creation_source=existing.creation_source,
+        )
+        self._position_repo.save(retired)
 
     def _materialize_one(self, result: LocalCsvProductiveResult, *, now: datetime) -> None:
         position_id = position_id_for_productive(result.id)
