@@ -15,6 +15,7 @@ from src.application.ports.local_inventory_package_repository import LocalInvent
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
 from src.application.services.local_csv_parser import LocalCsvDocumentError
+from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.application.services.local_inventory_package_parser import (
     LocalInventoryPackageError,
     ParsedLocalInventoryPackage,
@@ -226,6 +227,7 @@ class ConfirmLocalInventoryPackage:
         aisle_repo: AisleRepository,
         clock: Clock,
         enabled: bool,
+        position_materializer: LocalCsvPositionMaterializer | None = None,
     ) -> None:
         self._package_repo = package_repo
         self._result_writer = result_writer
@@ -233,6 +235,7 @@ class ConfirmLocalInventoryPackage:
         self._aisle_repo = aisle_repo
         self._clock = clock
         self._enabled = enabled
+        self._position_materializer = position_materializer
 
     def execute(
         self,
@@ -250,7 +253,7 @@ class ConfirmLocalInventoryPackage:
                 "LOCAL_CSV_CONFLICT_POLICY_INVALID",
                 f"conflict_policy must be one of: {', '.join(sorted(CONFLICT_POLICIES))}",
             )
-        return self._package_repo.confirm_package_atomically(
+        confirmed, duplicate = self._package_repo.confirm_package_atomically(
             inventory_id=inventory_id,
             export_id=export_id.strip(),
             conflict_policy=policy,
@@ -258,6 +261,25 @@ class ConfirmLocalInventoryPackage:
             apply_productive=self._apply_productive,
             clock_now=self._clock.now,
         )
+        # Already-confirmed packages skip apply_productive; backfill aisle positions
+        # so a re-confirm (or fix deploy) still fills Resultados del pasillo.
+        if duplicate and self._position_materializer is not None:
+            self._ensure_aisle_positions_from_productive(inventory_id, confirmed)
+        return confirmed, duplicate
+
+    def _ensure_aisle_positions_from_productive(
+        self,
+        inventory_id: str,
+        package: LocalInventoryPackage,
+    ) -> None:
+        results = tuple(
+            r
+            for r in self._result_writer.list_for_inventory(inventory_id)
+            if r.import_id == package.csv_import_id
+            and (package.aisle_id is None or r.aisle_id == package.aisle_id)
+        )
+        if results and self._position_materializer is not None:
+            self._position_materializer.materialize(results, now=self._clock.now())
 
     def _apply_productive(
         self,
@@ -322,6 +344,8 @@ class ConfirmLocalInventoryPackage:
             confirmed_by_user_id=confirmed_by_user_id,
             image_evidence_by_import_row_id=evidence,
         )
+        if self._position_materializer is not None and results:
+            self._position_materializer.materialize(results, now=now)
         for aisle_id in aisle_ids:
             aisle = self._aisle_repo.get_by_id(aisle_id)
             if aisle is not None:

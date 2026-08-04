@@ -60,9 +60,26 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       return a.asset_id.localeCompare(b.asset_id);
     });
 
+  /** Last DINAMIC_POSITION key seen in capture order — applies to following product photos. */
+  let currentPositionCode = '';
+
   return eligible.map((photo) => {
     const draft = draftByPhoto.get(photo.id);
     const confirmed = confirmedByPhoto.get(photo.id);
+    const isPositionLabel = draft?.error_code === 'POSITION_LABEL_DETECTED';
+    const labelPositionCode =
+      isPositionLabel && draft?.internal_code ? String(draft.internal_code).trim() : '';
+    if (labelPositionCode) {
+      currentPositionCode = labelPositionCode;
+    }
+
+    const positionCode = labelPositionCode || currentPositionCode;
+    const positionStatus = labelPositionCode
+      ? 'LABEL_DETECTED'
+      : currentPositionCode
+        ? 'INFERRED_FROM_PRIOR_LABEL'
+        : '';
+
     const requiresReview =
       confirmed == null &&
       (draft == null ||
@@ -72,9 +89,15 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
         draft.status === 'INVALID');
     const source = confirmed
       ? confirmed.source
-      : draft?.internal_code
-        ? 'LOCAL_CODE_SCAN'
-        : 'LOCAL_PENDING';
+      : isPositionLabel
+        ? 'LOCAL_POSITION_LABEL'
+        : draft?.internal_code && !isPositionLabel
+          ? 'LOCAL_CODE_SCAN'
+          : 'LOCAL_PENDING';
+
+    const productInternalCode = isPositionLabel
+      ? ''
+      : cell(confirmed?.confirmed_internal_code ?? draft?.internal_code);
 
     return {
       schema_version: LOCAL_CSV_SCHEMA_VERSION,
@@ -92,11 +115,17 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       client_file_id: cell(photo.client_file_id),
       capture_order: cell(photo.sequence_number),
       captured_at: cell(photo.stable_at ?? photo.detected_at ?? photo.created_at),
-      position_code: '',
-      position_status: '',
-      internal_code: cell(confirmed?.confirmed_internal_code ?? draft?.internal_code),
-      quantity: cell(confirmed?.confirmed_quantity ?? draft?.quantity),
-      quantity_status: cell(confirmed?.quantity_status ?? draft?.quantity_status),
+      position_code: positionCode,
+      position_status: positionStatus,
+      internal_code: productInternalCode,
+      quantity: cell(
+        isPositionLabel ? null : (confirmed?.confirmed_quantity ?? draft?.quantity),
+      ),
+      quantity_status: cell(
+        isPositionLabel
+          ? 'MISSING'
+          : (confirmed?.quantity_status ?? draft?.quantity_status),
+      ),
       detection_status: cell(confirmed ? 'CONFIRMED' : draft?.status ?? photo.status),
       detector_version: cell(confirmed?.detector_version ?? draft?.detector_version),
       parser_version: cell(confirmed?.parser_version ?? draft?.parser_version),

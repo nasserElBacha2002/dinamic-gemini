@@ -430,6 +430,17 @@ export class CaptureService {
       if (current.status === 'review' && target === 'review') {
         return sessionId;
       }
+      if (current.status === 'processing') {
+        const recovered = await this.recoverOrphanProcessingSession(current);
+        if (recovered) {
+          throw new Error(
+            'La captura ya estaba cerrada y el procesamiento no llegó a confirmarse (posible fallo de red). Continuá desde Cargas / Procesar.',
+          );
+        }
+        throw new Error(
+          'Esta captura ya está en procesamiento en el servidor. Abrila desde Actividad local → Procesamiento.',
+        );
+      }
       throw new Error(
         `No se puede finalizar la captura desde el estado "${current.status}".`,
       );
@@ -803,6 +814,17 @@ export class CaptureService {
     if (row.status === to) {
       return;
     }
+    if (to === 'finishing' && row.status === 'processing') {
+      const recovered = await this.recoverOrphanProcessingSession(row);
+      if (recovered) {
+        throw new Error(
+          'La captura ya estaba cerrada y el procesamiento no llegó a confirmarse (posible fallo de red). Continuá desde Cargas / Procesar.',
+        );
+      }
+      throw new Error(
+        'Esta captura ya está en procesamiento en el servidor. Abrila desde Actividad local → Procesamiento.',
+      );
+    }
     if (!allowedFrom.includes(row.status)) {
       throw new Error(
         `No se puede finalizar la captura desde el estado "${row.status}".`,
@@ -815,6 +837,27 @@ export class CaptureService {
         'No se pudo actualizar el estado de la captura. Probá de nuevo; si persiste, reiniciá la app.',
       );
     }
+  }
+
+  /**
+   * Process start marks `processing` before the API confirms a job. If the network
+   * fails mid-flight, the session can remain stuck without `backend_job_id`.
+   * Recover to ready_to_process so the operator can retry from Uploads.
+   */
+  private async recoverOrphanProcessingSession(
+    session: CaptureSessionRow,
+  ): Promise<boolean> {
+    if (session.status !== 'processing') {
+      return false;
+    }
+    const hasJob = Boolean(session.backend_job_id && String(session.backend_job_id).trim());
+    const confirmed = Boolean(session.process_confirmed_at && String(session.process_confirmed_at).trim());
+    if (hasJob || confirmed) {
+      return false;
+    }
+    await this.repo.updateSessionStatus(session.id, 'ready_to_process');
+    await this.loadSession(session.id, false);
+    return true;
   }
 
   private assertPhotosReadyForUpload(): void {

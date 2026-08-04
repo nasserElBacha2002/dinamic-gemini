@@ -31,7 +31,9 @@ const SESSION_TRANSITIONS: Readonly<Record<CaptureSessionStatus, readonly Captur
   uploading: ['upload_review', 'ready_to_process', 'failed', 'cancelled'],
   upload_review: ['uploading', 'ready_to_process', 'failed', 'cancelled'],
   ready_to_process: ['processing', 'upload_review', 'failed', 'cancelled'],
-  processing: ['completed', 'failed_processing', 'failed', 'cancelled'],
+  // Allow recovery when process start left the session stuck without a confirmed job
+  // (e.g. network loss after marking processing).
+  processing: ['completed', 'failed_processing', 'failed', 'cancelled', 'uploading', 'ready_to_process'],
   completed: [],
   failed: ['paused', 'upload_review', 'local_completed', 'cancelled'],
   failed_processing: ['ready_to_process', 'cancelled'],

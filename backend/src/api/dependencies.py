@@ -951,7 +951,14 @@ def get_preview_local_csv_import_use_case(
     )
 
 
-def get_confirm_local_csv_import_use_case(clock: Clock = Depends(get_clock)):
+def get_confirm_local_csv_import_use_case(
+    clock: Clock = Depends(get_clock),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+):
+    from src.application.services.local_csv_position_materializer import (
+        LocalCsvPositionMaterializer,
+    )
     from src.application.use_cases.inventories.manage_local_csv_import import (
         ConfirmLocalCsvImport,
     )
@@ -964,6 +971,10 @@ def get_confirm_local_csv_import_use_case(clock: Clock = Depends(get_clock)):
         result_writer=container.get_local_csv_result_writer(),
         clock=clock,
         enabled=bool(getattr(settings, "server_csv_import_enabled", False)),
+        position_materializer=LocalCsvPositionMaterializer(
+            position_repo=position_repo,
+            product_record_repo=product_record_repo,
+        ),
     )
 
 
@@ -1023,9 +1034,14 @@ def get_confirm_local_inventory_package_use_case(
     artifact_storage=Depends(get_artifact_storage),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
     clock: Clock = Depends(get_clock),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
 ):
     from src.application.services.aisle_source_asset_materializer import (
         AisleSourceAssetMaterializer,
+    )
+    from src.application.services.local_csv_position_materializer import (
+        LocalCsvPositionMaterializer,
     )
     from src.application.use_cases.inventories.manage_local_inventory_package import (
         ConfirmLocalInventoryPackage,
@@ -1047,6 +1063,10 @@ def get_confirm_local_inventory_package_use_case(
         aisle_repo=aisle_repo,
         clock=clock,
         enabled=bool(getattr(settings, "server_local_inventory_package_enabled", False)),
+        position_materializer=LocalCsvPositionMaterializer(
+            position_repo=position_repo,
+            product_record_repo=product_record_repo,
+        ),
     )
 
 

@@ -9,6 +9,7 @@ from src.application.ports.local_csv_import_repository import LocalCsvImportRepo
 from src.application.ports.local_csv_inventory_result_writer import LocalCsvInventoryResultWriter
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.services.local_csv_parser import ParsedLocalCsvRow, parse_local_csv
+from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow
 from src.domain.local_csv_import.errors import (
     CONFLICT_POLICIES,
@@ -168,11 +169,13 @@ class ConfirmLocalCsvImport:
         result_writer: LocalCsvInventoryResultWriter,
         clock: Clock,
         enabled: bool,
+        position_materializer: LocalCsvPositionMaterializer | None = None,
     ) -> None:
         self._import_repo = import_repo
         self._result_writer = result_writer
         self._clock = clock
         self._enabled = enabled
+        self._position_materializer = position_materializer
 
     def execute(
         self,
@@ -190,7 +193,7 @@ class ConfirmLocalCsvImport:
                 "LOCAL_CSV_CONFLICT_POLICY_INVALID",
                 f"conflict_policy must be one of: {', '.join(sorted(CONFLICT_POLICIES))}",
             )
-        return self._import_repo.confirm_import_atomically(
+        confirmed, duplicate = self._import_repo.confirm_import_atomically(
             inventory_id=inventory_id,
             export_id=export_id.strip(),
             conflict_policy=policy,
@@ -198,6 +201,13 @@ class ConfirmLocalCsvImport:
             apply_productive=self._apply_productive,
             clock_now=self._clock.now,
         )
+        if duplicate and self._position_materializer is not None:
+            results = tuple(
+                r for r in self._result_writer.list_for_inventory(inventory_id) if r.import_id == confirmed.id
+            )
+            if results:
+                self._position_materializer.materialize(results, now=self._clock.now())
+        return confirmed, duplicate
 
     def _apply_productive(
         self,
@@ -205,11 +215,14 @@ class ConfirmLocalCsvImport:
         rows_to_import: tuple[LocalCsvImportRow, ...],
         confirmed_by_user_id: str | None,
     ):
-        return self._result_writer.apply_import(
+        results = self._result_writer.apply_import(
             record=record,
             rows_to_import=rows_to_import,
             confirmed_by_user_id=confirmed_by_user_id,
         )
+        if self._position_materializer is not None and results:
+            self._position_materializer.materialize(results, now=self._clock.now())
+        return results
 
 
 class GetLocalCsvImport:

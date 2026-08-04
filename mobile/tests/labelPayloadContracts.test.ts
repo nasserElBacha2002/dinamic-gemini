@@ -2,7 +2,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { consolidateCodeDetections } from '../src/core/codeDetectionConsolidator';
-import { parseEncodedLabelPayload } from '../src/core/labelPayload';
+import {
+  extractDinamicPositionCode,
+  parseEncodedLabelPayload,
+} from '../src/core/labelPayload';
 import { hashPayloadFingerprint } from '../src/core/payloadFingerprint';
 
 const CONTRACTS_DIR = path.resolve(__dirname, '../../contracts/code-scan/v1');
@@ -123,5 +126,41 @@ describe('payloadFingerprint', () => {
     expect(hashPayloadFingerprint('ABC|5')).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(hashPayloadFingerprint('ABC|5')).toBe(hashPayloadFingerprint('ABC|5'));
     expect(hashPayloadFingerprint('ABC|5')).not.toBe(hashPayloadFingerprint('ABC|6'));
+  });
+});
+
+describe('DINAMIC_POSITION extraction for CSV position_code', () => {
+  it('extracts label_id and prefers position_id when present', () => {
+    expect(
+      extractDinamicPositionCode(
+        JSON.stringify({ type: 'DINAMIC_POSITION', version: 1, label_id: 'lbl-1' }),
+      ),
+    ).toBe('lbl-1');
+    expect(
+      extractDinamicPositionCode(
+        JSON.stringify({
+          type: 'DINAMIC_POSITION',
+          version: 1,
+          label_id: 'lbl-1',
+          position_id: 'A-01',
+        }),
+      ),
+    ).toBe('A-01');
+    expect(extractDinamicPositionCode('SKU|3')).toBeNull();
+  });
+
+  it('consolidator stores position key in internalCode for position-label-only images', () => {
+    const raw = JSON.stringify({
+      type: 'DINAMIC_POSITION',
+      version: 1,
+      label_id: 'pos-public-9',
+    });
+    const result = consolidateCodeDetections([{ rawValue: raw, symbology: 'QR_CODE', detectionIndex: 0 }]);
+    expect(result.status).toBe('NO_VALID_CODE');
+    expect(result.internalCode).toBe('pos-public-9');
+    expect(result.selectedIndex).toBe(0);
+    expect(result.parsed?.status === 'INVALID' ? result.parsed.errorCode : null).toBe(
+      'POSITION_LABEL_DETECTED',
+    );
   });
 });

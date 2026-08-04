@@ -159,6 +159,11 @@ export class CaptureRepository {
         throw new Error(`Capture session not found: ${id}`);
       }
       if (!canTransitionSession(current.status, status)) {
+        if (status === 'finishing' && current.status === 'processing') {
+          throw new Error(
+            'Esta captura ya está en procesamiento en el servidor. Abrila desde Actividad local → Procesamiento; no hace falta finalizar de nuevo.',
+          );
+        }
         throw new Error(`Invalid capture session transition: ${current.status} -> ${status}`);
       }
       await this.db.runAsync(

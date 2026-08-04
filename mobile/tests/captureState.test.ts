@@ -32,6 +32,10 @@ describe('capture state transitions', () => {
     expect(canTransitionSession('review', 'local_completed')).toBe(true);
     expect(canTransitionSession('local_completed', 'uploading')).toBe(true);
     expect(canTransitionSession('completed', 'active')).toBe(false);
+    // Orphan process-start recovery (network loss before job confirm)
+    expect(canTransitionSession('processing', 'ready_to_process')).toBe(true);
+    expect(canTransitionSession('processing', 'uploading')).toBe(true);
+    expect(canTransitionSession('processing', 'finishing')).toBe(false);
   });
 
   it('classifies open sessions', () => {

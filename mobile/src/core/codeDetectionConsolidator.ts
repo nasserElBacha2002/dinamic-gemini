@@ -4,6 +4,7 @@
  */
 
 import {
+  extractDinamicPositionCode,
   parseEncodedLabelPayload,
   type PayloadParseResult,
   QUANTITY_MAX_DEFAULT,
@@ -58,14 +59,22 @@ export function consolidateCodeDetections(
 
   const withCode = enriched.filter((d) => d.parsed.status === 'VALID' && d.parsed.internalCode);
   if (withCode.length === 0) {
+    const positionLabel = enriched.find(
+      (d) =>
+        d.parsed.status === 'INVALID' && d.parsed.errorCode === 'POSITION_LABEL_DETECTED',
+    );
+    const positionCode = positionLabel
+      ? extractDinamicPositionCode(positionLabel.rawValue)
+      : null;
     return {
       status: 'NO_VALID_CODE',
-      internalCode: null,
+      // Persist position key in internalCode so drafts/CSV can export position_code.
+      internalCode: positionCode,
       quantity: null,
-      selectedIndex: null,
+      selectedIndex: positionLabel?.detectionIndex ?? null,
       distinctCodes: [],
-      warnings: ['NO_VALID_CODE'],
-      parsed: enriched[0]?.parsed ?? null,
+      warnings: positionLabel ? ['POSITION_LABEL_DETECTED'] : ['NO_VALID_CODE'],
+      parsed: positionLabel?.parsed ?? enriched[0]?.parsed ?? null,
     };
   }
 

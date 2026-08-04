@@ -656,6 +656,50 @@ describe('CaptureService corrections', () => {
     expect((await repo.getSession('session-1'))?.status).toBe('review');
   });
 
+  it('finish recovers orphan processing (no job) with a clear error instead of Invalid transition', async () => {
+    const repo = new FakeRepo();
+    repo.sessions.set(
+      'session-1',
+      session({
+        status: 'processing',
+        backend_job_id: null,
+        process_confirmed_at: null,
+      }),
+    );
+    repo.photos.set('session-1:100', photo('stable'));
+    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+      mediaStore: mediaStore(),
+      stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
+      validationTimeoutMs: 10,
+    });
+    await service.loadSession('session-1', false);
+
+    await expect(service.finish()).rejects.toThrow(/procesamiento no llegó a confirmarse|fallo de red/i);
+    expect((await repo.getSession('session-1'))?.status).toBe('ready_to_process');
+  });
+
+  it('finish rejects confirmed processing without attempting finishing transition', async () => {
+    const repo = new FakeRepo();
+    repo.sessions.set(
+      'session-1',
+      session({
+        status: 'processing',
+        backend_job_id: 'job-1',
+        process_confirmed_at: '2026-08-04T18:00:00.000Z',
+      }),
+    );
+    repo.photos.set('session-1:100', photo('stable'));
+    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+      mediaStore: mediaStore(),
+      stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
+      validationTimeoutMs: 10,
+    });
+    await service.loadSession('session-1', false);
+
+    await expect(service.finish()).rejects.toThrow(/ya está en procesamiento/i);
+    expect((await repo.getSession('session-1'))?.status).toBe('processing');
+  });
+
   it('finish emits finishing and skips full rescan when MediaStore has no new candidates', async () => {
     const repo = new FakeRepo();
     repo.sessions.set('session-1', session({ status: 'active' }));

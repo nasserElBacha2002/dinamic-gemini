@@ -93,6 +93,29 @@ export function isDinamicPositionPayload(raw: string): boolean {
   }
 }
 
+/**
+ * Extract the stable position key from a DINAMIC_POSITION QR payload.
+ * Prefer legacy aisle ``position_id``, else client-scoped ``label_id``.
+ */
+export function extractDinamicPositionCode(raw: string): string | null {
+  const text = (raw ?? '').trim();
+  if (!isDinamicPositionPayload(text)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(text) as { label_id?: unknown; position_id?: unknown };
+    const positionId =
+      typeof parsed.position_id === 'string' ? parsed.position_id.trim() : '';
+    if (positionId) {
+      return positionId;
+    }
+    const labelId = typeof parsed.label_id === 'string' ? parsed.label_id.trim() : '';
+    return labelId || null;
+  } catch {
+    return null;
+  }
+}
+
 /** True when a PLAIN decode is not a trustworthy inventory internal code. */
 export function isRejectedPlainPayload(code: string, raw: string): boolean {
   const text = (raw ?? '').trim();

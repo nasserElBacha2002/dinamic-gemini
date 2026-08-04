@@ -10,6 +10,10 @@ from src.application.services.local_csv_parser import (
     LocalCsvDocumentError,
     parse_local_csv,
 )
+from src.application.services.local_csv_position_materializer import (
+    LocalCsvPositionMaterializer,
+    position_id_for_productive,
+)
 from src.application.use_cases.inventories.manage_local_csv_import import (
     LOCAL_CSV_INVENTORY_MISMATCH,
     ConfirmLocalCsvImport,
@@ -26,6 +30,10 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_local_csv_import_repository import (
     MemoryLocalCsvImportRepository,
+)
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
 )
 
 HEADERS = (
@@ -103,6 +111,8 @@ def _use_cases() -> tuple[
     ConfirmLocalCsvImport,
     MemoryLocalCsvImportRepository,
     MemoryLocalCsvInventoryResultWriter,
+    MemoryPositionRepository,
+    MemoryProductRecordRepository,
 ]:
     inventory_repo = MemoryInventoryRepository()
     inventory_repo.save(
@@ -127,6 +137,8 @@ def _use_cases() -> tuple[
     )
     import_repo = MemoryLocalCsvImportRepository()
     writer = MemoryLocalCsvInventoryResultWriter()
+    position_repo = MemoryPositionRepository()
+    product_repo = MemoryProductRecordRepository()
     preview = PreviewLocalCsvImport(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
@@ -139,8 +151,12 @@ def _use_cases() -> tuple[
         result_writer=writer,
         clock=FixedClock(),
         enabled=True,
+        position_materializer=LocalCsvPositionMaterializer(
+            position_repo=position_repo,
+            product_record_repo=product_repo,
+        ),
     )
-    return preview, confirm, import_repo, writer
+    return preview, confirm, import_repo, writer, position_repo, product_repo
 
 
 def test_parser_accepts_mobile_detection_source() -> None:
@@ -170,7 +186,7 @@ def test_parser_rejects_malformed_rfc4180_csv() -> None:
 
 
 def test_preview_rejects_wrong_path_inventory() -> None:
-    preview, _, _, _ = _use_cases()
+    preview, _, _, _, _, _ = _use_cases()
 
     with pytest.raises(LocalCsvImportError) as exc:
         preview.execute(
@@ -182,7 +198,7 @@ def test_preview_rejects_wrong_path_inventory() -> None:
 
 
 def test_formula_cell_is_neutralized_and_reported() -> None:
-    preview, _, _, _ = _use_cases()
+    preview, _, _, _, _, _ = _use_cases()
 
     record = preview.execute(
         inventory_id="inventory-1",
@@ -197,13 +213,13 @@ def test_formula_cell_is_neutralized_and_reported() -> None:
 
 
 def test_preview_does_not_apply_productive_results() -> None:
-    preview, _, _, writer = _use_cases()
+    preview, _, _, writer, _, _ = _use_cases()
     preview.execute(inventory_id="inventory-1", content=_csv_bytes())
     assert writer.list_for_inventory("inventory-1") == ()
 
 
 def test_confirm_applies_productive_results_and_is_idempotent() -> None:
-    preview, confirm, _, writer = _use_cases()
+    preview, confirm, _, writer, position_repo, product_repo = _use_cases()
     staged = preview.execute(inventory_id="inventory-1", content=_csv_bytes())
 
     first, first_duplicate = confirm.execute(
@@ -229,9 +245,24 @@ def test_confirm_applies_productive_results_and_is_idempotent() -> None:
     assert results[0].has_image_evidence is False
     assert results[0].quantity == 7
 
+    # Aisle results view: legacy null-job Position + ProductRecord
+    positions = position_repo.list_by_aisle("aisle-1", job_id=None)
+    assert len(positions) == 1
+    assert positions[0].job_id is None
+    assert positions[0].corrected_position_code == "A-01"
+    assert positions[0].id == position_id_for_productive(results[0].id)
+    products = product_repo.list_by_position(positions[0].id)
+    assert len(products) == 1
+    assert products[0].sku == "SKU-1"
+    assert products[0].detected_quantity == 7
+    assert products[0].qty_source == "local_csv_import"
+
+    # Re-confirm backfill stays idempotent (same deterministic ids)
+    assert len(position_repo.list_by_aisle("aisle-1", job_id=None)) == 1
+
 
 def test_confirm_skips_existing_secondary_capture_key() -> None:
-    preview, confirm, _, writer = _use_cases()
+    preview, confirm, _, writer, _, _ = _use_cases()
     first = preview.execute(inventory_id="inventory-1", content=_csv_bytes())
     confirm.execute(inventory_id="inventory-1", export_id=first.export_id)
     second = preview.execute(
@@ -251,7 +282,7 @@ def test_confirm_skips_existing_secondary_capture_key() -> None:
 
 
 def test_empty_position_forces_requires_review_on_productive() -> None:
-    preview, confirm, _, writer = _use_cases()
+    preview, confirm, _, writer, _, _ = _use_cases()
     staged = preview.execute(
         inventory_id="inventory-1",
         content=_csv_bytes(position_code=""),

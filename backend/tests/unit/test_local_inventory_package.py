@@ -14,6 +14,7 @@ import pytest
 
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.application.services.local_inventory_package_parser import (
     LocalInventoryPackageError,
     parse_local_inventory_package,
@@ -36,6 +37,10 @@ from src.infrastructure.repositories.memory_local_csv_import_repository import (
 )
 from src.infrastructure.repositories.memory_local_inventory_package_repository import (
     MemoryLocalInventoryPackageRepository,
+)
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
 )
 from src.infrastructure.repositories.memory_source_asset_repository import (
     MemorySourceAssetRepository,
@@ -260,6 +265,8 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
         ),
     )
     writer = MemoryLocalCsvInventoryResultWriter()
+    position_repo = MemoryPositionRepository()
+    product_repo = MemoryProductRecordRepository()
     confirm = ConfirmLocalInventoryPackage(
         package_repo=package_repo,
         result_writer=writer,
@@ -267,6 +274,10 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
         aisle_repo=aisle_repo,
         clock=clock,
         enabled=True,
+        position_materializer=LocalCsvPositionMaterializer(
+            position_repo=position_repo,
+            product_record_repo=product_repo,
+        ),
     )
     confirmed, duplicate = confirm.execute(
         inventory_id="inventory-1",
@@ -286,6 +297,27 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
     assert assets[0].upload_batch_id == confirmed.id
     assert len(assets[0].upload_batch_id or "") <= 36
     assert results[0].source_asset_id == assets[0].id
+
+    positions = position_repo.list_by_aisle("aisle-1", job_id=None)
+    assert len(positions) == 1
+    assert positions[0].job_id is None
+    assert positions[0].corrected_position_code == "A-01"
+    assert positions[0].detected_summary_json is not None
+    assert positions[0].detected_summary_json.get("source_image_id") == assets[0].id
+    products = product_repo.list_by_position(positions[0].id)
+    assert len(products) == 1
+    assert products[0].sku == "SKU-1"
+
+    # Re-confirm backfills positions idempotently for already-confirmed packages
+    again, again_dup = confirm.execute(
+        inventory_id="inventory-1",
+        export_id="export-pkg-1",
+        conflict_policy="SKIP",
+        confirmed_by_user_id="user-1",
+    )
+    assert again_dup is True
+    assert again.status == "CONFIRMED"
+    assert len(position_repo.list_by_aisle("aisle-1", job_id=None)) == 1
 
 
 def test_preview_rejects_inventory_mismatch(tmp_path: Path) -> None:

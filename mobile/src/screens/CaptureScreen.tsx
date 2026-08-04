@@ -190,13 +190,29 @@ export function CaptureScreen({
             }
             onPress={() => {
               setFinishInFlight(true);
-              void services.capture
-                .finish()
-                .then(onReview)
-                .catch((e) => {
-                  setFinishInFlight(false);
-                  onError(messageOf(e));
-                });
+              onError(null);
+              void (async () => {
+                const sessionId = snapshot?.session?.id;
+                if (sessionId) {
+                  // Re-read DB: process start / uploads may have moved status while UI still showed active.
+                  const fresh = await services.capture.getSessionSnapshot(sessionId);
+                  const status = fresh.session?.status;
+                  if (
+                    status &&
+                    status !== 'active' &&
+                    status !== 'paused' &&
+                    status !== 'finishing' &&
+                    status !== 'processing'
+                  ) {
+                    throw new Error(`No se puede finalizar la captura desde el estado "${status}".`);
+                  }
+                }
+                await services.capture.finish();
+                onReview();
+              })().catch((e) => {
+                setFinishInFlight(false);
+                onError(messageOf(e));
+              });
             }}
           />
         </View>
