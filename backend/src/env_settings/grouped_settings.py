@@ -1053,6 +1053,37 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: SERVER_CSV_IMPORT_MAX_BYTES."
         ),
     )
+    server_local_inventory_package_enabled: bool = Field(
+        default_factory=lambda: (
+            (
+                os.getenv("SERVER_LOCAL_INVENTORY_PACKAGE_ENABLED", "").strip().lower()
+                in ("1", "true", "yes")
+            )
+            if (os.getenv("SERVER_LOCAL_INVENTORY_PACKAGE_ENABLED") or "").strip()
+            else (
+                os.getenv("SERVER_CSV_IMPORT_ENABLED", "false").strip().lower()
+                in ("1", "true", "yes")
+            )
+        ),
+        description=(
+            "Enable ZIP local inventory package import (CSV + photos). "
+            "Defaults to SERVER_CSV_IMPORT_ENABLED when unset. "
+            "Env: SERVER_LOCAL_INVENTORY_PACKAGE_ENABLED."
+        ),
+    )
+    server_local_inventory_package_max_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv(
+                "SERVER_LOCAL_INVENTORY_PACKAGE_MAX_BYTES",
+                str(200 * 1024 * 1024),
+            )
+        ),
+        ge=1,
+        description=(
+            "Maximum local inventory ZIP package size in bytes. "
+            "Env: SERVER_LOCAL_INVENTORY_PACKAGE_MAX_BYTES."
+        ),
+    )
     server_preliminary_detection_ingest_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("SERVER_PRELIMINARY_DETECTION_INGEST", "false").strip().lower()

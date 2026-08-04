@@ -247,9 +247,10 @@ export function UploadsScreen({
     }
   }, [services, sessionId]);
   useEffect(() => {
-    // Entering Cargas: clear sticky native pause and drain JS queue for this session.
-    void services.uploadQueue.resume().then(() => {
-      void services.uploadQueue.enqueueSession(sessionId);
+    // Entering Cargas: clear sticky native pause, heal server/app desync, drain queue.
+    void services.uploadQueue.resume().then(async () => {
+      await services.uploadQueue.reconcileSessionWithServer(sessionId).catch(() => 0);
+      await services.uploadQueue.enqueueSession(sessionId);
       refresh();
     });
   }, [services, sessionId, refresh]);

@@ -8,10 +8,10 @@ from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportR
 
 
 class LocalCsvInventoryResultWriter(Protocol):
-    """Writes productive inventory results for confirmed CSV import rows.
+    """Writes productive inventory results for confirmed CSV / package import rows.
 
-    Does not create source assets or photos. Marks unknown product/position as
-    requires_review while preserving original codes.
+    CSV-only imports leave ``has_image_evidence=False``. Package imports may pass
+    ``image_evidence_by_import_row_id`` mapping import_row_id → source_asset_id.
     """
 
     def apply_import(
@@ -20,6 +20,7 @@ class LocalCsvInventoryResultWriter(Protocol):
         record: LocalCsvImport,
         rows_to_import: tuple[LocalCsvImportRow, ...],
         confirmed_by_user_id: str | None,
+        image_evidence_by_import_row_id: dict[str, str] | None = None,
     ) -> tuple[LocalCsvProductiveResult, ...]: ...
 
     def list_for_inventory(self, inventory_id: str) -> tuple[LocalCsvProductiveResult, ...]: ...

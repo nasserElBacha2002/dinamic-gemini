@@ -978,6 +978,91 @@ def get_get_local_csv_import_use_case():
     )
 
 
+def get_preview_local_inventory_package_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from pathlib import Path
+
+    from src.application.use_cases.inventories.manage_local_csv_import import (
+        PreviewLocalCsvImport,
+    )
+    from src.application.use_cases.inventories.manage_local_inventory_package import (
+        PreviewLocalInventoryPackage,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    container = get_app_container()
+    csv_repo = container.get_local_csv_import_repo()
+    csv_preview = PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=csv_repo,
+        clock=clock,
+        enabled=bool(getattr(settings, "server_csv_import_enabled", False))
+        or bool(getattr(settings, "server_local_inventory_package_enabled", False)),
+    )
+    staging_root = Path(getattr(settings, "output_dir", "/tmp")) / "local_inventory_packages"
+    return PreviewLocalInventoryPackage(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        csv_import_repo=csv_repo,
+        package_repo=container.get_local_inventory_package_repo(),
+        csv_preview=csv_preview,
+        clock=clock,
+        enabled=bool(getattr(settings, "server_local_inventory_package_enabled", False)),
+        staging_root=staging_root,
+    )
+
+
+def get_confirm_local_inventory_package_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    artifact_storage=Depends(get_artifact_storage),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.services.aisle_source_asset_materializer import (
+        AisleSourceAssetMaterializer,
+    )
+    from src.application.use_cases.inventories.manage_local_inventory_package import (
+        ConfirmLocalInventoryPackage,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    container = get_app_container()
+    materializer = AisleSourceAssetMaterializer(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        artifact_storage=artifact_storage,
+        status_reconciler=status_reconciler,
+    )
+    return ConfirmLocalInventoryPackage(
+        package_repo=container.get_local_inventory_package_repo(),
+        result_writer=container.get_local_csv_result_writer(),
+        materializer=materializer,
+        aisle_repo=aisle_repo,
+        clock=clock,
+        enabled=bool(getattr(settings, "server_local_inventory_package_enabled", False)),
+    )
+
+
+def get_get_local_inventory_package_use_case():
+    from src.application.use_cases.inventories.manage_local_inventory_package import (
+        GetLocalInventoryPackage,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return GetLocalInventoryPackage(
+        package_repo=get_app_container().get_local_inventory_package_repo(),
+        enabled=bool(getattr(settings, "server_local_inventory_package_enabled", False)),
+    )
+
+
 def get_evaluate_authoritative_aisle_readiness(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),

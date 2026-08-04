@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
-import { ROUTE_HOME, ROUTE_LOGIN, ROUTE_PATH } from './constants/appRoutes';
+import { ROUTE_HOME, ROUTE_LOGIN, ROUTE_PATH, pathToClient, pathToInventory } from './constants/appRoutes';
 import MetricsLegacyRedirect from './pages/analytics/MetricsLegacyRedirect';
 import ObservabilityLegacyRedirect from './pages/analytics/ObservabilityLegacyRedirect';
 import AisleObservabilityPage from './pages/AisleObservabilityPage';
@@ -11,9 +11,6 @@ import AppShell from './layout/AppShell';
 import InventoriesList from './pages/InventoriesList';
 import InventoryDetail from './pages/InventoryDetail';
 import AislePositionsPage from './pages/AislePositionsPage';
-import AisleLocationsPage from './pages/AisleLocationsPage';
-import ClientPositionLabelsPage from './pages/ClientPositionLabelsPage';
-import InventoryPhysicalLocationsHubPage from './pages/InventoryPhysicalLocationsHubPage';
 import CompareManyRunsPage from './pages/analytics/CompareManyRunsPage';
 import AnalyticsCompareRedirect from './pages/analytics/AnalyticsCompareRedirect';
 import LegacyAisleCompareRedirect from './pages/analytics/LegacyAisleCompareRedirect';
@@ -28,6 +25,23 @@ import AdminStorageMaintenancePage from './pages/AdminStorageMaintenancePage';
 import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
 import IngestionSessionsLegacyRedirect from './features/ingestionSessions/pages/IngestionSessionsLegacyRedirect';
 
+/** Legacy physical-locations URLs redirect to inventory detail. */
+function InventoryPhysicalLocationsRedirect() {
+  const { inventoryId } = useParams<{ inventoryId: string }>();
+  return <Navigate to={inventoryId ? pathToInventory(inventoryId) : ROUTE_HOME} replace />;
+}
+
+/** Legacy aisle physical-locations URLs redirect to inventory detail. */
+function AisleLocationsRedirect() {
+  const { inventoryId } = useParams<{ inventoryId: string }>();
+  return <Navigate to={inventoryId ? pathToInventory(inventoryId) : ROUTE_HOME} replace />;
+}
+
+/** Legacy client physical-locations URLs redirect to client detail. */
+function ClientPhysicalLocationsRedirect() {
+  const { clientId } = useParams<{ clientId: string }>();
+  return <Navigate to={clientId ? pathToClient(clientId) : ROUTE_HOME} replace />;
+}
 /** Minimal full-screen loading while auth bootstrap runs. */
 function AuthLoading() {
   return (
@@ -52,9 +66,6 @@ function App() {
   const listEl = useMemo(() => <InventoriesList />, []);
   const detailEl = useMemo(() => <InventoryDetail />, []);
   const positionsEl = useMemo(() => <AislePositionsPage />, []);
-  const aisleLocationsEl = useMemo(() => <AisleLocationsPage />, []);
-  const inventoryPhysicalLocationsHubEl = useMemo(() => <InventoryPhysicalLocationsHubPage />, []);
-  const clientPositionLabelsEl = useMemo(() => <ClientPositionLabelsPage />, []);
   const compareManyRunsEl = useMemo(() => <CompareManyRunsPage />, []);
   const analyticsCompareRedirectEl = useMemo(() => <AnalyticsCompareRedirect />, []);
   const legacyCompareRedirectEl = useMemo(() => <LegacyAisleCompareRedirect />, []);
@@ -105,7 +116,10 @@ function App() {
         <Route path={ROUTE_PATH.analitica} element={analyticsDashboardEl} />
         <Route path={ROUTE_PATH.clients} element={clientsEl} />
         <Route path={ROUTE_PATH.clientSupplierDetail} element={clientSupplierDetailEl} />
-        <Route path={ROUTE_PATH.clientPhysicalLocations} element={clientPositionLabelsEl} />
+        <Route
+          path={ROUTE_PATH.clientPhysicalLocations}
+          element={<ClientPhysicalLocationsRedirect />}
+        />
         <Route path={ROUTE_PATH.clientDetail} element={clientDetailEl} />
         <Route path={ROUTE_PATH.ingestionSessions} element={ingestionSessionsRedirectEl} />
         <Route path={ROUTE_PATH.ingestionSessionDetail} element={ingestionSessionsRedirectEl} />
@@ -114,10 +128,13 @@ function App() {
         <Route path={ROUTE_PATH.dashboard} element={<Navigate to={ROUTE_HOME} replace />} />
         <Route path={ROUTE_PATH.settings} element={<Navigate to={ROUTE_HOME} replace />} />
         <Route path={ROUTE_PATH.observabilidad} element={observabilityLegacyRedirectEl} />
-        <Route path={ROUTE_PATH.inventoryPhysicalLocations} element={inventoryPhysicalLocationsHubEl} />
+        <Route
+          path={ROUTE_PATH.inventoryPhysicalLocations}
+          element={<InventoryPhysicalLocationsRedirect />}
+        />
         <Route path={ROUTE_PATH.inventoryDetail} element={detailEl} />
         <Route path={ROUTE_PATH.aislePositions} element={positionsEl} />
-        <Route path={ROUTE_PATH.aisleLocations} element={aisleLocationsEl} />
+        <Route path={ROUTE_PATH.aisleLocations} element={<AisleLocationsRedirect />} />
         <Route path={ROUTE_PATH.analyticsCompare} element={analyticsCompareRedirectEl} />
         <Route path={ROUTE_PATH.analyticsCompareMany} element={compareManyRunsEl} />
         <Route path={ROUTE_PATH.legacyAisleCompare} element={legacyCompareRedirectEl} />

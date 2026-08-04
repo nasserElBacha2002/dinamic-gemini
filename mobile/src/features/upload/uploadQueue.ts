@@ -269,11 +269,17 @@ export class UploadQueue {
   }
 
   async enqueueSession(sessionId: string): Promise<void> {
-    const notQueued = await this.repo.listStableNotQueued(sessionId);
+    const session = await this.repo.getSession(sessionId);
+    let notQueued = await this.repo.listStableNotQueued(sessionId);
+    if (session?.active_freeze_id) {
+      const freezeIds = new Set(
+        (await this.repo.listFreezePhotos(session.active_freeze_id)).map((p) => p.id),
+      );
+      notQueued = notQueued.filter((p) => freezeIds.has(p.id));
+    }
     for (const photo of notQueued) {
       await this.enqueuePhoto(sessionId, photo.id);
     }
-    const session = await this.repo.getSession(sessionId);
     if (session && session.status === 'review') {
       try {
         await this.repo.updateSessionStatus(sessionId, 'uploading');
@@ -747,7 +753,7 @@ export class UploadQueue {
       if (!session.upload_batch_id) {
         continue;
       }
-      const photos = await this.repo.listPhotosForUpload(session.id);
+      const photos = await this.listPhotosForUploadScoped(session.id);
       globalPreparedPending += photos.filter(
         (p) =>
           p.upload_size != null &&
@@ -771,7 +777,7 @@ export class UploadQueue {
         continue;
       }
 
-      const eligible = (await this.repo.listPhotosForUpload(session.id)).filter((p) => this.isEligible(p));
+      const eligible = (await this.listPhotosForUploadScoped(session.id)).filter((p) => this.isEligible(p));
       if (eligible.length === 0) {
         continue;
       }
@@ -799,7 +805,7 @@ export class UploadQueue {
         continue;
       }
 
-      const prepared = (await this.repo.listPhotosForUpload(session.id))
+      const prepared = (await this.listPhotosForUploadScoped(session.id))
         .filter((p) => this.isEligible(p))
         .filter((p) => p.upload_size != null && p.upload_size > 0 && !this.inFlightPhotos.has(p.id));
 
@@ -1930,11 +1936,96 @@ export class UploadQueue {
     }
   }
 
+  /**
+   * Heal local upload_status when the server already has the asset (app shows pending/error,
+   * web shows uploaded). Matches by upload_client_file_id / client_file_id.
+   */
+  async reconcileSessionWithServer(sessionId: string): Promise<number> {
+    const session = await this.repo.getSession(sessionId);
+    if (!session) {
+      return 0;
+    }
+    let remote: Awaited<ReturnType<AisleAssetsApi['listAssets']>>;
+    try {
+      remote = await this.assetsApi.listAssets(session.inventory_id, session.aisle_id);
+    } catch (e) {
+      this.logger.warn('recovery', { sessionId, error: String(e), reason: 'upload_reconcile_list_failed' });
+      return 0;
+    }
+    const byClient = new Map<string, (typeof remote)[number]>();
+    for (const asset of remote) {
+      const key = asset.upload_client_file_id ?? null;
+      if (key) {
+        byClient.set(key, asset);
+      }
+    }
+    const photos = await this.repo.listPhotos(sessionId);
+    let healed = 0;
+    const nowIso = new Date().toISOString();
+    for (const photo of photos) {
+      if (!photo.client_file_id) {
+        continue;
+      }
+      if (
+        photo.upload_status === 'uploaded' ||
+        photo.upload_status === 'excluded' ||
+        photo.upload_status === 'remote_deleted' ||
+        photo.upload_status === 'remote_delete_pending'
+      ) {
+        continue;
+      }
+      const match = byClient.get(photo.client_file_id);
+      if (!match) {
+        continue;
+      }
+      await this.repo.setPhotoUploadStatus(photo.id, 'uploaded', {
+        progress: 1,
+        backendAssetId: match.id,
+        uploadedAt: match.uploaded_at || photo.uploaded_at || nowIso,
+        errorCode: null,
+        errorMessage: null,
+        nextRetryAt: null,
+      });
+      this.inFlightPhotos.delete(photo.id);
+      healed += 1;
+      emitObservability(this.obs?.reporter, {
+        name: 'photo.upload_healed',
+        sessionId,
+        clientFileId: photo.client_file_id,
+        attributes: {
+          previous_upload_status: photo.upload_status,
+          heal_reason: 'server_list_assets_match',
+        },
+      });
+    }
+    if (healed > 0) {
+      this.emit();
+      this.logger.info('recovery', {
+        reason: 'upload_reconciled_from_server_list',
+        sessionId,
+        healed,
+      });
+    }
+    return healed;
+  }
+
+  private async listPhotosForUploadScoped(sessionId: string) {
+    const session = await this.repo.getSession(sessionId);
+    let photos = await this.repo.listPhotosForUpload(sessionId);
+    if (session?.active_freeze_id) {
+      const freezeIds = new Set(
+        (await this.repo.listFreezePhotos(session.active_freeze_id)).map((p) => p.id),
+      );
+      photos = photos.filter((p) => freezeIds.has(p.id));
+    }
+    return photos;
+  }
+
   private async reclaimOrphanedInFlight(): Promise<void> {
     const now = Date.now();
     const sessions = await this.repo.listActivitySessions();
     for (const session of sessions) {
-      const photos = await this.repo.listPhotosForUpload(session.id);
+      const photos = await this.listPhotosForUploadScoped(session.id);
       for (const photo of photos) {
         // Always re-read: list snapshots go stale while prepare/native upload completes.
         const fresh = (await this.repo.getPhotoById(photo.id)) ?? photo;

@@ -1,4 +1,4 @@
-"""In-memory productive writer for local CSV confirm."""
+"""In-memory / SQL productive writers for local CSV and package confirm."""
 
 from __future__ import annotations
 
@@ -25,7 +25,9 @@ class MemoryLocalCsvInventoryResultWriter:
         record: LocalCsvImport,
         rows_to_import: tuple[LocalCsvImportRow, ...],
         confirmed_by_user_id: str | None,
+        image_evidence_by_import_row_id: dict[str, str] | None = None,
     ) -> tuple[LocalCsvProductiveResult, ...]:
+        evidence = image_evidence_by_import_row_id or {}
         now = datetime.now(timezone.utc)
         applied: list[LocalCsvProductiveResult] = []
         with self._lock:
@@ -46,6 +48,7 @@ class MemoryLocalCsvInventoryResultWriter:
                     applied.append(existing)
                     continue
                 requires_review = bool(row.requires_review) or not (row.position_code or "").strip()
+                source_asset_id = evidence.get(row.id)
                 result = LocalCsvProductiveResult(
                     id=str(uuid.uuid4()),
                     inventory_id=record.inventory_id,
@@ -64,7 +67,8 @@ class MemoryLocalCsvInventoryResultWriter:
                     detection_source=row.detection_source,
                     ingestion_source=INGESTION_SOURCE_LOCAL_CSV_IMPORT,
                     requires_review=requires_review,
-                    has_image_evidence=False,
+                    has_image_evidence=source_asset_id is not None,
+                    source_asset_id=source_asset_id,
                     confirmed_by_user_id=confirmed_by_user_id,
                     created_at=now,
                     updated_at=now,
@@ -90,9 +94,11 @@ class SqlLocalCsvInventoryResultWriter:
         rows_to_import: tuple[LocalCsvImportRow, ...],
         confirmed_by_user_id: str | None,
         cursor: object | None = None,
+        image_evidence_by_import_row_id: dict[str, str] | None = None,
     ) -> tuple[LocalCsvProductiveResult, ...]:
         from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
+        evidence = image_evidence_by_import_row_id or {}
         now = datetime.now(timezone.utc)
         applied: list[LocalCsvProductiveResult] = []
 
@@ -112,6 +118,7 @@ class SqlLocalCsvInventoryResultWriter:
                     applied.append(_productive_from_db(db_row))
                     continue
                 requires_review = bool(row.requires_review) or not (row.position_code or "").strip()
+                source_asset_id = evidence.get(row.id)
                 result_id = str(uuid.uuid4())
                 result = LocalCsvProductiveResult(
                     id=result_id,
@@ -131,7 +138,8 @@ class SqlLocalCsvInventoryResultWriter:
                     detection_source=row.detection_source,
                     ingestion_source=INGESTION_SOURCE_LOCAL_CSV_IMPORT,
                     requires_review=requires_review,
-                    has_image_evidence=False,
+                    has_image_evidence=source_asset_id is not None,
+                    source_asset_id=source_asset_id,
                     confirmed_by_user_id=confirmed_by_user_id,
                     created_at=now,
                     updated_at=now,
@@ -141,8 +149,9 @@ class SqlLocalCsvInventoryResultWriter:
                     "(id, inventory_id, aisle_id, import_id, import_row_id, capture_session_id, "
                     "capture_photo_id, client_file_id, capture_order, position_code, internal_code, "
                     "quantity, quantity_status, detection_status, detection_source, ingestion_source, "
-                    "requires_review, has_image_evidence, confirmed_by_user_id, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "requires_review, has_image_evidence, source_asset_id, confirmed_by_user_id, "
+                    "created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         result.id,
                         result.inventory_id,
@@ -161,7 +170,8 @@ class SqlLocalCsvInventoryResultWriter:
                         result.detection_source,
                         result.ingestion_source,
                         1 if result.requires_review else 0,
-                        0,
+                        1 if result.has_image_evidence else 0,
+                        result.source_asset_id,
                         result.confirmed_by_user_id,
                         result.created_at,
                         result.updated_at,
@@ -194,6 +204,7 @@ def _productive_from_db(row: object) -> LocalCsvProductiveResult:
             return value if value.tzinfo else value.replace(tzinfo=tz.utc)
         return datetime.now(tz.utc)
 
+    source_asset_id = getattr(row, "source_asset_id", None)
     return LocalCsvProductiveResult(
         id=str(getattr(row, "id")),
         inventory_id=str(getattr(row, "inventory_id")),
@@ -227,6 +238,7 @@ def _productive_from_db(row: object) -> LocalCsvProductiveResult:
         ingestion_source=str(getattr(row, "ingestion_source")),
         requires_review=bool(getattr(row, "requires_review")),
         has_image_evidence=bool(getattr(row, "has_image_evidence")),
+        source_asset_id=str(source_asset_id) if source_asset_id is not None else None,
         confirmed_by_user_id=(
             str(getattr(row, "confirmed_by_user_id"))
             if getattr(row, "confirmed_by_user_id", None) is not None

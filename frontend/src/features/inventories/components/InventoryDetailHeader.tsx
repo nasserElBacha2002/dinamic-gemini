@@ -3,11 +3,7 @@ import { Box, Button, Menu, MenuItem, Typography } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import {
-  ROUTE_HOME,
-  pathToInventoryAnalyticsCompare,
-  pathToInventoryPhysicalLocations,
-} from '../../../constants/appRoutes';
+import { ROUTE_HOME, pathToInventoryAnalyticsCompare } from '../../../constants/appRoutes';
 import type { Inventory } from '../../../api/types';
 import { PageHeader, type PageHeaderBreadcrumb } from '../../../components/shell';
 import { StatusBadge } from '../../../components/ui';
@@ -20,6 +16,7 @@ export interface InventoryDetailHeaderProps {
   headerVm: InventoryHeaderViewModel;
   onOpenCreateAisle: () => void;
   onEditName?: () => void;
+  onImportPackage?: () => void;
 }
 
 export default function InventoryDetailHeader({
@@ -28,6 +25,7 @@ export default function InventoryDetailHeader({
   headerVm,
   onOpenCreateAisle,
   onEditName,
+  onImportPackage,
 }: InventoryDetailHeaderProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -71,14 +69,16 @@ export default function InventoryDetailHeader({
             </Button>
           ) : null}
           <InventoryExportMenu inventoryId={inventoryId} />
-          <Button
-            variant="outlined"
-            size="small"
-            data-testid="inventory-open-physical-locations"
-            onClick={() => navigate(pathToInventoryPhysicalLocations(inventoryId))}
-          >
-            {t('aisle_locations.hub_title')}
-          </Button>
+          {onImportPackage ? (
+            <Button
+              variant="outlined"
+              size="small"
+              data-testid="inventory-import-package"
+              onClick={onImportPackage}
+            >
+              {t('inventory.import_package.action')}
+            </Button>
+          ) : null}
           {onEditName ? (
             <>
               <Button

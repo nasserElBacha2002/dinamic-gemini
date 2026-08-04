@@ -58,8 +58,8 @@ export function ReviewScreen({
           </Text>
           {localCompletion ? (
             <Text style={styles.notif}>
-              Resultado detectado localmente (CODE_SCAN). El procesamiento remoto puede agregar o
-              corregir resultados. La exportación CSV no incluye fotografías.
+              Resultado detectado localmente (CODE_SCAN). La exportación genera un ZIP con
+              el CSV y las fotos del freeze para importar luego en el sistema.
             </Text>
           ) : null}
           {!canConfirm ? <ErrorText text="Resolvé errores o esperá validaciones antes de confirmar." /> : null}
@@ -109,11 +109,11 @@ export function ReviewScreen({
           ) : null}
           {csvExport ? (
             <Button
-              label="Exportar resultados CSV"
+              label="Exportar ZIP (CSV + fotos)"
               disabled={!canConfirm || exportBusy || !sessionId}
               onPress={() => {
                 if (!sessionId || !services.localCsvExport) {
-                  onError('Exportación CSV no disponible.');
+                  onError('Exportación no disponible.');
                   return;
                 }
                 setExportBusy(true);
@@ -122,11 +122,17 @@ export function ReviewScreen({
                   .exportSession(sessionId)
                   .then(async (exported) => {
                     setExportHint(
-                      `CSV listo · ${exported.rowCount} filas · checksum ${exported.checksumSha256.slice(0, 12)}…${
+                      `Listo · ${exported.rowCount} filas · ${exported.photoCount} fotos · ${
+                        exported.zipUri ? 'ZIP' : 'CSV'
+                      } ${exported.checksumSha256.slice(0, 12)}…${
                         exported.reused ? ' (reutilizado)' : ''
                       }`,
                     );
-                    await services.localCsvExport!.shareExport(exported.fileUri, exported.exportId);
+                    await services.localCsvExport!.shareExport(
+                      exported.fileUri,
+                      exported.exportId,
+                      exported.zipUri,
+                    );
                   })
                   .catch((e) => onError(e instanceof Error ? e.message : String(e)))
                   .finally(() => setExportBusy(false));

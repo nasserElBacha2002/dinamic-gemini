@@ -188,6 +188,7 @@ from src.runtime.container.repository_builders import (
     build_inventory_repository,
     build_job_repository,
     build_local_csv_import_repository,
+    build_local_inventory_package_repository,
     build_manual_position_override_repository,
     build_mobile_preliminary_detection_repository,
     build_ordered_capture_session_repository,
@@ -256,6 +257,7 @@ class AppContainer:
         self._inventory_repo: InventoryRepository | None = None
         self._local_csv_import_repo: LocalCsvImportRepository | None = None
         self._local_csv_result_writer = None
+        self._local_inventory_package_repo = None
         self._client_repo: ClientRepository | None = None
         self._client_supplier_repo: ClientSupplierRepository | None = None
         self._aisle_repo: AisleRepository | None = None
@@ -386,6 +388,7 @@ class AppContainer:
         self._inventory_repo = None
         self._local_csv_import_repo = None
         self._local_csv_result_writer = None
+        self._local_inventory_package_repo = None
         self._client_repo = None
         self._client_supplier_repo = None
         self._aisle_repo = None
@@ -613,6 +616,15 @@ class AppContainer:
         else:
             self._local_csv_result_writer = MemoryLocalCsvInventoryResultWriter()
         return self._local_csv_result_writer
+
+    def get_local_inventory_package_repo(self):
+        if self._local_inventory_package_repo is not None:
+            return self._local_inventory_package_repo
+        self._local_inventory_package_repo = build_local_inventory_package_repository(
+            self._build_sql_repository_or_memory,
+            csv_import_repo=self.get_local_csv_import_repo(),
+        )
+        return self._local_inventory_package_repo
 
     def get_client_repo(self) -> ClientRepository:
         if self._client_repo is not None:

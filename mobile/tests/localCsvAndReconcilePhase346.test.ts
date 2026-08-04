@@ -5,6 +5,7 @@ import {
   LOCAL_CSV_HEADERS,
 } from '../src/features/localCsv/csvFormat';
 import { buildLocalCsvExport } from '../src/features/localCsv/buildLocalCsvExport';
+import { base64ToUint8Array, uint8ArrayToBase64 } from '../src/features/localCsv/binaryCodec';
 import { preparePerTickForNetwork, maxPreparedPendingForNetwork } from '../src/features/upload/prepareParallelism';
 import {
   classifyLocalRemotePair,
@@ -143,6 +144,28 @@ describe('Phase 4 local CSV export', () => {
     expect(result.csv).toContain('LOCAL_PENDING');
     expect(result.checksumSha256.length).toBeGreaterThan(8);
     expect(buildCsvDocument([])).toContain('schema_version');
+  });
+});
+
+describe('binary codec for ZIP packaging', () => {
+  it('round-trips base64', () => {
+    const original = new Uint8Array([0, 1, 2, 255, 128, 7]);
+    const b64 = uint8ArrayToBase64(original);
+    expect(base64ToUint8Array(b64)).toEqual(original);
+  });
+});
+
+describe('local package contract constants', () => {
+  it('exports package kind and version 2', () => {
+    const {
+      LOCAL_PACKAGE_KIND,
+      LOCAL_PACKAGE_VERSION,
+    } = require('../src/features/localCsv/localPackageContract') as {
+      LOCAL_PACKAGE_KIND: string;
+      LOCAL_PACKAGE_VERSION: number;
+    };
+    expect(LOCAL_PACKAGE_KIND).toBe('DINAMIC_LOCAL_AISLE_EXPORT');
+    expect(LOCAL_PACKAGE_VERSION).toBe(2);
   });
 });
 

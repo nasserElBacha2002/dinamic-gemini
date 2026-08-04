@@ -98,6 +98,37 @@ def build_local_csv_import_repository(
     )
 
 
+def build_local_inventory_package_repository(
+    build_repo: BuildSqlOrMemory,
+    *,
+    csv_import_repo: LocalCsvImportRepository,
+):
+    from src.application.ports.local_inventory_package_repository import (
+        LocalInventoryPackageRepository,
+    )
+
+    def _sql(client: SqlServerClient) -> LocalInventoryPackageRepository:
+        from src.infrastructure.repositories.sql_local_inventory_package_repository import (
+            SqlLocalInventoryPackageRepository,
+        )
+
+        return SqlLocalInventoryPackageRepository(client, csv_import_repo=csv_import_repo)
+
+    def _memory() -> LocalInventoryPackageRepository:
+        from src.infrastructure.repositories.memory_local_inventory_package_repository import (
+            MemoryLocalInventoryPackageRepository,
+        )
+
+        return MemoryLocalInventoryPackageRepository(csv_import_repo=csv_import_repo)
+
+    return build_repo(
+        backend_info_name="LocalInventoryPackageRepository",
+        sql_error_subject="local inventory package repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
 def build_client_repository(build_repo: BuildSqlOrMemory[ClientRepository]) -> ClientRepository:
     def _sql(client: SqlServerClient) -> ClientRepository:
         from src.infrastructure.repositories.sql_client_repository import SqlClientRepository

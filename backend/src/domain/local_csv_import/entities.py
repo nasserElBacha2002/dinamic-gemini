@@ -74,7 +74,7 @@ class LocalCsvImport:
 
 @dataclass(frozen=True)
 class LocalCsvProductiveResult:
-    """Inventory-visible result applied from a confirmed CSV import (no image evidence)."""
+    """Inventory-visible result applied from a confirmed CSV/package import."""
 
     id: str
     inventory_id: str
@@ -97,3 +97,4 @@ class LocalCsvProductiveResult:
     confirmed_by_user_id: str | None
     created_at: datetime
     updated_at: datetime
+    source_asset_id: str | None = None

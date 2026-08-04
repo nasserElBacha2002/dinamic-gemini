@@ -20,9 +20,6 @@ from src.domain.local_csv_import.errors import (
     LocalCsvImportError,
 )
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
-from src.infrastructure.repositories.local_csv_inventory_result_writer import (
-    SqlLocalCsvInventoryResultWriter,
-)
 
 _IMPORT_COLUMNS = (
     "id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
@@ -132,7 +129,6 @@ def _import_from_db(row: object, rows: tuple[LocalCsvImportRow, ...]) -> LocalCs
 class SqlLocalCsvImportRepository:
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
-        self._writer = SqlLocalCsvInventoryResultWriter(client)
 
     def get_by_id(self, import_id: str) -> LocalCsvImport | None:
         with self._client.cursor() as cur:
@@ -262,11 +258,11 @@ class SqlLocalCsvImportRepository:
                     continue
                 to_import.append(row)
 
-            applied = self._writer.apply_import(
-                record=record,
-                rows_to_import=tuple(to_import),
-                confirmed_by_user_id=confirmed_by_user_id,
-                cursor=cur,
+            # Must use the caller-provided callback (CSV writer or package
+            # materializer+writer). Do not bypass it with self._writer — package
+            # confirm injects source-asset materialization here.
+            applied = apply_productive(
+                record, tuple(to_import), confirmed_by_user_id
             )
             by_row_id = {r.import_row_id: r for r in applied}
             for row in to_import:
@@ -338,39 +334,91 @@ class SqlLocalCsvImportRepository:
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (record.id, *values[:-2], record.created_at, record.updated_at),
             )
-        cur.execute(  # type: ignore[attr-defined]
-            "DELETE FROM local_csv_import_rows WHERE import_id = ?", (record.id,)
-        )
+        # Upsert rows in place. Never DELETE+re-INSERT after productive results exist:
+        # FK_local_csv_productive_row references import_row_id.
+        keep_ids = {row.id for row in record.rows}
         for row in record.rows:
+            row_values = (
+                row.import_id,
+                row.row_number,
+                row.inventory_id,
+                row.aisle_id,
+                row.capture_session_id,
+                row.capture_photo_id,
+                row.client_file_id,
+                row.capture_order,
+                row.captured_at,
+                row.position_code,
+                row.internal_code,
+                row.quantity,
+                row.quantity_status,
+                row.detection_status,
+                row.detection_source,
+                row.ingestion_source,
+                row.requires_review,
+                row.error_code,
+                row.notes,
+                row.status,
+                json.dumps(row.validation_errors),
+                json.dumps(row.validation_warnings),
+                row.productive_result_id,
+                row.id,
+            )
             cur.execute(  # type: ignore[attr-defined]
-                "INSERT INTO local_csv_import_rows "
-                f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(24))})",
-                (
-                    row.id,
-                    row.import_id,
-                    row.row_number,
-                    row.inventory_id,
-                    row.aisle_id,
-                    row.capture_session_id,
-                    row.capture_photo_id,
-                    row.client_file_id,
-                    row.capture_order,
-                    row.captured_at,
-                    row.position_code,
-                    row.internal_code,
-                    row.quantity,
-                    row.quantity_status,
-                    row.detection_status,
-                    row.detection_source,
-                    row.ingestion_source,
-                    row.requires_review,
-                    row.error_code,
-                    row.notes,
-                    row.status,
-                    json.dumps(row.validation_errors),
-                    json.dumps(row.validation_warnings),
-                    row.productive_result_id,
-                ),
+                "UPDATE local_csv_import_rows SET import_id=?, row_number=?, inventory_id=?, "
+                "aisle_id=?, capture_session_id=?, capture_photo_id=?, client_file_id=?, "
+                "capture_order=?, captured_at=?, position_code=?, internal_code=?, quantity=?, "
+                "quantity_status=?, detection_status=?, detection_source=?, ingestion_source=?, "
+                "requires_review=?, error_code=?, notes=?, status=?, validation_errors_json=?, "
+                "validation_warnings_json=?, productive_result_id=? WHERE id=?",
+                row_values,
+            )
+            if cur.rowcount == 0:  # type: ignore[attr-defined]
+                cur.execute(  # type: ignore[attr-defined]
+                    "INSERT INTO local_csv_import_rows "
+                    f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(24))})",
+                    (
+                        row.id,
+                        row.import_id,
+                        row.row_number,
+                        row.inventory_id,
+                        row.aisle_id,
+                        row.capture_session_id,
+                        row.capture_photo_id,
+                        row.client_file_id,
+                        row.capture_order,
+                        row.captured_at,
+                        row.position_code,
+                        row.internal_code,
+                        row.quantity,
+                        row.quantity_status,
+                        row.detection_status,
+                        row.detection_source,
+                        row.ingestion_source,
+                        row.requires_review,
+                        row.error_code,
+                        row.notes,
+                        row.status,
+                        json.dumps(row.validation_errors),
+                        json.dumps(row.validation_warnings),
+                        row.productive_result_id,
+                    ),
+                )
+        if keep_ids:
+            placeholders = ", ".join("?" for _ in keep_ids)
+            cur.execute(  # type: ignore[attr-defined]
+                "DELETE FROM local_csv_import_rows WHERE import_id = ? AND id NOT IN "
+                f"({placeholders}) AND NOT EXISTS ("
+                "SELECT 1 FROM local_csv_productive_results p "
+                "WHERE p.import_row_id = local_csv_import_rows.id)",
+                (record.id, *keep_ids),
+            )
+        else:
+            cur.execute(  # type: ignore[attr-defined]
+                "DELETE FROM local_csv_import_rows WHERE import_id = ? AND NOT EXISTS ("
+                "SELECT 1 FROM local_csv_productive_results p "
+                "WHERE p.import_row_id = local_csv_import_rows.id)",
+                (record.id,),
             )
 
 

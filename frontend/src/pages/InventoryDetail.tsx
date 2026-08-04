@@ -1,20 +1,23 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Alert, Box, Button, Typography } from '@mui/material';
 import { ApiError } from '../api/types';
+import { queryKeys } from '../api/queryKeys';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { rowMatchesSearchQuery } from '../utils/tableSearch';
 import { isAisleActive } from '../utils/aisleActive';
 import { ErrorAlert, LoadingBlock, PhotoUploadProgressDialog, useAppSnackbar } from '../components/ui';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import { useInventoryDetail, useAislesList, useCreateAisle, useUpdateInventory } from '../hooks';
-import { ROUTE_HOME } from '../constants/appRoutes';
+import { pathToAislePositions, ROUTE_HOME } from '../constants/appRoutes';
 import { toAisleInventoryTableRows, toInventoryHeaderViewModel } from '../features/inventories/adapters';
 import { useAisleAssetUploadFlow } from '../features/inventories/hooks/useAisleAssetUploadFlow';
 import { useAisleProcessingFlow } from '../features/inventories/hooks/useAisleProcessingFlow';
 import AisleProcessingDialog from '../features/inventories/components/AisleProcessingDialog';
 import EditInventoryNameDialog from '../features/inventories/components/EditInventoryNameDialog';
+import ImportLocalInventoryPackageDialog from '../features/inventories/components/ImportLocalInventoryPackageDialog';
 import InventoryAislesSection from '../features/inventories/components/InventoryAislesSection';
 import InventoryDetailHeader from '../features/inventories/components/InventoryDetailHeader';
 import type { AisleActiveFilter } from '../features/inventories/components/InventoryAislesSection';
@@ -23,9 +26,11 @@ export default function InventoryDetail() {
   const { t } = useTranslation();
   const { inventoryId } = useParams<{ inventoryId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { showSnackbar } = useAppSnackbar();
   const [createAisleOpen, setCreateAisleOpen] = useState(false);
   const [editNameOpen, setEditNameOpen] = useState(false);
+  const [importPackageOpen, setImportPackageOpen] = useState(false);
   const [aisleTableSearch, setAisleTableSearch] = useState('');
   const [aisleActiveFilter, setAisleActiveFilter] = useState<AisleActiveFilter>('active');
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -111,6 +116,7 @@ export default function InventoryDetail() {
             headerVm={headerVm}
             onOpenCreateAisle={() => setCreateAisleOpen(true)}
             onEditName={() => setEditNameOpen(true)}
+            onImportPackage={() => setImportPackageOpen(true)}
           />
           <Box sx={{ display: 'grid', gap: 2 }}>
             {!inventory.client_id ? (
@@ -215,6 +221,41 @@ export default function InventoryDetail() {
         onClose={() => setEditNameOpen(false)}
         onSuccess={() => showSnackbar(t('inventory.name_updated_snackbar'), 'success')}
         updateInventoryFn={updateInventoryMutation.mutateAsync}
+      />
+
+      <ImportLocalInventoryPackageDialog
+        open={importPackageOpen}
+        inventoryId={inventoryId ?? ''}
+        aisleLabelById={Object.fromEntries(aisles.map((a) => [a.id, a.code || a.id]))}
+        onClose={() => setImportPackageOpen(false)}
+        onSuccess={(result) => {
+          const aisleLabel =
+            (result.aisle_id && aisles.find((a) => a.id === result.aisle_id)?.code) ||
+            result.aisle_id;
+          showSnackbar(
+            aisleLabel
+              ? t('inventory.import_package.success_snackbar_aisle', {
+                  aisle: aisleLabel,
+                  photos: result.included_photo_count,
+                  rows: result.csv_import?.valid_rows ?? 0,
+                })
+              : t('inventory.import_package.success_snackbar', {
+                  photos: result.included_photo_count,
+                  rows: result.csv_import?.valid_rows ?? 0,
+                }),
+            'success'
+          );
+          if (inventoryId) {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+            if (result.aisle_id) {
+              void queryClient.invalidateQueries({
+                queryKey: queryKeys.inventories.positions(inventoryId, result.aisle_id),
+              });
+              navigate(pathToAislePositions(inventoryId, result.aisle_id));
+            }
+          }
+        }}
       />
 
       {/* Table/native-file upload only; drawer uploads use ManagedImageAssetsDrawer dialog. */}
