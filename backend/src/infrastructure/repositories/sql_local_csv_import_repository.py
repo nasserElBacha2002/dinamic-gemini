@@ -3,22 +3,38 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from src.database.sqlserver import SqlServerClient
-from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow
+from src.domain.local_csv_import.entities import (
+    LocalCsvImport,
+    LocalCsvImportRow,
+    LocalCsvProductiveResult,
+)
+from src.domain.local_csv_import.errors import (
+    LOCAL_CSV_EXPORT_CONFLICT,
+    LOCAL_CSV_EXPORT_NOT_PREVIEWED,
+    LOCAL_CSV_SECONDARY_CONFLICT,
+    LocalCsvImportError,
+)
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
+from src.infrastructure.repositories.local_csv_inventory_result_writer import (
+    SqlLocalCsvInventoryResultWriter,
+)
 
 _IMPORT_COLUMNS = (
     "id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
     "content_hash, total_rows, valid_rows, rejected_rows, duplicate_rows, conflict_policy, "
-    "confirmed_at, created_at, updated_at"
+    "confirmed_at, confirmed_by_user_id, created_at, updated_at"
 )
 _ROW_COLUMNS = (
     "id, import_id, row_number, inventory_id, aisle_id, capture_session_id, capture_photo_id, "
     "client_file_id, capture_order, captured_at, position_code, internal_code, quantity, "
-    "quantity_status, detection_status, source, requires_review, error_code, notes, status, "
-    "validation_errors_json, validation_warnings_json"
+    "quantity_status, detection_status, detection_source, ingestion_source, requires_review, "
+    "error_code, notes, status, validation_errors_json, validation_warnings_json, "
+    "productive_result_id"
 )
 
 
@@ -62,7 +78,8 @@ def _row_from_db(row: object) -> LocalCsvImportRow:
         ),
         quantity_status=str(getattr(row, "quantity_status")),
         detection_status=str(getattr(row, "detection_status")),
-        source=str(getattr(row, "source")),
+        detection_source=str(getattr(row, "detection_source")),
+        ingestion_source=str(getattr(row, "ingestion_source")),
         requires_review=bool(getattr(row, "requires_review")),
         error_code=(
             str(getattr(row, "error_code"))
@@ -73,6 +90,11 @@ def _row_from_db(row: object) -> LocalCsvImportRow:
         status=str(getattr(row, "status")),
         validation_errors=_json_tuple(getattr(row, "validation_errors_json", None)),
         validation_warnings=_json_tuple(getattr(row, "validation_warnings_json", None)),
+        productive_result_id=(
+            str(getattr(row, "productive_result_id"))
+            if getattr(row, "productive_result_id", None) is not None
+            else None
+        ),
     )
 
 
@@ -96,6 +118,11 @@ def _import_from_db(row: object, rows: tuple[LocalCsvImportRow, ...]) -> LocalCs
             else None
         ),
         confirmed_at=_utc(getattr(row, "confirmed_at", None)),
+        confirmed_by_user_id=(
+            str(getattr(row, "confirmed_by_user_id"))
+            if getattr(row, "confirmed_by_user_id", None) is not None
+            else None
+        ),
         created_at=_utc(getattr(row, "created_at")),
         updated_at=_utc(getattr(row, "updated_at")),
         rows=rows,
@@ -105,6 +132,7 @@ def _import_from_db(row: object, rows: tuple[LocalCsvImportRow, ...]) -> LocalCs
 class SqlLocalCsvImportRepository:
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
+        self._writer = SqlLocalCsvInventoryResultWriter(client)
 
     def get_by_id(self, import_id: str) -> LocalCsvImport | None:
         with self._client.cursor() as cur:
@@ -154,10 +182,128 @@ class SqlLocalCsvImportRepository:
                     f"AND ({predicates})",
                     params,
                 )
-                found.update((str(row.capture_session_id), str(row.capture_photo_id)) for row in cur.fetchall())
+                found.update(
+                    (str(row.capture_session_id), str(row.capture_photo_id))
+                    for row in cur.fetchall()
+                )
         return found
 
+    def stage_or_get_existing(self, record: LocalCsvImport) -> LocalCsvImport:
+        try:
+            return self.save(record)
+        except Exception as exc:
+            # Narrow: only IntegrityError / SQL unique (2627/2601) become idempotent replay.
+            if not _is_unique_violation(exc):
+                raise
+            existing = self.get_by_export_id(
+                inventory_id=record.inventory_id, export_id=record.export_id
+            )
+            if existing is None:
+                raise
+            if existing.content_hash != record.content_hash:
+                raise LocalCsvImportError(
+                    LOCAL_CSV_EXPORT_CONFLICT,
+                    "export_id already exists with different CSV content",
+                ) from exc
+            return existing
+
+    def confirm_import_atomically(
+        self,
+        *,
+        inventory_id: str,
+        export_id: str,
+        conflict_policy: str,
+        confirmed_by_user_id: str | None,
+        apply_productive: Callable[
+            [LocalCsvImport, tuple[LocalCsvImportRow, ...], str | None],
+            tuple[LocalCsvProductiveResult, ...],
+        ],
+        clock_now: Callable[[], datetime],
+    ) -> tuple[LocalCsvImport, bool]:
+        with sql_repository_cursor(self._client) as cur:
+            cur.execute(
+                f"SELECT {_IMPORT_COLUMNS} FROM local_csv_imports WITH (UPDLOCK, ROWLOCK) "
+                "WHERE inventory_id = ? AND export_id = ?",
+                (inventory_id, export_id),
+            )
+            header = cur.fetchone()
+            if not header:
+                raise LocalCsvImportError(
+                    LOCAL_CSV_EXPORT_NOT_PREVIEWED, "export_id has not been previewed"
+                )
+            cur.execute(
+                f"SELECT {_ROW_COLUMNS} FROM local_csv_import_rows "
+                "WHERE import_id = ? ORDER BY row_number",
+                (str(header.id),),
+            )
+            rows = tuple(_row_from_db(row) for row in cur.fetchall())
+            record = _import_from_db(header, rows)
+            if record.status == "CONFIRMED":
+                return record, True
+
+            eligible = {
+                row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"
+            }
+            conflicts = self.find_confirmed_secondary_keys(eligible)
+            if conflicts and conflict_policy == "REJECT":
+                raise LocalCsvImportError(
+                    LOCAL_CSV_SECONDARY_CONFLICT,
+                    "One or more capture_session_id + capture_photo_id keys already exist",
+                )
+
+            to_import: list[LocalCsvImportRow] = []
+            updated_rows: list[LocalCsvImportRow] = []
+            for row in record.rows:
+                if row.status != "PREVIEW_VALID":
+                    updated_rows.append(row)
+                    continue
+                if row.secondary_key in conflicts:
+                    updated_rows.append(replace(row, status="DUPLICATE"))
+                    continue
+                to_import.append(row)
+
+            applied = self._writer.apply_import(
+                record=record,
+                rows_to_import=tuple(to_import),
+                confirmed_by_user_id=confirmed_by_user_id,
+                cursor=cur,
+            )
+            by_row_id = {r.import_row_id: r for r in applied}
+            for row in to_import:
+                result = by_row_id.get(row.id)
+                updated_rows.append(
+                    replace(
+                        row,
+                        status="IMPORTED",
+                        productive_result_id=result.id if result else None,
+                        requires_review=(
+                            bool(result.requires_review) if result else row.requires_review
+                        ),
+                    )
+                )
+            updated_rows.sort(key=lambda r: r.row_number)
+            now = clock_now()
+            confirmed = replace(
+                record,
+                status="CONFIRMED",
+                valid_rows=sum(row.status == "IMPORTED" for row in updated_rows),
+                duplicate_rows=sum(row.status == "DUPLICATE" for row in updated_rows),
+                rejected_rows=sum(row.status == "REJECTED" for row in updated_rows),
+                conflict_policy=conflict_policy,
+                confirmed_at=now,
+                confirmed_by_user_id=confirmed_by_user_id,
+                updated_at=now,
+                rows=tuple(updated_rows),
+            )
+            self._persist(cur, confirmed)
+            return confirmed, False
+
     def save(self, record: LocalCsvImport) -> LocalCsvImport:
+        with sql_repository_cursor(self._client) as cur:
+            self._persist(cur, record)
+        return record
+
+    def _persist(self, cur: object, record: LocalCsvImport) -> None:
         values = (
             record.export_id,
             record.schema_version,
@@ -172,54 +318,69 @@ class SqlLocalCsvImportRepository:
             record.duplicate_rows,
             record.conflict_policy,
             record.confirmed_at,
+            record.confirmed_by_user_id,
             record.updated_at,
             record.id,
         )
-        with sql_repository_cursor(self._client) as cur:
-            cur.execute(
-                "UPDATE local_csv_imports SET export_id=?, schema_version=?, inventory_id=?, "
-                "device_id=?, exported_at=?, status=?, content_hash=?, total_rows=?, valid_rows=?, "
-                "rejected_rows=?, duplicate_rows=?, conflict_policy=?, confirmed_at=?, updated_at=? "
-                "WHERE id=?",
-                values,
+        cur.execute(  # type: ignore[attr-defined]
+            "UPDATE local_csv_imports SET export_id=?, schema_version=?, inventory_id=?, "
+            "device_id=?, exported_at=?, status=?, content_hash=?, total_rows=?, valid_rows=?, "
+            "rejected_rows=?, duplicate_rows=?, conflict_policy=?, confirmed_at=?, "
+            "confirmed_by_user_id=?, updated_at=? WHERE id=?",
+            values,
+        )
+        if cur.rowcount == 0:  # type: ignore[attr-defined]
+            cur.execute(  # type: ignore[attr-defined]
+                "INSERT INTO local_csv_imports "
+                "(id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
+                "content_hash, total_rows, valid_rows, rejected_rows, duplicate_rows, "
+                "conflict_policy, confirmed_at, confirmed_by_user_id, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (record.id, *values[:-2], record.created_at, record.updated_at),
             )
-            if cur.rowcount == 0:
-                cur.execute(
-                    "INSERT INTO local_csv_imports "
-                    "(id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
-                    "content_hash, total_rows, valid_rows, rejected_rows, duplicate_rows, "
-                    "conflict_policy, confirmed_at, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (record.id, *values[:-2], record.created_at, record.updated_at),
-                )
-            cur.execute("DELETE FROM local_csv_import_rows WHERE import_id = ?", (record.id,))
-            for row in record.rows:
-                cur.execute(
-                    "INSERT INTO local_csv_import_rows "
-                    f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(22))})",
-                    (
-                        row.id,
-                        row.import_id,
-                        row.row_number,
-                        row.inventory_id,
-                        row.aisle_id,
-                        row.capture_session_id,
-                        row.capture_photo_id,
-                        row.client_file_id,
-                        row.capture_order,
-                        row.captured_at,
-                        row.position_code,
-                        row.internal_code,
-                        row.quantity,
-                        row.quantity_status,
-                        row.detection_status,
-                        row.source,
-                        row.requires_review,
-                        row.error_code,
-                        row.notes,
-                        row.status,
-                        json.dumps(row.validation_errors),
-                        json.dumps(row.validation_warnings),
-                    ),
-                )
-        return record
+        cur.execute(  # type: ignore[attr-defined]
+            "DELETE FROM local_csv_import_rows WHERE import_id = ?", (record.id,)
+        )
+        for row in record.rows:
+            cur.execute(  # type: ignore[attr-defined]
+                "INSERT INTO local_csv_import_rows "
+                f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(24))})",
+                (
+                    row.id,
+                    row.import_id,
+                    row.row_number,
+                    row.inventory_id,
+                    row.aisle_id,
+                    row.capture_session_id,
+                    row.capture_photo_id,
+                    row.client_file_id,
+                    row.capture_order,
+                    row.captured_at,
+                    row.position_code,
+                    row.internal_code,
+                    row.quantity,
+                    row.quantity_status,
+                    row.detection_status,
+                    row.detection_source,
+                    row.ingestion_source,
+                    row.requires_review,
+                    row.error_code,
+                    row.notes,
+                    row.status,
+                    json.dumps(row.validation_errors),
+                    json.dumps(row.validation_warnings),
+                    row.productive_result_id,
+                ),
+            )
+
+
+def _is_unique_violation(exc: BaseException) -> bool:
+    name = type(exc).__name__
+    if name in {"IntegrityError", "UniqueViolation", "UniqueConstraintError"}:
+        return True
+    args = getattr(exc, "args", ())
+    for arg in args:
+        text = str(arg)
+        if "2627" in text or "2601" in text or "UX_local_csv_imports_inventory_export" in text:
+            return True
+    return False

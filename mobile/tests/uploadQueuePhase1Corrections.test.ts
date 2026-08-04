@@ -80,6 +80,8 @@ function session(id: string, overrides: Partial<CaptureSessionRow> = {}): Captur
     capture_frozen_at: null,
     capture_frozen_photo_count: null,
     capture_freeze_generation: 0,
+    active_freeze_id: null,
+    upload_policy: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,

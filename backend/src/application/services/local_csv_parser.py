@@ -1,7 +1,7 @@
 """Strict RFC 4180 parser for local inventory CSV schema version 1.
 
 Formula-like text cells are prefixed with an apostrophe before they enter persistence.
-This preserves the text while preventing spreadsheet execution if reports are exported.
+Detection provenance stays in CSV column `source`; the server assigns ingestion_source.
 """
 
 from __future__ import annotations
@@ -12,10 +12,16 @@ import io
 from dataclasses import dataclass
 from datetime import datetime
 
-from src.domain.local_csv_import.entities import LOCAL_CSV_IMPORT_SOURCE
+from src.domain.local_csv_import.sources import (
+    ALLOWED_DETECTION_SOURCES,
+    INGESTION_SOURCE_LOCAL_CSV_IMPORT,
+    LEGACY_SOURCE_AS_DETECTION,
+)
 
 SCHEMA_VERSION = "1"
 FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+# Headers required by the mobile exporter contract (extra headers are ignored).
 REQUIRED_HEADERS = (
     "schema_version",
     "export_id",
@@ -38,6 +44,7 @@ REQUIRED_HEADERS = (
     "error_code",
     "notes",
 )
+
 _FORMULA_AWARE_COLUMNS = frozenset(
     {
         "export_id",
@@ -71,6 +78,8 @@ class ParsedLocalCsvRow:
     captured_at: datetime | None
     quantity: int | None
     requires_review: bool | None
+    detection_source: str
+    ingestion_source: str
     errors: tuple[str, ...]
     warnings: tuple[str, ...]
 
@@ -137,6 +146,20 @@ def _neutralize_formula(value: str) -> tuple[str, bool]:
     return value, False
 
 
+def _normalize_detection_source(raw: str, errors: list[str], warnings: list[str]) -> str:
+    value = raw.strip()
+    if not value:
+        errors.append("source:required")
+        return ""
+    if value in ALLOWED_DETECTION_SOURCES:
+        return value
+    if value in LEGACY_SOURCE_AS_DETECTION:
+        warnings.append("source:legacy_LOCAL_CSV_IMPORT_treated_as_LOCAL_PENDING")
+        return "LOCAL_PENDING"
+    errors.append("source:unsupported_detection_source")
+    return value
+
+
 def parse_local_csv(content: bytes) -> ParsedLocalCsv:
     """Parse a complete UTF-8 CSV document using strict RFC 4180 rules."""
     try:
@@ -174,22 +197,28 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
                 "aisle_id",
                 "capture_session_id",
                 "capture_photo_id",
-                "client_file_id",
-                "position_code",
                 "quantity_status",
                 "detection_status",
             ):
                 if not values[required]:
                     errors.append(f"{required}:required")
+            # position_code may be empty → requires review later
+            if not values["position_code"]:
+                warnings.append("position_code:empty")
+            if not values["client_file_id"]:
+                values["client_file_id"] = values["capture_photo_id"]
+                warnings.append("client_file_id:defaulted_to_capture_photo_id")
             if values["schema_version"] != SCHEMA_VERSION:
                 errors.append("schema_version:unsupported")
-            if values["source"] != LOCAL_CSV_IMPORT_SOURCE:
-                errors.append("source:must_be_LOCAL_CSV_IMPORT")
+            detection_source = _normalize_detection_source(values["source"], errors, warnings)
             exported_at = _parse_datetime(values["exported_at"], "exported_at", errors)
             captured_at = _parse_datetime(values["captured_at"], "captured_at", errors)
             capture_order = _parse_integer(values["capture_order"], "capture_order", errors)
             quantity = _parse_integer(values["quantity"], "quantity", errors, optional=True)
             requires_review = _parse_bool(values["requires_review"], errors)
+            if requires_review is False and not values["position_code"]:
+                requires_review = True
+                warnings.append("requires_review:forced_for_empty_position")
             parsed_rows.append(
                 ParsedLocalCsvRow(
                     row_number=row_number,
@@ -199,6 +228,8 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
                     captured_at=captured_at,
                     quantity=quantity,
                     requires_review=requires_review,
+                    detection_source=detection_source,
+                    ingestion_source=INGESTION_SOURCE_LOCAL_CSV_IMPORT,
                     errors=tuple(errors),
                     warnings=tuple(warnings),
                 )

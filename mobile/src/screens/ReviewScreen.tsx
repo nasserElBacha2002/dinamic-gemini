@@ -11,7 +11,11 @@ export interface ReviewScreenProps {
   onBack: () => void;
   /** Upload now — parent runs completeReview + enqueue. */
   onConfirm: (sessionId: string) => void;
-  /** Save locally and optionally upload later. */
+  /** Persist local only (MANUAL) — no upload enqueue. */
+  onSaveLocalOnly?: (sessionId: string) => void;
+  /** Persist local and enqueue when connectivity returns (WHEN_CONNECTED). */
+  onSaveLocalWhenConnected?: (sessionId: string) => void;
+  /** @deprecated Prefer onSaveLocalOnly / onSaveLocalWhenConnected */
   onSaveLocal?: (sessionId: string) => void;
   onError: (message: string | null) => void;
 }
@@ -21,6 +25,8 @@ export function ReviewScreen({
   snapshot,
   onBack,
   onConfirm,
+  onSaveLocalOnly,
+  onSaveLocalWhenConnected,
   onSaveLocal,
   onError,
 }: ReviewScreenProps) {
@@ -75,16 +81,29 @@ export function ReviewScreen({
               onConfirm(sessionId);
             }}
           />
-          {localCompletion && onSaveLocal ? (
+          {localCompletion && (onSaveLocalOnly || onSaveLocal) ? (
             <Button
-              label="Guardar y subir más tarde"
+              label="Guardar solo en el dispositivo"
               disabled={!canConfirm}
               onPress={() => {
                 if (!sessionId) {
                   onError('No se encontró la sesión de captura.');
                   return;
                 }
-                onSaveLocal(sessionId);
+                (onSaveLocalOnly ?? onSaveLocal)?.(sessionId);
+              }}
+            />
+          ) : null}
+          {localCompletion && (onSaveLocalWhenConnected || onSaveLocal) ? (
+            <Button
+              label="Guardar y subir cuando haya conexión"
+              disabled={!canConfirm}
+              onPress={() => {
+                if (!sessionId) {
+                  onError('No se encontró la sesión de captura.');
+                  return;
+                }
+                (onSaveLocalWhenConnected ?? onSaveLocal)?.(sessionId);
               }}
             />
           ) : null}

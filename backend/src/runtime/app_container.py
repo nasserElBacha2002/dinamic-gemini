@@ -255,6 +255,7 @@ class AppContainer:
         self._v3_sql_client: SqlServerClient | None = None
         self._inventory_repo: InventoryRepository | None = None
         self._local_csv_import_repo: LocalCsvImportRepository | None = None
+        self._local_csv_result_writer = None
         self._client_repo: ClientRepository | None = None
         self._client_supplier_repo: ClientSupplierRepository | None = None
         self._aisle_repo: AisleRepository | None = None
@@ -384,6 +385,7 @@ class AppContainer:
         self._v3_sql_client = None
         self._inventory_repo = None
         self._local_csv_import_repo = None
+        self._local_csv_result_writer = None
         self._client_repo = None
         self._client_supplier_repo = None
         self._aisle_repo = None
@@ -594,6 +596,23 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._local_csv_import_repo
+
+    def get_local_csv_result_writer(self):
+        if self._local_csv_result_writer is not None:
+            return self._local_csv_result_writer
+        from src.infrastructure.repositories.local_csv_inventory_result_writer import (
+            MemoryLocalCsvInventoryResultWriter,
+            SqlLocalCsvInventoryResultWriter,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == "sql":
+            self._local_csv_result_writer = SqlLocalCsvInventoryResultWriter(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._local_csv_result_writer = MemoryLocalCsvInventoryResultWriter()
+        return self._local_csv_result_writer
 
     def get_client_repo(self) -> ClientRepository:
         if self._client_repo is not None:

@@ -2,6 +2,7 @@ import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/c
 import type { ConfirmedLocalResultRow } from '../../database/repositories/confirmedLocalResultRepository';
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
 import {
+  CHECKSUM_ALGORITHM,
   LOCAL_CSV_SCHEMA_VERSION,
   buildCsvDocument,
   sha256Hex,
@@ -19,6 +20,8 @@ export interface LocalCsvExportInput {
   readonly clientId: string | null;
   readonly exportId?: string;
   readonly exportedAt?: string;
+  readonly freezeId?: string | null;
+  readonly freezeGeneration?: number | null;
 }
 
 export interface LocalCsvExportResult {
@@ -27,8 +30,11 @@ export interface LocalCsvExportResult {
   readonly schemaVersion: string;
   readonly rowCount: number;
   readonly checksumSha256: string;
+  readonly checksumAlgorithm: 'sha256';
   readonly csv: string;
   readonly scope: 'session';
+  readonly freezeId: string | null;
+  readonly freezeGeneration: number | null;
 }
 
 function cell(value: string | number | null | undefined): string {
@@ -102,6 +108,8 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       confirmed_manually: confirmed ? 'true' : 'false',
       error_code: cell(draft?.error_code ?? photo.stability_error),
       notes: '',
+      freeze_id: cell(input.freezeId ?? input.session.active_freeze_id),
+      freeze_generation: cell(input.freezeGeneration ?? input.session.capture_freeze_generation),
     };
   });
 }
@@ -118,7 +126,10 @@ export async function buildLocalCsvExport(input: LocalCsvExportInput): Promise<L
     schemaVersion: LOCAL_CSV_SCHEMA_VERSION,
     rowCount: rows.length,
     checksumSha256,
+    checksumAlgorithm: CHECKSUM_ALGORITHM,
     csv,
     scope: 'session',
+    freezeId: input.freezeId ?? input.session.active_freeze_id ?? null,
+    freezeGeneration: input.freezeGeneration ?? input.session.capture_freeze_generation ?? null,
   };
 }

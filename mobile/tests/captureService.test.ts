@@ -71,6 +71,8 @@ function session(overrides: Partial<CaptureSessionRow> = {}): CaptureSessionRow 
     capture_frozen_at: null,
     capture_frozen_photo_count: null,
     capture_freeze_generation: 0,
+    active_freeze_id: null,
+    upload_policy: null,
     created_at: now,
     updated_at: now,
     ...overrides,
@@ -225,6 +227,72 @@ class FakeRepo {
     };
     this.sessions.set(id, next);
     return next;
+  }
+
+  freezes = new Map<string, { id: string; sessionId: string; generation: number; frozen_at: string; photo_count: number; content_fingerprint: string; photos: string[] }>();
+
+  async createFreezeSnapshot(input: {
+    readonly freezeId: string;
+    readonly sessionId: string;
+    readonly frozenAt: string;
+    readonly photoCount: number;
+    readonly contentFingerprint: string;
+    readonly photos: readonly {
+      readonly capturePhotoId: string;
+      readonly sequenceNumber: number;
+      readonly statusAtFreeze: string;
+      readonly included: boolean;
+    }[];
+  }) {
+    const row = this.sessions.get(input.sessionId);
+    if (!row) throw new Error('missing session');
+    const generation = (row.capture_freeze_generation ?? 0) + 1;
+    this.freezes.set(input.freezeId, {
+      id: input.freezeId,
+      sessionId: input.sessionId,
+      generation,
+      frozen_at: input.frozenAt,
+      photo_count: input.photoCount,
+      content_fingerprint: input.contentFingerprint,
+      photos: input.photos.map((p) => p.capturePhotoId),
+    });
+    const next = {
+      ...row,
+      capture_frozen_at: input.frozenAt,
+      capture_frozen_photo_count: input.photoCount,
+      capture_freeze_generation: generation,
+      active_freeze_id: input.freezeId,
+    };
+    this.sessions.set(input.sessionId, next);
+    return next;
+  }
+
+  async getActiveFreeze(sessionId: string) {
+    const session = this.sessions.get(sessionId);
+    if (!session?.active_freeze_id) return null;
+    const freeze = this.freezes.get(session.active_freeze_id);
+    if (!freeze) return null;
+    return {
+      id: freeze.id,
+      generation: freeze.generation,
+      frozen_at: freeze.frozen_at,
+      photo_count: freeze.photo_count,
+      content_fingerprint: freeze.content_fingerprint,
+    };
+  }
+
+  async listFreezePhotos(freezeId: string) {
+    const freeze = this.freezes.get(freezeId);
+    if (!freeze) return [];
+    return freeze.photos
+      .map((id) => this.photos.get(id) ?? Array.from(this.photos.values()).find((p) => p.id === id))
+      .filter((p): p is CapturePhotoRow => p != null);
+  }
+
+  async setUploadPolicy(sessionId: string, policy: 'MANUAL' | 'WHEN_CONNECTED' | 'NOW') {
+    const row = this.sessions.get(sessionId);
+    if (!row) throw new Error('missing session');
+    this.sessions.set(sessionId, { ...row, upload_policy: policy });
   }
 
   async listPhotos(sessionId: string) {

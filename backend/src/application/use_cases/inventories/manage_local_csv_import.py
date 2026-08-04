@@ -3,36 +3,41 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import replace
 
 from src.application.ports.clock import Clock
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
+from src.application.ports.local_csv_inventory_result_writer import LocalCsvInventoryResultWriter
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.services.local_csv_parser import ParsedLocalCsvRow, parse_local_csv
-from src.domain.local_csv_import.entities import (
-    LOCAL_CSV_IMPORT_SOURCE,
-    LocalCsvImport,
-    LocalCsvImportRow,
+from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow
+from src.domain.local_csv_import.errors import (
+    CONFLICT_POLICIES,
+    LOCAL_CSV_EXPORT_CONFLICT,
+    LOCAL_CSV_IMPORT_NOT_FOUND,
+    LOCAL_CSV_INVENTORY_MISMATCH,
+    LocalCsvImportDisabledError,
+    LocalCsvImportError,
 )
+from src.domain.local_csv_import.sources import INGESTION_SOURCE_LOCAL_CSV_IMPORT
 
-LOCAL_CSV_IMPORT_DISABLED = "LOCAL_CSV_IMPORT_DISABLED"
-LOCAL_CSV_IMPORT_NOT_FOUND = "LOCAL_CSV_IMPORT_NOT_FOUND"
-LOCAL_CSV_EXPORT_NOT_PREVIEWED = "LOCAL_CSV_EXPORT_NOT_PREVIEWED"
-LOCAL_CSV_EXPORT_CONFLICT = "LOCAL_CSV_EXPORT_CONFLICT"
-LOCAL_CSV_INVENTORY_MISMATCH = "LOCAL_CSV_INVENTORY_MISMATCH"
-LOCAL_CSV_SECONDARY_CONFLICT = "LOCAL_CSV_SECONDARY_CONFLICT"
-CONFLICT_POLICIES = frozenset({"SKIP", "REJECT"})
+# Re-export for routes/tests that import from the use-case module.
+__all__ = [
+    "ConfirmLocalCsvImport",
+    "GetLocalCsvImport",
+    "LOCAL_CSV_EXPORT_CONFLICT",
+    "LOCAL_CSV_IMPORT_DISABLED",
+    "LOCAL_CSV_IMPORT_NOT_FOUND",
+    "LOCAL_CSV_INVENTORY_MISMATCH",
+    "LOCAL_CSV_SECONDARY_CONFLICT",
+    "LocalCsvImportDisabledError",
+    "LocalCsvImportError",
+    "PreviewLocalCsvImport",
+]
 
-
-class LocalCsvImportError(Exception):
-    def __init__(self, code: str, detail: str) -> None:
-        super().__init__(detail)
-        self.code = code
-
-
-class LocalCsvImportDisabledError(LocalCsvImportError):
-    def __init__(self) -> None:
-        super().__init__(LOCAL_CSV_IMPORT_DISABLED, "Local CSV import is not enabled")
+from src.domain.local_csv_import.errors import (  # noqa: E402
+    LOCAL_CSV_IMPORT_DISABLED,
+    LOCAL_CSV_SECONDARY_CONFLICT,
+)
 
 
 class PreviewLocalCsvImport:
@@ -118,13 +123,16 @@ class PreviewLocalCsvImport:
             updated_at=now,
             rows=tuple(rows),
         )
-        return self._import_repo.save(record)
+        return self._import_repo.stage_or_get_existing(record)
 
     @staticmethod
     def _to_row(
         import_id: str, parsed: ParsedLocalCsvRow, errors: tuple[str, ...]
     ) -> LocalCsvImportRow:
         values = parsed.values
+        requires_review = bool(parsed.requires_review)
+        if not values["position_code"]:
+            requires_review = True
         return LocalCsvImportRow(
             id=str(uuid.uuid4()),
             import_id=import_id,
@@ -141,8 +149,9 @@ class PreviewLocalCsvImport:
             quantity=parsed.quantity,
             quantity_status=values["quantity_status"],
             detection_status=values["detection_status"],
-            source=LOCAL_CSV_IMPORT_SOURCE,
-            requires_review=bool(parsed.requires_review),
+            detection_source=parsed.detection_source,
+            ingestion_source=parsed.ingestion_source or INGESTION_SOURCE_LOCAL_CSV_IMPORT,
+            requires_review=requires_review,
             error_code=values["error_code"] or None,
             notes=values["notes"] or None,
             status="REJECTED" if errors else "PREVIEW_VALID",
@@ -156,15 +165,22 @@ class ConfirmLocalCsvImport:
         self,
         *,
         import_repo: LocalCsvImportRepository,
+        result_writer: LocalCsvInventoryResultWriter,
         clock: Clock,
         enabled: bool,
     ) -> None:
         self._import_repo = import_repo
+        self._result_writer = result_writer
         self._clock = clock
         self._enabled = enabled
 
     def execute(
-        self, *, inventory_id: str, export_id: str, conflict_policy: str = "SKIP"
+        self,
+        *,
+        inventory_id: str,
+        export_id: str,
+        conflict_policy: str = "SKIP",
+        confirmed_by_user_id: str | None = None,
     ) -> tuple[LocalCsvImport, bool]:
         if not self._enabled:
             raise LocalCsvImportDisabledError()
@@ -174,50 +190,26 @@ class ConfirmLocalCsvImport:
                 "LOCAL_CSV_CONFLICT_POLICY_INVALID",
                 f"conflict_policy must be one of: {', '.join(sorted(CONFLICT_POLICIES))}",
             )
-        record = self._import_repo.get_by_export_id(
-            inventory_id=inventory_id, export_id=export_id.strip()
-        )
-        if record is None:
-            raise LocalCsvImportError(
-                LOCAL_CSV_EXPORT_NOT_PREVIEWED, "export_id has not been previewed"
-            )
-        if record.status == "CONFIRMED":
-            return record, True
-
-        eligible = {row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"}
-        conflicts = self._import_repo.find_confirmed_secondary_keys(eligible)
-        if conflicts and policy == "REJECT":
-            raise LocalCsvImportError(
-                LOCAL_CSV_SECONDARY_CONFLICT,
-                "One or more capture_session_id + capture_photo_id keys already exist",
-            )
-
-        rows = tuple(
-            replace(
-                row,
-                status=(
-                    "DUPLICATE"
-                    if row.status == "PREVIEW_VALID" and row.secondary_key in conflicts
-                    else "IMPORTED"
-                    if row.status == "PREVIEW_VALID"
-                    else row.status
-                ),
-            )
-            for row in record.rows
-        )
-        now = self._clock.now()
-        confirmed = replace(
-            record,
-            status="CONFIRMED",
-            valid_rows=sum(row.status == "IMPORTED" for row in rows),
-            duplicate_rows=sum(row.status == "DUPLICATE" for row in rows),
-            rejected_rows=sum(row.status == "REJECTED" for row in rows),
+        return self._import_repo.confirm_import_atomically(
+            inventory_id=inventory_id,
+            export_id=export_id.strip(),
             conflict_policy=policy,
-            confirmed_at=now,
-            updated_at=now,
-            rows=rows,
+            confirmed_by_user_id=confirmed_by_user_id,
+            apply_productive=self._apply_productive,
+            clock_now=self._clock.now,
         )
-        return self._import_repo.save(confirmed), False
+
+    def _apply_productive(
+        self,
+        record: LocalCsvImport,
+        rows_to_import: tuple[LocalCsvImportRow, ...],
+        confirmed_by_user_id: str | None,
+    ):
+        return self._result_writer.apply_import(
+            record=record,
+            rows_to_import=rows_to_import,
+            confirmed_by_user_id=confirmed_by_user_id,
+        )
 
 
 class GetLocalCsvImport:

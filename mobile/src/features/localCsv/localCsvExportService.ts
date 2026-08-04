@@ -39,7 +39,11 @@ export class LocalCsvExportService {
     if (!session) {
       throw new Error('No se encontró la captura local.');
     }
-    const photos = await this.deps.captureRepo.listPhotos(sessionId);
+    // Prefer exact freeze snapshot; never invent a live set when freeze exists.
+    let photos = await this.deps.captureRepo.listPhotos(sessionId);
+    if (session.active_freeze_id) {
+      photos = await this.deps.captureRepo.listFreezePhotos(session.active_freeze_id);
+    }
     const drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => []);
     const confirmed = await this.deps.confirmedRepo.listForSession(sessionId).catch(() => []);
 
@@ -51,6 +55,8 @@ export class LocalCsvExportService {
       deviceId: this.deps.deviceId,
       companyId: this.deps.companyId ?? null,
       clientId: this.deps.clientId ?? null,
+      freezeId: session.active_freeze_id,
+      freezeGeneration: session.capture_freeze_generation,
     });
 
     const contentFingerprint = await sha256Hex(
@@ -90,8 +96,10 @@ export class LocalCsvExportService {
       aisle_id: session.aisle_id,
       row_count: built.rowCount,
       checksum_sha256: built.checksumSha256,
+      checksum_algorithm: built.checksumAlgorithm,
       content_fingerprint: contentFingerprint,
       file_uri: finalUri,
+      freeze_id: built.freezeId,
       exported_at: built.exportedAt,
       shared_at: null,
       created_at: now,

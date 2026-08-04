@@ -48,6 +48,10 @@ export interface CaptureSessionRow {
   readonly capture_frozen_photo_count: number | null;
   /** Monotonic freeze generation (idempotent re-freeze increments). */
   readonly capture_freeze_generation: number;
+  /** Active freeze snapshot id (exact photo set for CSV/upload). */
+  readonly active_freeze_id: string | null;
+  /** Upload scheduling policy: MANUAL | WHEN_CONNECTED | NOW */
+  readonly upload_policy: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }

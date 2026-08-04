@@ -25,6 +25,7 @@ import { LocalDetectionDraftRepository } from '../../database/repositories/local
 import { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
 import { LocalCsvExportService } from '../../features/localCsv/localCsvExportService';
+import { getOrCreateInstallationId } from '../../shared/installationId';
 import { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
 import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
 import { PreliminaryDetectionApi } from '../../features/preliminarySync/preliminaryDetectionApi';
@@ -170,6 +171,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
   const localCsvExportRepo = new LocalCsvExportRepository(db);
+  const installationId = await getOrCreateInstallationId();
   const localCsvExport =
     config.flags.mobileCsvExport !== false
       ? new LocalCsvExportService({
@@ -177,7 +179,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
           draftRepo: localDetectionDrafts,
           confirmedRepo: confirmedLocalResults,
           exportRepo: localCsvExportRepo,
-          deviceId: `mobile-${config.environment}-v${config.versionCode}`,
+          deviceId: installationId,
           companyId: null,
           clientId: null,
           enabled: true,

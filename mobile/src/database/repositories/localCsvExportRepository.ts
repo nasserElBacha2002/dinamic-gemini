@@ -11,8 +11,10 @@ export interface LocalCsvExportRow {
   readonly aisle_id: string | null;
   readonly row_count: number;
   readonly checksum_sha256: string;
+  readonly checksum_algorithm?: string;
   readonly content_fingerprint: string;
   readonly file_uri: string | null;
+  readonly freeze_id?: string | null;
   readonly exported_at: string;
   readonly shared_at: string | null;
   readonly created_at: string;
@@ -42,8 +44,8 @@ export class LocalCsvExportRepository {
         `INSERT INTO local_csv_exports (
           id, export_id, schema_version, scope, capture_session_id, inventory_id, aisle_id,
           row_count, checksum_sha256, content_fingerprint, file_uri, exported_at, shared_at,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          created_at, updated_at, freeze_id, checksum_algorithm
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         row.id,
         row.export_id,
         row.schema_version,
@@ -59,6 +61,8 @@ export class LocalCsvExportRepository {
         row.shared_at,
         row.created_at,
         row.updated_at,
+        row.freeze_id ?? null,
+        row.checksum_algorithm ?? 'sha256',
       ),
     );
   }

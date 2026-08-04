@@ -958,8 +958,10 @@ def get_confirm_local_csv_import_use_case(clock: Clock = Depends(get_clock)):
     from src.config import load_settings
 
     settings = load_settings()
+    container = get_app_container()
     return ConfirmLocalCsvImport(
-        import_repo=get_app_container().get_local_csv_import_repo(),
+        import_repo=container.get_local_csv_import_repo(),
+        result_writer=container.get_local_csv_result_writer(),
         clock=clock,
         enabled=bool(getattr(settings, "server_csv_import_enabled", False)),
     )

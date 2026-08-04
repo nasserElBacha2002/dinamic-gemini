@@ -21,6 +21,9 @@ import {
   stageDurationMs,
   type CaptureFinishStage,
 } from './finishObservability';
+import { CaptureFreezeService } from './captureFreezeService';
+
+export type UploadPolicy = 'MANUAL' | 'WHEN_CONNECTED' | 'NOW';
 
 const VALIDATION_TIMEOUT_MS = 15_000;
 /** Re-scan gallery while capture is active (missed MediaStore events / delayed indexing). */
@@ -149,6 +152,8 @@ export class CaptureService {
   private readonly finishInstrumentation: boolean;
   private readonly finishSafeMediaCheck: boolean;
   private readonly sessionFreeze: boolean;
+  private readonly freezeService: CaptureFreezeService;
+  private sqliteBusyCountFinish = 0;
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -165,6 +170,7 @@ export class CaptureService {
     this.finishInstrumentation = adapters.finishInstrumentation ?? true;
     this.finishSafeMediaCheck = adapters.finishSafeMediaCheck ?? true;
     this.sessionFreeze = adapters.sessionFreeze ?? true;
+    this.freezeService = new CaptureFreezeService(repo);
     this.coordinator = createScanCoordinator(() => this.runScanOnce());
   }
 
@@ -610,14 +616,26 @@ export class CaptureService {
       });
 
       if (this.sessionFreeze) {
-        const frozenCount = countFinishPhotos(this.photos).photo_count - countFinishPhotos(this.photos).excluded_count;
-        const frozen = await this.repo.markCaptureFrozen(sessionId, {
-          frozenAt: new Date().toISOString(),
-          photoCount: Math.max(0, frozenCount),
-        });
+        const frozen = await this.freezeService.freezeSession(sessionId, this.photos);
+        this.sqliteBusyCountFinish = 0;
         if (this.session?.id === sessionId) {
-          this.session = frozen;
+          const refreshed = await this.repo.getSession(sessionId);
+          if (refreshed) {
+            this.session = refreshed;
+          }
         }
+        this.emitFinishObs('capture.finish_freeze_completed', sessionId, this.session ?? sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'finishing',
+          durationMs: 0,
+          newMediaCandidateCount: frozen.photoCount,
+        });
+        this.logger.info('session_finish', {
+          sessionId,
+          handoff: 'freeze_snapshot',
+          freezeId: frozen.freezeId,
+          photoCount: frozen.photoCount,
+        });
       }
 
       // Re-assert finishing before review: concurrent writers / SQLite recovery can
@@ -720,6 +738,7 @@ export class CaptureService {
       statusAfter: extra.statusAfter ?? null,
       activeValidationCount: extra.activeValidationCount ?? this.activeValidations.size,
       newMediaCandidateCount: extra.newMediaCandidateCount ?? null,
+      sqliteBusyCount: this.sqliteBusyCountFinish,
       errorCode: extra.errorCode ?? null,
       errorStage: extra.errorStage ?? null,
       foregroundServiceActive: extra.foregroundServiceActive ?? this.fgsActive,
@@ -817,38 +836,35 @@ export class CaptureService {
 
   /**
    * Close the aisle locally without requiring upload or /process.
-   * Upload may continue in background when enqueueLater is true.
+   * Upload scheduling follows uploadPolicy; MANUAL never enqueues.
    */
   async completeLocalSession(options?: {
-    readonly enqueueUpload?: boolean;
-  }): Promise<string> {
+    readonly uploadPolicy?: UploadPolicy;
+  }): Promise<{ readonly sessionId: string; readonly uploadPolicy: UploadPolicy }> {
     const sessionId = this.requireSessionId();
+    const policy: UploadPolicy = options?.uploadPolicy ?? 'MANUAL';
     const current = await this.repo.getSession(sessionId);
     if (!current) {
       throw new Error('No se encontró la captura local.');
     }
     if (current.status === 'local_completed') {
-      return sessionId;
+      return { sessionId, uploadPolicy: (current.upload_policy as UploadPolicy) ?? policy };
     }
     if (current.status === 'review') {
       await this.reloadPhotos(sessionId);
       this.assertPhotosReadyForUpload();
-      if (this.sessionFreeze && !current.capture_frozen_at) {
-        const frozenCount =
-          countFinishPhotos(this.photos).photo_count - countFinishPhotos(this.photos).excluded_count;
-        await this.repo.markCaptureFrozen(sessionId, {
-          frozenAt: new Date().toISOString(),
-          photoCount: Math.max(0, frozenCount),
-        });
+      if (this.sessionFreeze && !current.active_freeze_id) {
+        await this.freezeService.freezeSession(sessionId, this.photos);
       }
+      await this.repo.setUploadPolicy(sessionId, policy);
       await this.repo.updateSessionStatus(sessionId, 'local_completed');
       await this.loadSession(sessionId, false);
       this.logger.info('session_finish', {
         sessionId,
         handoff: 'local_completed',
-        enqueueUpload: options?.enqueueUpload === true,
+        uploadPolicy: policy,
       });
-      return sessionId;
+      return { sessionId, uploadPolicy: policy };
     }
     if (current.status === 'active' || current.status === 'paused' || current.status === 'finishing') {
       await this.finalizeCaptureForUpload({ targetStatus: 'review' });
@@ -1021,13 +1037,29 @@ export class CaptureService {
       : failureReason === 'undecodable'
         ? 'undecodable'
         : 'unstable';
-    const applied = await this.repo.applyStabilityResult({
-      sessionId,
-      assetId: image.assetId,
-      status,
-      error: failureReason,
-      checks: outcome.checks,
-    });
+    const applied = await this.repo.applyStabilityResult(
+      {
+        sessionId,
+        assetId: image.assetId,
+        status,
+        error: failureReason,
+        checks: outcome.checks,
+      },
+      {
+        onBusyRetry: ({ attempt, maxAttempts }) => {
+          this.sqliteBusyCountFinish += 1;
+          emitObservability(this.observability?.reporter ?? null, {
+            name: 'sqlite.busy_retry',
+            sessionId,
+            attributes: {
+              attempt,
+              max_attempts: maxAttempts,
+              scope: 'stability',
+            },
+          });
+        },
+      },
+    );
     if (!applied) return;
     if (status === 'stable') {
       const cursor = { dateAdded: image.dateAdded, assetId: image.assetId };

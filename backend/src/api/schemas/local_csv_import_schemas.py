@@ -28,11 +28,15 @@ class LocalCsvImportRowResponse(BaseModel):
     quantity: int | None
     quantity_status: str
     detection_status: str
-    source: Literal["LOCAL_CSV_IMPORT"]
+    """Detection provenance from CSV column `source`."""
+    source: str
+    """Server-assigned ingestion channel."""
+    ingestion_source: Literal["LOCAL_CSV_IMPORT"] = "LOCAL_CSV_IMPORT"
     requires_review: bool
     error_code: str | None
     notes: str | None
     status: str
+    productive_result_id: str | None = None
     validation_errors: list[str]
     validation_warnings: list[str] = Field(
         description=(
@@ -55,4 +59,5 @@ class LocalCsvImportResponse(BaseModel):
     duplicate: bool = False
     created_at: datetime
     confirmed_at: datetime | None
+    confirmed_by_user_id: str | None = None
     rows: list[LocalCsvImportRowResponse]

@@ -1,6 +1,13 @@
 /**
  * RFC 4180 CSV helpers for local export/import (UTF-8, formula-safe).
+ *
+ * Contract notes (schema v1):
+ * - `source` = detection provenance (LOCAL_CODE_SCAN, LOCAL_PENDING, …)
+ * - Server assigns ingestion_source=LOCAL_CSV_IMPORT; clients must not declare it as `source`
+ * - Extra headers (company_id, …) are allowed; backend required set is a subset
  */
+
+import { sha256Hex as realSha256Hex } from '../../core/payloadFingerprint';
 
 export const LOCAL_CSV_SCHEMA_VERSION = '1';
 
@@ -34,11 +41,25 @@ export const LOCAL_CSV_HEADERS = [
   'confirmed_manually',
   'error_code',
   'notes',
+  'freeze_id',
+  'freeze_generation',
 ] as const;
 
 export type LocalCsvHeader = (typeof LOCAL_CSV_HEADERS)[number];
 
 export type LocalCsvRow = Record<LocalCsvHeader, string>;
+
+/** Detection sources accepted by backend parser (CSV column `source`). */
+export const LOCAL_CSV_DETECTION_SOURCES = [
+  'LOCAL_PENDING',
+  'LOCAL_CODE_SCAN',
+  'LOCAL_MANUAL',
+  'LOCAL_MANUAL_CORRECTION',
+  'LOCAL_POSITION_LABEL',
+  'LOCAL_CODE_SCAN_SHADOW',
+] as const;
+
+export type LocalCsvDetectionSource = (typeof LOCAL_CSV_DETECTION_SOURCES)[number];
 
 /** Neutralize CSV injection for spreadsheet consumers; reversible on import by stripping prefix. */
 export function neutralizeCsvFormula(value: string): string {
@@ -68,20 +89,9 @@ export function buildCsvDocument(rows: readonly LocalCsvRow[]): string {
   return `${lines.join('\n')}\n`;
 }
 
+/** Real SHA-256 hex (same algorithm as payload fingerprints). */
 export async function sha256Hex(text: string): Promise<string> {
-  // Prefer Web Crypto when available (Hermes / modern RN); fall back to FNV-1a for tests/Node without subtle.
-  const subtle = globalThis.crypto?.subtle;
-  if (subtle) {
-    const data = new TextEncoder().encode(text);
-    const digest = await subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-  let hash = 2166136261;
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a32_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  return realSha256Hex(text);
 }
+
+export const CHECKSUM_ALGORITHM = 'sha256' as const;

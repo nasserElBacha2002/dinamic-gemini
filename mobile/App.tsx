@@ -377,13 +377,27 @@ export default function App(): JSX.Element {
               })
               .catch((e) => setError(messageOf(e)));
           }}
-          onSaveLocal={(sessionId) => {
+          onSaveLocalOnly={(sessionId) => {
             setWorkSessionId(sessionId);
             void services.capture
-              .completeLocalSession({ enqueueUpload: true })
-              .then((sid) => {
+              .completeLocalSession({ uploadPolicy: 'MANUAL' })
+              .then(({ sessionId: sid }) => {
                 setWorkSessionId(sid);
-                void services.uploadQueue.enqueueSession(sid);
+                setScreen('local-activity');
+              })
+              .catch((e) => setError(messageOf(e)));
+          }}
+          onSaveLocalWhenConnected={(sessionId) => {
+            setWorkSessionId(sessionId);
+            void services.capture
+              .completeLocalSession({ uploadPolicy: 'WHEN_CONNECTED' })
+              .then(({ sessionId: sid, uploadPolicy }) => {
+                setWorkSessionId(sid);
+                if (uploadPolicy === 'WHEN_CONNECTED' || uploadPolicy === 'NOW') {
+                  void services.uploadQueue.enqueueSession(sid).catch(() => {
+                    // Scheduling failure must not undo local close.
+                  });
+                }
                 setScreen('local-activity');
               })
               .catch((e) => setError(messageOf(e)));

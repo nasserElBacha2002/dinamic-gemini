@@ -71,6 +71,8 @@ describe('Phase 4 local CSV export', () => {
       capture_frozen_at: now,
       capture_frozen_photo_count: 1,
       capture_freeze_generation: 1,
+      active_freeze_id: null,
+      upload_policy: null,
       created_at: now,
       updated_at: now,
     } as CaptureSessionRow;

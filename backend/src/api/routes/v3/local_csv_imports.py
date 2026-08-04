@@ -9,6 +9,7 @@ from src.api.dependencies import (
     get_confirm_local_csv_import_use_case,
     get_get_local_csv_import_use_case,
     get_preview_local_csv_import_use_case,
+    require_inventory_client_scope,
 )
 from src.api.errors.structured_api_http import StructuredApiHttpError
 from src.api.schemas.local_csv_import_schemas import (
@@ -16,6 +17,7 @@ from src.api.schemas.local_csv_import_schemas import (
     LocalCsvImportResponse,
     LocalCsvImportRowResponse,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.services.local_csv_parser import LocalCsvDocumentError
 from src.application.use_cases.inventories.manage_local_csv_import import (
     LOCAL_CSV_EXPORT_CONFLICT,
@@ -30,6 +32,7 @@ from src.application.use_cases.inventories.manage_local_csv_import import (
 )
 from src.config import load_settings
 from src.domain.local_csv_import.entities import LocalCsvImport
+from src.domain.local_csv_import.sources import INGESTION_SOURCE_LOCAL_CSV_IMPORT
 
 router = APIRouter()
 
@@ -48,6 +51,7 @@ def _response(record: LocalCsvImport, *, duplicate: bool = False) -> LocalCsvImp
         duplicate=duplicate,
         created_at=record.created_at,
         confirmed_at=record.confirmed_at,
+        confirmed_by_user_id=record.confirmed_by_user_id,
         rows=[
             LocalCsvImportRowResponse(
                 row_number=row.row_number,
@@ -62,11 +66,13 @@ def _response(record: LocalCsvImport, *, duplicate: bool = False) -> LocalCsvImp
                 quantity=row.quantity,
                 quantity_status=row.quantity_status,
                 detection_status=row.detection_status,
-                source="LOCAL_CSV_IMPORT",
+                source=row.detection_source,
+                ingestion_source=INGESTION_SOURCE_LOCAL_CSV_IMPORT,  # type: ignore[arg-type]
                 requires_review=row.requires_review,
                 error_code=row.error_code,
                 notes=row.notes,
                 status=row.status,
+                productive_result_id=row.productive_result_id,
                 validation_errors=list(row.validation_errors),
                 validation_warnings=list(row.validation_warnings),
             )
@@ -124,12 +130,14 @@ async def _read_csv_request(request: Request, max_bytes: int) -> bytes:
     summary="Validate and stage a local CSV import",
     description=(
         "Accepts multipart field `file` or a raw UTF-8 CSV body. Formula-like text cells "
-        "are neutralized before staging. No source assets or final imported rows are created."
+        "are neutralized before staging. Detection `source` is preserved; server assigns "
+        "ingestion_source=LOCAL_CSV_IMPORT. No productive results until confirm."
     ),
 )
 async def preview_local_csv_import(
     inventory_id: str,
     request: Request,
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
     use_case: PreviewLocalCsvImport = Depends(get_preview_local_csv_import_use_case),
 ) -> LocalCsvImportResponse:
     settings = load_settings()
@@ -155,6 +163,7 @@ async def preview_local_csv_import(
 def confirm_local_csv_import(
     inventory_id: str,
     body: ConfirmLocalCsvImportRequest,
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
     use_case: ConfirmLocalCsvImport = Depends(get_confirm_local_csv_import_use_case),
 ) -> LocalCsvImportResponse:
     try:
@@ -162,6 +171,7 @@ def confirm_local_csv_import(
             inventory_id=inventory_id,
             export_id=body.export_id,
             conflict_policy=body.conflict_policy,
+            confirmed_by_user_id=principal.actor_id or None,
         )
         return _response(record, duplicate=duplicate)
     except LocalCsvImportError as exc:
@@ -176,6 +186,7 @@ def confirm_local_csv_import(
 def get_local_csv_import(
     inventory_id: str,
     import_id: str,
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
     use_case: GetLocalCsvImport = Depends(get_get_local_csv_import_use_case),
 ) -> LocalCsvImportResponse:
     try:
