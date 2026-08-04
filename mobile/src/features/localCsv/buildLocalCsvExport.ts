@@ -44,6 +44,34 @@ function cell(value: string | number | null | undefined): string {
   return String(value);
 }
 
+/**
+ * Fail closed: ZIP handoff must not ship unresolved LOCAL_PENDING-only captures
+ * (backend would stage photos with zero inventory results).
+ */
+export function assertLocalCsvRowsExportReady(rows: readonly LocalCsvRow[]): void {
+  if (rows.length === 0) {
+    throw new Error('PACKAGE_EXPORT_EMPTY: no hay fotos para exportar.');
+  }
+  const pending = rows.filter((r) => String(r.source).toUpperCase() === 'LOCAL_PENDING');
+  if (pending.length > 0) {
+    throw new Error(
+      `PACKAGE_EXPORT_UNRESOLVED: ${pending.length} foto(s) sin detectar/confirmar (LOCAL_PENDING). Completá el escaneo local o la revisión antes de exportar el ZIP.`,
+    );
+  }
+  const products = rows.filter((r) => {
+    const source = String(r.source).toUpperCase();
+    if (source === 'LOCAL_POSITION_LABEL') {
+      return false;
+    }
+    return String(r.internal_code ?? '').trim().length > 0;
+  });
+  if (products.length === 0) {
+    throw new Error(
+      'PACKAGE_EXPORT_NO_PRODUCTS: el export no tiene productos con código interno. Escaneá o confirmá al menos un SKU antes de exportar.',
+    );
+  }
+}
+
 export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
   const exportId = input.exportId ?? createId();
   const exportedAt = input.exportedAt ?? new Date().toISOString();
@@ -145,6 +173,7 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
 
 export async function buildLocalCsvExport(input: LocalCsvExportInput): Promise<LocalCsvExportResult> {
   const rows = buildLocalCsvRows(input);
+  assertLocalCsvRowsExportReady(rows);
   const exportId = rows[0]?.export_id ?? input.exportId ?? createId();
   const exportedAt = rows[0]?.exported_at ?? input.exportedAt ?? new Date().toISOString();
   const csv = buildCsvDocument(rows);

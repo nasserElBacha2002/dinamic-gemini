@@ -90,6 +90,10 @@ def test_materialize_skips_position_label_and_retires_prior_item() -> None:
     products = product_repo.list_by_position(positions[0].id)
     assert products[0].sku == "22242925205"
     assert products[0].detected_quantity == 100000
+    summary = positions[0].detected_summary_json or {}
+    assert summary.get("source_asset_id") == "asset-1"
+    assert summary.get("traceability_status") == "valid"
+    assert summary.get("has_valid_evidence") is True
 
     retired = position_repo.get_by_id(position_id_for_productive("label-1"))
     assert retired is not None

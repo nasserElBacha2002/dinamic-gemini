@@ -31,7 +31,7 @@ describe('Phase 4 local CSV export', () => {
     expect(escapeCsvField('line1\nline2')).toBe('"line1\nline2"');
   });
 
-  it('builds deterministic CSV with stable headers', async () => {
+    it('builds deterministic CSV with stable headers', async () => {
     const now = '2026-01-01T00:00:00.000Z';
     const session = {
       id: 'session-1',
@@ -127,10 +127,60 @@ describe('Phase 4 local CSV export', () => {
       updated_at: now,
     } as CapturePhotoRow;
 
+    const draft = {
+      id: 'd-product',
+      capture_photo_id: photo.id,
+      capture_session_id: 'session-1',
+      client_file_id: 'cf-1',
+      status: 'RESOLVED' as const,
+      raw_value_hash: 'sha256:abc',
+      internal_code: 'SKU-100',
+      quantity: 3,
+      quantity_status: 'PRESENT',
+      detected_format: 'PLAIN',
+      detected_symbology: 'QR_CODE',
+      parser_version: '1.1.0',
+      detector_version: 'mlkit-barcode-1.0.0',
+      candidate_count: 1,
+      error_code: null,
+      processing_ms: 10,
+      comparison_status: 'PENDING',
+      compare_result: null,
+      compared_at: null,
+      prepared_asset_fingerprint: 'sha256:x',
+      scan_owner: null,
+      scan_generation: 1,
+      sync_status: 'NOT_READY' as const,
+      sync_attempt_count: 0,
+      sync_next_retry_at: null,
+      sync_last_error_code: null,
+      server_preliminary_id: null,
+      synced_at: null,
+      sync_lease_token: null,
+      sync_lease_expires_at: null,
+      detected_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+
+    await expect(
+      buildLocalCsvExport({
+        session,
+        photos: [photo],
+        drafts: [],
+        confirmed: [],
+        deviceId: 'dev-1',
+        companyId: null,
+        clientId: 'client-1',
+        exportId: 'export-pending',
+        exportedAt: now,
+      }),
+    ).rejects.toThrow(/PACKAGE_EXPORT_UNRESOLVED/);
+
     const result = await buildLocalCsvExport({
       session,
       photos: [photo],
-      drafts: [],
+      drafts: [draft],
       confirmed: [],
       deviceId: 'dev-1',
       companyId: null,
@@ -141,7 +191,8 @@ describe('Phase 4 local CSV export', () => {
     expect(result.rowCount).toBe(1);
     expect(result.csv.startsWith(LOCAL_CSV_HEADERS.join(','))).toBe(true);
     expect(result.csv).toContain('export-1');
-    expect(result.csv).toContain('LOCAL_PENDING');
+    expect(result.csv).toContain('LOCAL_CODE_SCAN');
+    expect(result.csv).toContain('SKU-100');
     expect(result.checksumSha256.length).toBeGreaterThan(8);
     expect(buildCsvDocument([])).toContain('schema_version');
   });

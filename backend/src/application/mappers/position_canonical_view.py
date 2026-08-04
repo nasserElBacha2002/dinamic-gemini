@@ -26,6 +26,8 @@ from src.domain.quantity.resolution import (
     resolve_final_qty,
 )
 from src.domain.traceability import (
+    TraceabilityStatus,
+    normalize_traceability_status,
     resolve_has_valid_evidence_displayable,
 )
 
@@ -170,12 +172,35 @@ def resolve_qty_contract_from_position_legacy(p: Position, *, has_evidence: bool
     )
 
 
+def _is_local_csv_detected_summary(summary_json: dict) -> bool:
+    ingestion = str(summary_json.get("ingestion_source") or "").strip().upper()
+    if "LOCAL_CSV" in ingestion:
+        return True
+    return bool(
+        summary_json.get("local_csv_productive_result_id")
+        or summary_json.get("local_csv_import_row_id")
+    )
+
+
 def _traceability_from_position(
     p: Position,
 ) -> tuple[str | None, str | None, str | None, str | None, int | None, int | None, bool]:
     summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
-    source_image_id: str | None = summary_json.get("source_image_id") or None
+    source_image_id: str | None = summary_json.get("source_image_id") or summary_json.get(
+        "source_asset_id"
+    ) or None
+    if isinstance(source_image_id, str):
+        source_image_id = source_image_id.strip() or None
+    else:
+        source_image_id = None
     traceability_status: str | None = summary_json.get("traceability_status") or None
+    # Local ZIP/CSV imports are not CV-job traced; treat linked source assets as VALID
+    # so list chips and detail eligibility match package evidence.
+    if _is_local_csv_detected_summary(summary_json) and source_image_id:
+        if normalize_traceability_status(traceability_status) != TraceabilityStatus.VALID.value:
+            traceability_status = TraceabilityStatus.VALID.value
+        if summary_json.get("has_valid_evidence") is not True:
+            summary_json = {**summary_json, "has_valid_evidence": True}
     traceability_warning: str | None = summary_json.get("traceability_warning") or None
     source_image_original_filename: str | None = (
         summary_json.get("source_image_original_filename") or None

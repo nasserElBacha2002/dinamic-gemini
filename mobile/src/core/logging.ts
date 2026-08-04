@@ -23,6 +23,8 @@ export type LogEvent =
   | 'upload_limits_refreshed'
   | 'upload_limits_fallback'
   | 'upload_enqueue_missing_batch'
+  | 'upload_enqueue_skipped_policy'
+  | 'upload_enqueue_session_skipped_policy'
   | 'upload_missing_sequence_number'
   | 'ordered_capture_ensure_on_enqueue_failed'
   | 'ordered_capture_seal_preflight_failed'

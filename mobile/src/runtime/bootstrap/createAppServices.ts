@@ -381,10 +381,25 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     onPhotoStable: (sessionId, photoId) => {
       // Serialize upload + offline enqueue: parallel fire-and-forget stampedes SQLite
       // (database is locked) when many photos stabilize during "Finalizar captura".
+      // With localCompletion/csvExport, server upload is deferred until explicit policy
+      // (NOW / WHEN_CONNECTED) or completeReview → uploading — not on every stable photo.
       photoStableChain = photoStableChain
         .then(async () => {
           await uploadQueue.enqueuePhoto(sessionId, photoId);
-          await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
+          const session = await captureRepo.getSession(sessionId);
+          const localZipMode =
+            config.flags.localCompletion === true || config.flags.mobileCsvExport === true;
+          const policy = session?.upload_policy;
+          const status = session?.status;
+          const allowOfflineUpload =
+            !localZipMode ||
+            policy === 'NOW' ||
+            policy === 'WHEN_CONNECTED' ||
+            status === 'uploading' ||
+            status === 'upload_review';
+          if (allowOfflineUpload) {
+            await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
+          }
         })
         .catch((error) => {
           logger.warn('recovery', {

@@ -94,7 +94,9 @@ def _detected_summary(result: LocalCsvProductiveResult) -> dict:
     if result.source_asset_id:
         summary["source_image_id"] = result.source_asset_id
         summary["source_asset_id"] = result.source_asset_id
-        summary["traceability_status"] = "ok"
+        # Domain TraceabilityStatus.VALID — required for evidence display (Phase 4.8).
+        summary["traceability_status"] = "valid"
+        summary["has_valid_evidence"] = True
     if result.capture_order is not None:
         summary["source_image_sequence"] = result.capture_order
     return summary

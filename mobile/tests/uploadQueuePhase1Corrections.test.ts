@@ -648,4 +648,42 @@ describe('UploadQueue phase1 corrections', () => {
     expect(photos.get('stale')?.last_upload_error_code).toBe('UPLOAD_STALE');
     await queue.dispose();
   });
+
+  it('skips enqueue while capturing under localCompletion without upload policy', async () => {
+    const s1 = session('s1', { status: 'active', upload_policy: null });
+    const { queue, photos, repo } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [photo('p1', 's1', { upload_status: 'not_queued' })],
+      },
+    });
+    (repo.listStableNotQueued as jest.Mock).mockImplementation(async (sessionId: string) =>
+      [...photos.values()].filter(
+        (p) => p.capture_session_id === sessionId && p.upload_status === 'not_queued',
+      ),
+    );
+    await queue.enqueuePhoto('s1', 'p1');
+    expect(photos.get('p1')?.upload_status).toBe('not_queued');
+    await queue.enqueueSession('s1');
+    expect(photos.get('p1')?.upload_status).toBe('not_queued');
+    await queue.dispose();
+  });
+
+  it('enqueues after completeReview uploading status under localCompletion', async () => {
+    const s1 = session('s1', { status: 'uploading', upload_policy: null });
+    const { queue, photos, repo } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [photo('p1', 's1', { upload_status: 'not_queued' })],
+      },
+    });
+    (repo.listStableNotQueued as jest.Mock).mockImplementation(async (sessionId: string) =>
+      [...photos.values()].filter(
+        (p) => p.capture_session_id === sessionId && p.upload_status === 'not_queued',
+      ),
+    );
+    await queue.enqueuePhoto('s1', 'p1');
+    expect(photos.get('p1')?.upload_status).toBe('queued');
+    await queue.dispose();
+  });
 });

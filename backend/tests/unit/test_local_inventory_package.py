@@ -363,3 +363,128 @@ def test_preview_rejects_inventory_mismatch(tmp_path: Path) -> None:
         "INVENTORY_NOT_FOUND",
         "LOCAL_INVENTORY_PACKAGE_INVENTORY_MISMATCH",
     }
+
+
+def _pending_csv_bytes(*, export_id: str = "export-pending-1", photo_id: str = "photo-1") -> bytes:
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=HEADERS, lineterminator="\r\n")
+    writer.writeheader()
+    writer.writerow(
+        {
+            "schema_version": "1",
+            "export_id": export_id,
+            "exported_at": "2026-08-04T10:00:00Z",
+            "device_id": "device-1",
+            "inventory_id": "inventory-1",
+            "aisle_id": "aisle-1",
+            "capture_session_id": "session-1",
+            "capture_photo_id": photo_id,
+            "client_file_id": "file-1",
+            "capture_order": "1",
+            "captured_at": "2026-08-04T09:59:00Z",
+            "position_code": "",
+            "internal_code": "",
+            "quantity": "",
+            "quantity_status": "MISSING",
+            "detection_status": "stable",
+            "source": "LOCAL_PENDING",
+            "requires_review": "true",
+            "error_code": "",
+            "notes": "",
+        }
+    )
+    return output.getvalue().encode()
+
+
+def _build_pending_zip(
+    *,
+    export_id: str = "export-pending-1",
+    photo_id: str = "photo-1",
+    photo_bytes: bytes = JPEG_BYTES,
+) -> bytes:
+    csv_bytes = _pending_csv_bytes(export_id=export_id, photo_id=photo_id)
+    file_name = f"0001_{photo_id}.jpg"
+    sha = hashlib.sha256(photo_bytes).hexdigest()
+    manifest = {
+        "package_kind": "DINAMIC_LOCAL_AISLE_EXPORT",
+        "package_version": 2,
+        "status": "COMPLETE",
+        "export_id": export_id,
+        "inventory_id": "inventory-1",
+        "aisle_id": "aisle-1",
+        "capture_session_id": "session-1",
+        "freeze_id": "freeze-1",
+        "row_count": 1,
+        "expected_photo_count": 1,
+        "included_photo_count": 1,
+        "csv_checksum_sha256": hashlib.sha256(csv_bytes).hexdigest(),
+        "checksum_sha256": hashlib.sha256(csv_bytes).hexdigest(),
+        "package_checksum_sha256": "abc",
+        "photos": [
+            {
+                "capture_photo_id": photo_id,
+                "client_file_id": "file-1",
+                "sequence_number": 1,
+                "file_name": file_name,
+                "mime_type": "image/jpeg",
+                "size_bytes": len(photo_bytes),
+                "sha256": sha,
+                "width": 1,
+                "height": 1,
+                "asset_variant": "ORIGINAL",
+            }
+        ],
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr("results.csv", csv_bytes)
+        zf.writestr("manifest.json", json.dumps(manifest))
+        zf.writestr(f"photos/{file_name}", photo_bytes)
+    return buf.getvalue()
+
+
+def test_preview_rejects_local_pending_only_package(tmp_path: Path) -> None:
+    inventory_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    inventory_repo.save(
+        Inventory(
+            id="inventory-1",
+            name="Inv",
+            status=InventoryStatus.DRAFT,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    aisle_repo.save(
+        Aisle(
+            id="aisle-1",
+            inventory_id="inventory-1",
+            code="A1",
+            status=AisleStatus.CREATED,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    csv_repo = MemoryLocalCsvImportRepository()
+    package_repo = MemoryLocalInventoryPackageRepository(csv_import_repo=csv_repo)
+    clock = FixedClock()
+    csv_preview = PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=csv_repo,
+        clock=clock,
+        enabled=True,
+    )
+    preview = PreviewLocalInventoryPackage(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        csv_import_repo=csv_repo,
+        package_repo=package_repo,
+        csv_preview=csv_preview,
+        clock=clock,
+        enabled=True,
+        staging_root=tmp_path,
+    )
+    with pytest.raises(LocalInventoryPackageImportError) as exc:
+        preview.execute(inventory_id="inventory-1", content=_build_pending_zip())
+    assert exc.value.code == "PACKAGE_UNRESOLVED_ROWS"

@@ -21,6 +21,7 @@ from src.application.services.local_inventory_package_parser import (
     ParsedLocalInventoryPackage,
     parse_local_inventory_package,
 )
+from src.application.services.local_inventory_package_row_gate import assert_package_csv_rows_ready
 from src.application.use_cases.inventories.manage_local_csv_import import PreviewLocalCsvImport
 from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow, LocalCsvProductiveResult
 from src.domain.local_csv_import.errors import CONFLICT_POLICIES
@@ -96,6 +97,7 @@ class PreviewLocalInventoryPackage:
         except LocalCsvDocumentError as exc:
             raise LocalInventoryPackageImportError(exc.code, str(exc)) from exc
 
+        assert_package_csv_rows_ready(csv_record.rows)
         self._validate_photo_row_linkage(csv_record, parsed)
         aisle_id = self._resolve_package_aisle_id(
             inventory_id=inventory_id,
@@ -307,6 +309,7 @@ class ConfirmLocalInventoryPackage:
         confirmed_by_user_id: str | None,
         package: LocalInventoryPackage,
     ) -> tuple[LocalCsvProductiveResult, ...]:
+        assert_package_csv_rows_ready(rows_to_import)
         now = self._clock.now()
         photos_by_capture = {p.capture_photo_id: p for p in package.photos}
         evidence: dict[str, str] = {}

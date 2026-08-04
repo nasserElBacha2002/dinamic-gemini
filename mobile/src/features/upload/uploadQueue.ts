@@ -229,6 +229,21 @@ export class UploadQueue {
     await this.repo.setPreparationProcessingMode(sessionId, normalized);
   }
 
+  private sessionAllowsAutoServerUpload(session: CaptureSessionRow | null | undefined): boolean {
+    const localZipMode =
+      this.flags?.localCompletion === true || this.flags?.mobileCsvExport === true;
+    if (!localZipMode) {
+      return true;
+    }
+    const policy = session?.upload_policy;
+    if (policy === 'NOW' || policy === 'WHEN_CONNECTED') {
+      return true;
+    }
+    // Explicit "Subir imágenes ahora" / upload worker path after completeReview.
+    const status = session?.status;
+    return status === 'uploading' || status === 'upload_review';
+  }
+
   async restoreAndStart(): Promise<void> {
     this.connectivityUnsub = this.connectivity.subscribe((state) => {
       if (state === 'offline') {
@@ -270,6 +285,14 @@ export class UploadQueue {
 
   async enqueueSession(sessionId: string): Promise<void> {
     const session = await this.repo.getSession(sessionId);
+    if (!this.sessionAllowsAutoServerUpload(session)) {
+      this.logger.info('upload_enqueue_session_skipped_policy', {
+        sessionId,
+        uploadPolicy: session?.upload_policy ?? null,
+        status: session?.status ?? null,
+      });
+      return;
+    }
     let notQueued = await this.repo.listStableNotQueued(sessionId);
     if (session?.active_freeze_id) {
       const freezeIds = new Set(
@@ -301,6 +324,15 @@ export class UploadQueue {
       return;
     }
     const session = await this.repo.getSession(sessionId);
+    if (!this.sessionAllowsAutoServerUpload(session)) {
+      this.logger.info('upload_enqueue_skipped_policy', {
+        sessionId,
+        photoId,
+        uploadPolicy: session?.upload_policy ?? null,
+        status: session?.status ?? null,
+      });
+      return;
+    }
     if (!session?.upload_batch_id) {
       this.logger.warn('upload_enqueue_missing_batch', { sessionId });
       return;
