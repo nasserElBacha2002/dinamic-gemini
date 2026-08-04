@@ -202,6 +202,14 @@ def test_apply_enrichment_without_view_uses_detection_position_code():
     )
     assert out.position_code == "pos_n4IajJ53NSnsTOnO"
     assert out.aisle_position_assigned is True
+    assert out.position == {
+        "id": "pos_n4IajJ53NSnsTOnO",
+        "name": "pos_n4IajJ53NSnsTOnO",
+    }
+    assert out.position_assignment is not None
+    assert out.position_assignment["status"] == "ASSIGNED_AUTOMATIC"
+    assert out.position_assignment["reason"] == "LOCAL_CSV_POSITION_CODE"
+    assert out.position_assignment["source"] == "AUTOMATIC"
 
 
 def test_partition_key_from_assignment_view():

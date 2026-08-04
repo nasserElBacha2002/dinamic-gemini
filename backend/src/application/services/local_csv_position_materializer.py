@@ -171,13 +171,17 @@ class LocalCsvPositionMaterializer:
         existing = self._position_repo.get_by_id(position_id)
         created_at = existing.created_at if existing is not None else now
 
+        # Link the package photo as primary evidence so list ``has_evidence`` is true
+        # (canonical view keys has_evidence off primary_evidence_id).
+        evidence_asset_id = (result.source_asset_id or "").strip() or None
+
         position = Position(
             id=position_id,
             aisle_id=result.aisle_id,
             status=PositionStatus.DETECTED,
             confidence=1.0,
             needs_review=needs_review,
-            primary_evidence_id=None,
+            primary_evidence_id=evidence_asset_id,
             created_at=created_at,
             updated_at=now,
             review_resolution=None,

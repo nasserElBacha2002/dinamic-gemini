@@ -19,6 +19,11 @@ import type { LocalCsvExportRepository } from '../../database/repositories/local
 import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import type { CapturePhotoRow } from '../../database/schema/captureSchema';
 import { createId } from '../../shared/createId';
+import {
+  hashPreparedFileSha256,
+  hashPreparedMetaSha256,
+} from '../localCodeScan/preparedAssetHash';
+import type { LocalCodeScanStrategy } from '../localCodeScan/localCodeScanStrategy';
 import { buildLocalCsvExport } from './buildLocalCsvExport';
 import { sha256Hex } from './csvFormat';
 import { base64ToUint8Array, uint8ArrayToBase64 } from './binaryCodec';
@@ -49,6 +54,9 @@ export interface LocalCsvExportServiceDeps {
   readonly companyId?: string | null;
   readonly clientId?: string | null;
   readonly enabled?: boolean;
+  /** When set, ZIP export runs local CODE_SCAN before building rows (offline path). */
+  readonly localCodeScan?: LocalCodeScanStrategy | null;
+  readonly localCodeScanEnabled?: boolean;
 }
 
 export interface ExportedLocalCsv {
@@ -79,6 +87,51 @@ interface PackagedPhoto {
 export class LocalCsvExportService {
   constructor(private readonly deps: LocalCsvExportServiceDeps) {}
 
+  /**
+   * Offline ZIP path no longer goes through upload-prepare, so CODE_SCAN must run here
+   * (or on photo-stable) before asserting export readiness.
+   */
+  private async ensureLocalCodeScans(
+    sessionId: string,
+    photos: readonly CapturePhotoRow[],
+  ): Promise<void> {
+    const strategy = this.deps.localCodeScan;
+    if (!strategy || this.deps.localCodeScanEnabled !== true) {
+      return;
+    }
+    for (const photo of photos) {
+      if (photo.status !== 'stable') {
+        continue;
+      }
+      const preparedUri = photo.local_transform_uri || photo.uri;
+      let fingerprint: string;
+      try {
+        fingerprint = await hashPreparedFileSha256(preparedUri);
+      } catch {
+        fingerprint = hashPreparedMetaSha256({
+          uri: preparedUri,
+          bytes: photo.upload_size ?? photo.size ?? 0,
+          width: photo.width ?? 0,
+          height: photo.height ?? 0,
+        });
+      }
+      try {
+        await strategy.execute({
+          capturePhotoId: photo.id,
+          captureSessionId: sessionId,
+          clientFileId: photo.client_file_id,
+          preparedUri,
+          preparedAssetFingerprint: fingerprint,
+          processingMode: 'CODE_SCAN',
+          flagEnabled: true,
+          cancelRequested: photo.upload_cancel_requested === 1,
+        });
+      } catch {
+        // Per-photo scan failure must not abort the whole export; readiness assert decides.
+      }
+    }
+  }
+
   async exportSession(sessionId: string): Promise<ExportedLocalCsv> {
     if (this.deps.enabled === false) {
       throw new Error('La exportación CSV local no está habilitada.');
@@ -92,6 +145,7 @@ export class LocalCsvExportService {
       photos = await this.deps.captureRepo.listFreezePhotos(session.active_freeze_id);
     }
     const eligible = photos.filter((p) => p.status !== 'excluded' && p.status !== 'rejected');
+    await this.ensureLocalCodeScans(sessionId, eligible);
     const drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => []);
     const confirmed = await this.deps.confirmedRepo.listForSession(sessionId).catch(() => []);
 

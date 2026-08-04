@@ -22,6 +22,9 @@ from src.application.services.local_inventory_package_parser import (
     parse_local_inventory_package,
 )
 from src.application.services.local_inventory_package_row_gate import assert_package_csv_rows_ready
+from src.application.services.local_inventory_package_client_file_id import (
+    fit_source_asset_upload_client_file_id,
+)
 from src.application.use_cases.inventories.manage_local_csv_import import PreviewLocalCsvImport
 from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow, LocalCsvProductiveResult
 from src.domain.local_csv_import.errors import CONFLICT_POLICIES
@@ -327,12 +330,17 @@ class ConfirmLocalInventoryPackage:
                     "PACKAGE_STAGING_MISSING",
                     f"Staged photo missing: {photo.file_name}",
                 )
+            raw_client_file_id = (photo.client_file_id or photo.capture_photo_id or "").strip()
+            upload_client_file_id = fit_source_asset_upload_client_file_id(
+                raw_client_file_id,
+                stable_key=photo.capture_photo_id,
+            )
             with path.open("rb") as handle:
                 uploaded = UploadedFile(
                     original_filename=photo.file_name,
                     file_obj=handle,
                     content_type=photo.mime_type or "image/jpeg",
-                    client_file_id=photo.client_file_id,
+                    client_file_id=upload_client_file_id,
                     upload_batch_id=upload_batch_id,
                     size_bytes=photo.size_bytes,
                     content_sha256=photo.sha256,
@@ -351,9 +359,10 @@ class ConfirmLocalInventoryPackage:
                         "asset_variant": photo.asset_variant,
                         "package_photo_sha256": photo.sha256,
                         "content_sha256": photo.sha256,
+                        "upload_client_file_id_original": raw_client_file_id or None,
                     },
                     upload_batch_id=upload_batch_id,
-                    upload_client_file_id=photo.client_file_id,
+                    upload_client_file_id=upload_client_file_id,
                     sequence_number=photo.sequence_number or row.capture_order,
                     sequence_source="CLIENT_ASSIGNED",
                 )

@@ -155,3 +155,37 @@ def test_persisted_true_with_valid_status_empty_source_has_valid_evidence_false(
     )
     view = build_position_canonical_view(position)
     assert view.traceability.has_valid_evidence is False
+
+
+def test_local_csv_source_image_sets_has_evidence_without_crop_id() -> None:
+    """Package import stores the photo as source_image_id, not a crop evidence row."""
+    now = datetime.now(timezone.utc)
+    position = Position(
+        id="pos-local",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=1.0,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+        detected_summary_json={
+            "ingestion_source": "local_csv_import",
+            "local_csv_productive_result_id": "prod-1",
+            "source_image_id": "asset-zip-photo",
+            "source_asset_id": "asset-zip-photo",
+            "traceability_status": "valid",
+            "has_valid_evidence": True,
+            "internal_code": "23252855982",
+            "final_quantity": 5000,
+            "position_barcode": "pos_n4IajJ53NSnsTOnO",
+        },
+        corrected_position_code="pos_n4IajJ53NSnsTOnO",
+        job_id=None,
+    )
+    view = build_position_canonical_view(position)
+    assert view.traceability.source_image_id == "asset-zip-photo"
+    assert view.traceability.traceability_status == "valid"
+    assert view.traceability.has_valid_evidence is True
+    assert view.review.has_evidence is True
+    assert view.review.primary_evidence_id == "asset-zip-photo"

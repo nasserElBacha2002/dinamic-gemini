@@ -172,19 +172,6 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
   const localCsvExportRepo = new LocalCsvExportRepository(db);
   const installationId = await getOrCreateInstallationId();
-  const localCsvExport =
-    config.flags.mobileCsvExport !== false
-      ? new LocalCsvExportService({
-          captureRepo,
-          draftRepo: localDetectionDrafts,
-          confirmedRepo: confirmedLocalResults,
-          exportRepo: localCsvExportRepo,
-          deviceId: installationId,
-          companyId: null,
-          clientId: null,
-          enabled: true,
-        })
-      : null;
   const aisleFinalizationIntents = new AisleFinalizationIntentRepository(db);
   const serverReprocessIntents = new ServerReprocessIntentRepository(db);
   const aisleRevisionDrafts = new AisleRevisionDraftRepository(db);
@@ -213,6 +200,21 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   void localCodeScan.recoverStaleDrafts().catch(() => {
     // best-effort recovery after process death
   });
+  const localCsvExport =
+    config.flags.mobileCsvExport !== false
+      ? new LocalCsvExportService({
+          captureRepo,
+          draftRepo: localDetectionDrafts,
+          confirmedRepo: confirmedLocalResults,
+          exportRepo: localCsvExportRepo,
+          deviceId: installationId,
+          companyId: null,
+          clientId: null,
+          enabled: true,
+          localCodeScan,
+          localCodeScanEnabled: config.flags.mobileLocalCodeScan === true,
+        })
+      : null;
   const preliminaryApi = new PreliminaryDetectionApi(api);
   const preliminarySync = new PreliminaryDetectionSyncService({
     flags: config.flags,
@@ -383,6 +385,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       // (database is locked) when many photos stabilize during "Finalizar captura".
       // With localCompletion/csvExport, server upload is deferred until explicit policy
       // (NOW / WHEN_CONNECTED) or completeReview → uploading — not on every stable photo.
+      // Local CODE_SCAN still runs when upload is deferred so ZIP export has drafts.
       photoStableChain = photoStableChain
         .then(async () => {
           await uploadQueue.enqueuePhoto(sessionId, photoId);
@@ -399,6 +402,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
             status === 'upload_review';
           if (allowOfflineUpload) {
             await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
+          } else if (config.flags.mobileLocalCodeScan === true) {
+            await uploadQueue.rescanPhotoForLocalReview(photoId).catch(() => undefined);
           }
         })
         .catch((error) => {

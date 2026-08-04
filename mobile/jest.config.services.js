@@ -24,6 +24,7 @@ module.exports = {
     '<rootDir>/tests/uploadQueuePhase1Corrections.test.ts',
     '<rootDir>/tests/orderedCapturePhase1.test.ts',
     '<rootDir>/tests/localCodeScanStrategy.test.ts',
+    '<rootDir>/tests/localCsvExportCodeScanGate.test.ts',
     '<rootDir>/tests/preliminaryDetectionSyncService.test.ts',
     '<rootDir>/tests/preliminarySyncDoesNotBlockProcess.test.ts',
     '<rootDir>/tests/preliminaryReconciliationPhase5.test.ts',

@@ -94,6 +94,7 @@ def test_materialize_skips_position_label_and_retires_prior_item() -> None:
     assert summary.get("source_asset_id") == "asset-1"
     assert summary.get("traceability_status") == "valid"
     assert summary.get("has_valid_evidence") is True
+    assert positions[0].primary_evidence_id == "asset-1"
 
     retired = position_repo.get_by_id(position_id_for_productive("label-1"))
     assert retired is not None

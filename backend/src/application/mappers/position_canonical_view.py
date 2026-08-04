@@ -397,15 +397,27 @@ def build_position_canonical_view(
     """Build :class:`PositionCanonicalView` with explicit source priority (ADR + plan Sprint 1)."""
     effective_corrected = _effective_corrected_quantity(corrected_quantity, primary_product)
     summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
-    has_evidence = bool(
-        p.primary_evidence_id is not None and str(p.primary_evidence_id).strip() != ""
+    primary_evidence_id = (
+        str(p.primary_evidence_id).strip()
+        if p.primary_evidence_id is not None and str(p.primary_evidence_id).strip()
+        else None
     )
     aggregated_raw = summary_json.get("aggregated_from_ids")
     is_aggregated = isinstance(aggregated_raw, list) and len(aggregated_raw) > 0
 
     trace = _traceability_from_position(p)
+    source_image_id = trace[0]
+    # Local ZIP/CSV: package photo is the evidence row (no crop evidence id). Mirror
+    # source_image_id onto primary_evidence_id so list ``has_evidence`` matches UI chips.
+    if (
+        primary_evidence_id is None
+        and _is_local_csv_detected_summary(summary_json)
+        and source_image_id
+    ):
+        primary_evidence_id = source_image_id
+    has_evidence = bool(primary_evidence_id)
     traceability = PositionCanonicalTraceability(
-        source_image_id=trace[0],
+        source_image_id=source_image_id,
         traceability_status=trace[1],
         traceability_warning=trace[2],
         source_image_original_filename=trace[3],
@@ -418,7 +430,7 @@ def build_position_canonical_view(
         status=p.status.value,
         review_resolution=(p.review_resolution.value if p.review_resolution is not None else None),
         needs_review=p.needs_review,
-        primary_evidence_id=p.primary_evidence_id,
+        primary_evidence_id=primary_evidence_id,
         has_evidence=has_evidence,
     )
     snap = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else None

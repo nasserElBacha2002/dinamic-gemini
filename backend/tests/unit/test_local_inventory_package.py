@@ -106,7 +106,12 @@ class MemoryArtifactStorage:
         self.objects.pop(key, None)
 
 
-def _csv_bytes(*, export_id: str = "export-pkg-1", photo_id: str = "photo-1") -> bytes:
+def _csv_bytes(
+    *,
+    export_id: str = "export-pkg-1",
+    photo_id: str = "photo-1",
+    client_file_id: str = "file-1",
+) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=HEADERS, lineterminator="\r\n")
     writer.writeheader()
@@ -120,7 +125,7 @@ def _csv_bytes(*, export_id: str = "export-pkg-1", photo_id: str = "photo-1") ->
             "aisle_id": "aisle-1",
             "capture_session_id": "session-1",
             "capture_photo_id": photo_id,
-            "client_file_id": "file-1",
+            "client_file_id": client_file_id,
             "capture_order": "1",
             "captured_at": "2026-08-04T09:59:00Z",
             "position_code": "A-01",
@@ -141,11 +146,12 @@ def _build_zip(
     *,
     export_id: str = "export-pkg-1",
     photo_id: str = "photo-1",
+    client_file_id: str = "file-1",
     photo_bytes: bytes = JPEG_BYTES,
     corrupt_sha: bool = False,
     omit_photo: bool = False,
 ) -> bytes:
-    csv_bytes = _csv_bytes(export_id=export_id, photo_id=photo_id)
+    csv_bytes = _csv_bytes(export_id=export_id, photo_id=photo_id, client_file_id=client_file_id)
     file_name = f"0001_{photo_id}.jpg"
     sha = hashlib.sha256(photo_bytes).hexdigest()
     if corrupt_sha:
@@ -170,7 +176,7 @@ def _build_zip(
         else [
             {
                 "capture_photo_id": photo_id,
-                "client_file_id": "file-1",
+                "client_file_id": client_file_id,
                 "sequence_number": 1,
                 "file_name": file_name,
                 "mime_type": "image/jpeg",
@@ -323,6 +329,110 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
     assert again.status == "CONFIRMED"
     assert len(position_repo.list_by_aisle("aisle-1", job_id=None)) == 1
     assert aisle_repo.get_by_id("aisle-1").status == AisleStatus.PROCESSED
+
+
+def test_confirm_fits_long_mobile_client_file_id(tmp_path: Path) -> None:
+    """Mobile ZIP uses session:media client_file_ids longer than VARCHAR(36)."""
+    from src.application.services.local_inventory_package_client_file_id import (
+        SOURCE_ASSET_UPLOAD_CLIENT_FILE_ID_MAX,
+        fit_source_asset_upload_client_file_id,
+    )
+
+    long_cf = "fd2e9f97-babd-40f7-b059-87c2776e6969:1000329481"
+    assert len(long_cf) > SOURCE_ASSET_UPLOAD_CLIENT_FILE_ID_MAX
+    fitted = fit_source_asset_upload_client_file_id(long_cf, stable_key=long_cf)
+    assert len(fitted) == SOURCE_ASSET_UPLOAD_CLIENT_FILE_ID_MAX
+    assert fitted == fit_source_asset_upload_client_file_id(long_cf, stable_key=long_cf)
+
+    inventory_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    inventory_repo.save(
+        Inventory(
+            id="inventory-1",
+            name="Inv",
+            status=InventoryStatus.DRAFT,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    aisle_repo.save(
+        Aisle(
+            id="aisle-1",
+            inventory_id="inventory-1",
+            code="A1",
+            status=AisleStatus.CREATED,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    csv_repo = MemoryLocalCsvImportRepository()
+    package_repo = MemoryLocalInventoryPackageRepository(csv_import_repo=csv_repo)
+    clock = FixedClock()
+    csv_preview = PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=csv_repo,
+        clock=clock,
+        enabled=True,
+    )
+    preview = PreviewLocalInventoryPackage(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        csv_import_repo=csv_repo,
+        package_repo=package_repo,
+        csv_preview=csv_preview,
+        clock=clock,
+        enabled=True,
+        staging_root=tmp_path,
+    )
+    packaged = preview.execute(
+        inventory_id="inventory-1",
+        content=_build_zip(
+            export_id="export-long-cf",
+            photo_id=long_cf,
+            client_file_id=long_cf,
+        ),
+    )
+    assert packaged.status == "PREVIEWED"
+
+    asset_repo = MemorySourceAssetRepository()
+    storage = MemoryArtifactStorage()
+    materializer = AisleSourceAssetMaterializer(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        artifact_storage=storage,  # type: ignore[arg-type]
+        status_reconciler=InventoryStatusReconciler(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            clock=clock,
+        ),
+    )
+    writer = MemoryLocalCsvInventoryResultWriter()
+    confirm = ConfirmLocalInventoryPackage(
+        package_repo=package_repo,
+        result_writer=writer,
+        materializer=materializer,
+        aisle_repo=aisle_repo,
+        clock=clock,
+        enabled=True,
+        position_materializer=LocalCsvPositionMaterializer(
+            position_repo=MemoryPositionRepository(),
+            product_record_repo=MemoryProductRecordRepository(),
+        ),
+    )
+    confirmed, duplicate = confirm.execute(
+        inventory_id="inventory-1",
+        export_id="export-long-cf",
+        conflict_policy="SKIP",
+        confirmed_by_user_id="user-1",
+    )
+    assert duplicate is False
+    assert confirmed.status == "CONFIRMED"
+    assets = asset_repo.list_by_aisle("aisle-1")
+    assert len(assets) == 1
+    assert len(assets[0].upload_client_file_id or "") <= SOURCE_ASSET_UPLOAD_CLIENT_FILE_ID_MAX
+    assert assets[0].upload_client_file_id == fitted
+    assert (assets[0].metadata_json or {}).get("upload_client_file_id_original") == long_cf
 
 
 def test_preview_rejects_inventory_mismatch(tmp_path: Path) -> None:

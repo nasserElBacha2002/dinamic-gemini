@@ -134,7 +134,26 @@ export function ReviewScreen({
                       exported.zipUri,
                     );
                   })
-                  .catch((e) => onError(e instanceof Error ? e.message : String(e)))
+                  .catch((e) => {
+                    const raw = e instanceof Error ? e.message : String(e);
+                    if (raw.startsWith('PACKAGE_EXPORT_UNRESOLVED:')) {
+                      onError(
+                        'No se pudo exportar: faltan códigos detectados en las fotos. Esperá el escaneo local o volvé a capturar etiquetas/SKU legibles (no requiere conexión al servidor).',
+                      );
+                      return;
+                    }
+                    if (raw.startsWith('PACKAGE_EXPORT_NO_PRODUCTS:')) {
+                      onError(
+                        'No se pudo exportar: no hay productos con código interno. Escaneá al menos un SKU (las fotos de posición solas no alcanzan).',
+                      );
+                      return;
+                    }
+                    if (raw.startsWith('PACKAGE_EXPORT_EMPTY:')) {
+                      onError('No hay fotos para exportar.');
+                      return;
+                    }
+                    onError(raw);
+                  })
                   .finally(() => setExportBusy(false));
               }}
             />
