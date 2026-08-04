@@ -1,4 +1,5 @@
-import { Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Text, View } from 'react-native';
 
 import type { CaptureSnapshot } from '../features/capture/captureService';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
@@ -8,16 +9,33 @@ export interface ReviewScreenProps {
   services: AppServices;
   snapshot: CaptureSnapshot | null;
   onBack: () => void;
-  /** Called when capture review gates pass; parent decides next screen. */
+  /** Upload now — parent runs completeReview + enqueue. */
   onConfirm: (sessionId: string) => void;
+  /** Save locally and optionally upload later. */
+  onSaveLocal?: (sessionId: string) => void;
   onError: (message: string | null) => void;
 }
 
-export function ReviewScreen({ services, snapshot, onBack, onConfirm, onError }: ReviewScreenProps) {
+export function ReviewScreen({
+  services,
+  snapshot,
+  onBack,
+  onConfirm,
+  onSaveLocal,
+  onError,
+}: ReviewScreenProps) {
   const photos = snapshot?.photos ?? [];
   const counts = countPhotos(photos);
   const canConfirm = counts.waiting === 0 && counts.errors === 0;
   const context = snapshot?.context;
+  const flags = services.config.flags;
+  const localCompletion = flags.localCompletion !== false;
+  const csvExport = flags.mobileCsvExport !== false;
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportHint, setExportHint] = useState<string | null>(null);
+
+  const sessionId = snapshot?.session?.id;
+
   return (
     <PhotoWorkList
       photos={photos}
@@ -32,17 +50,24 @@ export function ReviewScreen({ services, snapshot, onBack, onConfirm, onError }:
           <Text style={styles.row}>
             Estables: {counts.stable} · Excluidas: {counts.excluded} · Errores: {counts.errors}
           </Text>
+          {localCompletion ? (
+            <Text style={styles.notif}>
+              Resultado detectado localmente (CODE_SCAN). El procesamiento remoto puede agregar o
+              corregir resultados. La exportación CSV no incluye fotografías.
+            </Text>
+          ) : null}
           {!canConfirm ? <ErrorText text="Resolvé errores o esperá validaciones antes de confirmar." /> : null}
+          {exportHint ? <Text style={styles.row}>{exportHint}</Text> : null}
+          {exportBusy ? <ActivityIndicator /> : null}
           <Button
             label="Reintentar errores"
             disabled={counts.errors === 0}
             onPress={() => void services.capture.retryErrors()}
           />
           <Button
-            label="Confirmar y continuar"
+            label="Subir imágenes ahora"
             disabled={!canConfirm}
             onPress={() => {
-              const sessionId = snapshot?.session?.id;
               if (!sessionId) {
                 onError('No se encontró la sesión de captura.');
                 return;
@@ -50,6 +75,58 @@ export function ReviewScreen({ services, snapshot, onBack, onConfirm, onError }:
               onConfirm(sessionId);
             }}
           />
+          {localCompletion && onSaveLocal ? (
+            <Button
+              label="Guardar y subir más tarde"
+              disabled={!canConfirm}
+              onPress={() => {
+                if (!sessionId) {
+                  onError('No se encontró la sesión de captura.');
+                  return;
+                }
+                onSaveLocal(sessionId);
+              }}
+            />
+          ) : null}
+          {csvExport ? (
+            <Button
+              label="Exportar resultados CSV"
+              disabled={!canConfirm || exportBusy || !sessionId}
+              onPress={() => {
+                if (!sessionId || !services.localCsvExport) {
+                  onError('Exportación CSV no disponible.');
+                  return;
+                }
+                setExportBusy(true);
+                setExportHint(null);
+                void services.localCsvExport
+                  .exportSession(sessionId)
+                  .then(async (exported) => {
+                    setExportHint(
+                      `CSV listo · ${exported.rowCount} filas · checksum ${exported.checksumSha256.slice(0, 12)}…${
+                        exported.reused ? ' (reutilizado)' : ''
+                      }`,
+                    );
+                    await services.localCsvExport!.shareExport(exported.fileUri, exported.exportId);
+                  })
+                  .catch((e) => onError(e instanceof Error ? e.message : String(e)))
+                  .finally(() => setExportBusy(false));
+              }}
+            />
+          ) : null}
+          {!localCompletion ? (
+            <Button
+              label="Confirmar y continuar"
+              disabled={!canConfirm}
+              onPress={() => {
+                if (!sessionId) {
+                  onError('No se encontró la sesión de captura.');
+                  return;
+                }
+                onConfirm(sessionId);
+              }}
+            />
+          ) : null}
         </View>
       }
     />

@@ -57,9 +57,18 @@ export interface BaselineReport {
     readonly compression_ratio: MetricSummary;
     readonly capture_to_first_server_result_ms: MetricSummary;
     readonly capture_to_job_terminal_ms: MetricSummary;
+    readonly finish_ms: MetricSummary;
+    readonly finish_media_store_check_ms: MetricSummary;
+    readonly finish_validation_wait_ms: MetricSummary;
   };
   readonly byNetwork: Record<string, { readonly upload_ms: MetricSummary; readonly prepare_ms: MetricSummary }>;
   readonly errorCounts: Record<string, number>;
+  readonly finishExtra: {
+    readonly new_media_candidates_events: number;
+    readonly skipped_full_rescan_events: number;
+    readonly orphan_reclaimed: number;
+    readonly upload_healed: number;
+  };
   readonly notes: readonly string[];
 }
 
@@ -130,6 +139,15 @@ export function buildBaselineReport(
     errorCounts[key] = (errorCounts[key] ?? 0) + 1;
   }
 
+  const finishExtra = {
+    new_media_candidates_events: events.filter((e) => e.name === 'capture.finish_new_media_candidates').length,
+    skipped_full_rescan_events: events.filter(
+      (e) => e.name === 'capture.finish_scan_completed' && e.attributes.skipped_full_rescan === true,
+    ).length,
+    orphan_reclaimed: events.filter((e) => e.name === 'upload.orphan_reclaimed').length,
+    upload_healed: events.filter((e) => e.name === 'photo.upload_healed').length,
+  };
+
   return {
     generatedAt: now().toISOString(),
     eventCount: events.length,
@@ -145,12 +163,16 @@ export function buildBaselineReport(
       capture_to_job_terminal_ms: summarizeMetric(
         collect('session.job_terminal', 'capture_to_job_terminal_ms'),
       ),
+      finish_ms: summarizeMetric(collect('capture.finish_completed')),
+      finish_media_store_check_ms: summarizeMetric(collect('capture.finish_media_store_check_completed')),
+      finish_validation_wait_ms: summarizeMetric(collect('capture.finish_validation_wait_completed')),
     },
     byNetwork,
     errorCounts,
+    finishExtra,
     notes: [
-      'Phase 0 baseline — no optimizations claimed.',
-      'Enable DINAMIC_FLAG_UPLOAD_OBS=1 (default on unless set to 0).',
+      'Phase 0/1 baseline — finish stage events + upload prepare/upload.',
+      'Enable captureFinishInstrumentation (default on).',
       'Device S10+ manual runs should be attached separately when available.',
     ],
   };

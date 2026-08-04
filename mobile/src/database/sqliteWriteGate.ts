@@ -52,6 +52,10 @@ export async function withSqliteBusyRetry<T>(
   options?: {
     readonly maxAttempts?: number;
     readonly baseDelayMs?: number;
+    readonly onBusyRetry?: (info: {
+      readonly attempt: number;
+      readonly maxAttempts: number;
+    }) => void;
   },
 ): Promise<T> {
   const maxAttempts = options?.maxAttempts ?? SQLITE_BUSY_RETRY_ATTEMPTS;
@@ -65,6 +69,7 @@ export async function withSqliteBusyRetry<T>(
       if (!isSqliteBusyError(error) || attempt >= maxAttempts) {
         throw error;
       }
+      options?.onBusyRetry?.({ attempt, maxAttempts });
       const jitter = Math.floor(Math.random() * 40);
       await sleep(baseDelayMs * attempt + jitter);
     }

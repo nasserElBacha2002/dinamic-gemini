@@ -23,6 +23,8 @@ import { UploadLimitsService } from '../../features/upload/uploadLimitsService';
 import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
+import { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
+import { LocalCsvExportService } from '../../features/localCsv/localCsvExportService';
 import { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
 import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
 import { PreliminaryDetectionApi } from '../../features/preliminarySync/preliminaryDetectionApi';
@@ -116,6 +118,7 @@ export interface AppServices {
   readonly jobMonitor: JobMonitor;
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly confirmedLocalResults: ConfirmedLocalResultRepository;
+  readonly localCsvExport: LocalCsvExportService | null;
   readonly confirmLocalResult: Pick<
     ConfirmLocalResultService,
     'isEnabled' | 'getLatestDraftForPhoto' | 'resolveSource' | 'confirm'
@@ -166,6 +169,20 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const jobRepo = new ProcessingJobRepository(db);
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
+  const localCsvExportRepo = new LocalCsvExportRepository(db);
+  const localCsvExport =
+    config.flags.mobileCsvExport !== false
+      ? new LocalCsvExportService({
+          captureRepo,
+          draftRepo: localDetectionDrafts,
+          confirmedRepo: confirmedLocalResults,
+          exportRepo: localCsvExportRepo,
+          deviceId: `mobile-${config.environment}-v${config.versionCode}`,
+          companyId: null,
+          clientId: null,
+          enabled: true,
+        })
+      : null;
   const aisleFinalizationIntents = new AisleFinalizationIntentRepository(db);
   const serverReprocessIntents = new ServerReprocessIntentRepository(db);
   const aisleRevisionDrafts = new AisleRevisionDraftRepository(db);
@@ -375,6 +392,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
         });
     },
     observability: obsWire,
+    finishInstrumentation: config.flags.captureFinishInstrumentation,
+    finishSafeMediaCheck: config.flags.captureFinishSafeMediaCheck,
+    sessionFreeze: config.flags.captureSessionFreeze,
   });
 
   const processing = new ProcessingService(
@@ -566,6 +586,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     jobMonitor,
     localDetectionDrafts,
     confirmedLocalResults,
+    localCsvExport,
     confirmLocalResult,
     preliminarySync,
     authoritativeLocalSync,

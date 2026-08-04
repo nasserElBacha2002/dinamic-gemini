@@ -6,6 +6,7 @@ export type LocalAisleWorkKind =
   | 'capture_active'
   | 'capture_paused'
   | 'capture_review'
+  | 'local_completed'
   | 'uploading'
   | 'ready_to_process'
   | 'processing'
@@ -40,6 +41,12 @@ export function classifyLocalSession(
   } else if (session.status === 'review') {
     kind = 'capture_review';
     label = 'Fotos listas para revisar';
+  } else if (session.status === 'local_completed') {
+    kind = 'local_completed';
+    label =
+      pending > 0
+        ? `Cierre local · ${pending} fotos pendientes de carga`
+        : 'Cierre local · resultados disponibles offline';
   } else if (session.status === 'uploading' || session.status === 'upload_review') {
     kind = 'uploading';
     label =

@@ -931,6 +931,51 @@ def get_persist_authoritative_local_code_scan_use_case(
     )
 
 
+def get_preview_local_csv_import_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.inventories.manage_local_csv_import import (
+        PreviewLocalCsvImport,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=get_app_container().get_local_csv_import_repo(),
+        clock=clock,
+        enabled=bool(getattr(settings, "server_csv_import_enabled", False)),
+    )
+
+
+def get_confirm_local_csv_import_use_case(clock: Clock = Depends(get_clock)):
+    from src.application.use_cases.inventories.manage_local_csv_import import (
+        ConfirmLocalCsvImport,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return ConfirmLocalCsvImport(
+        import_repo=get_app_container().get_local_csv_import_repo(),
+        clock=clock,
+        enabled=bool(getattr(settings, "server_csv_import_enabled", False)),
+    )
+
+
+def get_get_local_csv_import_use_case():
+    from src.application.use_cases.inventories.manage_local_csv_import import GetLocalCsvImport
+    from src.config import load_settings
+
+    settings = load_settings()
+    return GetLocalCsvImport(
+        import_repo=get_app_container().get_local_csv_import_repo(),
+        enabled=bool(getattr(settings, "server_csv_import_enabled", False)),
+    )
+
+
 def get_evaluate_authoritative_aisle_readiness(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),

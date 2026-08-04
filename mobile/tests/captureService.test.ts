@@ -13,6 +13,7 @@ import type { CapturePhotoStatus, CaptureSessionStatus } from '../src/domain/enu
 import type { CaptureRepository, CreateCaptureSessionInput, CreateCaptureSessionResult, StabilityResultInput } from '../src/database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../src/database/schema/captureSchema';
 import type { ForegroundService } from '../src/native/foregroundService';
+import { TimingMarkStore } from '../src/observability/timingMarks';
 
 const image: GalleryImage = {
   assetId: '100',
@@ -67,6 +68,9 @@ function session(overrides: Partial<CaptureSessionRow> = {}): CaptureSessionRow 
     process_requested_at: null,
     process_confirmed_at: null,
     last_recovery_check_at: null,
+    capture_frozen_at: null,
+    capture_frozen_photo_count: null,
+    capture_freeze_generation: 0,
     created_at: now,
     updated_at: now,
     ...overrides,
@@ -162,6 +166,7 @@ class FakeRepo {
           'paused',
           'finishing',
           'review',
+          'local_completed',
           'uploading',
           'upload_review',
           'ready_to_process',
@@ -204,6 +209,22 @@ class FakeRepo {
     const row = this.sessions.get(id);
     if (!row) throw new Error('missing session');
     this.sessions.set(id, { ...row, status });
+  }
+
+  async markCaptureFrozen(
+    id: string,
+    input: { readonly frozenAt: string; readonly photoCount: number },
+  ) {
+    const row = this.sessions.get(id);
+    if (!row) throw new Error('missing session');
+    const next = {
+      ...row,
+      capture_frozen_at: input.frozenAt,
+      capture_frozen_photo_count: input.photoCount,
+      capture_freeze_generation: (row.capture_freeze_generation ?? 0) + 1,
+    };
+    this.sessions.set(id, next);
+    return next;
   }
 
   async listPhotos(sessionId: string) {
@@ -567,13 +588,15 @@ describe('CaptureService corrections', () => {
     expect((await repo.getSession('session-1'))?.status).toBe('review');
   });
 
-  it('finish emits finishing and skips rescan when all photos are already stable', async () => {
+  it('finish emits finishing and skips full rescan when MediaStore has no new candidates', async () => {
     const repo = new FakeRepo();
     repo.sessions.set('session-1', session({ status: 'active' }));
     repo.photos.set('session-1:100', photo('stable'));
     const store = mediaStore();
     const querySpy = jest.spyOn(store, 'queryNewPhotosSince');
     const statuses: Array<string | undefined> = [];
+    const stages: Array<string | null> = [];
+    const events: string[] = [];
     const service = new CaptureService(
       repo as unknown as CaptureRepository,
       foreground(),
@@ -582,16 +605,86 @@ describe('CaptureService corrections', () => {
         mediaStore: store,
         stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
         validationTimeoutMs: 10,
+        observability: {
+          reporter: {
+            emit: (e) => {
+              events.push(e.name);
+            },
+          },
+          marks: new TimingMarkStore(),
+        },
       },
     );
     service.subscribe((snap) => {
       statuses.push(snap.session?.status);
+      stages.push(snap.finishStage);
     });
     await service.loadSession('session-1', false);
     await expect(service.finish()).resolves.toBeUndefined();
     expect(statuses).toContain('finishing');
+    expect(stages.some((s) => s === 'checking_media' || s === 'closing' || s === 'preparing_review')).toBe(
+      true,
+    );
     expect((await repo.getSession('session-1'))?.status).toBe('review');
-    expect(querySpy).not.toHaveBeenCalled();
+    expect((await repo.getSession('session-1'))?.capture_frozen_at).toBeTruthy();
+    // Light MediaStore check runs once; full admit path (runScanOnce) is skipped.
+    expect(querySpy).toHaveBeenCalledTimes(1);
+    expect(events).toContain('capture.finish_started');
+    expect(events).toContain('capture.finish_media_store_check_completed');
+    expect(events).toContain('capture.finish_completed');
+    expect(events).toContain('capture.finish_scan_completed');
+  });
+
+  it('finish admits gallery photos present in MediaStore but missing from SQLite', async () => {
+    const lateImage: GalleryImage = {
+      ...image,
+      assetId: '999',
+      mediaStoreNumericId: 999,
+      dateAdded: 20,
+      dateModified: 20,
+    };
+    const repo = new FakeRepo();
+    repo.sessions.set('session-1', session({ status: 'active' }));
+    repo.photos.set('session-1:100', photo('stable'));
+    const store = mediaStore([lateImage]);
+    const service = new CaptureService(
+      repo as unknown as CaptureRepository,
+      foreground(),
+      createLogger(() => undefined),
+      {
+        mediaStore: store,
+        stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
+        validationTimeoutMs: 50,
+      },
+    );
+    await service.loadSession('session-1', false);
+    await expect(service.finish()).resolves.toBeUndefined();
+    const photos = await repo.listPhotos('session-1');
+    expect(photos.map((p) => p.asset_id).sort()).toEqual(['100', '999']);
+    expect(photos.find((p) => p.asset_id === '999')?.status).toBe('stable');
+    expect((await repo.getSession('session-1'))?.status).toBe('review');
+  });
+
+  it('finish is idempotent under concurrent double submit', async () => {
+    const repo = new FakeRepo();
+    repo.sessions.set('session-1', session({ status: 'active' }));
+    repo.photos.set('session-1:100', photo('stable'));
+    const service = new CaptureService(
+      repo as unknown as CaptureRepository,
+      foreground(),
+      createLogger(() => undefined),
+      {
+        mediaStore: mediaStore(),
+        stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
+        validationTimeoutMs: 10,
+      },
+    );
+    await service.loadSession('session-1', false);
+    const [a, b] = await Promise.all([service.finish(), service.finish()]);
+    expect(a).toBeUndefined();
+    expect(b).toBeUndefined();
+    expect((await repo.getSession('session-1'))?.status).toBe('review');
+    expect((await repo.getSession('session-1'))?.capture_freeze_generation).toBe(1);
   });
 
   it('keeps a photo excluded when stability resolves after exclusion', async () => {

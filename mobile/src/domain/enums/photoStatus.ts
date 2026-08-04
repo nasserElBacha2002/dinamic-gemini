@@ -22,6 +22,8 @@ export type CaptureSessionStatus =
   | 'paused'
   | 'finishing'
   | 'review'
+  /** Local aisle closed without requiring upload /process (Phase 3). */
+  | 'local_completed'
   | 'uploading'
   | 'upload_review'
   | 'ready_to_process'

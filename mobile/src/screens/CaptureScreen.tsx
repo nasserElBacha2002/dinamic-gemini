@@ -7,6 +7,7 @@ import { getPhotoPermission, requestPhotoPermission } from '../native/mediaStore
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import { Button, ErrorText, PhotoWorkList, SmallButton, captureContextFrom, countPhotos, messageOf, styles } from '../ui';
+import { FINISH_STAGE_LABELS } from '../features/capture/finishObservability';
 
 export interface CaptureScreenProps {
   services: AppServices;
@@ -92,6 +93,10 @@ export function CaptureScreen({
   const counts = countPhotos(photos);
   const sessionStatus = snapshotBelongsToSelectedAisle ? snapshot?.session?.status : undefined;
   const isFinishing = finishInFlight || sessionStatus === 'finishing';
+  const finishStageLabel =
+    snapshotBelongsToSelectedAisle && snapshot?.finishStage
+      ? FINISH_STAGE_LABELS[snapshot.finishStage]
+      : null;
 
   useEffect(() => {
     if (sessionStatus !== 'active') return;
@@ -128,7 +133,9 @@ export function CaptureScreen({
           {isFinishing ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8 }}>
               <ActivityIndicator />
-              <Text style={styles.row}>Cerrando captura y preparando revisión…</Text>
+              <Text style={styles.row}>
+                {finishStageLabel ?? 'Cerrando captura y preparando revisión…'}
+              </Text>
             </View>
           ) : null}
           <Button
@@ -179,10 +186,7 @@ export function CaptureScreen({
           <Button
             label={isFinishing ? 'Finalizando…' : 'Finalizar captura'}
             disabled={
-              isFinishing ||
-              (sessionStatus !== 'active' &&
-                sessionStatus !== 'paused' &&
-                sessionStatus !== 'finishing')
+              isFinishing || (sessionStatus !== 'active' && sessionStatus !== 'paused')
             }
             onPress={() => {
               setFinishInFlight(true);

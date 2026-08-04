@@ -31,6 +31,7 @@ module.exports = {
     '<rootDir>/tests/labelPayloadContracts.test.ts',
     '<rootDir>/tests/databaseCorruption.test.ts',
     '<rootDir>/tests/databaseMigrations.test.ts',
+    '<rootDir>/tests/localCsvAndReconcilePhase346.test.ts',
     '<rootDir>/tests/processingService.test.ts',
     '<rootDir>/tests/offlineOperationsPhase9.test.ts',
   ],

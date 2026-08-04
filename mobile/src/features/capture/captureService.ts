@@ -14,6 +14,13 @@ import type { ForegroundService } from '../../native/foregroundService';
 import type { IncrementalScanOptions, IncrementalScanResult, PermissionState } from '../../native/mediaStore';
 import type { StabilityOutcome } from '../../native/stabilityProber';
 import { emitObservability, sessionMarkKey } from '../../observability';
+import {
+  countFinishPhotos,
+  emitFinishEvent,
+  finishBaseAttributes,
+  stageDurationMs,
+  type CaptureFinishStage,
+} from './finishObservability';
 
 const VALIDATION_TIMEOUT_MS = 15_000;
 /** Re-scan gallery while capture is active (missed MediaStore events / delayed indexing). */
@@ -46,6 +53,8 @@ export interface CaptureSnapshot {
   readonly activeValidations: number;
   readonly fgsActive: boolean;
   readonly warning: string | null;
+  /** User-visible finish progress stage (null when not finishing). */
+  readonly finishStage: CaptureFinishStage;
 }
 
 export interface CaptureMediaStore {
@@ -71,6 +80,12 @@ export interface CaptureServiceAdapters {
     readonly reporter: import('../../observability').ObservabilityReporter;
     readonly marks: import('../../observability').TimingMarkStore;
   } | null;
+  /** Emit capture.finish_* events (default true when observability is set). */
+  readonly finishInstrumentation?: boolean;
+  /** Light MediaStore check before skipping full rescan (default true). */
+  readonly finishSafeMediaCheck?: boolean;
+  /** Persist freeze watermark on successful finish (default true). */
+  readonly sessionFreeze?: boolean;
 }
 
 type Listener = (snapshot: CaptureSnapshot) => void;
@@ -121,6 +136,8 @@ export class CaptureService {
   private disposed = false;
   private autoScanEnabled = false;
   private warning: string | null = null;
+  private finishStage: CaptureFinishStage = null;
+  private finishInFlight: Promise<string> | null = null;
   private activeValidations = new Map<string, Promise<void>>();
   private validationVersions = new Map<string, number>();
   private readonly mediaStore: CaptureMediaStore;
@@ -129,6 +146,9 @@ export class CaptureService {
   private readonly createId: () => string;
   private readonly onPhotoStable: CaptureServiceAdapters['onPhotoStable'];
   private readonly observability: CaptureServiceAdapters['observability'];
+  private readonly finishInstrumentation: boolean;
+  private readonly finishSafeMediaCheck: boolean;
+  private readonly sessionFreeze: boolean;
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -142,6 +162,9 @@ export class CaptureService {
     this.createId = adapters.createId ?? createId;
     this.onPhotoStable = adapters.onPhotoStable;
     this.observability = adapters.observability ?? null;
+    this.finishInstrumentation = adapters.finishInstrumentation ?? true;
+    this.finishSafeMediaCheck = adapters.finishSafeMediaCheck ?? true;
+    this.sessionFreeze = adapters.sessionFreeze ?? true;
     this.coordinator = createScanCoordinator(() => this.runScanOnce());
   }
 
@@ -348,12 +371,31 @@ export class CaptureService {
   async finalizeCaptureForUpload(options?: {
     readonly targetStatus?: 'review' | 'uploading';
   }): Promise<string> {
+    if (this.finishInFlight) {
+      return this.finishInFlight;
+    }
+    const tracked: { current: Promise<string> | null } = { current: null };
+    tracked.current = this.runFinalizeCaptureForUpload(options).finally(() => {
+      if (this.finishInFlight === tracked.current) {
+        this.finishInFlight = null;
+      }
+    });
+    this.finishInFlight = tracked.current;
+    return tracked.current;
+  }
+
+  private async runFinalizeCaptureForUpload(options?: {
+    readonly targetStatus?: 'review' | 'uploading';
+  }): Promise<string> {
     const target = options?.targetStatus ?? 'uploading';
     const sessionId = this.requireSessionId();
+    const finishStartedAt = Date.now();
+    let errorStage = 'start';
     const current = await this.repo.getSession(sessionId);
     if (!current) {
       throw new Error('No se encontró la captura local.');
     }
+    const statusBefore = current.status;
 
     if (current.status === 'uploading' && target === 'uploading') {
       this.clearCurrentSession();
@@ -392,47 +434,238 @@ export class CaptureService {
     const resumeStatus: 'active' | 'paused' =
       current.status === 'paused' ? 'paused' : 'active';
 
+    this.emitFinishObs('capture.finish_started', sessionId, current, {
+      statusBefore,
+      statusAfter: 'finishing',
+      durationMs: 0,
+    });
+
     await this.ensureSessionStatus(sessionId, 'finishing', ['active', 'paused', 'finishing']);
     this.autoScanEnabled = false;
     this.detachListener();
     // Emit finishing immediately so CaptureScreen can show loading before heavy work.
     if (this.session?.id === sessionId) {
       this.session = { ...this.session, status: 'finishing' };
-      this.emit();
+      this.setFinishStage('checking_media');
     }
 
     try {
+      errorStage = 'session_loaded';
+      const loadStarted = Date.now();
       await this.loadSession(sessionId, false);
+      const sessionAfterLoad = this.session ?? (await this.repo.getSession(sessionId));
+      if (!sessionAfterLoad) {
+        throw new Error('No se encontró la captura local.');
+      }
+      this.emitFinishObs('capture.finish_session_loaded', sessionId, sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'finishing',
+        durationMs: stageDurationMs(loadStarted),
+      });
+
       const hasPendingValidation = this.photos.some(
         (p) => p.status === 'detected' || p.status === 'waiting_stability',
       );
-      const hasActiveValidation = Array.from(this.activeValidations.keys()).some((key) =>
+      const sessionValidationCount = Array.from(this.activeValidations.keys()).filter((key) =>
         key.startsWith(`${sessionId}:`),
-      );
-      // Skip a full gallery rescan when everything is already stable — finish used to
-      // re-scan under SQLite contention and freeze the UI with no loading affordance.
-      if (hasPendingValidation || hasActiveValidation) {
+      ).length;
+      this.emitFinishObs('capture.finish_pending_validation_count', sessionId, sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'finishing',
+        durationMs: 0,
+        activeValidationCount: sessionValidationCount,
+      });
+
+      // Light MediaStore check: SQLite-stable alone can miss gallery photos not yet admitted.
+      let newMediaCandidateCount = 0;
+      if (this.finishSafeMediaCheck) {
+        errorStage = 'media_store_check';
+        this.setFinishStage('checking_media');
+        const mediaCheckStarted = Date.now();
+        this.emitFinishObs('capture.finish_media_store_check_started', sessionId, sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'finishing',
+          durationMs: 0,
+        });
+        newMediaCandidateCount = await this.countNewMediaCandidates(sessionId);
+        this.emitFinishObs('capture.finish_media_store_check_completed', sessionId, sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'finishing',
+          durationMs: stageDurationMs(mediaCheckStarted),
+          newMediaCandidateCount,
+        });
+        this.emitFinishObs('capture.finish_new_media_candidates', sessionId, sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'finishing',
+          durationMs: 0,
+          newMediaCandidateCount,
+        });
+      }
+
+      const needsScanOrValidation =
+        hasPendingValidation || sessionValidationCount > 0 || newMediaCandidateCount > 0;
+
+      if (needsScanOrValidation) {
+        errorStage = 'scan';
+        this.setFinishStage(newMediaCandidateCount > 0 ? 'checking_media' : 'validating');
+        const scanStarted = Date.now();
+        this.emitFinishObs('capture.finish_scan_started', sessionId, sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'finishing',
+          durationMs: 0,
+          newMediaCandidateCount,
+          skippedFullRescan: false,
+        });
         await this.coordinator.request();
         await this.runScanOnce(sessionId, true);
+        this.emitFinishObs('capture.finish_scan_completed', sessionId, this.session ?? sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'finishing',
+          durationMs: stageDurationMs(scanStarted),
+          newMediaCandidateCount,
+          skippedFullRescan: false,
+        });
+
+        errorStage = 'validation_wait';
+        this.setFinishStage('validating');
+        const waitStarted = Date.now();
+        this.emitFinishObs('capture.finish_validation_wait_started', sessionId, this.session ?? sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'finishing',
+          durationMs: 0,
+          activeValidationCount: this.activeValidations.size,
+        });
         await this.waitForActiveValidations(sessionId, this.validationTimeoutMs);
         await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
+        this.emitFinishObs('capture.finish_validation_wait_completed', sessionId, this.session ?? sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'finishing',
+          durationMs: stageDurationMs(waitStarted),
+          activeValidationCount: this.activeValidations.size,
+        });
+
+        // Second light check: photos indexed during validation window.
+        if (this.finishSafeMediaCheck) {
+          const lateCandidates = await this.countNewMediaCandidates(sessionId);
+          if (lateCandidates > 0) {
+            await this.runScanOnce(sessionId, true);
+            await this.waitForActiveValidations(sessionId, this.validationTimeoutMs);
+            await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
+            newMediaCandidateCount += lateCandidates;
+          }
+        }
+      } else {
+        this.emitFinishObs('capture.finish_scan_completed', sessionId, sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'finishing',
+          durationMs: 0,
+          newMediaCandidateCount: 0,
+          skippedFullRescan: true,
+        });
       }
+
+      errorStage = 'foreground_stop';
+      this.setFinishStage('closing');
+      const fgsStarted = Date.now();
+      this.emitFinishObs('capture.finish_foreground_stop_started', sessionId, this.session ?? sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'finishing',
+        durationMs: 0,
+        foregroundServiceActive: this.fgsActive,
+      });
       await this.stopForeground();
+      this.emitFinishObs('capture.finish_foreground_stop_completed', sessionId, this.session ?? sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'finishing',
+        durationMs: stageDurationMs(fgsStarted),
+        foregroundServiceActive: false,
+      });
+
+      errorStage = 'reload_photos';
+      const reloadStarted = Date.now();
+      this.emitFinishObs('capture.finish_reload_photos_started', sessionId, this.session ?? sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'finishing',
+        durationMs: 0,
+      });
       await this.reloadPhotos(sessionId);
+      this.emitFinishObs('capture.finish_reload_photos_completed', sessionId, this.session ?? sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'finishing',
+        durationMs: stageDurationMs(reloadStarted),
+      });
+
+      errorStage = 'readiness_check';
+      const readyStarted = Date.now();
+      this.emitFinishObs('capture.finish_readiness_check_started', sessionId, this.session ?? sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'finishing',
+        durationMs: 0,
+      });
       this.assertPhotosReadyForUpload();
+      this.emitFinishObs('capture.finish_readiness_check_completed', sessionId, this.session ?? sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'finishing',
+        durationMs: stageDurationMs(readyStarted),
+      });
+
+      if (this.sessionFreeze) {
+        const frozenCount = countFinishPhotos(this.photos).photo_count - countFinishPhotos(this.photos).excluded_count;
+        const frozen = await this.repo.markCaptureFrozen(sessionId, {
+          frozenAt: new Date().toISOString(),
+          photoCount: Math.max(0, frozenCount),
+        });
+        if (this.session?.id === sessionId) {
+          this.session = frozen;
+        }
+      }
 
       // Re-assert finishing before review: concurrent writers / SQLite recovery can
       // leave the row on `active`, which cannot jump directly to `review`.
       await this.ensureSessionStatus(sessionId, 'finishing', ['active', 'paused', 'finishing']);
+
+      errorStage = 'review_transition';
+      this.setFinishStage('preparing_review');
+      const reviewStarted = Date.now();
+      this.emitFinishObs('capture.finish_review_transition_started', sessionId, this.session ?? sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'finishing',
+        durationMs: 0,
+        newMediaCandidateCount,
+        skippedFullRescan: !needsScanOrValidation,
+      });
       await this.repo.updateSessionStatus(sessionId, 'review');
+      this.emitFinishObs('capture.finish_review_transition_completed', sessionId, this.session ?? sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'review',
+        durationMs: stageDurationMs(reviewStarted),
+        newMediaCandidateCount,
+        skippedFullRescan: !needsScanOrValidation,
+      });
 
       if (target === 'review') {
         await this.loadSession(sessionId, false);
+        this.setFinishStage(null);
+        this.emitFinishObs('capture.finish_completed', sessionId, this.session ?? sessionAfterLoad, {
+          statusBefore,
+          statusAfter: 'review',
+          durationMs: stageDurationMs(finishStartedAt),
+          newMediaCandidateCount,
+          skippedFullRescan: !needsScanOrValidation,
+        });
         this.logger.info('session_finish', { sessionId });
         return sessionId;
       }
 
       await this.repo.updateSessionStatus(sessionId, 'uploading');
+      this.setFinishStage(null);
+      this.emitFinishObs('capture.finish_completed', sessionId, sessionAfterLoad, {
+        statusBefore,
+        statusAfter: 'uploading',
+        durationMs: stageDurationMs(finishStartedAt),
+        newMediaCandidateCount,
+        skippedFullRescan: !needsScanOrValidation,
+      });
       this.clearCurrentSession();
       this.logger.info('session_finish', { sessionId, handoff: 'uploading' });
       return sessionId;
@@ -443,8 +676,96 @@ export class CaptureService {
         await this.repo.updateSessionStatus(sessionId, resumeStatus);
         await this.loadSession(sessionId, resumeStatus === 'active');
       }
+      this.setFinishStage(null);
+      const failedSession = (await this.repo.getSession(sessionId)) ?? current;
+      this.emitFinishObs('capture.finish_failed', sessionId, failedSession, {
+        statusBefore,
+        statusAfter: failedSession.status,
+        durationMs: stageDurationMs(finishStartedAt),
+        errorCode: 'FINISH_FAILED',
+        errorStage,
+      });
       throw error;
     }
+  }
+
+  private setFinishStage(stage: CaptureFinishStage): void {
+    this.finishStage = stage;
+    this.emit();
+  }
+
+  private emitFinishObs(
+    name: string,
+    sessionId: string,
+    session: CaptureSessionRow,
+    extra: {
+      readonly statusBefore?: string | null;
+      readonly statusAfter?: string | null;
+      readonly durationMs?: number;
+      readonly activeValidationCount?: number;
+      readonly newMediaCandidateCount?: number | null;
+      readonly errorCode?: string | null;
+      readonly errorStage?: string | null;
+      readonly foregroundServiceActive?: boolean | null;
+      readonly skippedFullRescan?: boolean | null;
+    },
+  ): void {
+    if (!this.finishInstrumentation || !this.observability?.reporter) {
+      return;
+    }
+    const attributes = finishBaseAttributes({
+      session,
+      photos: this.photos,
+      statusBefore: extra.statusBefore ?? null,
+      statusAfter: extra.statusAfter ?? null,
+      activeValidationCount: extra.activeValidationCount ?? this.activeValidations.size,
+      newMediaCandidateCount: extra.newMediaCandidateCount ?? null,
+      errorCode: extra.errorCode ?? null,
+      errorStage: extra.errorStage ?? null,
+      foregroundServiceActive: extra.foregroundServiceActive ?? this.fgsActive,
+      finishStage: this.finishStage,
+      skippedFullRescan: extra.skippedFullRescan ?? null,
+    });
+    if (extra.durationMs != null) {
+      emitFinishEvent(this.observability.reporter, {
+        name,
+        sessionId,
+        durationMs: extra.durationMs,
+        attributes,
+      });
+      return;
+    }
+    emitFinishEvent(this.observability.reporter, {
+      name,
+      sessionId,
+      attributes,
+    });
+  }
+
+  /**
+   * Count gallery candidates newer than the session floor that are not yet admitted.
+   * Does not mutate SQLite; used to decide whether a finishing rescan is required.
+   */
+  private async countNewMediaCandidates(sessionId: string): Promise<number> {
+    const session = await this.repo.getSession(sessionId);
+    if (!session) {
+      return 0;
+    }
+    const isCurrent = session.id === this.session?.id;
+    const scanCursor = isCurrent ? this.scanCursor : cursorFromSession(session, 'scan');
+    const floorCursor = isCurrent ? this.floorCursor : cursorFromInitialMarker(session);
+    const inspectedIds = await this.repo.inspectedAssetIds(sessionId);
+    const { images } = await this.mediaStore.queryNewPhotosSince({
+      scanCursor,
+      floorCursor,
+      inspectedAssetIds: inspectedIds,
+    });
+    const result = detectNewPhotos({
+      candidates: images,
+      scanCursor: floorCursor,
+      inspectedIds,
+    });
+    return result.admitted.length;
   }
 
   /**
@@ -492,6 +813,50 @@ export class CaptureService {
    */
   async completeReview(): Promise<string> {
     return this.finalizeCaptureForUpload({ targetStatus: 'uploading' });
+  }
+
+  /**
+   * Close the aisle locally without requiring upload or /process.
+   * Upload may continue in background when enqueueLater is true.
+   */
+  async completeLocalSession(options?: {
+    readonly enqueueUpload?: boolean;
+  }): Promise<string> {
+    const sessionId = this.requireSessionId();
+    const current = await this.repo.getSession(sessionId);
+    if (!current) {
+      throw new Error('No se encontró la captura local.');
+    }
+    if (current.status === 'local_completed') {
+      return sessionId;
+    }
+    if (current.status === 'review') {
+      await this.reloadPhotos(sessionId);
+      this.assertPhotosReadyForUpload();
+      if (this.sessionFreeze && !current.capture_frozen_at) {
+        const frozenCount =
+          countFinishPhotos(this.photos).photo_count - countFinishPhotos(this.photos).excluded_count;
+        await this.repo.markCaptureFrozen(sessionId, {
+          frozenAt: new Date().toISOString(),
+          photoCount: Math.max(0, frozenCount),
+        });
+      }
+      await this.repo.updateSessionStatus(sessionId, 'local_completed');
+      await this.loadSession(sessionId, false);
+      this.logger.info('session_finish', {
+        sessionId,
+        handoff: 'local_completed',
+        enqueueUpload: options?.enqueueUpload === true,
+      });
+      return sessionId;
+    }
+    if (current.status === 'active' || current.status === 'paused' || current.status === 'finishing') {
+      await this.finalizeCaptureForUpload({ targetStatus: 'review' });
+      return this.completeLocalSession(options);
+    }
+    throw new Error(
+      `No se puede cerrar localmente desde el estado "${current.status}".`,
+    );
   }
 
   async cancel(): Promise<void> {
@@ -817,6 +1182,7 @@ export class CaptureService {
       activeValidations: this.activeValidations.size,
       fgsActive: this.fgsActive,
       warning: this.warning,
+      finishStage: this.finishStage,
     };
   }
 
@@ -837,6 +1203,7 @@ export class CaptureService {
     this.autoScanEnabled = false;
     this.fgsActive = false;
     this.warning = null;
+    this.finishStage = null;
     this.detachListener();
     this.emit();
   }

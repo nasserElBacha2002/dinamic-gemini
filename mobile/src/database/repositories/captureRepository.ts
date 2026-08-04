@@ -365,6 +365,39 @@ export class CaptureRepository {
   }
 
   /**
+   * Persist freeze watermark for review/upload/CSV. Idempotent: re-freeze updates
+   * timestamp/count and increments generation.
+   */
+  async markCaptureFrozen(
+    sessionId: string,
+    input: {
+      readonly frozenAt: string;
+      readonly photoCount: number;
+    },
+  ): Promise<CaptureSessionRow> {
+    const now = new Date().toISOString();
+    await withSqliteBusyRetry(() =>
+      this.db.runAsync(
+        `UPDATE capture_sessions
+         SET capture_frozen_at = ?,
+             capture_frozen_photo_count = ?,
+             capture_freeze_generation = COALESCE(capture_freeze_generation, 0) + 1,
+             updated_at = ?
+         WHERE id = ?;`,
+        input.frozenAt,
+        input.photoCount,
+        now,
+        sessionId,
+      ),
+    );
+    const row = await this.getSession(sessionId);
+    if (!row) {
+      throw new Error('No se encontró la captura local.');
+    }
+    return row;
+  }
+
+  /**
    * Low-level photo upsert. Prefer {@link upsertAdmittedPhotosWithSequences} so
    * sequence_number is assigned at first persist (not at upload time).
    */
@@ -844,27 +877,29 @@ export class CaptureRepository {
       return false;
     }
     const now = new Date().toISOString();
-    const result = await this.db.runAsync(
-      `UPDATE capture_photos
-       SET status = ?,
-           stability_error = ?,
-           stability_checks = ?,
-           stability_attempts = stability_attempts + 1,
-           last_stability_attempt_at = ?,
-           stable_at = CASE WHEN ? = 'stable' THEN ? ELSE stable_at END,
-           updated_at = ?
-       WHERE capture_session_id = ?
-         AND asset_id = ?
-         AND status IN ('detected', 'waiting_stability');`,
-      input.status,
-      input.error,
-      input.checks,
-      now,
-      input.status,
-      now,
-      now,
-      input.sessionId,
-      input.assetId,
+    const result = await withSqliteBusyRetry(() =>
+      this.db.runAsync(
+        `UPDATE capture_photos
+         SET status = ?,
+             stability_error = ?,
+             stability_checks = ?,
+             stability_attempts = stability_attempts + 1,
+             last_stability_attempt_at = ?,
+             stable_at = CASE WHEN ? = 'stable' THEN ? ELSE stable_at END,
+             updated_at = ?
+         WHERE capture_session_id = ?
+           AND asset_id = ?
+           AND status IN ('detected', 'waiting_stability');`,
+        input.status,
+        input.error,
+        input.checks,
+        now,
+        input.status,
+        now,
+        now,
+        input.sessionId,
+        input.assetId,
+      ),
     ) as { changes?: number };
     return (result.changes ?? 0) > 0;
   }

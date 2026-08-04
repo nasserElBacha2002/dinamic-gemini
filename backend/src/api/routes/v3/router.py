@@ -20,6 +20,7 @@ from . import (
     code_scans,
     image_results,
     inventories,
+    local_csv_imports,
     ordered_capture,
     position_label_detections,
     position_overrides,
@@ -40,6 +41,7 @@ router = APIRouter(
 )
 
 router.include_router(inventories.router)
+router.include_router(local_csv_imports.router)
 router.include_router(capture_sessions.router)
 router.include_router(ordered_capture.router)
 router.include_router(aisle_locations.router)

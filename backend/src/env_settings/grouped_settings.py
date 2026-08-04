@@ -1033,6 +1033,26 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Enable aisle QR/barcode code scan API. Env: CODE_SCAN_ENABLED.",
     )
+    server_csv_import_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_CSV_IMPORT_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: enable versioned local CSV inventory imports. "
+            "Default false. Env: SERVER_CSV_IMPORT_ENABLED."
+        ),
+    )
+    server_csv_import_max_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv("SERVER_CSV_IMPORT_MAX_BYTES", str(5 * 1024 * 1024))
+        ),
+        ge=1,
+        description=(
+            "Maximum local CSV request/file size in bytes. "
+            "Env: SERVER_CSV_IMPORT_MAX_BYTES."
+        ),
+    )
     server_preliminary_detection_ingest_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("SERVER_PRELIMINARY_DETECTION_INGEST", "false").strip().lower()
