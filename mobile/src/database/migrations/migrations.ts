@@ -581,6 +581,83 @@ CREATE INDEX IF NOT EXISTS idx_capture_sessions_process_idempotency_key
   ON capture_sessions(process_idempotency_key);
 `,
   },
+  {
+    version: 21,
+    name: 'capture_session_freeze_watermark',
+    sql: `
+ALTER TABLE capture_sessions ADD COLUMN capture_frozen_at TEXT;
+ALTER TABLE capture_sessions ADD COLUMN capture_frozen_photo_count INTEGER;
+ALTER TABLE capture_sessions ADD COLUMN capture_freeze_generation INTEGER NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_capture_sessions_frozen_at
+  ON capture_sessions(capture_frozen_at);
+`,
+  },
+  {
+    version: 22,
+    name: 'local_csv_exports',
+    sql: `
+CREATE TABLE IF NOT EXISTS local_csv_exports (
+  id TEXT PRIMARY KEY NOT NULL,
+  export_id TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  capture_session_id TEXT,
+  inventory_id TEXT NOT NULL,
+  aisle_id TEXT,
+  row_count INTEGER NOT NULL,
+  checksum_sha256 TEXT NOT NULL,
+  content_fingerprint TEXT NOT NULL,
+  file_uri TEXT,
+  exported_at TEXT NOT NULL,
+  shared_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(export_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_csv_exports_session
+  ON local_csv_exports(capture_session_id);
+CREATE INDEX IF NOT EXISTS idx_local_csv_exports_inventory
+  ON local_csv_exports(inventory_id);
+CREATE INDEX IF NOT EXISTS idx_local_csv_exports_fingerprint
+  ON local_csv_exports(content_fingerprint);
+`,
+  },
+  {
+    version: 23,
+    name: 'capture_session_freeze_snapshot',
+    sql: `
+CREATE TABLE IF NOT EXISTS capture_session_freezes (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_session_id TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  frozen_at TEXT NOT NULL,
+  photo_count INTEGER NOT NULL,
+  content_fingerprint TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(capture_session_id, generation)
+);
+
+CREATE TABLE IF NOT EXISTS capture_session_freeze_photos (
+  freeze_id TEXT NOT NULL,
+  capture_photo_id TEXT NOT NULL,
+  sequence_number INTEGER NOT NULL,
+  status_at_freeze TEXT NOT NULL,
+  included INTEGER NOT NULL,
+  PRIMARY KEY (freeze_id, capture_photo_id),
+  UNIQUE(freeze_id, sequence_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_capture_session_freezes_session
+  ON capture_session_freezes(capture_session_id);
+
+ALTER TABLE capture_sessions ADD COLUMN active_freeze_id TEXT;
+ALTER TABLE capture_sessions ADD COLUMN upload_policy TEXT;
+ALTER TABLE local_csv_exports ADD COLUMN freeze_id TEXT;
+ALTER TABLE local_csv_exports ADD COLUMN checksum_algorithm TEXT NOT NULL DEFAULT 'sha256';
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

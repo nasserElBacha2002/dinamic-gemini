@@ -193,7 +193,8 @@ def is_invalid_detection_status(status: str | PositionLabelDetectionStatus | Non
         PositionLabelDetectionStatus.INVALID_SIGNATURE.value,
         PositionLabelDetectionStatus.INVALID_JSON.value,
         PositionLabelDetectionStatus.CLIENT_MISMATCH.value,
-        PositionLabelDetectionStatus.LEGACY_UNSIGNED_REQUIRES_REVIEW.value,
+        # LEGACY_UNSIGNED_REQUIRES_REVIEW is an accepted unsigned path (sets position);
+        # do not count it as an invalid / rejected-signature warning.
         PositionLabelDetectionStatus.LABEL_INVALIDATED.value,
         PositionLabelDetectionStatus.LABEL_NOT_FOUND.value,
     }

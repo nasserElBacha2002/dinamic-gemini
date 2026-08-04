@@ -391,3 +391,77 @@ def test_summary_artifact_required_unpublished() -> None:
     )
     assert model.summary["artifact_required"] == 1
     assert model.summary["artifact_published"] == 0
+
+
+def test_local_csv_null_job_synthesizes_displayable_evidence() -> None:
+    pos = _position(
+        job_id=None,
+        detected_summary_json={
+            "ingestion_source": "LOCAL_CSV_IMPORT",
+            "local_csv_productive_result_id": "prod-1",
+            "source_asset_id": "asset-1",
+            "entity_uid": "local_csv:prod-1",
+        },
+    )
+    view = _service([]).get_position_evidence_view(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        position=pos,
+        job_id=None,
+    )
+    assert view.displayable is True
+    assert view.traceability_status == TraceabilityStatus.VALID.value
+    assert view.image_url is not None
+    assert view.source_asset_id == "asset-1"
+
+
+def test_local_csv_null_job_resolves_asset_via_capture_photo_metadata() -> None:
+    class _MetaAssetRepo(_AssetRepo):
+        def list_by_aisle(self, aisle_id: str):
+            assets = super().list_by_aisle(aisle_id)
+            if not assets:
+                return assets
+            a = assets[0]
+            return [
+                SourceAsset(
+                    id=a.id,
+                    aisle_id=a.aisle_id,
+                    type=a.type,
+                    original_filename=a.original_filename,
+                    storage_path=a.storage_path,
+                    mime_type=a.mime_type,
+                    uploaded_at=a.uploaded_at,
+                    metadata_json={"capture_photo_id": "photo-xyz", "client_file_id": "cf-xyz"},
+                    upload_client_file_id="cf-xyz",
+                )
+            ]
+
+    repo = MemoryResultEvidenceRepository()
+
+    def resolver(asset, artifact_store=None):  # noqa: ANN001
+        return ("https://cdn.example.com/a.jpg", False)
+
+    svc = ResultEvidenceQueryService(
+        result_evidence_repo=repo,
+        source_asset_repo=_MetaAssetRepo(),
+        manifest_store=None,
+        artifact_store=None,
+        image_url_resolver=resolver,
+    )
+    pos = _position(
+        job_id=None,
+        detected_summary_json={
+            "ingestion_source": "LOCAL_CSV_IMPORT",
+            "local_csv_import_row_id": "row-1",
+            "capture_photo_id": "photo-xyz",
+            "client_file_id": "cf-xyz",
+        },
+    )
+    view = svc.get_position_evidence_view(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        position=pos,
+        job_id=None,
+    )
+    assert view.displayable is True
+    assert view.source_asset_id == "asset-1"

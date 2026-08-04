@@ -42,6 +42,16 @@ export interface CaptureSessionRow {
   readonly process_requested_at: string | null;
   readonly process_confirmed_at: string | null;
   readonly last_recovery_check_at: string | null;
+  /** ISO timestamp when the capture photo set was frozen for review/upload/CSV. */
+  readonly capture_frozen_at: string | null;
+  /** Count of non-excluded photos at freeze time. */
+  readonly capture_frozen_photo_count: number | null;
+  /** Monotonic freeze generation (idempotent re-freeze increments). */
+  readonly capture_freeze_generation: number;
+  /** Active freeze snapshot id (exact photo set for CSV/upload). */
+  readonly active_freeze_id: string | null;
+  /** Upload scheduling policy: MANUAL | WHEN_CONNECTED | NOW */
+  readonly upload_policy: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }

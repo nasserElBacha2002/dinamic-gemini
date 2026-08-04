@@ -14,7 +14,7 @@ import {
   sortDataTableRows,
 } from '../../../components/ui';
 import { useTableState } from '../../../hooks';
-import { pathToAisleObservability, pathToAisleLocations, pathToClientSupplier } from '../../../constants/appRoutes';
+import { pathToAisleObservability, pathToClientSupplier } from '../../../constants/appRoutes';
 import { pathToAislePositions } from '../../../utils/resultRoutes';
 import { computeProcessAisleMenuState, type AisleInventoryTableRow, type ProcessAisleMenuContext } from '../adapters';
 
@@ -84,11 +84,6 @@ function buildAisleRowActions(params: {
       label: t('aisle.action_observability_view'),
       onClick: () =>
         navigate(pathToAisleObservability(inventoryId, p.id, row.action.observabilityInitialRunId)),
-    },
-    {
-      id: 'locations',
-      label: t('aisle_locations.action_manage'),
-      onClick: () => navigate(pathToAisleLocations(inventoryId, p.id)),
     },
     {
       id: 'process',
@@ -294,30 +289,6 @@ export default function InventoryAislesSection({
               }}
             >
               {t('aisle.action_observability_view')}
-            </Button>
-          );
-        },
-      },
-      {
-        id: 'action_physical_locations',
-        label: t('aisle_locations.column_action'),
-        align: 'center',
-        sortable: false,
-        width: 140,
-        cell: (row) => {
-          const p = row.presentation;
-          return (
-            <Button
-              variant="outlined"
-              size="small"
-              data-testid={`aisle-action-physical-locations-${p.id}`}
-              aria-label={t('aisle_locations.action_manage_a11y', { code: p.code })}
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(pathToAisleLocations(inventoryId, p.id));
-              }}
-            >
-              {t('aisle_locations.action_manage')}
             </Button>
           );
         },

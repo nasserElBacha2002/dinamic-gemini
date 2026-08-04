@@ -12,6 +12,24 @@ export interface FeatureFlags {
   readonly aisleDeviceLock: boolean;
   /** Phase 0 upload/process observability (kill switch: set DINAMIC_FLAG_UPLOAD_OBS=0). */
   readonly uploadObservabilityEnabled: boolean;
+  /** Phase 0: emit capture.finish_* stage events (safe; default on). */
+  readonly captureFinishInstrumentation: boolean;
+  /** Phase 1: light MediaStore check before skipping finish rescan (default on). */
+  readonly captureFinishSafeMediaCheck: boolean;
+  /** Phase 1: persist capture freeze watermark on finish (default on). */
+  readonly captureSessionFreeze: boolean;
+  /** Phase 2: debounce UploadQueue emit/refreshCachedSessions (default on). */
+  readonly uploadIncrementalSnapshots: boolean;
+  /** Phase 2: network-aware prepare parallelism (default on). */
+  readonly uploadPrepareParallelism: boolean;
+  /** Phase 3: allow closing capture locally without upload/process (default on). */
+  readonly localCompletion: boolean;
+  /** Phase 4: offline local CSV export (default on). */
+  readonly mobileCsvExport: boolean;
+  /** Phase 5: client may call server CSV import APIs (default false until server flag on). */
+  readonly serverCsvImport: boolean;
+  /** Phase 6: classify local vs server result conflicts (default on). */
+  readonly localRemoteReconciliation: boolean;
   /** Phase 1: proactive max-edge dimension cap during prepare. */
   readonly uploadDimensionCap: boolean;
   /** Phase 1: profile/network JPEG quality instead of legacy fixed qualities. */
@@ -81,6 +99,15 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   backgroundJobPolling: true,
   aisleDeviceLock: false,
   uploadObservabilityEnabled: true,
+  captureFinishInstrumentation: true,
+  captureFinishSafeMediaCheck: true,
+  captureSessionFreeze: true,
+  uploadIncrementalSnapshots: true,
+  uploadPrepareParallelism: true,
+  localCompletion: true,
+  mobileCsvExport: true,
+  serverCsvImport: false,
+  localRemoteReconciliation: true,
   uploadDimensionCap: true,
   uploadAdaptiveQuality: true,
   uploadAdaptiveConcurrency: true,
@@ -145,6 +172,33 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     uploadObservabilityEnabled: bool(
       'uploadObservabilityEnabled',
       DEFAULT_FEATURE_FLAGS.uploadObservabilityEnabled,
+    ),
+    captureFinishInstrumentation: bool(
+      'captureFinishInstrumentation',
+      DEFAULT_FEATURE_FLAGS.captureFinishInstrumentation,
+    ),
+    captureFinishSafeMediaCheck: bool(
+      'captureFinishSafeMediaCheck',
+      DEFAULT_FEATURE_FLAGS.captureFinishSafeMediaCheck,
+    ),
+    captureSessionFreeze: bool(
+      'captureSessionFreeze',
+      DEFAULT_FEATURE_FLAGS.captureSessionFreeze,
+    ),
+    uploadIncrementalSnapshots: bool(
+      'uploadIncrementalSnapshots',
+      DEFAULT_FEATURE_FLAGS.uploadIncrementalSnapshots,
+    ),
+    uploadPrepareParallelism: bool(
+      'uploadPrepareParallelism',
+      DEFAULT_FEATURE_FLAGS.uploadPrepareParallelism,
+    ),
+    localCompletion: bool('localCompletion', DEFAULT_FEATURE_FLAGS.localCompletion),
+    mobileCsvExport: bool('mobileCsvExport', DEFAULT_FEATURE_FLAGS.mobileCsvExport),
+    serverCsvImport: bool('serverCsvImport', DEFAULT_FEATURE_FLAGS.serverCsvImport),
+    localRemoteReconciliation: bool(
+      'localRemoteReconciliation',
+      DEFAULT_FEATURE_FLAGS.localRemoteReconciliation,
     ),
     uploadDimensionCap: bool('uploadDimensionCap', optInDefault),
     uploadAdaptiveQuality: bool('uploadAdaptiveQuality', optInDefault),

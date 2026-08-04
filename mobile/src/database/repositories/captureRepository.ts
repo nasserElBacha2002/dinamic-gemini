@@ -159,6 +159,11 @@ export class CaptureRepository {
         throw new Error(`Capture session not found: ${id}`);
       }
       if (!canTransitionSession(current.status, status)) {
+        if (status === 'finishing' && current.status === 'processing') {
+          throw new Error(
+            'Esta captura ya está en procesamiento en el servidor. Abrila desde Actividad local → Procesamiento; no hace falta finalizar de nuevo.',
+          );
+        }
         throw new Error(`Invalid capture session transition: ${current.status} -> ${status}`);
       }
       await this.db.runAsync(
@@ -361,6 +366,152 @@ export class CaptureRepository {
       cursor.assetId,
       new Date().toISOString(),
       id,
+    );
+  }
+
+  /**
+   * Persist freeze watermark + exact photo snapshot. Idempotent when fingerprint matches.
+   */
+  async markCaptureFrozen(
+    sessionId: string,
+    input: {
+      readonly frozenAt: string;
+      readonly photoCount: number;
+    },
+  ): Promise<CaptureSessionRow> {
+    const now = new Date().toISOString();
+    await withSqliteBusyRetry(() =>
+      this.db.runAsync(
+        `UPDATE capture_sessions
+         SET capture_frozen_at = ?,
+             capture_frozen_photo_count = ?,
+             capture_freeze_generation = COALESCE(capture_freeze_generation, 0) + 1,
+             updated_at = ?
+         WHERE id = ?;`,
+        input.frozenAt,
+        input.photoCount,
+        now,
+        sessionId,
+      ),
+    );
+    const row = await this.getSession(sessionId);
+    if (!row) {
+      throw new Error('No se encontró la captura local.');
+    }
+    return row;
+  }
+
+  async createFreezeSnapshot(input: {
+    readonly freezeId: string;
+    readonly sessionId: string;
+    readonly frozenAt: string;
+    readonly photoCount: number;
+    readonly contentFingerprint: string;
+    readonly photos: readonly {
+      readonly capturePhotoId: string;
+      readonly sequenceNumber: number;
+      readonly statusAtFreeze: string;
+      readonly included: boolean;
+    }[];
+  }): Promise<CaptureSessionRow> {
+    const now = new Date().toISOString();
+    await runImmediateTransaction(this.db, async () => {
+      const current = await this.getSession(input.sessionId);
+      const nextGen = (current?.capture_freeze_generation ?? 0) + 1;
+      await this.db.runAsync(
+        `INSERT INTO capture_session_freezes (
+          id, capture_session_id, generation, frozen_at, photo_count, content_fingerprint, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        input.freezeId,
+        input.sessionId,
+        nextGen,
+        input.frozenAt,
+        input.photoCount,
+        input.contentFingerprint,
+        now,
+      );
+      for (const photo of input.photos) {
+        await this.db.runAsync(
+          `INSERT INTO capture_session_freeze_photos (
+            freeze_id, capture_photo_id, sequence_number, status_at_freeze, included
+          ) VALUES (?, ?, ?, ?, ?);`,
+          input.freezeId,
+          photo.capturePhotoId,
+          photo.sequenceNumber,
+          photo.statusAtFreeze,
+          photo.included ? 1 : 0,
+        );
+      }
+      await this.db.runAsync(
+        `UPDATE capture_sessions
+         SET capture_frozen_at = ?,
+             capture_frozen_photo_count = ?,
+             capture_freeze_generation = ?,
+             active_freeze_id = ?,
+             updated_at = ?
+         WHERE id = ?;`,
+        input.frozenAt,
+        input.photoCount,
+        nextGen,
+        input.freezeId,
+        now,
+        input.sessionId,
+      );
+    });
+    const row = await this.getSession(input.sessionId);
+    if (!row) {
+      throw new Error('No se encontró la captura local.');
+    }
+    return row;
+  }
+
+  async getActiveFreeze(sessionId: string): Promise<{
+    readonly id: string;
+    readonly generation: number;
+    readonly frozen_at: string;
+    readonly photo_count: number;
+    readonly content_fingerprint: string;
+  } | null> {
+    const session = await this.getSession(sessionId);
+    if (!session?.active_freeze_id) {
+      return null;
+    }
+    return this.db.getFirstAsync(
+      `SELECT id, generation, frozen_at, photo_count, content_fingerprint
+       FROM capture_session_freezes WHERE id = ?;`,
+      session.active_freeze_id,
+    );
+  }
+
+  async listFreezePhotos(freezeId: string): Promise<CapturePhotoRow[]> {
+    const links = await this.db.getAllAsync<{ capture_photo_id: string; sequence_number: number }>(
+      `SELECT capture_photo_id, sequence_number
+       FROM capture_session_freeze_photos
+       WHERE freeze_id = ? AND included = 1
+       ORDER BY sequence_number ASC;`,
+      freezeId,
+    );
+    const photos: CapturePhotoRow[] = [];
+    for (const link of links) {
+      const photo = await this.db.getFirstAsync<CapturePhotoRow>(
+        `SELECT * FROM capture_photos WHERE id = ?;`,
+        link.capture_photo_id,
+      );
+      if (photo) {
+        photos.push(photo);
+      }
+    }
+    return photos;
+  }
+
+  async setUploadPolicy(sessionId: string, policy: 'MANUAL' | 'WHEN_CONNECTED' | 'NOW'): Promise<void> {
+    await withSqliteBusyRetry(() =>
+      this.db.runAsync(
+        `UPDATE capture_sessions SET upload_policy = ?, updated_at = ? WHERE id = ?;`,
+        policy,
+        new Date().toISOString(),
+        sessionId,
+      ),
     );
   }
 
@@ -835,7 +986,12 @@ export class CaptureRepository {
     );
   }
 
-  async applyStabilityResult(input: StabilityResultInput): Promise<boolean> {
+  async applyStabilityResult(
+    input: StabilityResultInput,
+    options?: {
+      readonly onBusyRetry?: (info: { readonly attempt: number; readonly maxAttempts: number }) => void;
+    },
+  ): Promise<boolean> {
     const current = await this.getPhoto(input.sessionId, input.assetId);
     if (!current) {
       return false;
@@ -844,27 +1000,31 @@ export class CaptureRepository {
       return false;
     }
     const now = new Date().toISOString();
-    const result = await this.db.runAsync(
-      `UPDATE capture_photos
-       SET status = ?,
-           stability_error = ?,
-           stability_checks = ?,
-           stability_attempts = stability_attempts + 1,
-           last_stability_attempt_at = ?,
-           stable_at = CASE WHEN ? = 'stable' THEN ? ELSE stable_at END,
-           updated_at = ?
-       WHERE capture_session_id = ?
-         AND asset_id = ?
-         AND status IN ('detected', 'waiting_stability');`,
-      input.status,
-      input.error,
-      input.checks,
-      now,
-      input.status,
-      now,
-      now,
-      input.sessionId,
-      input.assetId,
+    const result = await withSqliteBusyRetry(
+      () =>
+        this.db.runAsync(
+          `UPDATE capture_photos
+         SET status = ?,
+             stability_error = ?,
+             stability_checks = ?,
+             stability_attempts = stability_attempts + 1,
+             last_stability_attempt_at = ?,
+             stable_at = CASE WHEN ? = 'stable' THEN ? ELSE stable_at END,
+             updated_at = ?
+         WHERE capture_session_id = ?
+           AND asset_id = ?
+           AND status IN ('detected', 'waiting_stability');`,
+          input.status,
+          input.error,
+          input.checks,
+          now,
+          input.status,
+          now,
+          now,
+          input.sessionId,
+          input.assetId,
+        ),
+      options?.onBusyRetry ? { onBusyRetry: options.onBusyRetry } : {},
     ) as { changes?: number };
     return (result.changes ?? 0) > 0;
   }

@@ -26,6 +26,7 @@ import { AisleHistoryScreen } from './src/screens/AisleHistoryScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
 import { ExcludedPhotosScreen } from './src/screens/ExcludedPhotosScreen';
 import { AisleResultsListScreen } from './src/screens/AisleResultsListScreen';
+import { LocalActivityScreen } from './src/screens/LocalActivityScreen';
 import { ClientPositionLabelsScreen } from './src/screens/ClientPositionLabelsScreen';
 import type { AisleIdentificationMode } from './src/features/processing/processingMode';
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
@@ -49,7 +50,8 @@ type Screen =
   | 'aisle-results-list'
   | 'excluded-photos'
   | 'position-labels'
-  | 'diagnostic';
+  | 'diagnostic'
+  | 'local-activity';
 
 export default function App(): JSX.Element {
   const [services, setServices] = useState<AppServices | null>(null);
@@ -258,6 +260,7 @@ export default function App(): JSX.Element {
       footer={
         <View style={styles.nav}>
           <SmallButton label="Inventarios" onPress={() => setScreen('inventories')} />
+          <SmallButton label="Actividad local" onPress={() => setScreen('local-activity')} />
           <SmallButton label="Diagnóstico" onPress={() => setScreen('diagnostic')} />
           <SmallButton
             label="Salir"
@@ -371,6 +374,31 @@ export default function App(): JSX.Element {
                 }
                 void services.uploadQueue.enqueueSession(sid);
                 setScreen('uploads');
+              })
+              .catch((e) => setError(messageOf(e)));
+          }}
+          onSaveLocalOnly={(sessionId) => {
+            setWorkSessionId(sessionId);
+            void services.capture
+              .completeLocalSession({ uploadPolicy: 'MANUAL' })
+              .then(({ sessionId: sid }) => {
+                setWorkSessionId(sid);
+                setScreen('local-activity');
+              })
+              .catch((e) => setError(messageOf(e)));
+          }}
+          onSaveLocalWhenConnected={(sessionId) => {
+            setWorkSessionId(sessionId);
+            void services.capture
+              .completeLocalSession({ uploadPolicy: 'WHEN_CONNECTED' })
+              .then(({ sessionId: sid, uploadPolicy }) => {
+                setWorkSessionId(sid);
+                if (uploadPolicy === 'WHEN_CONNECTED' || uploadPolicy === 'NOW') {
+                  void services.uploadQueue.enqueueSession(sid).catch(() => {
+                    // Scheduling failure must not undo local close.
+                  });
+                }
+                setScreen('local-activity');
               })
               .catch((e) => setError(messageOf(e)));
           }}
@@ -531,6 +559,27 @@ export default function App(): JSX.Element {
       ) : null}
       {screen === 'diagnostic' ? (
         <DiagnosticScreen services={services} onBack={() => setScreen('inventories')} />
+      ) : null}
+      {screen === 'local-activity' ? (
+        <LocalActivityScreen
+          services={services}
+          onBack={() => setScreen('inventories')}
+          onError={setError}
+          onOpenSession={(work) => {
+            setWorkSessionId(work.sessionId);
+            if (work.kind === 'capture_active' || work.kind === 'capture_paused') {
+              setScreen('capture');
+              return;
+            }
+            if (work.kind === 'capture_review' || work.kind === 'local_completed') {
+              void services.capture.loadSession(work.sessionId, false).then(() => {
+                setScreen(work.kind === 'local_completed' ? 'uploads' : 'review');
+              });
+              return;
+            }
+            setScreen('uploads');
+          }}
+        />
       ) : null}
     </Shell>
   );

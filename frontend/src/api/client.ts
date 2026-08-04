@@ -80,6 +80,11 @@ export {
   uploadAisleAssets,
   uploadAisleAssetsBatch,
 } from './assetsApi';
+export {
+  confirmLocalInventoryPackage,
+  getLocalInventoryPackage,
+  previewLocalInventoryPackage,
+} from './localInventoryPackagesApi';
 export type { AnalyticsQueryParams } from './analyticsApi';
 export {
   downloadAisleBenchmarkExportCsv,

@@ -252,6 +252,10 @@ class SqlPositionRepository(PositionRepository):
         if status is not None:
             conditions.append("p.status = ?")
             params.append(status)
+        else:
+            # Soft-deleted positions stay in storage but are hidden from aisle results.
+            conditions.append("p.status <> ?")
+            params.append(PositionStatus.DELETED.value)
         if needs_review is not None:
             conditions.append("p.needs_review = ?")
             params.append(needs_review)

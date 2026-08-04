@@ -22,13 +22,25 @@ from src.domain.result_evidence.display import (
     detect_source_asset_mismatch,
     resolve_source_asset_id,
 )
-from src.domain.result_evidence.entities import ResultEvidenceRecord, ResultEvidenceRole
+from src.domain.result_evidence.entities import (
+    RESULT_EVIDENCE_KIND_ENTITY_TRACEABILITY,
+    ResultEvidenceRecord,
+    ResultEvidenceRole,
+)
 from src.domain.result_evidence.review_context import (
     REVIEW_CONTEXT_TRACEABILITY_UNCONFIRMED_WARNING,
     position_qualifies_for_review_context,
     resolve_review_context_asset_id,
 )
 from src.domain.traceability import TraceabilityStatus, normalize_traceability_status
+
+# Marker written by LocalCsvPositionMaterializer into detected_summary_json.
+_LOCAL_CSV_INGESTION_KEYS = frozenset(
+    {
+        "LOCAL_CSV_IMPORT",
+        "local_csv_import",
+    }
+)
 
 logger = logging.getLogger(__name__)
 
@@ -324,12 +336,25 @@ class ResultEvidenceQueryService:
         position: Position,
         job_id: str | None,
     ) -> ResultEvidenceViewModel:
+        assets_by_id = self._assets_by_id(aisle_id)
         if not job_id:
+            synthetic = self._synthetic_local_csv_evidence_record(
+                position,
+                assets_by_id=assets_by_id,
+            )
+            if synthetic is None:
+                return self.build_evidence_view(
+                    None,
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                    assets_by_id=assets_by_id,
+                )
             return self.build_evidence_view(
-                None,
+                synthetic,
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
-                assets_by_id=self._assets_by_id(aisle_id),
+                assets_by_id=assets_by_id,
+                job_id=None,
             )
         rows = list(
             self._result_evidence_repo.list_for_scope(
@@ -339,7 +364,6 @@ class ResultEvidenceQueryService:
             )
         )
         matched = self._match_row(rows, position=position)
-        assets_by_id = self._assets_by_id(aisle_id)
         view = self.build_evidence_view(
             matched,
             inventory_id=inventory_id,
@@ -355,6 +379,100 @@ class ResultEvidenceQueryService:
             inventory_id=inventory_id,
             aisle_id=aisle_id,
             assets_by_id=assets_by_id,
+        )
+
+    def _is_local_csv_summary(self, summary: dict[str, Any]) -> bool:
+        ingestion = str(summary.get("ingestion_source") or "").strip()
+        if ingestion in _LOCAL_CSV_INGESTION_KEYS or "LOCAL_CSV" in ingestion.upper():
+            return True
+        return bool(
+            summary.get("local_csv_productive_result_id")
+            or summary.get("local_csv_import_row_id")
+        )
+
+    def _resolve_local_csv_asset_id(
+        self,
+        summary: dict[str, Any],
+        *,
+        assets_by_id: dict[str, object],
+    ) -> str | None:
+        """Prefer persisted ids; else match aisle assets by capture/client file metadata."""
+        for key in ("source_asset_id", "source_image_id"):
+            raw = summary.get(key)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+
+        capture_photo_id = summary.get("capture_photo_id")
+        client_file_id = summary.get("client_file_id")
+        capture_photo = (
+            str(capture_photo_id).strip()
+            if isinstance(capture_photo_id, str) and capture_photo_id.strip()
+            else None
+        )
+        client_file = (
+            str(client_file_id).strip()
+            if isinstance(client_file_id, str) and client_file_id.strip()
+            else None
+        )
+        if not capture_photo and not client_file:
+            return None
+
+        for asset_id, asset in assets_by_id.items():
+            meta = getattr(asset, "metadata_json", None)
+            if not isinstance(meta, dict):
+                meta = {}
+            meta_capture = str(meta.get("capture_photo_id") or "").strip()
+            meta_client = str(meta.get("client_file_id") or "").strip()
+            upload_client = str(getattr(asset, "upload_client_file_id", None) or "").strip()
+            if capture_photo and meta_capture == capture_photo:
+                return str(asset_id)
+            if client_file and (meta_client == client_file or upload_client == client_file):
+                return str(asset_id)
+        return None
+
+    def _synthetic_local_csv_evidence_record(
+        self,
+        position: Position,
+        *,
+        assets_by_id: dict[str, object],
+    ) -> ResultEvidenceRecord | None:
+        """Build a displayable evidence row for ZIP/CSV imports (no inventory job)."""
+        summary = (
+            position.detected_summary_json
+            if isinstance(position.detected_summary_json, dict)
+            else {}
+        )
+        if not self._is_local_csv_summary(summary):
+            return None
+        asset_id = self._resolve_local_csv_asset_id(summary, assets_by_id=assets_by_id)
+        if not asset_id:
+            return None
+        now = position.updated_at
+        return ResultEvidenceRecord(
+            id=f"local-csv-ev-{position.id}",
+            job_id="local-csv-null-job",
+            inventory_id=str(summary.get("inventory_id") or ""),
+            aisle_id=position.aisle_id,
+            position_id=position.id,
+            entity_uid=str(summary.get("entity_uid") or f"local_csv:{position.id}"),
+            model_entity_id=None,
+            raw_manifest_entry_id=None,
+            manifest_entry_id=None,
+            raw_source_image_id=asset_id,
+            resolved_manifest_entry_id=None,
+            source_image_id=asset_id,
+            source_asset_id=asset_id,
+            traceability_status=TraceabilityStatus.VALID.value,
+            traceability_warning=None,
+            role=ResultEvidenceRole.PRIMARY_EVIDENCE,
+            provider="local_csv_import",
+            model_name=None,
+            schema_version=None,
+            manifest_version=None,
+            has_valid_evidence=True,
+            evidence_kind=RESULT_EVIDENCE_KIND_ENTITY_TRACEABILITY,
+            created_at=now,
+            updated_at=now,
         )
 
     def _artifact_read_model(self, job_id: str) -> TraceabilityArtifactReadModel | None:

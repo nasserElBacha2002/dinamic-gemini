@@ -12,6 +12,7 @@
   "scripts": {
     "start": "bash scripts/with-metro-env.sh expo start --dev-client",
     "android": "bash scripts/with-metro-env.sh expo run:android",
+    "adb:reverse": "bash scripts/ensure-adb-reverse.sh",
     "prebuild": "expo prebuild -p android --clean",
     "prebuild:android": "expo prebuild -p android --clean",
     "typecheck": "tsc --noEmit",
@@ -39,7 +40,9 @@
     "expo-image-manipulator": "~12.0.0",
     "expo-media-library": "~16.0.0",
     "expo-secure-store": "~13.0.0",
+    "expo-sharing": "~12.0.1",
     "expo-sqlite": "~14.0.0",
+    "fflate": "^0.8.2",
     "react": "18.2.0",
     "react-native": "0.74.5"
   },

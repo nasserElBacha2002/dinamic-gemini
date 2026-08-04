@@ -1245,7 +1245,30 @@
     "edit_name_title": "Editar nombre del inventario",
     "edit_name_subtitle": "Actualizá el nombre visible del inventario.",
     "name_updated_snackbar": "Nombre del inventario actualizado.",
-    "more_actions": "Más acciones"
+    "more_actions": "Más acciones",
+    "import_package": {
+      "action": "Importar ZIP",
+      "title": "Importar paquete local",
+      "subtitle": "Importá un ZIP exportado desde la app (CSV + fotos).",
+      "help": "El archivo debe contener results.csv, manifest.json y la carpeta photos/. Primero se valida (preview) y después se confirma la importación.",
+      "choose_file": "Elegir archivo ZIP",
+      "choose_other": "Elegir otro archivo",
+      "file_required": "Seleccioná un archivo ZIP para continuar.",
+      "preview": "Validar paquete",
+      "previewing": "Validando…",
+      "confirm": "Confirmar importación",
+      "confirming": "Importando…",
+      "preview_error": "No se pudo validar el paquete ZIP.",
+      "confirm_error": "No se pudo confirmar la importación del paquete.",
+      "preview_ready": "Export {{exportId}}: {{valid}}/{{total}} filas válidas, {{rejected}} rechazadas, {{photos}} fotos.",
+      "conflict_policy": "Si ya existen resultados",
+      "conflict_skip": "Omitir duplicados (SKIP)",
+      "conflict_reject": "Rechazar si hay conflicto (REJECT)",
+      "rejected_hint": "Algunas filas fueron rechazadas en el preview:",
+      "preview_aisle": "Pasillo detectado: {{aisle}}",
+      "success_snackbar": "Paquete importado: {{rows}} filas y {{photos}} fotos.",
+      "success_snackbar_aisle": "Paquete importado en pasillo {{aisle}}: {{rows}} filas y {{photos}} fotos."
+    }
   },
   "clients": {
     "breadcrumb_list": "Clientes",

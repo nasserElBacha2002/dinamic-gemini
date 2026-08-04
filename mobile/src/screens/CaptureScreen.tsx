@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, AppState, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Text, View } from 'react-native';
 
 import { OtherAisleCaptureActiveError, type CaptureSnapshot } from '../features/capture/captureService';
 import { userMessageForCode } from '../core/errorCatalog';
@@ -7,6 +7,7 @@ import { getPhotoPermission, requestPhotoPermission } from '../native/mediaStore
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import { Button, ErrorText, PhotoWorkList, SmallButton, captureContextFrom, countPhotos, messageOf, styles } from '../ui';
+import { FINISH_STAGE_LABELS } from '../features/capture/finishObservability';
 
 export interface CaptureScreenProps {
   services: AppServices;
@@ -28,6 +29,7 @@ export function CaptureScreen({
   onError,
 }: CaptureScreenProps) {
   const [permission, setPermission] = useState('desconocido');
+  const [finishInFlight, setFinishInFlight] = useState(false);
   const snapshotBelongsToSelectedAisle = Boolean(
     snapshot?.session &&
       inventory &&
@@ -90,6 +92,11 @@ export function CaptureScreen({
   const photos = snapshotBelongsToSelectedAisle ? snapshot?.photos ?? [] : [];
   const counts = countPhotos(photos);
   const sessionStatus = snapshotBelongsToSelectedAisle ? snapshot?.session?.status : undefined;
+  const isFinishing = finishInFlight || sessionStatus === 'finishing';
+  const finishStageLabel =
+    snapshotBelongsToSelectedAisle && snapshot?.finishStage
+      ? FINISH_STAGE_LABELS[snapshot.finishStage]
+      : null;
 
   useEffect(() => {
     if (sessionStatus !== 'active') return;
@@ -115,7 +122,7 @@ export function CaptureScreen({
           </Text>
           {snapshotBelongsToSelectedAisle && snapshot?.warning ? <ErrorText text={snapshot.warning} /> : null}
           <Text style={styles.row}>Permiso fotos: {permission}</Text>
-          <Text style={styles.row}>Estado: {sessionStatus ?? 'sin iniciar'}</Text>
+          <Text style={styles.row}>Estado: {isFinishing ? 'finalizando…' : sessionStatus ?? 'sin iniciar'}</Text>
           <Text style={styles.row}>
             FGS activo: {snapshotBelongsToSelectedAisle && snapshot?.fgsActive ? 'sí' : 'no'}
           </Text>
@@ -123,9 +130,22 @@ export function CaptureScreen({
             Detectadas: {counts.total} · Validando: {counts.waiting} · Estables: {counts.stable} · Error:{' '}
             {counts.errors} · Excluidas: {counts.excluded}
           </Text>
+          {isFinishing ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8 }}>
+              <ActivityIndicator />
+              <Text style={styles.row}>
+                {finishStageLabel ?? 'Cerrando captura y preparando revisión…'}
+              </Text>
+            </View>
+          ) : null}
           <Button
             label={sessionStatus === 'paused' ? 'Continuar captura' : 'Comenzar captura'}
-            disabled={!inventory || !aisle || Boolean(snapshotBelongsToSelectedAisle && sessionStatus === 'active')}
+            disabled={
+              isFinishing ||
+              !inventory ||
+              !aisle ||
+              Boolean(snapshotBelongsToSelectedAisle && sessionStatus === 'active')
+            }
             onPress={() => {
               if (snapshotBelongsToSelectedAisle && sessionStatus === 'paused') {
                 void requestPhotoPermission()
@@ -142,17 +162,17 @@ export function CaptureScreen({
           <View style={styles.nav}>
             <SmallButton
               label="Escanear"
-              disabled={sessionStatus !== 'active'}
+              disabled={isFinishing || sessionStatus !== 'active'}
               onPress={() => void services.capture.requestScan()}
             />
             <SmallButton
               label="Pausar"
-              disabled={sessionStatus !== 'active'}
+              disabled={isFinishing || sessionStatus !== 'active'}
               onPress={() => void services.capture.pause()}
             />
             <SmallButton
               label="Reanudar"
-              disabled={sessionStatus !== 'paused'}
+              disabled={isFinishing || sessionStatus !== 'paused'}
               onPress={() =>
                 void requestPhotoPermission()
                   .then((p) => {
@@ -164,13 +184,36 @@ export function CaptureScreen({
             />
           </View>
           <Button
-            label="Finalizar captura"
+            label={isFinishing ? 'Finalizando…' : 'Finalizar captura'}
             disabled={
-              sessionStatus !== 'active' &&
-              sessionStatus !== 'paused' &&
-              sessionStatus !== 'finishing'
+              isFinishing || (sessionStatus !== 'active' && sessionStatus !== 'paused')
             }
-            onPress={() => void services.capture.finish().then(onReview).catch((e) => onError(messageOf(e)))}
+            onPress={() => {
+              setFinishInFlight(true);
+              onError(null);
+              void (async () => {
+                const sessionId = snapshot?.session?.id;
+                if (sessionId) {
+                  // Re-read DB: process start / uploads may have moved status while UI still showed active.
+                  const fresh = await services.capture.getSessionSnapshot(sessionId);
+                  const status = fresh.session?.status;
+                  if (
+                    status &&
+                    status !== 'active' &&
+                    status !== 'paused' &&
+                    status !== 'finishing' &&
+                    status !== 'processing'
+                  ) {
+                    throw new Error(`No se puede finalizar la captura desde el estado "${status}".`);
+                  }
+                }
+                await services.capture.finish();
+                onReview();
+              })().catch((e) => {
+                setFinishInFlight(false);
+                onError(messageOf(e));
+              });
+            }}
           />
         </View>
       }

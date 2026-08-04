@@ -138,9 +138,18 @@ if command -v pgrep >/dev/null 2>&1; then
   fi
 fi
 
-echo "[dev] Arrancando backend en http://127.0.0.1:${PORT} ..."
-(cd "$ROOT/backend" && "$PYTHON" -m uvicorn src.api.server:app --reload --port "$PORT") &
+echo "[dev] Arrancando backend en http://0.0.0.0:${PORT} (loopback + LAN) ..."
+(cd "$ROOT/backend" && "$PYTHON" -m uvicorn src.api.server:app --reload --host 0.0.0.0 --port "$PORT") &
 BE_PID=$!
+
+# Physical Android + DINAMIC_API_BASE_URL=http://127.0.0.1:PORT needs this USB tunnel.
+if [[ -x "$ROOT/mobile/scripts/ensure-adb-reverse.sh" ]]; then
+  bash "$ROOT/mobile/scripts/ensure-adb-reverse.sh" "${PORT}" || true
+elif command -v adb >/dev/null 2>&1 && adb devices 2>/dev/null | grep -qE $'\tdevice$'; then
+  adb reverse "tcp:${PORT}" "tcp:${PORT}" >/dev/null 2>&1 \
+    && echo "[dev] adb reverse tcp:${PORT} → host" \
+    || echo "[dev] warning: adb reverse tcp:${PORT} falló" >&2
+fi
 
 cleanup() {
   echo "[dev] Cerrando procesos..."

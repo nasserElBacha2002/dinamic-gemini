@@ -18,13 +18,24 @@ const SESSION_TRANSITIONS: Readonly<Record<CaptureSessionStatus, readonly Captur
   paused: ['active', 'finishing', 'failed', 'cancelled'],
   // Gate failures (unstable/undecodable) roll back to active/paused so capture can continue.
   finishing: ['review', 'uploading', 'active', 'paused', 'failed', 'cancelled'],
-  review: ['uploading', 'upload_review', 'ready_to_process', 'completed', 'cancelled', 'failed'],
+  review: [
+    'local_completed',
+    'uploading',
+    'upload_review',
+    'ready_to_process',
+    'completed',
+    'cancelled',
+    'failed',
+  ],
+  local_completed: ['uploading', 'upload_review', 'completed', 'cancelled', 'failed'],
   uploading: ['upload_review', 'ready_to_process', 'failed', 'cancelled'],
   upload_review: ['uploading', 'ready_to_process', 'failed', 'cancelled'],
   ready_to_process: ['processing', 'upload_review', 'failed', 'cancelled'],
-  processing: ['completed', 'failed_processing', 'failed', 'cancelled'],
+  // Allow recovery when process start left the session stuck without a confirmed job
+  // (e.g. network loss after marking processing).
+  processing: ['completed', 'failed_processing', 'failed', 'cancelled', 'uploading', 'ready_to_process'],
   completed: [],
-  failed: ['paused', 'upload_review', 'cancelled'],
+  failed: ['paused', 'upload_review', 'local_completed', 'cancelled'],
   failed_processing: ['ready_to_process', 'cancelled'],
   cancelled: [],
 };
@@ -41,6 +52,7 @@ export const OPEN_CAPTURE_SESSION_STATUSES: readonly CaptureSessionStatus[] = [
   ...CAPTURE_EXCLUSIVE_SESSION_STATUSES,
   'paused',
   'review',
+  'local_completed',
   'uploading',
   'upload_review',
   'ready_to_process',

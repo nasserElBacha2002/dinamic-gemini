@@ -29,12 +29,19 @@ describe('capture state transitions', () => {
     expect(canTransitionSession('finishing', 'uploading')).toBe(true);
     expect(canTransitionSession('finishing', 'active')).toBe(true);
     expect(canTransitionSession('finishing', 'paused')).toBe(true);
+    expect(canTransitionSession('review', 'local_completed')).toBe(true);
+    expect(canTransitionSession('local_completed', 'uploading')).toBe(true);
     expect(canTransitionSession('completed', 'active')).toBe(false);
+    // Orphan process-start recovery (network loss before job confirm)
+    expect(canTransitionSession('processing', 'ready_to_process')).toBe(true);
+    expect(canTransitionSession('processing', 'uploading')).toBe(true);
+    expect(canTransitionSession('processing', 'finishing')).toBe(false);
   });
 
   it('classifies open sessions', () => {
     expect(isOpenCaptureSession('preparing')).toBe(true);
     expect(isOpenCaptureSession('review')).toBe(true);
+    expect(isOpenCaptureSession('local_completed')).toBe(true);
     expect(isOpenCaptureSession('uploading')).toBe(true);
     expect(isOpenCaptureSession('completed')).toBe(false);
     expect(isOpenCaptureSession('cancelled')).toBe(false);

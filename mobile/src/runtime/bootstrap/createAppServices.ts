@@ -23,6 +23,9 @@ import { UploadLimitsService } from '../../features/upload/uploadLimitsService';
 import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
+import { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
+import { LocalCsvExportService } from '../../features/localCsv/localCsvExportService';
+import { getOrCreateInstallationId } from '../../shared/installationId';
 import { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
 import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
 import { PreliminaryDetectionApi } from '../../features/preliminarySync/preliminaryDetectionApi';
@@ -116,6 +119,7 @@ export interface AppServices {
   readonly jobMonitor: JobMonitor;
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly confirmedLocalResults: ConfirmedLocalResultRepository;
+  readonly localCsvExport: LocalCsvExportService | null;
   readonly confirmLocalResult: Pick<
     ConfirmLocalResultService,
     'isEnabled' | 'getLatestDraftForPhoto' | 'resolveSource' | 'confirm'
@@ -166,6 +170,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const jobRepo = new ProcessingJobRepository(db);
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
+  const localCsvExportRepo = new LocalCsvExportRepository(db);
+  const installationId = await getOrCreateInstallationId();
   const aisleFinalizationIntents = new AisleFinalizationIntentRepository(db);
   const serverReprocessIntents = new ServerReprocessIntentRepository(db);
   const aisleRevisionDrafts = new AisleRevisionDraftRepository(db);
@@ -194,6 +200,21 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   void localCodeScan.recoverStaleDrafts().catch(() => {
     // best-effort recovery after process death
   });
+  const localCsvExport =
+    config.flags.mobileCsvExport !== false
+      ? new LocalCsvExportService({
+          captureRepo,
+          draftRepo: localDetectionDrafts,
+          confirmedRepo: confirmedLocalResults,
+          exportRepo: localCsvExportRepo,
+          deviceId: installationId,
+          companyId: null,
+          clientId: null,
+          enabled: true,
+          localCodeScan,
+          localCodeScanEnabled: config.flags.mobileLocalCodeScan === true,
+        })
+      : null;
   const preliminaryApi = new PreliminaryDetectionApi(api);
   const preliminarySync = new PreliminaryDetectionSyncService({
     flags: config.flags,
@@ -362,10 +383,28 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     onPhotoStable: (sessionId, photoId) => {
       // Serialize upload + offline enqueue: parallel fire-and-forget stampedes SQLite
       // (database is locked) when many photos stabilize during "Finalizar captura".
+      // With localCompletion/csvExport, server upload is deferred until explicit policy
+      // (NOW / WHEN_CONNECTED) or completeReview → uploading — not on every stable photo.
+      // Local CODE_SCAN still runs when upload is deferred so ZIP export has drafts.
       photoStableChain = photoStableChain
         .then(async () => {
           await uploadQueue.enqueuePhoto(sessionId, photoId);
-          await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
+          const session = await captureRepo.getSession(sessionId);
+          const localZipMode =
+            config.flags.localCompletion === true || config.flags.mobileCsvExport === true;
+          const policy = session?.upload_policy;
+          const status = session?.status;
+          const allowOfflineUpload =
+            !localZipMode ||
+            policy === 'NOW' ||
+            policy === 'WHEN_CONNECTED' ||
+            status === 'uploading' ||
+            status === 'upload_review';
+          if (allowOfflineUpload) {
+            await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
+          } else if (config.flags.mobileLocalCodeScan === true) {
+            await uploadQueue.rescanPhotoForLocalReview(photoId).catch(() => undefined);
+          }
         })
         .catch((error) => {
           logger.warn('recovery', {
@@ -375,6 +414,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
         });
     },
     observability: obsWire,
+    finishInstrumentation: config.flags.captureFinishInstrumentation,
+    finishSafeMediaCheck: config.flags.captureFinishSafeMediaCheck,
+    sessionFreeze: config.flags.captureSessionFreeze,
   });
 
   const processing = new ProcessingService(
@@ -566,6 +608,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     jobMonitor,
     localDetectionDrafts,
     confirmedLocalResults,
+    localCsvExport,
     confirmLocalResult,
     preliminarySync,
     authoritativeLocalSync,

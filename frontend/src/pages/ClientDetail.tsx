@@ -238,20 +238,19 @@ export default function ClientDetail() {
             <Button
               variant="outlined"
               size="small"
+              component={RouterLink}
+              to={pathToClientPhysicalLocations(safeClientId)}
+              disabled={!safeClientId || !clientQuery.data}
+            >
+              {t('position_labels.title')}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
               onClick={() => setLabelGeneratorOpen(true)}
               disabled={!safeClientId || !clientQuery.data}
             >
               {t('clients.labels.action_generate')}
-            </Button>
-            <Button
-              component={RouterLink}
-              to={pathToClientPhysicalLocations(safeClientId)}
-              variant="outlined"
-              size="small"
-              disabled={!safeClientId}
-              data-testid="client-open-position-labels"
-            >
-              {t('position_labels.title')}
             </Button>
             <Button component={RouterLink} to={ROUTE_CLIENTS} variant="outlined" size="small">
               {t('clients.detail.back_to_list')}

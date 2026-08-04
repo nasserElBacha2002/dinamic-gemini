@@ -18,8 +18,13 @@ import {
   normalizePreparationProcessingMode,
   resolveLocalScanProcessingMode,
 } from '../../core/imagePreparationPolicy';
-import { defaultUploadConcurrencyPolicy } from '../../core/uploadConcurrencyPolicy';
 import { UploadSlotGate, prepareAllowance } from '../../core/uploadSlotGate';
+import { defaultUploadConcurrencyPolicy } from '../../core/uploadConcurrencyPolicy';
+import {
+  maxPreparedPendingForNetwork,
+  preparePerTickForNetwork,
+  type PrepareNetworkClass,
+} from './prepareParallelism';
 import {
   UPLOAD_WORKER_OWNER_JS,
   hasForeignUploadLease,
@@ -56,10 +61,15 @@ import type { UploadLimitsService } from './uploadLimitsService';
 
 /** Multipart timeout is 120s; reclaim anything still "uploading/preparing" past this. */
 const UPLOAD_STALE_MS = 150_000;
-/** How many photos to prepare per tick before packing (keeps UI responsive for 20+ captures). */
-const PREPARE_PER_TICK = 4;
-/** Backpressure: max prepared-but-not-yet-uploaded photos across sessions. */
-const MAX_PREPARED_PENDING = 12;
+/**
+ * Grace before treating a preparing/uploading row as an orphan when it is not in this
+ * process's inFlight set. Prevents TOCTOU races (stale list + native lease) from
+ * resetting photos that just finished prepare or that the native worker is uploading.
+ */
+const UPLOAD_ORPHAN_GRACE_MS = 60_000;
+/** Legacy prepare caps when uploadPrepareParallelism is disabled. */
+const PREPARE_PER_TICK_LEGACY = 4;
+const MAX_PREPARED_PENDING_LEGACY = 12;
 
 export interface UploadQueueObservability {
   readonly reporter: ObservabilityReporter;
@@ -138,6 +148,8 @@ export class UploadQueue {
   private readonly cancelledWhileUploading = new Set<string>();
   /** Transforms deferred until batch settlement. */
   private readonly pendingTransformCleanup = new Set<string>();
+  /** Debounce timer for emit → refreshCachedSessions (Phase 2 incremental snapshots). */
+  private emitDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   /** Coalesce concurrent ordered-capture ensure calls per capture session. */
   private readonly orderedEnsureInflight = new Map<
     string,
@@ -185,6 +197,10 @@ export class UploadQueue {
     });
   }
 
+  private resolveNetworkClass(): PrepareNetworkClass {
+    return this.resolveNetworkType() as PrepareNetworkClass;
+  }
+
   private resolveUploadConcurrency(serverConcurrency: number): number {
     return defaultUploadConcurrencyPolicy.resolve({
       networkType: this.resolveNetworkType(),
@@ -211,6 +227,21 @@ export class UploadQueue {
   async setSessionPreparationMode(sessionId: string, mode: string | null): Promise<void> {
     const normalized = normalizePreparationProcessingMode(mode);
     await this.repo.setPreparationProcessingMode(sessionId, normalized);
+  }
+
+  private sessionAllowsAutoServerUpload(session: CaptureSessionRow | null | undefined): boolean {
+    const localZipMode =
+      this.flags?.localCompletion === true || this.flags?.mobileCsvExport === true;
+    if (!localZipMode) {
+      return true;
+    }
+    const policy = session?.upload_policy;
+    if (policy === 'NOW' || policy === 'WHEN_CONNECTED') {
+      return true;
+    }
+    // Explicit "Subir imágenes ahora" / upload worker path after completeReview.
+    const status = session?.status;
+    return status === 'uploading' || status === 'upload_review';
   }
 
   async restoreAndStart(): Promise<void> {
@@ -253,11 +284,25 @@ export class UploadQueue {
   }
 
   async enqueueSession(sessionId: string): Promise<void> {
-    const notQueued = await this.repo.listStableNotQueued(sessionId);
+    const session = await this.repo.getSession(sessionId);
+    if (!this.sessionAllowsAutoServerUpload(session)) {
+      this.logger.info('upload_enqueue_session_skipped_policy', {
+        sessionId,
+        uploadPolicy: session?.upload_policy ?? null,
+        status: session?.status ?? null,
+      });
+      return;
+    }
+    let notQueued = await this.repo.listStableNotQueued(sessionId);
+    if (session?.active_freeze_id) {
+      const freezeIds = new Set(
+        (await this.repo.listFreezePhotos(session.active_freeze_id)).map((p) => p.id),
+      );
+      notQueued = notQueued.filter((p) => freezeIds.has(p.id));
+    }
     for (const photo of notQueued) {
       await this.enqueuePhoto(sessionId, photo.id);
     }
-    const session = await this.repo.getSession(sessionId);
     if (session && session.status === 'review') {
       try {
         await this.repo.updateSessionStatus(sessionId, 'uploading');
@@ -279,6 +324,15 @@ export class UploadQueue {
       return;
     }
     const session = await this.repo.getSession(sessionId);
+    if (!this.sessionAllowsAutoServerUpload(session)) {
+      this.logger.info('upload_enqueue_skipped_policy', {
+        sessionId,
+        photoId,
+        uploadPolicy: session?.upload_policy ?? null,
+        status: session?.status ?? null,
+      });
+      return;
+    }
     if (!session?.upload_batch_id) {
       this.logger.warn('upload_enqueue_missing_batch', { sessionId });
       return;
@@ -584,6 +638,10 @@ export class UploadQueue {
     if (this.tickTimer) {
       clearTimeout(this.tickTimer);
     }
+    if (this.emitDebounceTimer) {
+      clearTimeout(this.emitDebounceTimer);
+      this.emitDebounceTimer = null;
+    }
     this.connectivityUnsub?.();
     this.listeners.clear();
     for (const controller of this.uploadAbortByAttempt.values()) {
@@ -727,7 +785,7 @@ export class UploadQueue {
       if (!session.upload_batch_id) {
         continue;
       }
-      const photos = await this.repo.listPhotosForUpload(session.id);
+      const photos = await this.listPhotosForUploadScoped(session.id);
       globalPreparedPending += photos.filter(
         (p) =>
           p.upload_size != null &&
@@ -736,12 +794,22 @@ export class UploadQueue {
       ).length;
     }
 
+    const networkClass = this.resolveNetworkClass();
+    const prepareParallel = this.flags?.uploadPrepareParallelism !== false;
+    const preparePerTick = preparePerTickForNetwork(networkClass, {
+      enabled: prepareParallel,
+      defaultPerTick: PREPARE_PER_TICK_LEGACY,
+    });
+    const maxPreparedPending = prepareParallel
+      ? maxPreparedPendingForNetwork(networkClass, { enabled: true })
+      : MAX_PREPARED_PENDING_LEGACY;
+
     for (const session of sessions) {
       if (!session.upload_batch_id) {
         continue;
       }
 
-      const eligible = (await this.repo.listPhotosForUpload(session.id)).filter((p) => this.isEligible(p));
+      const eligible = (await this.listPhotosForUploadScoped(session.id)).filter((p) => this.isEligible(p));
       if (eligible.length === 0) {
         continue;
       }
@@ -751,12 +819,12 @@ export class UploadQueue {
         preparedPending: globalPreparedPending,
         freeUploadSlots: freeSlots,
         maxFilesPerBatch: budget.maxFiles,
-        maxPreparedPending: MAX_PREPARED_PENDING,
+        maxPreparedPending,
       });
 
       if (allowance > 0) {
         const needPrepare = eligible.filter((p) => !(p.upload_size != null && p.upload_size > 0));
-        for (const photo of needPrepare.slice(0, Math.min(PREPARE_PER_TICK, allowance))) {
+        for (const photo of needPrepare.slice(0, Math.min(preparePerTick, allowance))) {
           if (this.inFlightPhotos.has(photo.id)) {
             continue;
           }
@@ -769,7 +837,7 @@ export class UploadQueue {
         continue;
       }
 
-      const prepared = (await this.repo.listPhotosForUpload(session.id))
+      const prepared = (await this.listPhotosForUploadScoped(session.id))
         .filter((p) => this.isEligible(p))
         .filter((p) => p.upload_size != null && p.upload_size > 0 && !this.inFlightPhotos.has(p.id));
 
@@ -792,12 +860,12 @@ export class UploadQueue {
       if (!batch) {
         this.releaseUploadSlot();
         const oversized = prepared.filter((p) => (p.upload_size ?? 0) > budget.maxFileBytes);
-        for (const photo of oversized.slice(0, PREPARE_PER_TICK)) {
+        for (const photo of oversized.slice(0, preparePerTick)) {
           if (prepareAllowance({
             preparedPending: globalPreparedPending,
             freeUploadSlots: Math.max(0, concurrency - this.uploadSlots.activeCount),
             maxFilesPerBatch: budget.maxFiles,
-            maxPreparedPending: MAX_PREPARED_PENDING,
+            maxPreparedPending,
           }) <= 0) {
             break;
           }
@@ -1400,6 +1468,8 @@ export class UploadQueue {
           ...(this.flags?.uploadAbortEnabled !== false ? { signal: abortController.signal } : {}),
         });
         const uploadMs = Math.max(0, Math.round(this.clock.nowMs() - uploadStartedAt));
+        const bytesPerSecond =
+          uploadMs > 0 ? Math.round((totalPreparedBytes / uploadMs) * 1000) : null;
 
         emitObservability(this.obs?.reporter, {
           name: 'batch.upload_completed',
@@ -1414,6 +1484,7 @@ export class UploadQueue {
             total_prepared_bytes: totalPreparedBytes,
             uploaded_count: response.uploaded?.length ?? 0,
             error_count: response.errors?.length ?? 0,
+            bytes_per_second: bytesPerSecond,
             configured_concurrency: concurrencyMeta.configuredConcurrency,
             effective_concurrency: concurrencyMeta.effectiveConcurrency,
             active_upload_count: this.uploadSlots.activeCount,
@@ -1427,6 +1498,22 @@ export class UploadQueue {
           if (!photo) {
             continue;
           }
+          emitObservability(this.obs?.reporter, {
+            name: 'photo.upload_http_completed',
+            sessionId: session.id,
+            clientFileId: photo.client_file_id ?? undefined,
+            batchId,
+            attemptId,
+            durationMs: uploadMs,
+            attributes: {
+              upload_http_status: 200,
+              backend_asset_id_present: Boolean(ok.asset_id),
+              prepared_bytes: photo.upload_size,
+              bytes_per_second: bytesPerSecond,
+              worker_owner: UPLOAD_WORKER_OWNER_JS,
+              ...network,
+            },
+          });
           const current = await this.repo.getPhotoById(photo.id);
           const cancelled =
             this.cancelledWhileUploading.has(photo.id) ||
@@ -1441,40 +1528,99 @@ export class UploadQueue {
             await this.reconcileCancelledRemoteAsset(session, photo.id, ok.asset_id);
             continue;
           }
-          await this.repo.setPhotoUploadStatus(photo.id, 'uploaded', {
-            progress: 1,
-            backendAssetId: ok.asset_id,
-            uploadedAt: new Date().toISOString(),
-            errorCode: null,
-            errorMessage: null,
-            nextRetryAt: null,
-          });
-          await cleanupTransformUri(photo.local_transform_uri);
-          this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
-          void this.options.preliminarySync?.enqueuePhotoAfterUpload(photo.id).catch(() => {
-            // Phase 4: sync must never block upload completion
-          });
-          void this.options.authoritativeSync
-            ?.enqueuePhotoAfterUpload(photo.id, ok.asset_id)
-            .catch(() => {
-              // Authoritative sync must never block upload completion
-            });
+          const confirmStarted = this.clock.nowMs();
           emitObservability(this.obs?.reporter, {
-            name: 'photo.upload_completed',
+            name: 'photo.upload_local_confirm_started',
             sessionId: session.id,
             clientFileId: photo.client_file_id ?? undefined,
             batchId,
             attemptId,
-            durationMs: uploadMs,
             attributes: {
-              upload_ms: uploadMs,
-              prepared_bytes: photo.upload_size,
-              upload_attempt_count: photo.upload_attempts,
-              upload_http_status: 200,
-              upload_error_code: null,
-              ...network,
+              worker_owner: UPLOAD_WORKER_OWNER_JS,
             },
           });
+          try {
+            await this.repo.setPhotoUploadStatus(photo.id, 'uploaded', {
+              progress: 1,
+              backendAssetId: ok.asset_id,
+              uploadedAt: new Date().toISOString(),
+              errorCode: null,
+              errorMessage: null,
+              nextRetryAt: null,
+            });
+            emitObservability(this.obs?.reporter, {
+              name: 'photo.upload_local_confirm_completed',
+              sessionId: session.id,
+              clientFileId: photo.client_file_id ?? undefined,
+              batchId,
+              attemptId,
+              durationMs: Math.max(0, Math.round(this.clock.nowMs() - confirmStarted)),
+              attributes: {
+                confirm_ok: true,
+                worker_owner: UPLOAD_WORKER_OWNER_JS,
+              },
+            });
+            await cleanupTransformUri(photo.local_transform_uri);
+            this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
+            void this.options.preliminarySync?.enqueuePhotoAfterUpload(photo.id).catch(() => {
+              // Phase 4: sync must never block upload completion
+            });
+            void this.options.authoritativeSync
+              ?.enqueuePhotoAfterUpload(photo.id, ok.asset_id)
+              .catch(() => {
+                // Authoritative sync must never block upload completion
+              });
+            emitObservability(this.obs?.reporter, {
+              name: 'photo.upload_completed',
+              sessionId: session.id,
+              clientFileId: photo.client_file_id ?? undefined,
+              batchId,
+              attemptId,
+              durationMs: uploadMs,
+              attributes: {
+                upload_ms: uploadMs,
+                prepared_bytes: photo.upload_size,
+                upload_attempt_count: photo.upload_attempts,
+                upload_http_status: 200,
+                upload_error_code: null,
+                bytes_per_second: bytesPerSecond,
+                ...network,
+              },
+            });
+          } catch (confirmErr) {
+            // HTTP already succeeded — never treat local confirm failure as upload failure.
+            const localDbCode = classifyLocalDbUploadFailure(String(confirmErr));
+            emitObservability(this.obs?.reporter, {
+              name: 'photo.upload_local_confirm_completed',
+              sessionId: session.id,
+              clientFileId: photo.client_file_id ?? undefined,
+              batchId,
+              attemptId,
+              durationMs: Math.max(0, Math.round(this.clock.nowMs() - confirmStarted)),
+              attributes: {
+                confirm_ok: false,
+                error_code: localDbCode ?? 'UPLOAD_CONFIRM_LOCAL',
+                worker_owner: UPLOAD_WORKER_OWNER_JS,
+              },
+            });
+            this.logger.warn('error', {
+              where: 'upload_confirm_local',
+              photoId: photo.id,
+              code: localDbCode ?? 'UPLOAD_CONFIRM_LOCAL',
+              message: String(confirmErr),
+            });
+            try {
+              await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
+                backendAssetId: ok.asset_id,
+                errorCode: localDbCode ?? 'UPLOAD_CONFIRM_LOCAL',
+                errorMessage:
+                  'La imagen ya está en el servidor; se reintenta la confirmación local.',
+                nextRetryAt: new Date(Date.now() + 1_500).toISOString(),
+              });
+            } catch {
+              // Next reclaim/heal pass may still converge if asset id was persisted earlier.
+            }
+          }
         }
 
         for (const err of response.errors ?? []) {
@@ -1822,51 +1968,221 @@ export class UploadQueue {
     }
   }
 
+  /**
+   * Heal local upload_status when the server already has the asset (app shows pending/error,
+   * web shows uploaded). Matches by upload_client_file_id / client_file_id.
+   */
+  async reconcileSessionWithServer(sessionId: string): Promise<number> {
+    const session = await this.repo.getSession(sessionId);
+    if (!session) {
+      return 0;
+    }
+    let remote: Awaited<ReturnType<AisleAssetsApi['listAssets']>>;
+    try {
+      remote = await this.assetsApi.listAssets(session.inventory_id, session.aisle_id);
+    } catch (e) {
+      this.logger.warn('recovery', { sessionId, error: String(e), reason: 'upload_reconcile_list_failed' });
+      return 0;
+    }
+    const byClient = new Map<string, (typeof remote)[number]>();
+    for (const asset of remote) {
+      const key = asset.upload_client_file_id ?? null;
+      if (key) {
+        byClient.set(key, asset);
+      }
+    }
+    const photos = await this.repo.listPhotos(sessionId);
+    let healed = 0;
+    const nowIso = new Date().toISOString();
+    for (const photo of photos) {
+      if (!photo.client_file_id) {
+        continue;
+      }
+      if (
+        photo.upload_status === 'uploaded' ||
+        photo.upload_status === 'excluded' ||
+        photo.upload_status === 'remote_deleted' ||
+        photo.upload_status === 'remote_delete_pending'
+      ) {
+        continue;
+      }
+      const match = byClient.get(photo.client_file_id);
+      if (!match) {
+        continue;
+      }
+      await this.repo.setPhotoUploadStatus(photo.id, 'uploaded', {
+        progress: 1,
+        backendAssetId: match.id,
+        uploadedAt: match.uploaded_at || photo.uploaded_at || nowIso,
+        errorCode: null,
+        errorMessage: null,
+        nextRetryAt: null,
+      });
+      this.inFlightPhotos.delete(photo.id);
+      healed += 1;
+      emitObservability(this.obs?.reporter, {
+        name: 'photo.upload_healed',
+        sessionId,
+        clientFileId: photo.client_file_id,
+        attributes: {
+          previous_upload_status: photo.upload_status,
+          heal_reason: 'server_list_assets_match',
+        },
+      });
+    }
+    if (healed > 0) {
+      this.emit();
+      this.logger.info('recovery', {
+        reason: 'upload_reconciled_from_server_list',
+        sessionId,
+        healed,
+      });
+    }
+    return healed;
+  }
+
+  private async listPhotosForUploadScoped(sessionId: string) {
+    const session = await this.repo.getSession(sessionId);
+    let photos = await this.repo.listPhotosForUpload(sessionId);
+    if (session?.active_freeze_id) {
+      const freezeIds = new Set(
+        (await this.repo.listFreezePhotos(session.active_freeze_id)).map((p) => p.id),
+      );
+      photos = photos.filter((p) => freezeIds.has(p.id));
+    }
+    return photos;
+  }
+
   private async reclaimOrphanedInFlight(): Promise<void> {
     const now = Date.now();
     const sessions = await this.repo.listActivitySessions();
     for (const session of sessions) {
-      const photos = await this.repo.listPhotosForUpload(session.id);
+      const photos = await this.listPhotosForUploadScoped(session.id);
       for (const photo of photos) {
-        if (photo.upload_status !== 'preparing' && photo.upload_status !== 'uploading') {
+        // Always re-read: list snapshots go stale while prepare/native upload completes.
+        const fresh = (await this.repo.getPhotoById(photo.id)) ?? photo;
+
+        // Server already accepted the asset — heal local status (desync: app pending, web OK).
+        if (
+          fresh.backend_asset_id &&
+          fresh.upload_status !== 'uploaded' &&
+          fresh.upload_status !== 'excluded' &&
+          fresh.upload_status !== 'remote_deleted' &&
+          fresh.upload_status !== 'remote_delete_pending'
+        ) {
+          await this.repo.setPhotoUploadStatus(fresh.id, 'uploaded', {
+            progress: 1,
+            backendAssetId: fresh.backend_asset_id,
+            uploadedAt: fresh.uploaded_at ?? new Date(now).toISOString(),
+            errorCode: null,
+            errorMessage: null,
+            nextRetryAt: null,
+          });
+          this.inFlightPhotos.delete(fresh.id);
+          emitObservability(this.obs?.reporter, {
+            name: 'photo.upload_healed',
+            sessionId: session.id,
+            clientFileId: fresh.client_file_id ?? undefined,
+            attributes: {
+              previous_upload_status: fresh.upload_status,
+              heal_reason: 'backend_asset_id_present',
+            },
+          });
+          this.logger.info('recovery', {
+            reason: 'upload_status_healed_from_backend_asset',
+            photoId: fresh.id,
+            previous: fresh.upload_status,
+          });
           continue;
         }
-        const startedAt = photo.last_upload_attempt_at
-          ? Date.parse(photo.last_upload_attempt_at)
+
+        if (fresh.upload_status !== 'preparing' && fresh.upload_status !== 'uploading') {
+          continue;
+        }
+
+        const startedAt = fresh.last_upload_attempt_at
+          ? Date.parse(fresh.last_upload_attempt_at)
           : 0;
-        const stale = startedAt > 0 && now - startedAt > UPLOAD_STALE_MS;
-        const orphan = !this.inFlightPhotos.has(photo.id);
-        if (!orphan && !stale) {
+        const ageMs = startedAt > 0 ? now - startedAt : Number.POSITIVE_INFINITY;
+        const stale = startedAt > 0 && ageMs > UPLOAD_STALE_MS;
+        const inFlight = this.inFlightPhotos.has(fresh.id);
+        const foreignLease = hasForeignUploadLease({
+          workerOwner: fresh.upload_worker_owner,
+          leaseExpiresAt: fresh.upload_lease_expires_at,
+          selfOwner: UPLOAD_WORKER_OWNER_JS,
+          nowMs: now,
+        });
+
+        if (inFlight) {
+          // Still owned by this JS process — only reclaim hung work.
+          if (!stale) {
+            continue;
+          }
+        } else if (foreignLease) {
+          // Native (or other) worker holds an active lease — do not orphan.
           continue;
+        } else {
+          // Not in this process and no foreign lease: wait for grace unless truly stale.
+          // Avoids concurrent tick/list races resetting queued→retryable right after prepare.
+          if (!stale && ageMs < UPLOAD_ORPHAN_GRACE_MS) {
+            continue;
+          }
         }
-        this.inFlightPhotos.delete(photo.id);
+
+        this.inFlightPhotos.delete(fresh.id);
         const delay = computeRetryDelayMs({
-          attempt: photo.upload_attempts,
+          attempt: fresh.upload_attempts,
           baseDelayMs: 2_000,
         });
-        await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
+        await this.repo.setPhotoUploadStatus(fresh.id, 'retryable_error', {
           errorCode: stale ? 'UPLOAD_STALE' : 'UPLOAD_ORPHAN',
           errorMessage: stale
             ? 'La carga quedó colgada y se reintentará.'
             : 'La carga se interrumpió y se reintentará.',
           nextRetryAt: new Date(now + delay).toISOString(),
         });
+        emitObservability(this.obs?.reporter, {
+          name: 'upload.orphan_reclaimed',
+          sessionId: session.id,
+          clientFileId: fresh.client_file_id ?? undefined,
+          attributes: {
+            previous_upload_status: fresh.upload_status,
+            reclaim_reason: stale ? 'stale' : 'orphan',
+            age_ms: Number.isFinite(ageMs) ? Math.round(ageMs) : null,
+            worker_owner: fresh.upload_worker_owner,
+          },
+        });
         this.logger.info('recovery', {
           reason: stale ? 'stale_upload_reclaimed' : 'orphan_upload_reclaimed',
-          photoId: photo.id,
-          previous: photo.upload_status,
+          photoId: fresh.id,
+          previous: fresh.upload_status,
         });
       }
     }
   }
 
   private emit(): void {
-    void this.refreshCachedSessions().then(() => {
-      const snapshot = this.getSnapshot();
-      for (const listener of this.listeners) {
-        listener(snapshot);
-      }
-    });
+    const debounceMs = this.flags?.uploadIncrementalSnapshots === false ? 0 : 120;
+    if (debounceMs <= 0) {
+      void this.flushEmit();
+      return;
+    }
+    if (this.emitDebounceTimer) {
+      clearTimeout(this.emitDebounceTimer);
+    }
+    this.emitDebounceTimer = setTimeout(() => {
+      this.emitDebounceTimer = null;
+      void this.flushEmit();
+    }, debounceMs);
+    this.emitDebounceTimer.unref?.();
+  }
+
+  private async flushEmit(): Promise<void> {
+    await this.refreshCachedSessions();
+    const snapshot = this.getSnapshot();
+    for (const listener of this.listeners) {
+      listener(snapshot);
+    }
   }
 
   private async refreshCachedSessions(): Promise<void> {

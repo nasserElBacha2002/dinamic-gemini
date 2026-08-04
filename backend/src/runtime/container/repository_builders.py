@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Protocol, TypeVar
 
 from src.application.ports.code_scan_repository import CodeScanRepository
+from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.mobile_preliminary_detection_repository import (
     MobilePreliminaryDetectionRepository,
 )
@@ -67,6 +68,62 @@ def build_inventory_repository(
     return build_repo(
         backend_info_name="InventoryRepository",
         sql_error_subject="repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_local_csv_import_repository(
+    build_repo: BuildSqlOrMemory[LocalCsvImportRepository],
+) -> LocalCsvImportRepository:
+    def _sql(client: SqlServerClient) -> LocalCsvImportRepository:
+        from src.infrastructure.repositories.sql_local_csv_import_repository import (
+            SqlLocalCsvImportRepository,
+        )
+
+        return SqlLocalCsvImportRepository(client)
+
+    def _memory() -> LocalCsvImportRepository:
+        from src.infrastructure.repositories.memory_local_csv_import_repository import (
+            MemoryLocalCsvImportRepository,
+        )
+
+        return MemoryLocalCsvImportRepository()
+
+    return build_repo(
+        backend_info_name="LocalCsvImportRepository",
+        sql_error_subject="local CSV import repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_local_inventory_package_repository(
+    build_repo: BuildSqlOrMemory,
+    *,
+    csv_import_repo: LocalCsvImportRepository,
+):
+    from src.application.ports.local_inventory_package_repository import (
+        LocalInventoryPackageRepository,
+    )
+
+    def _sql(client: SqlServerClient) -> LocalInventoryPackageRepository:
+        from src.infrastructure.repositories.sql_local_inventory_package_repository import (
+            SqlLocalInventoryPackageRepository,
+        )
+
+        return SqlLocalInventoryPackageRepository(client, csv_import_repo=csv_import_repo)
+
+    def _memory() -> LocalInventoryPackageRepository:
+        from src.infrastructure.repositories.memory_local_inventory_package_repository import (
+            MemoryLocalInventoryPackageRepository,
+        )
+
+        return MemoryLocalInventoryPackageRepository(csv_import_repo=csv_import_repo)
+
+    return build_repo(
+        backend_info_name="LocalInventoryPackageRepository",
+        sql_error_subject="local inventory package repo",
         build_sql=_sql,
         build_memory=_memory,
     )

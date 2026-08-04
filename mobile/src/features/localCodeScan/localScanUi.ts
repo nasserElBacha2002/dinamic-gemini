@@ -42,6 +42,12 @@ export function formatLocalScanDetection(draft: Pick<
     return null;
   }
   if (draft.error_code === 'POSITION_LABEL_DETECTED') {
+    const code = draft.internal_code?.trim();
+    if (code) {
+      return draft.detected_symbology
+        ? `${draft.detected_symbology} · Posición ${code}`
+        : `Posición ${code}`;
+    }
     return draft.detected_symbology
       ? `${draft.detected_symbology} · Etiqueta de posición`
       : 'Etiqueta de posición';

@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -114,6 +114,25 @@ describe('SQLite migrations', () => {
     expect(v20?.sql).toContain('process_idempotency_key');
     expect(v20?.sql).toContain('process_confirmed_at');
     expect(v20?.sql).toContain('last_recovery_check_at');
+  });
+
+  it('adds v21 capture freeze watermark columns', () => {
+    const v21 = MIGRATIONS.find((m) => m.version === 21);
+    expect(v21?.name).toBe('capture_session_freeze_watermark');
+    expect(v21?.sql).toContain('capture_frozen_at');
+    expect(v21?.sql).toContain('capture_frozen_photo_count');
+    expect(v21?.sql).toContain('capture_freeze_generation');
+    const v23 = MIGRATIONS.find((m) => m.version === 23);
+    expect(v23?.name).toBe('capture_session_freeze_snapshot');
+    expect(v23?.sql).toContain('capture_session_freezes');
+    expect(v23?.sql).toContain('capture_session_freeze_photos');
+  });
+
+  it('adds v22 local_csv_exports table', () => {
+    const v22 = MIGRATIONS.find((m) => m.version === 22);
+    expect(v22?.name).toBe('local_csv_exports');
+    expect(v22?.sql).toContain('CREATE TABLE IF NOT EXISTS local_csv_exports');
+    expect(v22?.sql).toContain('content_fingerprint');
   });
 });
 
