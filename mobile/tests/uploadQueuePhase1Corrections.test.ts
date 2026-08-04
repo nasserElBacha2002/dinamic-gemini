@@ -563,4 +563,84 @@ describe('UploadQueue phase1 corrections', () => {
     expect(photos.get('p2')?.upload_status).toBe('queued');
     await queue.dispose();
   });
+
+  it('resume does not orphan recent preparing/uploading photos missing from inFlight', async () => {
+    const s1 = session('s1');
+    const recent = new Date().toISOString();
+    const { queue, photos, repo } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [
+          photo('prep', 's1', {
+            upload_status: 'preparing',
+            last_upload_attempt_at: recent,
+            upload_size: null,
+          }),
+          photo('up', 's1', {
+            upload_status: 'uploading',
+            last_upload_attempt_at: recent,
+            upload_worker_owner: 'native',
+            upload_lease_token: 'tok-n',
+            upload_lease_expires_at: new Date(Date.now() + 120_000).toISOString(),
+          }),
+        ],
+      },
+    });
+    await queue.resume();
+    expect(photos.get('prep')?.upload_status).toBe('preparing');
+    expect(photos.get('up')?.upload_status).toBe('uploading');
+    expect(repo.setPhotoUploadStatus).not.toHaveBeenCalledWith(
+      'prep',
+      'retryable_error',
+      expect.anything(),
+    );
+    expect(repo.setPhotoUploadStatus).not.toHaveBeenCalledWith(
+      'up',
+      'retryable_error',
+      expect.anything(),
+    );
+    await queue.dispose();
+  });
+
+  it('resume heals local pending when backend_asset_id is already present', async () => {
+    const s1 = session('s1');
+    const { queue, photos } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [
+          photo('desync', 's1', {
+            upload_status: 'retryable_error',
+            backend_asset_id: 'srv-asset-1',
+            last_upload_error_code: 'UPLOAD_ORPHAN',
+            last_upload_attempt_at: new Date().toISOString(),
+          }),
+        ],
+      },
+    });
+    await queue.resume();
+    expect(photos.get('desync')?.upload_status).toBe('uploaded');
+    expect(photos.get('desync')?.backend_asset_id).toBe('srv-asset-1');
+    await queue.dispose();
+  });
+
+  it('resume reclaims only truly stale orphans past grace', async () => {
+    const s1 = session('s1');
+    const staleAt = new Date(Date.now() - 200_000).toISOString();
+    const { queue, photos } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [
+          photo('stale', 's1', {
+            upload_status: 'preparing',
+            last_upload_attempt_at: staleAt,
+            upload_size: null,
+          }),
+        ],
+      },
+    });
+    await queue.resume();
+    expect(photos.get('stale')?.upload_status).toBe('retryable_error');
+    expect(photos.get('stale')?.last_upload_error_code).toBe('UPLOAD_STALE');
+    await queue.dispose();
+  });
 });

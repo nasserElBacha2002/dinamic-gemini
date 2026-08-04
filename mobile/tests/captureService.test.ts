@@ -567,6 +567,33 @@ describe('CaptureService corrections', () => {
     expect((await repo.getSession('session-1'))?.status).toBe('review');
   });
 
+  it('finish emits finishing and skips rescan when all photos are already stable', async () => {
+    const repo = new FakeRepo();
+    repo.sessions.set('session-1', session({ status: 'active' }));
+    repo.photos.set('session-1:100', photo('stable'));
+    const store = mediaStore();
+    const querySpy = jest.spyOn(store, 'queryNewPhotosSince');
+    const statuses: Array<string | undefined> = [];
+    const service = new CaptureService(
+      repo as unknown as CaptureRepository,
+      foreground(),
+      createLogger(() => undefined),
+      {
+        mediaStore: store,
+        stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
+        validationTimeoutMs: 10,
+      },
+    );
+    service.subscribe((snap) => {
+      statuses.push(snap.session?.status);
+    });
+    await service.loadSession('session-1', false);
+    await expect(service.finish()).resolves.toBeUndefined();
+    expect(statuses).toContain('finishing');
+    expect((await repo.getSession('session-1'))?.status).toBe('review');
+    expect(querySpy).not.toHaveBeenCalled();
+  });
+
   it('keeps a photo excluded when stability resolves after exclusion', async () => {
     const repo = new FakeRepo();
     repo.sessions.set('session-1', session({ status: 'paused' }));

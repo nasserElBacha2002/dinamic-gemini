@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from '../database';
+import { withSqliteBusyRetry } from '../sqliteWriteGate';
 import { createId } from '../../shared/createId';
 
 export type LocalDetectionDraftStatus =
@@ -96,7 +97,8 @@ export class LocalDetectionDraftRepository {
       input.status !== 'SCANNING' &&
       input.status !== 'NOT_APPLICABLE';
     const detectedAt = terminal ? (input.detectedAt ?? now) : null;
-    await this.db.runAsync(
+    await withSqliteBusyRetry(() =>
+      this.db.runAsync(
       `INSERT INTO local_detection_drafts (
         id, capture_photo_id, capture_session_id, client_file_id, status,
         raw_value_hash, internal_code, quantity, quantity_status,
@@ -150,6 +152,7 @@ export class LocalDetectionDraftRepository {
       detectedAt,
       now,
       now,
+      ),
     );
     const row = await this.getByIdempotencyKey(
       input.capturePhotoId,

@@ -125,6 +125,54 @@ def test_readiness_requires_success_unless_finalizing():
     )
 
 
+def test_readiness_accepts_completed_ordered_session_after_code_scan_finalize():
+    """CODE_SCAN marks ordered session COMPLETED before auto-reconcile runs."""
+    from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
+
+    sessions = {
+        "ocs-1": SimpleNamespace(
+            id="ocs-1",
+            status=OrderedCaptureSessionStatus.COMPLETED,
+        )
+    }
+    policy = PositionReconciliationReadinessPolicy(
+        session_repo=SimpleNamespace(get_by_id=lambda sid: sessions.get(sid))
+    )
+    job = SimpleNamespace(
+        id="job-1",
+        status=JobStatus.SUCCEEDED,
+        ordered_capture_session_id="ocs-1",
+    )
+    aisle = SimpleNamespace(id="aisle-1", inventory_id="inventory-1")
+    policy.require_ready(
+        job, inventory_id="inventory-1", aisle=aisle, links=[object()]
+    )
+
+
+def test_readiness_rejects_processing_ordered_session():
+    from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
+
+    sessions = {
+        "ocs-1": SimpleNamespace(
+            id="ocs-1",
+            status=OrderedCaptureSessionStatus.PROCESSING,
+        )
+    }
+    policy = PositionReconciliationReadinessPolicy(
+        session_repo=SimpleNamespace(get_by_id=lambda sid: sessions.get(sid))
+    )
+    job = SimpleNamespace(
+        id="job-1",
+        status=JobStatus.SUCCEEDED,
+        ordered_capture_session_id="ocs-1",
+    )
+    aisle = SimpleNamespace(id="aisle-1", inventory_id="inventory-1")
+    with pytest.raises(PositionReconciliationNotReadyError, match="SEALED or COMPLETED"):
+        policy.require_ready(
+            job, inventory_id="inventory-1", aisle=aisle, links=[object()]
+        )
+
+
 def test_failed_attempt_preserves_published_assignments_and_cas_conflicts():
     repo = MemoryPositionReconciliationRepository()
     published = _reconciliation("published", "fingerprint-1")

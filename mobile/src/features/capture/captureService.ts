@@ -395,13 +395,28 @@ export class CaptureService {
     await this.ensureSessionStatus(sessionId, 'finishing', ['active', 'paused', 'finishing']);
     this.autoScanEnabled = false;
     this.detachListener();
+    // Emit finishing immediately so CaptureScreen can show loading before heavy work.
+    if (this.session?.id === sessionId) {
+      this.session = { ...this.session, status: 'finishing' };
+      this.emit();
+    }
 
     try {
       await this.loadSession(sessionId, false);
-      await this.coordinator.request();
-      await this.runScanOnce(sessionId, true);
-      await this.waitForActiveValidations(sessionId, this.validationTimeoutMs);
-      await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
+      const hasPendingValidation = this.photos.some(
+        (p) => p.status === 'detected' || p.status === 'waiting_stability',
+      );
+      const hasActiveValidation = Array.from(this.activeValidations.keys()).some((key) =>
+        key.startsWith(`${sessionId}:`),
+      );
+      // Skip a full gallery rescan when everything is already stable — finish used to
+      // re-scan under SQLite contention and freeze the UI with no loading affordance.
+      if (hasPendingValidation || hasActiveValidation) {
+        await this.coordinator.request();
+        await this.runScanOnce(sessionId, true);
+        await this.waitForActiveValidations(sessionId, this.validationTimeoutMs);
+        await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
+      }
       await this.stopForeground();
       await this.reloadPhotos(sessionId);
       this.assertPhotosReadyForUpload();

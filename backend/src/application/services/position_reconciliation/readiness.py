@@ -57,8 +57,15 @@ class PositionReconciliationReadinessPolicy:
                 raise PositionReconciliationNotReadyError(
                     f"Ordered capture session {job.ordered_capture_session_id} was not found"
                 )
-            if session.status is not OrderedCaptureSessionStatus.SEALED:
+            # CODE_SCAN finalization marks the session COMPLETED *before* auto-reconcile.
+            # Accept sealed (pre-process) and completed (post-success) — both imply a frozen
+            # capture set. Reject OPEN/UPLOADING/PROCESSING/FAILED mid-flight states.
+            ready_session_statuses = {
+                OrderedCaptureSessionStatus.SEALED,
+                OrderedCaptureSessionStatus.COMPLETED,
+            }
+            if session.status not in ready_session_statuses:
                 raise PositionReconciliationNotReadyError(
-                    f"Ordered capture session {session.id} must be SEALED; "
+                    f"Ordered capture session {session.id} must be SEALED or COMPLETED; "
                     f"current status is {session.status.value}"
                 )

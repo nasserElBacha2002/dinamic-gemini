@@ -56,6 +56,12 @@ import type { UploadLimitsService } from './uploadLimitsService';
 
 /** Multipart timeout is 120s; reclaim anything still "uploading/preparing" past this. */
 const UPLOAD_STALE_MS = 150_000;
+/**
+ * Grace before treating a preparing/uploading row as an orphan when it is not in this
+ * process's inFlight set. Prevents TOCTOU races (stale list + native lease) from
+ * resetting photos that just finished prepare or that the native worker is uploading.
+ */
+const UPLOAD_ORPHAN_GRACE_MS = 60_000;
 /** How many photos to prepare per tick before packing (keeps UI responsive for 20+ captures). */
 const PREPARE_PER_TICK = 4;
 /** Backpressure: max prepared-but-not-yet-uploaded photos across sessions. */
@@ -1441,40 +1447,62 @@ export class UploadQueue {
             await this.reconcileCancelledRemoteAsset(session, photo.id, ok.asset_id);
             continue;
           }
-          await this.repo.setPhotoUploadStatus(photo.id, 'uploaded', {
-            progress: 1,
-            backendAssetId: ok.asset_id,
-            uploadedAt: new Date().toISOString(),
-            errorCode: null,
-            errorMessage: null,
-            nextRetryAt: null,
-          });
-          await cleanupTransformUri(photo.local_transform_uri);
-          this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
-          void this.options.preliminarySync?.enqueuePhotoAfterUpload(photo.id).catch(() => {
-            // Phase 4: sync must never block upload completion
-          });
-          void this.options.authoritativeSync
-            ?.enqueuePhotoAfterUpload(photo.id, ok.asset_id)
-            .catch(() => {
-              // Authoritative sync must never block upload completion
+          try {
+            await this.repo.setPhotoUploadStatus(photo.id, 'uploaded', {
+              progress: 1,
+              backendAssetId: ok.asset_id,
+              uploadedAt: new Date().toISOString(),
+              errorCode: null,
+              errorMessage: null,
+              nextRetryAt: null,
             });
-          emitObservability(this.obs?.reporter, {
-            name: 'photo.upload_completed',
-            sessionId: session.id,
-            clientFileId: photo.client_file_id ?? undefined,
-            batchId,
-            attemptId,
-            durationMs: uploadMs,
-            attributes: {
-              upload_ms: uploadMs,
-              prepared_bytes: photo.upload_size,
-              upload_attempt_count: photo.upload_attempts,
-              upload_http_status: 200,
-              upload_error_code: null,
-              ...network,
-            },
-          });
+            await cleanupTransformUri(photo.local_transform_uri);
+            this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
+            void this.options.preliminarySync?.enqueuePhotoAfterUpload(photo.id).catch(() => {
+              // Phase 4: sync must never block upload completion
+            });
+            void this.options.authoritativeSync
+              ?.enqueuePhotoAfterUpload(photo.id, ok.asset_id)
+              .catch(() => {
+                // Authoritative sync must never block upload completion
+              });
+            emitObservability(this.obs?.reporter, {
+              name: 'photo.upload_completed',
+              sessionId: session.id,
+              clientFileId: photo.client_file_id ?? undefined,
+              batchId,
+              attemptId,
+              durationMs: uploadMs,
+              attributes: {
+                upload_ms: uploadMs,
+                prepared_bytes: photo.upload_size,
+                upload_attempt_count: photo.upload_attempts,
+                upload_http_status: 200,
+                upload_error_code: null,
+                ...network,
+              },
+            });
+          } catch (confirmErr) {
+            // HTTP already succeeded — never treat local confirm failure as upload failure.
+            const localDbCode = classifyLocalDbUploadFailure(String(confirmErr));
+            this.logger.warn('error', {
+              where: 'upload_confirm_local',
+              photoId: photo.id,
+              code: localDbCode ?? 'UPLOAD_CONFIRM_LOCAL',
+              message: String(confirmErr),
+            });
+            try {
+              await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
+                backendAssetId: ok.asset_id,
+                errorCode: localDbCode ?? 'UPLOAD_CONFIRM_LOCAL',
+                errorMessage:
+                  'La imagen ya está en el servidor; se reintenta la confirmación local.',
+                nextRetryAt: new Date(Date.now() + 1_500).toISOString(),
+              });
+            } catch {
+              // Next reclaim/heal pass may still converge if asset id was persisted earlier.
+            }
+          }
         }
 
         for (const err of response.errors ?? []) {
@@ -1828,23 +1856,73 @@ export class UploadQueue {
     for (const session of sessions) {
       const photos = await this.repo.listPhotosForUpload(session.id);
       for (const photo of photos) {
-        if (photo.upload_status !== 'preparing' && photo.upload_status !== 'uploading') {
+        // Always re-read: list snapshots go stale while prepare/native upload completes.
+        const fresh = (await this.repo.getPhotoById(photo.id)) ?? photo;
+
+        // Server already accepted the asset — heal local status (desync: app pending, web OK).
+        if (
+          fresh.backend_asset_id &&
+          fresh.upload_status !== 'uploaded' &&
+          fresh.upload_status !== 'excluded' &&
+          fresh.upload_status !== 'remote_deleted' &&
+          fresh.upload_status !== 'remote_delete_pending'
+        ) {
+          await this.repo.setPhotoUploadStatus(fresh.id, 'uploaded', {
+            progress: 1,
+            backendAssetId: fresh.backend_asset_id,
+            uploadedAt: fresh.uploaded_at ?? new Date(now).toISOString(),
+            errorCode: null,
+            errorMessage: null,
+            nextRetryAt: null,
+          });
+          this.inFlightPhotos.delete(fresh.id);
+          this.logger.info('recovery', {
+            reason: 'upload_status_healed_from_backend_asset',
+            photoId: fresh.id,
+            previous: fresh.upload_status,
+          });
           continue;
         }
-        const startedAt = photo.last_upload_attempt_at
-          ? Date.parse(photo.last_upload_attempt_at)
+
+        if (fresh.upload_status !== 'preparing' && fresh.upload_status !== 'uploading') {
+          continue;
+        }
+
+        const startedAt = fresh.last_upload_attempt_at
+          ? Date.parse(fresh.last_upload_attempt_at)
           : 0;
-        const stale = startedAt > 0 && now - startedAt > UPLOAD_STALE_MS;
-        const orphan = !this.inFlightPhotos.has(photo.id);
-        if (!orphan && !stale) {
+        const ageMs = startedAt > 0 ? now - startedAt : Number.POSITIVE_INFINITY;
+        const stale = startedAt > 0 && ageMs > UPLOAD_STALE_MS;
+        const inFlight = this.inFlightPhotos.has(fresh.id);
+        const foreignLease = hasForeignUploadLease({
+          workerOwner: fresh.upload_worker_owner,
+          leaseExpiresAt: fresh.upload_lease_expires_at,
+          selfOwner: UPLOAD_WORKER_OWNER_JS,
+          nowMs: now,
+        });
+
+        if (inFlight) {
+          // Still owned by this JS process — only reclaim hung work.
+          if (!stale) {
+            continue;
+          }
+        } else if (foreignLease) {
+          // Native (or other) worker holds an active lease — do not orphan.
           continue;
+        } else {
+          // Not in this process and no foreign lease: wait for grace unless truly stale.
+          // Avoids concurrent tick/list races resetting queued→retryable right after prepare.
+          if (!stale && ageMs < UPLOAD_ORPHAN_GRACE_MS) {
+            continue;
+          }
         }
-        this.inFlightPhotos.delete(photo.id);
+
+        this.inFlightPhotos.delete(fresh.id);
         const delay = computeRetryDelayMs({
-          attempt: photo.upload_attempts,
+          attempt: fresh.upload_attempts,
           baseDelayMs: 2_000,
         });
-        await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
+        await this.repo.setPhotoUploadStatus(fresh.id, 'retryable_error', {
           errorCode: stale ? 'UPLOAD_STALE' : 'UPLOAD_ORPHAN',
           errorMessage: stale
             ? 'La carga quedó colgada y se reintentará.'
@@ -1853,8 +1931,8 @@ export class UploadQueue {
         });
         this.logger.info('recovery', {
           reason: stale ? 'stale_upload_reclaimed' : 'orphan_upload_reclaimed',
-          photoId: photo.id,
-          previous: photo.upload_status,
+          photoId: fresh.id,
+          previous: fresh.upload_status,
         });
       }
     }
