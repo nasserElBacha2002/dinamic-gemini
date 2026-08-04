@@ -20,6 +20,7 @@ import {
 } from '../components/ui';
 import {
   ROUTE_CLIENTS,
+  pathToClientPhysicalLocations,
   pathToClientSupplier,
   pathToInventory,
 } from '../constants/appRoutes';
@@ -233,6 +234,15 @@ export default function ClientDetail() {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
             <Button variant="contained" size="small" onClick={() => setCreateInventoryOpen(true)} disabled={!safeClientId}>
               {t('clients.detail.create_inventory')}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              component={RouterLink}
+              to={pathToClientPhysicalLocations(safeClientId)}
+              disabled={!safeClientId || !clientQuery.data}
+            >
+              {t('position_labels.title')}
             </Button>
             <Button
               variant="outlined"

@@ -502,7 +502,9 @@ describe('UploadQueue phase1 corrections', () => {
     await tick();
 
     const prepared = [...photos.values()].filter((p) => p.upload_size != null && p.upload_size > 0);
-    expect(prepared.length).toBeLessThanOrEqual(12);
+    // WiFi prepare-parallelism cap is 16 (see maxPreparedPendingForNetwork).
+    expect(prepared.length).toBeLessThanOrEqual(16);
+    expect(prepared.length).toBeLessThan(many.length);
     resolveUpload({});
     await new Promise((r) => setTimeout(r, 40));
     await queue.dispose();

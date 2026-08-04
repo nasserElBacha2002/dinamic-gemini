@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow, LocalCsvProductiveResult
+from src.domain.local_csv_import.entities import (
+    LocalCsvImport,
+    LocalCsvImportRow,
+    LocalCsvProductiveResult,
+)
 
 
 class LocalCsvInventoryResultWriter(Protocol):

@@ -437,7 +437,10 @@ def test_local_csv_null_job_resolves_asset_via_capture_photo_metadata() -> None:
             ]
 
     repo = MemoryResultEvidenceRepository()
-    resolver = lambda asset, artifact_store=None: ("https://cdn.example.com/a.jpg", False)
+
+    def resolver(asset, artifact_store=None):  # noqa: ANN001
+        return ("https://cdn.example.com/a.jpg", False)
+
     svc = ResultEvidenceQueryService(
         result_evidence_repo=repo,
         source_asset_repo=_MetaAssetRepo(),

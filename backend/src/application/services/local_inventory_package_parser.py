@@ -166,7 +166,7 @@ def parse_local_inventory_package(
                 f"Unsupported package_kind: {package_kind!r}",
             )
         try:
-            package_version = int(manifest.get("package_version"))
+            package_version = int(manifest.get("package_version") or 0)
         except (TypeError, ValueError) as exc:
             raise LocalInventoryPackageError(
                 "PACKAGE_VERSION_UNSUPPORTED",

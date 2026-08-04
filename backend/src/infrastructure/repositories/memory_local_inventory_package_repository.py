@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
-from typing import Callable
 
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
-from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow, LocalCsvProductiveResult
+from src.domain.local_csv_import.entities import (
+    LocalCsvImport,
+    LocalCsvImportRow,
+    LocalCsvProductiveResult,
+)
 from src.domain.local_csv_import.errors import CONFLICT_POLICIES
 from src.domain.local_inventory_package.entities import LocalInventoryPackage
 from src.domain.local_inventory_package.errors import (
@@ -65,7 +69,7 @@ class MemoryLocalInventoryPackageRepository:
             [LocalCsvImport, tuple[LocalCsvImportRow, ...], str | None, LocalInventoryPackage],
             tuple[LocalCsvProductiveResult, ...],
         ],
-        clock_now: Callable[[], object],
+        clock_now: Callable[[], datetime],
     ) -> tuple[LocalInventoryPackage, bool]:
         policy = (conflict_policy or "SKIP").strip().upper()
         if policy not in CONFLICT_POLICIES:
@@ -100,7 +104,6 @@ class MemoryLocalInventoryPackageRepository:
                 clock_now=clock_now,
             )
             now = clock_now()
-            assert isinstance(now, datetime)
             updated_photos = []
             # source_asset_id is filled by apply_productive via side-effect on photos list
             # carried in package; re-read from apply result metadata if present.

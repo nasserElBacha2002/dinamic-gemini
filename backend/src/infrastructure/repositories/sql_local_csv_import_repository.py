@@ -41,6 +41,13 @@ def _utc(value: datetime | None) -> datetime | None:
     return value.replace(tzinfo=timezone.utc)
 
 
+def _utc_required(value: datetime | None, *, field: str) -> datetime:
+    resolved = _utc(value)
+    if resolved is None:
+        raise ValueError(f"local_csv_imports.{field} is required")
+    return resolved
+
+
 def _json_tuple(value: object) -> tuple[str, ...]:
     if not value:
         return ()
@@ -102,7 +109,7 @@ def _import_from_db(row: object, rows: tuple[LocalCsvImportRow, ...]) -> LocalCs
         schema_version=str(getattr(row, "schema_version")),
         inventory_id=str(getattr(row, "inventory_id")),
         device_id=str(getattr(row, "device_id")),
-        exported_at=_utc(getattr(row, "exported_at")),
+        exported_at=_utc_required(getattr(row, "exported_at"), field="exported_at"),
         status=str(getattr(row, "status")),
         content_hash=str(getattr(row, "content_hash")),
         total_rows=int(getattr(row, "total_rows")),
@@ -120,8 +127,8 @@ def _import_from_db(row: object, rows: tuple[LocalCsvImportRow, ...]) -> LocalCs
             if getattr(row, "confirmed_by_user_id", None) is not None
             else None
         ),
-        created_at=_utc(getattr(row, "created_at")),
-        updated_at=_utc(getattr(row, "updated_at")),
+        created_at=_utc_required(getattr(row, "created_at"), field="created_at"),
+        updated_at=_utc_required(getattr(row, "updated_at"), field="updated_at"),
         rows=rows,
     )
 

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Callable
 
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
-from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow, LocalCsvProductiveResult
+from src.domain.local_csv_import.entities import (
+    LocalCsvImport,
+    LocalCsvImportRow,
+    LocalCsvProductiveResult,
+)
 from src.domain.local_csv_import.errors import CONFLICT_POLICIES
 from src.domain.local_inventory_package.entities import (
     LocalInventoryPackage,
@@ -169,7 +173,7 @@ class SqlLocalInventoryPackageRepository:
             [LocalCsvImport, tuple[LocalCsvImportRow, ...], str | None, LocalInventoryPackage],
             tuple[LocalCsvProductiveResult, ...],
         ],
-        clock_now: Callable[[], object],
+        clock_now: Callable[[], datetime],
     ) -> tuple[LocalInventoryPackage, bool]:
         policy = (conflict_policy or "SKIP").strip().upper()
         if policy not in CONFLICT_POLICIES:

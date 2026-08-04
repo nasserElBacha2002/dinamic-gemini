@@ -6,7 +6,11 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
-from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow, LocalCsvProductiveResult
+from src.domain.local_csv_import.entities import (
+    LocalCsvImport,
+    LocalCsvImportRow,
+    LocalCsvProductiveResult,
+)
 
 
 class LocalCsvImportRepository(Protocol):

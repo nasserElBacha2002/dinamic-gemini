@@ -511,12 +511,20 @@ def test_post_review_delete_position_returns_204_and_detail_deleted() -> None:
         )
         assert resp.status_code == 204
 
-        list_resp = client.get("/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions")
+        list_resp = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions?status=deleted"
+        )
         assert list_resp.status_code == 200
         positions = list_resp.json()["positions"]
         assert len(positions) == 1
         assert positions[0]["status"] == "deleted"
         assert positions[0]["needs_review"] is False
+
+        default_list = client.get(
+            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
+        )
+        assert default_list.status_code == 200
+        assert all(p["status"] != "deleted" for p in default_list.json()["positions"])
 
         detail = client.get(
             "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions/pos-review-1"

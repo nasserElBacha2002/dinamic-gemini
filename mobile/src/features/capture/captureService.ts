@@ -15,7 +15,6 @@ import type { IncrementalScanOptions, IncrementalScanResult, PermissionState } f
 import type { StabilityOutcome } from '../../native/stabilityProber';
 import { emitObservability, sessionMarkKey } from '../../observability';
 import {
-  countFinishPhotos,
   emitFinishEvent,
   finishBaseAttributes,
   stageDurationMs,

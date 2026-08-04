@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from src.domain.local_csv_import.entities import LocalCsvImportRow
 from src.domain.local_inventory_package.errors import LocalInventoryPackageImportError

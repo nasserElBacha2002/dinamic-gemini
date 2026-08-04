@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Callable, Protocol
+from collections.abc import Callable
+from datetime import datetime
+from typing import Protocol
 
-from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow, LocalCsvProductiveResult
+from src.domain.local_csv_import.entities import (
+    LocalCsvImport,
+    LocalCsvImportRow,
+    LocalCsvProductiveResult,
+)
 from src.domain.local_inventory_package.entities import LocalInventoryPackage
 
 
@@ -28,5 +34,5 @@ class LocalInventoryPackageRepository(Protocol):
             [LocalCsvImport, tuple[LocalCsvImportRow, ...], str | None, LocalInventoryPackage],
             tuple[LocalCsvProductiveResult, ...],
         ],
-        clock_now: Callable[[], object],
+        clock_now: Callable[[], datetime],
     ) -> tuple[LocalInventoryPackage, bool]: ...

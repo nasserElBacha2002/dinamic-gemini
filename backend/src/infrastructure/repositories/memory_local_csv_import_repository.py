@@ -7,7 +7,11 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
 
-from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow, LocalCsvProductiveResult
+from src.domain.local_csv_import.entities import (
+    LocalCsvImport,
+    LocalCsvImportRow,
+    LocalCsvProductiveResult,
+)
 from src.domain.local_csv_import.errors import (
     LOCAL_CSV_EXPORT_CONFLICT,
     LOCAL_CSV_EXPORT_NOT_PREVIEWED,

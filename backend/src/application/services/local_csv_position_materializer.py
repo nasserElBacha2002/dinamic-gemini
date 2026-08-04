@@ -8,8 +8,8 @@ pipeline results when ``aisles.operational_job_id`` is unset.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Sequence
 
 from src.application.ports.repositories import PositionRepository, ProductRecordRepository
 from src.domain.local_csv_import.entities import LocalCsvProductiveResult
