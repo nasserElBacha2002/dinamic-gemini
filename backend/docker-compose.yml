@@ -11,6 +11,7 @@ services:
     env_file:
       - ../.env
     # Persist local artifacts (OUTPUT_DIR=output → /app/output/v3_uploads) across image rebuilds / container recreate.
+    # Host dir must be writable by appuser (uid 10001). Fix with: bash scripts/ensure_output_volume_perms.sh
     volumes:
       - ../data/output:/app/output
       # GCP ADC for ARTIFACT_STORAGE_PROVIDER=gcs (host: repo secrets/ → /app/secrets/)
