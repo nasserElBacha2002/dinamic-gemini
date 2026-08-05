@@ -13,6 +13,28 @@ The compose stack runs only the **`api`** service. On-demand aisle workers are s
 
 Environment for the API lives at the **repository root** `.env` (e.g. `/opt/dinamic/dinamic-gemini/.env`), loaded by `backend/docker-compose.yml`.
 
+### Output volume permissions (`data/output`)
+
+Compose bind-mounts `../data/output` → `/app/output`. The API image runs as non-root **`appuser` (uid/gid 10001)**. If the host directory is root-owned, aisle processing fails at worker spawn:
+
+```text
+WORKER_LAUNCH_FAILED
+Permission denied: 'output/<job_id>'
+current_stage=worker_launch / spawn_failed
+```
+
+**Fix on the server (one-time or after root created files there):**
+
+```bash
+cd /opt/dinamic/dinamic-gemini/backend
+bash scripts/ensure_output_volume_perms.sh
+# equivalent:
+# mkdir -p ../data/output
+# docker run --rm -v /opt/dinamic/dinamic-gemini/data/output:/out alpine:3.20 chown -R 10001:10001 /out
+```
+
+Deploy GHA runs this script before `docker-compose up`. Re-run aisle processing after the chown.
+
 ## GCP credentials (`GOOGLE_APPLICATION_CREDENTIALS`)
 
 When using GCS artifact storage, `.env` should include:

@@ -217,10 +217,13 @@ jobs:
 
             cd "${REPO_ROOT}/backend"
 
-            chmod +x scripts/check_deploy_secrets.sh scripts/dev_deploy_db_migrate.sh 2>/dev/null || true
+            chmod +x scripts/check_deploy_secrets.sh scripts/dev_deploy_db_migrate.sh scripts/ensure_output_volume_perms.sh 2>/dev/null || true
             echo "==> GCP secrets preflight (host paths + optional compose override)..."
             bash scripts/check_deploy_secrets.sh ensure-override
             bash scripts/check_deploy_secrets.sh host
+
+            echo "==> Ensure data/output is writable by container appuser (uid 10001)..."
+            bash scripts/ensure_output_volume_perms.sh "${REPO_ROOT}"
 
             docker-compose down --remove-orphans || true
 
