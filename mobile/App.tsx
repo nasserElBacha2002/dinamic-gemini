@@ -69,6 +69,8 @@ export default function App(): JSX.Element {
   const [connectivity, setConnectivity] = useState<'online' | 'offline' | 'unknown'>('unknown');
   const [localSessions, setLocalSessions] = useState<CaptureSessionRow[]>([]);
   const [uploadProgress, setUploadProgress] = useState<readonly UploadSessionProgress[]>([]);
+  const [forceNewCapture, setForceNewCapture] = useState(false);
+  const [footerHeight, setFooterHeight] = useState(72);
 
   useEffect(() => {
     let mounted = true;
@@ -240,9 +242,11 @@ export default function App(): JSX.Element {
       void services.uploadQueue.setSessionPreparationMode(work.sessionId, 'CODE_SCAN');
     }
     if (work.kind === 'capture_active' || work.kind === 'capture_paused') {
+      setForceNewCapture(false);
       void services.capture.loadSession(work.sessionId, work.kind === 'capture_active');
       setScreen('capture');
-    } else if (work.kind === 'capture_review') {
+    } else if (work.kind === 'capture_review' || work.kind === 'local_completed') {
+      setForceNewCapture(false);
       void services.capture.loadSession(work.sessionId, false);
       setScreen('review');
     } else if (work.kind === 'uploading' || work.kind === 'ready_to_process') {
@@ -257,8 +261,17 @@ export default function App(): JSX.Element {
   return (
     <Shell
       title="Dinamic Captura"
+      contentPaddingBottom={footerHeight}
       footer={
-        <View style={styles.nav}>
+        <View
+          style={styles.nav}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            if (h > 0 && Math.abs(h - footerHeight) > 1) {
+              setFooterHeight(h);
+            }
+          }}
+        >
           <SmallButton label="Inventarios" onPress={() => setScreen('inventories')} />
           <SmallButton label="Actividad local" onPress={() => setScreen('local-activity')} />
           <SmallButton label="Diagnóstico" onPress={() => setScreen('diagnostic')} />
@@ -303,13 +316,17 @@ export default function App(): JSX.Element {
           onSelectNew={(aisle) => {
             setSelectedAisle(aisle);
             setWorkSessionId(null);
+            setForceNewCapture(true);
             if (selectedInventory) {
-              services.capture.prepareNewCapture({
-                inventoryId: selectedInventory.id,
-                inventoryName: selectedInventory.name,
-                aisleId: aisle.id,
-                aisleName: aisle.code,
-              });
+              services.capture.prepareNewCapture(
+                {
+                  inventoryId: selectedInventory.id,
+                  inventoryName: selectedInventory.name,
+                  aisleId: aisle.id,
+                  aisleName: aisle.code,
+                },
+                { forceClear: true },
+              );
             }
             setScreen('capture');
           }}
@@ -343,8 +360,15 @@ export default function App(): JSX.Element {
           inventory={selectedInventory}
           aisle={selectedAisle}
           snapshot={capture}
-          onReview={() => setScreen('review')}
-          onBackToAisles={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
+          forceNewCapture={forceNewCapture}
+          onReview={() => {
+            setForceNewCapture(false);
+            setScreen('review');
+          }}
+          onBackToAisles={() => {
+            setForceNewCapture(false);
+            setScreen(selectedInventory ? 'aisles' : 'inventories');
+          }}
           onError={setError}
         />
       ) : null}
@@ -352,7 +376,13 @@ export default function App(): JSX.Element {
         <ReviewScreen
           services={services}
           snapshot={capture}
-          onBack={() => setScreen('capture')}
+          onBack={() =>
+            setScreen(
+              capture?.session?.status === 'local_completed'
+                ? 'local-activity'
+                : 'capture',
+            )
+          }
           onConfirm={(sessionId) => {
             setWorkSessionId(sessionId);
             const useLocalReview =
@@ -383,7 +413,9 @@ export default function App(): JSX.Element {
               .completeLocalSession({ uploadPolicy: 'MANUAL' })
               .then(({ sessionId: sid }) => {
                 setWorkSessionId(sid);
-                setScreen('local-activity');
+                refreshLocalWork();
+                // Stay on review (read-only / local_completed) so Exportar ZIP remains available.
+                setScreen('review');
               })
               .catch((e) => setError(messageOf(e)));
           }}
@@ -398,9 +430,14 @@ export default function App(): JSX.Element {
                     // Scheduling failure must not undo local close.
                   });
                 }
-                setScreen('local-activity');
+                refreshLocalWork();
+                setScreen('review');
               })
               .catch((e) => setError(messageOf(e)));
+          }}
+          onOpenUploads={(sessionId) => {
+            setWorkSessionId(sessionId);
+            setScreen('uploads');
           }}
           onError={setError}
         />
@@ -567,13 +604,15 @@ export default function App(): JSX.Element {
           onError={setError}
           onOpenSession={(work) => {
             setWorkSessionId(work.sessionId);
+            setForceNewCapture(false);
             if (work.kind === 'capture_active' || work.kind === 'capture_paused') {
+              void services.capture.loadSession(work.sessionId, work.kind === 'capture_active');
               setScreen('capture');
               return;
             }
             if (work.kind === 'capture_review' || work.kind === 'local_completed') {
               void services.capture.loadSession(work.sessionId, false).then(() => {
-                setScreen(work.kind === 'local_completed' ? 'uploads' : 'review');
+                setScreen('review');
               });
               return;
             }

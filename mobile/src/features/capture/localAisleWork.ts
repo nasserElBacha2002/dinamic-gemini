@@ -23,6 +23,9 @@ export interface LocalAisleWork {
   readonly kind: LocalAisleWorkKind;
   readonly label: string;
   readonly pendingUploads: number;
+  readonly updatedAt: string;
+  readonly shortId: string;
+  readonly frozenPhotoCount: number | null;
 }
 
 export function classifyLocalSession(
@@ -45,8 +48,8 @@ export function classifyLocalSession(
     kind = 'local_completed';
     label =
       pending > 0
-        ? `Cierre local · ${pending} fotos pendientes de carga`
-        : 'Cierre local · resultados disponibles offline';
+        ? `Guardada localmente · ${pending} fotos pendientes de carga`
+        : 'Guardada localmente · exportable offline';
   } else if (session.status === 'uploading' || session.status === 'upload_review') {
     kind = 'uploading';
     label =
@@ -73,6 +76,9 @@ export function classifyLocalSession(
     kind,
     label,
     pendingUploads: pending,
+    updatedAt: session.updated_at,
+    shortId: session.id.slice(0, 8),
+    frozenPhotoCount: session.capture_frozen_photo_count,
   };
 }
 
@@ -80,15 +86,43 @@ export function findExclusiveCapture(sessions: readonly CaptureSessionRow[]): Ca
   return sessions.find((s) => isCaptureExclusiveSession(s.status as never)) ?? null;
 }
 
+/**
+ * Sessions for one aisle, newest first (activity list is already updated_at DESC).
+ */
+export function listSessionsForAisle(
+  sessions: readonly CaptureSessionRow[],
+  aisleId: string,
+): CaptureSessionRow[] {
+  return sessions.filter((s) => s.aisle_id === aisleId);
+}
+
+/**
+ * Primary work for an aisle card: prefer exclusive/open capture, else newest session.
+ * Older sessions remain reachable via listSessionsForAisle / Actividad local.
+ */
 export function workForAisle(
   sessions: readonly CaptureSessionRow[],
   aisleId: string,
   uploads: readonly UploadSessionProgress[],
 ): LocalAisleWork | null {
-  const session = sessions.find((s) => s.aisle_id === aisleId);
-  if (!session) {
+  const forAisle = listSessionsForAisle(sessions, aisleId);
+  if (forAisle.length === 0) {
     return null;
   }
+  const exclusive = forAisle.find((s) => isCaptureExclusiveSession(s.status as never));
+  const session = exclusive ?? forAisle[0]!;
   const upload = uploads.find((u) => u.sessionId === session.id) ?? null;
   return classifyLocalSession(session, upload);
+}
+
+export function classifySessionsForAisle(
+  sessions: readonly CaptureSessionRow[],
+  aisleId: string,
+  uploads: readonly UploadSessionProgress[],
+): LocalAisleWork[] {
+  return listSessionsForAisle(sessions, aisleId)
+    .map((s) =>
+      classifyLocalSession(s, uploads.find((u) => u.sessionId === s.id) ?? null),
+    )
+    .filter((w) => w.kind !== 'none');
 }
