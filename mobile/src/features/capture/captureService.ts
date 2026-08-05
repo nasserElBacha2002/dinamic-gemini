@@ -209,19 +209,25 @@ export class CaptureService {
   }
 
   /**
-   * Clears in-memory snapshot when navigating to a different aisle so UI does not
+   * Clears in-memory snapshot when navigating to a different aisle, or when the
+   * caller explicitly starts a brand-new capture (forceClear), so UI does not
    * show photos/cursors from another capture.
    */
-  prepareNewCapture(context: CaptureContext): void {
+  prepareNewCapture(context: CaptureContext, options: { forceClear?: boolean } = {}): void {
     const current = this.session;
-    if (
+    const aisleChanged =
       current &&
-      (current.inventory_id !== context.inventoryId || current.aisle_id !== context.aisleId)
-    ) {
+      (current.inventory_id !== context.inventoryId || current.aisle_id !== context.aisleId);
+    if (options.forceClear || aisleChanged) {
       this.clearCurrentSession();
       this.warning = null;
       this.emit();
     }
+  }
+
+  async listSessionsForAisle(aisleId: string): Promise<CaptureSessionRow[]> {
+    const sessions = await this.repo.listActivitySessions();
+    return sessions.filter((s) => s.aisle_id === aisleId);
   }
 
   async loadSession(sessionId: string, startListener: boolean): Promise<CaptureSnapshot> {
@@ -259,7 +265,26 @@ export class CaptureService {
     return this.snapshot();
   }
 
-  async start(input: StartCaptureInput, options: { pauseOtherAisle?: boolean } = {}): Promise<void> {
+  /**
+   * Resume an existing paused/active session by id (does not create a new session).
+   */
+  async resumeSession(sessionId: string, permission?: PermissionState): Promise<void> {
+    await this.loadSession(sessionId, false);
+    await this.resume(permission);
+  }
+
+  /** Explicit new capture — never reuses paused/review sessions on the same aisle. */
+  async startNewSession(
+    input: StartCaptureInput,
+    options: { pauseOtherAisle?: boolean } = {},
+  ): Promise<void> {
+    return this.start(input, { ...options, forceNew: true });
+  }
+
+  async start(
+    input: StartCaptureInput,
+    options: { pauseOtherAisle?: boolean; forceNew?: boolean } = {},
+  ): Promise<void> {
     if (!input.permission.granted) {
       throw new Error('Se requieren permisos de fotografías.');
     }
@@ -276,9 +301,23 @@ export class CaptureService {
         await this.stopForeground();
       }
     } else if (exclusive && exclusive.aisle_id === input.aisleId) {
-      await this.loadSession(exclusive.id, exclusive.status === 'active');
-      this.warning = null;
-      return;
+      if (!options.forceNew) {
+        await this.loadSession(exclusive.id, exclusive.status === 'active');
+        this.warning = null;
+        return;
+      }
+      // forceNew on same aisle: pause exclusive work, then create an independent session.
+      await this.loadSession(exclusive.id, false);
+      if (
+        exclusive.status === 'active' ||
+        exclusive.status === 'preparing' ||
+        exclusive.status === 'finishing'
+      ) {
+        await this.pause();
+      } else {
+        this.detachListener();
+        await this.stopForeground();
+      }
     }
 
     const sameAislePaused = (await this.repo.listActivitySessions()).find(
@@ -287,7 +326,7 @@ export class CaptureService {
         s.inventory_id === input.inventoryId &&
         (s.status === 'paused' || s.status === 'review'),
     );
-    if (sameAislePaused && !options.pauseOtherAisle) {
+    if (sameAislePaused && !options.forceNew) {
       // Prefer continuing existing local work for this aisle unless caller forces new.
       await this.loadSession(sameAislePaused.id, false);
       this.warning = null;

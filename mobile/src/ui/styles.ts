@@ -1,7 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 export const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d1b2a', padding: 20, paddingTop: 52 },
+  container: { flex: 1, backgroundColor: '#0d1b2a', paddingHorizontal: 20, paddingTop: 8 },
   body: { flex: 1 },
   h1: { color: '#fff', fontSize: 22, fontWeight: '700', marginBottom: 12 },
   h2: { color: '#fff', fontSize: 18, fontWeight: '600', marginTop: 20, marginBottom: 8 },
@@ -17,6 +17,27 @@ export const styles = StyleSheet.create({
     padding: 12,
     marginVertical: 8,
   },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderColor: '#3d5a80',
+    borderWidth: 1,
+    borderRadius: 10,
+    marginVertical: 8,
+  },
+  passwordInput: {
+    flex: 1,
+    borderWidth: 0,
+    marginVertical: 0,
+  },
+  passwordToggle: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  passwordToggleText: { color: '#94d2bd', fontSize: 13, fontWeight: '700' },
   btn: {
     backgroundColor: '#1b9aaa',
     padding: 16,

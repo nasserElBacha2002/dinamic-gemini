@@ -17,6 +17,11 @@ export interface CaptureScreenProps {
   onReview: () => void;
   onBackToAisles: () => void;
   onError: (message: string | null) => void;
+  /**
+   * When true, "Comenzar captura" always creates a new session (forceNew).
+   * When false, start() may resume paused/review work on the same aisle.
+   */
+  forceNewCapture?: boolean;
 }
 
 export function CaptureScreen({
@@ -27,6 +32,7 @@ export function CaptureScreen({
   onReview,
   onBackToAisles,
   onError,
+  forceNewCapture = false,
 }: CaptureScreenProps) {
   const [permission, setPermission] = useState('desconocido');
   const [finishInFlight, setFinishInFlight] = useState(false);
@@ -49,6 +55,20 @@ export function CaptureScreen({
     }
     const p = await requestPhotoPermission();
     setPermission(p.granted ? (p.limited ? 'parcial' : 'completo') : 'denegado');
+    const startOpts = { pauseOtherAisle, forceNew: forceNewCapture };
+    if (forceNewCapture) {
+      await services.capture.startNewSession(
+        {
+          inventoryId: inventory.id,
+          inventoryName: inventory.name,
+          aisleId: aisle.id,
+          aisleName: aisle.code,
+          permission: p,
+        },
+        { pauseOtherAisle },
+      );
+      return;
+    }
     await services.capture.start(
       {
         inventoryId: inventory.id,
@@ -57,7 +77,7 @@ export function CaptureScreen({
         aisleName: aisle.code,
         permission: p,
       },
-      { pauseOtherAisle },
+      startOpts,
     );
   };
 
@@ -139,15 +159,21 @@ export function CaptureScreen({
             </View>
           ) : null}
           <Button
-            label={sessionStatus === 'paused' ? 'Continuar captura' : 'Comenzar captura'}
+            label={
+              sessionStatus === 'paused' && !forceNewCapture
+                ? 'Continuar captura'
+                : forceNewCapture
+                  ? 'Comenzar nueva captura'
+                  : 'Comenzar captura'
+            }
             disabled={
               isFinishing ||
               !inventory ||
               !aisle ||
-              Boolean(snapshotBelongsToSelectedAisle && sessionStatus === 'active')
+              Boolean(snapshotBelongsToSelectedAisle && sessionStatus === 'active' && !forceNewCapture)
             }
             onPress={() => {
-              if (snapshotBelongsToSelectedAisle && sessionStatus === 'paused') {
+              if (snapshotBelongsToSelectedAisle && sessionStatus === 'paused' && !forceNewCapture) {
                 void requestPhotoPermission()
                   .then((p) => {
                     setPermission(p.granted ? (p.limited ? 'parcial' : 'completo') : 'denegado');

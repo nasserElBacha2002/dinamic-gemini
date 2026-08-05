@@ -836,5 +836,68 @@ describe('CaptureService corrections', () => {
     await expect(service.completeReview()).resolves.toBe('session-1');
     expect((await repo.getSession('session-1'))?.status).toBe('ready_to_process');
   });
+
+  it('start reuses paused session on same aisle; startNewSession creates a distinct id', async () => {
+    let id = 0;
+    const repo = new FakeRepo();
+    repo.sessions.set(
+      'paused-1',
+      session({
+        id: 'paused-1',
+        status: 'paused',
+        aisle_id: 'aisle-1',
+        updated_at: '2026-01-02T00:00:00Z',
+      }),
+    );
+    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+      mediaStore: mediaStore(),
+      stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
+      createId: () => `session-${++id}`,
+    });
+    const input = {
+      inventoryId: 'inv-1',
+      inventoryName: 'Inventario',
+      aisleId: 'aisle-1',
+      aisleName: 'A1',
+      permission: { granted: true, limited: false, canAskAgain: true },
+    };
+
+    await service.start(input);
+    expect(service.getSnapshot().session?.id).toBe('paused-1');
+    expect(repo.createCalls).toBe(0);
+
+    await service.startNewSession(input);
+    expect(service.getSnapshot().session?.id).toBe('session-1');
+    expect(repo.createCalls).toBe(1);
+    expect(repo.sessions.has('paused-1')).toBe(true);
+    expect((await repo.getSession('paused-1'))?.status).toBe('paused');
+  });
+
+  it('forceNew pauses exclusive same-aisle capture then creates a new session without deleting the old one', async () => {
+    let id = 0;
+    const repo = new FakeRepo();
+    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+      mediaStore: mediaStore(),
+      stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
+      createId: () => `session-${++id}`,
+    });
+    const input = {
+      inventoryId: 'inv-1',
+      inventoryName: 'Inventario',
+      aisleId: 'aisle-1',
+      aisleName: 'A1',
+      permission: { granted: true, limited: false, canAskAgain: true },
+    };
+    await service.start(input);
+    const firstId = service.getSnapshot().session?.id;
+    expect(firstId).toBeTruthy();
+
+    await service.startNewSession(input);
+    const secondId = service.getSnapshot().session?.id;
+    expect(secondId).toBeTruthy();
+    expect(secondId).not.toBe(firstId);
+    expect((await repo.getSession(firstId!))?.status).toBe('paused');
+    expect((await repo.getSession(secondId!))?.status).toBe('active');
+  });
 });
 

@@ -3,7 +3,11 @@ import { Alert, FlatList, RefreshControl, Text, View } from 'react-native';
 
 import { CreateAisleModal } from '../components/CreateAisleModal';
 import type { CaptureSessionRow } from '../database/schema/captureSchema';
-import { workForAisle, type LocalAisleWork } from '../features/capture/localAisleWork';
+import {
+  classifySessionsForAisle,
+  workForAisle,
+  type LocalAisleWork,
+} from '../features/capture/localAisleWork';
 import type { UploadSessionProgress } from '../features/upload/uploadQueue';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
@@ -41,6 +45,7 @@ export function AislesScreen({
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [expandedAisleId, setExpandedAisleId] = useState<string | null>(null);
   const loadedRef = useRef(false);
   const load = useCallback(() => {
     setBusy(true);
@@ -93,7 +98,10 @@ export function AislesScreen({
         }
         renderItem={({ item: aisle }) => {
           const work = workForAisle(localSessions, aisle.id, uploadProgress);
+          const history = classifySessionsForAisle(localSessions, aisle.id, uploadProgress);
+          const historyExtra = history.filter((h) => h.sessionId !== work?.sessionId);
           const exclusiveHere = Boolean(exclusive) && exclusive!.aisle_id === aisle.id;
+          const expanded = expandedAisleId === aisle.id;
           return (
             <Card>
               <Text style={styles.cardTitle}>{aisle.code}</Text>
@@ -104,6 +112,11 @@ export function AislesScreen({
                 Fotos existentes: {aisle.assets_count} · Job: {aisle.latest_job?.status ?? '—'}
               </Text>
               {work && work.kind !== 'none' ? <Text style={styles.notif}>{work.label}</Text> : null}
+              {history.length > 1 ? (
+                <Text style={styles.row}>
+                  {history.length} capturas locales en este pasillo
+                </Text>
+              ) : null}
               {work && work.kind !== 'none' && work.kind !== 'completed' ? (
                 <Button
                   label={
@@ -111,17 +124,38 @@ export function AislesScreen({
                       ? 'Continuar captura'
                       : work.kind === 'capture_review'
                         ? 'Revisar fotos'
-                        : work.kind === 'uploading' || work.kind === 'ready_to_process'
-                          ? 'Continuar cargas'
-                          : work.kind === 'processing' || work.kind === 'failed_processing'
-                            ? 'Ver procesamiento'
-                            : 'Continuar'
+                        : work.kind === 'local_completed'
+                          ? 'Abrir captura guardada'
+                          : work.kind === 'uploading' || work.kind === 'ready_to_process'
+                            ? 'Continuar cargas'
+                            : work.kind === 'processing' || work.kind === 'failed_processing'
+                              ? 'Ver procesamiento'
+                              : 'Continuar'
                   }
                   onPress={() => onOpenWork(work)}
                 />
               ) : null}
+              {historyExtra.length > 0 ? (
+                <SmallButton
+                  label={expanded ? 'Ocultar historial' : 'Ver historial'}
+                  onPress={() => setExpandedAisleId(expanded ? null : aisle.id)}
+                />
+              ) : null}
+              {expanded
+                ? historyExtra.map((h) => (
+                    <View key={h.sessionId} style={styles.pendingBox}>
+                      <Text style={styles.row}>
+                        {h.label} · {h.shortId} · {h.updatedAt}
+                      </Text>
+                      <SmallButton label="Abrir" onPress={() => onOpenWork(h)} />
+                    </View>
+                  ))
+                : null}
               {exclusiveHere ? <Button label="Cancelar captura" onPress={onCancelCapture} /> : null}
-              <Button label="Seleccionar pasillo" onPress={() => onSelectNew(aisle)} />
+              <Button
+                label={work && work.kind !== 'none' ? 'Comenzar nueva captura' : 'Seleccionar pasillo'}
+                onPress={() => onSelectNew(aisle)}
+              />
             </Card>
           );
         }}
