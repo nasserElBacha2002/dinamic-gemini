@@ -31,7 +31,13 @@ class JobImageCoverageSnapshotRow:
 
 
 class JobImageCoverageRepository(Protocol):
-    def get_counters(self, *, job_id: str, aisle_id: str) -> JobImageCoverageCounters: ...
+    def get_counters(
+        self,
+        *,
+        job_id: str,
+        aisle_id: str,
+        exclude_source_asset_ids: frozenset[str] | None = None,
+    ) -> JobImageCoverageCounters: ...
 
     def list_snapshot_page(
         self,
@@ -41,6 +47,7 @@ class JobImageCoverageRepository(Protocol):
         result_status: ResultStatusFilter,
         page: int,
         page_size: int,
+        exclude_source_asset_ids: frozenset[str] | None = None,
     ) -> tuple[tuple[JobImageCoverageSnapshotRow, ...], int]: ...
 
     def load_positions_for_assets(

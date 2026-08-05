@@ -27,12 +27,15 @@ export default function JobImageResultCard({
   const statusLabel = failed
     ? t('results.imageCoverage.card.processingStatus.failed')
     : t('results.imageCoverage.card.withoutResultBadge');
+  const showAddResult =
+    item.is_product_candidate !== false && item.excluded_from_uncounted !== true;
 
   return (
     <Card
       variant="outlined"
       data-testid="job-image-result-card"
       data-has-result="false"
+      data-operational-role={item.operational_role ?? 'UNKNOWN'}
       sx={{ px: 2, py: 1.25 }}
     >
       <Stack
@@ -70,18 +73,20 @@ export default function JobImageResultCard({
           />
         </Stack>
 
-        <Box sx={{ flexShrink: 0 }}>
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<AddCircleOutlineIcon fontSize="small" />}
-            onClick={() => onAddResult(item)}
-            disabled={addResultDisabled}
-            data-testid="job-image-add-manual-result"
-          >
-            {t('results.imageCoverage.card.addResultAction')}
-          </Button>
-        </Box>
+        {showAddResult ? (
+          <Box sx={{ flexShrink: 0 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<AddCircleOutlineIcon fontSize="small" />}
+              onClick={() => onAddResult(item)}
+              disabled={addResultDisabled}
+              data-testid="job-image-add-manual-result"
+            >
+              {t('results.imageCoverage.card.addResultAction')}
+            </Button>
+          </Box>
+        ) : null}
       </Stack>
     </Card>
   );

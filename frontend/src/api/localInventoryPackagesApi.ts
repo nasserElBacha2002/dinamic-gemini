@@ -6,8 +6,10 @@ import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
 import { apiRequestJson } from './request';
 import type { LocalInventoryPackageResponse } from './types';
 
+const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
+
 function packagesBase(inventoryId: string): string {
-  return `${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/local-inventory-packages`;
+  return `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/local-inventory-packages`;
 }
 
 /** POST …/local-inventory-packages/preview — multipart field `file`. */

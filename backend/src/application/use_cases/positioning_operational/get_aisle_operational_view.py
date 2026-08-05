@@ -41,6 +41,9 @@ from src.application.services.position_reconciliation.published_assignment_reade
 from src.application.services.positioning_operational.allowed_actions import (
     resolve_positioning_allowed_actions,
 )
+from src.application.services.positioning_operational.sequence_event_classifier import (
+    is_resolved_position_detection,
+)
 from src.application.services.positioning_operational.warnings_builder import (
     build_operational_warnings,
     is_ambiguous_detection_status,
@@ -236,12 +239,10 @@ class GetAisleOperationalPositioningViewUseCase:
         unassigned = unassigned_automatic + unassigned_manual
         total_results = len(result_ids) if result_ids else (assigned + unassigned)
 
-        ambiguous = sum(
-            1 for d in detections if is_ambiguous_detection_status(d.detection_status)
-        )
-        invalid_det = sum(
-            1 for d in detections if is_invalid_detection_status(d.detection_status)
-        )
+        ambiguous = sum(1 for d in detections if is_ambiguous_detection_status(d.detection_status))
+        invalid_det = sum(1 for d in detections if is_invalid_detection_status(d.detection_status))
+        detections_count = len(detections)
+        resolved_detections_count = sum(1 for d in detections if is_resolved_position_detection(d))
 
         recon_status = None
         recon_id = None
@@ -269,9 +270,7 @@ class GetAisleOperationalPositioningViewUseCase:
             overrides_enabled=self._overrides_enabled,
             reconciliation_status=recon_status,
         )
-        allowed_names = frozenset(
-            name for name, enabled in allowed.as_dict().items() if enabled
-        )
+        allowed_names = frozenset(name for name, enabled in allowed.as_dict().items() if enabled)
 
         warnings = build_operational_warnings(
             processing_state=processing.state,
@@ -279,7 +278,7 @@ class GetAisleOperationalPositioningViewUseCase:
             reconciliation_status=recon_status,
             unassigned_count=unassigned,
             ambiguous_count=ambiguous,
-            detections_count=len(detections),
+            resolved_detections_count=resolved_detections_count,
             unordered_count=unordered,
             invalid_count=invalid_det,
             stale_count=stale_count,
@@ -295,7 +294,7 @@ class GetAisleOperationalPositioningViewUseCase:
 
         logger.info(
             "positioning_operational_view inventory_id=%s aisle_id=%s state=%s "
-            "result_job_id=%s total=%s assigned=%s unassigned=%s detections=%s",
+            "result_job_id=%s total=%s assigned=%s unassigned=%s detections=%s resolved=%s",
             command.inventory_id,
             command.aisle_id,
             processing.state,
@@ -303,7 +302,8 @@ class GetAisleOperationalPositioningViewUseCase:
             total_results,
             assigned,
             unassigned,
-            len(detections),
+            detections_count,
+            resolved_detections_count,
         )
 
         return AisleOperationalPositioningView(
@@ -328,7 +328,7 @@ class GetAisleOperationalPositioningViewUseCase:
             stale_results_count=stale_count,
             unordered_assets_count=unordered,
             ambiguous_detections_count=ambiguous,
-            detections_count=len(detections),
+            detections_count=detections_count,
             recoverable=processing.recoverable,
             can_process=allowed.process,
             can_reprocess=allowed.reprocess,

@@ -23,28 +23,6 @@ _UNASSIGNED_HINTS: dict[str, str] = {
 }
 
 
-def transition_message_for_action(action: str | None, *, reason: str | None = None) -> str:
-    key = (action or "").strip().upper()
-    messages = {
-        "SET_POSITION": "Se estableció una nueva posición a partir de la etiqueta detectada.",
-        "KEEP_POSITION": (
-            "La posición anterior se mantuvo porque esta imagen no contiene una etiqueta válida."
-        ),
-        "CLEAR_POSITION": "Se limpió la posición efectiva para este frame.",
-        "AMBIGUOUS": "Se detectó más de una etiqueta de posición válida en la misma imagen.",
-        "INVALID_SIGNATURE": "La firma de la etiqueta de posición no es válida.",
-        "CLIENT_MISMATCH": "La etiqueta no pertenece a este cliente.",
-        "LEGACY_UNSIGNED_REQUIRES_REVIEW": (
-            "Etiqueta sin firma criptográfica: la posición se aplicó y queda marcada para revisión."
-        ),
-        "NO_LABEL": "No se detectó etiqueta de posicionamiento en esta imagen.",
-    }
-    base = messages.get(key)
-    if base is None and reason:
-        return reason
-    return base or (reason or "Evento de transición de posición.")
-
-
 def build_operational_warnings(
     *,
     processing_state: str,
@@ -52,7 +30,7 @@ def build_operational_warnings(
     reconciliation_status: str | None,
     unassigned_count: int,
     ambiguous_count: int,
-    detections_count: int,
+    resolved_detections_count: int,
     unordered_count: int,
     invalid_count: int,
     stale_count: int,
@@ -92,14 +70,14 @@ def build_operational_warnings(
                 allowed_actions=_actions("reconcile_only", "reprocess"),
             )
         )
-    if detections_count == 0 and unassigned_count > 0:
+    if resolved_detections_count == 0 and unassigned_count > 0:
         warnings.append(
             PositioningOperationalWarning(
                 code="NO_POSITION_LABEL_DETECTIONS",
-                title="Sin detecciones de etiqueta",
+                title="Sin detecciones de etiqueta resueltas",
                 description=(
-                    "No hay detecciones de etiqueta de posicionamiento en este job. "
-                    "Verifique que el procesamiento use CODE_SCAN."
+                    "No hay etiquetas de posicionamiento resueltas (VALID) en este job. "
+                    "Las detecciones no resueltas no establecen una posición activa."
                 ),
                 severity=PositioningWarningSeverity.WARNING,
                 affected_count=unassigned_count,

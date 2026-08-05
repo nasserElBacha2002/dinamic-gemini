@@ -77,6 +77,8 @@ export interface PositioningSequenceFrameDto {
   automatic_assignment_summaries: string[];
   effective_assignment_summaries: string[];
   warnings: string[];
+  reason_code?: string | null;
+  position_label_id?: string | null;
 }
 
 export interface PositioningSequenceDto {

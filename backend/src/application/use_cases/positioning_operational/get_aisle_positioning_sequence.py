@@ -37,11 +37,15 @@ from src.application.services.position_reconciliation.job_final_item_result_read
 from src.application.services.position_reconciliation.published_assignment_reader import (
     PublishedPositionAssignmentReader,
 )
-from src.application.services.positioning_operational.warnings_builder import (
-    transition_message_for_action,
+from src.application.services.positioning_operational.sequence_event_classifier import (
+    reduce_asset_detections,
 )
+from src.domain.position_label_detection.entities import ImagePositionLabelDetection
 from src.domain.position_overrides.entities import EffectivePositionSource
-from src.domain.position_reconciliation.entities import AssignmentStatus
+from src.domain.position_reconciliation.entities import (
+    AssignmentStatus,
+    ProductPositionAssignment,
+)
 from src.domain.positioning_operational.entities import PositioningSequenceFrame
 
 
@@ -113,9 +117,7 @@ class GetAislePositioningSequenceUseCase:
         links = sorted(
             self._job_source_asset_repo.list_for_job(command.job_id),
             key=lambda link: (
-                link.sequence_number
-                if link.sequence_number is not None
-                else link.position_order,
+                link.sequence_number if link.sequence_number is not None else link.position_order,
                 link.source_asset_id,
             ),
         )
@@ -128,13 +130,13 @@ class GetAislePositioningSequenceUseCase:
         page_asset_ids = [link.source_asset_id for link in page_links]
 
         detections = list(self._detection_repo.list_by_job(command.job_id))
-        det_by_asset: dict[str, list] = defaultdict(list)
+        det_by_asset: dict[str, list[ImagePositionLabelDetection]] = defaultdict(list)
         for d in detections:
             if d.source_asset_id in page_asset_ids:
                 det_by_asset[d.source_asset_id].append(d)
 
         assignments = list(self._reconciliation_repo.list_active_assignments(command.job_id))
-        asg_by_asset: dict[str, list] = defaultdict(list)
+        asg_by_asset: dict[str, list[ProductPositionAssignment]] = defaultdict(list)
         for a in assignments:
             if a.source_asset_id in page_asset_ids:
                 asg_by_asset[a.source_asset_id].append(a)
@@ -171,15 +173,14 @@ class GetAislePositioningSequenceUseCase:
             asset_det = det_by_asset.get(asset_id, [])
             asset_finals = finals_by_asset.get(asset_id, [])
             seq = link.sequence_number if link.sequence_number is not None else link.position_order
-            primary_det = asset_det[0] if asset_det else None
-            label_name = None
-            det_status = None
-            if primary_det is not None:
-                det_status = str(primary_det.detection_status)
-                label_name = primary_det.position_name_snapshot
+
+            # P1: no persisted SET_POSITION ledger → LABEL_RESOLVED, never TRANSITION_APPLIED.
+            event = reduce_asset_detections(
+                asset_det,
+                reconciler_transition_applied=False,
+            )
 
             auto_summaries: list[str] = []
-            transition = None
             for a in asset_asg:
                 status_value = (
                     a.assignment_status.value
@@ -188,8 +189,6 @@ class GetAislePositioningSequenceUseCase:
                 )
                 pos_name = a.position_name_snapshot or ""
                 auto_summaries.append(f"{a.result_id[:8]}… → {pos_name or status_value}")
-                if transition is None and a.assignment_reason:
-                    transition = a.assignment_reason
 
             eff_summaries: list[str] = []
             warn: list[str] = []
@@ -222,16 +221,16 @@ class GetAislePositioningSequenceUseCase:
                     sequence_number=seq,
                     source_asset_id=asset_id,
                     filename=link.original_filename,
-                    position_detection_status=det_status,
-                    position_label_name=label_name,
-                    transition_action=str(transition) if transition else None,
-                    transition_message=transition_message_for_action(
-                        str(transition) if transition else det_status
-                    ),
+                    position_detection_status=event.detection_status,
+                    position_label_name=event.position_label_name,
+                    transition_action=event.event_kind.value,
+                    transition_message=event.message,
                     product_count=len(asset_finals) or len(asset_asg),
                     automatic_assignment_summaries=tuple(auto_summaries[:8]),
                     effective_assignment_summaries=tuple(eff_summaries[:8] or auto_summaries[:8]),
                     warnings=tuple(dict.fromkeys(warn)),
+                    reason_code=event.reason_code.value,
+                    position_label_id=event.position_label_id,
                 )
             )
 
@@ -244,7 +243,7 @@ class GetAislePositioningSequenceUseCase:
         )
 
 
-def _is_unassigned(assignment: object) -> bool:
-    status = getattr(assignment, "assignment_status", None)
+def _is_unassigned(assignment: ProductPositionAssignment) -> bool:
+    status = assignment.assignment_status
     value = status.value if isinstance(status, AssignmentStatus) else str(status or "")
     return value.startswith("UNASSIGNED")

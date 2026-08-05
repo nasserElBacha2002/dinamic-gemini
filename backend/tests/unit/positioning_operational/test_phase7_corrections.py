@@ -76,7 +76,7 @@ def test_warnings_filter_actions_by_allowed() -> None:
         reconciliation_status="STALE",
         unassigned_count=1,
         ambiguous_count=0,
-        detections_count=0,
+        resolved_detections_count=0,
         unordered_count=0,
         invalid_count=0,
         stale_count=1,

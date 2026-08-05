@@ -131,3 +131,6 @@ class PositioningSequenceFrame:
     automatic_assignment_summaries: tuple[str, ...] = ()
     effective_assignment_summaries: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    #: Classification reason (additive; optional for older clients).
+    reason_code: str | None = None
+    position_label_id: str | None = None

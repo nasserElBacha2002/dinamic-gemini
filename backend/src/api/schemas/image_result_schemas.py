@@ -43,6 +43,10 @@ class JobImageResultItemResponse(BaseModel):
     manual_result_count: int
     has_manual_result: bool
     results: list[PositionSummaryResponse]
+    operational_role: str = "UNKNOWN"
+    is_product_candidate: bool = True
+    excluded_from_uncounted: bool = False
+    uncounted_reason: str = "NONE"
 
 
 class JobImageResultsResponse(PageMeta):

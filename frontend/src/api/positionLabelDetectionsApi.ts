@@ -4,6 +4,8 @@
 
 import { apiRequestJson } from './request';
 
+const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
+
 export interface PositionLabelSummaryDto {
   id: string | null;
   name: string | null;
@@ -31,37 +33,63 @@ export async function listJobPositionDetections(
   inventoryId: string,
   jobId: string,
 ): Promise<ImagePositionDetectionListResponse> {
+  // Same API_BASE pattern as positioningOperationalApi / inventoriesApi —
+  // apiRequestJson does not prepend VITE_API_BASE_URL.
   return apiRequestJson<ImagePositionDetectionListResponse>(
-    `/api/v3/inventories/${encodeURIComponent(inventoryId)}/jobs/${encodeURIComponent(jobId)}/position-detections`,
+    `${API_BASE}/api/v3/inventories/${encodeURIComponent(inventoryId)}/jobs/${encodeURIComponent(jobId)}/position-detections`,
   );
 }
 
+/**
+ * Display labels for detection_status enum values.
+ * Does not invent "unresolved" copy for unknown statuses.
+ * FEATURE_DISABLED / NO_LABEL = no operative position detection.
+ */
 export function labelForPositionDetectionStatus(status: string): string {
   switch (status) {
     case 'VALID':
-      return 'Etiqueta de posicionamiento';
+      return 'Etiqueta de posicionamiento resuelta';
+    case 'LEGACY_UNSIGNED_REQUIRES_REVIEW':
+      return 'Etiqueta resuelta (sin firma; requiere revisión)';
     case 'NO_LABEL':
+    case 'FEATURE_DISABLED':
       return 'Sin etiqueta de posición';
     case 'CLIENT_MISMATCH':
-      return 'Etiqueta de otro cliente';
+      return 'Etiqueta detectada, no resuelta: otro cliente';
     case 'LABEL_INVALIDATED':
-      return 'Etiqueta invalidada';
+      return 'Etiqueta detectada, no resuelta: invalidada';
     case 'INVALID_SIGNATURE':
     case 'MISSING_SIGNATURE':
     case 'UNKNOWN_KEY_VERSION':
-      return 'Etiqueta inválida (firma)';
+      return 'Etiqueta detectada, no resuelta: firma';
     case 'UNSUPPORTED_LEGACY_PAYLOAD':
     case 'UNSUPPORTED_VERSION':
     case 'INVALID_TYPE':
     case 'INVALID_JSON':
-      return 'Payload no soportado';
+      return 'Etiqueta detectada, no resuelta: payload no soportado';
     case 'AMBIGUOUS_POSITION_DETECTION':
-      return 'Detección ambigua';
+    case 'DUPLICATE_POSITION_CODES':
+      return 'Etiqueta detectada, no resuelta: ambigua';
     case 'SIGNATURE_VALIDATION_SKIPPED':
-      return 'Firma no validada';
+      return 'Etiqueta detectada, no resuelta: firma no validada';
     case 'LABEL_NOT_FOUND':
-      return 'Etiqueta desconocida';
-    default:
-      return status;
+      return 'Etiqueta detectada, no resuelta: desconocida';
+    case 'MISSING_LABEL_ID':
+      return 'Etiqueta detectada, no resuelta: sin identificador';
+    case 'PAYLOAD_TOO_LARGE':
+      return 'Etiqueta detectada, no resuelta: payload demasiado grande';
+    case 'DECODE_TIMEOUT':
+      return 'Etiqueta detectada, no resuelta: timeout de decodificación';
+    case 'DETECTION_FAILED':
+      return 'Etiqueta detectada, no resuelta: detección fallida';
+    case 'DETECTION_CONTEXT_INVALID':
+      return 'Etiqueta detectada, no resuelta: contexto inválido';
+    default: {
+      const trimmed = (status || '').trim();
+      if (!trimmed) {
+        return 'Sin etiqueta de posición';
+      }
+      return `Estado de detección desconocido: ${trimmed}`;
+    }
   }
 }

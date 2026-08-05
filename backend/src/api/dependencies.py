@@ -1854,6 +1854,7 @@ def get_list_job_image_results_use_case(
         job_source_asset_repo=job_source_asset_repo,
         coverage_repo=coverage_repo,
         product_record_repo=product_record_repo,
+        detection_repo=get_app_container().get_image_position_label_detection_repo(),
     )
 
 
