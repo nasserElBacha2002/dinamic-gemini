@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -11,6 +12,9 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     PhotosJobRequiredError,
+)
+from src.application.ports.image_position_label_detection_repository import (
+    ImagePositionLabelDetectionRepository,
 )
 from src.application.ports.job_image_coverage_repository import JobImageCoverageRepository
 from src.application.ports.job_source_asset_repository import JobSourceAssetRepository
@@ -22,12 +26,17 @@ from src.application.ports.repositories import (
 )
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.display_primary_product import select_display_primary_product
+from src.application.services.job_image_coverage.asset_operational_role import (
+    classify_asset_for_uncounted,
+    source_asset_ids_excluded_as_position_labels,
+)
 from src.application.services.job_image_result_resolution import (
     is_photos_job_snapshot,
     resolve_image_processing_status,
     resolve_result_origin_counts,
 )
 from src.domain.jobs.entities import Job
+from src.domain.position_label_detection.entities import ImagePositionLabelDetection
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 
@@ -60,6 +69,10 @@ class JobImageResultRow:
     has_manual_result: bool
     positions: tuple[Position, ...]
     primary_products: tuple[ProductRecord | None, ...]
+    operational_role: str
+    is_product_candidate: bool
+    excluded_from_uncounted: bool
+    uncounted_reason: str
 
 
 @dataclass(frozen=True)
@@ -88,6 +101,7 @@ class ListJobImageResultsUseCase:
         job_source_asset_repo: JobSourceAssetRepository,
         coverage_repo: JobImageCoverageRepository,
         product_record_repo: ProductRecordRepository,
+        detection_repo: ImagePositionLabelDetectionRepository | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -95,6 +109,7 @@ class ListJobImageResultsUseCase:
         self._job_source_asset_repo = job_source_asset_repo
         self._coverage_repo = coverage_repo
         self._product_record_repo = product_record_repo
+        self._detection_repo = detection_repo
 
     def execute(self, command: ListJobImageResultsCommand) -> ListJobImageResultsResult:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
@@ -116,9 +131,7 @@ class ListJobImageResultsUseCase:
 
         links = self._job_source_asset_repo.list_for_job(command.job_id)
         if not is_photos_job_snapshot(links, job):
-            raise PhotosJobRequiredError(
-                "Image coverage is only supported for photos jobs."
-            )
+            raise PhotosJobRequiredError("Image coverage is only supported for photos jobs.")
 
         status_filter = (command.result_status or "all").strip().lower()
         if status_filter not in ("all", "with_result", "without_result"):
@@ -127,9 +140,18 @@ class ListJobImageResultsUseCase:
         page = max(1, command.page)
         page_size = max(1, min(command.page_size, 200))
 
+        detections = self._load_detections(command.job_id)
+        position_label_asset_ids = source_asset_ids_excluded_as_position_labels(detections)
+        det_by_asset: dict[str, list[ImagePositionLabelDetection]] = defaultdict(list)
+        for det in detections:
+            asset_id = (det.source_asset_id or "").strip()
+            if asset_id:
+                det_by_asset[asset_id].append(det)
+
         counters = self._coverage_repo.get_counters(
             job_id=command.job_id,
             aisle_id=command.aisle_id,
+            exclude_source_asset_ids=position_label_asset_ids,
         )
         snapshot_page, total_filtered = self._coverage_repo.list_snapshot_page(
             job_id=command.job_id,
@@ -137,6 +159,7 @@ class ListJobImageResultsUseCase:
             result_status=status_filter,  # type: ignore[arg-type]
             page=page,
             page_size=page_size,
+            exclude_source_asset_ids=position_label_asset_ids,
         )
         asset_ids = tuple(row.source_asset_id for row in snapshot_page)
         linked_by_asset = self._coverage_repo.load_positions_for_assets(
@@ -159,6 +182,10 @@ class ListJobImageResultsUseCase:
                     by_pos.setdefault(pr.position_id, []).append(pr)
                 for p in linked:
                     primaries.append(select_display_primary_product(by_pos.get(p.id, ())))
+            classification = classify_asset_for_uncounted(
+                det_by_asset.get(snap.source_asset_id, ()),
+                has_product_result=result_count > 0,
+            )
             built.append(
                 JobImageResultRow(
                     job_source_asset_id=snap.job_source_asset_id,
@@ -175,6 +202,10 @@ class ListJobImageResultsUseCase:
                     has_manual_result=origin.has_manual_result,
                     positions=linked,
                     primary_products=tuple(primaries),
+                    operational_role=classification.operational_role.value,
+                    is_product_candidate=classification.is_product_candidate,
+                    excluded_from_uncounted=classification.excluded_from_uncounted,
+                    uncounted_reason=classification.uncounted_reason.value,
                 )
             )
 
@@ -190,3 +221,8 @@ class ListJobImageResultsUseCase:
             ),
             job=job,
         )
+
+    def _load_detections(self, job_id: str) -> list[ImagePositionLabelDetection]:
+        if self._detection_repo is None:
+            return []
+        return list(self._detection_repo.list_by_job(job_id))

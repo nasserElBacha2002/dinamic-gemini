@@ -1354,6 +1354,11 @@ export interface JobImageResultItem {
   manual_result_count: number;
   has_manual_result: boolean;
   results: PositionSummary[];
+  /** Backend operational classification — positioning labels are not product-uncounted. */
+  operational_role?: string;
+  is_product_candidate?: boolean;
+  excluded_from_uncounted?: boolean;
+  uncounted_reason?: string;
 }
 
 /** GET .../aisles/{aisle_id}/jobs/{job_id}/image-results — paginated by image, not by position. */

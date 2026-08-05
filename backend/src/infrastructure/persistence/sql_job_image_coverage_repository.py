@@ -125,6 +125,19 @@ def _result_link_params(job_id: str, aisle_id: str) -> tuple[str, ...]:
     return (job_id, job_id, aisle_id, job_id, aisle_id)
 
 
+def _exclude_assets_sql(
+    exclude_source_asset_ids: frozenset[str] | None,
+) -> tuple[str, list[str]]:
+    """SQL fragment excluding positioning-label assets from uncounted queues."""
+    if not exclude_source_asset_ids:
+        return "", []
+    ordered = sorted(aid.strip() for aid in exclude_source_asset_ids if aid and aid.strip())
+    if not ordered:
+        return "", []
+    placeholders = ", ".join("?" for _ in ordered)
+    return f"AND c.source_asset_id NOT IN ({placeholders})", ordered
+
+
 def _status_filter_sql(result_status: ResultStatusFilter) -> str:
     status = (result_status or "all").strip().lower()
     if status == "with_result":
@@ -139,24 +152,39 @@ class SqlJobImageCoverageRepository:
         self._client = client
         self._connection = connection
 
-    def get_counters(self, *, job_id: str, aisle_id: str) -> JobImageCoverageCounters:
+    def get_counters(
+        self,
+        *,
+        job_id: str,
+        aisle_id: str,
+        exclude_source_asset_ids: frozenset[str] | None = None,
+    ) -> JobImageCoverageCounters:
         link_params = _result_link_params(job_id, aisle_id)
+        _exclude_sql, exclude_params = _exclude_assets_sql(exclude_source_asset_ids)
+        # Exclude clause references flagged.source_asset_id (not c.).
+        without_exclude = ""
+        if exclude_params:
+            placeholders = ", ".join("?" for _ in exclude_params)
+            without_exclude = f"AND source_asset_id NOT IN ({placeholders})"
         # SQL Server forbids aggregates over expressions that contain subqueries
         # (e.g. SUM(CASE WHEN EXISTS(...))). Compute has_result in a CTE first.
         sql = f"""
 {_CANONICAL_PHOTOS_CTE}
 , flagged AS (
     SELECT
+        c.source_asset_id,
         CASE WHEN ({_HAS_RESULT_EXISTS}) THEN 1 ELSE 0 END AS has_result
     FROM canonical c
 )
 SELECT
     COUNT(*) AS total_images,
     COALESCE(SUM(has_result), 0) AS with_result,
-    COALESCE(SUM(CASE WHEN has_result = 0 THEN 1 ELSE 0 END), 0) AS without_result
+    COALESCE(SUM(
+        CASE WHEN has_result = 0 {without_exclude} THEN 1 ELSE 0 END
+    ), 0) AS without_result
 FROM flagged
 """  # nosec B608 — static fragments only; values bound as ?
-        params: list[Any] = [job_id, *link_params]
+        params: list[Any] = [job_id, *link_params, *exclude_params]
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(sql, params)
             row = cur.fetchone()
@@ -179,6 +207,7 @@ FROM flagged
         result_status: ResultStatusFilter,
         page: int,
         page_size: int,
+        exclude_source_asset_ids: frozenset[str] | None = None,
     ) -> tuple[tuple[JobImageCoverageSnapshotRow, ...], int]:
         page = max(1, int(page))
         page_size = max(1, min(int(page_size), 200))
@@ -193,6 +222,11 @@ FROM flagged
             status = "all"
         filter_sql = _status_filter_sql(status)
         link_params = _result_link_params(job_id, aisle_id)
+        # Position-label assets are only removed from the unmatched (without_result) queue.
+        exclude_sql = ""
+        exclude_params: list[str] = []
+        if status == "without_result":
+            exclude_sql, exclude_params = _exclude_assets_sql(exclude_source_asset_ids)
 
         count_sql = f"""
 {_CANONICAL_PHOTOS_CTE}
@@ -200,6 +234,7 @@ SELECT COUNT(*) AS total_filtered
 FROM canonical c
 WHERE 1 = 1
 {filter_sql}
+{exclude_sql}
 """  # nosec B608
         page_sql = f"""
 {_CANONICAL_PHOTOS_CTE}
@@ -215,6 +250,7 @@ SELECT
 FROM canonical c
 WHERE 1 = 1
 {filter_sql}
+{exclude_sql}
 ORDER BY c.position_order ASC, c.source_asset_id ASC
 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
 """  # nosec B608
@@ -224,6 +260,8 @@ OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         if status in ("with_result", "without_result"):
             count_params.extend(link_params)
             page_params.extend(link_params)
+        count_params.extend(exclude_params)
+        page_params.extend(exclude_params)
         page_params.extend([offset, page_size])
 
         with sql_repository_cursor(self._client, connection=self._connection) as cur:

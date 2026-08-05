@@ -121,6 +121,10 @@ def list_job_image_results(
                 manual_result_count=row.manual_result_count,
                 has_manual_result=row.has_manual_result,
                 results=summaries,
+                operational_role=row.operational_role,
+                is_product_candidate=row.is_product_candidate,
+                excluded_from_uncounted=row.excluded_from_uncounted,
+                uncounted_reason=row.uncounted_reason,
             )
         )
 

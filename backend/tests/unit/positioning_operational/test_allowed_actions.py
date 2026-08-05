@@ -8,7 +8,6 @@ from src.application.services.positioning_operational.allowed_actions import (
 )
 from src.application.services.positioning_operational.warnings_builder import (
     build_operational_warnings,
-    transition_message_for_action,
 )
 
 
@@ -80,14 +79,14 @@ def test_feature_flag_disables_all_actions() -> None:
     }
 
 
-def test_warnings_include_recovery_and_no_detections() -> None:
+def test_warnings_include_recovery_and_no_resolved_detections() -> None:
     warnings = build_operational_warnings(
         processing_state="RECOVERY_REQUIRED",
         recoverable=True,
         reconciliation_status="STALE",
         unassigned_count=3,
         ambiguous_count=1,
-        detections_count=0,
+        resolved_detections_count=0,
         unordered_count=1,
         invalid_count=0,
         stale_count=3,
@@ -98,6 +97,17 @@ def test_warnings_include_recovery_and_no_detections() -> None:
     assert "NO_POSITION_LABEL_DETECTIONS" in codes
 
 
-def test_transition_message_keep_position_is_human() -> None:
-    msg = transition_message_for_action("KEEP_POSITION")
-    assert "posición anterior" in msg.lower() or "mantuvo" in msg.lower()
+def test_warnings_skip_no_detections_when_resolved_present() -> None:
+    warnings = build_operational_warnings(
+        processing_state="COMPLETED",
+        recoverable=False,
+        reconciliation_status="COMPLETED",
+        unassigned_count=2,
+        ambiguous_count=0,
+        resolved_detections_count=1,
+        unordered_count=0,
+        invalid_count=0,
+        stale_count=0,
+    )
+    codes = {w.code for w in warnings}
+    assert "NO_POSITION_LABEL_DETECTIONS" not in codes

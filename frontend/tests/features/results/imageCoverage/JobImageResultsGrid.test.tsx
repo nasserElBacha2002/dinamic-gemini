@@ -81,4 +81,31 @@ describe('JobImageResultsGrid', () => {
     fireEvent.click(screen.getByTestId('job-image-back-to-positions'));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
+
+  it('hides position-label assets even if the backend mistakenly returns them', () => {
+    render(
+      <JobImageResultsGrid
+        items={[
+          makeItem({
+            job_source_asset_id: 'pos',
+            original_filename: 'pasillo01.jpg',
+            is_product_candidate: false,
+            excluded_from_uncounted: true,
+            operational_role: 'POSITION_LABEL_RESOLVED',
+          }),
+        ]}
+        isLoading={false}
+        onAddResult={vi.fn()}
+        page={1}
+        pageSize={25}
+        totalItems={0}
+        pendingCount={0}
+        onPageChange={vi.fn()}
+        onPageSizeChange={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByText('pasillo01.jpg')).not.toBeInTheDocument();
+    expect(screen.getByTestId('job-image-results-empty')).toBeInTheDocument();
+  });
 });

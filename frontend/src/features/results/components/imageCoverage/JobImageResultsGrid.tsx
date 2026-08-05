@@ -44,7 +44,14 @@ export default function JobImageResultsGrid({
 }: JobImageResultsGridProps) {
   const { t } = useTranslation();
   const pendingItems = useMemo(
-    () => items.filter((item) => !item.has_result && item.result_count === 0),
+    () =>
+      items.filter(
+        (item) =>
+          !item.has_result &&
+          item.result_count === 0 &&
+          item.is_product_candidate !== false &&
+          item.excluded_from_uncounted !== true,
+      ),
     [items]
   );
   const headingCount = pendingCount ?? totalItems;

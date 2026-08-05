@@ -212,6 +212,7 @@ def _seed_world(*, with_video: bool = False):
         "review_repo": review_repo,
         "asset_repo": asset_repo,
         "coverage_repo": coverage_repo,
+        "detection_repo": None,
     }
 
 
@@ -304,6 +305,7 @@ def _list_uc(world: dict) -> ListJobImageResultsUseCase:
         job_source_asset_repo=world["jsa_repo"],
         coverage_repo=_coverage_repo(world),
         product_record_repo=world["product_repo"],
+        detection_repo=world.get("detection_repo"),
     )
 
 
@@ -705,3 +707,147 @@ def test_migration_0047_exists() -> None:
     assert "creation_source" in text
     assert "position_manual_image_coverage" in text
     assert "uq_manual_coverage_job_asset" in text
+
+
+def test_position_label_assets_excluded_from_uncounted_nine_asset_case() -> None:
+    """Real-world shaped case: 2 LEGACY position photos + 7 product results → uncounted=0."""
+    from src.domain.position_label_detection.entities import (
+        ImagePositionLabelDetection,
+        PositionLabelDetectionStatus,
+        PositionLabelSignatureStatus,
+    )
+    from src.infrastructure.repositories.memory_image_position_label_detection_repository import (
+        MemoryImagePositionLabelDetectionRepository,
+    )
+
+    now = datetime(2026, 8, 5, 12, 0, 0, tzinfo=timezone.utc)
+    world = _seed_world()
+    assets = [
+        ("pos-01", 0, "pasillo01.jpg"),
+        ("prod-1", 1, "p1.jpg"),
+        ("prod-2", 2, "p2.jpg"),
+        ("prod-3", 3, "p3.jpg"),
+        ("prod-4", 4, "p4.jpg"),
+        ("pos-02", 5, "pasillo-02.jpg"),
+        ("prod-5", 6, "p5.jpg"),
+        ("prod-6", 7, "p6.jpg"),
+        ("prod-7", 8, "p7.jpg"),
+    ]
+    links = []
+    for aid, order, fn in assets:
+        world["asset_repo"].save(
+            SourceAsset(
+                id=aid,
+                aisle_id="aisle-img",
+                type=SourceAssetType.PHOTO,
+                original_filename=fn,
+                storage_path=f"local/{aid}",
+                mime_type="image/jpeg",
+                uploaded_at=now,
+            )
+        )
+        links.append(
+            _link(
+                job_id="job-img-1",
+                asset_id=aid,
+                order=order,
+                filename=fn,
+                now=now,
+            )
+        )
+    world["jsa_repo"].replace_for_job("job-img-1", links)
+
+    for i, aid in enumerate(
+        ["prod-1", "prod-2", "prod-3", "prod-4", "prod-5", "prod-6", "prod-7"], start=1
+    ):
+        _add_position_with_evidence(
+            world, position_id=f"pos-r{i}", asset_id=aid, sku=f"SKU-{i}", qty=1
+        )
+
+    det_repo = MemoryImagePositionLabelDetectionRepository()
+    for idx, aid in enumerate(("pos-01", "pos-02")):
+        det_repo.upsert_idempotent(
+            ImagePositionLabelDetection(
+                id=f"det-{aid}",
+                client_id="c1",
+                inventory_id="inv-img",
+                job_id="job-img-1",
+                source_asset_id=aid,
+                detection_status=PositionLabelDetectionStatus.LEGACY_UNSIGNED_REQUIRES_REVIEW,
+                signature_status=PositionLabelSignatureStatus.MISSING,
+                payload_version=1,
+                raw_payload_hash=f"hash-{aid}",
+                detector_name="code_scan_shared",
+                detector_version="1",
+                created_at=now,
+                updated_at=now,
+                position_label_id=f"label-{idx}",
+                position_name_snapshot=f"Pos {idx}",
+            )
+        )
+    world["detection_repo"] = det_repo
+
+    uc = _list_uc(world)
+    without = uc.execute(
+        ListJobImageResultsCommand(
+            inventory_id="inv-img",
+            aisle_id="aisle-img",
+            job_id="job-img-1",
+            result_status="without_result",
+        )
+    )
+    assert without.counters.total_images == 9
+    assert without.counters.with_result == 7
+    assert without.counters.without_result == 0
+    assert without.total_items == 0
+    assert without.items == ()
+
+    all_rows = uc.execute(
+        ListJobImageResultsCommand(
+            inventory_id="inv-img",
+            aisle_id="aisle-img",
+            job_id="job-img-1",
+            result_status="all",
+        )
+    )
+    assert all_rows.total_items == 9
+    by_id = {r.source_asset_id: r for r in all_rows.items}
+    assert by_id["pos-01"].excluded_from_uncounted is True
+    assert by_id["pos-01"].is_product_candidate is False
+    assert by_id["pos-02"].operational_role == "POSITION_LABEL_RESOLVED"
+    assert by_id["prod-1"].has_result is True
+
+    bare = _seed_world()
+    bare_links = [
+        _link(
+            job_id="job-img-1",
+            asset_id="lonely",
+            order=0,
+            filename="pasillo01.jpg",
+            now=bare["now"],
+        )
+    ]
+    bare["asset_repo"].save(
+        SourceAsset(
+            id="lonely",
+            aisle_id="aisle-img",
+            type=SourceAssetType.PHOTO,
+            original_filename="pasillo01.jpg",
+            storage_path="local/lonely",
+            mime_type="image/jpeg",
+            uploaded_at=bare["now"],
+        )
+    )
+    bare["jsa_repo"].replace_for_job("job-img-1", bare_links)
+    bare["detection_repo"] = MemoryImagePositionLabelDetectionRepository()
+    lonely = _list_uc(bare).execute(
+        ListJobImageResultsCommand(
+            inventory_id="inv-img",
+            aisle_id="aisle-img",
+            job_id="job-img-1",
+            result_status="without_result",
+        )
+    )
+    assert lonely.counters.without_result == 1
+    assert lonely.items[0].source_asset_id == "lonely"
+    assert lonely.items[0].is_product_candidate is True

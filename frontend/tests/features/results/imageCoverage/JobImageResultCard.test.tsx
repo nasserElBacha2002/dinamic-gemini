@@ -58,4 +58,24 @@ describe('JobImageResultCard', () => {
     expect(screen.queryByTestId('job-image-without-result-badge')).not.toBeInTheDocument();
     expect(screen.getByTestId('job-image-add-manual-result')).toBeInTheDocument();
   });
+
+  it('hides add-result for positioning-label assets', () => {
+    render(
+      <JobImageResultCard
+        item={makeItem({
+          original_filename: 'pasillo01.jpg',
+          is_product_candidate: false,
+          excluded_from_uncounted: true,
+          operational_role: 'POSITION_LABEL_RESOLVED',
+        })}
+        onAddResult={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByTestId('job-image-add-manual-result')).not.toBeInTheDocument();
+    expect(screen.getByTestId('job-image-result-card')).toHaveAttribute(
+      'data-operational-role',
+      'POSITION_LABEL_RESOLVED',
+    );
+  });
 });

@@ -86,6 +86,8 @@ class PositioningSequenceFrameDto(BaseModel):
     automatic_assignment_summaries: list[str] = Field(default_factory=list)
     effective_assignment_summaries: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    reason_code: str | None = None
+    position_label_id: str | None = None
 
 
 class PositioningSequenceResponse(BaseModel):
@@ -171,4 +173,6 @@ def frame_to_dto(frame: PositioningSequenceFrame) -> PositioningSequenceFrameDto
         automatic_assignment_summaries=list(frame.automatic_assignment_summaries),
         effective_assignment_summaries=list(frame.effective_assignment_summaries),
         warnings=list(frame.warnings),
+        reason_code=frame.reason_code,
+        position_label_id=frame.position_label_id,
     )

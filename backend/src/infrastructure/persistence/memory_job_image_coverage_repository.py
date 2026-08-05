@@ -82,14 +82,23 @@ class MemoryJobImageCoverageRepository:
         ]
         return rows, by_asset
 
-    def get_counters(self, *, job_id: str, aisle_id: str) -> JobImageCoverageCounters:
+    def get_counters(
+        self,
+        *,
+        job_id: str,
+        aisle_id: str,
+        exclude_source_asset_ids: frozenset[str] | None = None,
+    ) -> JobImageCoverageCounters:
         rows, by_asset = self._snapshot_rows(job_id=job_id, aisle_id=aisle_id)
+        excluded = frozenset(
+            aid.strip() for aid in (exclude_source_asset_ids or frozenset()) if aid and aid.strip()
+        )
         with_result = 0
         without_result = 0
         for row in rows:
             if by_asset.get(row.source_asset_id):
                 with_result += 1
-            else:
+            elif row.source_asset_id not in excluded:
                 without_result += 1
         return JobImageCoverageCounters(
             total_images=len(rows),
@@ -105,13 +114,21 @@ class MemoryJobImageCoverageRepository:
         result_status: ResultStatusFilter,
         page: int,
         page_size: int,
+        exclude_source_asset_ids: frozenset[str] | None = None,
     ) -> tuple[tuple[JobImageCoverageSnapshotRow, ...], int]:
         rows, by_asset = self._snapshot_rows(job_id=job_id, aisle_id=aisle_id)
+        excluded = frozenset(
+            aid.strip() for aid in (exclude_source_asset_ids or frozenset()) if aid and aid.strip()
+        )
         status = (result_status or "all").strip().lower()
         if status == "with_result":
             filtered = [r for r in rows if by_asset.get(r.source_asset_id)]
         elif status == "without_result":
-            filtered = [r for r in rows if not by_asset.get(r.source_asset_id)]
+            filtered = [
+                r
+                for r in rows
+                if not by_asset.get(r.source_asset_id) and r.source_asset_id not in excluded
+            ]
         else:
             filtered = rows
 
@@ -129,9 +146,7 @@ class MemoryJobImageCoverageRepository:
         source_asset_ids: tuple[str, ...],
     ) -> dict[str, list[Position]]:
         coverage = frozenset(aid.strip() for aid in source_asset_ids if aid and aid.strip())
-        return self._coverage_index(
-            job_id=job_id, aisle_id=aisle_id, coverage_asset_ids=coverage
-        )
+        return self._coverage_index(job_id=job_id, aisle_id=aisle_id, coverage_asset_ids=coverage)
 
     def has_results_for_asset(
         self,
