@@ -1,5 +1,6 @@
 import { Box, Link as MuiLink, Tooltip, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
+import { safeInternalPath } from '../../../../utils/safeInternalPath';
 
 export interface AnalyticsEntityAction {
   id: string;
@@ -31,8 +32,9 @@ function ActionLink({ action }: { action: AnalyticsEntityAction }) {
   }
 
   if (action.href) {
+    const to = safeInternalPath(action.href);
     return (
-      <MuiLink component={RouterLink} to={action.href} variant={variant} underline="hover" data-testid={action.testId}>
+      <MuiLink component={RouterLink} to={to} variant={variant} underline="hover" data-testid={action.testId}>
         {action.label}
       </MuiLink>
     );

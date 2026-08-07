@@ -54,4 +54,7 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
 COPY --chown=appuser:appuser . .
 USER appuser
 
+# No Dockerfile HEALTHCHECK: this image has no HTTP listener. Orchestrator/process
+# supervision should monitor the worker process (queue consumer), not /health.
+
 CMD ["python", "-m", "src.jobs.run_worker"]

@@ -11,9 +11,10 @@ import LoginPage from '../../src/features/auth/LoginPage';
 import { getStoredToken } from '../../src/features/auth/storage';
 
 const mockLogin = vi.fn();
+const mockGetCurrentUser = vi.fn().mockRejectedValue(new Error('unauthorized'));
 vi.mock('../../src/features/auth/api', () => ({
   login: (payload: { username: string; password: string }) => mockLogin(payload),
-  getCurrentUser: vi.fn().mockRejectedValue(new Error('unauthorized')),
+  getCurrentUser: (token: string) => mockGetCurrentUser(token),
   getAuthErrorMessage: (err: unknown) => (err instanceof Error ? err.message : 'Authentication failed'),
 }));
 
@@ -34,6 +35,7 @@ describe('LoginPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    mockGetCurrentUser.mockRejectedValue(new Error('unauthorized'));
   });
 
   it('renders login form with username, password and submit button', () => {
@@ -69,12 +71,15 @@ describe('LoginPage', () => {
   });
 
   it('on login success stores token and navigates to dashboard', async () => {
+    const user = { id: 'admin', username: 'admin', role: 'administrator' as const };
     mockLogin.mockResolvedValue({
       access_token: 'jwt-123',
       token_type: 'bearer',
       expires_in: 300,
-      user: { id: 'admin', username: 'admin', role: 'administrator' },
+      user,
     });
+    // AuthProvider re-validates the new token via /auth/me after login().
+    mockGetCurrentUser.mockResolvedValue(user);
     renderLoginPage();
 
     fireEvent.change(screen.getByLabelText(/usuario|username/i, { selector: 'input' }), { target: { value: 'admin' } });

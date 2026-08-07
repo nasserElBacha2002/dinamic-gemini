@@ -64,4 +64,8 @@ USER appuser
 
 EXPOSE 8000
 
+# Liveness against the existing public /health endpoint (curl already installed for ODBC setup).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD curl -fsS --connect-timeout 3 --max-time 5 http://127.0.0.1:8000/health || exit 1
+
 CMD ["uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000"]

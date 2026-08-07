@@ -521,7 +521,9 @@ export default function AislePositionsPage() {
   );
 
   const handleResetFilters = useCallback(() => {
-    setSearchDraft('');
+    // Single URL update only — searchDraft syncs from urlFilters.q via effect.
+    // Avoid setSearchDraft('') here: that raced with setSearchParams under React Router 7
+    // and could re-apply a stale filter via the empty-q debounce path.
     updateFilters(createDefaultAisleResultsFilters(), { historyMode: 'push' });
   }, [updateFilters]);
 
