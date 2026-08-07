@@ -12,6 +12,7 @@ import CompareDeltaKpiRow from './components/CompareDeltaKpiRow';
 import CompareExecutiveSummary from './components/CompareExecutiveSummary';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { safeInternalPath } from '../../../utils/safeInternalPath';
 import { Box, Button, Typography } from '@mui/material';
 import { PageHeader } from '../../../components/shell';
 import { useAisleBenchmarkCompareMany, useAisleJobsList, useAislesList, useInventoryDetail } from '../../../hooks';
@@ -168,11 +169,12 @@ export function CompareManyRunsWorkspace({
   });
 
   const handleOpenStandalone = () => {
+    const to = safeInternalPath(standaloneHref);
     if (onNavigateToStandalone) {
-      onNavigateToStandalone(standaloneHref);
+      onNavigateToStandalone(to);
       return;
     }
-    void navigate(standaloneHref);
+    void navigate(to);
   };
 
   return (

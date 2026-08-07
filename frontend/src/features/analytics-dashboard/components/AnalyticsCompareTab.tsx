@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Alert, Box, Paper } from '@mui/material';
 import { CompareManyRunsWorkspace } from '../../analytics/compare/CompareManyRunsWorkspace';
+import { safeInternalPath } from '../../../utils/safeInternalPath';
 import { getCompareEligibility } from '../types';
 
 export interface AnalyticsCompareTabProps {
@@ -50,7 +51,7 @@ export function AnalyticsCompareTab({
         inventoryId={inventoryId}
         initialAisleId={aisleId || undefined}
         inventoryName={inventoryName}
-        onNavigateToStandalone={(href) => navigate(href)}
+        onNavigateToStandalone={(href) => navigate(safeInternalPath(href))}
       />
       </Paper>
     </Box>

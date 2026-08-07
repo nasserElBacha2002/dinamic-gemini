@@ -88,12 +88,20 @@ data/
 !audit/audit-report.md
 !audit/audit-backlog.md
 !audit/security-exceptions.json
+!audit/security-remediation/
+!audit/security-remediation/**
+!audit/security-remediation/**/*.md
+!audit/security-remediation/npm-audit/*.json
+# security-remediation markdown + npm-audit JSON snapshots are intentionally tracked.
 
 # Generated audit machine outputs — do not commit (regenerate via scripts/audit/).
 audit/audit-status.json
 audit/audit-summary.md
 audit/raw/**
 !audit/raw/.gitkeep
+
+# security-agents DAST/SAST run artifacts (never commit)
+security-audit-output/
 
 # Ephemeral Phase 0 git/command dumps (reports/notes stay tracked).
 audit-results/phase-0/phase0-*.txt

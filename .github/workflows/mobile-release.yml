@@ -63,12 +63,17 @@ jobs:
       - run: npm run verify
       - name: Prebuild
         env:
+          CI: '1'
           DINAMIC_VERSION_NAME: ${{ inputs.version_name }}
           DINAMIC_VERSION_CODE: ${{ inputs.version_code }}
           DINAMIC_ENVIRONMENT: production
           DINAMIC_API_BASE_URL: ${{ secrets.DINAMIC_API_BASE_URL }}
           DINAMIC_GIT_SHA: ${{ github.sha }}
-        run: npx expo prebuild -p android --non-interactive
+        run: |
+          set -euo pipefail
+          npx expo prebuild -p android --no-install
+          test -d android
+          test -x android/gradlew
       - name: Decode keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
