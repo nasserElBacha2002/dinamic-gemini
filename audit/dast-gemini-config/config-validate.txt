@@ -1,0 +1,1 @@
+Config valid: /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/security-audit.yaml

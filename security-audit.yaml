@@ -1,0 +1,1628 @@
+# security-audit.yaml — dinamic-gemini (project-specific DAST)
+# Generated from static FastAPI inventory. NO invented routes.
+# NEVER put real secrets/tokens in this file — env var names only.
+#
+# Mutating posture (disposable LOCAL DB only — never production data):
+#   Non-mutating GET suites remain as-is (~102 declarative requests).
+#   Plus a small mutating suite against POST/PATCH /api/v3/clients only.
+#   Clients have no product DELETE → cleanup uses http_custom_endpoint
+#   (/internal/dast/cleanup). That endpoint must exist and return
+#   {ok:true, audit_run_id, remaining:0, resources_remaining:[]} before
+#   enabling a real mutating run.
+#
+# Confirmations required for an active mutating run (do not commit values):
+#   export DAST_ACTIVE_CONFIRMATION="CONFIRM_ACTIVE_DAST_${RUN_ID}"
+#   export DAST_INJECTION_CONFIRMATION="CONFIRM_INJECTION_DAST_${RUN_ID}"
+#   export DAST_MUTATING_CONFIRMATION="CONFIRM_MUTATING_DAST_${RUN_ID}"
+#   NOTE: DAST_MUTATING_CONFIRMATION is an ops gate; framework 0.3.0 schema
+#   does not yet parse a dedicated mutating_confirmation_env — add it in
+#   security-agents before treating mutating runs as authorized.
+#
+# Framework constraints reflected below:
+#   - destructive deny beats allow → do NOT deny POST/** while allowlisting POSTs.
+#   - No case-to-case extract/use yet → follow-up PATCH/cross-tenant suite is disabled
+#     (do not invent fixed mutation IDs).
+#   - OpenAPI mutating generation stays off (include_mutating_methods: false).
+#
+# Prerequisites for path-scoped GET suites (IDOR / tenant / some SQLi):
+#   Seed a disposable local DB with synthetic IDs documented in
+#   audit/dast-gemini-config/endpoint-inventory.md
+#   Or those cases may return 404 (still useful for authz fail-closed checks).
+#
+# estimated_requests (declarative suites): ~102 non-mutating + ~8 mutating creates
+# OpenAPI safe GET generation may add more at plan time when /openapi.json is available.
+
+schema_version: "1.2.0"
+framework_version: "0.3.0"
+
+project:
+  name: "dinamic-gemini"
+  description: "Inventory Engine API — FastAPI/SQL Server; project-specific DAST suites from real routes."
+
+paths:
+  include:
+    - "."
+  exclude:
+    - "**/.git/**"
+    - "**/node_modules/**"
+    - "**/vendor/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/.venv/**"
+    - "**/venv/**"
+    - "**/env/**"
+    - "**/__pycache__/**"
+    - "**/.pytest_cache/**"
+    - "**/.mypy_cache/**"
+    - "**/.ruff_cache/**"
+    - "**/.expo/**"
+    - "**/coverage/**"
+    - "**/htmlcov/**"
+    - "**/security-audit-output/**"
+    - "**/audit-out/**"
+    - "**/audit/implementation/**"
+    - "**/audit/dast-gemini-config/**"
+    - "**/uploads/**"
+    - "**/media/**"
+    - "**/output/**"
+    - "**/output_test_artifacts/**"
+    - "**/.tmp/**"
+    - "**/secrets/**"
+
+output_dir: "security-audit-output"
+
+sast:
+  candidates:
+    semgrep:
+      enabled: true
+      rules_path: null
+    gitleaks:
+      enabled: true
+      scan_workspace: true
+      scan_git_history: false
+    trivy:
+      enabled: true
+    osv_scanner:
+      enabled: true
+    npm_audit:
+      enabled: true
+    language_specific:
+      enabled: true
+  tool_installation:
+    mode: detect_only
+  network_policy:
+    allow_rule_downloads: false
+  codeql:
+    enabled: true
+    mode: detect_only
+    required: false
+  timeouts:
+    default_seconds: 600
+
+dast:
+  environment: local
+  appears_production: false
+  base_url_env: DAST_BASE_URL
+
+  target_policy:
+    allowed_hosts:
+      - "127.0.0.1"
+      - "localhost"
+    denied_hosts: []
+    denied_host_patterns:
+      - "*prod*"
+      - "*production*"
+      - "*live*"
+    follow_redirects: false
+    allow_private_networks: false
+    allow_public_networks: false
+
+  production_override:
+    allowed: false
+    confirmation_phrase_env: null
+
+  openapi:
+    path: "/openapi.json"
+    discovery_enabled: true
+    generate_safe_cases: true
+
+  scanners:
+    zap_baseline:
+      enabled: false
+      mode: docker
+      max_duration_seconds: 600
+      spider_minutes: 1
+      ajax_spider: false
+      fail_on:
+        - high
+      rules_file: null
+
+  passive:
+    enabled: true
+    explicit_authorization: true
+
+  active:
+    explicit_authorization: true
+    allow_active: true
+    require_run_confirmation: true
+    run_confirmation_env: DAST_ACTIVE_CONFIRMATION
+
+    injection_tests:
+      enabled: true
+      explicit_authorization: true
+      confirmation_env: DAST_INJECTION_CONFIRMATION
+      safe_payloads_only: true
+      allow_destructive_payloads: false
+      allow_external_callbacks: false
+
+    cases: []
+
+    suites:
+      - id: health-and-ready
+        enabled: true
+        cases:
+          - id: health-get
+            description: Liveness probe from server.py health()
+            category: smoke
+            method: GET
+            path: /health
+            query: {}
+            headers: {}
+            auth_profile: null
+            expected_statuses:
+              - 200
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/server.py"
+              - "handler:health"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: ready-get
+            description: Readiness probe from server.py ready()
+            category: smoke
+            method: GET
+            path: /ready
+            query: {}
+            headers: {}
+            auth_profile: null
+            expected_statuses:
+              - 200
+              - 503
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/server.py"
+              - "handler:ready"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+      - id: input-validation
+        enabled: true
+        cases:
+          - id: inventories-invalid-page
+            description: inventories invalid page
+            category: input_validation
+            method: GET
+            path: /api/v3/inventories/
+            query:
+              page: "-1"
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: inventories-invalid-uuid-status
+            description: inventories invalid uuid status
+            category: input_validation
+            method: GET
+            path: /api/v3/inventories/
+            query:
+              status: not-a-real-status-value
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: inventories-huge-page-size
+            description: inventories huge page size
+            category: input_validation
+            method: GET
+            path: /api/v3/inventories/
+            query:
+              page_size: "999999"
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: inventories-empty-search
+            description: inventories empty search
+            category: input_validation
+            method: GET
+            path: /api/v3/inventories/
+            query:
+              search: ""
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: inventories-long-search
+            description: inventories long search
+            category: input_validation
+            method: GET
+            path: /api/v3/inventories/
+            query:
+              search: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: client-invalid-uuid
+            description: client invalid uuid
+            category: input_validation
+            method: GET
+            path: /api/v3/clients/not-a-uuid
+            query: {}
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:get_client"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: review-queue-bad-confidence
+            description: review queue bad confidence
+            category: input_validation
+            method: GET
+            path: /api/v3/review-queue/positions
+            query:
+              min_confidence: "2.5"
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/review_queue.py"
+              - "handler:list_review_queue_positions"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: config-upload-limits
+            description: config upload limits
+            category: input_validation
+            method: GET
+            path: /api/v3/config/upload-limits
+            query: {}
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/config.py"
+              - "handler:get_upload_limits"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+      - id: sql-injection
+        enabled: true
+        cases:
+          - id: sqli-inventories-search
+            description: Safe SQLi probes on real list_inventories search query (SQL Server LIKE candidate)
+            category: sql_injection
+            method: GET
+            path: /api/v3/inventories/
+            query:
+              search: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            payload:
+              type: corpus
+              corpus: safe_sqli
+              target:
+                location: query
+                name: search
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: sqli-review-queue-sku
+            description: Safe SQLi probes on review-queue sku_contains
+            category: sql_injection
+            method: GET
+            path: /api/v3/review-queue/positions
+            query:
+              sku_contains: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/review_queue.py"
+              - "handler:list_review_queue_positions"
+            payload:
+              type: corpus
+              corpus: safe_sqli
+              target:
+                location: query
+                name: sku_contains
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: sqli-position-labels-search
+            description: Safe SQLi probes on client position-labels search
+            category: sql_injection
+            method: GET
+            path: /api/v3/clients/11111111-1111-4111-8111-111111111111/position-labels
+            query:
+              search: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/client_position_labels.py"
+              - "handler:list_client_position_labels"
+            payload:
+              type: corpus
+              corpus: safe_sqli
+              target:
+                location: query
+                name: search
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: sqli-aisle-locations-search
+            description: Safe SQLi probes on aisle locations search (requires synthetic inventory/aisle)
+            category: sql_injection
+            method: GET
+            path: /api/v3/inventories/33333333-3333-4333-8333-333333333333/aisles/44444444-4444-4444-8444-444444444444/locations
+            query:
+              search: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/aisle_locations.py"
+              - "handler:list_aisle_locations"
+            payload:
+              type: corpus
+              corpus: safe_sqli
+              target:
+                location: query
+                name: search
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: sqli-positions-sku-filter
+            description: Safe SQLi probes on positions sku_filter (requires synthetic inventory/aisle)
+            category: sql_injection
+            method: GET
+            path: /api/v3/inventories/33333333-3333-4333-8333-333333333333/aisles/44444444-4444-4444-8444-444444444444/positions
+            query:
+              sku_filter: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/positions.py"
+              - "handler:list_aisle_positions"
+            payload:
+              type: corpus
+              corpus: safe_sqli
+              target:
+                location: query
+                name: sku_filter
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: sqli-positions-position-name
+            description: Safe SQLi probes on positions position_name
+            category: sql_injection
+            method: GET
+            path: /api/v3/inventories/33333333-3333-4333-8333-333333333333/aisles/44444444-4444-4444-8444-444444444444/positions
+            query:
+              position_name: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/positions.py"
+              - "handler:list_aisle_positions"
+            payload:
+              type: corpus
+              corpus: safe_sqli
+              target:
+                location: query
+                name: position_name
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+      - id: xss-reflection
+        enabled: true
+        cases:
+          - id: xss-inventories-search
+            description: Inert XSS canary on inventories search (JSON reflection context)
+            category: xss
+            method: GET
+            path: /api/v3/inventories/
+            query:
+              search: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            payload:
+              type: corpus
+              corpus: xss_canary
+              target:
+                location: query
+                name: search
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_reflection: false
+            reflection_probe:
+              enabled: false
+          - id: xss-review-queue-sku
+            description: Inert XSS canary on review-queue sku_contains
+            category: xss
+            method: GET
+            path: /api/v3/review-queue/positions
+            query:
+              sku_contains: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/review_queue.py"
+              - "handler:list_review_queue_positions"
+            payload:
+              type: corpus
+              corpus: xss_canary
+              target:
+                location: query
+                name: sku_contains
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_reflection: false
+            reflection_probe:
+              enabled: false
+          - id: xss-position-labels-search
+            description: Inert XSS canary on position-labels search
+            category: xss
+            method: GET
+            path: /api/v3/clients/11111111-1111-4111-8111-111111111111/position-labels
+            query:
+              search: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/client_position_labels.py"
+              - "handler:list_client_position_labels"
+            payload:
+              type: corpus
+              corpus: xss_canary
+              target:
+                location: query
+                name: search
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_reflection: false
+            reflection_probe:
+              enabled: false
+      - id: template-injection
+        enabled: true
+        cases:
+          - id: template-inventories-search
+            description: Template probe on inventories search (expect no evaluation)
+            category: template_injection
+            method: GET
+            path: /api/v3/inventories/
+            query:
+              search: baseline
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            payload:
+              type: corpus
+              corpus: template_probe
+              target:
+                location: query
+                name: search
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+      - id: auth
+        enabled: true
+        cases:
+          - id: auth-me-no-token
+            description: GET /auth/me without Authorization must be 401/403
+            category: auth
+            method: GET
+            path: /auth/me
+            query: {}
+            headers: {}
+            auth_profile: null
+            expected_statuses:
+              - 401
+              - 403
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/auth/routes.py"
+              - "handler:get_me"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: auth-me-bad-bearer
+            description: GET /auth/me with invalid synthetic bearer
+            category: auth
+            method: GET
+            path: /auth/me
+            query: {}
+            headers: {}
+            auth_profile: invalid_token
+            expected_statuses:
+              - 401
+              - 403
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/auth/routes.py"
+              - "handler:get_me"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: inventories-no-token
+            description: Protected inventories list without token
+            category: auth
+            method: GET
+            path: /api/v3/inventories/
+            query: {}
+            headers: {}
+            auth_profile: null
+            expected_statuses:
+              - 401
+              - 403
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: clients-no-token
+            description: Protected clients list without token
+            category: auth
+            method: GET
+            path: /api/v3/clients/
+            query: {}
+            headers: {}
+            auth_profile: null
+            expected_statuses:
+              - 401
+              - 403
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:list_clients"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: config-no-token
+            description: Protected config upload-limits without token
+            category: auth
+            method: GET
+            path: /api/v3/config/upload-limits
+            query: {}
+            headers: {}
+            auth_profile: null
+            expected_statuses:
+              - 401
+              - 403
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/config.py"
+              - "handler:get_upload_limits"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: admin-ai-no-token
+            description: Admin AI config without token
+            category: auth
+            method: GET
+            path: /api/v3/admin/ai-config
+            query: {}
+            headers: {}
+            auth_profile: null
+            expected_statuses:
+              - 401
+              - 403
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/admin_ai_config.py"
+              - "handler:get_admin_ai_config"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+      - id: authorization-idor
+        enabled: true
+        cases:
+          - id: idor-client-b-with-admin-a
+            description: company_admin_a must not read client_b
+            category: idor
+            method: GET
+            path: /api/v3/clients/22222222-2222-4222-8222-222222222222
+            query: {}
+            headers: {}
+            auth_profile: company_admin_a
+            expected_statuses:
+              - 403
+              - 404
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:get_client"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: idor-client-a-with-admin-b
+            description: company_admin_b must not read client_a
+            category: idor
+            method: GET
+            path: /api/v3/clients/11111111-1111-4111-8111-111111111111
+            query: {}
+            headers: {}
+            auth_profile: company_admin_b
+            expected_statuses:
+              - 403
+              - 404
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:get_client"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: idor-inventory-a-with-admin-b
+            description: company_admin_b must not read inventory of tenant A
+            category: idor
+            method: GET
+            path: /api/v3/inventories/33333333-3333-4333-8333-333333333333
+            query: {}
+            headers: {}
+            auth_profile: company_admin_b
+            expected_statuses:
+              - 403
+              - 404
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:get_inventory"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: idor-labels-client-a-with-op-b
+            description: operator_b must not list labels of client_a
+            category: idor
+            method: GET
+            path: /api/v3/clients/11111111-1111-4111-8111-111111111111/position-labels
+            query: {}
+            headers: {}
+            auth_profile: operator_b
+            expected_statuses:
+              - 403
+              - 404
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/client_position_labels.py"
+              - "handler:list_client_position_labels"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: priv-operator-admin-ai
+            description: operator must not access admin AI config (id==admin gate)
+            category: privilege
+            method: GET
+            path: /api/v3/admin/ai-config
+            query: {}
+            headers: {}
+            auth_profile: operator_a
+            expected_statuses:
+              - 401
+              - 403
+              - 404
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/admin_ai_config.py"
+              - "handler:get_admin_ai_config"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+      - id: multi-tenancy
+        enabled: true
+        cases:
+          - id: tenant-review-queue-foreign-inventory
+            description: company_admin_b must not access review-queue for foreign inventory_id
+            category: multi_tenancy
+            method: GET
+            path: /api/v3/review-queue/positions
+            query:
+              inventory_id: 33333333-3333-4333-8333-333333333333
+            headers: {}
+            auth_profile: company_admin_b
+            expected_statuses:
+              - 403
+              - 404
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/review_queue.py"
+              - "handler:list_review_queue_positions"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+          - id: tenant-observability-foreign-client
+            description: company_admin_b must not access observability metrics for foreign client_id
+            category: multi_tenancy
+            method: GET
+            path: /api/v3/observability/metrics
+            query:
+              client_id: 11111111-1111-4111-8111-111111111111
+            headers: {}
+            auth_profile: company_admin_b
+            expected_statuses:
+              - 403
+              - 404
+            forbidden_statuses:
+              - 200
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/observability.py"
+              - "handler:get_observability_metrics"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+            reflection_probe:
+              enabled: false
+      - id: error-handling
+        enabled: true
+        cases:
+          - id: error-inventories-bad-sort
+            description: error inventories bad sort
+            category: error_handling
+            method: GET
+            path: /api/v3/inventories/
+            query:
+              sort_by: "';_injection_or_unknown"
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/inventories.py"
+              - "handler:list_inventories"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: error-review-bad-traceability
+            description: error review bad traceability
+            category: error_handling
+            method: GET
+            path: /api/v3/review-queue/positions
+            query:
+              traceability: "%%%"
+            headers: {}
+            auth_profile: platform_admin_test
+            expected_statuses:
+              - 200
+              - 400
+              - 401
+              - 403
+              - 404
+              - 422
+            forbidden_statuses:
+              - 500
+            mutating: false
+            cleanup_strategy: null
+            tags:
+              - "source:backend/src/api/routes/v3/review_queue.py"
+              - "handler:list_review_queue_positions"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+
+      # ---------------------------------------------------------------------
+      # Mutating suite — synthetic clients on disposable local DB only.
+      # Entity: POST/PATCH /api/v3/clients (CreateClientRequest / UpdateClientRequest).
+      # No LLM, uploads, jobs, WhatsApp, or inventory processing.
+      # Successful creates must return JSON {"id": "<uuid>"} for identity tracking.
+      # ---------------------------------------------------------------------
+      - id: mutating-client-creates
+        enabled: true
+        cases:
+          - id: create-client-valid
+            description: Create synthetic DAST client (baseline mutating create)
+            category: mutation
+            method: POST
+            path: /api/v3/clients/
+            query: {}
+            headers: {}
+            auth_profile: platform_admin_test
+            body:
+              name: "DAST-MUTATING-CLIENT-BASELINE"
+              status: "active"
+            content_type: application/json
+            expected_statuses:
+              - 200
+              - 201
+            forbidden_statuses:
+              - 500
+            mutating: true
+            cleanup_strategy: http_custom_endpoint
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:create_client"
+              - "mutating_lifecycle:create"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: create-client-repeat-same-name
+            description: >
+              Second create with the same name. CreateClientUseCase has no uniqueness
+              constraint — expect another successful create (new id), not 409.
+            category: mutation
+            method: POST
+            path: /api/v3/clients/
+            query: {}
+            headers: {}
+            auth_profile: platform_admin_test
+            body:
+              name: "DAST-MUTATING-CLIENT-BASELINE"
+              status: "active"
+            content_type: application/json
+            expected_statuses:
+              - 200
+              - 201
+            forbidden_statuses:
+              - 500
+            mutating: true
+            cleanup_strategy: http_custom_endpoint
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:create_client"
+              - "mutating_lifecycle:repeat_create_no_uniqueness"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: create-client-invalid-json
+            description: >
+              Malformed JSON body must not 500. body is a YAML string; encode_body()
+              sends str as raw UTF-8 bytes (not json.dumps), so the wire body is
+              literally {not-valid-json — confirmed against security-agents 0.3.0.
+            category: mutation
+            method: POST
+            path: /api/v3/clients/
+            query: {}
+            headers: {}
+            auth_profile: platform_admin_test
+            body: "{not-valid-json"
+            content_type: application/json
+            expected_statuses:
+              - 400
+              - 422
+            forbidden_statuses:
+              - 200
+              - 201
+              - 500
+            mutating: true
+            cleanup_strategy: http_custom_endpoint
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:create_client"
+              - "mutating_lifecycle:invalid_json"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: create-client-missing-name
+            description: Missing required name property
+            category: mutation
+            method: POST
+            path: /api/v3/clients/
+            query: {}
+            headers: {}
+            auth_profile: platform_admin_test
+            body: {}
+            content_type: application/json
+            expected_statuses:
+              - 400
+              - 422
+            forbidden_statuses:
+              - 200
+              - 201
+              - 500
+            mutating: true
+            cleanup_strategy: http_custom_endpoint
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:create_client"
+              - "mutating_lifecycle:missing_required"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: create-client-wrong-type-name
+            description: Wrong type for name (number instead of string)
+            category: mutation
+            method: POST
+            path: /api/v3/clients/
+            query: {}
+            headers: {}
+            auth_profile: platform_admin_test
+            body:
+              name: 1234
+            content_type: application/json
+            expected_statuses:
+              - 400
+              - 422
+            forbidden_statuses:
+              - 200
+              - 201
+              - 500
+            mutating: true
+            cleanup_strategy: http_custom_endpoint
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:create_client"
+              - "mutating_lifecycle:wrong_type"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: create-client-mass-assignment
+            description: >
+              LIMITED: CreateClientRequest only accepts name/status (extra fields
+              ignored by Pydantic). This case only asserts create still succeeds
+              without 5xx. Full mass-assignment proof needs GET read-back of the
+              created id (blocked until case extract/use exists) — do not treat a
+              bare 201 as evidence that privileged fields were rejected.
+            category: mutation
+            method: POST
+            path: /api/v3/clients/
+            query: {}
+            headers: {}
+            auth_profile: platform_admin_test
+            body:
+              name: "DAST-MUTATING-CLIENT-MASS-ASSIGN"
+              status: "active"
+              role: "platform_admin"
+              company_id: "22222222-2222-4222-8222-222222222222"
+              tenant_id: "22222222-2222-4222-8222-222222222222"
+              is_admin: true
+              client_id: "22222222-2222-4222-8222-222222222222"
+            content_type: application/json
+            expected_statuses:
+              - 200
+              - 201
+            forbidden_statuses:
+              - 500
+            mutating: true
+            cleanup_strategy: http_custom_endpoint
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:create_client"
+              - "mutating_lifecycle:mass_assignment_limited"
+              - "blocked:needs_readback_extract"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: create-client-as-company-admin-a
+            description: >
+              Contract from code: clients router Depends(get_current_admin) allows
+              company_admin with tenant binding — create must succeed (not authz deny).
+            category: mutation
+            method: POST
+            path: /api/v3/clients/
+            query: {}
+            headers: {}
+            auth_profile: company_admin_a
+            body:
+              name: "DAST-MUTATING-CLIENT-TENANT-A"
+              status: "active"
+            content_type: application/json
+            expected_statuses:
+              - 200
+              - 201
+            forbidden_statuses:
+              - 401
+              - 403
+              - 500
+            mutating: true
+            cleanup_strategy: http_custom_endpoint
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:create_client"
+              - "mutating_lifecycle:company_admin_create_allowed"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+          - id: create-client-anonymous-denied
+            description: Anonymous create must be denied
+            category: mutation
+            method: POST
+            path: /api/v3/clients/
+            query: {}
+            headers: {}
+            auth_profile: null
+            body:
+              name: "DAST-MUTATING-CLIENT-ANON"
+              status: "active"
+            content_type: application/json
+            expected_statuses:
+              - 401
+              - 403
+            forbidden_statuses:
+              - 200
+              - 201
+              - 500
+            mutating: true
+            cleanup_strategy: http_custom_endpoint
+            tags:
+              - "source:backend/src/api/routes/v3/clients.py"
+              - "handler:create_client"
+              - "mutating_lifecycle:anon_denied"
+            assertions:
+              no_5xx: true
+              no_stack_trace: true
+              no_sql_error: true
+            reflection_probe:
+              enabled: false
+
+  authentication:
+    enabled: true
+    profiles:
+      - name: platform_admin_test
+        type: bearer
+        token_env: DAST_TOKEN_PLATFORM_ADMIN
+      - name: company_admin_a
+        type: bearer
+        token_env: DAST_TOKEN_COMPANY_ADMIN_A
+      - name: company_admin_b
+        type: bearer
+        token_env: DAST_TOKEN_COMPANY_ADMIN_B
+      - name: operator_a
+        type: bearer
+        token_env: DAST_TOKEN_OPERATOR_A
+      - name: operator_b
+        type: bearer
+        token_env: DAST_TOKEN_OPERATOR_B
+      - name: invalid_token
+        type: bearer
+        token_env: DAST_TOKEN_INVALID
+
+  test_profiles:
+    - name: anonymous
+      auth_profile: null
+    - name: platform_admin
+      auth_profile: platform_admin_test
+    - name: company_admin_a
+      auth_profile: company_admin_a
+    - name: company_admin_b
+      auth_profile: company_admin_b
+    - name: operator_a
+      auth_profile: operator_a
+    - name: operator_b
+      auth_profile: operator_b
+
+  authorization:
+    enabled: true
+    explicit_authorization: true
+
+  authorization_tests:
+    - id: authz-client-b-as-admin-a
+      description: company_admin_a must not access client_b
+      auth_profile: company_admin_a
+      method: GET
+      path: /api/v3/clients/22222222-2222-4222-8222-222222222222
+      expect_forbidden: true
+      expect_status: 403
+    - id: authz-client-a-as-admin-b
+      description: company_admin_b must not access client_a
+      auth_profile: company_admin_b
+      method: GET
+      path: /api/v3/clients/11111111-1111-4111-8111-111111111111
+      expect_forbidden: true
+      expect_status: 403
+    - id: authz-inventory-a-as-admin-b
+      description: cross-tenant inventory read denied
+      auth_profile: company_admin_b
+      method: GET
+      path: /api/v3/inventories/33333333-3333-4333-8333-333333333333
+      expect_forbidden: true
+      expect_status: 403
+    - id: authz-admin-ai-as-operator
+      description: operator denied admin AI config
+      auth_profile: operator_a
+      method: GET
+      path: /api/v3/admin/ai-config
+      expect_forbidden: true
+      expect_status: 403
+
+  rate_limit:
+    requests_per_second: 1
+    max_concurrent: 1
+    max_requests: 120
+    max_response_bytes: 1048576
+    max_request_bytes: 262144
+    request_timeout_seconds: 10
+
+  # Deny beats allow in security-agents. Do not combine POST/** deny with POST allows.
+  # Unapproved mutating surfaces are denied by tree; approved client create/patch allowlisted.
+  destructive_routes:
+    reviewed: true
+    deny:
+      - method: PUT
+        path: "/**"
+      - method: DELETE
+        path: "/**"
+      - method: POST
+        path: "/api/v3/inventories/**"
+      - method: POST
+        path: "/api/v3/admin/**"
+      - method: POST
+        path: "/api/v3/analytics/**"
+      - method: POST
+        path: "/api/v3/review-queue/**"
+      - method: POST
+        path: "/api/v3/observability/**"
+      - method: POST
+        path: "/api/v3/config/**"
+      - method: PATCH
+        path: "/api/v3/inventories/**"
+      - method: PATCH
+        path: "/api/v3/admin/**"
+      - method: PATCH
+        path: "/api/v3/analytics/**"
+      - method: PATCH
+        path: "/api/v3/review-queue/**"
+      - method: PATCH
+        path: "/api/v3/observability/**"
+      - method: PATCH
+        path: "/api/v3/config/**"
+    allow:
+      - method: POST
+        path: "/api/v3/clients"
+      - method: POST
+        path: "/api/v3/clients/"
+      - method: PATCH
+        path: "/api/v3/clients/*"
+      - method: POST
+        path: "/internal/dast/cleanup"
+
+  test_data_strategy:
+    defined: true
+    notes: >
+      Disposable local database only. Synthetic users, inventories, clients,
+      aisles and related resources. Mutating DAST may create/update/delete only
+      resources created for the current audit_run_id. No real PII or production data.
+
+  cleanup:
+    defined: true
+    adapter: http_custom_endpoint
+    endpoint_path: /internal/dast/cleanup
+    auth_profile: platform_admin_test
+    expected_statuses:
+      - 200
+    notes: >
+      Clients have no product DELETE. Cleanup must call a local-only DAST endpoint
+      that deletes only resources created by this audit_run_id and returns
+      {ok:true, audit_run_id, remaining:0, resources_remaining:[]}.
+      Do not run mutating active until that endpoint is implemented and verified
+      against a disposable DB. http_delete_fixture is unsuitable until a hard
+      DELETE exists for the mutated entity.
+
+  external_side_effects:
+    block_public_networks: true
+    block_redirects: true
+
+  multi_tenancy:
+    enabled: true
+    isolation_tests_required: true
+
+remediation:
+  authorized: false
+
+reporting:
+  include_informational: true
+  export_bundle: true
+  retain_raw_outputs: true
+  redact_raw_outputs: true
+  export_raw_outputs: false
+
+context:
+  compliance_drivers: []
+  notes: >
+    Project-specific DAST from real FastAPI routes. Non-mutating GET suites kept;
+    mutating suite mutating-client-creates targets POST /api/v3/clients only.
+    Injection remains GET/query only (no POST SQLi). Uploads/jobs/LLM/processing
+    stay out of scope. ZAP Baseline optional (disabled). ACTIVE_SCANNER
+    not_implemented. Roles in JWT: platform_admin|company_admin|operator.
+
+    BLOCKERS before a real mutating active run (still NOT ready for dast active mutant):
+    1) Implement /internal/dast/cleanup for disposable local env and verify
+       remaining=0 after creates.
+    2) Add active.mutating_tests confirmation gate in security-agents
+       (confirmation_env: DAST_MUTATING_CONFIRMATION = CONFIRM_MUTATING_DAST_<RUN_ID>)
+       and block all POST/PUT/PATCH/DELETE when missing/mismatched.
+    3) Add case extract/use so GET read-back / PATCH / cross-tenant probes can
+       reuse created ids (do not invent fixed mutation IDs). Mass-assignment
+       remains limited without that read-back.
+    4) Confirm API DB is disposable/synthetic — localhost alone is not enough.
+    5) Pass P0 per-request create tracking test
+       (baseline+probe creates both cleaned up).
