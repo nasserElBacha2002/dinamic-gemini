@@ -24,10 +24,11 @@ react-native@0.74.5 → @react-native-community/cli → fast-xml-parser, …
 
 ## What was done (this pass)
 
-1. Cleared **Critical tar** with temporary override `tar@^7.5.22` (compatible extract API; Expo CLI consumer).
-2. Cleared **js-yaml** / **brace-expansion** advisories reachable in the lockfile via overrides.
+1. **Critical tar — override rolled back.** Forcing `tar@^7.5.22` broke Expo 51 prebuild (`@expo/cli` uses Babel `interopRequireDefault(require('tar'))`; tar v7 sets `__esModule` without a usable `.default`, so `.extract` throws and `android/` is never created). CI symptom: Assemble debug → `mobile/android: No such file or directory`.
+2. Cleared **js-yaml** / **brace-expansion** advisories via overrides (kept).
 3. **Did not** run `npm audit fix --force` (would jump to Expo 57 / RN 0.86).
-4. Validated: `npm run typecheck`, `npm test` (core+services+integration), `npm run doctor` (Android-only script ignores Xcode mismatch).
+4. Validated: `npm run typecheck`, `npm test`, `npm run doctor`; local `CI=1 npx expo prebuild -p android --no-install` after removing tar override.
+5. CI workflows updated: drop unsupported `--non-interactive`, set `CI=1`, assert `android/gradlew` exists after prebuild.
 
 ## Why not full SDK upgrade now
 
@@ -49,7 +50,7 @@ Preference order: patch → minor → SDK.
 
 | Item | Status |
 |------|--------|
-| tar critical | **FIXED** (override); runtime app **NOT_REACHABLE** |
+| tar critical | **ACCEPTED_TEMPORARILY** / **NOT_REACHABLE** (Expo CLI / cacache build tooling only; tar@7 override incompatible with Expo 51; fix = SDK upgrade that ships tar-7-aware `@expo/cli`) |
 | Expo/@xmldom/postcss/ajv/uuid/fast-xml-parser tree | **ACCEPTED_TEMPORARILY** — requires SDK upgrade |
 | send (expo cli) | **NOT_REACHABLE** (CLI tooling) |
 | Mobile production exploit via these advisories | Not demonstrated; treat as supply-chain/build hygiene |

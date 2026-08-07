@@ -25,7 +25,7 @@ Closure assessment for this pass:
 DEPENDENCY_CRITICALS: FIXED
 DEPENDENCY_HIGHS: MITIGATED | ACCEPTED_TEMPORARILY
 DEPENDENCY_RUNTIME_REACHABILITY: MITIGATED
-NODE_TAR: FIXED (build-time; NOT_REACHABLE in mobile app runtime)
+NODE_TAR: ACCEPTED_TEMPORARILY (tar@7 override broke Expo 51 prebuild; build-time NOT_REACHABLE; clear via SDK upgrade)
 SHELL_QUOTE: FIXED (dev-only parent upgrade)
 REACT_ROUTER: FIXED
 JS_YAML: FIXED

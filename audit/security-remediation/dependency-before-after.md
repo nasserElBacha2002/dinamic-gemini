@@ -25,7 +25,7 @@
 | Finding | Before | After | Disposition |
 |---------|--------|-------|-------------|
 | shell-quote (root) | present via concurrently@8 | gone (shell-quote@1.9.0 via concurrently@9.2.4) | **FIXED** |
-| tar / node-tar (mobile) | present via @expo/cli → cacache | tar@7.5.22 via override | **FIXED** (build-time; NOT_REACHABLE at app runtime) |
+| tar / node-tar (mobile) | present via @expo/cli → cacache | back to tar@6.2.1 (Expo-compatible); tar@7 override rolled back | **ACCEPTED_TEMPORARILY** (build-time NOT_REACHABLE; tar@7 breaks Expo 51 prebuild) |
 
 ## Notable Highs
 

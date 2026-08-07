@@ -20,10 +20,10 @@
 
 1. **No Expo SDK major in this pass** (Android-native customizations + intentional SDK 51).
 2. Temporary overrides (remove after SDK upgrade):
-   - `tar` → `^7.5.22` (Critical)
    - `js-yaml` → `^4.3.1`
    - `brace-expansion` → `^2.1.4`
-3. Follow-up: Expo SDK upgrade path documented in `mobile-expo-security-upgrade.md`.
+3. **`tar@7` override removed** — incompatible with Expo 51 `@expo/cli` (`interopRequireDefault` + tar v7 `__esModule` breaks template extract → CI cannot create `mobile/android`). Critical tar remains **ACCEPTED_TEMPORARILY** / build-only until SDK upgrade.
+4. Follow-up: Expo SDK upgrade path documented in `mobile-expo-security-upgrade.md`.
 
 ## Explicitly rejected
 

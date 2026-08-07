@@ -61,8 +61,15 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
       - run: npm ci
+      # Expo 51+: --non-interactive is unsupported; use CI=1. android/ is gitignored and must be generated.
       - name: Prebuild Android
-        run: npx expo prebuild -p android --non-interactive
+        env:
+          CI: '1'
+        run: |
+          set -euo pipefail
+          npx expo prebuild -p android --no-install
+          test -d android
+          test -x android/gradlew
       - name: Assemble debug
         working-directory: mobile/android
         run: ./gradlew assembleDebug --no-daemon
