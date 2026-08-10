@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from src.application.errors import ProductLabelIdCollisionError
 from src.application.ports.issued_product_label_repository import (
     IssuedProductLabel,
     IssuedProductLabelRepository,
 )
 from src.database.sqlserver import SqlServerClient
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
+from src.infrastructure.database.sql_unique_violation import is_sql_unique_violation
 
 
 class SqlIssuedProductLabelRepository(IssuedProductLabelRepository):
@@ -16,27 +18,34 @@ class SqlIssuedProductLabelRepository(IssuedProductLabelRepository):
         self._connection = connection
 
     def save(self, row: IssuedProductLabel) -> None:
-        with sql_repository_cursor(self._client, connection=self._connection) as cur:
-            cur.execute(
-                """
-                INSERT INTO issued_product_labels (
-                    id, client_id, label_id, internal_code, quantity,
-                    format_version, checksum, payload, created_at, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    row.id,
-                    row.client_id,
-                    row.label_id.upper(),
-                    row.internal_code,
-                    row.quantity,
-                    row.format_version,
-                    row.checksum,
-                    row.payload,
-                    row.created_at,
-                    row.created_by,
-                ),
-            )
+        try:
+            with sql_repository_cursor(self._client, connection=self._connection) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO issued_product_labels (
+                        id, client_id, label_id, internal_code, quantity,
+                        format_version, checksum, payload, created_at, created_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        row.id,
+                        row.client_id,
+                        row.label_id.upper(),
+                        row.internal_code,
+                        row.quantity,
+                        row.format_version,
+                        row.checksum,
+                        row.payload,
+                        row.created_at,
+                        row.created_by,
+                    ),
+                )
+        except Exception as exc:
+            if is_sql_unique_violation(exc):
+                raise ProductLabelIdCollisionError(
+                    f"duplicate label_id: {row.label_id}"
+                ) from exc
+            raise
 
     def get_by_label_id(self, label_id: str) -> IssuedProductLabel | None:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:

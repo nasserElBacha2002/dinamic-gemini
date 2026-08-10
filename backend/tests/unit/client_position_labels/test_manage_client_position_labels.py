@@ -21,6 +21,8 @@ from src.application.services.positioning_label_signing import (
 from src.application.use_cases.client_position_labels.manage import (
     CreateClientPositionLabelCommand,
     CreateClientPositionLabelUseCase,
+    CreateClientPositionMarkerSetCommand,
+    CreateClientPositionMarkerSetUseCase,
     GetClientPositionLabelCommand,
     GetClientPositionLabelUseCase,
     InvalidateClientPositionLabelCommand,
@@ -28,6 +30,7 @@ from src.application.use_cases.client_position_labels.manage import (
     ListClientPositionLabelsCommand,
     ListClientPositionLabelsUseCase,
 )
+from src.domain.aisle_location.label_entities import POSITIONING_LABEL_PAYLOAD_VERSION_V2
 from src.domain.aisle_location.payload import validate_positioning_payload
 from src.domain.client.entities import Client, ClientStatus
 from src.domain.client_position_label.entities import ClientPositionLabelStatus
@@ -232,3 +235,40 @@ def test_payload_has_no_inventory_fields() -> None:
     )
     forbidden = {"inventory_id", "aisle_id", "job_id", "session_id", "deposit_id"}
     assert forbidden.isdisjoint(label.canonical_payload.keys())
+
+
+def test_marker_set_creates_padded_labels() -> None:
+    label_repo = MemoryClientPositionLabelRepository()
+    client_repo = _MemoryClientRepo([_client()])
+    uc = CreateClientPositionMarkerSetUseCase(
+        label_repo=label_repo,
+        client_repo=client_repo,
+        clock=_FixedClock(),
+        signing=_signing(),
+    )
+    labels = uc.execute(
+        CreateClientPositionMarkerSetCommand(
+            client_id="client-a",
+            pallet="P12",
+            side="LEFT",
+            level=3,
+            marker_total=3,
+            principal=_platform(),
+        )
+    )
+    assert len(labels) == 3
+    assert [lab.marker_index for lab in labels] == [1, 2, 3]
+    assert all(lab.marker_total == 3 for lab in labels)
+    assert all(lab.pallet == "P12" for lab in labels)
+    assert all(lab.side == "LEFT" for lab in labels)
+    assert all(lab.level == 3 for lab in labels)
+    assert all(lab.payload_version == POSITIONING_LABEL_PAYLOAD_VERSION_V2 for lab in labels)
+    assert labels[0].name == "P12 LEFT N3 01/03"
+    assert labels[1].name == "P12 LEFT N3 02/03"
+    assert labels[2].name == "P12 LEFT N3 03/03"
+    public_ids = {lab.public_identifier for lab in labels}
+    assert len(public_ids) == 3
+    for lab in labels:
+        validate_positioning_payload(lab.canonical_payload)
+        assert lab.canonical_payload["version"] == 2
+        assert lab.canonical_payload["marker_index"] == lab.marker_index

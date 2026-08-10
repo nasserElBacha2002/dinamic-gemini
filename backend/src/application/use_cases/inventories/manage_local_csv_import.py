@@ -134,6 +134,8 @@ class PreviewLocalCsvImport:
         requires_review = bool(parsed.requires_review)
         if not values["position_code"]:
             requires_review = True
+        raw_label = (values.get("label_id") or "").strip()
+        label_id = raw_label.upper() if raw_label else None
         return LocalCsvImportRow(
             id=str(uuid.uuid4()),
             import_id=import_id,
@@ -158,6 +160,7 @@ class PreviewLocalCsvImport:
             status="REJECTED" if errors else "PREVIEW_VALID",
             validation_errors=errors,
             validation_warnings=parsed.warnings,
+            label_id=label_id,
         )
 
 

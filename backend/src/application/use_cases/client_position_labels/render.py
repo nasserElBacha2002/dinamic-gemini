@@ -28,6 +28,7 @@ from src.domain.client_position_label.entities import (
     ClientPositionLabelArtifact,
     ClientPositionLabelStatus,
 )
+from src.domain.client_position_label.hierarchy import PositionHierarchy, PositionSide
 from src.infrastructure.storage.artifact_store import ArtifactStore
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,24 @@ class RenderClientPositionLabelUseCase:
 
         try:
             validate_positioning_payload(label.canonical_payload)
+            hierarchy: PositionHierarchy | None = None
+            if (
+                label.pallet
+                and label.side
+                and label.level is not None
+                and label.marker_index is not None
+                and label.marker_total is not None
+            ):
+                try:
+                    hierarchy = PositionHierarchy(
+                        pallet=label.pallet,
+                        side=PositionSide(str(label.side).strip().upper()),
+                        level=int(label.level),
+                        marker_index=int(label.marker_index),
+                        marker_total=int(label.marker_total),
+                    )
+                except (TypeError, ValueError):
+                    hierarchy = None
             display = PositioningLabelDisplayData(
                 depot_name=client.name or "",
                 aisle_code="",
@@ -136,6 +155,11 @@ class RenderClientPositionLabelUseCase:
                 payload_version=int(label.payload_version),
                 marker_version=_MARKER_VERSION,
                 template_version=int(preset.template_version),
+                pallet=hierarchy.pallet if hierarchy else None,
+                side=hierarchy.side.value if hierarchy else None,
+                level=hierarchy.level if hierarchy else None,
+                marker_index=hierarchy.marker_index if hierarchy else None,
+                marker_total=hierarchy.marker_total if hierarchy else None,
             )
             rendered: RenderedPositioningLabel = self._renderer.render(
                 payload=label.canonical_payload,

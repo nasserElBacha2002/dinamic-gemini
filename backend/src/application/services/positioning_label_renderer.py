@@ -29,6 +29,11 @@ from src.application.services.positioning_label_presets import (
     mm_to_px,
 )
 from src.domain.aisle_location.payload import canonicalize_positioning_payload
+from src.domain.client_position_label.hierarchy import (
+    PositionHierarchy,
+    PositionSide,
+    localize_side_es,
+)
 
 LabelFormat = Literal["PDF", "PNG"]
 PillowFont = ImageFont.ImageFont | ImageFont.FreeTypeFont
@@ -52,6 +57,21 @@ class PositioningLabelDisplayData:
     payload_version: int
     marker_version: int
     template_version: int
+    pallet: str | None = None
+    side: str | None = None
+    level: int | None = None
+    marker_index: int | None = None
+    marker_total: int | None = None
+
+    @property
+    def has_hierarchy(self) -> bool:
+        return (
+            bool((self.pallet or "").strip())
+            and bool((self.side or "").strip())
+            and self.level is not None
+            and self.marker_index is not None
+            and self.marker_total is not None
+        )
 
 
 @dataclass(frozen=True)
@@ -208,22 +228,72 @@ class PositioningLabelRenderer:
             )
             y += pt_to_px(tokens.secondary_text_font_size_pt, preset.dpi) + gap // 2
 
-        position = (display.position_code or "").strip() or "—"
-        caption_font = _load_font(pt_to_px(tokens.primary_label_font_size_pt, preset.dpi), bold=True)
-        draw.text((x, y), "UBICACIÓN", fill="black", font=caption_font)
-        y += pt_to_px(tokens.primary_label_font_size_pt, preset.dpi) + gap // 2
-
         text_max_width = width - 2 * margin
-        primary_font = _fit_primary_font(
-            draw, position, max_width=text_max_width, dpi=preset.dpi, tokens=tokens
-        )
-        for line in _wrap_text(draw, position, primary_font, text_max_width):
-            draw.text((x, y), line, fill="black", font=primary_font)
-            bbox = cast(
-                tuple[int, int, int, int],
-                draw.textbbox((0, 0), line, font=primary_font),
+        caption_font = _load_font(pt_to_px(tokens.primary_label_font_size_pt, preset.dpi), bold=True)
+
+        if display.has_hierarchy:
+            try:
+                hierarchy = PositionHierarchy(
+                    pallet=str(display.pallet),
+                    side=PositionSide(str(display.side).strip().upper()),
+                    level=int(display.level),  # type: ignore[arg-type]
+                    marker_index=int(display.marker_index),  # type: ignore[arg-type]
+                    marker_total=int(display.marker_total),  # type: ignore[arg-type]
+                )
+                side_es = localize_side_es(hierarchy.side)
+                rows = (
+                    ("ID", display.public_label_id),
+                    ("PALLET", hierarchy.pallet),
+                    ("LADO", side_es),
+                    ("NIVEL", str(hierarchy.level)),
+                    ("MARBETE", hierarchy.formatted_marker_pair()),
+                )
+            except (TypeError, ValueError):
+                rows = ()
+            if rows:
+                for caption, value in rows:
+                    draw.text((x, y), caption, fill="black", font=caption_font)
+                    y += pt_to_px(tokens.primary_label_font_size_pt, preset.dpi) + gap // 3
+                    primary_font = _fit_primary_font(
+                        draw, value, max_width=text_max_width, dpi=preset.dpi, tokens=tokens
+                    )
+                    for line in _wrap_text(draw, value, primary_font, text_max_width):
+                        draw.text((x, y), line, fill="black", font=primary_font)
+                        bbox = cast(
+                            tuple[int, int, int, int],
+                            draw.textbbox((0, 0), line, font=primary_font),
+                        )
+                        y += (bbox[3] - bbox[1]) + gap // 4
+                    y += gap // 3
+            else:
+                position = (display.position_code or "").strip() or "—"
+                draw.text((x, y), "UBICACIÓN", fill="black", font=caption_font)
+                y += pt_to_px(tokens.primary_label_font_size_pt, preset.dpi) + gap // 2
+                primary_font = _fit_primary_font(
+                    draw, position, max_width=text_max_width, dpi=preset.dpi, tokens=tokens
+                )
+                for line in _wrap_text(draw, position, primary_font, text_max_width):
+                    draw.text((x, y), line, fill="black", font=primary_font)
+                    bbox = cast(
+                        tuple[int, int, int, int],
+                        draw.textbbox((0, 0), line, font=primary_font),
+                    )
+                    y += (bbox[3] - bbox[1]) + gap // 3
+        else:
+            position = (display.position_code or "").strip() or "—"
+            draw.text((x, y), "UBICACIÓN", fill="black", font=caption_font)
+            y += pt_to_px(tokens.primary_label_font_size_pt, preset.dpi) + gap // 2
+
+            primary_font = _fit_primary_font(
+                draw, position, max_width=text_max_width, dpi=preset.dpi, tokens=tokens
             )
-            y += (bbox[3] - bbox[1]) + gap // 3
+            for line in _wrap_text(draw, position, primary_font, text_max_width):
+                draw.text((x, y), line, fill="black", font=primary_font)
+                bbox = cast(
+                    tuple[int, int, int, int],
+                    draw.textbbox((0, 0), line, font=primary_font),
+                )
+                y += (bbox[3] - bbox[1]) + gap // 3
 
         footer_block = mm_to_px(12, preset.dpi)
         marker_px = mm_to_px(preset.marker_size_mm, preset.dpi)

@@ -1666,6 +1666,7 @@
       "card": {
         "noFilename": "No file name",
         "withoutResultBadge": "Without result",
+        "withResultBadge": "With result",
         "addResultAction": "Add result",
         "processingStatus": {
           "pending": "Pending",

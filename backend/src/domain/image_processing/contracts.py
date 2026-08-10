@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol
 
+from src.domain.product_labels.processed import ProcessedProductLabel
 from src.domain.aisle_identification.modes import (
     AisleIdentificationExecutionStrategy,
     AisleIdentificationMode,
@@ -72,8 +73,8 @@ class ImageProcessingResult:
     error_message: str | None = None
     execution_scope: ExecutionScope = ExecutionScope.SINGLE_ASSET
     logical_asset_attempt: bool = True
-    #: CODE_SCAN multi-product: serialized ProductLabelResult dicts (0..N).
-    product_results: list[dict[str, Any]] = field(default_factory=list)
+    #: CODE_SCAN multi-product: 0..N typed physical product labels (D1 after registry resolve).
+    product_results: list[ProcessedProductLabel] = field(default_factory=list)
 
 
 class ProcessingStrategy(Protocol):

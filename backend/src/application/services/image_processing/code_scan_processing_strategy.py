@@ -45,6 +45,14 @@ from src.application.services.image_processing.encoded_label_payload_parser impo
 from src.application.services.image_processing.processing_event_publisher import (
     ProcessingEventPublisher,
 )
+from src.application.services.product_labels.issued_product_label_resolver import (
+    IssuedProductLabelResolver,
+)
+from src.domain.product_labels.format import parse_product_label_payload
+from src.domain.product_labels.processed import (
+    ProcessedProductLabel,
+    ProductLabelOutcomeStatus,
+)
 from src.domain.assets.entities import SourceAsset
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import (
@@ -111,6 +119,7 @@ class CodeScanConfig:
     enable_preprocessing: bool = False
     max_variants: int = 4
     max_technical_attempts: int = 2
+    max_candidates_per_asset: int = 12
 
 
 class CodeScanMetrics:
@@ -162,6 +171,7 @@ class CodeScanProcessingStrategy:
         metrics: CodeScanMetrics | None = None,
         event_publisher: ProcessingEventPublisher | None = None,
         position_detection=None,
+        issued_label_resolver: IssuedProductLabelResolver | None = None,
     ) -> None:
         self._scanner = scanner
         self._reader = content_reader
@@ -171,6 +181,7 @@ class CodeScanProcessingStrategy:
         self._metrics = metrics or CodeScanMetrics()
         self._events = event_publisher
         self._position_detection = position_detection
+        self._issued_label_resolver = issued_label_resolver
 
     def _publish_asset_event(
         self,
@@ -471,85 +482,82 @@ class CodeScanProcessingStrategy:
         # Never apply OCR/supplier text-profile validation here. Profile rules are for
         # INTERNAL_OCR; AI fallback uses prompts. CODE_SCAN is consolidator-only.
 
-        product_results = [
-            {
-                "label_id": p.label_id,
-                "internal_code": p.internal_code,
-                "quantity": p.quantity,
-                "format_version": p.format_version,
-                "checksum": p.checksum,
-                "validation_status": p.validation_status,
-                "selected_detection_index": p.selected_detection_index,
-                "duplicate_detection_count": p.duplicate_detection_count,
-                "symbology": p.symbology,
-                "raw_payload": p.raw_payload,
-                "normalized_payload": p.normalized_payload,
-            }
-            for p in consolidated.product_results
-        ]
-        if consolidated.rejections:
-            evidence = {
-                **(evidence or {}),
-                "product_label_rejections": [
-                    {
-                        "validation_status": r.validation_status,
-                        "raw_value_sha256": hashlib.sha256(
-                            (r.raw_value or "").encode("utf-8")
-                        ).hexdigest(),
-                        "detection_index": r.detection_index,
-                        "label_id": r.label_id,
-                        "detail": r.detail,
-                        "symbology": r.symbology,
-                    }
-                    for r in consolidated.rejections
-                ],
-            }
+        product_results, evidence, registry_hard_fail = self._resolve_issued_products(
+            context=context,
+            consolidated=consolidated,
+            evidence=evidence,
+            duration_ms=duration_ms,
+            mode=mode,
+        )
+        if registry_hard_fail is not None:
+            self._finalize_asset_event(context, registry_hard_fail)
+            return registry_hard_fail
 
         if consolidated.status in (
             CodeConsolidationStatus.RESOLVED,
             CodeConsolidationStatus.RESOLVED_MULTI,
         ):
-            self._metrics.increment("code_scan.resolved")
-            if len(product_results) > 1:
-                self._metrics.increment("multi_product_image_total")
-            self._metrics.increment("product_labels_valid_total", amount=max(1, len(product_results)))
-            logger.info(
-                "code_scan.resolved job_id=%s asset_id=%s symbology=%s "
-                "product_count=%s duration_ms=%s",
-                context.job_id,
-                context.asset_id,
-                evidence.get("symbology") if evidence else None,
-                len(product_results) or 1,
-                duration_ms,
-            )
-            result = ImageProcessingResult(
-                job_id=context.job_id,
-                asset_id=context.asset_id,
-                status=ImageResultStatus.RESOLVED_INTERNAL,
-                processing_mode=mode,
-                resolved_by=STRATEGY_KEY,
-                internal_code=consolidated.internal_code,
-                quantity=float(consolidated.quantity)
-                if consolidated.quantity is not None
-                else None,
-                evidence=evidence,
-                warnings=list(consolidated.warnings),
-                execution_scope=ExecutionScope.SINGLE_ASSET,
-                logical_asset_attempt=False,
-                processing_duration_ms=duration_ms,
-                product_results=product_results,
-            )
-            self._publish_asset_event(
-                context,
-                "code_scan.validation_completed",
-                message="consolidator validation completed",
-                metadata={
-                    "status": ImageResultStatus.RESOLVED_INTERNAL.value,
-                    "product_count": len(product_results) or 1,
-                },
-            )
-            self._finalize_asset_event(context, result)
-            return result
+            # D1 path: consolidator produced product_results that must pass registry.
+            if consolidated.product_results and not product_results:
+                consolidated = type(consolidated)(
+                    status=CodeConsolidationStatus.NO_VALID_CODE,
+                    warnings=tuple(
+                        list(consolidated.warnings) + ("NO_VALID_ISSUED_PRODUCT_LABEL",)
+                    ),
+                    rejections=consolidated.rejections,
+                    product_results=(),
+                )
+            elif product_results or not consolidated.product_results:
+                self._metrics.increment("code_scan.resolved")
+                if len(product_results) > 1:
+                    self._metrics.increment("multi_product_image_total")
+                counted = len(product_results) if product_results else 1
+                self._metrics.increment("product_labels_valid_total", amount=counted)
+                logger.info(
+                    "code_scan.resolved job_id=%s asset_id=%s symbology=%s "
+                    "product_count=%s duration_ms=%s",
+                    context.job_id,
+                    context.asset_id,
+                    evidence.get("symbology") if evidence else None,
+                    counted,
+                    duration_ms,
+                )
+                primary_code = (
+                    product_results[0].internal_code
+                    if product_results
+                    else consolidated.internal_code
+                )
+                primary_qty = (
+                    product_results[0].quantity
+                    if product_results
+                    else consolidated.quantity
+                )
+                result = ImageProcessingResult(
+                    job_id=context.job_id,
+                    asset_id=context.asset_id,
+                    status=ImageResultStatus.RESOLVED_INTERNAL,
+                    processing_mode=mode,
+                    resolved_by=STRATEGY_KEY,
+                    internal_code=primary_code,
+                    quantity=float(primary_qty) if primary_qty is not None else None,
+                    evidence=evidence,
+                    warnings=list(consolidated.warnings),
+                    execution_scope=ExecutionScope.SINGLE_ASSET,
+                    logical_asset_attempt=False,
+                    processing_duration_ms=duration_ms,
+                    product_results=list(product_results),
+                )
+                self._publish_asset_event(
+                    context,
+                    "code_scan.validation_completed",
+                    message="consolidator validation completed",
+                    metadata={
+                        "status": ImageResultStatus.RESOLVED_INTERNAL.value,
+                        "product_count": counted,
+                    },
+                )
+                self._finalize_asset_event(context, result)
+                return result
 
         if consolidated.status in (
             CodeConsolidationStatus.NO_DETECTIONS,
@@ -649,6 +657,104 @@ class CodeScanProcessingStrategy:
         if (time.monotonic() - started) > self._config.timeout_seconds:
             raise CodeScanTimeoutError(f"code scan exceeded {self._config.timeout_seconds}s budget")
 
+    def _resolve_issued_products(
+        self,
+        *,
+        context: ImageProcessingContext,
+        consolidated,
+        evidence: dict | None,
+        duration_ms: int,
+        mode: str,
+    ) -> tuple[list[ProcessedProductLabel], dict | None, ImageProcessingResult | None]:
+        """Map consolidator D1 hits through issued registry. Legacy PIPE leaves product_results empty."""
+        if consolidated.rejections:
+            evidence = {
+                **(evidence or {}),
+                "product_label_rejections": [
+                    {
+                        "validation_status": r.validation_status,
+                        "raw_value_sha256": hashlib.sha256(
+                            (r.raw_value or "").encode("utf-8")
+                        ).hexdigest(),
+                        "detection_index": r.detection_index,
+                        "label_id": r.label_id,
+                        "detail": r.detail,
+                        "symbology": r.symbology,
+                    }
+                    for r in consolidated.rejections
+                ],
+            }
+
+        if not consolidated.product_results:
+            return [], evidence, None
+
+        client_id = (context.client_id or "").strip()
+        if not client_id:
+            self._metrics.increment("product_label_client_context_missing_total")
+            fail = ImageProcessingResult(
+                job_id=context.job_id,
+                asset_id=context.asset_id,
+                status=ImageResultStatus.FAILED_TECHNICAL,
+                processing_mode=mode,
+                error_code="PRODUCT_LABEL_CLIENT_CONTEXT_MISSING",
+                error_message="inventory client_id required to validate issued product labels",
+                evidence=evidence,
+                processing_duration_ms=duration_ms,
+                warnings=["PRODUCT_LABEL_CLIENT_CONTEXT_MISSING"],
+                product_results=[],
+            )
+            return [], evidence, fail
+        if self._issued_label_resolver is None:
+            self._metrics.increment("product_label_resolver_missing_total")
+            fail = ImageProcessingResult(
+                job_id=context.job_id,
+                asset_id=context.asset_id,
+                status=ImageResultStatus.FAILED_TECHNICAL,
+                processing_mode=mode,
+                error_code="PRODUCT_LABEL_RESOLVER_UNAVAILABLE",
+                error_message="IssuedProductLabelResolver is required for D1 labels",
+                evidence=evidence,
+                processing_duration_ms=duration_ms,
+                warnings=["PRODUCT_LABEL_RESOLVER_UNAVAILABLE"],
+                product_results=[],
+            )
+            return [], evidence, fail
+
+        products: list[ProcessedProductLabel] = []
+        registry_rejections: list[dict[str, object]] = []
+        for p in consolidated.product_results:
+            parsed = parse_product_label_payload(p.raw_payload or "")
+            resolved = self._issued_label_resolver.resolve_parsed(
+                parsed=parsed,
+                expected_client_id=client_id,
+                selected_detection_index=p.selected_detection_index,
+                duplicate_detection_count=p.duplicate_detection_count,
+                symbology=p.symbology,
+            )
+            if (
+                resolved.status is ProductLabelOutcomeStatus.VALID
+                and resolved.product is not None
+            ):
+                products.append(resolved.product)
+            else:
+                self._metrics.increment(
+                    f"product_label_reject_{resolved.status.value.lower()}_total"
+                )
+                registry_rejections.append(
+                    {
+                        "validation_status": resolved.status.value,
+                        "label_id": p.label_id,
+                        "detail": resolved.detail,
+                        "detection_index": p.selected_detection_index,
+                    }
+                )
+        if registry_rejections:
+            evidence = {
+                **(evidence or {}),
+                "product_label_registry_rejections": registry_rejections,
+            }
+        return products, evidence, None
+
     def _scan_with_variants(
         self, asset: SourceAsset, content: bytes, started: float
     ) -> list[CodeScanDetectionCandidate]:
@@ -680,7 +786,12 @@ class CodeScanProcessingStrategy:
         for angle in rotation_angles:
             self._check_timeout(started)
             # Stop early if we already have several distinct symbols (budget).
-            if len(merged) >= 12:
+            if len(merged) >= int(self._config.max_candidates_per_asset):
+                self._metrics.increment("code_scan.max_candidates_per_asset_reached")
+                logger.info(
+                    "code_scan.max_candidates_per_asset_reached limit=%s",
+                    self._config.max_candidates_per_asset,
+                )
                 break
             rotated = self._rotated_variant_bytes(content, angle)
             if rotated is None:

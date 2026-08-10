@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src.application.errors import ProductLabelIdCollisionError
 from src.application.ports.issued_product_label_repository import (
     IssuedProductLabel,
     IssuedProductLabelRepository,
@@ -16,7 +17,7 @@ class MemoryIssuedProductLabelRepository(IssuedProductLabelRepository):
     def save(self, row: IssuedProductLabel) -> None:
         key = row.label_id.upper()
         if key in self._by_label:
-            raise ValueError(f"duplicate label_id: {key}")
+            raise ProductLabelIdCollisionError(f"duplicate label_id: {key}")
         self._by_label[key] = row
         self._order.append(key)
 

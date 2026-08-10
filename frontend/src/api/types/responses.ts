@@ -1348,7 +1348,12 @@ export interface JobImageDetectedProduct {
   qty_source?: string | null;
 }
 
-/** One row of GET .../jobs/{job_id}/image-results: photo LEFT JOIN positions (0..n results per image). */
+/**
+ * One row of GET .../jobs/{job_id}/image-results: photo LEFT JOIN positions (0..n results per image).
+ *
+ * - `results`: legacy position summaries (one summary row per linked position; historical UI).
+ * - `detected_products`: physical products counted on the image (0..N), including D1 label_id when present.
+ */
 export interface JobImageResultItem {
   job_source_asset_id: string;
   source_asset_id: string;

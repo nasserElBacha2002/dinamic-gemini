@@ -5,14 +5,17 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
-from src.application.errors import ClientNotFoundError
+from src.application.dto.access_principal import AccessPrincipal
+from src.application.errors import ClientNotFoundError, ProductLabelIdCollisionError
 from src.application.ports.clock import Clock
 from src.application.ports.issued_product_label_repository import (
     IssuedProductLabel,
     IssuedProductLabelRepository,
 )
 from src.application.ports.repositories import ClientRepository
+from src.application.use_cases.client_position_labels.manage import require_client_scope
 from src.domain.product_labels.format import (
     PRODUCT_LABEL_FORMAT_VERSION,
     build_product_label_payload,
@@ -31,6 +34,7 @@ class IssueProductLabelsCommand:
     client_id: str
     internal_code: str
     quantity: int
+    principal: AccessPrincipal
     count: int = 1
     created_by: str | None = None
 
@@ -43,7 +47,7 @@ class IssuedProductLabelView:
     format_version: str
     checksum: str
     payload: str
-    created_at: object
+    created_at: datetime
 
 
 @dataclass(frozen=True)
@@ -64,9 +68,11 @@ class IssueProductLabelsUseCase:
         self._clock = clock
 
     def execute(self, command: IssueProductLabelsCommand) -> IssueProductLabelsResult:
-        client = self._client_repo.get_by_id(command.client_id)
-        if client is None:
-            raise ClientNotFoundError(f"Client not found: {command.client_id}")
+        require_client_scope(
+            client_id=command.client_id,
+            principal=command.principal,
+            client_repo=self._client_repo,
+        )
 
         code = (command.internal_code or "").strip()
         if not code or "|" in code or len(code) > 48:
@@ -113,7 +119,7 @@ class IssueProductLabelsUseCase:
         internal_code: str,
         quantity: int,
         created_by: str | None,
-        created_at: object,
+        created_at: datetime,
     ) -> IssuedProductLabel:
         last_exc: Exception | None = None
         for _attempt in range(_MAX_ID_ATTEMPTS):
@@ -133,18 +139,15 @@ class IssueProductLabelsUseCase:
                 format_version=PRODUCT_LABEL_FORMAT_VERSION,
                 checksum=checksum,
                 payload=payload,
-                created_at=created_at,  # type: ignore[arg-type]
+                created_at=created_at,
                 created_by=created_by,
             )
             try:
                 self._issued_repo.save(row)
                 return row
-            except Exception as exc:
+            except ProductLabelIdCollisionError as exc:
                 last_exc = exc
-                msg = str(exc).lower()
-                if "unique" in msg or "2627" in msg or "2601" in msg or "duplicate" in msg:
-                    continue
-                raise
+                continue
         raise RuntimeError(
             f"failed to mint unique label_id after {_MAX_ID_ATTEMPTS} attempts: {last_exc}"
         )

@@ -621,6 +621,18 @@ class ClientPositionLabelConflictError(Exception):
         super().__init__(message)
 
 
+class ProductLabelIdCollisionError(Exception):
+    """Issued product label_id unique violation (infrastructure maps SQL 2627/2601)."""
+
+
+class ProductLabelAlreadyClaimedError(Exception):
+    """Inventory counted product label unique violation (infrastructure maps SQL)."""
+
+
+class ProductLabelClaimRepositoryUnavailableError(RuntimeError):
+    """Fail-closed: claim repository required when persisting D1 label_id."""
+
+
 class ClientPositionLabelAccessDeniedError(Exception):
     def __init__(self, message: str = "Position label access denied") -> None:
         self.code = "POSITION_LABEL_ACCESS_DENIED"

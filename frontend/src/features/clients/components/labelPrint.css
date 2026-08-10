@@ -65,7 +65,7 @@
   --label-row-value-size: 11pt;
   --label-code-size: 28pt;
   --label-quantity-label-size: 16pt;
-  --label-quantity-value-size: 52pt;
+  --label-quantity-value-size: 34pt;
   /* Physical print targets (mm). Printable ~287mm; 260mm ≈ 90%+. */
   --label-qr-size: 80mm;
   --label-barcode-width: 260mm;
@@ -440,6 +440,60 @@
   overflow-wrap: anywhere;
   white-space: normal;
   word-break: break-word;
+}
+
+/* Primary hierarchy for lot/expiry/description/observations (match Código scale). */
+.label-field-main-value {
+  font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 28pt;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1.05;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.label-field-main-value--multiline {
+  display: -webkit-box;
+  font-family: inherit;
+  font-size: 22pt;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.label-id-band {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2mm;
+  margin-bottom: 1mm;
+}
+
+.label-id-band__label {
+  font-size: 9pt;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.label-id-band__value {
+  font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 16pt;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.label-additional-item.label-primary-row {
+  align-items: baseline;
+  column-gap: 3mm;
+  display: grid;
+  grid-template-columns: 38mm minmax(0, 1fr);
+  min-width: 0;
+  width: 100%;
 }
 
 @media print {

@@ -12,6 +12,7 @@ import {
   evaluateLocalCodeScanCapability,
   LOCAL_CODE_DETECTOR_VERSION,
 } from './localCodeDetector';
+import { applyPositionScan } from './activePositionStore';
 
 export const LOCAL_CODE_SCAN_TIMEOUT_MS = 10_000;
 export const LOCAL_CODE_SCAN_CONCURRENCY = 1;
@@ -219,6 +220,15 @@ export class LocalCodeScanStrategy {
         consolidated.selectedIndex != null
           ? candidates[consolidated.selectedIndex]?.rawValue
           : candidates[0]?.rawValue;
+
+      // Forward-fill: first valid DINAMIC_POSITION on this photo becomes active position.
+      if (parsedError === 'POSITION_LABEL_DETECTED' || consolidated.warnings?.includes('POSITION_LABEL_DETECTED')) {
+        for (const cand of candidates) {
+          if (applyPositionScan(cand.rawValue)) break;
+        }
+      } else if (selectedRaw) {
+        applyPositionScan(selectedRaw);
+      }
 
       await this.deps.drafts.upsertDraft({
         capturePhotoId: input.capturePhotoId,

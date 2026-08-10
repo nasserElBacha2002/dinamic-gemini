@@ -39,6 +39,8 @@ class LocalCsvImportRow:
     validation_errors: tuple[str, ...] = ()
     validation_warnings: tuple[str, ...] = ()
     productive_result_id: str | None = None
+    #: Physical D1 product label identity; None/empty = legacy row without label.
+    label_id: str | None = None
 
     @property
     def secondary_key(self) -> tuple[str, str]:
@@ -98,3 +100,5 @@ class LocalCsvProductiveResult:
     created_at: datetime
     updated_at: datetime
     source_asset_id: str | None = None
+    #: Physical D1 product label identity; None = legacy row without label.
+    label_id: str | None = None

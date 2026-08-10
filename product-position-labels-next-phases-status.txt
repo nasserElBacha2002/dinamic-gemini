@@ -1,0 +1,144 @@
+ M .github/workflows/develop-quality-gate.yml
+ M .github/workflows/mobile-validate.yml
+A  audit-results/phase-0/implementation-report.md
+A  audit-results/phase-0/root-cause-notes.md
+A  audit-results/phase-1/adr-atomic-job-claiming.md
+A  audit-results/phase-1/concurrency-test-report.md
+A  audit-results/phase-1/implementation-report.md
+A  audit-results/phase-1/sql-validation.md
+A  audit-results/phase-1/state-machine.md
+A  audit-results/phase-2/implementation-corrections.md
+A  audit-results/phase-2/implementation-report.md
+A  audit-results/phase-2/migration-validation.md
+A  audit-results/phase-2/repository-backend-policy.md
+A  audit-results/phase-2/result-context-contract.md
+A  audit-results/phase-2/security-test-report.md
+A  audit-results/phase-2/upload-authorization-matrix.md
+A  audit-results/phase-3/adr-job-lease-fencing.md
+A  audit-results/phase-3/fencing-state-machine.md
+A  audit-results/phase-3/implementation-report.md
+A  audit-results/phase-3/lease-contract.md
+A  audit-results/phase-3/migration-validation.md
+A  audit-results/phase-3/sql-concurrency-validation.md
+A  audit-results/phase-3/test-report.md
+A  audit-results/phase-3/worker-lease-lifecycle.md
+A  audit-results/phase-4/corrections-report.md
+A  audit-results/phase-4/dependency-audit.md
+A  audit-results/phase-4/docker-ci-hardening.md
+A  audit-results/phase-4/implementation-report.md
+A  audit-results/phase-4/mobile-dependency-reachability.md
+A  audit-results/phase-4/secrets-audit.md
+A  audit-results/phase-4/security-architecture-review.md
+A  audit-results/phase-4/security-exceptions.md
+A  audit-results/phase-4/test-report.md
+A  audit-results/phase-4/vulnerability-matrix.md
+A  audit-results/phase-5/alert-catalog.md
+A  audit-results/phase-5/dashboard-specification.md
+A  audit-results/phase-5/implementation-report.md
+A  audit-results/phase-5/metrics-catalog.md
+A  audit-results/phase-5/observability-contract.md
+A  audit-results/phase-5/operational-runbooks.md
+A  audit-results/phase-5/recovery-policy.md
+A  audit-results/phase-5/recovery-test-report.md
+A  audit-results/phase-5/slo-sli-proposal.md
+A  audit-results/phase-5/test-report.md
+A  audit-results/phase-6/architecture-before-after.md
+A  audit-results/phase-6/compatibility-report.md
+A  audit-results/phase-6/complexity-report.md
+A  audit-results/phase-6/contract-changes.md
+A  audit-results/phase-6/dead-code-report.md
+A  audit-results/phase-6/dependency-map.md
+A  audit-results/phase-6/implementation-report.md
+A  audit-results/phase-6/refactor-candidate-matrix.md
+A  audit-results/phase-6/test-report.md
+A  audit-results/phase-7/backup-restore-notes.md
+A  audit-results/phase-7/cleanup-matrix.md
+A  audit-results/phase-7/configuration-migration.md
+A  audit-results/phase-7/end-to-end-test-report.md
+A  audit-results/phase-7/feature-flag-report.md
+A  audit-results/phase-7/implementation-report.md
+A  audit-results/phase-7/legacy-removal-report.md
+A  audit-results/phase-7/migration-validation-report.md
+A  audit-results/phase-7/performance-comparison.md
+A  audit-results/phase-7/release-notes.md
+A  audit-results/phase-7/release-readiness-report.md
+A  audit-results/phase-7/rollback-plan.md
+A  audit-results/phase-7/security-final-report.md
+A  audit-results/phase-7/smoke-test-report.md
+A  audit-results/phase-7/test-report.md
+ M backend/src/api/dependencies.py
+ M backend/src/api/routes/v3/client_position_labels.py
+ M backend/src/api/routes/v3/client_product_labels.py
+ M backend/src/api/schemas/client_position_label_schemas.py
+ M backend/src/application/errors.py
+ M backend/src/application/ports/manual_image_result_unit_of_work.py
+ M backend/src/application/services/image_processing/code_scan_asset_processor.py
+ M backend/src/application/services/image_processing/code_scan_processing_strategy.py
+ M backend/src/application/services/image_processing/processing_result_persister.py
+ M backend/src/application/services/local_csv_parser.py
+ M backend/src/application/services/local_csv_position_materializer.py
+ M backend/src/application/services/positioning_label_renderer.py
+ A backend/src/application/services/product_labels/issued_product_label_resolver.py
+ M backend/src/application/use_cases/client_position_labels/__init__.py
+ M backend/src/application/use_cases/client_position_labels/manage.py
+ M backend/src/application/use_cases/client_position_labels/render.py
+ M backend/src/application/use_cases/inventories/export_inventory_results.py
+ M backend/src/application/use_cases/inventories/manage_local_csv_import.py
+ M backend/src/application/use_cases/product_labels/issue_product_labels.py
+ A backend/src/database/migrations/versions/0089_product_label_identity_hardening.down.sql
+ A backend/src/database/migrations/versions/0089_product_label_identity_hardening.sql
+ A backend/src/database/migrations/versions/0090_local_csv_product_label_id.down.sql
+ A backend/src/database/migrations/versions/0090_local_csv_product_label_id.sql
+ A backend/src/database/migrations/versions/0091_client_position_label_hierarchy.down.sql
+ A backend/src/database/migrations/versions/0091_client_position_label_hierarchy.sql
+ M backend/src/domain/aisle_location/label_entities.py
+ M backend/src/domain/aisle_location/payload.py
+ M backend/src/domain/client_position_label/entities.py
+ A backend/src/domain/client_position_label/hierarchy.py
+ M backend/src/domain/image_processing/contracts.py
+ M backend/src/domain/local_csv_import/entities.py
+ A backend/src/domain/product_labels/processed.py
+ M backend/src/env_settings/grouped_settings.py
+ A backend/src/infrastructure/database/sql_unique_violation.py
+ M backend/src/infrastructure/pipeline/v3_image_processing_bridge.py
+ M backend/src/infrastructure/repositories/local_csv_inventory_result_writer.py
+ M backend/src/infrastructure/repositories/memory_issued_product_label_repository.py
+ M backend/src/infrastructure/repositories/sql_client_position_label_repository.py
+ M backend/src/infrastructure/repositories/sql_inventory_counted_product_label_repository.py
+ M backend/src/infrastructure/repositories/sql_issued_product_label_repository.py
+ M backend/src/infrastructure/repositories/sql_local_csv_import_repository.py
+ M backend/src/runtime/app_container.py
+ M backend/tests/api/test_job_image_results.py
+ M backend/tests/application/services/image_processing/test_processing_result_persister_needs_review.py
+ A backend/tests/application/services/image_processing/test_processing_result_persister_product_labels.py
+ A backend/tests/application/services/product_labels/test_issued_product_label_resolver.py
+ M backend/tests/application/use_cases/product_labels/test_issue_product_labels.py
+ A backend/tests/integration/product_labels/test_sql_inventory_counted_product_label_concurrency.py
+ M backend/tests/unit/aisle_location/test_positioning_payload.py
+ M backend/tests/unit/client_position_labels/test_manage_client_position_labels.py
+ A backend/tests/unit/client_position_labels/test_position_hierarchy.py
+ M backend/tests/unit/test_local_csv_position_materializer.py
+ M frontend/src/api/clientPositionLabelsApi.ts
+ M frontend/src/api/types/responses.ts
+ M frontend/src/features/clients/components/LabelPrintSheet.tsx
+ M frontend/src/features/clients/components/labelPrint.css
+ A frontend/src/features/results/components/imageCoverage/DetectedProductsList.tsx
+ M frontend/src/features/results/components/imageCoverage/JobImageResultCard.tsx
+ M frontend/src/i18n/locales/en/translation.json
+ M frontend/src/i18n/locales/es/translation.json
+ M frontend/src/pages/ClientPositionLabelsPage.tsx
+ M frontend/tests/PrintableLabel.test.tsx
+ M frontend/tests/features/results/imageCoverage/JobImageResultCard.test.tsx
+ A implementation-corrections-report.md
+ M mobile/jest.config.core.js
+ A mobile/src/core/positionLabelPayload.ts
+ A mobile/src/features/localCodeScan/activePositionStore.ts
+ M mobile/src/features/localCodeScan/localCodeScanStrategy.ts
+ M mobile/src/features/localCsv/buildLocalCsvExport.ts
+ M mobile/src/features/localCsv/csvFormat.ts
+ A mobile/tests/positionLabelPayload.test.ts
+ A mobile/tests/productLabelChecksumVectors.test.ts
+ A product-position-labels-next-phases-diff.txt
+ A product-position-labels-next-phases-diffstat.txt
+ A product-position-labels-next-phases-status.txt
+ A product-position-labels-next-phases-validation.md

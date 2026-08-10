@@ -11,6 +11,11 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
+from src.application.errors import ProductLabelClaimRepositoryUnavailableError
+from src.application.ports.inventory_counted_product_label_repository import (
+    InventoryCountedProductLabel,
+    InventoryCountedProductLabelRepository,
+)
 from src.application.ports.repositories import PositionRepository, ProductRecordRepository
 from src.domain.local_csv_import.entities import LocalCsvProductiveResult
 from src.domain.positions.entities import Position, PositionCreationSource, PositionStatus
@@ -99,6 +104,9 @@ def _detected_summary(result: LocalCsvProductiveResult) -> dict:
         summary["has_valid_evidence"] = True
     if result.capture_order is not None:
         summary["source_image_sequence"] = result.capture_order
+    label_id = (result.label_id or "").strip().upper() or None
+    if label_id:
+        summary["label_id"] = label_id
     return summary
 
 
@@ -110,9 +118,11 @@ class LocalCsvPositionMaterializer:
         *,
         position_repo: PositionRepository,
         product_record_repo: ProductRecordRepository,
+        counted_product_label_repo: InventoryCountedProductLabelRepository | None = None,
     ) -> None:
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
+        self._counted_product_label_repo = counted_product_label_repo
 
     def materialize(
         self,
@@ -131,8 +141,8 @@ class LocalCsvPositionMaterializer:
             if not is_inventory_line_result(result):
                 self._retire_marker_row(result, now=now)
                 continue
-            self._materialize_one(result, now=now)
-            written += 1
+            if self._materialize_one(result, now=now):
+                written += 1
         return written
 
     def _retire_marker_row(self, result: LocalCsvProductiveResult, *, now: datetime) -> None:
@@ -160,16 +170,42 @@ class LocalCsvPositionMaterializer:
         )
         self._position_repo.save(retired)
 
-    def _materialize_one(self, result: LocalCsvProductiveResult, *, now: datetime) -> None:
+    def _materialize_one(self, result: LocalCsvProductiveResult, *, now: datetime) -> bool:
         position_id = position_id_for_productive(result.id)
         product_id = product_id_for_productive(result.id)
         position_code = (result.position_code or "").strip() or None
         sku = _sku_for(result)
         qty = _quantity_for(result)
         needs_review = bool(result.requires_review) or sku == "UNKNOWN" or result.quantity is None
+        label_id = (result.label_id or "").strip().upper() or None
 
         existing = self._position_repo.get_by_id(position_id)
         created_at = existing.created_at if existing is not None else now
+
+        save_product = True
+        if label_id:
+            if self._counted_product_label_repo is None:
+                raise ProductLabelClaimRepositoryUnavailableError(
+                    "counted_product_label_repo required for D1 label_id persist"
+                )
+            claimed = self._counted_product_label_repo.try_claim(
+                InventoryCountedProductLabel(
+                    id=str(uuid.uuid4()),
+                    inventory_id=result.inventory_id,
+                    label_id=label_id,
+                    first_product_record_id=product_id,
+                    first_source_asset_id=(result.source_asset_id or "").strip() or position_id,
+                    first_job_id="",
+                    first_position_id=position_id,
+                    created_at=now,
+                )
+            )
+            if not claimed:
+                # Idempotent re-import / cross-row dedupe: never create a second ProductRecord.
+                # Still refresh position when it already exists from the winning claim path.
+                if existing is None:
+                    return False
+                save_product = False
 
         # Link the package photo as primary evidence so list ``has_evidence`` is true
         # (canonical view keys has_evidence off primary_evidence_id).
@@ -191,20 +227,24 @@ class LocalCsvPositionMaterializer:
             job_id=None,
             creation_source=PositionCreationSource.AUTOMATIC,
         )
-        product = ProductRecord(
-            id=product_id,
-            position_id=position_id,
-            sku=sku,
-            description=None,
-            detected_quantity=qty,
-            corrected_quantity=None,
-            confidence=1.0,
-            created_at=created_at,
-            updated_at=now,
-            qty_source="local_csv_import",
-            qty_inference_reason=None,
-            raw_qty=result.quantity,
-            qty_parse_status=_qty_parse_status(qty, result.quantity),
-        )
         self._position_repo.save(position)
-        self._product_record_repo.save(product)
+
+        if save_product:
+            product = ProductRecord(
+                id=product_id,
+                position_id=position_id,
+                sku=sku,
+                description=None,
+                detected_quantity=qty,
+                corrected_quantity=None,
+                confidence=1.0,
+                created_at=created_at,
+                updated_at=now,
+                qty_source="local_csv_import",
+                qty_inference_reason=None,
+                raw_qty=result.quantity,
+                qty_parse_status=_qty_parse_status(qty, result.quantity),
+                label_id=label_id,
+            )
+            self._product_record_repo.save(product)
+        return True

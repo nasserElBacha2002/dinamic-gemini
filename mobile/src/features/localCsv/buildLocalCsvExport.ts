@@ -9,6 +9,7 @@ import {
   type LocalCsvRow,
 } from './csvFormat';
 import { createId } from '../../shared/createId';
+import { parseDinamicPositionPayload } from '../../core/positionLabelPayload';
 
 export interface LocalCsvExportInput {
   readonly session: CaptureSessionRow;
@@ -90,6 +91,11 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
 
   /** Last DINAMIC_POSITION key seen in capture order — applies to following product photos. */
   let currentPositionCode = '';
+  let currentPallet = '';
+  let currentSide = '';
+  let currentLevel = '';
+  let currentMarkerIndex = '';
+  let currentMarkerTotal = '';
 
   return eligible.map((photo) => {
     const draft = draftByPhoto.get(photo.id);
@@ -99,9 +105,20 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       isPositionLabel && draft?.internal_code ? String(draft.internal_code).trim() : '';
     if (labelPositionCode) {
       currentPositionCode = labelPositionCode;
+      const parsed = parseDinamicPositionPayload(labelPositionCode);
+      if (parsed?.pallet) {
+        currentPallet = parsed.pallet;
+        currentSide = parsed.side ?? '';
+        currentLevel = parsed.level != null ? String(parsed.level) : '';
+        currentMarkerIndex = parsed.markerIndex != null ? String(parsed.markerIndex) : '';
+        currentMarkerTotal = parsed.markerTotal != null ? String(parsed.markerTotal) : '';
+        currentPositionCode = parsed.displayName;
+      }
     }
 
-    const positionCode = labelPositionCode || currentPositionCode;
+    const positionCode = labelPositionCode
+      ? currentPositionCode || labelPositionCode
+      : currentPositionCode;
     const positionStatus = labelPositionCode
       ? 'LABEL_DETECTED'
       : currentPositionCode
@@ -145,7 +162,20 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       captured_at: cell(photo.stable_at ?? photo.detected_at ?? photo.created_at),
       position_code: positionCode,
       position_status: positionStatus,
+      pallet: currentPallet,
+      side: currentSide,
+      level: currentLevel,
+      marker_index: currentMarkerIndex,
+      marker_total: currentMarkerTotal,
       internal_code: productInternalCode,
+      // D1 physical sticker id when present on confirmed/draft; empty for legacy PIPE/DI1.
+      label_id: cell(
+        isPositionLabel
+          ? ''
+          : ((confirmed as { label_id?: string | null } | undefined)?.label_id ??
+              (draft as { label_id?: string | null } | undefined)?.label_id ??
+              ''),
+      ),
       quantity: cell(
         isPositionLabel ? null : (confirmed?.confirmed_quantity ?? draft?.quantity),
       ),

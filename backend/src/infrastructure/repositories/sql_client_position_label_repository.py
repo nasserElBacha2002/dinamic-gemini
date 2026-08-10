@@ -86,6 +86,23 @@ def _row_to_label(row) -> ClientPositionLabel:
         idempotency_request_hash=optional_nonempty_db_str(
             getattr(row, "idempotency_request_hash", None)
         ),
+        pallet=optional_nonempty_db_str(getattr(row, "pallet", None)),
+        side=optional_nonempty_db_str(getattr(row, "side", None)),
+        level=(
+            int(getattr(row, "level"))
+            if getattr(row, "level", None) is not None
+            else None
+        ),
+        marker_index=(
+            int(getattr(row, "marker_index"))
+            if getattr(row, "marker_index", None) is not None
+            else None
+        ),
+        marker_total=(
+            int(getattr(row, "marker_total"))
+            if getattr(row, "marker_total", None) is not None
+            else None
+        ),
     )
 
 
@@ -112,7 +129,8 @@ _LABEL_SELECT = """
 SELECT id, client_id, public_identifier, name, normalized_name, description, status,
        payload_version, canonical_payload, payload_hash, signature, signature_algorithm,
        signature_key_version, signature_status, created_by, created_at, updated_at,
-       invalidated_at, invalidation_reason, idempotency_key, idempotency_request_hash
+       invalidated_at, invalidation_reason, idempotency_key, idempotency_request_hash,
+       pallet, side, level, marker_index, marker_total
 FROM client_position_labels
 """
 
@@ -247,13 +265,15 @@ class SqlClientPositionLabelRepository:
                             status, payload_version, canonical_payload, payload_hash,
                             signature, signature_algorithm, signature_key_version, signature_status,
                             created_by, created_at, updated_at, invalidated_at, invalidation_reason,
-                            idempotency_key, idempotency_request_hash
+                            idempotency_key, idempotency_request_hash,
+                            pallet, side, level, marker_index, marker_total
                         ) VALUES (
                             ?, ?, ?, ?, ?, ?,
                             ?, ?, ?, ?,
                             ?, ?, ?, ?,
                             ?, ?, ?, ?, ?,
-                            ?, ?
+                            ?, ?,
+                            ?, ?, ?, ?, ?
                         )
                         """,
                         (
@@ -278,6 +298,11 @@ class SqlClientPositionLabelRepository:
                             label.invalidation_reason,
                             label.idempotency_key,
                             label.idempotency_request_hash,
+                            label.pallet,
+                            label.side,
+                            label.level,
+                            label.marker_index,
+                            label.marker_total,
                         ),
                     )
                 else:
@@ -289,7 +314,8 @@ class SqlClientPositionLabelRepository:
                             signature = ?, signature_algorithm = ?, signature_key_version = ?,
                             signature_status = ?, updated_at = ?, invalidated_at = ?,
                             invalidation_reason = ?, idempotency_key = ?,
-                            idempotency_request_hash = ?
+                            idempotency_request_hash = ?,
+                            pallet = ?, side = ?, level = ?, marker_index = ?, marker_total = ?
                         WHERE id = ?
                         """,
                         (
@@ -309,6 +335,11 @@ class SqlClientPositionLabelRepository:
                             label.invalidation_reason,
                             label.idempotency_key,
                             label.idempotency_request_hash,
+                            label.pallet,
+                            label.side,
+                            label.level,
+                            label.marker_index,
+                            label.marker_total,
                             label.id,
                         ),
                     )

@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from src.application.ports.inventory_counted_product_label_repository import (
+    InventoryCountedProductLabelRepository,
+)
 from src.application.ports.job_image_coverage_repository import JobImageCoverageRepository
 from src.application.ports.manual_image_coverage_repository import ManualImageCoverageRepository
 from src.application.ports.repositories import (
@@ -25,7 +28,7 @@ class ManualImageResultRepositories:
     result_evidence_repo: ResultEvidenceRepository
     review_repo: ReviewActionRepository
     image_coverage_repo: JobImageCoverageRepository
-    counted_product_label_repo: object | None = None
+    counted_product_label_repo: InventoryCountedProductLabelRepository
 
 
 class ManualImageResultUnitOfWork(Protocol):

@@ -407,6 +407,7 @@ class AppContainer:
         self._manual_image_coverage_repo = None
         self._job_image_coverage_repo = None
         self._manual_image_result_uow_factory = None
+        self._counted_product_label_repo = None
         self._metrics_calculator = None
         self._raw_label_repo = None
         self._normalized_label_repo = None
@@ -1563,9 +1564,6 @@ class AppContainer:
         from src.infrastructure.persistence.sql_manual_image_result_unit_of_work import (
             build_sql_manual_image_result_uow_factory,
         )
-        from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
-            MemoryInventoryCountedProductLabelRepository,
-        )
 
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
@@ -1593,13 +1591,33 @@ class AppContainer:
                 result_evidence_repo=self.get_result_evidence_repo(),
                 review_repo=self.get_review_action_repo(),
                 image_coverage_repo=self.get_job_image_coverage_repo(),
-                counted_product_label_repo=MemoryInventoryCountedProductLabelRepository(),
+                counted_product_label_repo=self.get_counted_product_label_repo(),
             )
             self._manual_image_result_uow_factory = build_memory_manual_image_result_uow_factory(
                 repos,
                 lifecycle,
             )
         return self._manual_image_result_uow_factory
+
+    def get_counted_product_label_repo(self):
+        """Inventory-scoped D1 label_id claim store (SQL or memory singleton)."""
+        if getattr(self, "_counted_product_label_repo", None) is not None:
+            return self._counted_product_label_repo
+        from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
+            MemoryInventoryCountedProductLabelRepository,
+        )
+        from src.infrastructure.repositories.sql_inventory_counted_product_label_repository import (
+            SqlInventoryCountedProductLabelRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._counted_product_label_repo = SqlInventoryCountedProductLabelRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._counted_product_label_repo = MemoryInventoryCountedProductLabelRepository()
+        return self._counted_product_label_repo
 
     def get_artifact_publication_outbox_store(self) -> ArtifactPublicationOutboxStore:
         if self._artifact_publication_outbox_store is not None:

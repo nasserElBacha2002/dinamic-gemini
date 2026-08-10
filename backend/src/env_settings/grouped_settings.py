@@ -1349,6 +1349,15 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: CODE_SCAN_MAX_VARIANTS."
         ),
     )
+    code_scan_max_candidates_per_asset: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_CANDIDATES_PER_ASSET", "12")),
+        ge=1,
+        le=64,
+        description=(
+            "D1: max decoded barcode/QR candidates retained per source asset during code scan. "
+            "Env: CODE_SCAN_MAX_CANDIDATES_PER_ASSET."
+        ),
+    )
     code_scan_quantity_max: int = Field(
         default_factory=lambda: int(os.getenv("CODE_SCAN_QUANTITY_MAX", "99999999")),
         ge=1,

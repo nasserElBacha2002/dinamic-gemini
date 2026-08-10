@@ -78,4 +78,41 @@ describe('JobImageResultCard', () => {
       'POSITION_LABEL_RESOLVED',
     );
   });
+
+  it('renders detected_products list and with-result chip when has_result', () => {
+    render(
+      <JobImageResultCard
+        item={makeItem({
+          has_result: true,
+          result_count: 2,
+          processing_status: 'processed_with_result',
+          detected_products: [
+            {
+              product_record_id: 'pr-1',
+              position_id: 'pos-1',
+              sku: 'SKU-A',
+              detected_quantity: 4,
+              label_id: 'A1B2C3D4E5',
+            },
+            {
+              product_record_id: 'pr-2',
+              position_id: 'pos-2',
+              sku: 'SKU-B',
+              detected_quantity: 1,
+              label_id: null,
+            },
+          ],
+        })}
+        onAddResult={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('job-image-result-card')).toHaveAttribute('data-has-result', 'true');
+    expect(screen.getByTestId('job-image-with-result-badge')).toBeInTheDocument();
+    expect(screen.getByTestId('job-image-detected-products')).toBeInTheDocument();
+    const rows = screen.getAllByTestId('job-image-detected-product');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('✓ SKU-A × 4 — A1B2C3D4E5');
+    expect(rows[1]).toHaveTextContent('✓ SKU-B × 1');
+  });
 });

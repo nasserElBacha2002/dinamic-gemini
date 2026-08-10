@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from src.application.errors import ProductLabelAlreadyClaimedError
 from src.application.ports.inventory_counted_product_label_repository import (
     InventoryCountedProductLabel,
     InventoryCountedProductLabelRepository,
 )
 from src.database.sqlserver import SqlServerClient
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
+from src.infrastructure.database.sql_unique_violation import is_sql_unique_violation
 
 
 class SqlInventoryCountedProductLabelRepository(InventoryCountedProductLabelRepository):
@@ -38,11 +40,16 @@ class SqlInventoryCountedProductLabelRepository(InventoryCountedProductLabelRepo
                 )
             return True
         except Exception as exc:
-            # Unique violation → already counted in this inventory.
-            msg = str(exc).lower()
-            if "unique" in msg or "2627" in msg or "2601" in msg or "duplicate" in msg:
+            if is_sql_unique_violation(exc):
                 return False
             raise
+
+    def claim_or_raise(self, row: InventoryCountedProductLabel) -> None:
+        """Insert claim; raise ProductLabelAlreadyClaimedError on unique collision."""
+        if not self.try_claim(row):
+            raise ProductLabelAlreadyClaimedError(
+                f"label_id already claimed in inventory: {row.label_id}"
+            )
 
     def get(self, inventory_id: str, label_id: str) -> InventoryCountedProductLabel | None:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:

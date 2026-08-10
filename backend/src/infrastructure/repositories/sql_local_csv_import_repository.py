@@ -31,7 +31,7 @@ _ROW_COLUMNS = (
     "client_file_id, capture_order, captured_at, position_code, internal_code, quantity, "
     "quantity_status, detection_status, detection_source, ingestion_source, requires_review, "
     "error_code, notes, status, validation_errors_json, validation_warnings_json, "
-    "productive_result_id"
+    "productive_result_id, label_id"
 )
 
 
@@ -97,6 +97,11 @@ def _row_from_db(row: object) -> LocalCsvImportRow:
         productive_result_id=(
             str(getattr(row, "productive_result_id"))
             if getattr(row, "productive_result_id", None) is not None
+            else None
+        ),
+        label_id=(
+            str(getattr(row, "label_id")).strip().upper() or None
+            if getattr(row, "label_id", None) is not None
             else None
         ),
     )
@@ -369,6 +374,7 @@ class SqlLocalCsvImportRepository:
                 json.dumps(row.validation_errors),
                 json.dumps(row.validation_warnings),
                 row.productive_result_id,
+                row.label_id,
                 row.id,
             )
             cur.execute(  # type: ignore[attr-defined]
@@ -377,13 +383,13 @@ class SqlLocalCsvImportRepository:
                 "capture_order=?, captured_at=?, position_code=?, internal_code=?, quantity=?, "
                 "quantity_status=?, detection_status=?, detection_source=?, ingestion_source=?, "
                 "requires_review=?, error_code=?, notes=?, status=?, validation_errors_json=?, "
-                "validation_warnings_json=?, productive_result_id=? WHERE id=?",
+                "validation_warnings_json=?, productive_result_id=?, label_id=? WHERE id=?",
                 row_values,
             )
             if cur.rowcount == 0:  # type: ignore[attr-defined]
                 cur.execute(  # type: ignore[attr-defined]
                     "INSERT INTO local_csv_import_rows "
-                    f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(24))})",
+                    f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(25))})",
                     (
                         row.id,
                         row.import_id,
@@ -409,6 +415,7 @@ class SqlLocalCsvImportRepository:
                         json.dumps(row.validation_errors),
                         json.dumps(row.validation_warnings),
                         row.productive_result_id,
+                        row.label_id,
                     ),
                 )
         if keep_ids:

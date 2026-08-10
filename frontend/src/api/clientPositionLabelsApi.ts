@@ -23,6 +23,12 @@ export interface ClientPositionLabel {
   signature_status?: string | null;
   invalidated_at?: string | null;
   invalidation_reason?: string | null;
+  pallet?: string | null;
+  side?: 'LEFT' | 'RIGHT' | string | null;
+  level?: number | null;
+  marker_index?: number | null;
+  marker_total?: number | null;
+  marker?: string | null;
 }
 
 export interface ClientPositionLabelListResponse {
@@ -34,8 +40,25 @@ export interface ClientPositionLabelListResponse {
 }
 
 export interface CreateClientPositionLabelRequest {
-  name: string;
+  name?: string | null;
   description?: string | null;
+  pallet?: string | null;
+  side?: 'LEFT' | 'RIGHT' | string | null;
+  level?: number | null;
+  marker_index?: number | null;
+  marker_total?: number | null;
+}
+
+export interface CreateClientPositionMarkerSetRequest {
+  pallet: string;
+  side: 'LEFT' | 'RIGHT' | string;
+  level: number;
+  marker_total: number;
+  description?: string | null;
+}
+
+export interface ClientPositionLabelMarkerSetResponse {
+  items: ClientPositionLabel[];
 }
 
 export interface UpdateClientPositionLabelRequest {
@@ -81,6 +104,20 @@ export async function createClientPositionLabel(
     headers,
     body,
   });
+}
+
+/** Create a full marker set (01/N … N/N) with shared pallet/side/level. */
+export async function createClientPositionMarkerSet(
+  clientId: string,
+  body: CreateClientPositionMarkerSetRequest
+): Promise<ClientPositionLabelMarkerSetResponse> {
+  return apiRequestJson<ClientPositionLabelMarkerSetResponse>(
+    `${positionLabelsBase(clientId)}/marker-set`,
+    {
+      method: 'POST',
+      body,
+    }
+  );
 }
 
 export async function getClientPositionLabel(

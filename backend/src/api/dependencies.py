@@ -968,6 +968,10 @@ def get_confirm_local_csv_import_use_case(
 
     settings = load_settings()
     container = get_app_container()
+    counted_repo = None
+    getter = getattr(container, "get_counted_product_label_repo", None)
+    if callable(getter):
+        counted_repo = getter()
     return ConfirmLocalCsvImport(
         import_repo=container.get_local_csv_import_repo(),
         result_writer=container.get_local_csv_result_writer(),
@@ -976,6 +980,7 @@ def get_confirm_local_csv_import_use_case(
         position_materializer=LocalCsvPositionMaterializer(
             position_repo=position_repo,
             product_record_repo=product_record_repo,
+            counted_product_label_repo=counted_repo,
         ),
         aisle_repo=aisle_repo,
         status_reconciler=status_reconciler,
@@ -1060,6 +1065,10 @@ def get_confirm_local_inventory_package_use_case(
         artifact_storage=artifact_storage,
         status_reconciler=status_reconciler,
     )
+    counted_repo = None
+    getter = getattr(container, "get_counted_product_label_repo", None)
+    if callable(getter):
+        counted_repo = getter()
     return ConfirmLocalInventoryPackage(
         package_repo=container.get_local_inventory_package_repo(),
         result_writer=container.get_local_csv_result_writer(),
@@ -1070,6 +1079,7 @@ def get_confirm_local_inventory_package_use_case(
         position_materializer=LocalCsvPositionMaterializer(
             position_repo=position_repo,
             product_record_repo=product_record_repo,
+            counted_product_label_repo=counted_repo,
         ),
     )
 

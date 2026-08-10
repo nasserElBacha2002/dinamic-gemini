@@ -1524,7 +1524,8 @@
       "field_description": "Descripción",
       "field_observations": "Observaciones",
       "supplier_empty": "Sin proveedor",
-      "helper_not_saved": "Las etiquetas no se guardan en el sistema.",
+      "helper_not_saved": "Cada etiqueta impresa recibe un ID único y queda registrada para su validación durante el inventario.",
+      "helper_registered": "Cada etiqueta impresa recibe un ID único y queda registrada para su validación durante el inventario.",
       "validation_copies": "La cantidad de copias debe estar entre 1 y 50",
       "validation_code_required": "El código interno es obligatorio.",
       "validation_code_invalid": "El código interno es inválido o demasiado largo.",
@@ -2392,6 +2393,7 @@
       "card": {
         "noFilename": "Sin nombre de archivo",
         "withoutResultBadge": "Sin resultado",
+        "withResultBadge": "Con resultado",
         "addResultAction": "Agregar resultado",
         "processingStatus": {
           "pending": "Pendiente",

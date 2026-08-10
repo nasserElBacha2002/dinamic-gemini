@@ -72,6 +72,7 @@ class MemoryLocalCsvInventoryResultWriter:
                     confirmed_by_user_id=confirmed_by_user_id,
                     created_at=now,
                     updated_at=now,
+                    label_id=(row.label_id or "").strip().upper() or None,
                 )
                 self._by_id[result.id] = result
                 applied.append(result)
@@ -143,6 +144,7 @@ class SqlLocalCsvInventoryResultWriter:
                     confirmed_by_user_id=confirmed_by_user_id,
                     created_at=now,
                     updated_at=now,
+                    label_id=(row.label_id or "").strip().upper() or None,
                 )
                 cur.execute(  # type: ignore[attr-defined]
                     "INSERT INTO local_csv_productive_results "
@@ -150,8 +152,8 @@ class SqlLocalCsvInventoryResultWriter:
                     "capture_photo_id, client_file_id, capture_order, position_code, internal_code, "
                     "quantity, quantity_status, detection_status, detection_source, ingestion_source, "
                     "requires_review, has_image_evidence, source_asset_id, confirmed_by_user_id, "
-                    "created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "created_at, updated_at, label_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         result.id,
                         result.inventory_id,
@@ -175,6 +177,7 @@ class SqlLocalCsvInventoryResultWriter:
                         result.confirmed_by_user_id,
                         result.created_at,
                         result.updated_at,
+                        result.label_id,
                     ),
                 )
                 applied.append(result)
@@ -246,4 +249,9 @@ def _productive_from_db(row: object) -> LocalCsvProductiveResult:
         ),
         created_at=_utc(getattr(row, "created_at")),
         updated_at=_utc(getattr(row, "updated_at")),
+        label_id=(
+            str(getattr(row, "label_id")).strip().upper() or None
+            if getattr(row, "label_id", None) is not None
+            else None
+        ),
     )

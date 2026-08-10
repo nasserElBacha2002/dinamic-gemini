@@ -17,8 +17,11 @@ from src.domain.local_csv_import.sources import (
     INGESTION_SOURCE_LOCAL_CSV_IMPORT,
     LEGACY_SOURCE_AS_DETECTION,
 )
+from src.domain.product_labels.format import LABEL_ID_ALPHABET, LABEL_ID_LENGTH
 
 SCHEMA_VERSION = "1"
+SCHEMA_VERSION_WITH_LABEL_ID = "1.1"
+SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION, SCHEMA_VERSION_WITH_LABEL_ID})
 FORMULA_PREFIXES = ("=", "+", "-", "@")
 
 # Headers required by the mobile exporter contract (extra headers are ignored).
@@ -45,6 +48,10 @@ REQUIRED_HEADERS = (
     "notes",
 )
 
+# Optional in v1; required presence-as-column for schema 1.1 exporters (still optional value).
+OPTIONAL_HEADERS = ("label_id",)
+_LABEL_ID_ALLOWED = frozenset(LABEL_ID_ALPHABET)
+
 _FORMULA_AWARE_COLUMNS = frozenset(
     {
         "export_id",
@@ -56,11 +63,24 @@ _FORMULA_AWARE_COLUMNS = frozenset(
         "client_file_id",
         "position_code",
         "internal_code",
+        "label_id",
         "source",
         "error_code",
         "notes",
     }
 )
+
+
+def _normalize_optional_label_id(raw: str, errors: list[str]) -> str:
+    """Return uppercase label_id, empty string for legacy, or record format error."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    normalized = text.upper()
+    if len(normalized) != LABEL_ID_LENGTH or any(ch not in _LABEL_ID_ALLOWED for ch in normalized):
+        errors.append("label_id:invalid_format")
+        return normalized
+    return normalized
 
 
 class LocalCsvDocumentError(ValueError):
@@ -174,6 +194,7 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
             raise LocalCsvDocumentError(
                 "CSV_MISSING_HEADERS", f"Missing required headers: {', '.join(missing)}"
             )
+        has_label_id_header = "label_id" in headers
         parsed_rows: list[ParsedLocalCsvRow] = []
         for row_number, raw in enumerate(reader, start=2):
             errors: list[str] = []
@@ -189,6 +210,21 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
                     if neutralized:
                         warnings.append(f"{name}:csv_formula_neutralized")
                 values[name] = value.strip()
+
+            schema_version = values["schema_version"]
+            if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+                errors.append("schema_version:unsupported")
+            if schema_version == SCHEMA_VERSION_WITH_LABEL_ID and not has_label_id_header:
+                errors.append("label_id:header_required")
+            # Copy optional label_id when the column is present; never invent IDs.
+            if has_label_id_header:
+                raw_label = raw.get("label_id")
+                label_value = "" if raw_label is None else str(raw_label)
+                if "label_id" in _FORMULA_AWARE_COLUMNS:
+                    label_value, neutralized = _neutralize_formula(label_value)
+                    if neutralized:
+                        warnings.append("label_id:csv_formula_neutralized")
+                values["label_id"] = _normalize_optional_label_id(label_value, errors)
 
             for required in (
                 "export_id",
@@ -208,8 +244,6 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
             if not values["client_file_id"]:
                 values["client_file_id"] = values["capture_photo_id"]
                 warnings.append("client_file_id:defaulted_to_capture_photo_id")
-            if values["schema_version"] != SCHEMA_VERSION:
-                errors.append("schema_version:unsupported")
             detection_source = _normalize_detection_source(values["source"], errors, warnings)
             exported_at = _parse_datetime(values["exported_at"], "exported_at", errors)
             captured_at = _parse_datetime(values["captured_at"], "captured_at", errors)

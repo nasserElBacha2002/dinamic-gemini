@@ -22,6 +22,7 @@ from enum import Enum
 from src.application.errors import (
     ImageAlreadyHasResultsError,
     ManualResultAlreadyExistsError,
+    ProductLabelClaimRepositoryUnavailableError,
 )
 from src.application.ports.clock import Clock
 from src.application.ports.inventory_counted_product_label_repository import (
@@ -42,6 +43,10 @@ from src.domain.positions.entities import (
     Position,
     PositionCreationSource,
     PositionStatus,
+)
+from src.domain.product_labels.processed import (
+    ProcessedProductLabel,
+    ProductLabelOutcomeStatus,
 )
 from src.domain.products.entities import ProductRecord
 from src.domain.result_evidence.entities import (
@@ -94,36 +99,52 @@ def _coerce_positive_int_quantity(quantity: object) -> int | None:
     return None
 
 
-def _product_specs_from_result(result: ImageProcessingResult) -> list[dict]:
-    specs: list[dict] = []
+def _product_specs_from_result(result: ImageProcessingResult) -> list[ProcessedProductLabel]:
+    specs: list[ProcessedProductLabel] = []
     for item in result.product_results or []:
-        if not isinstance(item, dict):
+        if isinstance(item, ProcessedProductLabel):
+            label = item
+        elif isinstance(item, dict):
+            label = ProcessedProductLabel.from_dict(item)
+        else:
             continue
-        code = str(item.get("internal_code") or "").strip()
-        qty = _coerce_positive_int_quantity(item.get("quantity"))
-        label_id = str(item.get("label_id") or "").strip().upper() or None
+        if label.validation_status is not ProductLabelOutcomeStatus.VALID:
+            continue
+        code = (label.internal_code or "").strip()
+        qty = label.quantity
         if not code or qty is None or qty <= 0:
             continue
-        specs.append(
-            {
-                "internal_code": code,
-                "quantity": qty,
-                "label_id": label_id,
-                "format_version": item.get("format_version"),
-                "checksum": item.get("checksum"),
-            }
-        )
+        specs.append(label)
     if specs:
         return specs
     code = (result.internal_code or "").strip()
     if not code:
         return []
     if result.quantity is None:
-        return [{"internal_code": code, "quantity": 0, "label_id": None, "needs_review": True}]
+        return [
+            ProcessedProductLabel(
+                label_id=None,
+                internal_code=code,
+                quantity=0,
+                format_version=None,
+                checksum=None,
+                validation_status=ProductLabelOutcomeStatus.VALID,
+                detail="legacy_missing_quantity",
+            )
+        ]
     qty = _coerce_positive_int_quantity(result.quantity)
     if qty is None or qty <= 0:
         return []
-    return [{"internal_code": code, "quantity": qty, "label_id": None}]
+    return [
+        ProcessedProductLabel(
+            label_id=None,
+            internal_code=code,
+            quantity=qty,
+            format_version=None,
+            checksum=None,
+            validation_status=ProductLabelOutcomeStatus.VALID,
+        )
+    ]
 
 
 class ProcessingResultPersister:
@@ -205,13 +226,13 @@ class ProcessingResultPersister:
             entity_slug = "code_scan"
 
         primary = specs[0]
-        needs_review = bool(primary.get("needs_review"))
+        needs_review = (primary.quantity or 0) == 0 and primary.detail == "legacy_missing_quantity"
         entity_uid = f"{job_id}_{entity_slug}_{asset_id}"
 
         summary: dict = {
             "entity_uid": entity_uid,
             "entity_type": "PALLET",
-            "internal_code": primary["internal_code"],
+            "internal_code": primary.internal_code,
             "source_image_id": asset_id,
             "source_asset_id": asset_id,
             "source_image_original_filename": snap.original_filename,
@@ -221,7 +242,7 @@ class ProcessingResultPersister:
             "qty_parse_status": "null" if needs_review else "valid_positive",
             "resolved_by": provider,
             "product_count": len(specs),
-            "product_label_ids": [s.get("label_id") for s in specs if s.get("label_id")],
+            "product_label_ids": [s.label_id for s in specs if s.label_id],
         }
         if needs_review:
             summary["count_status"] = "NEEDS_REVIEW"
@@ -332,17 +353,17 @@ class ProcessingResultPersister:
                         skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
                     )
 
-                counted_repo = getattr(repos, "counted_product_label_repo", None)
+                counted_repo = repos.counted_product_label_repo
                 products_to_save: list[ProductRecord] = []
                 for spec in specs:
                     product_id = str(uuid.uuid4())
-                    label_id = spec.get("label_id")
-                    if needs_review and int(spec.get("quantity") or 0) == 0:
+                    label_id = (spec.label_id or "").strip().upper() or None
+                    if needs_review and int(spec.quantity or 0) == 0:
                         products_to_save.append(
                             ProductRecord(
                                 id=product_id,
                                 position_id=position_id,
-                                sku=spec["internal_code"],
+                                sku=str(spec.internal_code),
                                 description=None,
                                 detected_quantity=0,
                                 corrected_quantity=None,
@@ -358,7 +379,11 @@ class ProcessingResultPersister:
                         )
                         continue
 
-                    if label_id and counted_repo is not None:
+                    if label_id:
+                        if counted_repo is None:
+                            raise ProductLabelClaimRepositoryUnavailableError(
+                                "counted_product_label_repo required for D1 label_id persist"
+                            )
                         claimed = counted_repo.try_claim(
                             InventoryCountedProductLabel(
                                 id=str(uuid.uuid4()),
@@ -379,25 +404,28 @@ class ProcessingResultPersister:
                         ProductRecord(
                             id=product_id,
                             position_id=position_id,
-                            sku=spec["internal_code"],
+                            sku=str(spec.internal_code),
                             description=None,
-                            detected_quantity=int(spec["quantity"]),
+                            detected_quantity=int(spec.quantity or 0),
                             corrected_quantity=None,
                             confidence=1.0,
                             created_at=now,
                             updated_at=now,
                             qty_source=qty_source,
                             qty_inference_reason=None,
-                            raw_qty=int(spec["quantity"]),
+                            raw_qty=int(spec.quantity or 0),
                             qty_parse_status="valid_positive",
                             label_id=label_id,
                         )
                     )
 
                 if not products_to_save and products_skipped_duplicate:
-                    summary["all_product_labels_duplicate"] = True
-                    summary["duplicate_label_count"] = products_skipped_duplicate
-                    position.detected_summary_json = summary
+                    # All D1 labels already counted — do not create empty Position/coverage.
+                    return PersistOutcome(
+                        persisted=False,
+                        skipped_reason=PersistSkipReason.ALL_LABELS_DUPLICATE,
+                        products_skipped_duplicate=products_skipped_duplicate,
+                    )
 
                 if not products_to_save and not products_skipped_duplicate:
                     return PersistOutcome(

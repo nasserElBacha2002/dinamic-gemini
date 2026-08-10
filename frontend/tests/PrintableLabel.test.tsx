@@ -233,26 +233,43 @@ describe('label print CSS contracts', () => {
 
     const items = [...additional.querySelectorAll('.label-additional-item')];
     expect(items).toHaveLength(4);
-    expect(items.map((item) => item.querySelector('.label-additional-label')?.textContent)).toEqual([
+    expect(items.map((item) => item.querySelector('.label-primary-label')?.textContent)).toEqual([
       'LOTE:',
       'VENCIMIENTO:',
       'DESCRIPCIÓN:',
       'OBSERVACIONES:',
     ]);
-    expect(items.map((item) => item.querySelector('.label-additional-value')?.textContent)).toEqual([
-      '894',
-      '24/2002',
-      'ddescrgiobniudb',
-      'falla',
-    ]);
+    expect(
+      items.map((item) => item.querySelector('.label-field-main-value')?.textContent)
+    ).toEqual(['894', '24/2002', 'ddescrgiobniudb', 'falla']);
 
     // Label and value share one row (grid), value follows label in DOM.
     items.forEach((item) => {
       expect(item.className).not.toMatch(/absolute/);
-      const label = item.querySelector('.label-additional-label')!;
-      const value = item.querySelector('.label-additional-value')!;
+      const label = item.querySelector('.label-primary-label')!;
+      const value = item.querySelector('.label-field-main-value')!;
       expect(label.compareDocumentPosition(value) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
+  });
+
+  it('shows visible D1 label_id when scanPayload is issued', () => {
+    render(
+      <PrintableLabel
+        data={{
+          ...sampleData,
+          scanPayload: 'D1|A1B2C3D4E5|SKU100|4|6',
+        }}
+        headerDate="17/07"
+      />
+    );
+    const idBand = screen.getByTestId('label-visible-id');
+    expect(idBand.textContent).toContain('ID ETIQUETA:');
+    expect(idBand.textContent).toContain('A1B2C3D4E5');
+    expect(screen.getByTestId('label-card')).toHaveAttribute('data-label-id', 'A1B2C3D4E5');
+    expect(screen.getByTestId('label-lot-value').textContent).toBe('LOTE-2026-01');
+    expect(screen.getByTestId('label-expiry-value').textContent).toBe('31/12/2026');
+    expect(screen.getByTestId('label-description-value').textContent).toContain('Mercadería');
+    expect(screen.getByTestId('label-observations-value').textContent).toContain('Controlar');
   });
 
   it('does not render additional-data section when optional fields are empty', () => {

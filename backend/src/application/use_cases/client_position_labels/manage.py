@@ -25,7 +25,10 @@ from src.application.services.positioning_label_signing import (
     PositioningLabelSigningError,
     PositioningLabelSigningService,
 )
-from src.domain.aisle_location.label_entities import POSITIONING_LABEL_PAYLOAD_VERSION
+from src.domain.aisle_location.label_entities import (
+    POSITIONING_LABEL_PAYLOAD_VERSION,
+    POSITIONING_LABEL_PAYLOAD_VERSION_V2,
+)
 from src.domain.aisle_location.payload import (
     build_positioning_label_payload,
     payload_sha256,
@@ -38,12 +41,15 @@ from src.domain.client_position_label.entities import (
     ClientPositionLabelStatus,
     normalize_position_label_name,
 )
+from src.domain.client_position_label.hierarchy import PositionHierarchy, PositionSide
 
 logger = logging.getLogger(__name__)
 
 _CREATE_OP = "CREATE_CLIENT_POSITION_LABEL"
+_MARKER_SET_OP = "CREATE_CLIENT_POSITION_MARKER_SET"
 _MAX_NAME_LEN = 200
 _MAX_DESCRIPTION_LEN = 1000
+_MAX_MARKER_TOTAL = 99
 
 
 def require_client_scope(
@@ -66,6 +72,37 @@ def require_client_scope(
     return client
 
 
+def _parse_optional_hierarchy(
+    *,
+    pallet: str | None,
+    side: str | None,
+    level: int | None,
+    marker_index: int | None,
+    marker_total: int | None,
+) -> PositionHierarchy | None:
+    values = (pallet, side, level, marker_index, marker_total)
+    if all(v is None or (isinstance(v, str) and not str(v).strip()) for v in values):
+        return None
+    if any(v is None or (isinstance(v, str) and not str(v).strip()) for v in values):
+        raise ClientPositionLabelConflictError(
+            "pallet, side, level, marker_index, and marker_total must all be provided together",
+            code="POSITION_LABEL_HIERARCHY_INCOMPLETE",
+        )
+    try:
+        return PositionHierarchy(
+            pallet=str(pallet),
+            side=PositionSide(str(side).strip().upper()),
+            level=int(level),  # type: ignore[arg-type]
+            marker_index=int(marker_index),  # type: ignore[arg-type]
+            marker_total=int(marker_total),  # type: ignore[arg-type]
+        )
+    except (TypeError, ValueError) as exc:
+        raise ClientPositionLabelConflictError(
+            str(exc),
+            code="POSITION_LABEL_HIERARCHY_INVALID",
+        ) from exc
+
+
 @dataclass(frozen=True)
 class CreateClientPositionLabelCommand:
     client_id: str
@@ -73,6 +110,23 @@ class CreateClientPositionLabelCommand:
     principal: AccessPrincipal
     description: str | None = None
     idempotency_key: str | None = None
+    created_by: str | None = None
+    pallet: str | None = None
+    side: str | None = None
+    level: int | None = None
+    marker_index: int | None = None
+    marker_total: int | None = None
+
+
+@dataclass(frozen=True)
+class CreateClientPositionMarkerSetCommand:
+    client_id: str
+    pallet: str
+    side: str
+    level: int
+    marker_total: int
+    principal: AccessPrincipal
+    description: str | None = None
     created_by: str | None = None
 
 
@@ -125,16 +179,28 @@ class CreateClientPositionLabelUseCase:
         self._signing = signing
 
     @staticmethod
-    def _request_hash(*, client_id: str, name: str, description: str | None) -> str:
-        return hash_request_payload(
-            {
-                "op": _CREATE_OP,
-                "client_id": client_id,
-                "name": name,
-                "description": description or "",
-                "payload_version": POSITIONING_LABEL_PAYLOAD_VERSION,
-            }
+    def _request_hash(
+        *,
+        client_id: str,
+        name: str,
+        description: str | None,
+        hierarchy: PositionHierarchy | None,
+    ) -> str:
+        payload_version = (
+            POSITIONING_LABEL_PAYLOAD_VERSION_V2
+            if hierarchy is not None
+            else POSITIONING_LABEL_PAYLOAD_VERSION
         )
+        body: dict = {
+            "op": _CREATE_OP,
+            "client_id": client_id,
+            "name": name,
+            "description": description or "",
+            "payload_version": payload_version,
+        }
+        if hierarchy is not None:
+            body["hierarchy"] = hierarchy.canonical_key()
+        return hash_request_payload(body)
 
     @staticmethod
     def _resolve_idempotent(
@@ -146,13 +212,32 @@ class CreateClientPositionLabelUseCase:
             "IDEMPOTENCY_KEY_REUSED: same key with a different create fingerprint"
         )
 
+    def _sign_payload(self, payload: dict) -> tuple[dict, ClientPositionLabelSignatureStatus]:
+        if self._signing is not None and self._signing.can_sign:
+            return self._signing.sign_payload(payload), ClientPositionLabelSignatureStatus.SIGNED
+        if self._signing is not None and self._signing.required:
+            raise PositioningLabelSigningError(
+                "POSITIONING_LABEL_HMAC_SECRET is required but not configured"
+            )
+        return payload, ClientPositionLabelSignatureStatus.UNSIGNED
+
     def execute(self, command: CreateClientPositionLabelCommand) -> ClientPositionLabel:
         require_client_scope(
             client_id=command.client_id,
             principal=command.principal,
             client_repo=self._client_repo,
         )
+        hierarchy = _parse_optional_hierarchy(
+            pallet=command.pallet,
+            side=command.side,
+            level=command.level,
+            marker_index=command.marker_index,
+            marker_total=command.marker_total,
+        )
         name = (command.name or "").strip()
+        if hierarchy is not None:
+            # Always derive name from hierarchy for consistency.
+            name = hierarchy.display_name()
         if not name:
             raise ClientPositionLabelConflictError(
                 "name is required",
@@ -175,7 +260,10 @@ class CreateClientPositionLabelUseCase:
         request_hash: str | None = None
         if idem_key:
             request_hash = self._request_hash(
-                client_id=command.client_id, name=name, description=description
+                client_id=command.client_id,
+                name=name,
+                description=description,
+                hierarchy=hierarchy,
             )
             existing = self._label_repo.get_by_idempotency_key(command.client_id, idem_key)
             if existing is not None:
@@ -189,19 +277,27 @@ class CreateClientPositionLabelUseCase:
             )
 
         public_identifier = f"pos_{secrets.token_urlsafe(12)}"
-        payload = build_positioning_label_payload(
-            public_label_id=public_identifier,
-            version=POSITIONING_LABEL_PAYLOAD_VERSION,
+        payload_version = (
+            POSITIONING_LABEL_PAYLOAD_VERSION_V2
+            if hierarchy is not None
+            else POSITIONING_LABEL_PAYLOAD_VERSION
         )
-        if self._signing is not None and self._signing.can_sign:
-            payload = self._signing.sign_payload(payload)
-            signature_status = ClientPositionLabelSignatureStatus.SIGNED
-        elif self._signing is not None and self._signing.required:
-            raise PositioningLabelSigningError(
-                "POSITIONING_LABEL_HMAC_SECRET is required but not configured"
+        if hierarchy is not None:
+            payload = build_positioning_label_payload(
+                public_label_id=public_identifier,
+                version=payload_version,
+                pallet=hierarchy.pallet,
+                side=hierarchy.side,
+                level=hierarchy.level,
+                marker_index=hierarchy.marker_index,
+                marker_total=hierarchy.marker_total,
             )
         else:
-            signature_status = ClientPositionLabelSignatureStatus.UNSIGNED
+            payload = build_positioning_label_payload(
+                public_label_id=public_identifier,
+                version=payload_version,
+            )
+        payload, signature_status = self._sign_payload(payload)
         validate_positioning_payload(payload)
 
         now = self._clock.now()
@@ -212,7 +308,7 @@ class CreateClientPositionLabelUseCase:
             name=name,
             normalized_name=normalized,
             status=ClientPositionLabelStatus.ACTIVE,
-            payload_version=POSITIONING_LABEL_PAYLOAD_VERSION,
+            payload_version=payload_version,
             canonical_payload=payload,
             created_at=now,
             updated_at=now,
@@ -227,6 +323,11 @@ class CreateClientPositionLabelUseCase:
             created_by=command.created_by or command.principal.actor_id,
             idempotency_key=idem_key,
             idempotency_request_hash=request_hash,
+            pallet=hierarchy.pallet if hierarchy else None,
+            side=hierarchy.side.value if hierarchy else None,
+            level=hierarchy.level if hierarchy else None,
+            marker_index=hierarchy.marker_index if hierarchy else None,
+            marker_total=hierarchy.marker_total if hierarchy else None,
         )
         try:
             self._label_repo.save(label)
@@ -245,6 +346,89 @@ class CreateClientPositionLabelUseCase:
             label.public_identifier,
         )
         return label
+
+
+class CreateClientPositionMarkerSetUseCase:
+    """Create N marker labels sharing pallet/side/level (indices 1..N)."""
+
+    def __init__(
+        self,
+        *,
+        label_repo: ClientPositionLabelRepository,
+        client_repo: ClientRepository,
+        clock: Clock,
+        signing: PositioningLabelSigningService | None = None,
+    ) -> None:
+        self._create = CreateClientPositionLabelUseCase(
+            label_repo=label_repo,
+            client_repo=client_repo,
+            clock=clock,
+            signing=signing,
+        )
+        self._client_repo = client_repo
+
+    def execute(
+        self, command: CreateClientPositionMarkerSetCommand
+    ) -> list[ClientPositionLabel]:
+        require_client_scope(
+            client_id=command.client_id,
+            principal=command.principal,
+            client_repo=self._client_repo,
+        )
+        try:
+            total = int(command.marker_total)
+        except (TypeError, ValueError) as exc:
+            raise ClientPositionLabelConflictError(
+                "marker_total must be an integer",
+                code="POSITION_LABEL_HIERARCHY_INVALID",
+            ) from exc
+        if total < 1 or total > _MAX_MARKER_TOTAL:
+            raise ClientPositionLabelConflictError(
+                f"marker_total must be between 1 and {_MAX_MARKER_TOTAL}",
+                code="POSITION_LABEL_HIERARCHY_INVALID",
+            )
+        # Validate shared hierarchy skeleton once (index=1).
+        try:
+            PositionHierarchy(
+                pallet=command.pallet,
+                side=PositionSide(str(command.side).strip().upper()),
+                level=int(command.level),
+                marker_index=1,
+                marker_total=total,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ClientPositionLabelConflictError(
+                str(exc),
+                code="POSITION_LABEL_HIERARCHY_INVALID",
+            ) from exc
+
+        labels: list[ClientPositionLabel] = []
+        for index in range(1, total + 1):
+            labels.append(
+                self._create.execute(
+                    CreateClientPositionLabelCommand(
+                        client_id=command.client_id,
+                        name="",
+                        principal=command.principal,
+                        description=command.description,
+                        created_by=command.created_by,
+                        pallet=command.pallet,
+                        side=command.side,
+                        level=command.level,
+                        marker_index=index,
+                        marker_total=total,
+                    )
+                )
+            )
+        logger.info(
+            "position_label_marker_set_created client_id=%s pallet=%s side=%s level=%s total=%s",
+            command.client_id,
+            command.pallet,
+            command.side,
+            command.level,
+            total,
+        )
+        return labels
 
 
 class ListClientPositionLabelsUseCase:

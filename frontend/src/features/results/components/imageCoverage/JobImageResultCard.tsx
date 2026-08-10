@@ -1,6 +1,6 @@
 /**
  * Compact unmatched-image row: order, filename, status, add-result action.
- * This view only lists images without results — no thumbnails, counts, or origin badges.
+ * When `detected_products` is present, lists SKU/qty/label_id under the row.
  */
 
 import { useTranslation } from 'react-i18next';
@@ -8,6 +8,7 @@ import { Box, Button, Card, Chip, Stack, Typography } from '@mui/material';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import type { JobImageResultItem } from '../../../../api/types';
 import { isFailedProcessingStatus } from '../../utils/jobImageProcessingStatus';
+import DetectedProductsList from './DetectedProductsList';
 
 export interface JobImageResultCardProps {
   item: JobImageResultItem;
@@ -24,9 +25,19 @@ export default function JobImageResultCard({
   const filename = item.original_filename?.trim() || t('results.imageCoverage.card.noFilename');
   const orderLabel = `#${item.position_order + 1}`;
   const failed = isFailedProcessingStatus(item.processing_status);
-  const statusLabel = failed
-    ? t('results.imageCoverage.card.processingStatus.failed')
-    : t('results.imageCoverage.card.withoutResultBadge');
+  const hasDetected =
+    Array.isArray(item.detected_products) && item.detected_products.length > 0;
+  const statusLabel = item.has_result
+    ? t('results.imageCoverage.card.withResultBadge')
+    : failed
+      ? t('results.imageCoverage.card.processingStatus.failed')
+      : t('results.imageCoverage.card.withoutResultBadge');
+  const statusColor = item.has_result ? 'success' : failed ? 'error' : 'warning';
+  const statusTestId = item.has_result
+    ? 'job-image-with-result-badge'
+    : failed
+      ? 'job-image-failed-badge'
+      : 'job-image-without-result-badge';
   const showAddResult =
     item.is_product_candidate !== false && item.excluded_from_uncounted !== true;
 
@@ -34,7 +45,7 @@ export default function JobImageResultCard({
     <Card
       variant="outlined"
       data-testid="job-image-result-card"
-      data-has-result="false"
+      data-has-result={item.has_result ? 'true' : 'false'}
       data-operational-role={item.operational_role ?? 'UNKNOWN'}
       sx={{ px: 2, py: 1.25 }}
     >
@@ -67,9 +78,9 @@ export default function JobImageResultCard({
           <Chip
             size="small"
             variant="outlined"
-            color={failed ? 'error' : 'warning'}
+            color={statusColor}
             label={statusLabel}
-            data-testid={failed ? 'job-image-failed-badge' : 'job-image-without-result-badge'}
+            data-testid={statusTestId}
           />
         </Stack>
 
@@ -88,6 +99,7 @@ export default function JobImageResultCard({
           </Box>
         ) : null}
       </Stack>
+      {hasDetected ? <DetectedProductsList products={item.detected_products!} /> : null}
     </Card>
   );
 }

@@ -1,4 +1,10 @@
-"""Client-scoped physical product label mint API (D1 format)."""
+"""Client-scoped physical product label mint API (D1 format).
+
+Idempotency: each POST intentionally mints new unique label_id values (physical stickers).
+Unlike position-label create, retries/double-clicks produce additional stickers — there is no
+shared Idempotency-Key for mint batches because each unit must remain a distinct physical ID.
+Clients should disable double-submit in UI; timeouts may intentionally create extras that are unused.
+"""
 
 from __future__ import annotations
 
@@ -50,7 +56,7 @@ def issue_product_labels(
     body: IssueProductLabelsRequest,
     use_case: IssueProductLabelsUseCase = Depends(get_issue_product_labels_use_case),
     user: AuthUser = Depends(get_current_admin),
-    _principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(get_access_principal),
 ) -> IssueProductLabelsResponse:
     try:
         result = use_case.execute(
@@ -60,6 +66,7 @@ def issue_product_labels(
                 quantity=body.quantity,
                 count=body.count,
                 created_by=user.id,
+                principal=principal,
             )
         )
     except Exception as exc:
@@ -75,7 +82,7 @@ def issue_product_labels(
                 format_version=item.format_version,
                 checksum=item.checksum,
                 payload=item.payload,
-                created_at=item.created_at,  # type: ignore[arg-type]
+                created_at=item.created_at,
             )
             for item in result.items
         ]
