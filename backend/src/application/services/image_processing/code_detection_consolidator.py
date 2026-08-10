@@ -134,11 +134,15 @@ class CodeDetectionConsolidator:
                         )
                     )
                     continue
+                internal_code = first_parsed.internal_code
+                quantity = first_parsed.quantity
+                if internal_code is None or quantity is None:
+                    continue
                 products.append(
                     ProductLabelResult(
                         label_id=label_id,
-                        internal_code=str(first_parsed.internal_code),
-                        quantity=int(first_parsed.quantity),
+                        internal_code=str(internal_code),
+                        quantity=int(quantity),
                         format_version=str(first_parsed.format_version),
                         checksum=str(first_parsed.checksum_received),
                         validation_status=ProductLabelValidationStatus.VALID.value,

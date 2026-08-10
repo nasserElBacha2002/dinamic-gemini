@@ -33,6 +33,7 @@ from src.application.utils.natural_sort import natural_sort_key_parts
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position, PositionStatus
+from src.domain.products.entities import ProductRecord
 
 
 @dataclass(frozen=True)
@@ -226,9 +227,9 @@ class ExportInventoryCollector:
         for p in consolidated_sorted:
             products = list(self._product_record_repo.list_by_position(p.id))
             # Always expand every ProductRecord — same label_id cardinality as the UI.
-            export_products: list = products if products else [None]
-            if not export_products:
-                export_products = [None]
+            export_products: list[ProductRecord | None] = (
+                list(products) if products else [None]
+            )
             for primary in export_products:
                 internal = position_to_operational_export_row_dict(
                     inv, aisle, aisle_sequence, p, primary

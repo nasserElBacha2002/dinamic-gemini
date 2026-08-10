@@ -532,9 +532,7 @@ class CodeScanProcessingStrategy:
             if consolidated.product_results and not product_results:
                 consolidated = type(consolidated)(
                     status=CodeConsolidationStatus.NO_VALID_CODE,
-                    warnings=tuple(
-                        list(consolidated.warnings) + ("NO_VALID_ISSUED_PRODUCT_LABEL",)
-                    ),
+                    warnings=(*consolidated.warnings, "NO_VALID_ISSUED_PRODUCT_LABEL"),
                     rejections=consolidated.rejections,
                     product_results=(),
                 )

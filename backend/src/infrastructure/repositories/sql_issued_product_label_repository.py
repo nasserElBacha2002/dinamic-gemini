@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Protocol
+
 from src.application.errors import ProductLabelIdCollisionError
 from src.application.ports.issued_product_label_repository import (
     IssuedProductLabel,
@@ -10,6 +13,19 @@ from src.application.ports.issued_product_label_repository import (
 from src.database.sqlserver import SqlServerClient
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.database.sql_unique_violation import is_sql_unique_violation
+
+
+class _IssuedProductLabelRow(Protocol):
+    id: object
+    client_id: object
+    label_id: object
+    internal_code: object
+    quantity: object
+    format_version: object
+    checksum: object
+    payload: object
+    created_at: datetime
+    created_by: object | None
 
 
 class SqlIssuedProductLabelRepository(IssuedProductLabelRepository):
@@ -82,16 +98,16 @@ class SqlIssuedProductLabelRepository(IssuedProductLabelRepository):
         return [self._map(r) for r in rows]
 
     @staticmethod
-    def _map(row: object) -> IssuedProductLabel:
+    def _map(row: _IssuedProductLabelRow) -> IssuedProductLabel:
         return IssuedProductLabel(
             id=str(row.id),
             client_id=str(row.client_id),
             label_id=str(row.label_id),
             internal_code=str(row.internal_code),
-            quantity=int(row.quantity),
+            quantity=int(str(row.quantity)),
             format_version=str(row.format_version),
             checksum=str(row.checksum),
             payload=str(row.payload),
             created_at=row.created_at,
-            created_by=str(row.created_by) if getattr(row, "created_by", None) else None,
+            created_by=str(row.created_by) if row.created_by is not None else None,
         )

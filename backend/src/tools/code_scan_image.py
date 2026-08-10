@@ -19,6 +19,7 @@ from src.application.services.image_processing.code_detection_consolidator impor
 from src.application.services.image_processing.code_scan_processing_strategy import (
     CodeScanConfig,
     CodeScanProcessingStrategy,
+    SourceAssetContentReaderPort,
 )
 from src.application.services.image_processing.encoded_label_payload_parser import (
     EncodedLabelPayloadParser,
@@ -33,7 +34,7 @@ from src.domain.image_processing.contracts import ExecutionScope, ImageProcessin
 from src.domain.product_labels.format import parse_product_label_payload
 
 
-class _BytesReader:
+class _BytesReader(SourceAssetContentReaderPort):
     def __init__(self, content: bytes) -> None:
         self._content = content
 
