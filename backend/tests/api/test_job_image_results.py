@@ -69,14 +69,14 @@ from src.infrastructure.persistence.memory_job_source_asset_repository import (
 from src.infrastructure.persistence.memory_manual_image_coverage_repository import (
     MemoryManualImageCoverageRepository,
 )
-from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
-    MemoryInventoryCountedProductLabelRepository,
-)
 from src.infrastructure.persistence.memory_manual_image_result_unit_of_work import (
     build_memory_manual_image_result_uow_factory,
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
+from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
+    MemoryInventoryCountedProductLabelRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository

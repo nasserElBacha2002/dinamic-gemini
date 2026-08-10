@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol
 
-from src.domain.product_labels.processed import ProcessedProductLabel
 from src.domain.aisle_identification.modes import (
     AisleIdentificationExecutionStrategy,
     AisleIdentificationMode,
 )
+from src.domain.product_labels.processed import ProcessedProductLabel
 
 
 class ExecutionScope(str, Enum):

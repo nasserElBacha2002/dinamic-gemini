@@ -24,12 +24,12 @@ from src.infrastructure.persistence.sql_manual_image_coverage_repository import 
 )
 from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
 from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
-from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
-from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
-from src.infrastructure.repositories.sql_product_record_repository import SqlProductRecordRepository
 from src.infrastructure.repositories.sql_inventory_counted_product_label_repository import (
     SqlInventoryCountedProductLabelRepository,
 )
+from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
+from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
+from src.infrastructure.repositories.sql_product_record_repository import SqlProductRecordRepository
 from src.infrastructure.repositories.sql_result_evidence_repository import (
     SqlResultEvidenceRepository,
 )

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from src.application.dto.access_principal import AccessPrincipal
-from src.application.errors import ClientNotFoundError, ProductLabelIdCollisionError
+from src.application.errors import ProductLabelIdCollisionError
 from src.application.ports.clock import Clock
 from src.application.ports.issued_product_label_repository import (
     IssuedProductLabel,

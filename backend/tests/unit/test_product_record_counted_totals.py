@@ -10,7 +10,6 @@ from src.application.services.aisle_results_export_source import (
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 
-
 NOW = datetime(2026, 8, 10, tzinfo=timezone.utc)
 
 

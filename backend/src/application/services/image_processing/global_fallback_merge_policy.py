@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-
 # Keep in sync with global_fallback_eligibility.FALLBACK_SKIP_ERROR_CODES.
 # Assets with these codes must never receive APPLY_EXTERNAL / COMBINE_QUANTITY.
 _HARD_REJECT_FALLBACK_CODES = frozenset(

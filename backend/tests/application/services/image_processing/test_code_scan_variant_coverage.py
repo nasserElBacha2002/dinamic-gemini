@@ -34,7 +34,6 @@ from src.domain.image_processing.contracts import (
 )
 from src.domain.product_labels.format import build_product_label_payload
 
-
 NOW = datetime(2026, 8, 10, tzinfo=timezone.utc)
 
 

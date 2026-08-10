@@ -141,11 +141,11 @@ def test_real_two_d1_qr_on_one_canvas_returns_two_products() -> None:
         CodeDetectionConsolidator,
         CodeDetectionInput,
     )
-    from src.application.services.image_processing.encoded_label_payload_parser import (
-        EncodedLabelPayloadParser,
-    )
     from src.application.services.image_processing.code_scan_processing_strategy import (
         symbology_for_candidate,
+    )
+    from src.application.services.image_processing.encoded_label_payload_parser import (
+        EncodedLabelPayloadParser,
     )
 
     parser = EncodedLabelPayloadParser(quantity_max=99999999)

@@ -53,11 +53,6 @@ from src.application.services.image_processing.processing_event_publisher import
 from src.application.services.product_labels.issued_product_label_resolver import (
     IssuedProductLabelResolver,
 )
-from src.domain.product_labels.format import parse_product_label_payload
-from src.domain.product_labels.processed import (
-    ProcessedProductLabel,
-    ProductLabelOutcomeStatus,
-)
 from src.domain.assets.entities import SourceAsset
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import (
@@ -65,6 +60,11 @@ from src.domain.image_processing.contracts import (
     ImageProcessingContext,
     ImageProcessingResult,
     ImageResultStatus,
+)
+from src.domain.product_labels.format import parse_product_label_payload
+from src.domain.product_labels.processed import (
+    ProcessedProductLabel,
+    ProductLabelOutcomeStatus,
 )
 from src.infrastructure.code_scanning.image_decode import (
     UnreadableImageError,

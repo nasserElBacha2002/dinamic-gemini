@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, NoReturn, Sequence, cast
+from typing import Any, NoReturn, cast
 
 from fastapi import HTTPException
 from pydantic import ValidationError

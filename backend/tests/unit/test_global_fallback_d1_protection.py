@@ -44,13 +44,13 @@ def test_no_code_symbol_still_eligible_for_fallback() -> None:
 
 def test_mixed_aisle_d1_failed_not_apply_external() -> None:
     """Peer eligible for GLOBAL_BATCH must not resurrect a hard-rejected D1 asset."""
+    from src.application.services.image_processing.global_fallback_merge_planner import (
+        build_merge_plan,
+    )
     from src.application.services.image_processing.global_fallback_merge_policy import (
         ExternalEntityEvidence,
         GlobalFallbackMergeAction,
         decide_merge_for_asset,
-    )
-    from src.application.services.image_processing.global_fallback_merge_planner import (
-        build_merge_plan,
     )
 
     evidence = {

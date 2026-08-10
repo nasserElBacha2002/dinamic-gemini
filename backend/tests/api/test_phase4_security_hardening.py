@@ -11,8 +11,8 @@ from src.api.api_key_policy import (
     path_requires_api_key,
 )
 from src.api.security_headers import (
-    CorsPolicyError,
     SAFE_CORS_ALLOW_HEADERS,
+    CorsPolicyError,
     normalize_cors_allow_origins,
     resolve_hsts_enabled,
 )

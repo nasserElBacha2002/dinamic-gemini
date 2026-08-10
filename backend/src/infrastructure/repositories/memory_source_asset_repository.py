@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from src.application.errors import OrderedCaptureSessionConflictError, DuplicateUploadIdempotencyKeyError
+from src.application.errors import (
+    DuplicateUploadIdempotencyKeyError,
+    OrderedCaptureSessionConflictError,
+)
 from src.application.ports.repositories import SourceAssetRepository
 from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.application.services.capture_sequence import sort_assets_by_logical_sequence
