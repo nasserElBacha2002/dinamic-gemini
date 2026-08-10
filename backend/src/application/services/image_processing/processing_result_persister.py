@@ -1,12 +1,14 @@
-"""Phase 3 — persist a RESOLVED_INTERNAL code-scan result as one automatic position.
+"""Phase 3+ — persist RESOLVED code-scan results as one Position with 0..N ProductRecords.
 
 Reuses the manual image-result unit of work (atomic, lock + coverage uniqueness) so that a
 code-scan run and an operator manual result can never both create a position for the same
-``(job_id, source_asset_id)``. Physical rule: ONE image → at most ONE position.
+``(job_id, source_asset_id)``.
 
-Idempotent: if a position/coverage already exists for this ``(job_id, source_asset_id)`` the
-persist is a no-op (reconcile) rather than a duplicate insert. Two *different* assets that
-carry the same internal code produce two positions (no dedupe by code).
+Physical shelf association remains via sequential reconciliation (forward-fill).
+Physical product stickers (D1 ``label_id``) are inventory-deduped via
+``inventory_counted_product_labels`` UNIQUE(inventory_id, label_id).
+
+Idempotent: existing coverage for ``(job_id, source_asset_id)`` → reconcile no-op.
 """
 
 from __future__ import annotations
@@ -22,6 +24,9 @@ from src.application.errors import (
     ManualResultAlreadyExistsError,
 )
 from src.application.ports.clock import Clock
+from src.application.ports.inventory_counted_product_label_repository import (
+    InventoryCountedProductLabel,
+)
 from src.application.ports.job_source_asset_repository import JobSourceAssetRepository
 from src.application.ports.manual_image_coverage_repository import ManualImageCoverageLink
 from src.application.ports.manual_image_result_unit_of_work import (
@@ -65,32 +70,21 @@ class PersistSkipReason(str, Enum):
     PERSISTENCE_ERROR = "PERSISTENCE_ERROR"
     NOT_RESOLVED_INTERNAL = "NOT_RESOLVED_INTERNAL"
     NON_POSITIVE_QUANTITY = "NON_POSITIVE_QUANTITY"
+    ALL_LABELS_DUPLICATE = "ALL_LABELS_DUPLICATE"
 
 
 @dataclass(frozen=True)
 class PersistOutcome:
-    """Outcome of one persist attempt for a RESOLVED_INTERNAL code-scan result.
-
-    - ``persisted``: a new position was written by this call.
-    - ``reconciled``: a position already exists for ``(job_id, source_asset_id)`` created by a
-      prior code-scan run (or won by a concurrent code-scan worker); the asset is still
-      legitimately RESOLVED and callers must NOT downgrade it. ``persisted=False`` +
-      ``reconciled=False`` means the caller must NOT finalize as RESOLVED.
-    """
-
     persisted: bool
     reconciled: bool = False
     position_id: str | None = None
     active_result_id: str | None = None
     skipped_reason: PersistSkipReason | None = None
+    products_persisted: int = 0
+    products_skipped_duplicate: int = 0
 
 
 def _coerce_positive_int_quantity(quantity: object) -> int | None:
-    """Return a positive int quantity, or ``None`` when the value is not a whole number.
-
-    Never truncates a real decimal (2.7 → rejected, not 2). Booleans are rejected (``bool`` is
-    an ``int`` subclass but is never a valid quantity).
-    """
     if isinstance(quantity, bool):
         return None
     if isinstance(quantity, int):
@@ -98,6 +92,38 @@ def _coerce_positive_int_quantity(quantity: object) -> int | None:
     if isinstance(quantity, float) and quantity.is_integer():
         return int(quantity)
     return None
+
+
+def _product_specs_from_result(result: ImageProcessingResult) -> list[dict]:
+    specs: list[dict] = []
+    for item in result.product_results or []:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("internal_code") or "").strip()
+        qty = _coerce_positive_int_quantity(item.get("quantity"))
+        label_id = str(item.get("label_id") or "").strip().upper() or None
+        if not code or qty is None or qty <= 0:
+            continue
+        specs.append(
+            {
+                "internal_code": code,
+                "quantity": qty,
+                "label_id": label_id,
+                "format_version": item.get("format_version"),
+                "checksum": item.get("checksum"),
+            }
+        )
+    if specs:
+        return specs
+    code = (result.internal_code or "").strip()
+    if not code:
+        return []
+    if result.quantity is None:
+        return [{"internal_code": code, "quantity": 0, "label_id": None, "needs_review": True}]
+    qty = _coerce_positive_int_quantity(result.quantity)
+    if qty is None or qty <= 0:
+        return []
+    return [{"internal_code": code, "quantity": qty, "label_id": None}]
 
 
 class ProcessingResultPersister:
@@ -121,45 +147,19 @@ class ProcessingResultPersister:
         inventory_id: str,
         aisle_id: str,
     ) -> PersistOutcome:
-        if result.status is not ImageResultStatus.RESOLVED_INTERNAL and result.status is not ImageResultStatus.RESOLVED_EXTERNAL:
+        if (
+            result.status is not ImageResultStatus.RESOLVED_INTERNAL
+            and result.status is not ImageResultStatus.RESOLVED_EXTERNAL
+        ):
             return PersistOutcome(
                 persisted=False, skipped_reason=PersistSkipReason.NOT_RESOLVED_INTERNAL
             )
-        code = (result.internal_code or "").strip()
-        if not code:
+
+        specs = _product_specs_from_result(result)
+        if not specs:
             return PersistOutcome(
                 persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
             )
-
-        needs_review = False
-        quantity: int
-        qty_source_override: str | None = None
-        qty_parse_status = "valid_positive"
-        if result.quantity is None:
-            # GLOBAL_BATCH / external: code without quantity → NEEDS_REVIEW position (hybrid parity).
-            needs_review = True
-            quantity = 0
-            qty_source_override = "unresolved"
-            qty_parse_status = "null"
-        else:
-            coerced = _coerce_positive_int_quantity(result.quantity)
-            if coerced is None:
-                # Non-integer decimal (or otherwise non-whole) quantity is never truncated; the
-                # caller routes this to manual review rather than silently changing the count.
-                logger.warning(
-                    "code_scan.persist_reject_non_integer_quantity job_id=%s asset_id=%s quantity=%r",
-                    result.job_id,
-                    result.asset_id,
-                    result.quantity,
-                )
-                return PersistOutcome(
-                    persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
-                )
-            if coerced <= 0:
-                return PersistOutcome(
-                    persisted=False, skipped_reason=PersistSkipReason.NON_POSITIVE_QUANTITY
-                )
-            quantity = coerced
 
         job_id = result.job_id
         asset_id = result.asset_id
@@ -182,7 +182,6 @@ class ProcessingResultPersister:
         live = self._source_asset_repo.get_by_id(asset_id)
         now = self._clock.now()
         position_id = str(uuid.uuid4())
-        product_id = str(uuid.uuid4())
         evidence_id = str(uuid.uuid4())
         result_evidence_id = str(uuid.uuid4())
         coverage_id = str(uuid.uuid4())
@@ -194,31 +193,35 @@ class ProcessingResultPersister:
             or result.status is ImageResultStatus.RESOLVED_EXTERNAL
         ):
             provider = (result.provider_name or EXTERNAL_PROVIDER).strip() or EXTERNAL_PROVIDER
-            qty_source = qty_source_override or EXTERNAL_QTY_SOURCE
+            qty_source = EXTERNAL_QTY_SOURCE
             entity_slug = "external"
         elif resolved_by.upper() == "INTERNAL_OCR" or resolved_by == INTERNAL_OCR_PROVIDER:
             provider = INTERNAL_OCR_PROVIDER
-            qty_source = qty_source_override or INTERNAL_OCR_QTY_SOURCE
+            qty_source = INTERNAL_OCR_QTY_SOURCE
             entity_slug = "internal_ocr"
         else:
             provider = CODE_SCAN_PROVIDER
-            qty_source = qty_source_override or CODE_SCAN_QTY_SOURCE
+            qty_source = CODE_SCAN_QTY_SOURCE
             entity_slug = "code_scan"
 
+        primary = specs[0]
+        needs_review = bool(primary.get("needs_review"))
         entity_uid = f"{job_id}_{entity_slug}_{asset_id}"
 
         summary: dict = {
             "entity_uid": entity_uid,
             "entity_type": "PALLET",
-            "internal_code": code,
+            "internal_code": primary["internal_code"],
             "source_image_id": asset_id,
             "source_asset_id": asset_id,
             "source_image_original_filename": snap.original_filename,
             "source_image_sequence": snap.position_order + 1,
             "creation_source": PositionCreationSource.AUTOMATIC.value,
-            "qty_source": qty_source,
-            "qty_parse_status": qty_parse_status,
+            "qty_source": "unresolved" if needs_review else qty_source,
+            "qty_parse_status": "null" if needs_review else "valid_positive",
             "resolved_by": provider,
+            "product_count": len(specs),
+            "product_label_ids": [s.get("label_id") for s in specs if s.get("label_id")],
         }
         if needs_review:
             summary["count_status"] = "NEEDS_REVIEW"
@@ -243,21 +246,6 @@ class ProcessingResultPersister:
             corrected_position_code=None,
             job_id=job_id,
             creation_source=PositionCreationSource.AUTOMATIC,
-        )
-        product = ProductRecord(
-            id=product_id,
-            position_id=position_id,
-            sku=code,
-            description=None,
-            detected_quantity=quantity,
-            corrected_quantity=None,
-            confidence=1.0,
-            created_at=now,
-            updated_at=now,
-            qty_source=qty_source,
-            qty_inference_reason=None,
-            raw_qty=None if needs_review else quantity,
-            qty_parse_status=qty_parse_status,
         )
         evidence = Evidence(
             id=evidence_id,
@@ -309,6 +297,9 @@ class ProcessingResultPersister:
             created_at=now,
         )
 
+        products_persisted = 0
+        products_skipped_duplicate = 0
+
         try:
             with self._uow_factory() as uow:
                 if hasattr(uow, "bind_lifecycle_scope"):
@@ -318,30 +309,13 @@ class ProcessingResultPersister:
 
                 existing = repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
                 if existing is not None:
-                    # A coverage link created by an operator (created_by_user_id set) means a
-                    # manual result already owns this image — code scan must NOT keep RESOLVED.
-                    # A link with no user id is a prior code-scan position → idempotent reconcile.
                     if (existing.created_by_user_id or "").strip():
-                        logger.info(
-                            "code_scan.persist_skip_manual_result_exists job_id=%s asset_id=%s "
-                            "position_id=%s",
-                            job_id,
-                            asset_id,
-                            existing.position_id,
-                        )
                         return PersistOutcome(
                             persisted=False,
                             reconciled=False,
                             position_id=existing.position_id,
                             skipped_reason=PersistSkipReason.MANUAL_RESULT_EXISTS,
                         )
-                    logger.info(
-                        "code_scan.persist_idempotent_existing_coverage job_id=%s asset_id=%s "
-                        "position_id=%s",
-                        job_id,
-                        asset_id,
-                        existing.position_id,
-                    )
                     return PersistOutcome(
                         persisted=False,
                         reconciled=True,
@@ -352,35 +326,96 @@ class ProcessingResultPersister:
                 if repos.image_coverage_repo.has_results_for_asset(
                     job_id=job_id, aisle_id=aisle_id, source_asset_id=asset_id
                 ):
-                    logger.info(
-                        "code_scan.persist_idempotent_existing_result job_id=%s asset_id=%s",
-                        job_id,
-                        asset_id,
-                    )
                     return PersistOutcome(
                         persisted=False,
                         reconciled=True,
                         skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
                     )
 
+                counted_repo = getattr(repos, "counted_product_label_repo", None)
+                products_to_save: list[ProductRecord] = []
+                for spec in specs:
+                    product_id = str(uuid.uuid4())
+                    label_id = spec.get("label_id")
+                    if needs_review and int(spec.get("quantity") or 0) == 0:
+                        products_to_save.append(
+                            ProductRecord(
+                                id=product_id,
+                                position_id=position_id,
+                                sku=spec["internal_code"],
+                                description=None,
+                                detected_quantity=0,
+                                corrected_quantity=None,
+                                confidence=1.0,
+                                created_at=now,
+                                updated_at=now,
+                                qty_source="unresolved",
+                                qty_inference_reason=None,
+                                raw_qty=None,
+                                qty_parse_status="null",
+                                label_id=label_id,
+                            )
+                        )
+                        continue
+
+                    if label_id and counted_repo is not None:
+                        claimed = counted_repo.try_claim(
+                            InventoryCountedProductLabel(
+                                id=str(uuid.uuid4()),
+                                inventory_id=inventory_id,
+                                label_id=str(label_id),
+                                first_product_record_id=product_id,
+                                first_source_asset_id=asset_id,
+                                first_job_id=job_id,
+                                first_position_id=position_id,
+                                created_at=now,
+                            )
+                        )
+                        if not claimed:
+                            products_skipped_duplicate += 1
+                            continue
+
+                    products_to_save.append(
+                        ProductRecord(
+                            id=product_id,
+                            position_id=position_id,
+                            sku=spec["internal_code"],
+                            description=None,
+                            detected_quantity=int(spec["quantity"]),
+                            corrected_quantity=None,
+                            confidence=1.0,
+                            created_at=now,
+                            updated_at=now,
+                            qty_source=qty_source,
+                            qty_inference_reason=None,
+                            raw_qty=int(spec["quantity"]),
+                            qty_parse_status="valid_positive",
+                            label_id=label_id,
+                        )
+                    )
+
+                if not products_to_save and products_skipped_duplicate:
+                    summary["all_product_labels_duplicate"] = True
+                    summary["duplicate_label_count"] = products_skipped_duplicate
+                    position.detected_summary_json = summary
+
+                if not products_to_save and not products_skipped_duplicate:
+                    return PersistOutcome(
+                        persisted=False,
+                        skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY,
+                    )
+
                 repos.position_repo.save(position)
-                repos.product_record_repo.save(product)
+                for product in products_to_save:
+                    repos.product_record_repo.save(product)
+                    products_persisted += 1
                 repos.evidence_repo.save(evidence)
                 repos.manual_coverage_repo.save(coverage)
                 repos.result_evidence_repo.save_many([result_evidence])
                 uow.commit()
         except (ManualResultAlreadyExistsError, ImageAlreadyHasResultsError):
-            # Lost a race with a concurrent writer for the same (job, asset). Best-effort
-            # re-read the winner's coverage so we can reconcile (keep RESOLVED) rather than
-            # blindly downgrade a legitimately-covered asset.
             existing = self._lookup_existing_coverage(job_id, asset_id)
             if existing is not None:
-                logger.info(
-                    "code_scan.persist_conflict_reconciled job_id=%s asset_id=%s position_id=%s",
-                    job_id,
-                    asset_id,
-                    existing.position_id,
-                )
                 return PersistOutcome(
                     persisted=False,
                     reconciled=True,
@@ -388,9 +423,6 @@ class ProcessingResultPersister:
                     active_result_id=existing.position_id,
                     skipped_reason=PersistSkipReason.CONCURRENCY_CONFLICT,
                 )
-            logger.info(
-                "code_scan.persist_conflict_unreconciled job_id=%s asset_id=%s", job_id, asset_id
-            )
             return PersistOutcome(
                 persisted=False,
                 reconciled=False,
@@ -398,18 +430,23 @@ class ProcessingResultPersister:
             )
 
         logger.info(
-            "code_scan.persisted_position job_id=%s asset_id=%s position_id=%s quantity=%s",
+            "code_scan.persisted_position job_id=%s asset_id=%s position_id=%s "
+            "products_persisted=%s products_skipped_duplicate=%s",
             job_id,
             asset_id,
             position_id,
-            quantity,
+            products_persisted,
+            products_skipped_duplicate,
         )
         return PersistOutcome(
-            persisted=True, position_id=position_id, active_result_id=position_id
+            persisted=True,
+            position_id=position_id,
+            active_result_id=position_id,
+            products_persisted=products_persisted,
+            products_skipped_duplicate=products_skipped_duplicate,
         )
 
     def _lookup_existing_coverage(self, job_id: str, asset_id: str):
-        """Best-effort read of an existing coverage link outside the failed write transaction."""
         try:
             with self._uow_factory() as uow:
                 return uow.repositories.manual_coverage_repo.get_by_job_and_asset(

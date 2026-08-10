@@ -60,6 +60,7 @@ function draftStatusFromConsolidation(
 ): LocalDetectionDraftStatus {
   switch (status) {
     case 'RESOLVED':
+    case 'RESOLVED_MULTI':
     case 'MISSING_QUANTITY':
       return 'RESOLVED';
     case 'NO_DETECTIONS':

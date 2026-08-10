@@ -6,6 +6,23 @@ import type { ClientSupplier } from '../src/api/types';
 import LabelGeneratorDialog from '../src/features/clients/components/LabelGeneratorDialog';
 import { LABEL_PRINT_TITLE } from '../src/features/clients/components/labelPrintUtils';
 
+vi.mock('../src/api/productLabelsApi', () => ({
+  issueProductLabels: vi.fn(async (_clientId: string, body: { count?: number; internal_code: string; quantity: number }) => {
+    const count = body.count ?? 1;
+    return {
+      items: Array.from({ length: count }, (_, i) => ({
+        label_id: `A1B2C3D4E${i}`,
+        internal_code: body.internal_code,
+        quantity: body.quantity,
+        format_version: 'D1',
+        checksum: '6',
+        payload: `D1|A1B2C3D4E${i}|${body.internal_code}|${body.quantity}|6`,
+        created_at: '2026-05-15T12:00:00Z',
+      })),
+    };
+  }),
+}));
+
 const suppliers: ClientSupplier[] = [
   {
     id: 'supplier-1',
@@ -376,7 +393,9 @@ describe('LabelGeneratorDialog', () => {
       expect(screen.getByRole('button', { name: /^imprimir$/i })).toBeEnabled();
     });
     fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
-    expect(window.print).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(window.print).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('sets document title before print for suggested PDF filename', async () => {
@@ -389,6 +408,7 @@ describe('LabelGeneratorDialog', () => {
       expect(document.title).toBe('cliente-blainstein-1931038-3-2026-05-15');
     });
 
+
     renderDialog();
     fillRequiredFields();
     await waitFor(() => {
@@ -396,7 +416,9 @@ describe('LabelGeneratorDialog', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
 
-    expect(printSpy).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(printSpy).toHaveBeenCalledTimes(1);
+    });
     vi.advanceTimersByTime(1000);
     expect(document.title).toBe(originalTitle);
 
@@ -418,7 +440,9 @@ describe('LabelGeneratorDialog', () => {
       expect(screen.getByRole('button', { name: /^imprimir$/i })).toBeEnabled();
     });
     fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
-    expect(document.title).toBe('cliente-blainstein-1931038-3-2026-05-15');
+    await waitFor(() => {
+      expect(document.title).toBe('cliente-blainstein-1931038-3-2026-05-15');
+    });
 
     window.dispatchEvent(new Event('afterprint'));
     expect(document.title).toBe(originalTitle);

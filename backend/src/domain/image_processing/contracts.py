@@ -72,6 +72,8 @@ class ImageProcessingResult:
     error_message: str | None = None
     execution_scope: ExecutionScope = ExecutionScope.SINGLE_ASSET
     logical_asset_attempt: bool = True
+    #: CODE_SCAN multi-product: serialized ProductLabelResult dicts (0..N).
+    product_results: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ProcessingStrategy(Protocol):

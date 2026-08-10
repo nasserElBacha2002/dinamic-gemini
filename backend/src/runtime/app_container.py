@@ -1237,6 +1237,18 @@ class AppContainer:
         )
         return self._client_position_label_repo
 
+    def get_issued_product_label_repo(self):
+        if getattr(self, "_issued_product_label_repo", None) is not None:
+            return self._issued_product_label_repo
+        from src.runtime.container.repository_builders import (
+            build_issued_product_label_repository,
+        )
+
+        self._issued_product_label_repo = build_issued_product_label_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._issued_product_label_repo
+
     def get_manual_position_override_repo(self):
         if getattr(self, "_manual_position_override_repo", None) is not None:
             return self._manual_position_override_repo
@@ -1551,6 +1563,9 @@ class AppContainer:
         from src.infrastructure.persistence.sql_manual_image_result_unit_of_work import (
             build_sql_manual_image_result_uow_factory,
         )
+        from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
+            MemoryInventoryCountedProductLabelRepository,
+        )
 
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
@@ -1578,6 +1593,7 @@ class AppContainer:
                 result_evidence_repo=self.get_result_evidence_repo(),
                 review_repo=self.get_review_action_repo(),
                 image_coverage_repo=self.get_job_image_coverage_repo(),
+                counted_product_label_repo=MemoryInventoryCountedProductLabelRepository(),
             )
             self._manual_image_result_uow_factory = build_memory_manual_image_result_uow_factory(
                 repos,

@@ -29,3 +29,5 @@ class ProductRecord:
     qty_inference_reason: str | None = None
     raw_qty: object | None = None
     qty_parse_status: str | None = None  # missing | null | invalid | zero | valid_positive
+    #: Physical product label identity (D1); None for legacy PIPE/DI1 counts.
+    label_id: str | None = None

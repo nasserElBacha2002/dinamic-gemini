@@ -25,6 +25,7 @@ class ManualImageResultRepositories:
     result_evidence_repo: ResultEvidenceRepository
     review_repo: ReviewActionRepository
     image_coverage_repo: JobImageCoverageRepository
+    counted_product_label_repo: object | None = None
 
 
 class ManualImageResultUnitOfWork(Protocol):

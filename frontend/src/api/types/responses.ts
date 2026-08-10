@@ -1337,6 +1337,17 @@ export interface JobImageResultCounters {
   without_result: number;
 }
 
+/** One counted product linked to an image (0..N for D1 multi-label photos). */
+export interface JobImageDetectedProduct {
+  product_record_id: string;
+  position_id: string;
+  sku: string;
+  detected_quantity: number;
+  corrected_quantity?: number | null;
+  label_id?: string | null;
+  qty_source?: string | null;
+}
+
 /** One row of GET .../jobs/{job_id}/image-results: photo LEFT JOIN positions (0..n results per image). */
 export interface JobImageResultItem {
   job_source_asset_id: string;
@@ -1354,6 +1365,8 @@ export interface JobImageResultItem {
   manual_result_count: number;
   has_manual_result: boolean;
   results: PositionSummary[];
+  /** All product records for linked positions (multi-label D1). */
+  detected_products?: JobImageDetectedProduct[];
   /** Backend operational classification — positioning labels are not product-uncounted. */
   operational_role?: string;
   is_product_candidate?: boolean;

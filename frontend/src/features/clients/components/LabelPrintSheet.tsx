@@ -42,14 +42,17 @@ function LabelRow({
 }
 
 export interface InventoryLabelProps {
-  data: Omit<LabelSheetData, 'copies'>;
+  data: Omit<LabelSheetData, 'copies' | 'issuedPayloads'> & {
+    /** Full scannable payload override (D1 preferred). */
+    scanPayload?: string | null;
+  };
   headerDate: string;
   onBarcodeValidityChange?: (valid: boolean) => void;
 }
 
 /**
  * One full A4-landscape warehouse label optimized for drone-readable QR + barcode.
- * Both codes encode the same payload: internal_code|quantity.
+ * Codes encode D1 when `scanPayload` is provided; otherwise legacy code|quantity.
  */
 export function InventoryLabel({ data, headerDate, onBarcodeValidityChange }: InventoryLabelProps) {
   const codeValueClassName = useMemo(() => getLabelCodeMainValueClassName(data.code), [data.code]);
@@ -59,10 +62,11 @@ export function InventoryLabel({ data, headerDate, onBarcodeValidityChange }: In
     [data.quantity]
   );
 
-  const scanPayload = useMemo(
-    () => tryBuildInventoryCodePayload({ code: data.code, quantity: data.quantity }) ?? '',
-    [data.code, data.quantity]
-  );
+  const scanPayload = useMemo(() => {
+    const issued = (data.scanPayload ?? '').trim();
+    if (issued) return issued;
+    return tryBuildInventoryCodePayload({ code: data.code, quantity: data.quantity }) ?? '';
+  }, [data.scanPayload, data.code, data.quantity]);
 
   const hasAdditionalData =
     Boolean(data.lot?.trim()) ||
@@ -221,6 +225,8 @@ function LabelPrintSheetContent({
     [copies]
   );
 
+  const issued = data.issuedPayloads ?? null;
+
   const gridClass = [
     'label-print-grid',
     'label-print-grid--horizontal',
@@ -239,7 +245,10 @@ function LabelPrintSheetContent({
         {cards.map((key, index) => (
           <InventoryLabel
             key={key}
-            data={cardData}
+            data={{
+              ...cardData,
+              scanPayload: issued?.[index] ?? null,
+            }}
             headerDate={headerDate}
             onBarcodeValidityChange={index === 0 ? onBarcodeValidityChange : undefined}
           />

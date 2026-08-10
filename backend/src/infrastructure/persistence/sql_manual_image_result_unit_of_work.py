@@ -27,6 +27,9 @@ from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceR
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
 from src.infrastructure.repositories.sql_product_record_repository import SqlProductRecordRepository
+from src.infrastructure.repositories.sql_inventory_counted_product_label_repository import (
+    SqlInventoryCountedProductLabelRepository,
+)
 from src.infrastructure.repositories.sql_result_evidence_repository import (
     SqlResultEvidenceRepository,
 )
@@ -110,6 +113,9 @@ class SqlManualImageResultUnitOfWork:
             result_evidence_repo=SqlResultEvidenceRepository(self._client, connection=conn),
             review_repo=SqlReviewActionRepository(self._client, connection=conn),
             image_coverage_repo=SqlJobImageCoverageRepository(self._client, connection=conn),
+            counted_product_label_repo=SqlInventoryCountedProductLabelRepository(
+                self._client, connection=conn
+            ),
         )
         # Lifecycle uses the SAME transactional connection — never AppContainer globals.
         self._lifecycle_sync = AisleReviewLifecycleSync(

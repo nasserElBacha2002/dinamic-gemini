@@ -763,6 +763,31 @@ def build_client_position_label_repository(
     )
 
 
+def build_issued_product_label_repository(
+    build_repo: BuildSqlOrMemory[_RepoT],
+) -> _RepoT:
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_issued_product_label_repository import (
+            SqlIssuedProductLabelRepository,
+        )
+
+        return SqlIssuedProductLabelRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_issued_product_label_repository import (
+            MemoryIssuedProductLabelRepository,
+        )
+
+        return MemoryIssuedProductLabelRepository()
+
+    return build_repo(
+        backend_info_name="IssuedProductLabelRepository",
+        sql_error_subject="issued_product_label repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
 def build_manual_position_override_repository(
     build_repo: BuildSqlOrMemory[_RepoT],
 ) -> _RepoT:

@@ -26,6 +26,20 @@ class JobImageResultCountersResponse(BaseModel):
     without_result: int
 
 
+class JobImageDetectedProductResponse(BaseModel):
+    """One counted product on an image (0..N per photo for D1 labels)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    product_record_id: str
+    position_id: str
+    sku: str
+    detected_quantity: int
+    corrected_quantity: int | None = None
+    label_id: str | None = None
+    qty_source: str | None = None
+
+
 class JobImageResultItemResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -43,6 +57,7 @@ class JobImageResultItemResponse(BaseModel):
     manual_result_count: int
     has_manual_result: bool
     results: list[PositionSummaryResponse]
+    detected_products: list[JobImageDetectedProductResponse] = Field(default_factory=list)
     operational_role: str = "UNKNOWN"
     is_product_candidate: bool = True
     excluded_from_uncounted: bool = False

@@ -4,9 +4,11 @@ Reads a single source asset, scans it for QR/CODE128 payloads (pyzbar via the ex
 ``CodeScannerPort``), parses ``internal_code|quantity`` labels, consolidates repeated
 detections into one logical label, and returns an :class:`ImageProcessingResult`.
 
-Hard constraints (no OCR, no LLM fallback, no multi-label per image):
-- ONE image → at most ONE resolved position (SINGLE_ASSET scope).
-- RESOLVED_INTERNAL only when exactly one valid code + positive-integer quantity.
+Hard constraints (no OCR, no LLM fallback):
+- Position labels remain separate (Phase 3 position detection); ≥2 VALID positions → ambiguous.
+- Product labels (format D1): ONE image → 0..N physical products (dedupe by label_id).
+- Legacy PIPE/DI1 without label_id: at most ONE logical product (prior semantics).
+- RESOLVED_INTERNAL when ≥1 valid product with positive-integer quantity.
 - Missing / invalid quantity with a recoverable code → PENDING_MANUAL_REVIEW.
 - No detection → UNRECOGNIZED. Ambiguity → PENDING_MANUAL_REVIEW.
 - Technical problems (missing file, corrupt image, scanner unavailable, timeout) →
@@ -469,13 +471,55 @@ class CodeScanProcessingStrategy:
         # Never apply OCR/supplier text-profile validation here. Profile rules are for
         # INTERNAL_OCR; AI fallback uses prompts. CODE_SCAN is consolidator-only.
 
-        if consolidated.status is CodeConsolidationStatus.RESOLVED:
+        product_results = [
+            {
+                "label_id": p.label_id,
+                "internal_code": p.internal_code,
+                "quantity": p.quantity,
+                "format_version": p.format_version,
+                "checksum": p.checksum,
+                "validation_status": p.validation_status,
+                "selected_detection_index": p.selected_detection_index,
+                "duplicate_detection_count": p.duplicate_detection_count,
+                "symbology": p.symbology,
+                "raw_payload": p.raw_payload,
+                "normalized_payload": p.normalized_payload,
+            }
+            for p in consolidated.product_results
+        ]
+        if consolidated.rejections:
+            evidence = {
+                **(evidence or {}),
+                "product_label_rejections": [
+                    {
+                        "validation_status": r.validation_status,
+                        "raw_value_sha256": hashlib.sha256(
+                            (r.raw_value or "").encode("utf-8")
+                        ).hexdigest(),
+                        "detection_index": r.detection_index,
+                        "label_id": r.label_id,
+                        "detail": r.detail,
+                        "symbology": r.symbology,
+                    }
+                    for r in consolidated.rejections
+                ],
+            }
+
+        if consolidated.status in (
+            CodeConsolidationStatus.RESOLVED,
+            CodeConsolidationStatus.RESOLVED_MULTI,
+        ):
             self._metrics.increment("code_scan.resolved")
+            if len(product_results) > 1:
+                self._metrics.increment("multi_product_image_total")
+            self._metrics.increment("product_labels_valid_total", amount=max(1, len(product_results)))
             logger.info(
-                "code_scan.resolved job_id=%s asset_id=%s symbology=%s duration_ms=%s",
+                "code_scan.resolved job_id=%s asset_id=%s symbology=%s "
+                "product_count=%s duration_ms=%s",
                 context.job_id,
                 context.asset_id,
                 evidence.get("symbology") if evidence else None,
+                len(product_results) or 1,
                 duration_ms,
             )
             result = ImageProcessingResult(
@@ -489,15 +533,20 @@ class CodeScanProcessingStrategy:
                 if consolidated.quantity is not None
                 else None,
                 evidence=evidence,
+                warnings=list(consolidated.warnings),
                 execution_scope=ExecutionScope.SINGLE_ASSET,
                 logical_asset_attempt=False,
                 processing_duration_ms=duration_ms,
+                product_results=product_results,
             )
             self._publish_asset_event(
                 context,
                 "code_scan.validation_completed",
                 message="consolidator validation completed",
-                metadata={"status": ImageResultStatus.RESOLVED_INTERNAL.value},
+                metadata={
+                    "status": ImageResultStatus.RESOLVED_INTERNAL.value,
+                    "product_count": len(product_results) or 1,
+                },
             )
             self._finalize_asset_event(context, result)
             return result
@@ -603,23 +652,42 @@ class CodeScanProcessingStrategy:
     def _scan_with_variants(
         self, asset: SourceAsset, content: bytes, started: float
     ) -> list[CodeScanDetectionCandidate]:
-        self._check_timeout(started)
-        candidates = list(self._scanner.scan_asset(asset, content))
-        if candidates or not self._config.enable_rotations:
-            return candidates
+        """Scan base image and optional rotations; merge candidates across variants.
 
-        # Deterministic rotation order; variant 0 already consumed above.
+        Dedupes by ``(code_type, code_value)`` preserving first-seen order so a code only
+        visible after rotation is not dropped when another code appeared at 0°.
+        """
+        self._check_timeout(started)
+        merged: list[CodeScanDetectionCandidate] = []
+        seen: set[tuple[str, str]] = set()
+
+        def _absorb(batch: list[CodeScanDetectionCandidate]) -> None:
+            for cand in batch:
+                key = (
+                    getattr(cand.code_type, "value", str(cand.code_type)),
+                    (cand.code_value or "").strip(),
+                )
+                if not key[1] or key in seen:
+                    continue
+                seen.add(key)
+                merged.append(cand)
+
+        _absorb(list(self._scanner.scan_asset(asset, content)))
+        if not self._config.enable_rotations:
+            return merged
+
         rotation_angles = [90, 180, 270][: max(0, self._config.max_variants - 1)]
         for angle in rotation_angles:
             self._check_timeout(started)
+            # Stop early if we already have several distinct symbols (budget).
+            if len(merged) >= 12:
+                break
             rotated = self._rotated_variant_bytes(content, angle)
             if rotated is None:
                 break
             self._metrics.increment("code_scan.rotation_variant")
-            candidates = list(self._scanner.scan_asset(asset, rotated))
-            if candidates:
-                break
-        return candidates
+            _absorb(list(self._scanner.scan_asset(asset, rotated)))
+        return merged
 
     def _rotated_variant_bytes(self, content: bytes, angle: int) -> bytes | None:
         """Best-effort rotated (and downscaled) PNG bytes; None if undecodable here."""

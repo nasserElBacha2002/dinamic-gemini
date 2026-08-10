@@ -49,6 +49,7 @@ def _row_to_product(row) -> ProductRecord:
         qty_inference_reason=getattr(row, "qty_inference_reason", None),
         raw_qty=_safe_load_json(getattr(row, "raw_qty_json", None)),
         qty_parse_status=getattr(row, "qty_parse_status", None),
+        label_id=optional_nonempty_db_str(getattr(row, "label_id", None)),
     )
 
 
@@ -93,7 +94,8 @@ class SqlProductRecordRepository(ProductRecordRepository):
                 """
                 UPDATE product_records
                 SET position_id = ?, sku = ?, description = ?, detected_quantity = ?, corrected_quantity = ?, confidence = ?,
-                    updated_at = ?, qty_source = ?, qty_inference_reason = ?, raw_qty_json = ?, qty_parse_status = ?
+                    updated_at = ?, qty_source = ?, qty_inference_reason = ?, raw_qty_json = ?, qty_parse_status = ?,
+                    label_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -108,6 +110,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
                     (product.qty_inference_reason or None),
                     raw_qty_json,
                     (product.qty_parse_status or None),
+                    (product.label_id or None),
                     product.id,
                 ),
             )
@@ -116,9 +119,10 @@ class SqlProductRecordRepository(ProductRecordRepository):
                     """
                     INSERT INTO product_records (
                         id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
-                        created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status
+                        created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status,
+                        label_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         product.id,
@@ -134,6 +138,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
                         (product.qty_inference_reason or None),
                         raw_qty_json,
                         (product.qty_parse_status or None),
+                        (product.label_id or None),
                     ),
                 )
 
@@ -142,7 +147,8 @@ class SqlProductRecordRepository(ProductRecordRepository):
             cur.execute(
                 """
                 SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
-                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status
+                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status,
+                       label_id
                 FROM product_records WHERE id = ?
                 """,
                 (product_id,),
@@ -157,7 +163,8 @@ class SqlProductRecordRepository(ProductRecordRepository):
             cur.execute(
                 """
                 SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
-                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status
+                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status,
+                       label_id
                 FROM product_records WHERE position_id = ? ORDER BY created_at ASC, id ASC
                 """,
                 (position_id,),
@@ -177,7 +184,8 @@ class SqlProductRecordRepository(ProductRecordRepository):
             cur.execute(
                 f"""
                 SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
-                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status
+                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status,
+                       label_id
                 FROM product_records
                 WHERE position_id IN ({placeholders})
                 ORDER BY position_id, created_at ASC, id ASC
