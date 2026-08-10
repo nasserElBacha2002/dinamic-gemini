@@ -337,4 +337,4 @@ def test_materialize_valid_claim() -> None:
     assert product.label_id == LABEL_ID
     assert product.sku == ISSUED_SKU
     assert product.detected_quantity == ISSUED_QTY
-    assert counted.get("inv-1", LABEL_ID) is not None
+    assert counted.get("aisle-1", LABEL_ID) is not None
