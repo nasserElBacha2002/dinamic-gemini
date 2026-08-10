@@ -85,6 +85,7 @@ def _persister_harness(*, asset_id: str = "asset-1", job_id: str = "job-1"):
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         result_evidence_repo=result_evidence_repo,
+        counted_product_label_repo=MagicMock(),
     )
     uow = MagicMock()
     uow.repositories = repos

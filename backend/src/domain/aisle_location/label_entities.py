@@ -22,7 +22,10 @@ class PositioningLabelSignatureStatus(str, Enum):
 
 
 POSITIONING_LABEL_TYPE = "DINAMIC_POSITION"
+# Legacy / default payload version (label_id only).
 POSITIONING_LABEL_PAYLOAD_VERSION = 1
+POSITIONING_LABEL_PAYLOAD_VERSION_V1 = 1
+POSITIONING_LABEL_PAYLOAD_VERSION_V2 = 2
 
 
 @dataclass

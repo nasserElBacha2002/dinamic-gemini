@@ -207,6 +207,19 @@ class ResultPositionAssignmentResponse(BaseModel):
     version: int = 0
 
 
+class PositionDetectedProductItem(BaseModel):
+    """One ProductRecord on a result position (0..N for multi-label CODE_SCAN)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    product_record_id: str
+    sku: str
+    detected_quantity: int
+    corrected_quantity: Optional[int] = None
+    label_id: Optional[str] = None
+    qty_source: Optional[str] = None
+
+
 class PositionSummaryResponse(BaseModel):
     """One row in the per-aisle results list (Aisle Results / review entry).
 
@@ -324,6 +337,13 @@ class PositionSummaryResponse(BaseModel):
         description=(
             "How the position was originally created: pipeline detection (automatic) "
             "or operator manual coverage from an image (manual)."
+        ),
+    )
+    detected_products: list[PositionDetectedProductItem] = Field(
+        default_factory=list,
+        description=(
+            "All ProductRecords on this position (0..N). Primary SKU remains in ``product``; "
+            "operators use this list when a CODE_SCAN photo counted multiple D1 labels."
         ),
     )
 

@@ -150,6 +150,12 @@ def position_to_operational_export_row_dict(
         "position_code": position_code,
         "product_sku": view.product.public_sku or "",
         "product_display_label": view.product.display_label or "",
+        "product_label_id": (
+            (primary_product.label_id or "") if primary_product is not None else ""
+        ),
+        "product_record_id": (
+            primary_product.id if primary_product is not None else ""
+        ),
         "barcode": view.product.barcode or "",
         "detected_quantity": view.quantity.detected_quantity,
         "corrected_quantity": "" if corrected is None else corrected,

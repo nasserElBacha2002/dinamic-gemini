@@ -634,7 +634,7 @@ def test_business_export_totals_match_aisle_results_ui_projection() -> None:
         )
     )
     ui_qty, ui_items = ui_counted_totals_from_aisle_result_rows(
-        list_result.positions, list_result.primary_products
+        list_result.positions, list_result.products
     )
     assert ui_qty == 69
     assert ui_items == 4

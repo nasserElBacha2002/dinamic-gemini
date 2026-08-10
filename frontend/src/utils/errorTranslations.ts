@@ -62,6 +62,9 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   MANUAL_RESULT_NOT_ALLOWED_FOR_ASSET_TYPE: 'results.imageCoverage.errors.not_allowed_for_asset_type',
   ASSET_NOT_IN_JOB_SNAPSHOT: 'results.imageCoverage.errors.asset_not_in_job',
   PHOTOS_JOB_REQUIRED: 'results.imageCoverage.errors.photos_job_required',
+  POSITION_LABEL_MARKER_ACTIVE_EXISTS: 'position_labels.error_marker_active_exists',
+  POSITION_LABEL_NAME_CONFLICT: 'position_labels.error_name_conflict',
+  IDEMPOTENCY_KEY_REUSED: 'position_labels.error_idempotency_conflict',
 };
 
 export function v3StructuredErrorCodeToTranslationKey(code: string): string | null {

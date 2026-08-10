@@ -210,7 +210,58 @@ export function mapPositionSummaryToResultSummary(
     updatedAt: p.updated_at,
     hasEvidence,
     hasValidEvidence,
+    sourcePositionId: p.id,
+    detectedProducts: Array.isArray(p.detected_products)
+      ? p.detected_products.map((pr) => ({
+          productRecordId: pr.product_record_id,
+          sku: pr.sku,
+          detectedQuantity: pr.detected_quantity,
+          correctedQuantity: pr.corrected_quantity ?? null,
+          labelId: pr.label_id ?? null,
+          qtySource: pr.qty_source ?? null,
+        }))
+      : undefined,
   };
+}
+
+/**
+ * Expand Position summaries into one ResultSummary per ProductRecord.
+ * Invariant: 1 valid label_id / ProductRecord = 1 operational table row.
+ * Positions with zero products are omitted (position-only must not inflate item counts).
+ */
+export function expandPositionSummariesToProductRows(
+  positions: PositionSummary[]
+): ResultSummary[] {
+  const rows: ResultSummary[] = [];
+  for (const p of positions) {
+    const base = mapPositionSummaryToResultSummary(p);
+    const products = Array.isArray(p.detected_products) ? p.detected_products : [];
+    if (products.length > 0) {
+      for (const pr of products) {
+        const detectedQty = pr.detected_quantity ?? null;
+        const correctedQty = pr.corrected_quantity ?? null;
+        const resolvedQty = correctedQty != null ? correctedQty : detectedQty;
+        rows.push({
+          ...base,
+          id: pr.product_record_id,
+          sourcePositionId: p.id,
+          sku: pr.sku ?? null,
+          labelId: pr.label_id ?? null,
+          detectedQty,
+          correctedQty,
+          resolvedQty,
+          qtySource: (pr.qty_source as ResultSummary['qtySource']) ?? base.qtySource,
+          detectedProducts: undefined,
+        });
+      }
+      continue;
+    }
+    // Legacy single-product positions without detected_products payload.
+    if (base.sku != null || base.detectedQty != null || base.resolvedQty != null) {
+      rows.push(base);
+    }
+  }
+  return rows;
 }
 
 /** Map evidence (API) to ResultEvidence. imageUrl/thumbnailUrl left null; UI can set from route context. */

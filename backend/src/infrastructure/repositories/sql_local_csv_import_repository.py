@@ -31,7 +31,7 @@ _ROW_COLUMNS = (
     "client_file_id, capture_order, captured_at, position_code, internal_code, quantity, "
     "quantity_status, detection_status, detection_source, ingestion_source, requires_review, "
     "error_code, notes, status, validation_errors_json, validation_warnings_json, "
-    "productive_result_id"
+    "productive_result_id, label_id, position_label_id, position_payload_raw"
 )
 
 
@@ -97,6 +97,21 @@ def _row_from_db(row: object) -> LocalCsvImportRow:
         productive_result_id=(
             str(getattr(row, "productive_result_id"))
             if getattr(row, "productive_result_id", None) is not None
+            else None
+        ),
+        label_id=(
+            str(getattr(row, "label_id")).strip().upper() or None
+            if getattr(row, "label_id", None) is not None
+            else None
+        ),
+        position_label_id=(
+            str(getattr(row, "position_label_id")).strip() or None
+            if getattr(row, "position_label_id", None) is not None
+            else None
+        ),
+        position_payload_raw=(
+            str(getattr(row, "position_payload_raw")).strip() or None
+            if getattr(row, "position_payload_raw", None) is not None
             else None
         ),
     )
@@ -168,27 +183,28 @@ class SqlLocalCsvImportRepository:
     def find_confirmed_secondary_keys(
         self, keys: set[tuple[str, str]]
     ) -> set[tuple[str, str]]:
+        from src.domain.local_csv_import.entities import local_csv_row_secondary_key
+
         found: set[tuple[str, str]] = set()
-        ordered = list(keys)
-        for offset in range(0, len(ordered), 500):
-            batch = ordered[offset : offset + 500]
-            predicates = " OR ".join(
-                "(r.capture_session_id = ? AND r.capture_photo_id = ?)" for _ in batch
+        # Load confirmed imported rows and compute the same secondary_key as preview.
+        with self._client.cursor() as cur:
+            cur.execute(
+                "SELECT r.capture_session_id, r.capture_photo_id, r.label_id, r.detection_source "
+                "FROM local_csv_import_rows r "
+                "JOIN local_csv_imports i ON i.id = r.import_id "
+                "WHERE i.status = 'CONFIRMED' AND r.status = 'IMPORTED'"
             )
-            params = tuple(item for key in batch for item in key)
-            with self._client.cursor() as cur:
-                cur.execute(
-                    "SELECT r.capture_session_id, r.capture_photo_id "
-                    "FROM local_csv_import_rows r "
-                    "JOIN local_csv_imports i ON i.id = r.import_id "
-                    "WHERE i.status = 'CONFIRMED' AND r.status = 'IMPORTED' "
-                    f"AND ({predicates})",
-                    params,
+            for row in cur.fetchall():
+                key = local_csv_row_secondary_key(
+                    capture_session_id=str(row.capture_session_id),
+                    capture_photo_id=str(row.capture_photo_id),
+                    label_id=(str(row.label_id).strip() if row.label_id else None),
+                    detection_source=(
+                        str(row.detection_source).strip() if row.detection_source else None
+                    ),
                 )
-                found.update(
-                    (str(row.capture_session_id), str(row.capture_photo_id))
-                    for row in cur.fetchall()
-                )
+                if key in keys:
+                    found.add(key)
         return found
 
     def stage_or_get_existing(self, record: LocalCsvImport) -> LocalCsvImport:
@@ -369,6 +385,9 @@ class SqlLocalCsvImportRepository:
                 json.dumps(row.validation_errors),
                 json.dumps(row.validation_warnings),
                 row.productive_result_id,
+                row.label_id,
+                row.position_label_id,
+                row.position_payload_raw,
                 row.id,
             )
             cur.execute(  # type: ignore[attr-defined]
@@ -377,13 +396,14 @@ class SqlLocalCsvImportRepository:
                 "capture_order=?, captured_at=?, position_code=?, internal_code=?, quantity=?, "
                 "quantity_status=?, detection_status=?, detection_source=?, ingestion_source=?, "
                 "requires_review=?, error_code=?, notes=?, status=?, validation_errors_json=?, "
-                "validation_warnings_json=?, productive_result_id=? WHERE id=?",
+                "validation_warnings_json=?, productive_result_id=?, label_id=?, "
+                "position_label_id=?, position_payload_raw=? WHERE id=?",
                 row_values,
             )
             if cur.rowcount == 0:  # type: ignore[attr-defined]
                 cur.execute(  # type: ignore[attr-defined]
                     "INSERT INTO local_csv_import_rows "
-                    f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(24))})",
+                    f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(27))})",
                     (
                         row.id,
                         row.import_id,
@@ -409,6 +429,9 @@ class SqlLocalCsvImportRepository:
                         json.dumps(row.validation_errors),
                         json.dumps(row.validation_warnings),
                         row.productive_result_id,
+                        row.label_id,
+                        row.position_label_id,
+                        row.position_payload_raw,
                     ),
                 )
         if keep_ids:

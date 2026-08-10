@@ -18,6 +18,7 @@ export interface ImagePositionDetectionDto {
   sequence_number: number | null;
   status: string;
   signature_status: string;
+  payload_version?: number | null;
   position_label: PositionLabelSummaryDto | null;
   confidence: number | null;
   detector_version: string;
@@ -45,7 +46,14 @@ export async function listJobPositionDetections(
  * Does not invent "unresolved" copy for unknown statuses.
  * FEATURE_DISABLED / NO_LABEL = no operative position detection.
  */
-export function labelForPositionDetectionStatus(status: string): string {
+export function labelForPositionDetectionStatus(
+  status: string,
+  metadata?: Record<string, unknown>,
+): string {
+  const detail =
+    metadata && typeof metadata.detail === 'string' && metadata.detail.trim()
+      ? metadata.detail.trim()
+      : null;
   switch (status) {
     case 'VALID':
       return 'Etiqueta de posicionamiento resuelta';
@@ -59,14 +67,27 @@ export function labelForPositionDetectionStatus(status: string): string {
     case 'LABEL_INVALIDATED':
       return 'Etiqueta detectada, no resuelta: invalidada';
     case 'INVALID_SIGNATURE':
+      return detail
+        ? `Etiqueta detectada, no resuelta: firma inválida (${detail})`
+        : 'Etiqueta detectada, no resuelta: firma inválida';
     case 'MISSING_SIGNATURE':
+      return 'Etiqueta detectada, no resuelta: firma ausente';
     case 'UNKNOWN_KEY_VERSION':
-      return 'Etiqueta detectada, no resuelta: firma';
+      return 'Etiqueta detectada, no resuelta: key_version desconocida';
     case 'UNSUPPORTED_LEGACY_PAYLOAD':
+      return detail
+        ? `Etiqueta detectada, no resuelta: payload legacy (${detail})`
+        : 'Etiqueta detectada, no resuelta: payload legacy';
     case 'UNSUPPORTED_VERSION':
+      return detail
+        ? `Etiqueta detectada, no resuelta: versión no soportada (${detail})`
+        : 'Etiqueta detectada, no resuelta: versión no soportada';
     case 'INVALID_TYPE':
+      return detail
+        ? `Etiqueta detectada, no resuelta: tipo/campos inválidos (${detail})`
+        : 'Etiqueta detectada, no resuelta: tipo inválido';
     case 'INVALID_JSON':
-      return 'Etiqueta detectada, no resuelta: payload no soportado';
+      return 'Etiqueta detectada, no resuelta: JSON inválido';
     case 'AMBIGUOUS_POSITION_DETECTION':
     case 'DUPLICATE_POSITION_CODES':
       return 'Etiqueta detectada, no resuelta: ambigua';
@@ -92,4 +113,47 @@ export function labelForPositionDetectionStatus(status: string): string {
       return `Estado de detección desconocido: ${trimmed}`;
     }
   }
+}
+
+export function formatPositionDetectionSecondary(args: {
+  status: string;
+  signatureStatus: string;
+  labelId?: string | null;
+  version?: string | null;
+  assetId: string;
+  metadata?: Record<string, unknown>;
+}): string {
+  const meta = args.metadata ?? {};
+  const lines: string[] = [
+    `Asset ID: ${args.assetId}`,
+    `Estado: ${args.status}`,
+    `Firma: ${args.signatureStatus}`,
+  ];
+  if (args.version) lines.push(`Versión: ${args.version}`);
+  if (args.labelId) lines.push(`Label ID: ${args.labelId}`);
+  const pallet = meta.pallet;
+  const side = meta.side;
+  const level = meta.level;
+  const markerIndex = meta.marker_index;
+  const markerTotal = meta.marker_total;
+  if (pallet != null || side != null || level != null) {
+    const marker =
+      markerIndex != null && markerTotal != null
+        ? `${String(markerIndex).padStart(2, '0')}/${String(markerTotal).padStart(2, '0')}`
+        : null;
+    lines.push(
+      [
+        pallet != null ? `Pallet ${pallet}` : null,
+        side != null ? String(side) : null,
+        level != null ? `Level ${level}` : null,
+        marker,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    );
+  }
+  if (typeof meta.detail === 'string' && meta.detail.trim()) {
+    lines.push(`Motivo: ${meta.detail.trim()}`);
+  }
+  return lines.join('\n');
 }

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -10,6 +11,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { ClientSupplier } from '../../../api/types';
+import { issueProductLabels } from '../../../api/productLabelsApi';
 import BaseDialog from '../../../components/ui/BaseDialog';
 import LabelPrintSheet, { LabelPrintPortal } from './LabelPrintSheet';
 import {
@@ -65,6 +67,7 @@ function buildSheetData(
 export default function LabelGeneratorDialog({
   open,
   onClose,
+  clientId,
   clientName,
   suppliers,
   suppliersLoading = false,
@@ -83,6 +86,9 @@ export default function LabelGeneratorDialog({
   const [quantityError, setQuantityError] = useState('');
   const [copiesError, setCopiesError] = useState('');
   const [barcodeRenderValid, setBarcodeRenderValid] = useState(false);
+  const [issuedPayloads, setIssuedPayloads] = useState<string[] | null>(null);
+  const [issuing, setIssuing] = useState(false);
+  const [issueError, setIssueError] = useState('');
 
   const trimmedClientName = clientName.trim() || t('clients.common.no_information');
   const copies = clampLabelCopies(Number(copiesInput));
@@ -96,8 +102,8 @@ export default function LabelGeneratorDialog({
   }, [supplierId, suppliers]);
 
   const sheetData = useMemo(
-    () =>
-      buildSheetData(
+    () => ({
+      ...buildSheetData(
         trimmedClientName,
         selectedSupplierName,
         countedBy,
@@ -109,6 +115,8 @@ export default function LabelGeneratorDialog({
         observations,
         copies
       ),
+      issuedPayloads,
+    }),
     [
       trimmedClientName,
       selectedSupplierName,
@@ -120,6 +128,7 @@ export default function LabelGeneratorDialog({
       description,
       observations,
       copies,
+      issuedPayloads,
     ]
   );
 
@@ -182,6 +191,8 @@ export default function LabelGeneratorDialog({
     setQuantityError('');
     setCopiesError('');
     setBarcodeRenderValid(false);
+    setIssuedPayloads(null);
+    setIssueError('');
   };
 
   const handleClose = () => {
@@ -190,23 +201,45 @@ export default function LabelGeneratorDialog({
     onClose();
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!validate()) return;
+    setIssuing(true);
+    setIssueError('');
+    try {
+      const qty = Number.parseInt(quantity.trim(), 10);
+      const minted = await issueProductLabels(clientId, {
+        internal_code: code.trim(),
+        quantity: qty,
+        count: copies,
+      });
+      const payloads = minted.items.map((item) => item.payload);
+      flushSync(() => {
+        setIssuedPayloads(payloads);
+      });
 
-    const previousTitle = document.title;
-    document.title = buildLabelPrintFilename(sheetData);
+      const previousTitle = document.title;
+      document.title = buildLabelPrintFilename({
+        clientName: sheetData.clientName,
+        code: sheetData.code,
+        quantity: sheetData.quantity,
+      });
 
-    let restored = false;
-    const restoreTitle = () => {
-      if (restored) return;
-      restored = true;
-      document.title = previousTitle;
-      window.removeEventListener('afterprint', restoreTitle);
-    };
+      let restored = false;
+      const restoreTitle = () => {
+        if (restored) return;
+        restored = true;
+        document.title = previousTitle;
+        window.removeEventListener('afterprint', restoreTitle);
+      };
 
-    window.addEventListener('afterprint', restoreTitle, { once: true });
-    window.print();
-    window.setTimeout(restoreTitle, 1000);
+      window.addEventListener('afterprint', restoreTitle, { once: true });
+      window.print();
+      window.setTimeout(restoreTitle, 1000);
+    } catch {
+      setIssueError(t('clients.labels.issue_failed', { defaultValue: 'No se pudieron emitir las etiquetas.' }));
+    } finally {
+      setIssuing(false);
+    }
   };
 
   const handleCopiesBlur = () => {
@@ -226,8 +259,8 @@ export default function LabelGeneratorDialog({
         <>
           <Button onClick={handleClose}>{t('common.cancel')}</Button>
           <Button onClick={handleClear}>{t('clients.labels.clear')}</Button>
-          <Button variant="contained" onClick={handlePrint} disabled={!canPrint}>
-            {t('clients.labels.print')}
+          <Button variant="contained" onClick={() => void handlePrint()} disabled={!canPrint || issuing}>
+            {issuing ? t('common.loading', { defaultValue: 'Cargando…' }) : t('clients.labels.print')}
           </Button>
         </>
       }
@@ -369,6 +402,11 @@ export default function LabelGeneratorDialog({
           isValidLabelQuantity(quantity) ? (
             <FormHelperText sx={{ mt: 0.5 }} error data-testid="barcode-payload-error">
               {t('clients.labels.barcode_too_long')}
+            </FormHelperText>
+          ) : null}
+          {issueError ? (
+            <FormHelperText sx={{ mt: 0.5 }} error data-testid="label-issue-error">
+              {issueError}
             </FormHelperText>
           ) : null}
           {!canPrint ? (

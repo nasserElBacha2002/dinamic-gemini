@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import InventoryBarcode from './InventoryBarcode';
 import InventoryQrCode from './InventoryQrCode';
@@ -14,7 +14,24 @@ import {
   LABEL_PRINT_TITLE,
   type LabelSheetData,
 } from './labelPrintUtils';
+import { parseProductLabelPayload } from './productLabelPayload';
 import './labelPrint.css';
+
+const DESC_OBS_MAX_CHARS = 240;
+const DESC_OBS_MAX_LINES = 3;
+
+function clampMultilinePrintValue(raw: string, maxChars = DESC_OBS_MAX_CHARS): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.length <= maxChars) return trimmed;
+  return `${trimmed.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
+function extractVisibleLabelId(scanPayload: string): string | null {
+  const parsed = parseProductLabelPayload(scanPayload);
+  if (parsed.status === 'VALID' && parsed.labelId) return parsed.labelId;
+  return null;
+}
 
 function LabelRow({
   label,
@@ -42,14 +59,17 @@ function LabelRow({
 }
 
 export interface InventoryLabelProps {
-  data: Omit<LabelSheetData, 'copies'>;
+  data: Omit<LabelSheetData, 'copies' | 'issuedPayloads'> & {
+    /** Full scannable payload override (D1 preferred). */
+    scanPayload?: string | null;
+  };
   headerDate: string;
   onBarcodeValidityChange?: (valid: boolean) => void;
 }
 
 /**
  * One full A4-landscape warehouse label optimized for drone-readable QR + barcode.
- * Both codes encode the same payload: internal_code|quantity.
+ * Codes encode D1 when `scanPayload` is provided; otherwise legacy code|quantity.
  */
 export function InventoryLabel({ data, headerDate, onBarcodeValidityChange }: InventoryLabelProps) {
   const codeValueClassName = useMemo(() => getLabelCodeMainValueClassName(data.code), [data.code]);
@@ -59,16 +79,27 @@ export function InventoryLabel({ data, headerDate, onBarcodeValidityChange }: In
     [data.quantity]
   );
 
-  const scanPayload = useMemo(
-    () => tryBuildInventoryCodePayload({ code: data.code, quantity: data.quantity }) ?? '',
-    [data.code, data.quantity]
+  const scanPayload = useMemo(() => {
+    const issued = (data.scanPayload ?? '').trim();
+    if (issued) return issued;
+    return tryBuildInventoryCodePayload({ code: data.code, quantity: data.quantity }) ?? '';
+  }, [data.scanPayload, data.code, data.quantity]);
+
+  const visibleLabelId = useMemo(() => extractVisibleLabelId(scanPayload), [scanPayload]);
+  const descriptionValue = useMemo(
+    () => clampMultilinePrintValue(data.description ?? ''),
+    [data.description]
+  );
+  const observationsValue = useMemo(
+    () => clampMultilinePrintValue(data.observations ?? ''),
+    [data.observations]
   );
 
   const hasAdditionalData =
     Boolean(data.lot?.trim()) ||
     Boolean(data.expiry?.trim()) ||
-    Boolean(data.description?.trim()) ||
-    Boolean(data.observations?.trim());
+    Boolean(descriptionValue) ||
+    Boolean(observationsValue);
 
   return (
     <article
@@ -82,6 +113,7 @@ export function InventoryLabel({ data, headerDate, onBarcodeValidityChange }: In
       data-testid="label-card"
       data-print-label="true"
       data-scan-payload={scanPayload || undefined}
+      data-label-id={visibleLabelId ?? undefined}
       data-has-additional={hasAdditionalData ? 'true' : 'false'}
     >
       <header className="label-header">
@@ -91,6 +123,12 @@ export function InventoryLabel({ data, headerDate, onBarcodeValidityChange }: In
         <div className="label-header-main">
           <div className="label-title">{LABEL_PRINT_TITLE}</div>
           <div className="label-header-meta">
+            {visibleLabelId ? (
+              <div className="label-id-band" data-testid="label-visible-id">
+                <span className="label-id-band__label">ID ETIQUETA:</span>
+                <span className="label-id-band__value">{visibleLabelId}</span>
+              </div>
+            ) : null}
             <LabelRow label="CLIENTE:" value={data.clientName} rowClassName="label-row--compact" />
             <LabelRow label="PROVEEDOR:" value={data.supplierName} rowClassName="label-row--compact" />
             {data.countedBy?.trim() ? (
@@ -122,27 +160,46 @@ export function InventoryLabel({ data, headerDate, onBarcodeValidityChange }: In
               aria-label="Datos adicionales"
             >
               {data.lot?.trim() ? (
-                <div className="label-additional-item label-additional-item--lot">
-                  <span className="label-additional-label">LOTE:</span>
-                  <span className="label-additional-value">{data.lot.trim()}</span>
+                <div className="label-additional-item label-additional-item--lot label-primary-row">
+                  <span className="label-primary-label">LOTE:</span>
+                  <span className="label-primary-value label-field-main-value" data-testid="label-lot-value">
+                    {data.lot.trim()}
+                  </span>
                 </div>
               ) : null}
               {data.expiry?.trim() ? (
-                <div className="label-additional-item label-additional-item--expiry">
-                  <span className="label-additional-label">VENCIMIENTO:</span>
-                  <span className="label-additional-value">{data.expiry.trim()}</span>
+                <div className="label-additional-item label-additional-item--expiry label-primary-row">
+                  <span className="label-primary-label">VENCIMIENTO:</span>
+                  <span
+                    className="label-primary-value label-field-main-value"
+                    data-testid="label-expiry-value"
+                  >
+                    {data.expiry.trim()}
+                  </span>
                 </div>
               ) : null}
-              {data.description?.trim() ? (
-                <div className="label-additional-item label-additional-item--description">
-                  <span className="label-additional-label">DESCRIPCIÓN:</span>
-                  <span className="label-additional-value">{data.description.trim()}</span>
+              {descriptionValue ? (
+                <div className="label-additional-item label-additional-item--description label-primary-row">
+                  <span className="label-primary-label">DESCRIPCIÓN:</span>
+                  <span
+                    className="label-primary-value label-field-main-value label-field-main-value--multiline"
+                    data-testid="label-description-value"
+                    style={{ WebkitLineClamp: DESC_OBS_MAX_LINES } as CSSProperties}
+                  >
+                    {descriptionValue}
+                  </span>
                 </div>
               ) : null}
-              {data.observations?.trim() ? (
-                <div className="label-additional-item label-additional-item--observations">
-                  <span className="label-additional-label">OBSERVACIONES:</span>
-                  <span className="label-additional-value">{data.observations.trim()}</span>
+              {observationsValue ? (
+                <div className="label-additional-item label-additional-item--observations label-primary-row">
+                  <span className="label-primary-label">OBSERVACIONES:</span>
+                  <span
+                    className="label-primary-value label-field-main-value label-field-main-value--multiline"
+                    data-testid="label-observations-value"
+                    style={{ WebkitLineClamp: DESC_OBS_MAX_LINES } as CSSProperties}
+                  >
+                    {observationsValue}
+                  </span>
                 </div>
               ) : null}
             </section>
@@ -221,6 +278,8 @@ function LabelPrintSheetContent({
     [copies]
   );
 
+  const issued = data.issuedPayloads ?? null;
+
   const gridClass = [
     'label-print-grid',
     'label-print-grid--horizontal',
@@ -239,7 +298,10 @@ function LabelPrintSheetContent({
         {cards.map((key, index) => (
           <InventoryLabel
             key={key}
-            data={cardData}
+            data={{
+              ...cardData,
+              scanPayload: issued?.[index] ?? null,
+            }}
             headerDate={headerDate}
             onBarcodeValidityChange={index === 0 ? onBarcodeValidityChange : undefined}
           />

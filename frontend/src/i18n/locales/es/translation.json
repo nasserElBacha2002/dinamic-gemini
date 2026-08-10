@@ -1524,7 +1524,8 @@
       "field_description": "Descripción",
       "field_observations": "Observaciones",
       "supplier_empty": "Sin proveedor",
-      "helper_not_saved": "Las etiquetas no se guardan en el sistema.",
+      "helper_not_saved": "Cada etiqueta impresa recibe un ID único y queda registrada para su validación durante el inventario.",
+      "helper_registered": "Cada etiqueta impresa recibe un ID único y queda registrada para su validación durante el inventario.",
       "validation_copies": "La cantidad de copias debe estar entre 1 y 50",
       "validation_code_required": "El código interno es obligatorio.",
       "validation_code_invalid": "El código interno es inválido o demasiado largo.",
@@ -2392,6 +2393,7 @@
       "card": {
         "noFilename": "Sin nombre de archivo",
         "withoutResultBadge": "Sin resultado",
+        "withResultBadge": "Con resultado",
         "addResultAction": "Agregar resultado",
         "processingStatus": {
           "pending": "Pendiente",
@@ -2869,6 +2871,9 @@
     "created_snackbar": "Etiqueta de posicionamiento creada",
     "invalidated_snackbar": "Etiqueta invalidada",
     "create_error": "No se pudo crear la etiqueta",
+    "error_marker_active_exists": "Ya existen marbetes activos para ese Pallet / Lado / Nivel. Invalidá los existentes antes de generar otro set o usá otra ubicación.",
+    "error_name_conflict": "Ya existe una etiqueta activa con ese nombre.",
+    "error_idempotency_conflict": "La misma clave de idempotencia se usó con otro contenido. Cerrá el diálogo e intentá de nuevo.",
     "invalidate_error": "No se pudo invalidar la etiqueta",
     "list_error": "No se pudieron cargar las etiquetas",
     "result_title": "Etiqueta creada correctamente",

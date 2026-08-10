@@ -291,7 +291,21 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
         enable_preprocessing=False,
         max_variants=int(getattr(settings, "code_scan_max_variants", 4)),
         max_technical_attempts=max_technical_attempts,
+        max_candidates_per_asset=int(settings.code_scan_max_candidates_per_asset),
     )
+    issued_resolver = None
+    try:
+        from src.application.services.product_labels.issued_product_label_resolver import (
+            IssuedProductLabelResolver,
+        )
+        from src.runtime.app_container import get_app_container
+
+        issued_resolver = IssuedProductLabelResolver(
+            issued_repo=get_app_container().get_issued_product_label_repo()
+        )
+    except Exception:
+        logger.exception("code_scan.issued_label_resolver_unavailable")
+
     return CodeScanProcessingStrategy(
         scanner=_LazyPyzbarCodeScanner(),
         content_reader=ArtifactStoreSourceAssetContentReader(artifact_store),
@@ -300,6 +314,7 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
         config=config,
         event_publisher=event_publisher,
         position_detection=_build_position_detection_use_case(settings),
+        issued_label_resolver=issued_resolver,
     )
 
 

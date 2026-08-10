@@ -76,6 +76,51 @@ describe('mapPositionStatusToReviewStatus', () => {
 });
 
 describe('mapPositionSummaryToResultSummary', () => {
+  it('maps detected_products for multi-label aisle results', () => {
+    const p: PositionSummary = {
+      id: 'pos-multi',
+      aisle_id: 'aisle-1',
+      position_code: 'P12 LEFT N3 01/03',
+      status: 'detected',
+      confidence: 0.9,
+      needs_review: false,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-02T00:00:00Z',
+      sku: 'SKU-A',
+      detected_quantity: 2,
+      corrected_quantity: null,
+      qty: 2,
+      qtySource: 'label_explicit',
+      has_evidence: true,
+      detected_products: [
+        {
+          product_record_id: 'pr-1',
+          sku: 'SKU-A',
+          detected_quantity: 2,
+          label_id: 'AAAAAAAAAA',
+        },
+        {
+          product_record_id: 'pr-2',
+          sku: 'SKU-B',
+          detected_quantity: 1,
+          label_id: 'BBBBBBBBBB',
+        },
+      ],
+    };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.detectedProducts).toHaveLength(2);
+    expect(r.detectedProducts?.[0]).toMatchObject({
+      productRecordId: 'pr-1',
+      sku: 'SKU-A',
+      labelId: 'AAAAAAAAAA',
+    });
+    expect(r.detectedProducts?.[1]).toMatchObject({
+      productRecordId: 'pr-2',
+      sku: 'SKU-B',
+      labelId: 'BBBBBBBBBB',
+    });
+  });
+
   it('maps all fields and uses has_evidence as canonical (v3.2.5 Block 4)', () => {
     const p: PositionSummary = {
       id: 'pos-1',

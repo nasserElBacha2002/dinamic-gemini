@@ -22,7 +22,6 @@ from src.application.services.aisle_results_export_source import (
     AISLE_RESULTS_UI_CONSOLIDATE_BY_SKU,
     ui_aligned_rollup_service,
 )
-from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.export_quantity_rollup import (
     ExportQuantityRollupService,
     ExportRollupRowInput,
@@ -34,6 +33,7 @@ from src.application.utils.natural_sort import natural_sort_key_parts
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import Inventory
 from src.domain.positions.entities import Position, PositionStatus
+from src.domain.products.entities import ProductRecord
 
 
 @dataclass(frozen=True)
@@ -225,28 +225,33 @@ class ExportInventoryCollector:
 
         row_bundles: list[ExportOperationalRowBundle] = []
         for p in consolidated_sorted:
-            products = self._product_record_repo.list_by_position(p.id)
-            primary = select_display_primary_product(products)
-            internal = position_to_operational_export_row_dict(
-                inv, aisle, aisle_sequence, p, primary
+            products = list(self._product_record_repo.list_by_position(p.id))
+            # Always expand every ProductRecord — same label_id cardinality as the UI.
+            export_products: list[ProductRecord | None] = (
+                list(products) if products else [None]
             )
-            rollup_input = ExportRollupRowInput(
-                position_id=p.id,
-                aisle_id=aisle.id,
-                position_status=p.status.value,
-                traceability_status=str(internal.get("traceability_status", "") or "") or None,
-                needs_review=bool(internal.get("needs_review")),
-                final_quantity=int(internal.get("final_quantity") or 0),
-            )
-            rollup_result = self._rollup.rollup_row(rollup_input)
-            row_bundles.append(
-                ExportOperationalRowBundle(
-                    internal_row=internal,
-                    rollup_input=rollup_input,
-                    rollup_result=rollup_result,
-                    job_id_for_slice=slice_job,
+            for primary in export_products:
+                internal = position_to_operational_export_row_dict(
+                    inv, aisle, aisle_sequence, p, primary
                 )
-            )
+                rollup_input = ExportRollupRowInput(
+                    position_id=p.id,
+                    aisle_id=aisle.id,
+                    position_status=p.status.value,
+                    traceability_status=str(internal.get("traceability_status", "") or "")
+                    or None,
+                    needs_review=bool(internal.get("needs_review")),
+                    final_quantity=int(internal.get("final_quantity") or 0),
+                )
+                rollup_result = self._rollup.rollup_row(rollup_input)
+                row_bundles.append(
+                    ExportOperationalRowBundle(
+                        internal_row=internal,
+                        rollup_input=rollup_input,
+                        rollup_result=rollup_result,
+                        job_id_for_slice=slice_job,
+                    )
+                )
         return ExportAisleOperationalBundle(
             aisle=aisle,
             aisle_sequence=aisle_sequence,

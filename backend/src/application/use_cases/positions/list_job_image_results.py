@@ -69,6 +69,7 @@ class JobImageResultRow:
     has_manual_result: bool
     positions: tuple[Position, ...]
     primary_products: tuple[ProductRecord | None, ...]
+    products: tuple[ProductRecord, ...]
     operational_role: str
     is_product_candidate: bool
     excluded_from_uncounted: bool
@@ -175,13 +176,16 @@ class ListJobImageResultsUseCase:
             origin = resolve_result_origin_counts(linked)
             status = resolve_image_processing_status(job=job, result_count=result_count)
             primaries: list[ProductRecord | None] = []
+            all_products: list[ProductRecord] = []
             if linked:
                 batch = self._product_record_repo.list_by_position_ids([p.id for p in linked])
                 by_pos: dict[str, list[ProductRecord]] = {}
                 for pr in batch:
                     by_pos.setdefault(pr.position_id, []).append(pr)
                 for p in linked:
-                    primaries.append(select_display_primary_product(by_pos.get(p.id, ())))
+                    pos_products = by_pos.get(p.id, ())
+                    all_products.extend(pos_products)
+                    primaries.append(select_display_primary_product(pos_products))
             classification = classify_asset_for_uncounted(
                 det_by_asset.get(snap.source_asset_id, ()),
                 has_product_result=result_count > 0,
@@ -202,6 +206,7 @@ class ListJobImageResultsUseCase:
                     has_manual_result=origin.has_manual_result,
                     positions=linked,
                     primary_products=tuple(primaries),
+                    products=tuple(all_products),
                     operational_role=classification.operational_role.value,
                     is_product_candidate=classification.is_product_candidate,
                     excluded_from_uncounted=classification.excluded_from_uncounted,

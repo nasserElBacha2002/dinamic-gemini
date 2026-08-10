@@ -23,10 +23,13 @@ FALLBACK_ELIGIBLE_INTERNAL_STATUSES = frozenset(
 )
 
 # Position-only CODE_SCAN outcomes: QR was a DINAMIC_POSITION label, not a product miss.
+# D1-recognized-but-invalid must not become GLOBAL_EXTERNAL_FALLBACK invent-product.
 FALLBACK_SKIP_ERROR_CODES = frozenset(
     {
         "POSITION_LABEL_ONLY",
         "POSITION_LABEL_UNRESOLVED",
+        "D1_CANDIDATES_FAILED",
+        "NO_VALID_ISSUED_PRODUCT_LABEL",
     }
 )
 

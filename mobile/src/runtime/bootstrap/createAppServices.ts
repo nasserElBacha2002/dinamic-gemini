@@ -196,6 +196,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const localCodeScan = new LocalCodeScanStrategy({
     drafts: localDetectionDrafts,
     reporter: obsWire?.reporter ?? null,
+    onActivePositionChanged: async (sessionId, state) => {
+      await captureRepo.updateActivePositionJson(sessionId, JSON.stringify(state));
+    },
   });
   void localCodeScan.recoverStaleDrafts().catch(() => {
     // best-effort recovery after process death

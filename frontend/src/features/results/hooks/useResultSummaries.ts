@@ -9,7 +9,7 @@
 import { useMemo } from 'react';
 import { useAislePositions, usePositionDetail } from '../../../hooks';
 import {
-  mapPositionSummaryToResultSummary,
+  expandPositionSummariesToProductRows,
   mapPositionDetailToResultDetail,
 } from '../mappers';
 import type { ResultSummary, ResultDetail } from '../types';
@@ -21,6 +21,7 @@ const defaultResultsListQuery: AislePositionsListQuery = { page: 1, page_size: 5
 /**
  * Returns the list of results for an aisle as ResultSummary[].
  * Uses the same API as AislePositionsPage but exposes the visible Result model.
+ * One ProductRecord = one row (multi-label images expand).
  */
 export function useResultSummaries(
   inventoryId: string | undefined,
@@ -31,7 +32,7 @@ export function useResultSummaries(
   const query = useAislePositions(inventoryId, aisleId, { ...options, listQuery });
   const rawPositions = query.data?.positions;
   const results: ResultSummary[] = useMemo(
-    () => (rawPositions ?? []).map(mapPositionSummaryToResultSummary),
+    () => expandPositionSummariesToProductRows(rawPositions ?? []),
     [rawPositions]
   );
 

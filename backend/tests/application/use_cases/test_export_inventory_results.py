@@ -452,6 +452,8 @@ def test_export_operational_csv_aligns_with_public_contract_fields() -> None:
             "position_code": "BC-1",
             "product_sku": "SKU-1",
             "product_display_label": "Display label",
+            "product_label_id": "",
+            "product_record_id": "pr1",
             "barcode": "BC-1",
             "detected_quantity": "4",
             "corrected_quantity": "6",

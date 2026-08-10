@@ -161,7 +161,7 @@ from src.domain.client_supplier.extraction_profile import (
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 
-from . import client_position_labels
+from . import client_position_labels, client_product_labels
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +172,7 @@ router = APIRouter(
 )
 
 router.include_router(client_position_labels.router)
+router.include_router(client_product_labels.router)
 
 
 def _to_response(client: Client) -> ClientResponse:

@@ -3,7 +3,7 @@
  */
 
 import type { TFunction } from 'i18next';
-import { Button, Typography } from '@mui/material';
+import { Button, Stack, Typography } from '@mui/material';
 import i18n from '../../../i18n';
 import {
   StatusBadge,
@@ -62,6 +62,63 @@ function prioritySemantic(
   return 'neutral';
 }
 
+function SkuCell({
+  r,
+  dash,
+  t,
+  onOpenReview,
+}: {
+  r: ResultSummary;
+  dash: string;
+  t: TFunction;
+  onOpenReview: (resultId: string) => void;
+}) {
+  const label = displaySku(r);
+  const labelId = (r.labelId ?? '').trim();
+  if (label === dash) {
+    return (
+      <Typography variant="body2" color="text.secondary" component="span">
+        {label}
+      </Typography>
+    );
+  }
+  return (
+    <Stack spacing={0.25} alignItems="flex-start">
+      <Button
+        variant="text"
+        size="small"
+        onClick={() => onOpenReview(r.id)}
+        aria-label={t('results.table_review_aria', { sku: label })}
+        data-testid="aisle-result-sku"
+        sx={{
+          fontWeight: 650,
+          textTransform: 'none',
+          px: 0,
+          minWidth: 0,
+          justifyContent: 'flex-start',
+          color: 'text.primary',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          '&:hover': { textDecoration: 'underline', backgroundColor: 'transparent' },
+        }}
+      >
+        {label}
+      </Button>
+      {labelId ? (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          data-testid="aisle-result-label-id"
+          sx={{
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          }}
+        >
+          {labelId}
+        </Typography>
+      ) : null}
+    </Stack>
+  );
+}
+
 export function buildResultsTableColumns(params: {
   t: TFunction;
   dash: string;
@@ -89,35 +146,7 @@ export function buildResultsTableColumns(params: {
       sortable: true,
       sortType: 'string',
       sortAccessor: (r) => (r.sku ?? '').trim().toLowerCase(),
-      cell: (r) => {
-        const label = displaySku(r);
-        if (label === dash) {
-          return (
-            <Typography variant="body2" color="text.secondary" component="span">
-              {label}
-            </Typography>
-          );
-        }
-        return (
-          <Button
-            variant="text"
-            size="small"
-            onClick={() => onOpenReview(r.id)}
-            aria-label={t('results.table_review_aria', { sku: label })}
-            sx={{
-              fontWeight: 650,
-              textTransform: 'none',
-              px: 0,
-              minWidth: 0,
-              justifyContent: 'flex-start',
-              color: 'text.primary',
-              '&:hover': { textDecoration: 'underline', backgroundColor: 'transparent' },
-            }}
-          >
-            {label}
-          </Button>
-        );
-      },
+      cell: (r) => <SkuCell r={r} dash={dash} t={t} onOpenReview={onOpenReview} />,
     },
     {
       id: 'position_code',

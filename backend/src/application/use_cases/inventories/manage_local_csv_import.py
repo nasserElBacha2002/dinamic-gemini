@@ -10,7 +10,11 @@ from src.application.ports.local_csv_inventory_result_writer import LocalCsvInve
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.services.local_csv_parser import ParsedLocalCsvRow, parse_local_csv
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
-from src.domain.local_csv_import.entities import LocalCsvImport, LocalCsvImportRow
+from src.domain.local_csv_import.entities import (
+    LocalCsvImport,
+    LocalCsvImportRow,
+    local_csv_row_secondary_key,
+)
 from src.domain.local_csv_import.errors import (
     CONFLICT_POLICIES,
     LOCAL_CSV_EXPORT_CONFLICT,
@@ -99,7 +103,12 @@ class PreviewLocalCsvImport:
                 errors.append("exported_at:inconsistent")
             if values["aisle_id"] not in aisle_ids:
                 errors.append("aisle_id:not_in_inventory")
-            secondary_key = (values["capture_session_id"], values["capture_photo_id"])
+            secondary_key = local_csv_row_secondary_key(
+                capture_session_id=values["capture_session_id"],
+                capture_photo_id=values["capture_photo_id"],
+                label_id=(values.get("label_id") or "").strip() or None,
+                detection_source=(values.get("source") or "").strip() or None,
+            )
             if secondary_key in seen_keys:
                 errors.append("secondary_key:duplicate_in_file")
             seen_keys.add(secondary_key)
@@ -134,6 +143,10 @@ class PreviewLocalCsvImport:
         requires_review = bool(parsed.requires_review)
         if not values["position_code"]:
             requires_review = True
+        raw_label = (values.get("label_id") or "").strip()
+        label_id = raw_label.upper() if raw_label else None
+        position_label_id = (values.get("position_label_id") or "").strip() or None
+        position_payload_raw = (values.get("position_payload_raw") or "").strip() or None
         return LocalCsvImportRow(
             id=str(uuid.uuid4()),
             import_id=import_id,
@@ -158,6 +171,9 @@ class PreviewLocalCsvImport:
             status="REJECTED" if errors else "PREVIEW_VALID",
             validation_errors=errors,
             validation_warnings=parsed.warnings,
+            label_id=label_id,
+            position_label_id=position_label_id,
+            position_payload_raw=position_payload_raw,
         )
 
 

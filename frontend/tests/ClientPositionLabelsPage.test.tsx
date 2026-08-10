@@ -23,10 +23,12 @@ vi.mock('../src/features/positionLabels/positionLabelCapabilities', () => ({
 
 const listMock = vi.fn();
 const createMock = vi.fn();
+const createMarkerSetMock = vi.fn();
 
 vi.mock('../src/api/clientPositionLabelsApi', () => ({
   listClientPositionLabels: (...args: unknown[]) => listMock(...args),
   createClientPositionLabel: (...args: unknown[]) => createMock(...args),
+  createClientPositionMarkerSet: (...args: unknown[]) => createMarkerSetMock(...args),
   downloadClientPositionLabelFile: vi.fn(),
   fetchClientPositionLabelPreviewBlob: vi.fn(async () => new Blob(['x'], { type: 'image/png' })),
   invalidateClientPositionLabel: vi.fn(),
@@ -56,6 +58,7 @@ describe('ClientPositionLabelsPage', () => {
   beforeEach(() => {
     listMock.mockReset();
     createMock.mockReset();
+    createMarkerSetMock.mockReset();
     listMock.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, total_pages: 0 });
   });
 
@@ -68,11 +71,11 @@ describe('ClientPositionLabelsPage', () => {
     expect(screen.getByTestId('position-label-new')).toBeInTheDocument();
   });
 
-  it('shows empty state and create dialog with name field', async () => {
+  it('shows empty state and create dialog with hierarchy fields by default', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('position-label-new')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('position-label-new'));
-    expect(screen.getByTestId('position-label-name-input')).toBeInTheDocument();
+    expect(screen.getByTestId('position-label-pallet-input')).toBeInTheDocument();
     expect(screen.queryByLabelText(/inventario/i)).toBeNull();
   });
 
@@ -100,5 +103,72 @@ describe('ClientPositionLabelsPage', () => {
     await waitFor(() => expect(screen.getByTestId('position-labels-table')).toBeInTheDocument());
     expect(screen.getByText('01')).toBeInTheDocument();
     expect(screen.queryByText(/No se pudieron cargar/i)).toBeNull();
+  });
+
+  it('creates marker-set with stable Idempotency-Key and previews 01/03…03/03', async () => {
+    createMarkerSetMock.mockResolvedValue({
+      items: [
+        {
+          id: 'a',
+          public_identifier: 'p1',
+          client_id: 'c1',
+          name: 'P12 LEFT N3 01/03',
+          description: null,
+          status: 'ACTIVE',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          available_formats: ['PNG'],
+          marker: '01/03',
+          marker_index: 1,
+          marker_total: 3,
+        },
+        {
+          id: 'b',
+          public_identifier: 'p2',
+          client_id: 'c1',
+          name: 'P12 LEFT N3 02/03',
+          description: null,
+          status: 'ACTIVE',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          available_formats: ['PNG'],
+          marker: '02/03',
+          marker_index: 2,
+          marker_total: 3,
+        },
+        {
+          id: 'c',
+          public_identifier: 'p3',
+          client_id: 'c1',
+          name: 'P12 LEFT N3 03/03',
+          description: null,
+          status: 'ACTIVE',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          available_formats: ['PNG'],
+          marker: '03/03',
+          marker_index: 3,
+          marker_total: 3,
+        },
+      ],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('position-label-new')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('position-label-new'));
+    fireEvent.change(screen.getByTestId('position-label-pallet-input'), {
+      target: { value: 'P12' },
+    });
+    fireEvent.change(screen.getByTestId('position-label-marker-total-input'), {
+      target: { value: '3' },
+    });
+    fireEvent.click(screen.getByTestId('position-label-create-submit'));
+    await waitFor(() => expect(createMarkerSetMock).toHaveBeenCalled());
+    const [, , opts] = createMarkerSetMock.mock.calls[0];
+    expect(opts?.idempotencyKey).toMatch(/^pos-marker-set-/);
+    await waitFor(() => expect(screen.getByTestId('position-label-result-set')).toBeInTheDocument());
+    const markers = screen.getAllByTestId('position-label-result-set-marker').map((el) => el.textContent);
+    expect(markers.some((m) => m?.includes('01/03'))).toBe(true);
+    expect(markers.some((m) => m?.includes('02/03'))).toBe(true);
+    expect(markers.some((m) => m?.includes('03/03'))).toBe(true);
   });
 });

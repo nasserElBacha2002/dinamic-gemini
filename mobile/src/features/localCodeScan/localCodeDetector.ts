@@ -1,6 +1,7 @@
 import type { DetectedCodeCandidate } from '../../core/codeDetectionConsolidator';
 
-export const LOCAL_CODE_DETECTOR_VERSION = 'mlkit-barcode-1.0.0';
+/** Bump when native multipass/tile behavior changes so drafts re-scan. */
+export const LOCAL_CODE_DETECTOR_VERSION = 'mlkit-barcode-1.1.0-multipass';
 
 export type DeviceCapabilityStatus =
   | 'SUPPORTED'
@@ -9,7 +10,10 @@ export type DeviceCapabilityStatus =
   | 'DISABLED';
 
 type NativeBarcodeMod = {
-  detectBarcodes?: (uri: string, formatsCsv: string) => Promise<Array<{ rawValue: string; format: string }>>;
+  detectBarcodes?: (
+    uri: string,
+    formatsCsv: string,
+  ) => Promise<Array<{ rawValue: string; format: string; boundingBox?: string }>>;
   isBarcodeScannerAvailable?: () => Promise<boolean>;
 };
 
@@ -88,5 +92,6 @@ export async function detectLocalBarcodes(uri: string): Promise<DetectedCodeCand
       rawValue: r.rawValue.slice(0, 512),
       symbology: String(r.format || 'UNKNOWN'),
       detectionIndex: i,
+      boundingBox: typeof r.boundingBox === 'string' && r.boundingBox.trim() ? r.boundingBox : null,
     }));
 }

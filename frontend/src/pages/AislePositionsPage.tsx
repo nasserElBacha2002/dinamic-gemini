@@ -56,6 +56,7 @@ import {
   filterResults,
   sortResultsByPriority,
   getInitialFilterFromReturnState,
+  uniqueOrderedIds,
 } from '../features/results';
 import { resolveBrowseRunJobIds } from '../features/results/resolveBrowseRunJobId';
 import {
@@ -557,14 +558,18 @@ export default function AislePositionsPage() {
 
   const handleOpenReview = useCallback(
     (resultId: string) => {
-      if (!positionById.has(resultId) || !inventoryId || !aisleId || !inventory) return;
+      const row = rowsOrderedForTable.find((r) => r.id === resultId);
+      const positionId = (row?.sourcePositionId ?? resultId).trim();
+      if (!positionById.has(positionId) || !inventoryId || !aisleId || !inventory) return;
       setQuickContext({
         inventoryId,
         inventoryName: inventory.name,
         aisleCode: aisle?.code ?? t('common.em_dash'),
         aisleId,
-        positionId: resultId,
-        resultIds: rowsOrderedForTable.map((r) => r.id),
+        positionId,
+        resultIds: uniqueOrderedIds(
+          rowsOrderedForTable.map((r) => r.sourcePositionId ?? r.id)
+        ),
         returnTo: 'aisle_results',
         filter,
         jobId: visibleJobId ?? undefined,
@@ -581,6 +586,7 @@ export default function AislePositionsPage() {
       filter,
       visibleJobId,
       t,
+      setQuickContext,
     ]
   );
 

@@ -39,15 +39,50 @@ class LocalCsvImportRow:
     validation_errors: tuple[str, ...] = ()
     validation_warnings: tuple[str, ...] = ()
     productive_result_id: str | None = None
+    #: Physical D1 product label identity; None/empty = legacy row without label.
+    label_id: str | None = None
+    #: Optional positioning label registry id (client_position_labels.id).
+    position_label_id: str | None = None
+    #: Optional raw DINAMIC_POSITION JSON payload from the device.
+    position_payload_raw: str | None = None
 
     @property
     def secondary_key(self) -> tuple[str, str]:
-        return self.capture_session_id, self.capture_photo_id
+        """Import uniqueness key.
+
+        D1 product rows: ``(session, label:<label_id>)`` — many products per photo allowed.
+        Position-only: ``(session, pos:<capture_photo_id>)``.
+        Legacy product (no label_id): ``(session, photo:<capture_photo_id>)``.
+        """
+        return local_csv_row_secondary_key(
+            capture_session_id=self.capture_session_id,
+            capture_photo_id=self.capture_photo_id,
+            label_id=self.label_id,
+            detection_source=self.detection_source,
+        )
 
     @property
     def source(self) -> str:
         """Deprecated alias for detection_source (CSV column semantics)."""
         return self.detection_source
+
+
+def local_csv_row_secondary_key(
+    *,
+    capture_session_id: str,
+    capture_photo_id: str,
+    label_id: str | None,
+    detection_source: str | None,
+) -> tuple[str, str]:
+    session = (capture_session_id or "").strip()
+    lid = (label_id or "").strip().upper()
+    if lid:
+        return session, f"label:{lid}"
+    src = (detection_source or "").strip().upper()
+    photo = (capture_photo_id or "").strip()
+    if src == "LOCAL_POSITION_LABEL":
+        return session, f"pos:{photo}"
+    return session, f"photo:{photo}"
 
 
 @dataclass(frozen=True)
@@ -98,3 +133,9 @@ class LocalCsvProductiveResult:
     created_at: datetime
     updated_at: datetime
     source_asset_id: str | None = None
+    #: Physical D1 product label identity; None = legacy row without label.
+    label_id: str | None = None
+    #: Optional positioning label registry id (client_position_labels.id).
+    position_label_id: str | None = None
+    #: Optional raw DINAMIC_POSITION JSON payload from the device.
+    position_payload_raw: str | None = None

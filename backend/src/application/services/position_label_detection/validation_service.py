@@ -33,12 +33,16 @@ class PositionLabelValidationService:
 
     def validate(self, parsed: ParsedPositionLabelPayload) -> PositionLabelValidationResult:
         if parsed.status is not PositionLabelDetectionStatus.VALID:
-            sig = PositionLabelSignatureStatus.MISSING
-            if parsed.status is PositionLabelDetectionStatus.INVALID_SIGNATURE:
+            if parsed.signature:
+                # Signature bytes present but not verified (e.g. version/type fail).
+                sig = PositionLabelSignatureStatus.INVALID
+            elif parsed.status is PositionLabelDetectionStatus.INVALID_SIGNATURE:
                 sig = PositionLabelSignatureStatus.INVALID
             elif parsed.status is PositionLabelDetectionStatus.UNKNOWN_KEY_VERSION:
                 sig = PositionLabelSignatureStatus.UNKNOWN_KEY
             elif parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE:
+                sig = PositionLabelSignatureStatus.MISSING
+            else:
                 sig = PositionLabelSignatureStatus.MISSING
             return PositionLabelValidationResult(
                 detection_status=parsed.status,

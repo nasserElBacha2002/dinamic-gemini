@@ -36,6 +36,17 @@ from src.domain.position_label_detection.entities import (
 logger = logging.getLogger(__name__)
 
 
+def _payload_hierarchy_meta(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """Safe subset of DINAMIC_POSITION hierarchy fields for detection metadata (no HMAC)."""
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key in ("pallet", "side", "level", "marker_index", "marker_total"):
+        if key in payload:
+            out[key] = payload[key]
+    return out
+
+
 @dataclass(frozen=True)
 class ImagePositionDetectionCommand:
     client_id: str
@@ -341,9 +352,8 @@ class ImagePositionDetectionUseCase:
     ) -> ImagePositionLabelDetection:
         parsed = self._parser.parse(code.raw_value)
         if parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE and parsed.label_id:
-            # Labels created while HMAC was unconfigured are stored UNSIGNED with the same
-            # {type,version,label_id} payload. Accept ACTIVE unsigned DB matches so detection
-            # and Phase 4 reconciliation can proceed without forcing a reprint.
+            # Accept catalog UNSIGNED labels (v1 or v2) that were issued while HMAC was
+            # unconfigured. Signed labels missing a QR signature stay MISSING_SIGNATURE.
             unsigned = self._try_resolve_unsigned_label(
                 command=command,
                 code=code,
@@ -364,22 +374,16 @@ class ImagePositionDetectionUseCase:
                 self._detector_version,
                 command.correlation_id,
             )
+            # MISSING only when the payload truly lacks a signature field.
+            if parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE or not parsed.signature:
+                signature_status = PositionLabelSignatureStatus.MISSING
+            else:
+                signature_status = PositionLabelSignatureStatus.INVALID
             return self._build_row(
                 command,
                 now=now,
                 status=parsed.status,
-                signature_status=PositionLabelSignatureStatus.MISSING
-                if parsed.status
-                in (
-                    PositionLabelDetectionStatus.MISSING_SIGNATURE,
-                    PositionLabelDetectionStatus.INVALID_JSON,
-                    PositionLabelDetectionStatus.INVALID_TYPE,
-                    PositionLabelDetectionStatus.UNSUPPORTED_VERSION,
-                    PositionLabelDetectionStatus.UNSUPPORTED_LEGACY_PAYLOAD,
-                    PositionLabelDetectionStatus.MISSING_LABEL_ID,
-                    PositionLabelDetectionStatus.PAYLOAD_TOO_LARGE,
-                )
-                else PositionLabelSignatureStatus.INVALID,
+                signature_status=signature_status,
                 payload_hash=parsed.payload_hash,
                 public_identifier=parsed.label_id,
                 payload_version=parsed.version,
@@ -387,6 +391,7 @@ class ImagePositionDetectionUseCase:
                 rotation_degrees=code.rotation_degrees,
                 confidence=code.confidence,
                 detail=parsed.detail,
+                metadata=_payload_hierarchy_meta(parsed.payload),
             )
 
         validated = self._validator.validate(parsed)
@@ -487,6 +492,7 @@ class ImagePositionDetectionUseCase:
             bounding_box_json=code.bounding_box,
             rotation_degrees=code.rotation_degrees,
             confidence=code.confidence,
+            metadata=_payload_hierarchy_meta(parsed.payload),
         )
 
     def _try_resolve_unsigned_label(
@@ -541,7 +547,10 @@ class ImagePositionDetectionUseCase:
             rotation_degrees=code.rotation_degrees,
             confidence=code.confidence,
             detail="unsigned_label_accepted",
-            metadata={"unsigned_acceptance": True},
+            metadata={
+                "unsigned_acceptance": True,
+                **_payload_hierarchy_meta(parsed.payload),
+            },
         )
 
     def _persist_many(

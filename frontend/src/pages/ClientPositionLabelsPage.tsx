@@ -3,7 +3,7 @@
  * No inventory or aisle selection.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import {
@@ -33,6 +33,7 @@ import {
 import { pathToClient, ROUTE_CLIENTS } from '../constants/appRoutes';
 import {
   createClientPositionLabel,
+  createClientPositionMarkerSet,
   downloadClientPositionLabelFile,
   fetchClientPositionLabelPreviewBlob,
   invalidateClientPositionLabel,
@@ -42,8 +43,16 @@ import {
 import { queryKeys } from '../api/queryKeys';
 import { getPositionLabelUiCapabilities } from '../features/positionLabels/positionLabelCapabilities';
 import { useClient } from '../hooks';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 
 const PRESET = 'MM_100x100';
+
+function newIdempotencyKey(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function statusSemantic(status: string): 'success' | 'warning' | 'neutral' {
   if (status === 'ACTIVE') return 'success';
@@ -62,11 +71,18 @@ export default function ClientPositionLabelsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [pallet, setPallet] = useState('');
+  const [side, setSide] = useState<'LEFT' | 'RIGHT'>('LEFT');
+  const [level, setLevel] = useState('1');
+  const [markerTotal, setMarkerTotal] = useState('1');
+  const [createMode, setCreateMode] = useState<'legacy' | 'hierarchy'>('hierarchy');
   const [resultLabel, setResultLabel] = useState<ClientPositionLabel | null>(null);
+  const [resultSet, setResultSet] = useState<ClientPositionLabel[] | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [invalidateTarget, setInvalidateTarget] = useState<ClientPositionLabel | null>(null);
   const [invalidateReason, setInvalidateReason] = useState('');
   const [search, setSearch] = useState('');
+  const createIdempotencyKeyRef = useRef(newIdempotencyKey('pos-marker-set'));
 
   const clientQuery = useClient(safeClientId || undefined, { enabled: Boolean(safeClientId) });
 
@@ -107,26 +123,63 @@ export default function ClientPositionLabelsPage() {
   );
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      createClientPositionLabel(safeClientId, {
-        name: name.trim(),
-        description: description.trim() || null,
-      }),
-    onSuccess: async (label) => {
+    mutationFn: async () => {
+      if (createMode === 'hierarchy') {
+        const levelNum = Number.parseInt(level, 10);
+        const totalNum = Number.parseInt(markerTotal, 10);
+        return createClientPositionMarkerSet(
+          safeClientId,
+          {
+            pallet: pallet.trim(),
+            side,
+            level: levelNum,
+            marker_total: totalNum,
+            description: description.trim() || null,
+          },
+          { idempotencyKey: createIdempotencyKeyRef.current }
+        );
+      }
+      const label = await createClientPositionLabel(
+        safeClientId,
+        {
+          name: name.trim(),
+          description: description.trim() || null,
+        },
+        { idempotencyKey: createIdempotencyKeyRef.current }
+      );
+      return { items: [label] };
+    },
+    onSuccess: async (payload) => {
       setCreateOpen(false);
       setName('');
       setDescription('');
-      setResultLabel(label);
+      setPallet('');
+      setLevel('1');
+      setMarkerTotal('1');
+      setSide('LEFT');
+      createIdempotencyKeyRef.current = newIdempotencyKey('pos-marker-set');
+      const itemsCreated = payload.items ?? [];
+      setResultSet(itemsCreated.length > 1 ? itemsCreated : null);
+      setResultLabel(itemsCreated[0] ?? null);
       await queryClient.invalidateQueries({
         queryKey: queryKeys.clients.positionLabels.all(safeClientId),
       });
       showSnackbar(t('position_labels.created_snackbar'), 'success');
-      if (caps.renderEnabled) {
-        await loadPreview(label);
+      if (caps.renderEnabled && itemsCreated[0]) {
+        await loadPreview(itemsCreated[0]);
       }
     },
-    onError: () => showSnackbar(t('position_labels.create_error'), 'error'),
+    onError: (error) =>
+      showSnackbar(resolveApiErrorMessage(error, 'position_labels.create_error'), 'error'),
   });
+
+  const canSubmitCreate =
+    createMode === 'hierarchy'
+      ? Boolean(pallet.trim()) &&
+        Number.parseInt(level, 10) >= 1 &&
+        Number.parseInt(markerTotal, 10) >= 1 &&
+        Number.parseInt(markerTotal, 10) <= 99
+      : Boolean(name.trim());
 
   const invalidateMutation = useMutation({
     mutationFn: () =>
@@ -322,12 +375,70 @@ export default function ClientPositionLabelsPage() {
       >
         <Stack spacing={2} sx={{ pt: 1 }}>
           <TextField
-            required
-            label={t('position_labels.field_name')}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            inputProps={{ 'data-testid': 'position-label-name-input' }}
-          />
+            select
+            size="small"
+            label={t('position_labels.create_mode', { defaultValue: 'Modo' })}
+            value={createMode}
+            onChange={(e) => setCreateMode(e.target.value as 'legacy' | 'hierarchy')}
+            data-testid="position-label-create-mode"
+          >
+            <MenuItem value="hierarchy">
+              {t('position_labels.mode_hierarchy', { defaultValue: 'Pallet / Lado / Nivel / Marbete' })}
+            </MenuItem>
+            <MenuItem value="legacy">
+              {t('position_labels.mode_legacy', { defaultValue: 'Nombre libre (legacy)' })}
+            </MenuItem>
+          </TextField>
+
+          {createMode === 'hierarchy' ? (
+            <>
+              <TextField
+                required
+                label={t('position_labels.field_pallet', { defaultValue: 'Pallet' })}
+                value={pallet}
+                onChange={(e) => setPallet(e.target.value)}
+                inputProps={{ 'data-testid': 'position-label-pallet-input' }}
+              />
+              <TextField
+                select
+                required
+                label={t('position_labels.field_side', { defaultValue: 'Lado' })}
+                value={side}
+                onChange={(e) => setSide(e.target.value as 'LEFT' | 'RIGHT')}
+                inputProps={{ 'data-testid': 'position-label-side-input' }}
+              >
+                <MenuItem value="LEFT">{t('position_labels.side_left', { defaultValue: 'Izquierda' })}</MenuItem>
+                <MenuItem value="RIGHT">{t('position_labels.side_right', { defaultValue: 'Derecha' })}</MenuItem>
+              </TextField>
+              <TextField
+                required
+                type="number"
+                label={t('position_labels.field_level', { defaultValue: 'Nivel' })}
+                value={level}
+                onChange={(e) => setLevel(e.target.value)}
+                inputProps={{ min: 1, 'data-testid': 'position-label-level-input' }}
+              />
+              <TextField
+                required
+                type="number"
+                label={t('position_labels.field_marker_total', { defaultValue: 'Cantidad de marbetes' })}
+                value={markerTotal}
+                onChange={(e) => setMarkerTotal(e.target.value)}
+                helperText={t('position_labels.marker_total_help', {
+                  defaultValue: 'Genera 01/N … N/N con un label_id único cada uno',
+                })}
+                inputProps={{ min: 1, max: 99, 'data-testid': 'position-label-marker-total-input' }}
+              />
+            </>
+          ) : (
+            <TextField
+              required
+              label={t('position_labels.field_name')}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              inputProps={{ 'data-testid': 'position-label-name-input' }}
+            />
+          )}
           <TextField
             label={t('position_labels.field_description')}
             value={description}
@@ -340,7 +451,7 @@ export default function ClientPositionLabelsPage() {
           <Button onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button>
           <Button
             variant="contained"
-            disabled={!name.trim() || createMutation.isPending}
+            disabled={!canSubmitCreate || createMutation.isPending}
             onClick={() => createMutation.mutate()}
             data-testid="position-label-create-submit"
           >
@@ -365,6 +476,39 @@ export default function ClientPositionLabelsPage() {
               <Typography>
                 {t('position_labels.result_location')}: <strong>{resultLabel.name}</strong>
               </Typography>
+              {resultLabel.marker ? (
+                <Typography data-testid="position-label-result-marker">
+                  {t('position_labels.result_marker', { defaultValue: 'Marbete' })}:{' '}
+                  <strong>{resultLabel.marker}</strong>
+                </Typography>
+              ) : null}
+              {resultSet && resultSet.length > 1 ? (
+                <Stack spacing={0.5} data-testid="position-label-result-set">
+                  <Typography variant="body2" color="text.secondary">
+                    {t('position_labels.result_set_count', {
+                      defaultValue: '{{count}} marbetes generados',
+                      count: resultSet.length,
+                    })}
+                  </Typography>
+                  {resultSet.map((item) => (
+                    <Typography
+                      key={item.id}
+                      variant="body2"
+                      data-testid="position-label-result-set-marker"
+                      sx={{
+                        fontFamily:
+                          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                      }}
+                    >
+                      {item.marker ??
+                        (item.marker_index != null && item.marker_total != null
+                          ? `${String(item.marker_index).padStart(2, '0')}/${String(item.marker_total).padStart(2, '0')}`
+                          : item.name)}
+                      {item.public_identifier ? ` — ${item.id}` : ''}
+                    </Typography>
+                  ))}
+                </Stack>
+              ) : null}
               <Typography>
                 {t('position_labels.result_client')}:{' '}
                 <strong>{clientQuery.data?.name ?? safeClientId}</strong>

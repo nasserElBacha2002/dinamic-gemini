@@ -74,6 +74,9 @@ from src.infrastructure.persistence.memory_manual_image_result_unit_of_work impo
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
+from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
+    MemoryInventoryCountedProductLabelRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
@@ -318,6 +321,7 @@ def _create_uc(world: dict) -> CreateManualImageResultUseCase:
         result_evidence_repo=world["re_repo"],
         review_repo=world["review_repo"],
         image_coverage_repo=_coverage_repo(world),
+        counted_product_label_repo=MemoryInventoryCountedProductLabelRepository(),
     )
     uow_factory = build_memory_manual_image_result_uow_factory(
         repos,

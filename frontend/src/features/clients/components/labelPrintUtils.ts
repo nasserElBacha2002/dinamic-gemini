@@ -21,6 +21,8 @@ export interface LabelSheetData {
   description: string | null;
   observations: string | null;
   copies: number;
+  /** Per-copy D1 payloads from mint API (length should match copies). */
+  issuedPayloads?: string[] | null;
 }
 
 export function clampLabelCopies(value: number): number {

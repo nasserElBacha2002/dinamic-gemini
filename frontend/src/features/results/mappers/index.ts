@@ -4,6 +4,7 @@
 
 export {
   mapPositionSummaryToResultSummary,
+  expandPositionSummariesToProductRows,
   mapPositionDetailToResultDetail,
   mapEvidenceToResultEvidence,
   mapReviewActionToHistoryItem,

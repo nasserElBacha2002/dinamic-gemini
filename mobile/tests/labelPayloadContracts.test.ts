@@ -149,7 +149,7 @@ describe('DINAMIC_POSITION extraction for CSV position_code', () => {
     expect(extractDinamicPositionCode('SKU|3')).toBeNull();
   });
 
-  it('consolidator stores position key in internalCode for position-label-only images', () => {
+  it('consolidator exposes exact positionRawPayload for position-only images (not id-only internalCode)', () => {
     const raw = JSON.stringify({
       type: 'DINAMIC_POSITION',
       version: 1,
@@ -157,10 +157,9 @@ describe('DINAMIC_POSITION extraction for CSV position_code', () => {
     });
     const result = consolidateCodeDetections([{ rawValue: raw, symbology: 'QR_CODE', detectionIndex: 0 }]);
     expect(result.status).toBe('NO_VALID_CODE');
-    expect(result.internalCode).toBe('pos-public-9');
+    expect(result.internalCode).toBeNull();
+    expect(result.positionRawPayload).toBe(raw);
     expect(result.selectedIndex).toBe(0);
-    expect(result.parsed?.status === 'INVALID' ? result.parsed.errorCode : null).toBe(
-      'POSITION_LABEL_DETECTED',
-    );
+    expect(result.warnings).toContain('POSITION_LABEL_DETECTED');
   });
 });

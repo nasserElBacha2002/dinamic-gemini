@@ -143,12 +143,14 @@ class SingleAssetStrategyProcessor:
         return str(getattr(self._strategy, "attempt_model", None) or "unknown")
 
     def _resolve_client_id(self, job: Job) -> str | None:
+        # Authoritative: inventory.client_id (injected as inventory_client_id).
+        if self._inventory_client_id and str(self._inventory_client_id).strip():
+            return str(self._inventory_client_id).strip()
+        # Legacy fallback only when inventory has no client linkage.
         params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
         snap_client = params.get("client_id")
         if isinstance(snap_client, str) and snap_client.strip():
             return snap_client.strip()
-        if self._inventory_client_id and str(self._inventory_client_id).strip():
-            return str(self._inventory_client_id).strip()
         return None
 
     def process_asset(
@@ -461,6 +463,20 @@ class SingleAssetStrategyProcessor:
                 ),
                 f"asset_not_in_snapshot:{asset.id}",
             )
+        if reason is PersistSkipReason.ALL_LABELS_DUPLICATE:
+            result.additional_fields["persistence_status"] = "all_labels_duplicate"
+            result.additional_fields["products_skipped_duplicate"] = (
+                outcome.products_skipped_duplicate
+            )
+            result.warnings = list(result.warnings or []) + ["ALL_LABELS_DUPLICATE"]
+            logger.info(
+                "image_processing.persistence_all_labels_duplicate job_id=%s asset_id=%s "
+                "duplicates=%s",
+                job.id,
+                asset.id,
+                outcome.products_skipped_duplicate,
+            )
+            return result, None
         if reason in (
             PersistSkipReason.MISSING_CODE_OR_QUANTITY,
             PersistSkipReason.NON_POSITIVE_QUANTITY,

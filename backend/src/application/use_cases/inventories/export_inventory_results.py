@@ -118,14 +118,24 @@ def append_inventory_csv_rows_for_aisle(
         partition_key_by_position_id=partition_keys or None,
     )
     consolidated_sorted = sorted(consolidated, key=export_position_sort_key)
+    products_by_position: dict[str, list] = {}
+    if consolidated_sorted:
+        batch = product_record_repo.list_by_position_ids([p.id for p in consolidated_sorted])
+        for pr in batch:
+            products_by_position.setdefault(pr.position_id, []).append(pr)
+
     views: dict = {}
     if export_enrichment and reconciliation_repo is not None and slice_job is not None:
-        # Collect primary product ids first for a single batch read.
         primaries = []
         for p in consolidated_sorted:
-            products = product_record_repo.list_by_position(p.id)
+            products = products_by_position.get(p.id, [])
             primaries.append(select_display_primary_product(products))
         result_ids = [pr.id for pr in primaries if pr is not None]
+        # Include all D1 product ids so assignment enrichment can attach per-row.
+        for products in products_by_position.values():
+            for pr in products:
+                if (pr.label_id or "").strip() and pr.id not in result_ids:
+                    result_ids.append(pr.id)
         reader = PublishedPositionAssignmentReader(
             reconciliation_repo=reconciliation_repo,
             enrichment_enabled=True,
@@ -140,25 +150,47 @@ def append_inventory_csv_rows_for_aisle(
             else reader.load_for_job(slice_job, result_ids=result_ids)
         )
         for p, primary in zip(consolidated_sorted, primaries):
-            assignment = views.get(primary.id) if primary is not None else None
-            rows.append(
-                position_to_operational_export_row_dict(
-                    inv,
-                    aisle,
-                    aisle_sequence,
-                    p,
-                    primary,
-                    position_assignment=assignment,
+            products = list(products_by_position.get(p.id, []))
+            export_products = products if products else [None]
+            if any((pr.label_id or "").strip() for pr in products if pr is not None):
+                export_products = products
+            for product in export_products:
+                assignment = (
+                    views.get(product.id)
+                    if product is not None
+                    else (views.get(primary.id) if primary is not None else None)
                 )
-            )
+                rows.append(
+                    position_to_operational_export_row_dict(
+                        inv,
+                        aisle,
+                        aisle_sequence,
+                        p,
+                        product if product is not None else primary,
+                        position_assignment=assignment,
+                    )
+                )
         return
 
     for p in consolidated_sorted:
-        products = product_record_repo.list_by_position(p.id)
-        primary = select_display_primary_product(products)
+        products = list(products_by_position.get(p.id, []))
         if technical:
             rows.append(position_to_technical_export_row_dict(inv, aisle, aisle_sequence, p))
+            continue
+        if not products:
+            rows.append(
+                position_to_operational_export_row_dict(inv, aisle, aisle_sequence, p, None)
+            )
+            continue
+        if any((pr.label_id or "").strip() for pr in products):
+            for product in products:
+                rows.append(
+                    position_to_operational_export_row_dict(
+                        inv, aisle, aisle_sequence, p, product
+                    )
+                )
         else:
+            primary = select_display_primary_product(products)
             rows.append(
                 position_to_operational_export_row_dict(inv, aisle, aisle_sequence, p, primary)
             )

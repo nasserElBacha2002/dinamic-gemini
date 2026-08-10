@@ -89,6 +89,48 @@ jobs:
       - run: npm run test -- --run
       - run: npm run build
 
+  # Shared D1 checksum contract — all three implementations must pass the same golden vectors.
+  product-label-contract:
+    name: Product labels — checksum vectors (backend + frontend + mobile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install backend (editable + dev extras)
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Backend checksum vectors
+        run: pytest backend/tests/domain/product_labels -q --no-cov
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            mobile/package-lock.json
+
+      - name: Frontend checksum vectors
+        working-directory: frontend
+        run: |
+          npm ci
+          npx vitest run productLabelPayload
+
+      - name: Mobile checksum vectors
+        working-directory: mobile
+        run: |
+          npm ci
+          npx jest --config jest.config.core.js --watchman=false productLabelChecksumVectors
+
   security-light:
     name: Security — pip-audit + npm audit high
     runs-on: ubuntu-latest

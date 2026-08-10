@@ -25,6 +25,8 @@ INVENTORY_RESULTS_CSV_FIELDS: tuple[str, ...] = (
     "position_code",
     "product_sku",
     "product_display_label",
+    "product_label_id",
+    "product_record_id",
     "barcode",
     "detected_quantity",
     "corrected_quantity",

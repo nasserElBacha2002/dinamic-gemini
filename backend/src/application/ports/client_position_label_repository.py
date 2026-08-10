@@ -25,6 +25,16 @@ class ClientPositionLabelRepository(Protocol):
         self, client_id: str, normalized_name: str
     ) -> ClientPositionLabel | None: ...
 
+    def list_active_by_hierarchy(
+        self,
+        client_id: str,
+        *,
+        pallet: str,
+        side: str,
+        level: int,
+        marker_total: int,
+    ) -> list[ClientPositionLabel]: ...
+
     def list_by_client(
         self,
         client_id: str,
@@ -44,6 +54,8 @@ class ClientPositionLabelRepository(Protocol):
     ) -> int: ...
 
     def save(self, label: ClientPositionLabel) -> ClientPositionLabel: ...
+
+    def save_many(self, labels: list[ClientPositionLabel]) -> list[ClientPositionLabel]: ...
 
     def get_artifact(
         self,

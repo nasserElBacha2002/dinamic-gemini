@@ -10,8 +10,10 @@ from src.api.errors import reraise_if_mapped
 from src.api.schemas.client_position_label_schemas import (
     ClientPositionLabelArtifactResponse,
     ClientPositionLabelListResponse,
+    ClientPositionLabelMarkerSetResponse,
     ClientPositionLabelResponse,
     CreateClientPositionLabelRequest,
+    CreateClientPositionMarkerSetRequest,
     InvalidateClientPositionLabelRequest,
     RenderClientPositionLabelRequest,
     UpdateClientPositionLabelRequest,
@@ -31,6 +33,8 @@ from src.application.services.positioning_label_signing import (
 from src.application.use_cases.client_position_labels import (
     CreateClientPositionLabelCommand,
     CreateClientPositionLabelUseCase,
+    CreateClientPositionMarkerSetCommand,
+    CreateClientPositionMarkerSetUseCase,
     DownloadClientPositionLabelUseCase,
     GetClientPositionLabelCommand,
     GetClientPositionLabelUseCase,
@@ -83,6 +87,19 @@ def get_create_client_position_label_use_case(
     clock: Clock = Depends(get_clock),
 ) -> CreateClientPositionLabelUseCase:
     return CreateClientPositionLabelUseCase(
+        label_repo=label_repo,
+        client_repo=client_repo,
+        clock=clock,
+        signing=_signing_service(),
+    )
+
+
+def get_create_client_position_marker_set_use_case(
+    label_repo=Depends(_get_label_repo),
+    client_repo: ClientRepository = Depends(get_client_repo),
+    clock: Clock = Depends(get_clock),
+) -> CreateClientPositionMarkerSetUseCase:
+    return CreateClientPositionMarkerSetUseCase(
         label_repo=label_repo,
         client_repo=client_repo,
         clock=clock,
@@ -211,7 +228,46 @@ def create_client_position_label(
         label = use_case.execute(
             CreateClientPositionLabelCommand(
                 client_id=client_id,
-                name=body.name,
+                name=body.name or "",
+                description=body.description,
+                principal=principal,
+                idempotency_key=idempotency_key,
+                pallet=body.pallet,
+                side=body.side,
+                level=body.level,
+                marker_index=body.marker_index,
+                marker_total=body.marker_total,
+            )
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return client_position_label_to_response(label)
+
+
+@router.post(
+    "/{client_id}/position-labels/marker-set",
+    response_model=ClientPositionLabelMarkerSetResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_client_position_marker_set(
+    client_id: str,
+    body: CreateClientPositionMarkerSetRequest,
+    principal: AccessPrincipal = Depends(get_access_principal),
+    use_case: CreateClientPositionMarkerSetUseCase = Depends(
+        get_create_client_position_marker_set_use_case
+    ),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> ClientPositionLabelMarkerSetResponse:
+    try:
+        _require_position_labels_enabled()
+        labels = use_case.execute(
+            CreateClientPositionMarkerSetCommand(
+                client_id=client_id,
+                pallet=body.pallet,
+                side=body.side,
+                level=body.level,
+                marker_total=body.marker_total,
                 description=body.description,
                 principal=principal,
                 idempotency_key=idempotency_key,
@@ -220,7 +276,9 @@ def create_client_position_label(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return client_position_label_to_response(label)
+    return ClientPositionLabelMarkerSetResponse(
+        items=[client_position_label_to_response(label) for label in labels]
+    )
 
 
 @router.get(

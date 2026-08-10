@@ -82,6 +82,7 @@ function session(id: string, overrides: Partial<CaptureSessionRow> = {}): Captur
     capture_freeze_generation: 0,
     active_freeze_id: null,
     upload_policy: null,
+    active_position_json: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,

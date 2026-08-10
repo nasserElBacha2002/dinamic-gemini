@@ -1,0 +1,52 @@
+{
+  "format_version": "D1",
+  "algorithm": "weighted_mod36",
+  "canonical_body": "D1|<label_id>|<internal_code>|<quantity>",
+  "payload": "D1|<label_id>|<internal_code>|<quantity>|<checksum>",
+  "normalization": "trim only; no OCR substitutions; label_id uppercased A-Z0-9 Crockford-like",
+  "vectors": [
+    {
+      "name": "basic",
+      "label_id": "A1B2C3D4E5",
+      "internal_code": "SKU100",
+      "quantity": 4,
+      "checksum": "6",
+      "payload": "D1|A1B2C3D4E5|SKU100|4|6"
+    },
+    {
+      "name": "alphanumeric",
+      "label_id": "0123456789",
+      "internal_code": "ABC123",
+      "quantity": 1,
+      "checksum": "S",
+      "payload": "D1|0123456789|ABC123|1|S"
+    },
+    {
+      "name": "same-sku-diff-id",
+      "label_id": "FGHJKMNPQR",
+      "internal_code": "SKU100",
+      "quantity": 6,
+      "checksum": "0",
+      "payload": "D1|FGHJKMNPQR|SKU100|6|0"
+    },
+    {
+      "name": "checksum-fail-tampered-qty",
+      "label_id": "A1B2C3D4E5",
+      "internal_code": "SKU100",
+      "quantity": 4,
+      "checksum": "6",
+      "tampered_payload": "D1|A1B2C3D4E5|SKU100|5|6",
+      "expected_status": "CHECKSUM_FAILED"
+    },
+    {
+      "name": "not-our-format-ean",
+      "raw": "7790001234567",
+      "expected_status": "NOT_OUR_FORMAT"
+    },
+    {
+      "name": "unknown-version",
+      "raw": "D2|A1B2C3D4E5|SKU100|4|6",
+      "expected_status": "UNKNOWN_VERSION"
+    }
+  ]
+}

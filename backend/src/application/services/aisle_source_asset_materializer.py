@@ -179,6 +179,18 @@ class AisleSourceAssetMaterializer:
             raise
         return asset, delete_key
 
+    def find_by_upload_idempotency_key(
+        self,
+        *,
+        aisle_id: str,
+        upload_batch_id: str,
+        upload_client_file_id: str,
+    ) -> SourceAsset | None:
+        """Resolve an existing SourceAsset for package multilabel / retry reuse."""
+        return self._asset_repo.get_by_upload_idempotency_key(
+            aisle_id, upload_batch_id, upload_client_file_id
+        )
+
     def finalize_aisle_after_source_assets_changed(
         self,
         *,

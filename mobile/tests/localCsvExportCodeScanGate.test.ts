@@ -200,6 +200,7 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
         synced_at: null,
         sync_lease_token: null,
         sync_lease_expires_at: null,
+        position_snapshot_json: null,
         detected_at: now,
         created_at: now,
         updated_at: now,

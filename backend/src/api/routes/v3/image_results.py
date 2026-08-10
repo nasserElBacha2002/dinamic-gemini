@@ -16,6 +16,7 @@ from src.api.routes.v3.shared import position_to_summary
 from src.api.schemas.image_result_schemas import (
     CreateManualImageResultRequest,
     CreateManualImageResultResponse,
+    JobImageDetectedProductResponse,
     JobImageResultCountersResponse,
     JobImageResultItemResponse,
     JobImageResultsResponse,
@@ -121,6 +122,18 @@ def list_job_image_results(
                 manual_result_count=row.manual_result_count,
                 has_manual_result=row.has_manual_result,
                 results=summaries,
+                detected_products=[
+                    JobImageDetectedProductResponse(
+                        product_record_id=pr.id,
+                        position_id=pr.position_id,
+                        sku=pr.sku,
+                        detected_quantity=pr.detected_quantity,
+                        corrected_quantity=pr.corrected_quantity,
+                        label_id=pr.label_id,
+                        qty_source=pr.qty_source,
+                    )
+                    for pr in row.products
+                ],
                 operational_role=row.operational_role,
                 is_product_candidate=row.is_product_candidate,
                 excluded_from_uncounted=row.excluded_from_uncounted,

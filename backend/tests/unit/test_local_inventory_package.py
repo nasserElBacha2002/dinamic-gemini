@@ -19,6 +19,9 @@ from src.application.services.local_inventory_package_parser import (
     LocalInventoryPackageError,
     parse_local_inventory_package,
 )
+from src.application.services.product_labels.issued_product_label_resolver import (
+    IssuedProductLabelResolver,
+)
 from src.application.use_cases.inventories.manage_local_csv_import import PreviewLocalCsvImport
 from src.application.use_cases.inventories.manage_local_inventory_package import (
     ConfirmLocalInventoryPackage,
@@ -31,7 +34,13 @@ from src.infrastructure.repositories.local_csv_inventory_result_writer import (
     MemoryLocalCsvInventoryResultWriter,
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
+    MemoryInventoryCountedProductLabelRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_issued_product_label_repository import (
+    MemoryIssuedProductLabelRepository,
+)
 from src.infrastructure.repositories.memory_local_csv_import_repository import (
     MemoryLocalCsvImportRepository,
 )
@@ -283,6 +292,11 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
         position_materializer=LocalCsvPositionMaterializer(
             position_repo=position_repo,
             product_record_repo=product_repo,
+            counted_product_label_repo=MemoryInventoryCountedProductLabelRepository(),
+            issued_label_resolver=IssuedProductLabelResolver(
+                issued_repo=MemoryIssuedProductLabelRepository()
+            ),
+            inventory_repo=inventory_repo,
         ),
     )
     confirmed, duplicate = confirm.execute(
@@ -418,6 +432,11 @@ def test_confirm_fits_long_mobile_client_file_id(tmp_path: Path) -> None:
         position_materializer=LocalCsvPositionMaterializer(
             position_repo=MemoryPositionRepository(),
             product_record_repo=MemoryProductRecordRepository(),
+            counted_product_label_repo=MemoryInventoryCountedProductLabelRepository(),
+            issued_label_resolver=IssuedProductLabelResolver(
+                issued_repo=MemoryIssuedProductLabelRepository()
+            ),
+            inventory_repo=inventory_repo,
         ),
     )
     confirmed, duplicate = confirm.execute(
@@ -598,3 +617,180 @@ def test_preview_rejects_local_pending_only_package(tmp_path: Path) -> None:
     with pytest.raises(LocalInventoryPackageImportError) as exc:
         preview.execute(inventory_id="inventory-1", content=_build_pending_zip())
     assert exc.value.code == "PACKAGE_UNRESOLVED_ROWS"
+
+
+def _build_multiproduct_zip(
+    *,
+    export_id: str = "export-multi-1",
+    photo_id: str = "photo-multi-1",
+    client_file_id: str = "file-multi-1",
+) -> bytes:
+    """One JPG, two D1 product CSV rows (same capture_photo_id)."""
+    headers = HEADERS + ("label_id",)
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=headers, lineterminator="\r\n")
+    writer.writeheader()
+    for sku, qty, label_id in (
+        ("232424090", "1000", "6YD0S6WVMM"),
+        ("232424025", "1100", "6FYR11RPXS"),
+    ):
+        writer.writerow(
+            {
+                "schema_version": "1.1",
+                "export_id": export_id,
+                "exported_at": "2026-08-04T10:00:00Z",
+                "device_id": "device-1",
+                "inventory_id": "inventory-1",
+                "aisle_id": "aisle-1",
+                "capture_session_id": "session-1",
+                "capture_photo_id": photo_id,
+                "client_file_id": client_file_id,
+                "capture_order": "1",
+                "captured_at": "2026-08-04T09:59:00Z",
+                "position_code": "A-01",
+                "internal_code": sku,
+                "quantity": qty,
+                "quantity_status": "PRESENT",
+                "detection_status": "RESOLVED",
+                "source": "LOCAL_CODE_SCAN",
+                "requires_review": "false",
+                "error_code": "",
+                "notes": "",
+                "label_id": label_id,
+            }
+        )
+    csv_bytes = output.getvalue().encode()
+    file_name = f"0001_{photo_id}.jpg"
+    sha = hashlib.sha256(JPEG_BYTES).hexdigest()
+    manifest = {
+        "package_kind": "DINAMIC_LOCAL_AISLE_EXPORT",
+        "package_version": 2,
+        "status": "COMPLETE",
+        "export_id": export_id,
+        "inventory_id": "inventory-1",
+        "aisle_id": "aisle-1",
+        "capture_session_id": "session-1",
+        "freeze_id": "freeze-multi-1",
+        "row_count": 2,
+        "expected_photo_count": 1,
+        "included_photo_count": 1,
+        "product_result_count": 2,
+        "csv_checksum_sha256": hashlib.sha256(csv_bytes).hexdigest(),
+        "checksum_sha256": hashlib.sha256(csv_bytes).hexdigest(),
+        "package_checksum_sha256": "abc",
+        "photos": [
+            {
+                "capture_photo_id": photo_id,
+                "client_file_id": client_file_id,
+                "sequence_number": 1,
+                "file_name": file_name,
+                "mime_type": "image/jpeg",
+                "size_bytes": len(JPEG_BYTES),
+                "sha256": sha,
+                "width": 1,
+                "height": 1,
+                "asset_variant": "ORIGINAL",
+            }
+        ],
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr("results.csv", csv_bytes)
+        zf.writestr("manifest.json", json.dumps(manifest))
+        zf.writestr(f"photos/{file_name}", JPEG_BYTES)
+    return buf.getvalue()
+
+
+def test_confirm_multiproduct_same_photo_reuses_one_source_asset(tmp_path: Path) -> None:
+    """Multilabel CSV: N rows / 1 photo must not hit upload idempotency unique twice."""
+    inventory_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    inventory_repo.save(
+        Inventory(
+            id="inventory-1",
+            name="Inv",
+            status=InventoryStatus.DRAFT,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    aisle_repo.save(
+        Aisle(
+            id="aisle-1",
+            inventory_id="inventory-1",
+            code="A1",
+            status=AisleStatus.CREATED,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    csv_repo = MemoryLocalCsvImportRepository()
+    package_repo = MemoryLocalInventoryPackageRepository(csv_import_repo=csv_repo)
+    clock = FixedClock()
+    csv_preview = PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=csv_repo,
+        clock=clock,
+        enabled=True,
+    )
+    preview = PreviewLocalInventoryPackage(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        csv_import_repo=csv_repo,
+        package_repo=package_repo,
+        csv_preview=csv_preview,
+        clock=clock,
+        enabled=True,
+        staging_root=tmp_path,
+    )
+    packaged = preview.execute(
+        inventory_id="inventory-1", content=_build_multiproduct_zip()
+    )
+    assert packaged.csv_import is not None
+    assert packaged.csv_import.valid_rows == 2
+
+    asset_repo = MemorySourceAssetRepository()
+    storage = MemoryArtifactStorage()
+    materializer = AisleSourceAssetMaterializer(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        artifact_storage=storage,  # type: ignore[arg-type]
+        status_reconciler=InventoryStatusReconciler(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            clock=clock,
+        ),
+    )
+    writer = MemoryLocalCsvInventoryResultWriter()
+    confirm = ConfirmLocalInventoryPackage(
+        package_repo=package_repo,
+        result_writer=writer,
+        materializer=materializer,
+        aisle_repo=aisle_repo,
+        clock=clock,
+        enabled=True,
+        position_materializer=LocalCsvPositionMaterializer(
+            position_repo=MemoryPositionRepository(),
+            product_record_repo=MemoryProductRecordRepository(),
+            counted_product_label_repo=MemoryInventoryCountedProductLabelRepository(),
+            issued_label_resolver=IssuedProductLabelResolver(
+                issued_repo=MemoryIssuedProductLabelRepository()
+            ),
+            inventory_repo=inventory_repo,
+        ),
+    )
+    confirmed, duplicate = confirm.execute(
+        inventory_id="inventory-1",
+        export_id="export-multi-1",
+        conflict_policy="SKIP",
+        confirmed_by_user_id="user-1",
+    )
+    assert duplicate is False
+    assert confirmed.status == "CONFIRMED"
+    results = writer.list_for_inventory("inventory-1")
+    assert len(results) == 2
+    assets = asset_repo.list_by_aisle("aisle-1")
+    assert len(assets) == 1
+    assert {r.source_asset_id for r in results} == {assets[0].id}
+    assert {r.label_id for r in results} == {"6YD0S6WVMM", "6FYR11RPXS"}

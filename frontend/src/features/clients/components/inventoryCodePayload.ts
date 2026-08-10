@@ -1,13 +1,17 @@
+import {
+  parseProductLabelPayload,
+} from './productLabelPayload';
+
 /**
  * Unified inventory label code payload (QR + barcode + scanners).
  *
- * Primary format (v2 print):
- *   <internal_code>|<quantity>
- *   Example: 22294029014|234
+ * Primary print format (v3 / D1 physical stickers):
+ *   D1|<label_id>|<internal_code>|<quantity>|<checksum>
  *
- * Backward compatible parse:
- *   - DI1|C=<urlencoded>|Q=<qty>  (previous barcode format)
- *   - plain internal code only   (quantity = null)
+ * Legacy formats still accepted:
+ *   <internal_code>|<quantity>
+ *   DI1|C=<urlencoded>|Q=<qty>
+ *   plain internal code only   (quantity = null)
  */
 
 export const INVENTORY_CODE_PAYLOAD_SEPARATOR = '|' as const;
@@ -19,7 +23,7 @@ export const INVENTORY_CODE_MAX_LENGTH = 48;
  * Max encoded payload length for CODE128 in the enlarged printable barcode area.
  * Short `code|qty` payloads leave headroom; still reject silent clipping.
  */
-export const INVENTORY_CODE_PAYLOAD_MAX_LENGTH = 72;
+export const INVENTORY_CODE_PAYLOAD_MAX_LENGTH = 96;
 
 /** Positive integers 1–99999999; no leading zeros, decimals, or thousand separators. */
 export const INVENTORY_QUANTITY_PATTERN = /^[1-9]\d{0,7}$/;
@@ -33,11 +37,13 @@ export interface InventoryCodeData {
 }
 
 export interface ParsedInventoryCode {
-  /** Primary printable format uses 'pipe'; DI1 scans report 'di1'; code-only → 'plain'. */
-  readonly format: 'pipe' | 'di1' | 'plain';
+  /** D1 physical stickers; pipe/di1/plain are legacy. */
+  readonly format: 'd1' | 'pipe' | 'di1' | 'plain';
   readonly internal_code: string;
   /** Null when an older code-only label was scanned. */
   readonly quantity: string | null;
+  readonly label_id?: string | null;
+  readonly checksum?: string | null;
 }
 
 export class InventoryCodePayloadError extends Error {
@@ -188,6 +194,23 @@ export function parseInventoryCodePayload(payload: string): ParsedInventoryCode 
     throw new InventoryCodePayloadError('EMPTY_PAYLOAD', 'Payload vacío.');
   }
 
+  const d1 = parseProductLabelPayload(raw);
+  if (d1.status === 'VALID' && d1.internalCode && d1.quantity != null) {
+    return {
+      format: 'd1',
+      internal_code: d1.internalCode,
+      quantity: String(d1.quantity),
+      label_id: d1.labelId,
+      checksum: d1.checksumReceived,
+    };
+  }
+  if (d1.status === 'CHECKSUM_FAILED' || d1.status === 'UNKNOWN_VERSION') {
+    throw new InventoryCodePayloadError(
+      d1.status,
+      d1.detail ?? 'Etiqueta de producto inválida.'
+    );
+  }
+
   if (raw.startsWith(`${LEGACY_DI1_VERSION}|`)) {
     return parseDi1Payload(raw);
   }
@@ -319,9 +342,10 @@ export const LABEL_QUANTITY_PATTERN = INVENTORY_QUANTITY_PATTERN;
 
 export type LabelBarcodeData = InventoryCodeData;
 export type ParsedLabelBarcode = {
-  version: typeof LEGACY_DI1_VERSION | 'PIPE';
+  version: typeof LEGACY_DI1_VERSION | 'PIPE' | 'D1';
   code: string;
   quantity: string;
+  label_id?: string;
 };
 
 export const LabelBarcodePayloadError = InventoryCodePayloadError;
@@ -342,7 +366,7 @@ export function tryBuildLabelBarcodePayload(data: LabelBarcodeData): string | nu
 
 /**
  * Strict parse used by label tests / print path — requires quantity.
- * Accepts pipe and DI1; rejects plain code-only (no quantity).
+ * Accepts D1, pipe and DI1; rejects plain code-only (no quantity).
  */
 export function parseLabelBarcodePayload(payload: string): ParsedLabelBarcode {
   const parsed = parseInventoryCodePayload(payload);
@@ -351,6 +375,14 @@ export function parseLabelBarcodePayload(payload: string): ParsedLabelBarcode {
       'MISSING_QUANTITY',
       'El payload no incluye cantidad.'
     );
+  }
+  if (parsed.format === 'd1') {
+    return {
+      version: 'D1',
+      code: parsed.internal_code,
+      quantity: parsed.quantity,
+      label_id: parsed.label_id ?? undefined,
+    };
   }
   return {
     version: parsed.format === 'di1' ? LEGACY_DI1_VERSION : 'PIPE',

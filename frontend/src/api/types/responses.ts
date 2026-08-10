@@ -1294,6 +1294,15 @@ export interface PositionSummary {
   review_resolution?: string | null;
   /** How the position was created: pipeline detection (automatic) or operator manual coverage from an image (manual). Defaults to automatic for legacy rows. */
   creation_source?: 'automatic' | 'manual';
+  /** All ProductRecords on this position (0..N multi-label D1). */
+  detected_products?: Array<{
+    product_record_id: string;
+    sku: string;
+    detected_quantity: number;
+    corrected_quantity?: number | null;
+    label_id?: string | null;
+    qty_source?: string | null;
+  }>;
 }
 
 /**
@@ -1337,7 +1346,23 @@ export interface JobImageResultCounters {
   without_result: number;
 }
 
-/** One row of GET .../jobs/{job_id}/image-results: photo LEFT JOIN positions (0..n results per image). */
+/** One counted product linked to an image (0..N for D1 multi-label photos). */
+export interface JobImageDetectedProduct {
+  product_record_id: string;
+  position_id: string;
+  sku: string;
+  detected_quantity: number;
+  corrected_quantity?: number | null;
+  label_id?: string | null;
+  qty_source?: string | null;
+}
+
+/**
+ * One row of GET .../jobs/{job_id}/image-results: photo LEFT JOIN positions (0..n results per image).
+ *
+ * - `results`: legacy position summaries (one summary row per linked position; historical UI).
+ * - `detected_products`: physical products counted on the image (0..N), including D1 label_id when present.
+ */
 export interface JobImageResultItem {
   job_source_asset_id: string;
   source_asset_id: string;
@@ -1354,6 +1379,8 @@ export interface JobImageResultItem {
   manual_result_count: number;
   has_manual_result: boolean;
   results: PositionSummary[];
+  /** All product records for linked positions (multi-label D1). */
+  detected_products?: JobImageDetectedProduct[];
   /** Backend operational classification — positioning labels are not product-uncounted. */
   operational_role?: string;
   is_product_candidate?: boolean;

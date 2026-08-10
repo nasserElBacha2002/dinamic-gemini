@@ -13,6 +13,7 @@ import io
 from datetime import datetime, timezone
 
 import pytest
+from PIL import Image
 
 pytest.importorskip("pyzbar")
 qrcode = pytest.importorskip("qrcode")
@@ -105,7 +106,64 @@ def _context() -> ImageProcessingContext:
     )
 
 
-def test_real_qr_pipe_payload_resolves_code_and_quantity() -> None:
+def test_real_two_d1_qr_on_one_canvas_returns_two_products() -> None:
+    """Real pyzbar path: one PNG with two D1 QRs → two consolidator/strategy products.
+
+    Registry is not wired here, so product_results may be empty for D1 (issued check),
+    but the scanner + consolidator stage must surface both label_ids.
+    """
+    from src.domain.product_labels.format import build_product_label_payload
+
+    a = build_product_label_payload(
+        label_id="A1B2C3D4E5", internal_code="232424090", quantity=1000
+    )
+    b = build_product_label_payload(
+        label_id="FGHJKMNPQR", internal_code="232424025", quantity=1100
+    )
+    qa = qrcode.make(a).convert("RGB").resize((220, 220))
+    qb = qrcode.make(b).convert("RGB").resize((220, 220))
+    canvas = Image.new("RGB", (520, 280), color=(255, 255, 255))
+    canvas.paste(qa, (20, 30))
+    canvas.paste(qb, (280, 30))
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    content = buf.getvalue()
+
+    strategy = _strategy(content)
+    asset = _asset()
+    session = strategy._scan_with_variants(asset, content, started=__import__("time").monotonic())
+    raw_values = {c.code_value for c in session.candidates}
+    assert a in raw_values
+    assert b in raw_values
+    assert session.scan_complete is True
+
+    from src.application.services.image_processing.code_detection_consolidator import (
+        CodeDetectionConsolidator,
+        CodeDetectionInput,
+    )
+    from src.application.services.image_processing.code_scan_processing_strategy import (
+        symbology_for_candidate,
+    )
+    from src.application.services.image_processing.encoded_label_payload_parser import (
+        EncodedLabelPayloadParser,
+    )
+
+    parser = EncodedLabelPayloadParser(quantity_max=99999999)
+    detections = [
+        CodeDetectionInput(
+            symbology=symbology_for_candidate(c),
+            raw_value=c.code_value or "",
+            parsed=parser.parse(c.code_value or ""),
+            bounding_box=c.bounding_box_json,
+            detection_index=i,
+        )
+        for i, c in enumerate(session.candidates)
+    ]
+    consolidated = CodeDetectionConsolidator().consolidate(detections)
+    assert len(consolidated.product_results) == 2
+    ids = {p.label_id for p in consolidated.product_results}
+    assert ids == {"A1B2C3D4E5", "FGHJKMNPQR"}
+
     strategy = _strategy(_qr_png_bytes("ABC123|5"))
     result = strategy.process(_context(), _asset())
     assert result.status is ImageResultStatus.RESOLVED_INTERNAL

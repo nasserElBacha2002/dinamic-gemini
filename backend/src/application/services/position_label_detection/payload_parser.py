@@ -7,11 +7,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.domain.aisle_location.label_entities import (
-    POSITIONING_LABEL_PAYLOAD_VERSION,
+    POSITIONING_LABEL_PAYLOAD_VERSION_V1,
+    POSITIONING_LABEL_PAYLOAD_VERSION_V2,
     POSITIONING_LABEL_TYPE,
 )
-from src.domain.aisle_location.payload import payload_sha256
+from src.domain.aisle_location.payload import payload_sha256, validate_positioning_payload
 from src.domain.position_label_detection.entities import PositionLabelDetectionStatus
+
+_SUPPORTED_POSITION_PAYLOAD_VERSIONS = frozenset(
+    {
+        POSITIONING_LABEL_PAYLOAD_VERSION_V1,
+        POSITIONING_LABEL_PAYLOAD_VERSION_V2,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -43,10 +51,17 @@ class PositionLabelPayloadParser:
         self,
         *,
         max_payload_bytes: int,
-        supported_version: int = POSITIONING_LABEL_PAYLOAD_VERSION,
+        supported_versions: frozenset[int] | None = None,
+        # Deprecated alias kept for call sites that pinned a single version.
+        supported_version: int | None = None,
     ) -> None:
         self._max_payload_bytes = max(256, int(max_payload_bytes))
-        self._supported_version = int(supported_version)
+        if supported_versions is not None:
+            self._supported_versions = frozenset(int(v) for v in supported_versions)
+        elif supported_version is not None:
+            self._supported_versions = frozenset({int(supported_version)})
+        else:
+            self._supported_versions = _SUPPORTED_POSITION_PAYLOAD_VERSIONS
 
     def parse(self, raw_value: str) -> ParsedPositionLabelPayload:
         text = (raw_value or "").strip()
@@ -95,11 +110,12 @@ class PositionLabelPayloadParser:
                 payload=parsed,
                 detail="version must be an integer",
             )
-        if version != self._supported_version:
+        if version not in self._supported_versions:
             return ParsedPositionLabelPayload(
                 status=PositionLabelDetectionStatus.UNSUPPORTED_VERSION,
                 payload=parsed,
                 version=version,
+                signature=_optional_signature(parsed),
                 detail=f"unsupported version={version}",
             )
         label_id = parsed.get("label_id")
@@ -108,6 +124,7 @@ class PositionLabelPayloadParser:
                 status=PositionLabelDetectionStatus.MISSING_LABEL_ID,
                 payload=parsed,
                 version=version,
+                signature=_optional_signature(parsed),
                 detail="label_id required",
             )
         signature = parsed.get("signature")
@@ -139,8 +156,21 @@ class PositionLabelPayloadParser:
                     payload=parsed,
                     label_id=label_id.strip(),
                     version=version,
+                    signature=signature.strip(),
                     detail="invalid key_version",
                 )
+        try:
+            validate_positioning_payload(parsed)
+        except ValueError as exc:
+            return ParsedPositionLabelPayload(
+                status=PositionLabelDetectionStatus.INVALID_TYPE,
+                payload=parsed,
+                label_id=label_id.strip(),
+                version=version,
+                key_version=key_version,
+                signature=signature.strip(),
+                detail=str(exc),
+            )
         return ParsedPositionLabelPayload(
             status=PositionLabelDetectionStatus.VALID,
             payload=parsed,
@@ -150,3 +180,10 @@ class PositionLabelPayloadParser:
             signature=signature.strip(),
             payload_hash=payload_sha256(parsed),
         )
+
+
+def _optional_signature(parsed: dict[str, Any]) -> str | None:
+    signature = parsed.get("signature")
+    if isinstance(signature, str) and signature.strip():
+        return signature.strip()
+    return None

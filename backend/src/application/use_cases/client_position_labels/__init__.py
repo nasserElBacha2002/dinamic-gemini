@@ -3,6 +3,8 @@
 from src.application.use_cases.client_position_labels.manage import (
     CreateClientPositionLabelCommand,
     CreateClientPositionLabelUseCase,
+    CreateClientPositionMarkerSetCommand,
+    CreateClientPositionMarkerSetUseCase,
     GetClientPositionLabelCommand,
     GetClientPositionLabelUseCase,
     InvalidateClientPositionLabelCommand,
@@ -21,6 +23,8 @@ from src.application.use_cases.client_position_labels.render import (
 __all__ = [
     "CreateClientPositionLabelCommand",
     "CreateClientPositionLabelUseCase",
+    "CreateClientPositionMarkerSetCommand",
+    "CreateClientPositionMarkerSetUseCase",
     "DownloadClientPositionLabelUseCase",
     "GetClientPositionLabelCommand",
     "GetClientPositionLabelUseCase",

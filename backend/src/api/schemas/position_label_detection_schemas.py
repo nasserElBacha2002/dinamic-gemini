@@ -22,6 +22,7 @@ class ImagePositionDetectionDto(BaseModel):
     sequence_number: int | None = None
     status: str
     signature_status: str
+    payload_version: int | None = None
     position_label: PositionLabelSummaryDto | None = None
     confidence: float | None = None
     detector_version: str
@@ -49,6 +50,7 @@ def detection_to_dto(row: ImagePositionLabelDetection) -> ImagePositionDetection
         sequence_number=row.sequence_number,
         status=row.detection_status.value,
         signature_status=row.signature_status.value,
+        payload_version=row.payload_version,
         position_label=label,
         confidence=row.confidence,
         detector_version=row.detector_version,

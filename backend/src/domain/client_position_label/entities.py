@@ -44,6 +44,11 @@ class ClientPositionLabel:
     invalidation_reason: str | None = None
     idempotency_key: str | None = None
     idempotency_request_hash: str | None = None
+    pallet: str | None = None
+    side: str | None = None
+    level: int | None = None
+    marker_index: int | None = None
+    marker_total: int | None = None
 
 
 @dataclass

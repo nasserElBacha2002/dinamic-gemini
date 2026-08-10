@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - 'mobile/**'
+      - 'contracts/product-labels/**'
       - '.github/workflows/mobile-validate.yml'
       - '.github/workflows/mobile-release.yml'
   push:
     branches: [main, develop]
     paths:
       - 'mobile/**'
+      - 'contracts/product-labels/**'
       - '.github/workflows/mobile-validate.yml'
       - '.github/workflows/mobile-release.yml'
 

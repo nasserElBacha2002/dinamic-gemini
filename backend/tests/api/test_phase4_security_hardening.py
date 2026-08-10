@@ -11,6 +11,7 @@ from src.api.api_key_policy import (
     path_requires_api_key,
 )
 from src.api.security_headers import (
+    SAFE_CORS_ALLOW_HEADERS,
     CorsPolicyError,
     normalize_cors_allow_origins,
     resolve_hsts_enabled,
@@ -182,3 +183,10 @@ def test_security_headers_on_health() -> None:
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+
+
+def test_cors_allowlist_includes_standard_idempotency_key() -> None:
+    """Frontend and v3 routes use ``Idempotency-Key`` (not only ``X-Idempotency-Key``)."""
+    allowed = {h.lower() for h in SAFE_CORS_ALLOW_HEADERS}
+    assert "idempotency-key" in allowed
+    assert "x-idempotency-key" in allowed

@@ -10,6 +10,7 @@ from src.domain.aisle_identification.modes import (
     AisleIdentificationExecutionStrategy,
     AisleIdentificationMode,
 )
+from src.domain.product_labels.processed import ProcessedProductLabel
 
 
 class ExecutionScope(str, Enum):
@@ -72,6 +73,8 @@ class ImageProcessingResult:
     error_message: str | None = None
     execution_scope: ExecutionScope = ExecutionScope.SINGLE_ASSET
     logical_asset_attempt: bool = True
+    #: CODE_SCAN multi-product: 0..N typed physical product labels (D1 after registry resolve).
+    product_results: list[ProcessedProductLabel] = field(default_factory=list)
 
 
 class ProcessingStrategy(Protocol):
