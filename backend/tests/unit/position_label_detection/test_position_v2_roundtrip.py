@@ -99,6 +99,7 @@ def test_unknown_version_still_unsupported_and_signature_not_falsely_missing() -
 
 
 def test_position_v2_missing_signature_is_missing_not_legacy() -> None:
+    """Parser still reports MISSING_SIGNATURE; use-case may accept catalog UNSIGNED separately."""
     raw = (
         '{"type":"DINAMIC_POSITION","version":2,"label_id":"pos_v2_nosig",'
         '"pallet":"02","side":"LEFT","level":1,"marker_index":1,"marker_total":1}'

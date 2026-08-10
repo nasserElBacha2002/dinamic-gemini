@@ -343,6 +343,71 @@ def test_unsigned_active_label_accepted_when_qr_missing_signature() -> None:
     assert result.detections[0].public_identifier == "pos_unsigned"
 
 
+def test_unsigned_v2_active_label_accepted_when_qr_missing_signature() -> None:
+    """Hierarchy v2 labels issued UNSIGNED (no HMAC) must still set position via review path."""
+    import json
+
+    repo_labels = MemoryClientPositionLabelRepository()
+    repo_det = MemoryImagePositionLabelDetectionRepository()
+    now = datetime(2026, 7, 31, tzinfo=timezone.utc)
+    payload = build_positioning_label_payload(
+        public_label_id="pos_v2_unsigned",
+        pallet="02",
+        side="LEFT",
+        level=1,
+        marker_index=1,
+        marker_total=1,
+    )
+    assert payload["version"] == 2
+    repo_labels.save(
+        ClientPositionLabel(
+            id=str(uuid4()),
+            client_id="client-1",
+            public_identifier="pos_v2_unsigned",
+            name="Pallet 02 - LEFT - Level 1",
+            normalized_name="PALLET 02 - LEFT - LEVEL 1",
+            status=ClientPositionLabelStatus.ACTIVE,
+            payload_version=2,
+            canonical_payload=payload,
+            created_at=now,
+            updated_at=now,
+            signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
+        )
+    )
+    use_case = ImagePositionDetectionUseCase(
+        classifier=CodeClassifier(max_payload_bytes=4096),
+        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
+        validator=PositionLabelValidationService(
+            signing=_signing(), signature_validation_enabled=True
+        ),
+        resolver=PositionLabelResolver(label_repo=repo_labels),
+        repo=repo_det,
+        clock=_Clock(),
+        detection_enabled=True,
+        persistence_enabled=True,
+        max_codes_per_image=16,
+    )
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    result = use_case.execute(
+        ImagePositionDetectionCommand(
+            client_id="client-1",
+            inventory_id="inv-1",
+            job_id="job-1",
+            source_asset_id="asset-v2-u",
+            codes=[
+                DetectedCode(symbology="QR_CODE", raw_value=raw, normalized_value=raw, candidate_index=0)
+            ],
+        )
+    )
+    assert len(result.detections) == 1
+    assert (
+        result.detections[0].detection_status
+        is PositionLabelDetectionStatus.LEGACY_UNSIGNED_REQUIRES_REVIEW
+    )
+    assert result.detections[0].public_identifier == "pos_v2_unsigned"
+    assert result.detections[0].metadata_json.get("pallet") == "02"
+
+
 def test_use_case_position_plus_item_keeps_both() -> None:
     import json
 

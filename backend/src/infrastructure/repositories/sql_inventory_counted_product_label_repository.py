@@ -1,4 +1,4 @@
-"""SQL Server claims for inventory-scoped product label_id uniqueness."""
+"""SQL Server claims for aisle-scoped product label_id uniqueness."""
 
 from __future__ import annotations
 
@@ -23,13 +23,14 @@ class SqlInventoryCountedProductLabelRepository(InventoryCountedProductLabelRepo
                 cur.execute(
                     """
                     INSERT INTO inventory_counted_product_labels (
-                        id, inventory_id, label_id, first_product_record_id,
+                        id, inventory_id, aisle_id, label_id, first_product_record_id,
                         first_source_asset_id, first_job_id, first_position_id, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         row.id,
                         row.inventory_id,
+                        row.aisle_id,
                         row.label_id.upper(),
                         row.first_product_record_id,
                         row.first_source_asset_id,
@@ -48,19 +49,19 @@ class SqlInventoryCountedProductLabelRepository(InventoryCountedProductLabelRepo
         """Insert claim; raise ProductLabelAlreadyClaimedError on unique collision."""
         if not self.try_claim(row):
             raise ProductLabelAlreadyClaimedError(
-                f"label_id already claimed in inventory: {row.label_id}"
+                f"label_id already claimed in aisle: {row.label_id}"
             )
 
-    def get(self, inventory_id: str, label_id: str) -> InventoryCountedProductLabel | None:
+    def get(self, aisle_id: str, label_id: str) -> InventoryCountedProductLabel | None:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
-                SELECT id, inventory_id, label_id, first_product_record_id,
+                SELECT id, inventory_id, aisle_id, label_id, first_product_record_id,
                        first_source_asset_id, first_job_id, first_position_id, created_at
                 FROM inventory_counted_product_labels
-                WHERE inventory_id = ? AND label_id = ?
+                WHERE aisle_id = ? AND label_id = ?
                 """,
-                (inventory_id, label_id.upper()),
+                (aisle_id, label_id.upper()),
             )
             row = cur.fetchone()
         if not row:
@@ -68,6 +69,7 @@ class SqlInventoryCountedProductLabelRepository(InventoryCountedProductLabelRepo
         return InventoryCountedProductLabel(
             id=str(row.id),
             inventory_id=str(row.inventory_id),
+            aisle_id=str(row.aisle_id),
             label_id=str(row.label_id),
             first_product_record_id=str(row.first_product_record_id),
             first_source_asset_id=str(row.first_source_asset_id),

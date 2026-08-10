@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from src.application.dto.uploaded_file import UploadedFile
+from src.application.errors import DuplicateUploadIdempotencyKeyError
 from src.application.ports.clock import Clock
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.local_csv_inventory_result_writer import LocalCsvInventoryResultWriter
@@ -320,6 +321,9 @@ class ConfirmLocalInventoryPackage:
         now = self._clock.now()
         photos_by_capture = {p.capture_photo_id: p for p in package.photos}
         evidence: dict[str, str] = {}
+        # One JPG → N CSV product rows share the same upload idempotency key.
+        # Materialize the SourceAsset once per capture_photo_id and reuse.
+        asset_id_by_photo: dict[str, str] = {}
         # source_assets.upload_batch_id is VARCHAR(36); package.id is already a UUID.
         upload_batch_id = package.id
         aisle_ids: set[str] = set()
@@ -327,6 +331,11 @@ class ConfirmLocalInventoryPackage:
         for row in rows_to_import:
             photo = photos_by_capture.get(row.capture_photo_id)
             if photo is None:
+                continue
+            reused = asset_id_by_photo.get(photo.capture_photo_id)
+            if reused is not None:
+                evidence[row.id] = reused
+                aisle_ids.add(row.aisle_id)
                 continue
             path = Path(photo.staging_path)
             if not path.is_file():
@@ -352,24 +361,36 @@ class ConfirmLocalInventoryPackage:
                     # server ordered_capture_sessions rows (FK would fail).
                     sequence_number=photo.sequence_number or row.capture_order,
                 )
-                asset, _rollback = self._materializer.persist_uploaded_file_as_source_asset(
-                    aisle_id=row.aisle_id,
-                    uploaded=uploaded,
-                    now=now,
-                    metadata_json={
-                        "local_package_id": package.id,
-                        "capture_photo_id": photo.capture_photo_id,
-                        "capture_session_id": row.capture_session_id,
-                        "asset_variant": photo.asset_variant,
-                        "package_photo_sha256": photo.sha256,
-                        "content_sha256": photo.sha256,
-                        "upload_client_file_id_original": raw_client_file_id or None,
-                    },
-                    upload_batch_id=upload_batch_id,
-                    upload_client_file_id=upload_client_file_id,
-                    sequence_number=photo.sequence_number or row.capture_order,
-                    sequence_source="CLIENT_ASSIGNED",
-                )
+                try:
+                    asset, _rollback = self._materializer.persist_uploaded_file_as_source_asset(
+                        aisle_id=row.aisle_id,
+                        uploaded=uploaded,
+                        now=now,
+                        metadata_json={
+                            "local_package_id": package.id,
+                            "capture_photo_id": photo.capture_photo_id,
+                            "capture_session_id": row.capture_session_id,
+                            "asset_variant": photo.asset_variant,
+                            "package_photo_sha256": photo.sha256,
+                            "content_sha256": photo.sha256,
+                            "upload_client_file_id_original": raw_client_file_id or None,
+                        },
+                        upload_batch_id=upload_batch_id,
+                        upload_client_file_id=upload_client_file_id,
+                        sequence_number=photo.sequence_number or row.capture_order,
+                        sequence_source="CLIENT_ASSIGNED",
+                    )
+                except DuplicateUploadIdempotencyKeyError:
+                    # Partial retry / concurrent winner: reuse existing row for this photo.
+                    existing = self._materializer.find_by_upload_idempotency_key(
+                        aisle_id=row.aisle_id,
+                        upload_batch_id=upload_batch_id,
+                        upload_client_file_id=upload_client_file_id,
+                    )
+                    if existing is None:
+                        raise
+                    asset = existing
+            asset_id_by_photo[photo.capture_photo_id] = asset.id
             evidence[row.id] = asset.id
             aisle_ids.add(row.aisle_id)
 

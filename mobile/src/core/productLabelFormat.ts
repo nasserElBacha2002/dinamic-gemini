@@ -103,6 +103,23 @@ export function parseProductLabelPayload(raw: string): ParsedProductLabelPayload
   }
   const match = D1_PATTERN.exec(text);
   if (!match) {
+    // Any D1|… that fails the strict grammar is still a D1 *candidate*.
+    // Must not fall through as NOT_OUR_FORMAT (that enables legacy revival).
+    if (/^D1\|/i.test(text)) {
+      const parts = text.split('|');
+      return {
+        status: 'MALFORMED',
+        formatVersion: 'D1',
+        labelId: parts[1] ? parts[1].trim().toUpperCase() || null : null,
+        internalCode: parts[2] ? parts[2].trim() || null : null,
+        quantity: null,
+        checksumReceived: parts[4] ? parts[4].trim().toUpperCase() || null : null,
+        checksumExpected: null,
+        rawValue: text,
+        normalizedPayload: null,
+        detail: 'd1_grammar_mismatch',
+      };
+    }
     return {
       status: 'NOT_OUR_FORMAT',
       formatVersion: null,

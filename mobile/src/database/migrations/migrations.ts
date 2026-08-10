@@ -675,6 +675,13 @@ ALTER TABLE local_detection_drafts ADD COLUMN product_results_json TEXT;
 ALTER TABLE local_detection_drafts ADD COLUMN position_detected INTEGER NOT NULL DEFAULT 0;
 `,
   },
+  {
+    version: 26,
+    name: 'draft_product_rejections_json',
+    sql: `
+ALTER TABLE local_detection_drafts ADD COLUMN rejections_json TEXT;
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

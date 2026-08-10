@@ -15,6 +15,7 @@ import {
   parseProductLabelPayload,
   type ParsedProductLabelPayload,
 } from './productLabelFormat';
+import type { ProductLabelRejection } from './productLabelRejection';
 import { parseDinamicPositionPayload } from './positionLabelPayload';
 
 export type ConsolidationStatus =
@@ -30,6 +31,8 @@ export interface DetectedCodeCandidate {
   readonly rawValue: string;
   readonly symbology: string;
   readonly detectionIndex?: number;
+  /** Optional ML Kit bounding box as "l,t,w,h" (diagnostics only). */
+  readonly boundingBox?: string | null;
 }
 
 export interface ProductLabelResult {
@@ -54,12 +57,9 @@ export interface ConsolidationResult {
   readonly warnings: readonly string[];
   readonly parsed: PayloadParseResult | null;
   readonly productResults: readonly ProductLabelResult[];
-  readonly rejections: readonly {
-    readonly validationStatus: string;
-    readonly rawValue: string;
-    readonly detectionIndex: number;
-    readonly labelId: string | null;
-  }[];
+  readonly rejections: readonly ProductLabelRejection[];
+  /** True when any D1-shaped candidate was seen (blocks legacy revival). */
+  readonly d1Mode: boolean;
   /** Exact ML Kit raw string for a co-located DINAMIC_POSITION QR, if any. */
   readonly positionRawPayload: string | null;
 }
@@ -88,7 +88,29 @@ function emptyResult(
     parsed: null,
     productResults: [],
     rejections: [],
+    d1Mode: false,
     ...overrides,
+  };
+}
+
+function rejectionFromD1(
+  det: { rawValue: string; detectionIndex: number },
+  parsed: ParsedProductLabelPayload,
+): ProductLabelRejection {
+  const mapped =
+    parsed.status === 'CHECKSUM_FAILED'
+      ? 'D1_CHECKSUM_FAILED'
+      : parsed.status === 'MALFORMED'
+        ? 'D1_MALFORMED'
+        : parsed.status === 'UNKNOWN_VERSION'
+          ? 'UNKNOWN_VERSION'
+          : parsed.status;
+  return {
+    labelId: parsed.labelId,
+    validationStatus: mapped,
+    reason: parsed.detail ?? mapped,
+    detectionIndex: det.detectionIndex,
+    rawValuePreview: det.rawValue.slice(0, 48),
   };
 }
 
@@ -114,12 +136,7 @@ export function consolidateCodeDetections(
     string,
     { det: (typeof enriched)[number]; parsed: ParsedProductLabelPayload }[]
   >();
-  const rejections: Array<{
-    validationStatus: string;
-    rawValue: string;
-    detectionIndex: number;
-    labelId: string | null;
-  }> = [];
+  const rejections: ProductLabelRejection[] = [];
   let hasD1Attempt = false;
 
   for (const det of enriched) {
@@ -130,18 +147,7 @@ export function consolidateCodeDetections(
       list.push({ det, parsed: det.d1 });
       d1ByLabel.set(det.d1.labelId, list);
     } else {
-      const mapped =
-        det.d1.status === 'CHECKSUM_FAILED'
-          ? 'D1_CHECKSUM_FAILED'
-          : det.d1.status === 'MALFORMED'
-            ? 'D1_MALFORMED'
-            : det.d1.status;
-      rejections.push({
-        validationStatus: mapped,
-        rawValue: det.rawValue,
-        detectionIndex: det.detectionIndex,
-        labelId: det.d1.labelId,
-      });
+      rejections.push(rejectionFromD1(det, det.d1));
     }
   }
 
@@ -152,10 +158,11 @@ export function consolidateCodeDetections(
       const qtys = new Set(group.map((g) => g.parsed.quantity));
       if (codes.size > 1 || qtys.size > 1) {
         rejections.push({
-          validationStatus: 'QUANTITY_CONFLICT',
-          rawValue: group[0]!.det.rawValue,
-          detectionIndex: group[0]!.det.detectionIndex,
           labelId,
+          validationStatus: 'QUANTITY_CONFLICT',
+          reason: 'conflicting_code_or_qty_for_label',
+          detectionIndex: group[0]!.det.detectionIndex,
+          rawValuePreview: group[0]!.det.rawValue.slice(0, 48),
         });
         continue;
       }
@@ -174,12 +181,13 @@ export function consolidateCodeDetections(
       });
     }
     if (products.length === 0) {
-      const warnings = ['NO_VALID_D1_PRODUCT_LABEL'];
+      const warnings = ['NO_VALID_D1_PRODUCT_LABEL', 'D1_CANDIDATES_FAILED'];
       if (positionRawPayload) warnings.push('POSITION_LABEL_DETECTED');
       return emptyResult({
         status: 'NO_VALID_CODE',
         warnings,
         rejections,
+        d1Mode: true,
         positionRawPayload,
         parsed: null,
       });
@@ -199,18 +207,20 @@ export function consolidateCodeDetections(
       parsed: null,
       productResults: products,
       rejections,
+      d1Mode: true,
       positionRawPayload,
     };
   }
 
   // Known Dinamic D1 attempt(s) failed → never revive via legacy barcode.
-  if (hasD1Attempt && rejections.length > 0) {
+  if (hasD1Attempt) {
     const warnings = ['D1_CANDIDATES_FAILED'];
     if (positionRawPayload) warnings.push('POSITION_LABEL_DETECTED');
     return emptyResult({
       status: 'NO_VALID_CODE',
       warnings,
       rejections,
+      d1Mode: true,
       positionRawPayload,
     });
   }
@@ -225,6 +235,7 @@ export function consolidateCodeDetections(
       status: 'NO_VALID_CODE',
       warnings: [...warnings],
       rejections,
+      d1Mode: false,
       positionRawPayload,
       selectedIndex: positionRawPayload
         ? enriched.find((d) => d.rawValue === positionRawPayload)?.detectionIndex ?? null
@@ -250,6 +261,7 @@ export function consolidateCodeDetections(
       warnings: ['MULTIPLE_DISTINCT_CODES', 'LEGACY_NO_LABEL_ID'],
       parsed: withCode[0]?.parsed ?? null,
       rejections,
+      d1Mode: false,
       positionRawPayload,
     });
   }
@@ -270,6 +282,7 @@ export function consolidateCodeDetections(
       warnings: ['QUANTITY_CONFLICT'],
       parsed: group[0]?.parsed ?? null,
       rejections,
+      d1Mode: false,
       positionRawPayload,
     });
   }
@@ -283,6 +296,7 @@ export function consolidateCodeDetections(
       warnings: ['QUANTITY_MISSING'],
       parsed: group[0]?.parsed ?? null,
       rejections,
+      d1Mode: false,
       positionRawPayload,
     });
   }
@@ -303,6 +317,7 @@ export function consolidateCodeDetections(
     parsed: selected.parsed,
     productResults: [],
     rejections,
+    d1Mode: false,
     positionRawPayload,
   };
 }

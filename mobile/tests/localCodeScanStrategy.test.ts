@@ -39,6 +39,7 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
       positionSnapshotJson?: string | null;
       labelId?: string | null;
       productResultsJson?: string | null;
+      rejectionsJson?: string | null;
       positionDetected?: boolean | null;
     }): Promise<LocalDetectionDraftRow> {
       const existing = rows.find(
@@ -89,6 +90,7 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
         label_id: input.labelId ?? existing?.label_id ?? null,
         product_results_json:
           input.productResultsJson ?? existing?.product_results_json ?? null,
+        rejections_json: input.rejectionsJson ?? existing?.rejections_json ?? null,
         position_detected: input.positionDetected
           ? 1
           : (existing?.position_detected ?? 0),

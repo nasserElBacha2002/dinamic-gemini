@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -148,6 +148,12 @@ describe('SQLite migrations', () => {
     expect(v25?.sql).toContain('product_results_json');
     expect(v25?.sql).toContain('label_id');
     expect(v25?.sql).toContain('position_detected');
+  });
+
+  it('adds v26 draft rejections_json', () => {
+    const v26 = MIGRATIONS.find((m) => m.version === 26);
+    expect(v26?.name).toBe('draft_product_rejections_json');
+    expect(v26?.sql).toContain('rejections_json');
   });
 });
 

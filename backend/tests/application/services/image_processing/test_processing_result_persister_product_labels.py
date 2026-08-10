@@ -135,6 +135,7 @@ def test_all_labels_duplicate_skips_empty_position() -> None:
             InventoryCountedProductLabel(
                 id=f"c-{lid}",
                 inventory_id="inv-1",
+                aisle_id="aisle-1",
                 label_id=lid,
                 first_product_record_id=pid,
                 first_source_asset_id="a0",
@@ -163,6 +164,7 @@ def test_mixed_duplicate_and_new_persists_only_new() -> None:
         InventoryCountedProductLabel(
             id="c1",
             inventory_id="inv-1",
+            aisle_id="aisle-1",
             label_id="A1B2C3D4E5",
             first_product_record_id="p0",
             first_source_asset_id="a0",
@@ -184,3 +186,32 @@ def test_mixed_duplicate_and_new_persists_only_new() -> None:
     assert len(saved_products) == 1
     assert saved_products[0].label_id == "FGHJKMNPQR"
     assert saved_products[0].sku == "SKU2"
+
+
+def test_same_label_other_aisle_does_not_block() -> None:
+    counted = MemoryInventoryCountedProductLabelRepository()
+    now = datetime(2026, 7, 21, 12, 0, 0, tzinfo=timezone.utc)
+    counted.try_claim(
+        InventoryCountedProductLabel(
+            id="c1",
+            inventory_id="inv-1",
+            aisle_id="aisle-other",
+            label_id="A1B2C3D4E5",
+            first_product_record_id="p0",
+            first_source_asset_id="a0",
+            first_job_id="j0",
+            first_position_id="pos0",
+            created_at=now,
+        )
+    )
+    persister, saved_positions, saved_products, _ = _harness(counted=counted)
+    outcome = persister.persist(
+        result=_result(_spec("A1B2C3D4E5")),
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+    )
+    assert outcome.persisted is True
+    assert outcome.products_skipped_duplicate == 0
+    assert outcome.products_persisted == 1
+    assert len(saved_products) == 1
+    assert saved_products[0].label_id == "A1B2C3D4E5"

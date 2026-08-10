@@ -82,8 +82,25 @@ export function getInitialFilterFromReturnState(state: unknown): ResultsFilterKi
 }
 
 /**
+ * Preserve order while removing duplicate ids.
+ * Multi-product rows share ``sourcePositionId``; nav must be position/photo scoped.
+ */
+export function uniqueOrderedIds(ids: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of ids) {
+    const id = raw.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/**
  * Compute previous/next from the current visible result set.
  * Returns null if currentId is not in the list or list is empty.
+ * Skips adjacent duplicate ids so multi-product photos do not stall Next/Prev.
  */
 export function getResultNavigationContext(
   resultIds: string[],
@@ -93,11 +110,28 @@ export function getResultNavigationContext(
   const currentIndex = resultIds.indexOf(currentId);
   if (currentIndex < 0) return null;
 
+  let previousId: string | null = null;
+  for (let i = currentIndex - 1; i >= 0; i -= 1) {
+    const candidate = resultIds[i]!;
+    if (candidate !== currentId) {
+      previousId = candidate;
+      break;
+    }
+  }
+
+  let nextId: string | null = null;
+  for (let i = currentIndex + 1; i < resultIds.length; i += 1) {
+    const candidate = resultIds[i]!;
+    if (candidate !== currentId) {
+      nextId = candidate;
+      break;
+    }
+  }
+
   return {
     currentIndex,
-    previousId: currentIndex > 0 ? resultIds[currentIndex - 1]! : null,
-    nextId:
-      currentIndex < resultIds.length - 1 ? resultIds[currentIndex + 1]! : null,
+    previousId,
+    nextId,
     total: resultIds.length,
   };
 }

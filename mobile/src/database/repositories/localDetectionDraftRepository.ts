@@ -65,6 +65,8 @@ export interface LocalDetectionDraftRow {
   readonly label_id: string | null;
   /** JSON array of ProductLabelResult-like objects (0..N). */
   readonly product_results_json: string | null;
+  /** JSON array of ProductLabelRejection objects (observable rejects). */
+  readonly rejections_json: string | null;
   /** 1 when a DINAMIC_POSITION was applied from this photo. */
   readonly position_detected: number;
   readonly detected_at: string | null;
@@ -99,6 +101,7 @@ export class LocalDetectionDraftRepository {
     readonly positionSnapshotJson?: string | null;
     readonly labelId?: string | null;
     readonly productResultsJson?: string | null;
+    readonly rejectionsJson?: string | null;
     readonly positionDetected?: boolean | null;
   }): Promise<LocalDetectionDraftRow> {
     const now = new Date().toISOString();
@@ -112,6 +115,7 @@ export class LocalDetectionDraftRepository {
     const positionSnapshotJson = input.positionSnapshotJson ?? null;
     const labelId = input.labelId ?? null;
     const productResultsJson = input.productResultsJson ?? null;
+    const rejectionsJson = input.rejectionsJson ?? null;
     const positionDetected = input.positionDetected ? 1 : 0;
     await withSqliteBusyRetry(() =>
       this.db.runAsync(
@@ -121,9 +125,9 @@ export class LocalDetectionDraftRepository {
         detected_format, detected_symbology, parser_version, detector_version,
         candidate_count, error_code, processing_ms, comparison_status, compare_result, compared_at,
         prepared_asset_fingerprint, scan_owner, scan_generation, position_snapshot_json,
-        label_id, product_results_json, position_detected,
+        label_id, product_results_json, rejections_json, position_detected,
         detected_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)
       DO UPDATE SET
         status = excluded.status,
@@ -147,6 +151,7 @@ export class LocalDetectionDraftRepository {
         position_snapshot_json = COALESCE(excluded.position_snapshot_json, local_detection_drafts.position_snapshot_json),
         label_id = excluded.label_id,
         product_results_json = excluded.product_results_json,
+        rejections_json = excluded.rejections_json,
         position_detected = excluded.position_detected,
         detected_at = COALESCE(local_detection_drafts.detected_at, excluded.detected_at),
         updated_at = excluded.updated_at
@@ -174,6 +179,7 @@ export class LocalDetectionDraftRepository {
       positionSnapshotJson,
       labelId,
       productResultsJson,
+      rejectionsJson,
       positionDetected,
       detectedAt,
       now,

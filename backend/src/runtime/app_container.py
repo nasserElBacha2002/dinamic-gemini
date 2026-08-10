@@ -1600,7 +1600,7 @@ class AppContainer:
         return self._manual_image_result_uow_factory
 
     def get_counted_product_label_repo(self):
-        """Inventory-scoped D1 label_id claim store (SQL or memory singleton)."""
+        """Aisle-scoped D1 label_id claim store (SQL or memory singleton)."""
         if getattr(self, "_counted_product_label_repo", None) is not None:
             return self._counted_product_label_repo
         from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (

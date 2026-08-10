@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from src.application.errors import OrderedCaptureSessionConflictError
+from src.application.errors import OrderedCaptureSessionConflictError, DuplicateUploadIdempotencyKeyError
 from src.application.ports.repositories import SourceAssetRepository
 from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.application.services.capture_sequence import sort_assets_by_logical_sequence
@@ -20,6 +20,22 @@ class MemorySourceAssetRepository(SourceAssetRepository):
         self._store: dict[str, SourceAsset] = {}
 
     def save(self, asset: SourceAsset) -> None:
+        batch = (asset.upload_batch_id or "").strip()
+        client = (asset.upload_client_file_id or "").strip()
+        if batch and client:
+            for existing in self._store.values():
+                if existing.id == asset.id:
+                    continue
+                if (
+                    existing.aisle_id == asset.aisle_id
+                    and (existing.upload_batch_id or "").strip() == batch
+                    and (existing.upload_client_file_id or "").strip() == client
+                ):
+                    raise DuplicateUploadIdempotencyKeyError(
+                        "Duplicate upload idempotency key for this aisle "
+                        f"(aisle_id={asset.aisle_id}, upload_batch_id={batch}, "
+                        f"upload_client_file_id={client})"
+                    )
         if asset.ordered_capture_session_id and asset.sequence_number is not None:
             for existing in self._store.values():
                 if existing.id == asset.id:

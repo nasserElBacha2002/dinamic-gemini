@@ -13,11 +13,16 @@ import {
   LOCAL_CODE_DETECTOR_VERSION,
 } from './localCodeDetector';
 import { parseStoredProductResults } from '../../core/storedProductResults';
+import {
+  serializeProductRejections,
+  type ProductLabelRejection,
+} from '../../core/productLabelRejection';
 import { applyPositionScan, getActivePosition } from './activePositionStore';
 import type { ActivePositionState } from '../../core/positionLabelPayload';
 import { parseDinamicPositionPayload } from '../../core/positionLabelPayload';
 
-export const LOCAL_CODE_SCAN_TIMEOUT_MS = 10_000;
+/** Must cover native multipass (full + tiles + zoom crops). */
+export const LOCAL_CODE_SCAN_TIMEOUT_MS = 22_000;
 export const LOCAL_CODE_SCAN_CONCURRENCY = 1;
 export const LOCAL_SCAN_STALE_MS = 60_000;
 export const LOCAL_SCAN_OWNER = 'js-local-code-scan';
@@ -265,12 +270,20 @@ export class LocalCodeScanStrategy {
       }
 
       let products = [...consolidated.productResults];
+      const rejections: ProductLabelRejection[] = [...consolidated.rejections];
       let duplicateLabels = 0;
       if (products.length > 0) {
         const kept: typeof products = [];
         for (const p of products) {
           if (seenLabelIds.has(p.labelId)) {
             duplicateLabels += 1;
+            rejections.push({
+              labelId: p.labelId,
+              validationStatus: 'DUPLICATE_LABEL',
+              reason: 'session_label_already_counted',
+              detectionIndex: p.selectedIndex,
+              rawValuePreview: p.rawPayload.slice(0, 48),
+            });
             continue;
           }
           seenLabelIds.add(p.labelId);
@@ -292,10 +305,19 @@ export class LocalCodeScanStrategy {
               })),
             )
           : null;
+      const rejectionsJson = serializeProductRejections(rejections);
 
       const primary = products[0] ?? null;
+      const d1Mode = consolidated.d1Mode;
+      // In D1 MODE never persist legacy scalar codes (blocks CSV revival).
+      const persistInternalCode = d1Mode
+        ? primary?.internalCode ?? null
+        : primary?.internalCode ?? consolidated.internalCode;
+      const persistQuantity = d1Mode
+        ? primary?.quantity ?? null
+        : primary?.quantity ?? consolidated.quantity;
       const isPositionOnly =
-        positionDetected && products.length === 0 && consolidated.status === 'NO_VALID_CODE';
+        positionDetected && products.length === 0 && (d1Mode || consolidated.status === 'NO_VALID_CODE');
 
       await this.deps.drafts.upsertDraft({
         capturePhotoId: input.capturePhotoId,
@@ -303,15 +325,16 @@ export class LocalCodeScanStrategy {
         clientFileId: input.clientFileId,
         status: isPositionOnly ? 'DETECTED_UNVERIFIED' : status,
         rawValueHash: selectedRaw ? hashPayloadFingerprint(selectedRaw) : null,
-        internalCode: primary?.internalCode ?? consolidated.internalCode,
-        quantity: primary?.quantity ?? consolidated.quantity,
+        internalCode: persistInternalCode,
+        quantity: persistQuantity,
         labelId: primary?.labelId ?? null,
         productResultsJson,
+        rejectionsJson,
         positionDetected,
         quantityStatus:
           consolidated.status === 'MISSING_QUANTITY'
             ? 'MISSING'
-            : primary?.quantity != null || consolidated.quantity != null
+            : persistQuantity != null
               ? 'PRESENT'
               : consolidated.status === 'NO_DETECTIONS'
                 ? null
@@ -334,9 +357,11 @@ export class LocalCodeScanStrategy {
             ? consolidated.status
             : status === 'INVALID' || status === 'DETECTED_UNVERIFIED'
               ? parsedError ??
-                (consolidated.warnings.includes('D1_CANDIDATES_FAILED')
+                (d1Mode && products.length === 0
                   ? 'D1_CANDIDATES_FAILED'
-                  : 'NO_VALID_CODE')
+                  : consolidated.warnings.includes('D1_CANDIDATES_FAILED')
+                    ? 'D1_CANDIDATES_FAILED'
+                    : 'NO_VALID_CODE')
               : status === 'UNRESOLVED'
                 ? 'NO_DETECTIONS'
                 : null,
@@ -345,6 +370,48 @@ export class LocalCodeScanStrategy {
         scanGeneration,
         comparisonStatus: 'PENDING',
         positionSnapshotJson,
+      });
+
+      const validLabelIds = products.map((p) => p.labelId);
+      const rejectedLabelIds = rejections
+        .map((r) => r.labelId)
+        .filter((id): id is string => Boolean(id));
+      emitObservability(this.deps.reporter, {
+        name: 'local_scan_multilabel_trace',
+        sessionId: input.captureSessionId,
+        clientFileId: input.clientFileId ?? undefined,
+        durationMs: processingMs,
+        attributes: {
+          capture_photo_id: input.capturePhotoId,
+          raw_codes_detected_count: candidates.length,
+          raw_codes_json: JSON.stringify(
+            candidates.map((c) => ({
+              format: c.symbology,
+              raw_preview: c.rawValue.slice(0, 64),
+              bounding_box: c.boundingBox ?? null,
+            })),
+          ),
+          position_candidates_count: consolidated.positionRawPayload ? 1 : 0,
+          product_d1_candidates_count: candidates.filter((c) => {
+            const v = c.rawValue.trim().toUpperCase();
+            return v.startsWith('D1|') || /^D\d+\|/.test(v);
+          }).length,
+          legacy_candidates_count: candidates.filter((c) => {
+            const v = c.rawValue;
+            return v.includes('|') && !v.toUpperCase().startsWith('D1|') && !v.includes('"type"');
+          }).length,
+          d1_mode: d1Mode,
+          d1_valid_count: products.length,
+          d1_invalid_count: consolidated.rejections.length,
+          valid_label_ids: validLabelIds.join(','),
+          rejected_label_ids: rejectedLabelIds.join(','),
+          consolidated_product_results_count: consolidated.productResults.length,
+          strategy_product_results_count: products.length,
+          stored_product_results_count: products.length,
+          rejections_count: rejections.length,
+          duplicate_labels: duplicateLabels,
+          consolidation_status: consolidated.status,
+        },
       });
 
       const eventName =
@@ -369,15 +436,12 @@ export class LocalCodeScanStrategy {
           codes_detected: candidates.length,
           position_candidates: consolidated.positionRawPayload ? 1 : 0,
           product_candidates: consolidated.productResults.length,
-          d1_valid: consolidated.productResults.filter((p) => p.validationStatus === 'VALID' || p.validationStatus === 'D1_VALID')
-            .length,
+          d1_valid: products.length,
           d1_invalid: consolidated.rejections.length,
-          legacy_candidates: candidates.filter((c) => {
-            const v = c.rawValue;
-            return v.includes('|') && !v.startsWith('D1|') && !v.includes('"type"');
-          }).length,
+          d1_mode: d1Mode,
           products_emitted: products.length,
           duplicate_labels: duplicateLabels,
+          rejections_count: rejections.length,
           active_position_before: activeBefore?.labelId ?? null,
           position_detected: positionDetected,
           active_position_after: getActivePosition(input.captureSessionId)?.labelId ?? null,

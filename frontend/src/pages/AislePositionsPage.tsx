@@ -56,6 +56,7 @@ import {
   filterResults,
   sortResultsByPriority,
   getInitialFilterFromReturnState,
+  uniqueOrderedIds,
 } from '../features/results';
 import { resolveBrowseRunJobIds } from '../features/results/resolveBrowseRunJobId';
 import {
@@ -566,7 +567,9 @@ export default function AislePositionsPage() {
         aisleCode: aisle?.code ?? t('common.em_dash'),
         aisleId,
         positionId,
-        resultIds: rowsOrderedForTable.map((r) => r.sourcePositionId ?? r.id),
+        resultIds: uniqueOrderedIds(
+          rowsOrderedForTable.map((r) => r.sourcePositionId ?? r.id)
+        ),
         returnTo: 'aisle_results',
         filter,
         jobId: visibleJobId ?? undefined,

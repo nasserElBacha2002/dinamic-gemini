@@ -14,6 +14,7 @@ import {
   type ActivePositionState,
 } from '../../core/positionLabelPayload';
 import { parseStoredProductResults } from '../../core/storedProductResults';
+import { parseStoredProductRejections } from '../../core/productLabelRejection';
 
 export interface LocalCsvExportInput {
   readonly session: CaptureSessionRow;
@@ -131,7 +132,19 @@ function productsForPhoto(
       quantity: p.quantity,
     }));
   }
-  // Confirmed override (single) or legacy single draft without product_results_json.
+
+  const errorCode = (draft?.error_code || '').toUpperCase();
+  const rejections = parseStoredProductRejections(draft?.rejections_json);
+  // D1 MODE fail-closed: never revive scalar/legacy product rows.
+  if (
+    errorCode === 'D1_CANDIDATES_FAILED' ||
+    errorCode.startsWith('D1_') ||
+    rejections.length > 0
+  ) {
+    return [];
+  }
+
+  // Confirmed override (operator) or authentic legacy single draft without product_results_json.
   const code = confirmed?.confirmed_internal_code ?? draft?.internal_code;
   if (code && String(code).trim() && draft?.error_code !== 'POSITION_LABEL_DETECTED') {
     const labelId =
@@ -355,6 +368,8 @@ export async function buildLocalCsvExport(input: LocalCsvExportInput): Promise<L
   const productResultCount = rows.filter((r) => r.source === 'LOCAL_CODE_SCAN').length;
   const positionEventCount = rows.filter((r) => r.source === 'LOCAL_POSITION_LABEL').length;
   const rejectedDetectionCount = input.drafts.reduce((acc, d) => {
+    const fromJson = parseStoredProductRejections(d.rejections_json).length;
+    if (fromJson > 0) return acc + fromJson;
     if (!d.product_results_json && d.error_code === 'D1_CANDIDATES_FAILED') return acc + 1;
     return acc;
   }, 0);

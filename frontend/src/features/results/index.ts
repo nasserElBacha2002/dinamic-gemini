@@ -36,7 +36,7 @@ export type { ResultPriority, ResultPriorityTier } from './utils/resultPriority'
 
 export { LOW_CONFIDENCE_THRESHOLD } from './constants';
 export { visibleTraceabilityToApiStatus } from './utils/traceabilityDisplay';
-export { getResultNavigationContext, parseResultDetailNavigationState, getInitialFilterFromReturnState } from './utils/navigationContext';
+export { getResultNavigationContext, parseResultDetailNavigationState, getInitialFilterFromReturnState, uniqueOrderedIds } from './utils/navigationContext';
 export type {
   ResultDetailNavigationState,
   ResultDetailReturnTo,

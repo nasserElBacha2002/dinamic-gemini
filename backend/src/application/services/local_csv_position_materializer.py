@@ -376,6 +376,7 @@ class LocalCsvPositionMaterializer:
                 InventoryCountedProductLabel(
                     id=str(uuid.uuid4()),
                     inventory_id=result.inventory_id,
+                    aisle_id=result.aisle_id,
                     label_id=label_id,
                     first_product_record_id=product_id,
                     first_source_asset_id=(result.source_asset_id or "").strip() or position_id,

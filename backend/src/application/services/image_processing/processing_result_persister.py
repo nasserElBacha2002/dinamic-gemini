@@ -5,8 +5,8 @@ code-scan run and an operator manual result can never both create a position for
 ``(job_id, source_asset_id)``.
 
 Physical shelf association remains via sequential reconciliation (forward-fill).
-Physical product stickers (D1 ``label_id``) are inventory-deduped via
-``inventory_counted_product_labels`` UNIQUE(inventory_id, label_id).
+Physical product stickers (D1 ``label_id``) are aisle-deduped via
+``inventory_counted_product_labels`` UNIQUE(aisle_id, label_id).
 
 Idempotent: existing coverage for ``(job_id, source_asset_id)`` → reconcile no-op.
 """
@@ -388,6 +388,7 @@ class ProcessingResultPersister:
                             InventoryCountedProductLabel(
                                 id=str(uuid.uuid4()),
                                 inventory_id=inventory_id,
+                                aisle_id=aisle_id,
                                 label_id=str(label_id),
                                 first_product_record_id=product_id,
                                 first_source_asset_id=asset_id,

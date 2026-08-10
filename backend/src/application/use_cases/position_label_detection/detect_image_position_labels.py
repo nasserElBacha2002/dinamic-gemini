@@ -352,20 +352,16 @@ class ImagePositionDetectionUseCase:
     ) -> ImagePositionLabelDetection:
         parsed = self._parser.parse(code.raw_value)
         if parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE and parsed.label_id:
-            # Legacy unsigned acceptance is only for historical v1 (or missing version)
-            # payloads created while HMAC was unconfigured. Modern v2+ without signature
-            # must remain MISSING_SIGNATURE — never LEGACY_UNSIGNED_REQUIRES_REVIEW.
-            payload_version = parsed.version
-            allow_unsigned_legacy = payload_version is None or int(payload_version) <= 1
-            if allow_unsigned_legacy:
-                unsigned = self._try_resolve_unsigned_label(
-                    command=command,
-                    code=code,
-                    parsed=parsed,
-                    now=now,
-                )
-                if unsigned is not None:
-                    return unsigned
+            # Accept catalog UNSIGNED labels (v1 or v2) that were issued while HMAC was
+            # unconfigured. Signed labels missing a QR signature stay MISSING_SIGNATURE.
+            unsigned = self._try_resolve_unsigned_label(
+                command=command,
+                code=code,
+                parsed=parsed,
+                now=now,
+            )
+            if unsigned is not None:
+                return unsigned
         if parsed.status is not PositionLabelDetectionStatus.VALID:
             logger.info(
                 "position_label_validation_failed client_id=%s job_id=%s asset_id=%s "
@@ -551,7 +547,10 @@ class ImagePositionDetectionUseCase:
             rotation_degrees=code.rotation_degrees,
             confidence=code.confidence,
             detail="unsigned_label_accepted",
-            metadata={"unsigned_acceptance": True},
+            metadata={
+                "unsigned_acceptance": True,
+                **_payload_hierarchy_meta(parsed.payload),
+            },
         )
 
     def _persist_many(

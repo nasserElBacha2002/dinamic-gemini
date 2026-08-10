@@ -82,6 +82,7 @@ function makeDraft(
     position_snapshot_json: null,
     label_id: null,
     product_results_json: null,
+    rejections_json: null,
     position_detected: 0,
     detected_at: '2026-08-10T00:00:00Z',
     created_at: '2026-08-10T00:00:00Z',
