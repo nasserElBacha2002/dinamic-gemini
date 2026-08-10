@@ -33,21 +33,44 @@ def ui_aligned_rollup_service() -> ExportQuantityRollupService:
 
 def ui_counted_totals_from_aisle_result_rows(
     positions: Sequence[Position],
-    primary_products: Sequence[ProductRecord | None],
+    products_per_position: Sequence[Sequence[ProductRecord]],
 ) -> tuple[int, int]:
-    """Return (total contabilizado, ítems contados) using the same rules as the Aisle Results UI."""
+    """Return (total contabilizado, ítems contados) using ProductRecord cardinality.
+
+    When a position has ProductRecords, each product is one counted item (multi-label).
+    When a position has none (legacy summary-only rows), count the Position once from
+    its canonical view — matching pre-D1 aisle results.
+    Deleted positions are excluded.
+    """
     total_qty = 0
     items = 0
-    if len(positions) != len(primary_products):
-        raise ValueError("positions and primary_products length mismatch")
-    for pos, primary in zip(positions, primary_products):
+    if len(positions) != len(products_per_position):
+        raise ValueError("positions and products_per_position length mismatch")
+    for pos, products in zip(positions, products_per_position):
         if pos.status == PositionStatus.DELETED:
             continue
-        corrected = primary.corrected_quantity if primary is not None else None
-        view = build_position_canonical_view(pos, primary, corrected_quantity=corrected)
+        if products:
+            for product in products:
+                corrected = product.corrected_quantity
+                view = build_position_canonical_view(pos, product, corrected_quantity=corrected)
+                total_qty += view.quantity.final_display_quantity
+                items += 1
+            continue
+        view = build_position_canonical_view(pos, None, corrected_quantity=None)
         total_qty += view.quantity.final_display_quantity
         items += 1
     return total_qty, items
+
+
+def ui_counted_totals_from_primary_products(
+    positions: Sequence[Position],
+    primary_products: Sequence[ProductRecord | None],
+) -> tuple[int, int]:
+    """Legacy helper: one primary product per position (pre multi-label expansion)."""
+    products_per_position: list[tuple[ProductRecord, ...]] = []
+    for primary in primary_products:
+        products_per_position.append((primary,) if primary is not None else ())
+    return ui_counted_totals_from_aisle_result_rows(positions, products_per_position)
 
 
 def operational_csv_counted_totals(rows: Sequence[Mapping[str, str]]) -> tuple[int, int]:

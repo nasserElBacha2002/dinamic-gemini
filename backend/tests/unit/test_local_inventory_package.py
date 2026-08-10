@@ -19,6 +19,9 @@ from src.application.services.local_inventory_package_parser import (
     LocalInventoryPackageError,
     parse_local_inventory_package,
 )
+from src.application.services.product_labels.issued_product_label_resolver import (
+    IssuedProductLabelResolver,
+)
 from src.application.use_cases.inventories.manage_local_csv_import import PreviewLocalCsvImport
 from src.application.use_cases.inventories.manage_local_inventory_package import (
     ConfirmLocalInventoryPackage,
@@ -31,7 +34,13 @@ from src.infrastructure.repositories.local_csv_inventory_result_writer import (
     MemoryLocalCsvInventoryResultWriter,
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
+    MemoryInventoryCountedProductLabelRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_issued_product_label_repository import (
+    MemoryIssuedProductLabelRepository,
+)
 from src.infrastructure.repositories.memory_local_csv_import_repository import (
     MemoryLocalCsvImportRepository,
 )
@@ -283,6 +292,11 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
         position_materializer=LocalCsvPositionMaterializer(
             position_repo=position_repo,
             product_record_repo=product_repo,
+            counted_product_label_repo=MemoryInventoryCountedProductLabelRepository(),
+            issued_label_resolver=IssuedProductLabelResolver(
+                issued_repo=MemoryIssuedProductLabelRepository()
+            ),
+            inventory_repo=inventory_repo,
         ),
     )
     confirmed, duplicate = confirm.execute(
@@ -418,6 +432,11 @@ def test_confirm_fits_long_mobile_client_file_id(tmp_path: Path) -> None:
         position_materializer=LocalCsvPositionMaterializer(
             position_repo=MemoryPositionRepository(),
             product_record_repo=MemoryProductRecordRepository(),
+            counted_product_label_repo=MemoryInventoryCountedProductLabelRepository(),
+            issued_label_resolver=IssuedProductLabelResolver(
+                issued_repo=MemoryIssuedProductLabelRepository()
+            ),
+            inventory_repo=inventory_repo,
         ),
     )
     confirmed, duplicate = confirm.execute(

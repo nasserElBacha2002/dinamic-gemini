@@ -3,7 +3,7 @@
  * No inventory or aisle selection.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import {
@@ -43,8 +43,16 @@ import {
 import { queryKeys } from '../api/queryKeys';
 import { getPositionLabelUiCapabilities } from '../features/positionLabels/positionLabelCapabilities';
 import { useClient } from '../hooks';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 
 const PRESET = 'MM_100x100';
+
+function newIdempotencyKey(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function statusSemantic(status: string): 'success' | 'warning' | 'neutral' {
   if (status === 'ACTIVE') return 'success';
@@ -74,6 +82,7 @@ export default function ClientPositionLabelsPage() {
   const [invalidateTarget, setInvalidateTarget] = useState<ClientPositionLabel | null>(null);
   const [invalidateReason, setInvalidateReason] = useState('');
   const [search, setSearch] = useState('');
+  const createIdempotencyKeyRef = useRef(newIdempotencyKey('pos-marker-set'));
 
   const clientQuery = useClient(safeClientId || undefined, { enabled: Boolean(safeClientId) });
 
@@ -118,18 +127,26 @@ export default function ClientPositionLabelsPage() {
       if (createMode === 'hierarchy') {
         const levelNum = Number.parseInt(level, 10);
         const totalNum = Number.parseInt(markerTotal, 10);
-        return createClientPositionMarkerSet(safeClientId, {
-          pallet: pallet.trim(),
-          side,
-          level: levelNum,
-          marker_total: totalNum,
-          description: description.trim() || null,
-        });
+        return createClientPositionMarkerSet(
+          safeClientId,
+          {
+            pallet: pallet.trim(),
+            side,
+            level: levelNum,
+            marker_total: totalNum,
+            description: description.trim() || null,
+          },
+          { idempotencyKey: createIdempotencyKeyRef.current }
+        );
       }
-      const label = await createClientPositionLabel(safeClientId, {
-        name: name.trim(),
-        description: description.trim() || null,
-      });
+      const label = await createClientPositionLabel(
+        safeClientId,
+        {
+          name: name.trim(),
+          description: description.trim() || null,
+        },
+        { idempotencyKey: createIdempotencyKeyRef.current }
+      );
       return { items: [label] };
     },
     onSuccess: async (payload) => {
@@ -140,6 +157,7 @@ export default function ClientPositionLabelsPage() {
       setLevel('1');
       setMarkerTotal('1');
       setSide('LEFT');
+      createIdempotencyKeyRef.current = newIdempotencyKey('pos-marker-set');
       const itemsCreated = payload.items ?? [];
       setResultSet(itemsCreated.length > 1 ? itemsCreated : null);
       setResultLabel(itemsCreated[0] ?? null);
@@ -151,7 +169,8 @@ export default function ClientPositionLabelsPage() {
         await loadPreview(itemsCreated[0]);
       }
     },
-    onError: () => showSnackbar(t('position_labels.create_error'), 'error'),
+    onError: (error) =>
+      showSnackbar(resolveApiErrorMessage(error, 'position_labels.create_error'), 'error'),
   });
 
   const canSubmitCreate =
@@ -464,12 +483,31 @@ export default function ClientPositionLabelsPage() {
                 </Typography>
               ) : null}
               {resultSet && resultSet.length > 1 ? (
-                <Typography variant="body2" color="text.secondary" data-testid="position-label-result-set">
-                  {t('position_labels.result_set_count', {
-                    defaultValue: '{{count}} marbetes generados',
-                    count: resultSet.length,
-                  })}
-                </Typography>
+                <Stack spacing={0.5} data-testid="position-label-result-set">
+                  <Typography variant="body2" color="text.secondary">
+                    {t('position_labels.result_set_count', {
+                      defaultValue: '{{count}} marbetes generados',
+                      count: resultSet.length,
+                    })}
+                  </Typography>
+                  {resultSet.map((item) => (
+                    <Typography
+                      key={item.id}
+                      variant="body2"
+                      data-testid="position-label-result-set-marker"
+                      sx={{
+                        fontFamily:
+                          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                      }}
+                    >
+                      {item.marker ??
+                        (item.marker_index != null && item.marker_total != null
+                          ? `${String(item.marker_index).padStart(2, '0')}/${String(item.marker_total).padStart(2, '0')}`
+                          : item.name)}
+                      {item.public_identifier ? ` — ${item.id}` : ''}
+                    </Typography>
+                  ))}
+                </Stack>
               ) : null}
               <Typography>
                 {t('position_labels.result_client')}:{' '}

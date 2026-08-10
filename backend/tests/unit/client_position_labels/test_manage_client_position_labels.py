@@ -272,3 +272,163 @@ def test_marker_set_creates_padded_labels() -> None:
         validate_positioning_payload(lab.canonical_payload)
         assert lab.canonical_payload["version"] == 2
         assert lab.canonical_payload["marker_index"] == lab.marker_index
+
+
+def test_marker_set_atomic_rollback_on_save_many_failure() -> None:
+    class _FailingAtomic(MemoryClientPositionLabelRepository):
+        def save_many(self, labels):  # type: ignore[no-untyped-def]
+            inserted: list[str] = []
+            try:
+                for i, label in enumerate(labels):
+                    if i == 1:
+                        raise RuntimeError("fail mid-way")
+                    self._labels[label.id] = label
+                    inserted.append(label.id)
+                return labels
+            except Exception:
+                for lid in inserted:
+                    self._labels.pop(lid, None)
+                raise
+
+    repo = _FailingAtomic()
+    uc = CreateClientPositionMarkerSetUseCase(
+        label_repo=repo,
+        client_repo=_MemoryClientRepo([_client()]),
+        clock=_FixedClock(),
+        signing=_signing(),
+    )
+    with pytest.raises(RuntimeError, match="fail mid-way"):
+        uc.execute(
+            CreateClientPositionMarkerSetCommand(
+                client_id="client-a",
+                pallet="P99",
+                side="RIGHT",
+                level=1,
+                marker_total=3,
+                principal=_platform(),
+            )
+        )
+    assert repo.list_by_client("client-a", limit=100) == []
+
+
+def test_memory_save_many_rolls_back_on_active_marker_conflict() -> None:
+    from src.domain.client_position_label.entities import (
+        ClientPositionLabel,
+        ClientPositionLabelSignatureStatus,
+        ClientPositionLabelStatus,
+    )
+
+    repo = MemoryClientPositionLabelRepository()
+    now = datetime(2026, 7, 17, 12, 0, tzinfo=timezone.utc)
+
+    def _label(*, lid: str, name: str, marker_index: int) -> ClientPositionLabel:
+        return ClientPositionLabel(
+            id=lid,
+            client_id="client-a",
+            public_identifier=f"pos_{lid}",
+            name=name,
+            normalized_name=name.upper(),
+            status=ClientPositionLabelStatus.ACTIVE,
+            payload_version=2,
+            canonical_payload={"type": "DINAMIC_POSITION", "version": 2, "label_id": f"pos_{lid}"},
+            created_at=now,
+            updated_at=now,
+            signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
+            pallet="P1",
+            side="LEFT",
+            level=1,
+            marker_index=marker_index,
+            marker_total=2,
+        )
+
+    first = _label(lid="a", name="A", marker_index=1)
+    conflict = _label(lid="b", name="B", marker_index=1)
+    with pytest.raises(ClientPositionLabelConflictError) as exc:
+        repo.save_many([first, conflict])
+    assert exc.value.code == "POSITION_LABEL_MARKER_ACTIVE_EXISTS"
+    assert repo.get_by_id("a") is None
+    assert repo.get_by_id("b") is None
+
+
+def test_marker_set_idempotent_retry() -> None:
+    label_repo = MemoryClientPositionLabelRepository()
+    client_repo = _MemoryClientRepo([_client()])
+    uc = CreateClientPositionMarkerSetUseCase(
+        label_repo=label_repo,
+        client_repo=client_repo,
+        clock=_FixedClock(),
+        signing=_signing(),
+    )
+    first = uc.execute(
+        CreateClientPositionMarkerSetCommand(
+            client_id="client-a",
+            pallet="P12",
+            side="LEFT",
+            level=3,
+            marker_total=2,
+            principal=_platform(),
+            idempotency_key="marker-set-1",
+        )
+    )
+    second = uc.execute(
+        CreateClientPositionMarkerSetCommand(
+            client_id="client-a",
+            pallet="P12",
+            side="LEFT",
+            level=3,
+            marker_total=2,
+            principal=_platform(),
+            idempotency_key="marker-set-1",
+        )
+    )
+    assert [lab.id for lab in first] == [lab.id for lab in second]
+    assert first[0].idempotency_key == "marker-set-1"
+    assert first[1].idempotency_key is None
+    with pytest.raises(IdempotencyKeyReusedError):
+        uc.execute(
+            CreateClientPositionMarkerSetCommand(
+                client_id="client-a",
+                pallet="P12",
+                side="LEFT",
+                level=4,
+                marker_total=2,
+                principal=_platform(),
+                idempotency_key="marker-set-1",
+            )
+        )
+
+
+def test_marker_set_active_uniqueness_conflict() -> None:
+    label_repo = MemoryClientPositionLabelRepository()
+    client_repo = _MemoryClientRepo([_client()])
+    uc = CreateClientPositionMarkerSetUseCase(
+        label_repo=label_repo,
+        client_repo=client_repo,
+        clock=_FixedClock(),
+        signing=_signing(),
+    )
+    uc.execute(
+        CreateClientPositionMarkerSetCommand(
+            client_id="client-a",
+            pallet="P12",
+            side="LEFT",
+            level=3,
+            marker_total=2,
+            principal=_platform(),
+        )
+    )
+    with pytest.raises(ClientPositionLabelConflictError) as exc:
+        uc.execute(
+            CreateClientPositionMarkerSetCommand(
+                client_id="client-a",
+                pallet="P12",
+                side="LEFT",
+                level=3,
+                marker_total=2,
+                principal=_platform(),
+            )
+        )
+    assert exc.value.code in {
+        "POSITION_LABEL_MARKER_ACTIVE_EXISTS",
+        "POSITION_LABEL_NAME_CONFLICT",
+    }

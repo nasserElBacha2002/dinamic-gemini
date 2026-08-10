@@ -14,6 +14,9 @@ from src.application.services.local_csv_position_materializer import (
     LocalCsvPositionMaterializer,
     position_id_for_productive,
 )
+from src.application.services.product_labels.issued_product_label_resolver import (
+    IssuedProductLabelResolver,
+)
 from src.application.use_cases.inventories.manage_local_csv_import import (
     LOCAL_CSV_INVENTORY_MISMATCH,
     ConfirmLocalCsvImport,
@@ -27,7 +30,13 @@ from src.infrastructure.repositories.local_csv_inventory_result_writer import (
     MemoryLocalCsvInventoryResultWriter,
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
+    MemoryInventoryCountedProductLabelRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_issued_product_label_repository import (
+    MemoryIssuedProductLabelRepository,
+)
 from src.infrastructure.repositories.memory_local_csv_import_repository import (
     MemoryLocalCsvImportRepository,
 )
@@ -154,6 +163,11 @@ def _use_cases() -> tuple[
         position_materializer=LocalCsvPositionMaterializer(
             position_repo=position_repo,
             product_record_repo=product_repo,
+            counted_product_label_repo=MemoryInventoryCountedProductLabelRepository(),
+            issued_label_resolver=IssuedProductLabelResolver(
+                issued_repo=MemoryIssuedProductLabelRepository()
+            ),
+            inventory_repo=inventory_repo,
         ),
     )
     return preview, confirm, import_repo, writer, position_repo, product_repo

@@ -7,18 +7,35 @@ pipeline results when ``aisles.operational_job_id`` is unset.
 
 from __future__ import annotations
 
+import json
+import logging
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from src.application.errors import ProductLabelClaimRepositoryUnavailableError
+from src.application.ports.client_position_label_repository import ClientPositionLabelRepository
 from src.application.ports.inventory_counted_product_label_repository import (
     InventoryCountedProductLabel,
     InventoryCountedProductLabelRepository,
 )
-from src.application.ports.repositories import PositionRepository, ProductRecordRepository
+from src.application.ports.repositories import (
+    InventoryRepository,
+    PositionRepository,
+    ProductRecordRepository,
+)
+from src.application.services.positioning_label_signing import PositioningLabelSigningService
+from src.application.services.product_labels.issued_product_label_resolver import (
+    IssuedProductLabelResolver,
+)
+from src.domain.aisle_location.payload import validate_positioning_payload
+from src.domain.client_position_label.entities import ClientPositionLabelStatus
 from src.domain.local_csv_import.entities import LocalCsvProductiveResult
 from src.domain.positions.entities import Position, PositionCreationSource, PositionStatus
+from src.domain.product_labels.format import (
+    build_product_label_payload,
+    parse_product_label_payload,
+)
+from src.domain.product_labels.processed import ProductLabelOutcomeStatus
 from src.domain.products.entities import ProductRecord
 
 # Stable namespace so re-confirm is idempotent without scanning aisle history.
@@ -30,6 +47,8 @@ SUMMARY_INGESTION_SOURCE = "ingestion_source"
 
 # Position-marker photos are capture context, not inventory line items.
 _POSITION_MARKER_SOURCES = frozenset({"LOCAL_POSITION_LABEL"})
+
+logger = logging.getLogger(__name__)
 
 
 def is_inventory_line_result(result: LocalCsvProductiveResult) -> bool:
@@ -107,6 +126,9 @@ def _detected_summary(result: LocalCsvProductiveResult) -> dict:
     label_id = (result.label_id or "").strip().upper() or None
     if label_id:
         summary["label_id"] = label_id
+    position_label_id = (result.position_label_id or "").strip() or None
+    if position_label_id:
+        summary["position_label_id"] = position_label_id
     return summary
 
 
@@ -118,17 +140,26 @@ class LocalCsvPositionMaterializer:
         *,
         position_repo: PositionRepository,
         product_record_repo: ProductRecordRepository,
-        counted_product_label_repo: InventoryCountedProductLabelRepository | None = None,
+        counted_product_label_repo: InventoryCountedProductLabelRepository,
+        issued_label_resolver: IssuedProductLabelResolver,
+        inventory_repo: InventoryRepository | None = None,
+        client_position_label_repo: ClientPositionLabelRepository | None = None,
+        positioning_signing: PositioningLabelSigningService | None = None,
     ) -> None:
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
         self._counted_product_label_repo = counted_product_label_repo
+        self._issued_label_resolver = issued_label_resolver
+        self._inventory_repo = inventory_repo
+        self._client_position_label_repo = client_position_label_repo
+        self._positioning_signing = positioning_signing
 
     def materialize(
         self,
         results: Sequence[LocalCsvProductiveResult],
         *,
         now: datetime,
+        inventory_client_id: str | None = None,
     ) -> int:
         """Create or refresh inventory line positions. Returns rows written.
 
@@ -141,9 +172,26 @@ class LocalCsvPositionMaterializer:
             if not is_inventory_line_result(result):
                 self._retire_marker_row(result, now=now)
                 continue
-            if self._materialize_one(result, now=now):
+            if self._materialize_one(
+                result, now=now, inventory_client_id=inventory_client_id
+            ):
                 written += 1
         return written
+
+    def _resolve_inventory_client_id(
+        self,
+        result: LocalCsvProductiveResult,
+        inventory_client_id: str | None,
+    ) -> str | None:
+        explicit = (inventory_client_id or "").strip() or None
+        if explicit:
+            return explicit
+        if self._inventory_repo is None:
+            return None
+        inventory = self._inventory_repo.get_by_id(result.inventory_id)
+        if inventory is None:
+            return None
+        return (inventory.client_id or "").strip() or None
 
     def _retire_marker_row(self, result: LocalCsvProductiveResult, *, now: datetime) -> None:
         position_id = position_id_for_productive(result.id)
@@ -170,7 +218,140 @@ class LocalCsvPositionMaterializer:
         )
         self._position_repo.save(retired)
 
-    def _materialize_one(self, result: LocalCsvProductiveResult, *, now: datetime) -> bool:
+    def _validate_position_payload(
+        self,
+        result: LocalCsvProductiveResult,
+        *,
+        inventory_client_id: str | None,
+    ) -> bool:
+        """Validate optional positioning payload; fail-closed on invalid structure/HMAC/registry."""
+        raw = (result.position_payload_raw or "").strip()
+        if not raw:
+            return True
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            logger.warning(
+                "local_csv_position_payload_invalid productive_id=%s reason=json",
+                result.id,
+            )
+            return False
+        try:
+            validate_positioning_payload(payload)
+        except ValueError as exc:
+            logger.warning(
+                "local_csv_position_payload_invalid productive_id=%s reason=%s",
+                result.id,
+                exc,
+            )
+            return False
+        signing = self._positioning_signing
+        if signing is not None and signing.can_sign:
+            if not signing.verify_payload(payload):
+                logger.warning(
+                    "local_csv_position_payload_hmac_failed productive_id=%s",
+                    result.id,
+                )
+                return False
+        if self._client_position_label_repo is None:
+            return True
+        public_id = str(payload.get("label_id") or "").strip()
+        label = self._client_position_label_repo.get_by_public_identifier(public_id)
+        if label is None and (result.position_label_id or "").strip():
+            label = self._client_position_label_repo.get_by_id(
+                (result.position_label_id or "").strip()
+            )
+        if label is None:
+            logger.warning(
+                "local_csv_position_label_unknown productive_id=%s public_id=%s",
+                result.id,
+                public_id,
+            )
+            return False
+        if label.status != ClientPositionLabelStatus.ACTIVE:
+            logger.warning(
+                "local_csv_position_label_inactive productive_id=%s label_id=%s",
+                result.id,
+                label.id,
+            )
+            return False
+        client_id = self._resolve_inventory_client_id(result, inventory_client_id)
+        if client_id and (label.client_id or "").strip() != client_id:
+            logger.warning(
+                "local_csv_position_label_client_mismatch productive_id=%s",
+                result.id,
+            )
+            return False
+        return True
+
+    def _resolve_issued_label(
+        self,
+        result: LocalCsvProductiveResult,
+        *,
+        label_id: str,
+        inventory_client_id: str | None,
+    ) -> tuple[str, int] | None:
+        """Return authoritative (sku, qty) when issued registry accepts the row; else None."""
+        client_id = self._resolve_inventory_client_id(result, inventory_client_id)
+        if not client_id:
+            logger.warning(
+                "local_csv_label_missing_client productive_id=%s label_id=%s",
+                result.id,
+                label_id,
+            )
+            return None
+        sku = _sku_for(result)
+        qty = _quantity_for(result)
+        if sku == "UNKNOWN" or qty < 1:
+            logger.warning(
+                "local_csv_label_fields_invalid productive_id=%s label_id=%s",
+                result.id,
+                label_id,
+            )
+            return None
+        try:
+            raw = build_product_label_payload(
+                label_id=label_id, internal_code=sku, quantity=qty
+            )
+        except ValueError as exc:
+            logger.warning(
+                "local_csv_label_payload_build_failed productive_id=%s detail=%s",
+                result.id,
+                exc,
+            )
+            return None
+        parsed = parse_product_label_payload(raw)
+        resolved = self._issued_label_resolver.resolve_parsed(
+            parsed=parsed, expected_client_id=client_id
+        )
+        if resolved.status is not ProductLabelOutcomeStatus.VALID or resolved.product is None:
+            logger.warning(
+                "local_csv_label_resolve_rejected productive_id=%s label_id=%s status=%s",
+                result.id,
+                label_id,
+                resolved.status.value,
+            )
+            return None
+        auth_sku = (resolved.product.internal_code or "").strip() or sku
+        auth_qty = (
+            int(resolved.product.quantity)
+            if resolved.product.quantity is not None
+            else qty
+        )
+        return auth_sku, auth_qty
+
+    def _materialize_one(
+        self,
+        result: LocalCsvProductiveResult,
+        *,
+        now: datetime,
+        inventory_client_id: str | None = None,
+    ) -> bool:
+        if not self._validate_position_payload(
+            result, inventory_client_id=inventory_client_id
+        ):
+            return False
+
         position_id = position_id_for_productive(result.id)
         product_id = product_id_for_productive(result.id)
         position_code = (result.position_code or "").strip() or None
@@ -184,10 +365,13 @@ class LocalCsvPositionMaterializer:
 
         save_product = True
         if label_id:
-            if self._counted_product_label_repo is None:
-                raise ProductLabelClaimRepositoryUnavailableError(
-                    "counted_product_label_repo required for D1 label_id persist"
-                )
+            resolved = self._resolve_issued_label(
+                result, label_id=label_id, inventory_client_id=inventory_client_id
+            )
+            if resolved is None:
+                return False
+            sku, qty = resolved
+            needs_review = bool(result.requires_review)
             claimed = self._counted_product_label_repo.try_claim(
                 InventoryCountedProductLabel(
                     id=str(uuid.uuid4()),

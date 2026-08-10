@@ -1,10 +1,12 @@
 /**
- * Collapse barcode detections from one image into 0..N physical product labels.
+ * Collapse barcode detections from one image into 0..N physical product labels
+ * plus an optional co-located POSITION label (same photo).
+ *
  * D1 labels dedupe by label_id. Legacy PIPE/DI1 keeps ≤1 semantics when no D1 present.
+ * Known D1 (even invalid) blocks legacy fallback for that image's product path.
  */
 
 import {
-  extractDinamicPositionCode,
   parseEncodedLabelPayload,
   type PayloadParseResult,
   QUANTITY_MAX_DEFAULT,
@@ -13,6 +15,7 @@ import {
   parseProductLabelPayload,
   type ParsedProductLabelPayload,
 } from './productLabelFormat';
+import { parseDinamicPositionPayload } from './positionLabelPayload';
 
 export type ConsolidationStatus =
   | 'NO_DETECTIONS'
@@ -57,6 +60,36 @@ export interface ConsolidationResult {
     readonly detectionIndex: number;
     readonly labelId: string | null;
   }[];
+  /** Exact ML Kit raw string for a co-located DINAMIC_POSITION QR, if any. */
+  readonly positionRawPayload: string | null;
+}
+
+function findPositionRawPayload(
+  candidates: readonly { readonly rawValue: string }[],
+): string | null {
+  for (const c of candidates) {
+    if (parseDinamicPositionPayload(c.rawValue)) {
+      return c.rawValue;
+    }
+  }
+  return null;
+}
+
+function emptyResult(
+  overrides: Partial<ConsolidationResult> &
+    Pick<ConsolidationResult, 'status' | 'positionRawPayload'>,
+): ConsolidationResult {
+  return {
+    internalCode: null,
+    quantity: null,
+    selectedIndex: null,
+    distinctCodes: [],
+    warnings: [],
+    parsed: null,
+    productResults: [],
+    rejections: [],
+    ...overrides,
+  };
 }
 
 export function consolidateCodeDetections(
@@ -64,17 +97,7 @@ export function consolidateCodeDetections(
   options?: { readonly quantityMax?: number },
 ): ConsolidationResult {
   if (candidates.length === 0) {
-    return {
-      status: 'NO_DETECTIONS',
-      internalCode: null,
-      quantity: null,
-      selectedIndex: null,
-      distinctCodes: [],
-      warnings: [],
-      parsed: null,
-      productResults: [],
-      rejections: [],
-    };
+    return emptyResult({ status: 'NO_DETECTIONS', positionRawPayload: null });
   }
 
   const quantityMax = options?.quantityMax ?? QUANTITY_MAX_DEFAULT;
@@ -84,6 +107,8 @@ export function consolidateCodeDetections(
     d1: parseProductLabelPayload(c.rawValue),
     parsed: parseEncodedLabelPayload(c.rawValue, { quantityMax }),
   }));
+
+  const positionRawPayload = findPositionRawPayload(enriched);
 
   const d1ByLabel = new Map<
     string,
@@ -105,8 +130,14 @@ export function consolidateCodeDetections(
       list.push({ det, parsed: det.d1 });
       d1ByLabel.set(det.d1.labelId, list);
     } else {
+      const mapped =
+        det.d1.status === 'CHECKSUM_FAILED'
+          ? 'D1_CHECKSUM_FAILED'
+          : det.d1.status === 'MALFORMED'
+            ? 'D1_MALFORMED'
+            : det.d1.status;
       rejections.push({
-        validationStatus: det.d1.status,
+        validationStatus: mapped,
         rawValue: det.rawValue,
         detectionIndex: det.detectionIndex,
         labelId: det.d1.labelId,
@@ -135,7 +166,7 @@ export function consolidateCodeDetections(
         quantity: first.parsed.quantity!,
         formatVersion: first.parsed.formatVersion ?? 'D1',
         checksum: first.parsed.checksumReceived ?? '',
-        validationStatus: 'VALID',
+        validationStatus: 'D1_VALID',
         selectedIndex: first.det.detectionIndex,
         duplicateDetectionCount: group.length,
         rawPayload: first.det.rawValue,
@@ -143,67 +174,63 @@ export function consolidateCodeDetections(
       });
     }
     if (products.length === 0) {
-      return {
+      const warnings = ['NO_VALID_D1_PRODUCT_LABEL'];
+      if (positionRawPayload) warnings.push('POSITION_LABEL_DETECTED');
+      return emptyResult({
         status: 'NO_VALID_CODE',
-        internalCode: null,
-        quantity: null,
-        selectedIndex: null,
-        distinctCodes: [],
-        warnings: ['NO_VALID_D1_PRODUCT_LABEL'],
-        parsed: null,
-        productResults: [],
+        warnings,
         rejections,
-      };
+        positionRawPayload,
+        parsed: null,
+      });
     }
     const primary = products[0]!;
+    const warnings: string[] = [];
+    if (products.length > 1) warnings.push('MULTI_PRODUCT_IMAGE');
+    if (positionRawPayload) warnings.push('POSITION_LABEL_DETECTED');
+    if (rejections.length > 0) warnings.push('D1_PARTIAL_REJECTIONS');
     return {
       status: products.length > 1 ? 'RESOLVED_MULTI' : 'RESOLVED',
       internalCode: primary.internalCode,
       quantity: primary.quantity,
       selectedIndex: primary.selectedIndex,
       distinctCodes: products.map((p) => p.internalCode),
-      warnings: products.length > 1 ? ['MULTI_PRODUCT_IMAGE'] : [],
+      warnings,
       parsed: null,
       productResults: products,
       rejections,
+      positionRawPayload,
     };
   }
 
+  // Known Dinamic D1 attempt(s) failed → never revive via legacy barcode.
   if (hasD1Attempt && rejections.length > 0) {
-    return {
+    const warnings = ['D1_CANDIDATES_FAILED'];
+    if (positionRawPayload) warnings.push('POSITION_LABEL_DETECTED');
+    return emptyResult({
       status: 'NO_VALID_CODE',
-      internalCode: null,
-      quantity: null,
-      selectedIndex: null,
-      distinctCodes: [],
-      warnings: ['D1_CANDIDATES_FAILED'],
-      parsed: null,
-      productResults: [],
+      warnings,
       rejections,
-    };
+      positionRawPayload,
+    });
   }
 
-  // Legacy ≤1 path
+  // Legacy ≤1 path (true legacy stickers with no D1 QR).
   const withCode = enriched.filter((d) => d.parsed.status === 'VALID' && d.parsed.internalCode);
   if (withCode.length === 0) {
-    const positionLabel = enriched.find(
-      (d) =>
-        d.parsed.status === 'INVALID' && d.parsed.errorCode === 'POSITION_LABEL_DETECTED',
-    );
-    const positionCode = positionLabel
-      ? extractDinamicPositionCode(positionLabel.rawValue)
-      : null;
-    return {
+    const warnings = positionRawPayload
+      ? (['POSITION_LABEL_DETECTED'] as const)
+      : (['NO_VALID_CODE'] as const);
+    return emptyResult({
       status: 'NO_VALID_CODE',
-      internalCode: positionCode,
-      quantity: null,
-      selectedIndex: positionLabel?.detectionIndex ?? null,
-      distinctCodes: [],
-      warnings: positionLabel ? ['POSITION_LABEL_DETECTED'] : ['NO_VALID_CODE'],
-      parsed: positionLabel?.parsed ?? enriched[0]?.parsed ?? null,
-      productResults: [],
+      warnings: [...warnings],
       rejections,
-    };
+      positionRawPayload,
+      selectedIndex: positionRawPayload
+        ? enriched.find((d) => d.rawValue === positionRawPayload)?.detectionIndex ?? null
+        : null,
+      parsed: enriched[0]?.parsed ?? null,
+    });
   }
 
   const grouped = new Map<string, typeof withCode>();
@@ -217,17 +244,14 @@ export function consolidateCodeDetections(
 
   const distinctCodes = [...grouped.keys()];
   if (distinctCodes.length > 1) {
-    return {
+    return emptyResult({
       status: 'MULTIPLE_DISTINCT_CODES',
-      internalCode: null,
-      quantity: null,
-      selectedIndex: null,
       distinctCodes,
       warnings: ['MULTIPLE_DISTINCT_CODES', 'LEGACY_NO_LABEL_ID'],
       parsed: withCode[0]?.parsed ?? null,
-      productResults: [],
       rejections,
-    };
+      positionRawPayload,
+    });
   }
 
   const code = distinctCodes[0]!;
@@ -239,45 +263,46 @@ export function consolidateCodeDetections(
   );
 
   if (quantities.size > 1) {
-    return {
+    return emptyResult({
       status: 'QUANTITY_CONFLICT',
       internalCode: code,
-      quantity: null,
-      selectedIndex: null,
       distinctCodes,
       warnings: ['QUANTITY_CONFLICT'],
       parsed: group[0]?.parsed ?? null,
-      productResults: [],
       rejections,
-    };
+      positionRawPayload,
+    });
   }
 
   if (quantities.size === 0) {
-    return {
+    return emptyResult({
       status: 'MISSING_QUANTITY',
       internalCode: code,
-      quantity: null,
       selectedIndex: group[0]?.detectionIndex ?? null,
       distinctCodes,
       warnings: ['QUANTITY_MISSING'],
       parsed: group[0]?.parsed ?? null,
-      productResults: [],
       rejections,
-    };
+      positionRawPayload,
+    });
   }
 
   const quantity = [...quantities][0]!;
   const selected =
     group.find((d) => d.parsed.status === 'VALID' && d.parsed.quantity === quantity) ?? group[0]!;
+  const warnings = positionRawPayload
+    ? ['POSITION_LABEL_DETECTED', 'LEGACY_ONLY']
+    : ['LEGACY_ONLY'];
   return {
     status: 'RESOLVED',
     internalCode: code,
     quantity,
     selectedIndex: selected.detectionIndex,
     distinctCodes,
-    warnings: [],
+    warnings,
     parsed: selected.parsed,
     productResults: [],
     rejections,
+    positionRawPayload,
   };
 }

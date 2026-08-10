@@ -2,6 +2,9 @@
 
 Primary location code uses the same typographic scale as item-label Código/Cantidad
 (see ``label_print_typography.DEFAULT_LABEL_PRINT_TYPOGRAPHY``).
+
+Hierarchy labels (pallet/side/level/marker) use a compact field layout so QR stays
+scannable on MM_100x100 without overlapping footer text.
 """
 
 from __future__ import annotations
@@ -46,6 +49,10 @@ _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
 )
+
+# Minimum QR edge for warehouse scan reliability on 100×100mm labels.
+_MIN_QR_MM = 32.0
+_FOOTER_MM = 10.0
 
 
 @dataclass(frozen=True)
@@ -136,6 +143,27 @@ def _wrap_text(
     return lines[:2]
 
 
+def _hierarchy_rows(display: PositioningLabelDisplayData) -> tuple[tuple[str, str], ...] | None:
+    try:
+        hierarchy = PositionHierarchy(
+            pallet=str(display.pallet),
+            side=PositionSide(str(display.side).strip().upper()),
+            level=int(display.level),  # type: ignore[arg-type]
+            marker_index=int(display.marker_index),  # type: ignore[arg-type]
+            marker_total=int(display.marker_total),  # type: ignore[arg-type]
+        )
+        side_es = localize_side_es(hierarchy.side)
+        return (
+            ("ID ETIQUETA", display.public_label_id),
+            ("PALLET", hierarchy.pallet),
+            ("LADO", side_es),
+            ("NIVEL", str(hierarchy.level)),
+            ("MARBETE", hierarchy.formatted_marker_pair()),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 class PositioningLabelRenderer:
     """Pure renderer: no auth, no persistence, no HTTP."""
 
@@ -175,9 +203,9 @@ class PositioningLabelRenderer:
     def _build_qr_image(self, qr_text: str, marker_px: int) -> Image.Image:
         qr = qrcode.QRCode(
             version=None,
-            error_correction=qrcode.constants.ERROR_CORRECT_H,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
             box_size=10,
-            border=4,
+            border=2,
         )
         qr.add_data(qr_text)
         qr.make(fit=True)
@@ -186,6 +214,22 @@ class PositioningLabelRenderer:
             Image.Image,
             img.resize((marker_px, marker_px), Image.Resampling.NEAREST),
         )
+
+    def _reserved_qr_px(self, *, preset: PositioningLabelPreset, content_top_y: int) -> tuple[int, int]:
+        """Return (qr_edge_px, qr_top_y) with QR above footer, never overlapping fields."""
+        margin = mm_to_px(self._typo.print_margin_mm, preset.dpi)
+        gap = mm_to_px(self._typo.content_gap_mm, preset.dpi)
+        footer = mm_to_px(_FOOTER_MM, preset.dpi)
+        height = mm_to_px(preset.height_mm, preset.dpi)
+        max_qr = mm_to_px(preset.marker_size_mm, preset.dpi)
+        min_qr = mm_to_px(_MIN_QR_MM, preset.dpi)
+        available = height - content_top_y - footer - margin - gap
+        qr_px = min(max_qr, max(min_qr, available))
+        if available < min_qr:
+            # Still reserve min QR; fields must fit above this line.
+            qr_px = min_qr
+        qr_y = height - margin - footer - qr_px
+        return qr_px, qr_y
 
     def _render_png(
         self,
@@ -211,13 +255,28 @@ class PositioningLabelRenderer:
         font_title = _load_font(pt_to_px(tokens.title_font_size_pt, preset.dpi), bold=True)
         font_secondary = _load_font(pt_to_px(tokens.secondary_text_font_size_pt, preset.dpi), bold=False)
         font_footer = _load_font(pt_to_px(tokens.footer_font_size_pt, preset.dpi), bold=False)
+        font_field_label = _load_font(pt_to_px(9.0, preset.dpi), bold=True)
+        font_field_value = _load_font(pt_to_px(16.0, preset.dpi), bold=True)
+        font_marbete = _load_font(pt_to_px(22.0, preset.dpi), bold=True)
+
+        # Reserve QR + footer first so hierarchy text cannot push QR off-canvas.
+        # Estimate content start after header; QR reservation uses mid-band heuristic.
+        header_estimate = (
+            margin
+            + pt_to_px(tokens.brand_font_size_pt, preset.dpi)
+            + pt_to_px(tokens.title_font_size_pt, preset.dpi)
+            + pt_to_px(tokens.secondary_text_font_size_pt, preset.dpi)
+            + 3 * gap
+        )
+        qr_px, qr_y = self._reserved_qr_px(preset=preset, content_top_y=header_estimate)
+        content_bottom = qr_y - gap
 
         x = margin
         y = margin
         draw.text((x, y), "DINAMIC SYSTEMS", fill="black", font=font_brand)
         y += pt_to_px(tokens.brand_font_size_pt, preset.dpi) + gap // 2
         draw.text((x, y), "ETIQUETA DE POSICIONAMIENTO", fill="black", font=font_title)
-        y += pt_to_px(tokens.title_font_size_pt, preset.dpi) + gap
+        y += pt_to_px(tokens.title_font_size_pt, preset.dpi) + gap // 2
 
         if (display.depot_name or "").strip():
             draw.text(
@@ -229,65 +288,38 @@ class PositioningLabelRenderer:
             y += pt_to_px(tokens.secondary_text_font_size_pt, preset.dpi) + gap // 2
 
         text_max_width = width - 2 * margin
-        caption_font = _load_font(pt_to_px(tokens.primary_label_font_size_pt, preset.dpi), bold=True)
+        hierarchy_rows = _hierarchy_rows(display) if display.has_hierarchy else None
 
-        if display.has_hierarchy:
-            try:
-                hierarchy = PositionHierarchy(
-                    pallet=str(display.pallet),
-                    side=PositionSide(str(display.side).strip().upper()),
-                    level=int(display.level),  # type: ignore[arg-type]
-                    marker_index=int(display.marker_index),  # type: ignore[arg-type]
-                    marker_total=int(display.marker_total),  # type: ignore[arg-type]
-                )
-                side_es = localize_side_es(hierarchy.side)
-                rows = (
-                    ("ID", display.public_label_id),
-                    ("PALLET", hierarchy.pallet),
-                    ("LADO", side_es),
-                    ("NIVEL", str(hierarchy.level)),
-                    ("MARBETE", hierarchy.formatted_marker_pair()),
-                )
-            except (TypeError, ValueError):
-                rows = ()
-            if rows:
-                for caption, value in rows:
-                    draw.text((x, y), caption, fill="black", font=caption_font)
-                    y += pt_to_px(tokens.primary_label_font_size_pt, preset.dpi) + gap // 3
-                    primary_font = _fit_primary_font(
-                        draw, value, max_width=text_max_width, dpi=preset.dpi, tokens=tokens
-                    )
-                    for line in _wrap_text(draw, value, primary_font, text_max_width):
-                        draw.text((x, y), line, fill="black", font=primary_font)
-                        bbox = cast(
-                            tuple[int, int, int, int],
-                            draw.textbbox((0, 0), line, font=primary_font),
-                        )
-                        y += (bbox[3] - bbox[1]) + gap // 4
-                    y += gap // 3
-            else:
-                position = (display.position_code or "").strip() or "—"
-                draw.text((x, y), "UBICACIÓN", fill="black", font=caption_font)
-                y += pt_to_px(tokens.primary_label_font_size_pt, preset.dpi) + gap // 2
-                primary_font = _fit_primary_font(
-                    draw, position, max_width=text_max_width, dpi=preset.dpi, tokens=tokens
-                )
-                for line in _wrap_text(draw, position, primary_font, text_max_width):
-                    draw.text((x, y), line, fill="black", font=primary_font)
+        if hierarchy_rows:
+            for caption, value in hierarchy_rows:
+                if y >= content_bottom - mm_to_px(6, preset.dpi):
+                    break
+                value_font = font_marbete if caption == "MARBETE" else font_field_value
+                if caption == "ID ETIQUETA":
+                    value_font = _load_font(pt_to_px(11.0, preset.dpi), bold=True)
+                draw.text((x, y), caption, fill="black", font=font_field_label)
+                y += pt_to_px(9.0, preset.dpi) + gap // 5
+                for line in _wrap_text(draw, value, value_font, text_max_width):
+                    if y >= content_bottom:
+                        break
+                    draw.text((x, y), line, fill="black", font=value_font)
                     bbox = cast(
                         tuple[int, int, int, int],
-                        draw.textbbox((0, 0), line, font=primary_font),
+                        draw.textbbox((0, 0), line, font=value_font),
                     )
-                    y += (bbox[3] - bbox[1]) + gap // 3
+                    y += (bbox[3] - bbox[1]) + gap // 6
+                y += gap // 4
         else:
+            caption_font = _load_font(pt_to_px(tokens.primary_label_font_size_pt, preset.dpi), bold=True)
             position = (display.position_code or "").strip() or "—"
             draw.text((x, y), "UBICACIÓN", fill="black", font=caption_font)
             y += pt_to_px(tokens.primary_label_font_size_pt, preset.dpi) + gap // 2
-
             primary_font = _fit_primary_font(
                 draw, position, max_width=text_max_width, dpi=preset.dpi, tokens=tokens
             )
             for line in _wrap_text(draw, position, primary_font, text_max_width):
+                if y >= content_bottom:
+                    break
                 draw.text((x, y), line, fill="black", font=primary_font)
                 bbox = cast(
                     tuple[int, int, int, int],
@@ -295,26 +327,29 @@ class PositioningLabelRenderer:
                 )
                 y += (bbox[3] - bbox[1]) + gap // 3
 
-        footer_block = mm_to_px(12, preset.dpi)
-        marker_px = mm_to_px(preset.marker_size_mm, preset.dpi)
-        # Prefer leaving room for large primary text; shrink QR only if needed.
-        available_for_qr = height - y - footer_block - margin - gap
-        if available_for_qr < marker_px:
-            marker_px = max(mm_to_px(28, preset.dpi), available_for_qr)
-        qr_img = self._build_qr_image(qr_text, marker_px)
-        qr_x = (width - marker_px) // 2
-        qr_y = y + gap
-        max_qr_y = height - margin - footer_block - marker_px
-        if qr_y > max_qr_y:
-            qr_y = max(y, max_qr_y)
-        img.paste(qr_img, (qr_x, qr_y))
+        # Always paint QR in the reserved band (may shrink slightly if header grew).
+        if y + gap > qr_y:
+            qr_px, qr_y = self._reserved_qr_px(preset=preset, content_top_y=y)
+            # If still tight, shrink QR toward min but keep it on-canvas.
+            footer = mm_to_px(_FOOTER_MM, preset.dpi)
+            max_edge = height - y - footer - margin - gap
+            if max_edge > 0:
+                qr_px = max(mm_to_px(_MIN_QR_MM, preset.dpi) // 2, min(qr_px, max_edge))
+                qr_y = height - margin - footer - qr_px
 
-        footer_y = height - margin - footer_block + mm_to_px(2, preset.dpi)
-        draw.text((x, footer_y), f"ID: {display.public_label_id}", fill="black", font=font_footer)
+        qr_img = self._build_qr_image(qr_text, qr_px)
+        qr_x = (width - qr_px) // 2
+        img.paste(qr_img, (qr_x, max(margin, qr_y)))
+
+        footer_y = height - margin - mm_to_px(_FOOTER_MM, preset.dpi) + mm_to_px(1.5, preset.dpi)
+        # Footer only when hierarchy already showed ID ETIQUETA — keep meta short.
+        if not hierarchy_rows:
+            draw.text((x, footer_y), f"ID: {display.public_label_id}", fill="black", font=font_footer)
+            footer_y += mm_to_px(3.5, preset.dpi)
         draw.text(
-            (x, footer_y + mm_to_px(4, preset.dpi)),
+            (x, footer_y),
             (
-                f"Versión payload={display.payload_version} "
+                f"v{display.payload_version} "
                 f"marcador={display.marker_version} plantilla={display.template_version}"
             ),
             fill="black",
@@ -332,17 +367,27 @@ class PositioningLabelRenderer:
         preset: PositioningLabelPreset,
     ) -> bytes:
         tokens = self._typo
-        marker_px = mm_to_px(preset.marker_size_mm, max(preset.dpi, 200))
+        page_w = preset.width_mm * rl_mm
+        page_h = preset.height_mm * rl_mm
+        margin = tokens.print_margin_mm * rl_mm
+        gap = tokens.content_gap_mm * rl_mm
+        footer_h = _FOOTER_MM * rl_mm
+        min_qr = _MIN_QR_MM * rl_mm
+        max_qr = preset.marker_size_mm * rl_mm
+
+        # Reserve QR from bottom.
+        qr_size = min(max_qr, max(min_qr, page_h * 0.38))
+        qr_y = margin + footer_h
+        content_bottom_y = qr_y + qr_size + gap
+
+        marker_px = mm_to_px(qr_size / rl_mm, max(preset.dpi, 200))
         qr_img = self._build_qr_image(qr_text, marker_px)
         qr_buf = io.BytesIO()
         qr_img.save(qr_buf, format="PNG")
         qr_buf.seek(0)
 
         pdf_buf = io.BytesIO()
-        page_w = preset.width_mm * rl_mm
-        page_h = preset.height_mm * rl_mm
         c = canvas.Canvas(pdf_buf, pagesize=(page_w, page_h))
-        margin = tokens.print_margin_mm * rl_mm
         c.setStrokeColorRGB(0, 0, 0)
         c.setLineWidth(1.5)
         c.rect(margin / 2, margin / 2, page_w - margin, page_h - margin)
@@ -355,70 +400,85 @@ class PositioningLabelRenderer:
         y -= (tokens.title_font_size_pt + 2) * 0.5 * rl_mm
         c.setFont("Helvetica-Bold", tokens.title_font_size_pt)
         c.drawString(text_x, y, "ETIQUETA DE POSICIONAMIENTO")
-        y -= tokens.content_gap_mm * rl_mm
+        y -= gap * 0.7
 
         if (display.depot_name or "").strip():
             c.setFont("Helvetica", tokens.secondary_text_font_size_pt)
             c.drawString(text_x, y, f"Cliente: {display.depot_name.strip()}")
             y -= (tokens.secondary_text_font_size_pt + 2) * 0.45 * rl_mm
 
-        c.setFont("Helvetica-Bold", tokens.primary_label_font_size_pt)
-        c.drawString(text_x, y, "UBICACIÓN")
-        y -= (tokens.primary_label_font_size_pt + 4) * 0.45 * rl_mm
-
-        position = (display.position_code or "").strip() or "—"
-        primary_pt = primary_value_font_size_pt(position, tokens)
+        hierarchy_rows = _hierarchy_rows(display) if display.has_hierarchy else None
         max_text_w = page_w - 2 * margin
-        while primary_pt >= tokens.primary_value_min_font_size_pt:
-            c.setFont("Helvetica-Bold", primary_pt)
-            if c.stringWidth(position, "Helvetica-Bold", primary_pt) <= max_text_w:
-                break
-            primary_pt -= 2.0
-        c.setFont("Helvetica-Bold", primary_pt)
-        # Up to two lines for long names
-        words = position.split()
-        lines: list[str] = []
-        if not words:
-            lines = [position]
+        if hierarchy_rows:
+            for caption, value in hierarchy_rows:
+                if y < content_bottom_y + 4 * rl_mm:
+                    break
+                c.setFont("Helvetica-Bold", 8)
+                c.drawString(text_x, y, caption)
+                y -= 9 * 0.45 * rl_mm
+                value_pt = 18.0 if caption == "MARBETE" else (10.0 if caption == "ID ETIQUETA" else 14.0)
+                c.setFont("Helvetica-Bold", value_pt)
+                # Single line truncate if needed
+                shown = value
+                while (
+                    c.stringWidth(shown, "Helvetica-Bold", value_pt) > max_text_w
+                    and len(shown) > 4
+                ):
+                    shown = shown[:-1]
+                if shown != value:
+                    shown = shown[:-1] + "…"
+                c.drawString(text_x, y, shown)
+                y -= value_pt * 0.5 * rl_mm
         else:
-            cur = words[0]
-            for w in words[1:]:
-                trial = f"{cur} {w}"
-                if c.stringWidth(trial, "Helvetica-Bold", primary_pt) <= max_text_w:
-                    cur = trial
-                else:
-                    lines.append(cur)
-                    cur = w
-            lines.append(cur)
-        for line in lines[:2]:
-            c.drawString(text_x, y, line)
-            y -= primary_pt * 0.45 * rl_mm
+            c.setFont("Helvetica-Bold", tokens.primary_label_font_size_pt)
+            c.drawString(text_x, y, "UBICACIÓN")
+            y -= (tokens.primary_label_font_size_pt + 4) * 0.45 * rl_mm
+            position = (display.position_code or "").strip() or "—"
+            primary_pt = primary_value_font_size_pt(position, tokens)
+            while primary_pt >= tokens.primary_value_min_font_size_pt:
+                c.setFont("Helvetica-Bold", primary_pt)
+                if c.stringWidth(position, "Helvetica-Bold", primary_pt) <= max_text_w:
+                    break
+                primary_pt -= 2.0
+            c.setFont("Helvetica-Bold", primary_pt)
+            words = position.split()
+            lines: list[str] = []
+            if not words:
+                lines = [position]
+            else:
+                cur = words[0]
+                for w in words[1:]:
+                    trial = f"{cur} {w}"
+                    if c.stringWidth(trial, "Helvetica-Bold", primary_pt) <= max_text_w:
+                        cur = trial
+                    else:
+                        lines.append(cur)
+                        cur = w
+                lines.append(cur)
+            for line in lines[:2]:
+                if y < content_bottom_y + 4 * rl_mm:
+                    break
+                c.drawString(text_x, y, line)
+                y -= primary_pt * 0.45 * rl_mm
 
-        marker_w = preset.marker_size_mm * rl_mm
-        footer_h = 14 * rl_mm
-        qr_y = margin + footer_h
-        # If primary text consumed space, keep QR above footer without overlapping text.
-        max_qr_top = y - tokens.content_gap_mm * rl_mm
-        if qr_y + marker_w > max_qr_top and max_qr_top - margin > 28 * rl_mm:
-            marker_w = max(28 * rl_mm, max_qr_top - margin - tokens.content_gap_mm * rl_mm)
-            qr_y = margin + footer_h
-        qr_x = (page_w - marker_w) / 2
+        qr_x = (page_w - qr_size) / 2
         c.drawImage(
             ImageReader(qr_buf),
             qr_x,
             qr_y,
-            width=marker_w,
-            height=marker_w,
+            width=qr_size,
+            height=qr_size,
             mask="auto",
             preserveAspectRatio=True,
         )
         c.setFont("Helvetica", tokens.footer_font_size_pt)
-        c.drawString(text_x, margin + 8 * rl_mm, f"ID: {display.public_label_id}")
+        if not hierarchy_rows:
+            c.drawString(text_x, margin + 6 * rl_mm, f"ID: {display.public_label_id}")
         c.drawString(
             text_x,
-            margin + 4 * rl_mm,
+            margin + 3 * rl_mm,
             (
-                f"Versión payload={display.payload_version} "
+                f"v{display.payload_version} "
                 f"marcador={display.marker_version} plantilla={display.template_version}"
             ),
         )

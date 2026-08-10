@@ -274,7 +274,8 @@ def _position_summaries_for_list(
         )
     )
     summaries = []
-    for p, primary in zip(result.positions, result.primary_products):
+    products_by_position = getattr(result, "products", ()) or ()
+    for idx, (p, primary) in enumerate(zip(result.positions, result.primary_products)):
         primary_id = primary.id if primary is not None else None
         view = views.get(primary_id) if primary_id else None
         if filters_on and not matches_position_filters(
@@ -292,11 +293,17 @@ def _position_summaries_for_list(
         ):
             continue
         corrected_quantity = primary.corrected_quantity if primary is not None else None
+        pos_products = (
+            products_by_position[idx]
+            if idx < len(products_by_position)
+            else ()
+        )
         summary = position_to_summary(
             p,
             corrected_quantity=corrected_quantity,
             primary_product=primary,
             include_technical_snapshot=include_technical,
+            detected_products=pos_products,
         )
         summaries.append(
             apply_published_assignment_to_summary(

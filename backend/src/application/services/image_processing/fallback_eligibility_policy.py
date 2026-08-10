@@ -38,6 +38,11 @@ NEVER_ELIGIBLE_ERROR_CODES = frozenset(
         "PROFILE_SNAPSHOT_INVALID",
         "JOB_CANCELLED",
         "LEASE_LOST",
+        # Dinamic D1 recognized but invalid — never invent SKU via EXTERNAL_PROVIDER.
+        "D1_CANDIDATES_FAILED",
+        "NO_VALID_ISSUED_PRODUCT_LABEL",
+        "POSITION_LABEL_ONLY",
+        "POSITION_LABEL_UNRESOLVED",
     }
 )
 

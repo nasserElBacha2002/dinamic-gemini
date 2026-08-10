@@ -7,6 +7,18 @@ from enum import Enum
 from typing import Any
 
 
+# Keep in sync with global_fallback_eligibility.FALLBACK_SKIP_ERROR_CODES.
+# Assets with these codes must never receive APPLY_EXTERNAL / COMBINE_QUANTITY.
+_HARD_REJECT_FALLBACK_CODES = frozenset(
+    {
+        "POSITION_LABEL_ONLY",
+        "POSITION_LABEL_UNRESOLVED",
+        "D1_CANDIDATES_FAILED",
+        "NO_VALID_ISSUED_PRODUCT_LABEL",
+    }
+)
+
+
 class GlobalFallbackMergeAction(str, Enum):
     KEEP_INTERNAL = "KEEP_INTERNAL"
     APPLY_EXTERNAL = "APPLY_EXTERNAL"
@@ -70,6 +82,19 @@ def decide_merge_for_asset(
     asset_id = (internal.asset_id if internal else None) or (
         external.source_image_id if external else None
     )
+
+    # Hard-rejected Dinamic labels (invalid D1 / position-only) must never be
+    # reinvented by GLOBAL_EXTERNAL_FALLBACK — even when peers make the batch run.
+    if internal is not None:
+        skip_code = (internal.last_error_code or "").strip().upper()
+        if skip_code in _HARD_REJECT_FALLBACK_CODES:
+            return GlobalFallbackMergeDecision(
+                action=GlobalFallbackMergeAction.KEEP_INTERNAL,
+                asset_id=asset_id,
+                reason=f"hard_reject_keep_internal:{skip_code}",
+                external=external,
+                internal=internal,
+            )
 
     if external is None:
         return GlobalFallbackMergeDecision(

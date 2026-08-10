@@ -257,6 +257,7 @@ def create_client_position_marker_set(
     use_case: CreateClientPositionMarkerSetUseCase = Depends(
         get_create_client_position_marker_set_use_case
     ),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> ClientPositionLabelMarkerSetResponse:
     try:
         _require_position_labels_enabled()
@@ -269,6 +270,7 @@ def create_client_position_marker_set(
                 marker_total=body.marker_total,
                 description=body.description,
                 principal=principal,
+                idempotency_key=idempotency_key,
             )
         )
     except Exception as e:

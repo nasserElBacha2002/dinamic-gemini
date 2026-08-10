@@ -1294,6 +1294,15 @@ export interface PositionSummary {
   review_resolution?: string | null;
   /** How the position was created: pipeline detection (automatic) or operator manual coverage from an image (manual). Defaults to automatic for legacy rows. */
   creation_source?: 'automatic' | 'manual';
+  /** All ProductRecords on this position (0..N multi-label D1). */
+  detected_products?: Array<{
+    product_record_id: string;
+    sku: string;
+    detected_quantity: number;
+    corrected_quantity?: number | null;
+    label_id?: string | null;
+    qty_source?: string | null;
+  }>;
 }
 
 /**

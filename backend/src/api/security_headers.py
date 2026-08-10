@@ -31,6 +31,7 @@ SAFE_CORS_ALLOW_HEADERS: list[str] = [
     "Accept-Language",
     "Authorization",
     "Content-Type",
+    "Idempotency-Key",
     "X-API-Key",
     "X-Request-Id",
     "X-Correlation-Id",

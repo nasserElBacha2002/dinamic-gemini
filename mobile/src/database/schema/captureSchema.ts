@@ -52,6 +52,8 @@ export interface CaptureSessionRow {
   readonly active_freeze_id: string | null;
   /** Upload scheduling policy: MANUAL | WHEN_CONNECTED | NOW */
   readonly upload_policy: string | null;
+  /** JSON-serialized ActivePositionState for the current session (nullable). */
+  readonly active_position_json: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }

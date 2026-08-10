@@ -75,7 +75,7 @@ describe('LabelGeneratorDialog', () => {
     renderDialog();
     expect(screen.getByRole('dialog', { name: /generar etiquetas/i })).toBeInTheDocument();
     expect(screen.getByDisplayValue('Cliente Blainstein')).toBeInTheDocument();
-    expect(screen.getByText(/las etiquetas no se guardan/i)).toBeInTheDocument();
+    expect(screen.getByText(/queda registrada para su validación/i)).toBeInTheDocument();
   });
 
   it('lists suppliers in the dropdown', () => {

@@ -109,3 +109,55 @@ def test_legacy_pipe_single() -> None:
     assert result.internal_code == "SKU100"
     assert result.quantity == 4
     assert result.product_results == ()
+
+
+def test_two_valid_plus_one_invalid_keeps_two() -> None:
+    import json
+    from pathlib import Path
+
+    a = build_product_label_payload(label_id="A1B2C3D4E5", internal_code="SKU_A", quantity=1)
+    b = build_product_label_payload(label_id="FGHJKMNPQR", internal_code="SKU_B", quantity=2)
+    vectors = json.loads(
+        Path(__file__)
+        .resolve()
+        .parents[5]
+        .joinpath("contracts/product-labels/v1/checksum-vectors.json")
+        .read_text(encoding="utf-8")
+    )
+    bad = next(
+        v["tampered_payload"]
+        for v in vectors["vectors"]
+        if v["name"] == "checksum-fail-tampered-qty"
+    )
+    result = CodeDetectionConsolidator().consolidate(
+        [_det(a, 0), _det(b, 1), _det(bad, 2)]
+    )
+    assert result.status is CodeConsolidationStatus.RESOLVED_MULTI
+    assert len(result.product_results) == 2
+    assert "D1_PARTIAL_REJECTIONS" in result.warnings
+    assert len(result.rejections) >= 1
+
+
+def test_invalid_d1_plus_legacy_barcode_yields_zero() -> None:
+    import json
+    from pathlib import Path
+
+    vectors = json.loads(
+        Path(__file__)
+        .resolve()
+        .parents[5]
+        .joinpath("contracts/product-labels/v1/checksum-vectors.json")
+        .read_text(encoding="utf-8")
+    )
+    bad = next(
+        v["tampered_payload"]
+        for v in vectors["vectors"]
+        if v["name"] == "checksum-fail-tampered-qty"
+    )
+    result = CodeDetectionConsolidator().consolidate(
+        [_det(bad, 0), _det("SKU123|1000", 1, code="SKU123", qty=1000)]
+    )
+    assert result.status is CodeConsolidationStatus.NO_VALID_CODE
+    assert result.product_results == ()
+    assert "D1_CANDIDATES_FAILED" in result.warnings
+    assert result.internal_code is None

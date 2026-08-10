@@ -59,6 +59,14 @@ export interface LocalDetectionDraftRow {
   readonly synced_at: string | null;
   readonly sync_lease_token: string | null;
   readonly sync_lease_expires_at: string | null;
+  /** Frozen ActivePositionState JSON at draft upsert time (nullable). */
+  readonly position_snapshot_json: string | null;
+  /** Primary D1 label_id when a single product; multi-product uses product_results_json. */
+  readonly label_id: string | null;
+  /** JSON array of ProductLabelResult-like objects (0..N). */
+  readonly product_results_json: string | null;
+  /** 1 when a DINAMIC_POSITION was applied from this photo. */
+  readonly position_detected: number;
   readonly detected_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
@@ -88,6 +96,10 @@ export class LocalDetectionDraftRepository {
     readonly scanGeneration?: number;
     readonly comparisonStatus?: string | null;
     readonly detectedAt?: string | null;
+    readonly positionSnapshotJson?: string | null;
+    readonly labelId?: string | null;
+    readonly productResultsJson?: string | null;
+    readonly positionDetected?: boolean | null;
   }): Promise<LocalDetectionDraftRow> {
     const now = new Date().toISOString();
     const id = createId();
@@ -97,6 +109,10 @@ export class LocalDetectionDraftRepository {
       input.status !== 'SCANNING' &&
       input.status !== 'NOT_APPLICABLE';
     const detectedAt = terminal ? (input.detectedAt ?? now) : null;
+    const positionSnapshotJson = input.positionSnapshotJson ?? null;
+    const labelId = input.labelId ?? null;
+    const productResultsJson = input.productResultsJson ?? null;
+    const positionDetected = input.positionDetected ? 1 : 0;
     await withSqliteBusyRetry(() =>
       this.db.runAsync(
       `INSERT INTO local_detection_drafts (
@@ -104,8 +120,10 @@ export class LocalDetectionDraftRepository {
         raw_value_hash, internal_code, quantity, quantity_status,
         detected_format, detected_symbology, parser_version, detector_version,
         candidate_count, error_code, processing_ms, comparison_status, compare_result, compared_at,
-        prepared_asset_fingerprint, scan_owner, scan_generation, detected_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)
+        prepared_asset_fingerprint, scan_owner, scan_generation, position_snapshot_json,
+        label_id, product_results_json, position_detected,
+        detected_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)
       DO UPDATE SET
         status = excluded.status,
@@ -126,6 +144,10 @@ export class LocalDetectionDraftRepository {
           THEN excluded.scan_generation
           ELSE local_detection_drafts.scan_generation
         END,
+        position_snapshot_json = COALESCE(excluded.position_snapshot_json, local_detection_drafts.position_snapshot_json),
+        label_id = excluded.label_id,
+        product_results_json = excluded.product_results_json,
+        position_detected = excluded.position_detected,
         detected_at = COALESCE(local_detection_drafts.detected_at, excluded.detected_at),
         updated_at = excluded.updated_at
       WHERE excluded.scan_generation >= local_detection_drafts.scan_generation;`,
@@ -149,6 +171,10 @@ export class LocalDetectionDraftRepository {
       input.preparedAssetFingerprint,
       input.scanOwner ?? null,
       generation,
+      positionSnapshotJson,
+      labelId,
+      productResultsJson,
+      positionDetected,
       detectedAt,
       now,
       now,

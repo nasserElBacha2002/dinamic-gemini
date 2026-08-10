@@ -128,6 +128,7 @@ class CreateClientPositionMarkerSetCommand:
     principal: AccessPrincipal
     description: str | None = None
     created_by: str | None = None
+    idempotency_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -349,7 +350,7 @@ class CreateClientPositionLabelUseCase:
 
 
 class CreateClientPositionMarkerSetUseCase:
-    """Create N marker labels sharing pallet/side/level (indices 1..N)."""
+    """Create N marker labels sharing pallet/side/level (indices 1..N) atomically."""
 
     def __init__(
         self,
@@ -359,13 +360,50 @@ class CreateClientPositionMarkerSetUseCase:
         clock: Clock,
         signing: PositioningLabelSigningService | None = None,
     ) -> None:
-        self._create = CreateClientPositionLabelUseCase(
-            label_repo=label_repo,
-            client_repo=client_repo,
-            clock=clock,
-            signing=signing,
-        )
+        self._label_repo = label_repo
         self._client_repo = client_repo
+        self._clock = clock
+        self._signing = signing
+
+    @staticmethod
+    def _request_hash(
+        *,
+        client_id: str,
+        pallet: str,
+        side: str,
+        level: int,
+        marker_total: int,
+        description: str | None,
+    ) -> str:
+        return hash_request_payload(
+            {
+                "op": _MARKER_SET_OP,
+                "client_id": client_id,
+                "pallet": pallet,
+                "side": side,
+                "level": int(level),
+                "marker_total": int(marker_total),
+                "description": description or "",
+            }
+        )
+
+    @staticmethod
+    def _resolve_idempotent(
+        existing: ClientPositionLabel, *, request_hash: str
+    ) -> None:
+        if (existing.idempotency_request_hash or "") != request_hash:
+            raise IdempotencyKeyReusedError(
+                "IDEMPOTENCY_KEY_REUSED: same key with a different create fingerprint"
+            )
+
+    def _sign_payload(self, payload: dict) -> tuple[dict, ClientPositionLabelSignatureStatus]:
+        if self._signing is not None and self._signing.can_sign:
+            return self._signing.sign_payload(payload), ClientPositionLabelSignatureStatus.SIGNED
+        if self._signing is not None and self._signing.required:
+            raise PositioningLabelSigningError(
+                "POSITIONING_LABEL_HMAC_SECRET is required but not configured"
+            )
+        return payload, ClientPositionLabelSignatureStatus.UNSIGNED
 
     def execute(
         self, command: CreateClientPositionMarkerSetCommand
@@ -387,12 +425,14 @@ class CreateClientPositionMarkerSetUseCase:
                 f"marker_total must be between 1 and {_MAX_MARKER_TOTAL}",
                 code="POSITION_LABEL_HIERARCHY_INVALID",
             )
-        # Validate shared hierarchy skeleton once (index=1).
         try:
+            side = PositionSide(str(command.side).strip().upper())
+            level = int(command.level)
+            # Validate shared hierarchy skeleton once (index=1).
             PositionHierarchy(
                 pallet=command.pallet,
-                side=PositionSide(str(command.side).strip().upper()),
-                level=int(command.level),
+                side=side,
+                level=level,
                 marker_index=1,
                 marker_total=total,
             )
@@ -402,33 +442,129 @@ class CreateClientPositionMarkerSetUseCase:
                 code="POSITION_LABEL_HIERARCHY_INVALID",
             ) from exc
 
+        description = (command.description or "").strip() or None
+        if description is not None and len(description) > _MAX_DESCRIPTION_LEN:
+            raise ClientPositionLabelConflictError(
+                f"description must be at most {_MAX_DESCRIPTION_LEN} characters",
+                code="POSITION_LABEL_NAME_REQUIRED",
+            )
+
+        pallet = str(command.pallet).strip()
+        idem_key = (command.idempotency_key or "").strip() or None
+        request_hash: str | None = None
+        if idem_key:
+            request_hash = self._request_hash(
+                client_id=command.client_id,
+                pallet=pallet,
+                side=side.value,
+                level=level,
+                marker_total=total,
+                description=description,
+            )
+            existing = self._label_repo.get_by_idempotency_key(command.client_id, idem_key)
+            if existing is not None:
+                self._resolve_idempotent(existing, request_hash=request_hash)
+                return self._label_repo.list_active_by_hierarchy(
+                    command.client_id,
+                    pallet=pallet,
+                    side=side.value,
+                    level=level,
+                    marker_total=total,
+                )
+
+        now = self._clock.now()
         labels: list[ClientPositionLabel] = []
         for index in range(1, total + 1):
+            hierarchy = PositionHierarchy(
+                pallet=pallet,
+                side=side,
+                level=level,
+                marker_index=index,
+                marker_total=total,
+            )
+            name = hierarchy.display_name()
+            normalized = normalize_position_label_name(name)
+            duplicate = self._label_repo.get_active_by_normalized_name(
+                command.client_id, normalized
+            )
+            if duplicate is not None:
+                raise ClientPositionLabelConflictError(
+                    f"Active position label with name {normalized} already exists",
+                    code="POSITION_LABEL_NAME_CONFLICT",
+                )
+            public_identifier = f"pos_{secrets.token_urlsafe(12)}"
+            payload = build_positioning_label_payload(
+                public_label_id=public_identifier,
+                version=POSITIONING_LABEL_PAYLOAD_VERSION_V2,
+                pallet=hierarchy.pallet,
+                side=hierarchy.side,
+                level=hierarchy.level,
+                marker_index=hierarchy.marker_index,
+                marker_total=hierarchy.marker_total,
+            )
+            payload, signature_status = self._sign_payload(payload)
+            validate_positioning_payload(payload)
             labels.append(
-                self._create.execute(
-                    CreateClientPositionLabelCommand(
-                        client_id=command.client_id,
-                        name="",
-                        principal=command.principal,
-                        description=command.description,
-                        created_by=command.created_by,
-                        pallet=command.pallet,
-                        side=command.side,
-                        level=command.level,
-                        marker_index=index,
-                        marker_total=total,
-                    )
+                ClientPositionLabel(
+                    id=str(uuid4()),
+                    client_id=command.client_id,
+                    public_identifier=public_identifier,
+                    name=name,
+                    normalized_name=normalized,
+                    status=ClientPositionLabelStatus.ACTIVE,
+                    payload_version=POSITIONING_LABEL_PAYLOAD_VERSION_V2,
+                    canonical_payload=payload,
+                    created_at=now,
+                    updated_at=now,
+                    description=description,
+                    payload_hash=payload_sha256(payload),
+                    signature=str(payload.get("signature") or "") or None,
+                    signature_algorithm=(
+                        "HMAC-SHA256" if signature_status.value == "SIGNED" else None
+                    ),
+                    signature_key_version=(
+                        int(payload["key_version"]) if "key_version" in payload else None
+                    ),
+                    signature_status=signature_status,
+                    created_by=command.created_by or command.principal.actor_id,
+                    idempotency_key=idem_key if index == 1 else None,
+                    idempotency_request_hash=request_hash if index == 1 else None,
+                    pallet=hierarchy.pallet,
+                    side=hierarchy.side.value,
+                    level=hierarchy.level,
+                    marker_index=hierarchy.marker_index,
+                    marker_total=hierarchy.marker_total,
                 )
             )
+
+        try:
+            saved = self._label_repo.save_many(labels)
+        except IdempotencyKeyReusedError:
+            if not idem_key or not request_hash:
+                raise
+            raced = self._label_repo.get_by_idempotency_key(command.client_id, idem_key)
+            if raced is None:
+                raise
+            self._resolve_idempotent(raced, request_hash=request_hash)
+            return self._label_repo.list_active_by_hierarchy(
+                command.client_id,
+                pallet=pallet,
+                side=side.value,
+                level=level,
+                marker_total=total,
+            )
+        except ClientPositionLabelConflictError:
+            raise
+
         logger.info(
             "position_label_marker_set_created client_id=%s pallet=%s side=%s level=%s total=%s",
             command.client_id,
-            command.pallet,
-            command.side,
-            command.level,
+            pallet,
+            side.value,
+            level,
             total,
         )
-        return labels
+        return list(saved)
 
 
 class ListClientPositionLabelsUseCase:

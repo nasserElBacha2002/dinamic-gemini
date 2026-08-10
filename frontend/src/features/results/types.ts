@@ -138,6 +138,19 @@ export interface ResultSummary {
   hasEvidence: boolean;
   /** Phase 4.2: true only when traceability is VALID and backend confirms display eligibility. */
   hasValidEvidence: boolean;
+  /** Product label public id when this row is one ProductRecord (D1). */
+  labelId?: string | null;
+  /** Parent Position id when ``id`` is a product_record_id (multi-label expansion). */
+  sourcePositionId?: string | null;
+  /** All ProductRecords on this position (multi-label D1); empty/undefined after row expansion. */
+  detectedProducts?: Array<{
+    productRecordId: string;
+    sku: string;
+    detectedQuantity: number;
+    correctedQuantity?: number | null;
+    labelId?: string | null;
+    qtySource?: string | null;
+  }>;
 }
 
 /** Single evidence item (image/crop) for a result. */

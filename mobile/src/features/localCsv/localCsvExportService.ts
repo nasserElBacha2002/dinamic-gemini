@@ -234,6 +234,12 @@ export class LocalCsvExportService {
       checksum_sha256: built.checksumSha256,
       checksum_algorithm: built.checksumAlgorithm,
       package_checksum_sha256: packageChecksumSha256,
+      summary: {
+        photo_count: packagedPhotos.length,
+        position_event_count: built.positionEventCount,
+        product_result_count: built.productResultCount,
+        rejected_detection_count: built.rejectedDetectionCount,
+      },
       photos: photoEntries,
     };
 

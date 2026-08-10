@@ -22,7 +22,6 @@ from src.application.services.aisle_results_export_source import (
     AISLE_RESULTS_UI_CONSOLIDATE_BY_SKU,
     ui_aligned_rollup_service,
 )
-from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.export_quantity_rollup import (
     ExportQuantityRollupService,
     ExportRollupRowInput,
@@ -226,11 +225,8 @@ class ExportInventoryCollector:
         row_bundles: list[ExportOperationalRowBundle] = []
         for p in consolidated_sorted:
             products = list(self._product_record_repo.list_by_position(p.id))
-            export_products: list = (
-                products
-                if products and any((pr.label_id or "").strip() for pr in products)
-                else [select_display_primary_product(products)]
-            )
+            # Always expand every ProductRecord — same label_id cardinality as the UI.
+            export_products: list = products if products else [None]
             if not export_products:
                 export_products = [None]
             for primary in export_products:

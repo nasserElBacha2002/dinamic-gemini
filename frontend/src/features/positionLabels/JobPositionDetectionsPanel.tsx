@@ -5,6 +5,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Box, List, ListItem, ListItemText, Typography } from '@mui/material';
 import {
+  formatPositionDetectionSecondary,
   labelForPositionDetectionStatus,
   listJobPositionDetections,
 } from '../../api/positionLabelDetectionsApi';
@@ -62,16 +63,41 @@ export default function JobPositionDetectionsPanel({
       </Typography>
       <List dense>
         {items.map((item) => {
-          const seq = item.sequence_number != null ? `Imagen ${item.sequence_number}` : item.asset_id;
+          const meta = item.metadata ?? {};
+          const filename =
+            typeof meta.original_filename === 'string' && meta.original_filename.trim()
+              ? meta.original_filename.trim()
+              : null;
+          const seq =
+            filename ??
+            (item.sequence_number != null ? `Imagen ${item.sequence_number}` : item.asset_id);
           const posName = item.position_label?.name;
+          const labelId = item.position_label?.public_identifier;
+          const version =
+            item.payload_version != null
+              ? `v${item.payload_version}`
+              : typeof meta.payload_version === 'number'
+                ? `v${meta.payload_version}`
+                : null;
           const primary =
             item.status === 'VALID' && posName
               ? `${seq}: Posición ${posName}`
-              : `${seq}: ${labelForPositionDetectionStatus(item.status)}`;
-          const secondary = `Estado: ${item.status} · Firma: ${item.signature_status}`;
+              : `${seq}: ${labelForPositionDetectionStatus(item.status, meta)}`;
+          const secondary = formatPositionDetectionSecondary({
+            status: item.status,
+            signatureStatus: item.signature_status,
+            labelId,
+            version,
+            assetId: item.asset_id,
+            metadata: meta,
+          });
           return (
             <ListItem key={item.id} disableGutters>
-              <ListItemText primary={primary} secondary={secondary} />
+              <ListItemText
+                primary={primary}
+                secondary={secondary}
+                secondaryTypographyProps={{ component: 'div', sx: { whiteSpace: 'pre-line' } }}
+              />
             </ListItem>
           );
         })}

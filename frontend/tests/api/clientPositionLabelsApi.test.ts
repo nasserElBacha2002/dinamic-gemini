@@ -3,6 +3,7 @@ import {
   clientPositionLabelDownloadUrl,
   clientPositionLabelPreviewUrl,
   createClientPositionLabel,
+  createClientPositionMarkerSet,
   invalidateClientPositionLabel,
   listClientPositionLabels,
   updateClientPositionLabel,
@@ -73,6 +74,22 @@ describe('clientPositionLabelsApi', () => {
     );
     expect(clientPositionLabelDownloadUrl('c1', 'l1', { format: 'PDF', preset: 'MM_100x100' })).toMatch(
       /\/download\?format=PDF&preset=MM_100x100$/
+    );
+  });
+
+  it('createClientPositionMarkerSet sends Idempotency-Key header', async () => {
+    apiRequestJson.mockResolvedValue({ items: [] });
+    await createClientPositionMarkerSet(
+      'client-1',
+      { pallet: 'P12', side: 'LEFT', level: 3, marker_total: 3 },
+      { idempotencyKey: 'pos-marker-set-abc' }
+    );
+    expect(apiRequestJson).toHaveBeenCalledWith(
+      expect.stringContaining('/position-labels/marker-set'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'pos-marker-set-abc' },
+      })
     );
   });
 });

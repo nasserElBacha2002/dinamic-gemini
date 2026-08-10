@@ -9,7 +9,11 @@ import {
   type LocalCsvRow,
 } from './csvFormat';
 import { createId } from '../../shared/createId';
-import { parseDinamicPositionPayload } from '../../core/positionLabelPayload';
+import {
+  parseDinamicPositionPayload,
+  type ActivePositionState,
+} from '../../core/positionLabelPayload';
+import { parseStoredProductResults } from '../../core/storedProductResults';
 
 export interface LocalCsvExportInput {
   readonly session: CaptureSessionRow;
@@ -30,6 +34,9 @@ export interface LocalCsvExportResult {
   readonly exportedAt: string;
   readonly schemaVersion: string;
   readonly rowCount: number;
+  readonly productResultCount: number;
+  readonly positionEventCount: number;
+  readonly rejectedDetectionCount: number;
   readonly checksumSha256: string;
   readonly checksumAlgorithm: 'sha256';
   readonly csv: string;
@@ -43,6 +50,103 @@ function cell(value: string | number | null | undefined): string {
     return '';
   }
   return String(value);
+}
+
+type PositionFields = {
+  positionCode: string;
+  positionStatus: string;
+  pallet: string;
+  side: string;
+  level: string;
+  markerIndex: string;
+  markerTotal: string;
+  positionLabelId: string;
+  positionPayloadRaw: string;
+};
+
+function fieldsFromActiveState(
+  state: ActivePositionState,
+  positionStatus: string,
+): PositionFields {
+  return {
+    positionCode: state.displayName || state.labelId,
+    positionStatus,
+    pallet: state.pallet ?? '',
+    side: state.side ?? '',
+    level: state.level != null ? String(state.level) : '',
+    markerIndex: state.markerIndex != null ? String(state.markerIndex) : '',
+    markerTotal: state.markerTotal != null ? String(state.markerTotal) : '',
+    positionLabelId: state.positionLabelId || state.labelId,
+    // Exact ML Kit raw string — never rebuild from parsed subset.
+    positionPayloadRaw: state.rawPayload || state.sourcePayload || '',
+  };
+}
+
+function parsePositionSnapshotJson(raw: string | null | undefined): ActivePositionState | null {
+  if (raw == null || !String(raw).trim()) return null;
+  try {
+    const parsed = JSON.parse(String(raw)) as Partial<ActivePositionState>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.labelId !== 'string' && typeof parsed.positionLabelId !== 'string') {
+      return null;
+    }
+    return parsed as ActivePositionState;
+  } catch {
+    return null;
+  }
+}
+
+function snapshotJsonFromDraftOrConfirmed(
+  draft: LocalDetectionDraftRow | undefined,
+  confirmed: ConfirmedLocalResultRow | undefined,
+): string | null {
+  const fromDraft = draft?.position_snapshot_json ?? null;
+  if (fromDraft) return fromDraft;
+  const fromConfirmed = (confirmed as { position_snapshot_json?: string | null } | undefined)
+    ?.position_snapshot_json;
+  return fromConfirmed ?? null;
+}
+
+function positionDetectedOnDraft(draft: LocalDetectionDraftRow | undefined): boolean {
+  if (!draft) return false;
+  if (Number(draft.position_detected) === 1) return true;
+  return draft.error_code === 'POSITION_LABEL_DETECTED';
+}
+
+type EmitProduct = {
+  readonly labelId: string;
+  readonly internalCode: string;
+  readonly quantity: number | null;
+};
+
+function productsForPhoto(
+  draft: LocalDetectionDraftRow | undefined,
+  confirmed: ConfirmedLocalResultRow | undefined,
+): EmitProduct[] {
+  const fromJson = parseStoredProductResults(draft?.product_results_json);
+  if (fromJson.length > 0) {
+    return fromJson.map((p) => ({
+      labelId: p.labelId,
+      internalCode: p.internalCode,
+      quantity: p.quantity,
+    }));
+  }
+  // Confirmed override (single) or legacy single draft without product_results_json.
+  const code = confirmed?.confirmed_internal_code ?? draft?.internal_code;
+  if (code && String(code).trim() && draft?.error_code !== 'POSITION_LABEL_DETECTED') {
+    const labelId =
+      (confirmed as { label_id?: string | null } | undefined)?.label_id ??
+      draft?.label_id ??
+      '';
+    return [
+      {
+        labelId: String(labelId ?? ''),
+        internalCode: String(code).trim(),
+        quantity: confirmed?.confirmed_quantity ?? draft?.quantity ?? null,
+      },
+    ];
+  }
+  return [];
 }
 
 /**
@@ -89,41 +193,66 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       return a.asset_id.localeCompare(b.asset_id);
     });
 
-  /** Last DINAMIC_POSITION key seen in capture order — applies to following product photos. */
-  let currentPositionCode = '';
-  let currentPallet = '';
-  let currentSide = '';
-  let currentLevel = '';
-  let currentMarkerIndex = '';
-  let currentMarkerTotal = '';
+  // LEGACY_FORWARD_FILL: only used when drafts lack position_snapshot_json.
+  let legacyPositionCode = '';
+  let legacyPallet = '';
+  let legacySide = '';
+  let legacyLevel = '';
+  let legacyMarkerIndex = '';
+  let legacyMarkerTotal = '';
 
-  return eligible.map((photo) => {
+  const rows: LocalCsvRow[] = [];
+  const emittedLabelIds = new Set<string>();
+
+  for (const photo of eligible) {
     const draft = draftByPhoto.get(photo.id);
     const confirmed = confirmedByPhoto.get(photo.id);
-    const isPositionLabel = draft?.error_code === 'POSITION_LABEL_DETECTED';
-    const labelPositionCode =
-      isPositionLabel && draft?.internal_code ? String(draft.internal_code).trim() : '';
-    if (labelPositionCode) {
-      currentPositionCode = labelPositionCode;
-      const parsed = parseDinamicPositionPayload(labelPositionCode);
-      if (parsed?.pallet) {
-        currentPallet = parsed.pallet;
-        currentSide = parsed.side ?? '';
-        currentLevel = parsed.level != null ? String(parsed.level) : '';
-        currentMarkerIndex = parsed.markerIndex != null ? String(parsed.markerIndex) : '';
-        currentMarkerTotal = parsed.markerTotal != null ? String(parsed.markerTotal) : '';
-        currentPositionCode = parsed.displayName;
-      }
-    }
+    const detectedHere = positionDetectedOnDraft(draft);
+    const snapshot = parsePositionSnapshotJson(
+      snapshotJsonFromDraftOrConfirmed(draft, confirmed),
+    );
 
-    const positionCode = labelPositionCode
-      ? currentPositionCode || labelPositionCode
-      : currentPositionCode;
-    const positionStatus = labelPositionCode
-      ? 'LABEL_DETECTED'
-      : currentPositionCode
-        ? 'INFERRED_FROM_PRIOR_LABEL'
-        : '';
+    let position: PositionFields;
+    if (snapshot) {
+      position = fieldsFromActiveState(
+        snapshot,
+        detectedHere ? 'LABEL_DETECTED' : 'FROM_SNAPSHOT',
+      );
+    } else {
+      const labelPositionCode =
+        detectedHere && draft?.internal_code ? String(draft.internal_code).trim() : '';
+      if (labelPositionCode) {
+        legacyPositionCode = labelPositionCode;
+        const parsed = parseDinamicPositionPayload(labelPositionCode);
+        if (parsed?.pallet) {
+          legacyPallet = parsed.pallet;
+          legacySide = parsed.side ?? '';
+          legacyLevel = parsed.level != null ? String(parsed.level) : '';
+          legacyMarkerIndex = parsed.markerIndex != null ? String(parsed.markerIndex) : '';
+          legacyMarkerTotal = parsed.markerTotal != null ? String(parsed.markerTotal) : '';
+          legacyPositionCode = parsed.displayName;
+        }
+      }
+      const positionCode = labelPositionCode
+        ? legacyPositionCode || labelPositionCode
+        : legacyPositionCode;
+      const positionStatus = labelPositionCode
+        ? 'LABEL_DETECTED'
+        : legacyPositionCode
+          ? 'INFERRED_FROM_PRIOR_LABEL'
+          : '';
+      position = {
+        positionCode,
+        positionStatus,
+        pallet: legacyPallet,
+        side: legacySide,
+        level: legacyLevel,
+        markerIndex: legacyMarkerIndex,
+        markerTotal: legacyMarkerTotal,
+        positionLabelId: '',
+        positionPayloadRaw: '',
+      };
+    }
 
     const requiresReview =
       confirmed == null &&
@@ -132,19 +261,8 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
         draft.status === 'AMBIGUOUS' ||
         draft.status === 'FAILED' ||
         draft.status === 'INVALID');
-    const source = confirmed
-      ? confirmed.source
-      : isPositionLabel
-        ? 'LOCAL_POSITION_LABEL'
-        : draft?.internal_code && !isPositionLabel
-          ? 'LOCAL_CODE_SCAN'
-          : 'LOCAL_PENDING';
 
-    const productInternalCode = isPositionLabel
-      ? ''
-      : cell(confirmed?.confirmed_internal_code ?? draft?.internal_code);
-
-    return {
+    const base = {
       schema_version: LOCAL_CSV_SCHEMA_VERSION,
       export_id: exportId,
       exported_at: exportedAt,
@@ -160,37 +278,22 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       client_file_id: cell(photo.client_file_id),
       capture_order: cell(photo.sequence_number),
       captured_at: cell(photo.stable_at ?? photo.detected_at ?? photo.created_at),
-      position_code: positionCode,
-      position_status: positionStatus,
-      pallet: currentPallet,
-      side: currentSide,
-      level: currentLevel,
-      marker_index: currentMarkerIndex,
-      marker_total: currentMarkerTotal,
-      internal_code: productInternalCode,
-      // D1 physical sticker id when present on confirmed/draft; empty for legacy PIPE/DI1.
-      label_id: cell(
-        isPositionLabel
-          ? ''
-          : ((confirmed as { label_id?: string | null } | undefined)?.label_id ??
-              (draft as { label_id?: string | null } | undefined)?.label_id ??
-              ''),
-      ),
-      quantity: cell(
-        isPositionLabel ? null : (confirmed?.confirmed_quantity ?? draft?.quantity),
-      ),
-      quantity_status: cell(
-        isPositionLabel
-          ? 'MISSING'
-          : (confirmed?.quantity_status ?? draft?.quantity_status),
-      ),
+      position_code: position.positionCode,
+      position_status: position.positionStatus,
+      pallet: position.pallet,
+      side: position.side,
+      level: position.level,
+      marker_index: position.markerIndex,
+      marker_total: position.markerTotal,
+      position_label_id: position.positionLabelId,
+      position_payload_raw: position.positionPayloadRaw,
+      quantity_status: cell(confirmed?.quantity_status ?? draft?.quantity_status),
       detection_status: cell(confirmed ? 'CONFIRMED' : draft?.status ?? photo.status),
       detector_version: cell(confirmed?.detector_version ?? draft?.detector_version),
       parser_version: cell(confirmed?.parser_version ?? draft?.parser_version),
       prepared_asset_fingerprint: cell(
         confirmed?.prepared_asset_sha256 ?? draft?.prepared_asset_fingerprint,
       ),
-      source,
       requires_review: requiresReview ? 'true' : 'false',
       confirmed_manually: confirmed ? 'true' : 'false',
       error_code: cell(draft?.error_code ?? photo.stability_error),
@@ -198,7 +301,48 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       freeze_id: cell(input.freezeId ?? input.session.active_freeze_id),
       freeze_generation: cell(input.freezeGeneration ?? input.session.capture_freeze_generation),
     };
-  });
+
+    let products = productsForPhoto(draft, confirmed);
+    // Cross-photo label_id dedupe at export (session count-once).
+    products = products.filter((p) => {
+      const lid = (p.labelId || '').trim();
+      if (!lid) return true;
+      if (emittedLabelIds.has(lid)) return false;
+      emittedLabelIds.add(lid);
+      return true;
+    });
+
+    if (products.length === 0) {
+      const isPositionOnly = detectedHere;
+      rows.push({
+        ...base,
+        internal_code: '',
+        label_id: '',
+        quantity: '',
+        quantity_status: isPositionOnly ? 'MISSING' : base.quantity_status,
+        source: confirmed
+          ? confirmed.source
+          : isPositionOnly
+            ? 'LOCAL_POSITION_LABEL'
+            : 'LOCAL_PENDING',
+      });
+      continue;
+    }
+
+    for (const product of products) {
+      rows.push({
+        ...base,
+        internal_code: product.internalCode,
+        label_id: cell(product.labelId),
+        quantity: cell(product.quantity),
+        quantity_status:
+          product.quantity != null ? cell(confirmed?.quantity_status ?? draft?.quantity_status ?? 'PRESENT') : 'MISSING',
+        source: confirmed ? confirmed.source : 'LOCAL_CODE_SCAN',
+      });
+    }
+  }
+
+  return rows;
 }
 
 export async function buildLocalCsvExport(input: LocalCsvExportInput): Promise<LocalCsvExportResult> {
@@ -208,11 +352,20 @@ export async function buildLocalCsvExport(input: LocalCsvExportInput): Promise<L
   const exportedAt = rows[0]?.exported_at ?? input.exportedAt ?? new Date().toISOString();
   const csv = buildCsvDocument(rows);
   const checksumSha256 = await sha256Hex(csv);
+  const productResultCount = rows.filter((r) => r.source === 'LOCAL_CODE_SCAN').length;
+  const positionEventCount = rows.filter((r) => r.source === 'LOCAL_POSITION_LABEL').length;
+  const rejectedDetectionCount = input.drafts.reduce((acc, d) => {
+    if (!d.product_results_json && d.error_code === 'D1_CANDIDATES_FAILED') return acc + 1;
+    return acc;
+  }, 0);
   return {
     exportId,
     exportedAt,
     schemaVersion: LOCAL_CSV_SCHEMA_VERSION,
     rowCount: rows.length,
+    productResultCount,
+    positionEventCount,
+    rejectedDetectionCount,
     checksumSha256,
     checksumAlgorithm: CHECKSUM_ALGORITHM,
     csv,

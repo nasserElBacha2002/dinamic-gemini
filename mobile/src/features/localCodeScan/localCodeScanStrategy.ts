@@ -12,12 +12,17 @@ import {
   evaluateLocalCodeScanCapability,
   LOCAL_CODE_DETECTOR_VERSION,
 } from './localCodeDetector';
-import { applyPositionScan } from './activePositionStore';
+import { parseStoredProductResults } from '../../core/storedProductResults';
+import { applyPositionScan, getActivePosition } from './activePositionStore';
+import type { ActivePositionState } from '../../core/positionLabelPayload';
+import { parseDinamicPositionPayload } from '../../core/positionLabelPayload';
 
 export const LOCAL_CODE_SCAN_TIMEOUT_MS = 10_000;
 export const LOCAL_CODE_SCAN_CONCURRENCY = 1;
 export const LOCAL_SCAN_STALE_MS = 60_000;
 export const LOCAL_SCAN_OWNER = 'js-local-code-scan';
+
+export { parseStoredProductResults } from '../../core/storedProductResults';
 
 export interface LocalCodeScanStrategyDeps {
   readonly drafts: LocalDetectionDraftRepository;
@@ -26,6 +31,16 @@ export interface LocalCodeScanStrategyDeps {
   readonly evaluateCapability?: typeof evaluateLocalCodeScanCapability;
   readonly nowMs?: () => number;
   readonly timeoutMs?: number;
+  /** Persist session active position when a position label scan succeeds. */
+  readonly onActivePositionChanged?: (
+    captureSessionId: string,
+    state: ActivePositionState,
+  ) => Promise<void>;
+}
+
+function freezePositionSnapshotJson(captureSessionId: string): string | null {
+  const active = getActivePosition(captureSessionId);
+  return active ? JSON.stringify(active) : null;
 }
 
 export interface LocalCodeScanInput {
@@ -221,27 +236,82 @@ export class LocalCodeScanStrategy {
           ? candidates[consolidated.selectedIndex]?.rawValue
           : candidates[0]?.rawValue;
 
-      // Forward-fill: first valid DINAMIC_POSITION on this photo becomes active position.
-      if (parsedError === 'POSITION_LABEL_DETECTED' || consolidated.warnings?.includes('POSITION_LABEL_DETECTED')) {
-        for (const cand of candidates) {
-          if (applyPositionScan(cand.rawValue)) break;
-        }
-      } else if (selectedRaw) {
-        applyPositionScan(selectedRaw);
+      // Resolve POSITION independently of products (same photo may contain both).
+      const activeBefore = getActivePosition(input.captureSessionId);
+      let appliedPosition: ActivePositionState | null = null;
+      const positionRaw =
+        consolidated.positionRawPayload ??
+        candidates.find((c) => parseDinamicPositionPayload(c.rawValue) != null)?.rawValue ??
+        null;
+      if (positionRaw) {
+        appliedPosition = applyPositionScan(input.captureSessionId, positionRaw);
       }
+      if (appliedPosition && this.deps.onActivePositionChanged) {
+        await this.deps.onActivePositionChanged(input.captureSessionId, appliedPosition);
+      }
+
+      const positionSnapshotJson = freezePositionSnapshotJson(input.captureSessionId);
+      const positionDetected = Boolean(appliedPosition);
+
+      // Session-scoped label_id dedupe (count once).
+      const sessionDrafts = await this.deps.drafts.listForSession(input.captureSessionId);
+      const seenLabelIds = new Set<string>();
+      for (const d of sessionDrafts) {
+        if (d.capture_photo_id === input.capturePhotoId) continue;
+        for (const p of parseStoredProductResults(d.product_results_json)) {
+          if (p.labelId) seenLabelIds.add(p.labelId);
+        }
+        if (d.label_id) seenLabelIds.add(d.label_id);
+      }
+
+      let products = [...consolidated.productResults];
+      let duplicateLabels = 0;
+      if (products.length > 0) {
+        const kept: typeof products = [];
+        for (const p of products) {
+          if (seenLabelIds.has(p.labelId)) {
+            duplicateLabels += 1;
+            continue;
+          }
+          seenLabelIds.add(p.labelId);
+          kept.push(p);
+        }
+        products = kept;
+      }
+
+      const productResultsJson =
+        products.length > 0
+          ? JSON.stringify(
+              products.map((p) => ({
+                labelId: p.labelId,
+                internalCode: p.internalCode,
+                quantity: p.quantity,
+                validationStatus: p.validationStatus,
+                formatVersion: p.formatVersion,
+                selectedIndex: p.selectedIndex,
+              })),
+            )
+          : null;
+
+      const primary = products[0] ?? null;
+      const isPositionOnly =
+        positionDetected && products.length === 0 && consolidated.status === 'NO_VALID_CODE';
 
       await this.deps.drafts.upsertDraft({
         capturePhotoId: input.capturePhotoId,
         captureSessionId: input.captureSessionId,
         clientFileId: input.clientFileId,
-        status,
+        status: isPositionOnly ? 'DETECTED_UNVERIFIED' : status,
         rawValueHash: selectedRaw ? hashPayloadFingerprint(selectedRaw) : null,
-        internalCode: consolidated.internalCode,
-        quantity: consolidated.quantity,
+        internalCode: primary?.internalCode ?? consolidated.internalCode,
+        quantity: primary?.quantity ?? consolidated.quantity,
+        labelId: primary?.labelId ?? null,
+        productResultsJson,
+        positionDetected,
         quantityStatus:
           consolidated.status === 'MISSING_QUANTITY'
             ? 'MISSING'
-            : consolidated.quantity != null
+            : primary?.quantity != null || consolidated.quantity != null
               ? 'PRESENT'
               : consolidated.status === 'NO_DETECTIONS'
                 ? null
@@ -258,11 +328,15 @@ export class LocalCodeScanStrategy {
         detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
         preparedAssetFingerprint: input.preparedAssetFingerprint,
         candidateCount: candidates.length,
-        errorCode:
-          status === 'AMBIGUOUS'
+        errorCode: isPositionOnly
+          ? 'POSITION_LABEL_DETECTED'
+          : status === 'AMBIGUOUS'
             ? consolidated.status
             : status === 'INVALID' || status === 'DETECTED_UNVERIFIED'
-              ? parsedError ?? 'NO_VALID_CODE'
+              ? parsedError ??
+                (consolidated.warnings.includes('D1_CANDIDATES_FAILED')
+                  ? 'D1_CANDIDATES_FAILED'
+                  : 'NO_VALID_CODE')
               : status === 'UNRESOLVED'
                 ? 'NO_DETECTIONS'
                 : null,
@@ -270,6 +344,7 @@ export class LocalCodeScanStrategy {
         scanOwner: null,
         scanGeneration,
         comparisonStatus: 'PENDING',
+        positionSnapshotJson,
       });
 
       const eventName =
@@ -290,13 +365,29 @@ export class LocalCodeScanStrategy {
           consolidation_status: consolidated.status,
           detector_version: LOCAL_CODE_DETECTOR_VERSION,
           parser_version: LABEL_PAYLOAD_PARSER_VERSION,
+          capture_photo_id: input.capturePhotoId,
+          codes_detected: candidates.length,
+          position_candidates: consolidated.positionRawPayload ? 1 : 0,
+          product_candidates: consolidated.productResults.length,
+          d1_valid: consolidated.productResults.filter((p) => p.validationStatus === 'VALID' || p.validationStatus === 'D1_VALID')
+            .length,
+          d1_invalid: consolidated.rejections.length,
+          legacy_candidates: candidates.filter((c) => {
+            const v = c.rawValue;
+            return v.includes('|') && !v.startsWith('D1|') && !v.includes('"type"');
+          }).length,
+          products_emitted: products.length,
+          duplicate_labels: duplicateLabels,
+          active_position_before: activeBefore?.labelId ?? null,
+          position_detected: positionDetected,
+          active_position_after: getActivePosition(input.captureSessionId)?.labelId ?? null,
           detected_symbology:
             (consolidated.selectedIndex != null
               ? candidates[consolidated.selectedIndex]?.symbology
               : candidates[0]?.symbology) ?? null,
         },
       });
-      return status;
+      return isPositionOnly ? 'DETECTED_UNVERIFIED' : status;
     } catch (e) {
       const processingMs = Math.max(0, Math.round(this.nowMs() - started));
       const message = String(e);

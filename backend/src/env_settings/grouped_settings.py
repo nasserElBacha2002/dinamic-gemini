@@ -1326,8 +1326,10 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 3: when a first (0°) scan finds nothing, retry with rotated variants "
-            "(90/180/270) up to CODE_SCAN_MAX_VARIANTS. Env: CODE_SCAN_ENABLE_ROTATIONS."
+            "Phase 3: when true, always attempt rotated variants (90/180/270) up to "
+            "CODE_SCAN_MAX_VARIANTS after the base (0°) pass, so labels only readable at "
+            "another orientation are not lost after a partial 0° hit. "
+            "Env: CODE_SCAN_ENABLE_ROTATIONS."
         ),
     )
     code_scan_enable_preprocessing: bool = Field(
@@ -1350,12 +1352,13 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
     )
     code_scan_max_candidates_per_asset: int = Field(
-        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_CANDIDATES_PER_ASSET", "12")),
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_CANDIDATES_PER_ASSET", "24")),
         ge=1,
         le=64,
         description=(
             "D1: max decoded barcode/QR candidates retained per source asset during code scan. "
-            "Env: CODE_SCAN_MAX_CANDIDATES_PER_ASSET."
+            "Budget must cover multi-sticker scenes (each sticker ≈ QR D1 + Code128, plus "
+            "optional POSITION QR). Default 24. Env: CODE_SCAN_MAX_CANDIDATES_PER_ASSET."
         ),
     )
     code_scan_quantity_max: int = Field(

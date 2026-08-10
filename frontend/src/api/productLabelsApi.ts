@@ -29,15 +29,17 @@ export async function issueProductLabels(
   clientId: string,
   body: IssueProductLabelsRequest
 ): Promise<IssueProductLabelsResponse> {
+  // Pass a plain object: apiRequestJson stringifies and sets Content-Type.
+  // Pre-stringifying skips Content-Type and FastAPI returns 422 on the body.
   return apiRequestJson<IssueProductLabelsResponse>(
     `${V3_CLIENTS_BASE}/${encodeURIComponent(clientId)}/product-labels`,
     {
       method: 'POST',
-      body: JSON.stringify({
+      body: {
         internal_code: body.internal_code,
         quantity: body.quantity,
         count: body.count ?? 1,
-      }),
+      },
     }
   );
 }

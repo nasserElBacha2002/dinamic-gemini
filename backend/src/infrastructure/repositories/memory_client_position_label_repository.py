@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from src.application.errors import IdempotencyKeyReusedError
+from src.application.errors import (
+    ClientPositionLabelConflictError,
+    IdempotencyKeyReusedError,
+)
 from src.domain.client_position_label.entities import (
     ClientPositionLabel,
     ClientPositionLabelArtifact,
@@ -58,6 +61,30 @@ class MemoryClientPositionLabelRepository:
                 return label
         return None
 
+    def list_active_by_hierarchy(
+        self,
+        client_id: str,
+        *,
+        pallet: str,
+        side: str,
+        level: int,
+        marker_total: int,
+    ) -> list[ClientPositionLabel]:
+        pallet_n = (pallet or "").strip()
+        side_n = (side or "").strip().upper()
+        rows = [
+            lab
+            for lab in self._labels.values()
+            if lab.client_id == client_id
+            and lab.status == ClientPositionLabelStatus.ACTIVE
+            and (lab.pallet or "") == pallet_n
+            and (lab.side or "").upper() == side_n
+            and lab.level == int(level)
+            and lab.marker_total == int(marker_total)
+        ]
+        rows.sort(key=lambda lab: (lab.marker_index or 0, lab.id))
+        return rows
+
     def list_by_client(
         self,
         client_id: str,
@@ -95,6 +122,28 @@ class MemoryClientPositionLabelRepository:
             )
         )
 
+    def _assert_active_marker_unique(self, label: ClientPositionLabel) -> None:
+        if label.status != ClientPositionLabelStatus.ACTIVE:
+            return
+        if not (label.pallet or "").strip() or label.marker_index is None:
+            return
+        for existing in self._labels.values():
+            if existing.id == label.id:
+                continue
+            if existing.status != ClientPositionLabelStatus.ACTIVE:
+                continue
+            if (
+                existing.client_id == label.client_id
+                and (existing.pallet or "") == (label.pallet or "")
+                and (existing.side or "").upper() == (label.side or "").upper()
+                and existing.level == label.level
+                and existing.marker_index == label.marker_index
+            ):
+                raise ClientPositionLabelConflictError(
+                    "Active marker already exists for this hierarchy index",
+                    code="POSITION_LABEL_MARKER_ACTIVE_EXISTS",
+                )
+
     def save(self, label: ClientPositionLabel) -> ClientPositionLabel:
         key = (label.idempotency_key or "").strip()
         if key:
@@ -108,8 +157,51 @@ class MemoryClientPositionLabelRepository:
                     raise IdempotencyKeyReusedError(
                         "IDEMPOTENCY_KEY_REUSED: key already registered"
                     )
+        self._assert_active_marker_unique(label)
         self._labels[label.id] = label
         return label
+
+    def save_many(self, labels: list[ClientPositionLabel]) -> list[ClientPositionLabel]:
+        inserted: list[str] = []
+        try:
+            for label in labels:
+                key = (label.idempotency_key or "").strip()
+                if key:
+                    for existing in self._labels.values():
+                        if existing.id == label.id or existing.id in inserted:
+                            continue
+                        if (
+                            existing.client_id == label.client_id
+                            and (existing.idempotency_key or "").strip() == key
+                        ):
+                            raise IdempotencyKeyReusedError(
+                                "IDEMPOTENCY_KEY_REUSED: key already registered"
+                            )
+                self._assert_active_marker_unique(label)
+                for prior_id in inserted:
+                    prior = self._labels[prior_id]
+                    if (
+                        label.status == ClientPositionLabelStatus.ACTIVE
+                        and prior.status == ClientPositionLabelStatus.ACTIVE
+                        and (label.pallet or "").strip()
+                        and label.marker_index is not None
+                        and prior.client_id == label.client_id
+                        and (prior.pallet or "") == (label.pallet or "")
+                        and (prior.side or "").upper() == (label.side or "").upper()
+                        and prior.level == label.level
+                        and prior.marker_index == label.marker_index
+                    ):
+                        raise ClientPositionLabelConflictError(
+                            "Active marker already exists for this hierarchy index",
+                            code="POSITION_LABEL_MARKER_ACTIVE_EXISTS",
+                        )
+                self._labels[label.id] = label
+                inserted.append(label.id)
+            return labels
+        except Exception:
+            for lid in inserted:
+                self._labels.pop(lid, None)
+            raise
 
     def get_artifact(
         self,

@@ -39,6 +39,11 @@ from src.application.services.image_processing.code_detection_consolidator impor
     CodeDetectionConsolidator,
     CodeDetectionInput,
 )
+from src.application.services.image_processing.code_scan_session import (
+    CodeScanSessionResult,
+    CodeScanStopReason,
+    CodeScanVariantObservation,
+)
 from src.application.services.image_processing.encoded_label_payload_parser import (
     EncodedLabelPayloadParser,
 )
@@ -119,7 +124,7 @@ class CodeScanConfig:
     enable_preprocessing: bool = False
     max_variants: int = 4
     max_technical_attempts: int = 2
-    max_candidates_per_asset: int = 12
+    max_candidates_per_asset: int = 24
 
 
 class CodeScanMetrics:
@@ -278,7 +283,7 @@ class CodeScanProcessingStrategy:
         )
 
         try:
-            candidates = self._scan_with_variants(asset, content, started)
+            scan_session = self._scan_with_variants(asset, content, started)
         except CodeScanTimeoutError as exc:
             self._metrics.increment("code_scan.timeout")
             self._publish_asset_event(
@@ -336,12 +341,23 @@ class CodeScanProcessingStrategy:
             self._finalize_asset_event(context, result)
             return result
 
+        candidates = list(scan_session.candidates)
         symbol_count = len(candidates)
+        self._metrics.increment("code_scan.raw_symbols_total", amount=symbol_count)
+        if not scan_session.scan_complete:
+            self._metrics.increment("code_scan.scan_incomplete_total")
+        if scan_session.partial_timeout:
+            self._metrics.increment("code_scan.timeout_partial_total")
         self._publish_asset_event(
             context,
             "code_scan.decode_completed",
             message="barcode/QR decode completed",
-            metadata={"symbol_count": symbol_count},
+            metadata={
+                "symbol_count": symbol_count,
+                "scan_complete": scan_session.scan_complete,
+                "scan_stop_reason": scan_session.stop_reason.value,
+                "variants_attempted": scan_session.variants_attempted,
+            },
             error_code="NO_CODE_SYMBOL_FOUND" if symbol_count == 0 else None,
         )
         if symbol_count > 0:
@@ -349,7 +365,11 @@ class CodeScanProcessingStrategy:
                 context,
                 "code_scan.symbols_detected",
                 message="symbols detected",
-                metadata={"symbol_count": symbol_count},
+                metadata={
+                    "symbol_count": symbol_count,
+                    "scan_complete": scan_session.scan_complete,
+                    "scan_stop_reason": scan_session.stop_reason.value,
+                },
             )
 
         item_candidates = candidates
@@ -476,7 +496,7 @@ class CodeScanProcessingStrategy:
         consolidated = self._consolidator.consolidate(detections)
 
         duration_ms = int((time.monotonic() - started) * 1000)
-        evidence = self._build_evidence(consolidated, detections)
+        evidence = self._build_evidence(consolidated, detections, scan_session=scan_session)
         if position_meta:
             evidence = {**(evidence or {}), "position_label_detection": position_meta}
         # Never apply OCR/supplier text-profile validation here. Profile rules are for
@@ -492,6 +512,17 @@ class CodeScanProcessingStrategy:
         if registry_hard_fail is not None:
             self._finalize_asset_event(context, registry_hard_fail)
             return registry_hard_fail
+
+        scan_warnings = self._scan_session_warnings(scan_session)
+        if consolidated.product_results:
+            self._metrics.increment(
+                "code_scan.d1_candidates_total",
+                amount=len(consolidated.product_results) + len(consolidated.rejections),
+            )
+            self._metrics.increment(
+                "product_labels_rejected_total",
+                amount=len(consolidated.rejections),
+            )
 
         if consolidated.status in (
             CodeConsolidationStatus.RESOLVED,
@@ -514,12 +545,27 @@ class CodeScanProcessingStrategy:
                 counted = len(product_results) if product_results else 1
                 self._metrics.increment("product_labels_valid_total", amount=counted)
                 logger.info(
-                    "code_scan.resolved job_id=%s asset_id=%s symbology=%s "
-                    "product_count=%s duration_ms=%s",
+                    "code_scan.resolved job_id=%s asset_id=%s original_filename=%s "
+                    "raw_symbols_count=%s product_count=%s product_label_ids=%s "
+                    "rejected_label_ids=%s rejected_count=%s "
+                    "scan_complete=%s scan_stop_reason=%s "
+                    "position_candidates=%s duration_ms=%s",
                     context.job_id,
                     context.asset_id,
-                    evidence.get("symbology") if evidence else None,
+                    getattr(asset, "original_filename", None),
+                    len(detections),
                     counted,
+                    [p.label_id for p in product_results if getattr(p, "label_id", None)],
+                    [
+                        r.label_id
+                        for r in consolidated.rejections
+                        if getattr(r, "label_id", None)
+                    ],
+                    len(consolidated.rejections)
+                    + len((evidence or {}).get("product_label_registry_rejections") or []),
+                    scan_session.scan_complete,
+                    scan_session.stop_reason.value,
+                    (position_meta or {}).get("position_candidate_count"),
                     duration_ms,
                 )
                 primary_code = (
@@ -541,7 +587,7 @@ class CodeScanProcessingStrategy:
                     internal_code=primary_code,
                     quantity=float(primary_qty) if primary_qty is not None else None,
                     evidence=evidence,
-                    warnings=list(consolidated.warnings),
+                    warnings=list(consolidated.warnings) + scan_warnings,
                     execution_scope=ExecutionScope.SINGLE_ASSET,
                     logical_asset_attempt=False,
                     processing_duration_ms=duration_ms,
@@ -589,7 +635,7 @@ class CodeScanProcessingStrategy:
                     processing_mode=mode,
                     resolved_by=STRATEGY_KEY,
                     evidence=evidence,
-                    warnings=list(consolidated.warnings),
+                    warnings=list(consolidated.warnings) + scan_warnings,
                     error_code=error_code,
                     execution_scope=ExecutionScope.SINGLE_ASSET,
                     logical_asset_attempt=False,
@@ -599,6 +645,19 @@ class CodeScanProcessingStrategy:
                 return result
 
             self._metrics.increment("code_scan.unrecognized")
+            # Known Dinamic D1 symbols that failed checksum/registry must not become
+            # NO_CODE_SYMBOL_FOUND → GLOBAL_EXTERNAL_FALLBACK invent-product.
+            has_d1_rejection = bool(
+                (evidence or {}).get("product_label_rejections")
+                or (evidence or {}).get("product_label_registry_rejections")
+                or any(
+                    w in ("D1_CANDIDATES_FAILED", "NO_VALID_ISSUED_PRODUCT_LABEL")
+                    for w in (consolidated.warnings or ())
+                )
+            )
+            error_code = (
+                "D1_CANDIDATES_FAILED" if has_d1_rejection else "NO_CODE_SYMBOL_FOUND"
+            )
             result = ImageProcessingResult(
                 job_id=context.job_id,
                 asset_id=context.asset_id,
@@ -606,8 +665,8 @@ class CodeScanProcessingStrategy:
                 processing_mode=mode,
                 resolved_by=STRATEGY_KEY,
                 evidence=evidence,
-                warnings=list(consolidated.warnings),
-                error_code="NO_CODE_SYMBOL_FOUND",
+                warnings=list(consolidated.warnings) + scan_warnings,
+                error_code=error_code,
                 execution_scope=ExecutionScope.SINGLE_ASSET,
                 logical_asset_attempt=False,
                 processing_duration_ms=duration_ms,
@@ -625,7 +684,7 @@ class CodeScanProcessingStrategy:
             resolved_by=STRATEGY_KEY,
             internal_code=consolidated.internal_code,
             evidence=evidence,
-            warnings=list(consolidated.warnings),
+            warnings=list(consolidated.warnings) + scan_warnings,
             error_code=consolidated.status.value,
             execution_scope=ExecutionScope.SINGLE_ASSET,
             logical_asset_attempt=False,
@@ -757,17 +816,30 @@ class CodeScanProcessingStrategy:
 
     def _scan_with_variants(
         self, asset: SourceAsset, content: bytes, started: float
-    ) -> list[CodeScanDetectionCandidate]:
+    ) -> CodeScanSessionResult:
         """Scan base image and optional rotations; merge candidates across variants.
 
         Dedupes by ``(code_type, code_value)`` preserving first-seen order so a code only
         visible after rotation is not dropped when another code appeared at 0°.
+
+        Timeout with candidates → ``scan_complete=False`` / ``TIMEOUT`` (partial), not a
+        silent full success. Timeout with zero candidates still raises.
         """
-        self._check_timeout(started)
         merged: list[CodeScanDetectionCandidate] = []
         seen: set[tuple[str, str]] = set()
+        observations: list[CodeScanVariantObservation] = []
+        variants_attempted = 0
+        stop_reason = CodeScanStopReason.COMPLETE
+        scan_complete = True
+        dims = self._image_dimensions(content)
 
-        def _absorb(batch: list[CodeScanDetectionCandidate]) -> None:
+        def _timeout_remaining_ms() -> int:
+            budget = float(self._config.timeout_seconds)
+            elapsed = time.monotonic() - started
+            return max(0, int((budget - elapsed) * 1000))
+
+        def _absorb(batch: list[CodeScanDetectionCandidate]) -> int:
+            added = 0
             for cand in batch:
                 key = (
                     getattr(cand.code_type, "value", str(cand.code_type)),
@@ -777,31 +849,180 @@ class CodeScanProcessingStrategy:
                     continue
                 seen.add(key)
                 merged.append(cand)
+                added += 1
+                self._log_symbol_safe(asset, cand)
+            return added
 
-        _absorb(list(self._scanner.scan_asset(asset, content)))
-        if not self._config.enable_rotations:
-            return merged
+        def _run_variant(angle: int, payload: bytes, variant_type: str) -> None:
+            nonlocal variants_attempted, stop_reason, scan_complete
+            variant_started = time.monotonic()
+            batch = list(self._scanner.scan_asset(asset, payload))
+            self._metrics.increment("code_scan.variant_symbols_total", amount=len(batch))
+            _absorb(batch)
+            variants_attempted += 1
+            duration_ms = int((time.monotonic() - variant_started) * 1000)
+            obs = CodeScanVariantObservation(
+                variant_type=variant_type,
+                rotation_angle=angle,
+                duration_ms=duration_ms,
+                symbols_detected_count=len(batch),
+                candidate_count_after_merge=len(merged),
+                timeout_remaining_ms=_timeout_remaining_ms(),
+                original_width=dims.get("original_width"),
+                original_height=dims.get("original_height"),
+                processed_width=dims.get("processed_width"),
+                processed_height=dims.get("processed_height"),
+                scale_ratio=dims.get("scale_ratio"),
+            )
+            observations.append(obs)
+            logger.info(
+                "code_scan.variant_result asset_id=%s original_filename=%s "
+                "variant_type=%s angle=%s symbols=%s merged=%s duration_ms=%s "
+                "timeout_remaining_ms=%s processed=%sx%s scale_ratio=%s",
+                asset.id,
+                getattr(asset, "original_filename", None),
+                variant_type,
+                angle,
+                obs.symbols_detected_count,
+                obs.candidate_count_after_merge,
+                duration_ms,
+                obs.timeout_remaining_ms,
+                obs.processed_width,
+                obs.processed_height,
+                obs.scale_ratio,
+            )
 
-        rotation_angles = [90, 180, 270][: max(0, self._config.max_variants - 1)]
-        for angle in rotation_angles:
+        try:
             self._check_timeout(started)
-            # Stop early if we already have several distinct symbols (budget).
-            if len(merged) >= int(self._config.max_candidates_per_asset):
-                self._metrics.increment("code_scan.max_candidates_per_asset_reached")
-                logger.info(
-                    "code_scan.max_candidates_per_asset_reached limit=%s",
-                    self._config.max_candidates_per_asset,
-                )
-                break
-            rotated = self._rotated_variant_bytes(content, angle)
-            if rotated is None:
-                break
-            self._metrics.increment("code_scan.rotation_variant")
-            _absorb(list(self._scanner.scan_asset(asset, rotated)))
-        return merged
+            # Align 0° with configured max_image_side (rotations already downscaled).
+            base_payload = self._prepared_scan_bytes(content, angle=0) or content
+            _run_variant(0, base_payload, "base")
 
-    def _rotated_variant_bytes(self, content: bytes, angle: int) -> bytes | None:
-        """Best-effort rotated (and downscaled) PNG bytes; None if undecodable here."""
+            if not self._config.enable_rotations:
+                return CodeScanSessionResult(
+                    candidates=tuple(merged),
+                    scan_complete=True,
+                    stop_reason=CodeScanStopReason.ROTATIONS_DISABLED,
+                    variants_attempted=variants_attempted,
+                    variant_observations=tuple(observations),
+                    **dims,
+                )
+
+            rotation_angles = [90, 180, 270][: max(0, self._config.max_variants - 1)]
+            for angle in rotation_angles:
+                self._check_timeout(started)
+                if len(merged) >= int(self._config.max_candidates_per_asset):
+                    self._metrics.increment("code_scan.max_candidates_reached_total")
+                    self._metrics.increment("code_scan.max_candidates_per_asset_reached")
+                    stop_reason = CodeScanStopReason.MAX_CANDIDATES
+                    scan_complete = False
+                    logger.info(
+                        "code_scan.max_candidates_per_asset_reached asset_id=%s limit=%s "
+                        "merged=%s stop_reason=%s",
+                        asset.id,
+                        self._config.max_candidates_per_asset,
+                        len(merged),
+                        stop_reason.value,
+                    )
+                    break
+                rotated = self._prepared_scan_bytes(content, angle=angle)
+                if rotated is None:
+                    # One failed variant must not abort remaining angles.
+                    logger.info(
+                        "code_scan.variant_prepare_failed asset_id=%s angle=%s",
+                        asset.id,
+                        angle,
+                    )
+                    continue
+                self._metrics.increment("code_scan.rotation_variant")
+                _run_variant(angle, rotated, "rotation")
+        except CodeScanTimeoutError:
+            if merged:
+                self._metrics.increment("code_scan.timeout_partial")
+                stop_reason = CodeScanStopReason.TIMEOUT
+                scan_complete = False
+                logger.info(
+                    "code_scan.timeout_partial asset_id=%s candidates=%s "
+                    "variants_attempted=%s original_filename=%s",
+                    asset.id,
+                    len(merged),
+                    variants_attempted,
+                    getattr(asset, "original_filename", None),
+                )
+                return CodeScanSessionResult(
+                    candidates=tuple(merged),
+                    scan_complete=False,
+                    stop_reason=CodeScanStopReason.TIMEOUT,
+                    variants_attempted=variants_attempted,
+                    variant_observations=tuple(observations),
+                    **dims,
+                )
+            raise
+
+        return CodeScanSessionResult(
+            candidates=tuple(merged),
+            scan_complete=scan_complete,
+            stop_reason=stop_reason,
+            variants_attempted=variants_attempted,
+            variant_observations=tuple(observations),
+            **dims,
+        )
+
+    def _log_symbol_safe(self, asset: SourceAsset, cand: CodeScanDetectionCandidate) -> None:
+        raw = (cand.code_value or "").strip()
+        label_id = None
+        classification = "OTHER"
+        try:
+            d1 = parse_product_label_payload(raw)
+            if d1.status.value != "NOT_OUR_FORMAT":
+                classification = "PRODUCT_D1"
+                label_id = d1.label_id
+            elif '"type":"DINAMIC_POSITION"' in raw.replace(" ", "") or (
+                '"type": "DINAMIC_POSITION"' in raw
+            ):
+                classification = "POSITION"
+            elif "|" in raw:
+                classification = "LEGACY_PRODUCT"
+        except Exception:
+            classification = "OTHER"
+        logger.info(
+            "code_scan.symbol asset_id=%s symbology=%s classification=%s "
+            "label_id=%s raw_value_hash=%s",
+            asset.id,
+            symbology_for_candidate(cand),
+            classification,
+            label_id,
+            _sha256_hex(raw) if raw else None,
+        )
+
+    def _image_dimensions(self, content: bytes) -> dict[str, Any]:
+        try:
+            from PIL import Image, ImageOps
+
+            with Image.open(io.BytesIO(content)) as img:
+                oriented = (ImageOps.exif_transpose(img) or img).convert("RGB")
+                ow, oh = oriented.size
+                processed_img = self._maybe_downscale(oriented)
+                pw, ph = processed_img.size
+            scale = (pw / float(ow)) if ow else None
+            return {
+                "original_width": int(ow),
+                "original_height": int(oh),
+                "processed_width": int(pw),
+                "processed_height": int(ph),
+                "scale_ratio": float(scale) if scale is not None else None,
+            }
+        except Exception:
+            return {
+                "original_width": None,
+                "original_height": None,
+                "processed_width": None,
+                "processed_height": None,
+                "scale_ratio": None,
+            }
+
+    def _prepared_scan_bytes(self, content: bytes, *, angle: int) -> bytes | None:
+        """Oriented (+ optional downscale) PNG, optionally rotated. None if undecodable."""
         try:
             from PIL import Image, ImageOps
 
@@ -809,12 +1030,16 @@ class CodeScanProcessingStrategy:
                 oriented = ImageOps.exif_transpose(img) or img
                 oriented = oriented.convert("RGB")
                 oriented = self._maybe_downscale(oriented)
-                rotated = oriented.rotate(-angle, expand=True)
+                frame = oriented.rotate(-angle, expand=True) if angle else oriented
                 buf = io.BytesIO()
-                rotated.save(buf, format="PNG")
+                frame.save(buf, format="PNG")
                 return buf.getvalue()
         except Exception:
             return None
+
+    def _rotated_variant_bytes(self, content: bytes, angle: int) -> bytes | None:
+        """Best-effort rotated (and downscaled) PNG bytes; None if undecodable here."""
+        return self._prepared_scan_bytes(content, angle=angle)
 
     def _maybe_downscale(self, image):
         max_side = int(self._config.max_image_side or 0)
@@ -826,6 +1051,16 @@ class CodeScanProcessingStrategy:
         scale = max_side / float(longest)
         new_size = (max(1, int(image.size[0] * scale)), max(1, int(image.size[1] * scale)))
         return image.resize(new_size)
+
+    def _scan_session_warnings(self, scan_session: CodeScanSessionResult) -> list[str]:
+        if scan_session.partial_timeout:
+            return ["CODE_SCAN_PARTIAL_TIMEOUT"]
+        if (
+            not scan_session.scan_complete
+            and scan_session.stop_reason is CodeScanStopReason.MAX_CANDIDATES
+        ):
+            return ["CODE_SCAN_MAX_CANDIDATES"]
+        return []
 
     def _to_detection_inputs(
         self, candidates: list[CodeScanDetectionCandidate]
@@ -848,28 +1083,53 @@ class CodeScanProcessingStrategy:
     # Evidence (no raw payload; only sha256 hash)
     # ------------------------------------------------------------------
 
-    def _build_evidence(self, consolidated, detections) -> dict | None:
+    def _build_evidence(
+        self,
+        consolidated,
+        detections,
+        *,
+        scan_session: CodeScanSessionResult | None = None,
+    ) -> dict | None:
+        base: dict[str, Any] = {
+            "scanner_name": self._scanner_name(),
+            "scanner_version": self._scanner_version(),
+            "detection_count": len(detections),
+        }
+        if scan_session is not None:
+            base.update(
+                {
+                    "scan_complete": scan_session.scan_complete,
+                    "scan_stop_reason": scan_session.stop_reason.value,
+                    "variant_count": scan_session.variants_attempted,
+                    "raw_symbols_count": len(scan_session.candidates),
+                    "d1_candidate_count": len(consolidated.product_results)
+                    + len(consolidated.rejections),
+                    "valid_product_count": len(consolidated.product_results),
+                    "rejected_product_count": len(consolidated.rejections),
+                    "original_width": scan_session.original_width,
+                    "original_height": scan_session.original_height,
+                    "processed_width": scan_session.processed_width,
+                    "processed_height": scan_session.processed_height,
+                    "scale_ratio": scan_session.scale_ratio,
+                }
+            )
         if not detections:
-            return {
-                "scanner_name": self._scanner_name(),
-                "scanner_version": self._scanner_version(),
-                "detection_count": 0,
-            }
+            return base
         selected_idx = consolidated.selected_detection_index
         selected = None
         if selected_idx is not None:
             selected = next((d for d in detections if d.detection_index == selected_idx), None)
         if selected is None:
             selected = detections[0]
-        return {
-            "scanner_name": self._scanner_name(),
-            "scanner_version": self._scanner_version(),
-            "symbology": selected.symbology,
-            "raw_value_hash": _sha256_hex(selected.raw_value),
-            "bounding_box": selected.bounding_box,
-            "detection_count": len(detections),
-            "distinct_codes": len(consolidated.distinct_codes),
-        }
+        base.update(
+            {
+                "symbology": selected.symbology,
+                "raw_value_hash": _sha256_hex(selected.raw_value),
+                "bounding_box": selected.bounding_box,
+                "distinct_codes": len(consolidated.distinct_codes),
+            }
+        )
+        return base
 
     def _scanner_name(self) -> str:
         return str(getattr(self._scanner, "engine_name", "") or "code_scanner")
@@ -910,6 +1170,8 @@ __all__ = [
     "CodeScanConfig",
     "CodeScanMetrics",
     "CodeScanProcessingStrategy",
+    "CodeScanSessionResult",
+    "CodeScanStopReason",
     "CodeScanTimeoutError",
     "STRATEGY_KEY",
     "symbology_for_candidate",

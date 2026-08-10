@@ -49,7 +49,7 @@ REQUIRED_HEADERS = (
 )
 
 # Optional in v1; required presence-as-column for schema 1.1 exporters (still optional value).
-OPTIONAL_HEADERS = ("label_id",)
+OPTIONAL_HEADERS = ("label_id", "position_label_id", "position_payload_raw")
 _LABEL_ID_ALLOWED = frozenset(LABEL_ID_ALPHABET)
 
 _FORMULA_AWARE_COLUMNS = frozenset(
@@ -64,6 +64,8 @@ _FORMULA_AWARE_COLUMNS = frozenset(
         "position_code",
         "internal_code",
         "label_id",
+        "position_label_id",
+        "position_payload_raw",
         "source",
         "error_code",
         "notes",
@@ -225,6 +227,17 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
                     if neutralized:
                         warnings.append("label_id:csv_formula_neutralized")
                 values["label_id"] = _normalize_optional_label_id(label_value, errors)
+
+            for optional_name in ("position_label_id", "position_payload_raw"):
+                if optional_name not in headers:
+                    continue
+                raw_opt = raw.get(optional_name)
+                opt_value = "" if raw_opt is None else str(raw_opt)
+                if optional_name in _FORMULA_AWARE_COLUMNS:
+                    opt_value, neutralized = _neutralize_formula(opt_value)
+                    if neutralized:
+                        warnings.append(f"{optional_name}:csv_formula_neutralized")
+                values[optional_name] = opt_value.strip()
 
             for required in (
                 "export_id",

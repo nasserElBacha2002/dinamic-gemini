@@ -109,12 +109,16 @@ export async function createClientPositionLabel(
 /** Create a full marker set (01/N … N/N) with shared pallet/side/level. */
 export async function createClientPositionMarkerSet(
   clientId: string,
-  body: CreateClientPositionMarkerSetRequest
+  body: CreateClientPositionMarkerSetRequest,
+  opts?: { idempotencyKey?: string }
 ): Promise<ClientPositionLabelMarkerSetResponse> {
+  const headers: Record<string, string> = {};
+  if (opts?.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
   return apiRequestJson<ClientPositionLabelMarkerSetResponse>(
     `${positionLabelsBase(clientId)}/marker-set`,
     {
       method: 'POST',
+      headers,
       body,
     }
   );

@@ -10,6 +10,7 @@ from src.domain.local_csv_import.entities import (
     LocalCsvImport,
     LocalCsvImportRow,
     LocalCsvProductiveResult,
+    local_csv_row_secondary_key,
 )
 from src.domain.local_csv_import.sources import INGESTION_SOURCE_LOCAL_CSV_IMPORT
 
@@ -32,15 +33,19 @@ class MemoryLocalCsvInventoryResultWriter:
         applied: list[LocalCsvProductiveResult] = []
         with self._lock:
             for row in rows_to_import:
+                row_key = row.secondary_key
                 existing = next(
                     (
                         r
                         for r in self._by_id.values()
                         if r.import_row_id == row.id
-                        or (
-                            r.capture_session_id == row.capture_session_id
-                            and r.capture_photo_id == row.capture_photo_id
+                        or local_csv_row_secondary_key(
+                            capture_session_id=r.capture_session_id,
+                            capture_photo_id=r.capture_photo_id,
+                            label_id=r.label_id,
+                            detection_source=r.detection_source,
                         )
+                        == row_key
                     ),
                     None,
                 )
@@ -73,6 +78,8 @@ class MemoryLocalCsvInventoryResultWriter:
                     created_at=now,
                     updated_at=now,
                     label_id=(row.label_id or "").strip().upper() or None,
+                    position_label_id=(row.position_label_id or "").strip() or None,
+                    position_payload_raw=(row.position_payload_raw or "").strip() or None,
                 )
                 self._by_id[result.id] = result
                 applied.append(result)
@@ -145,6 +152,8 @@ class SqlLocalCsvInventoryResultWriter:
                     created_at=now,
                     updated_at=now,
                     label_id=(row.label_id or "").strip().upper() or None,
+                    position_label_id=(row.position_label_id or "").strip() or None,
+                    position_payload_raw=(row.position_payload_raw or "").strip() or None,
                 )
                 cur.execute(  # type: ignore[attr-defined]
                     "INSERT INTO local_csv_productive_results "
@@ -152,8 +161,8 @@ class SqlLocalCsvInventoryResultWriter:
                     "capture_photo_id, client_file_id, capture_order, position_code, internal_code, "
                     "quantity, quantity_status, detection_status, detection_source, ingestion_source, "
                     "requires_review, has_image_evidence, source_asset_id, confirmed_by_user_id, "
-                    "created_at, updated_at, label_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "created_at, updated_at, label_id, position_label_id, position_payload_raw) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         result.id,
                         result.inventory_id,
@@ -178,6 +187,8 @@ class SqlLocalCsvInventoryResultWriter:
                         result.created_at,
                         result.updated_at,
                         result.label_id,
+                        result.position_label_id,
+                        result.position_payload_raw,
                     ),
                 )
                 applied.append(result)
@@ -252,6 +263,16 @@ def _productive_from_db(row: object) -> LocalCsvProductiveResult:
         label_id=(
             str(getattr(row, "label_id")).strip().upper() or None
             if getattr(row, "label_id", None) is not None
+            else None
+        ),
+        position_label_id=(
+            str(getattr(row, "position_label_id")).strip() or None
+            if getattr(row, "position_label_id", None) is not None
+            else None
+        ),
+        position_payload_raw=(
+            str(getattr(row, "position_payload_raw")).strip() or None
+            if getattr(row, "position_payload_raw", None) is not None
             else None
         ),
     )

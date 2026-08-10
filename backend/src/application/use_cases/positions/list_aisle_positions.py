@@ -77,13 +77,15 @@ class ListAislePositionsResult:
     #: Display-primary product per ``positions`` row (same length and order as ``positions``).
     #: Invariant: ``len(primary_products) == len(positions)`` (enforced when building results).
     primary_products: tuple[ProductRecord | None, ...]
-    total_items: int
-    page: int
-    page_size: int
-    raw_fetch_truncated: bool
-    resolved_job_id: str | None
+    #: All ProductRecords per ``positions`` row (same length/order). Empty tuple when none.
+    products: tuple[tuple[ProductRecord, ...], ...] = ()
+    total_items: int = 0
+    page: int = 1
+    page_size: int = 25
+    raw_fetch_truncated: bool = False
+    resolved_job_id: str | None = None
     """Effective slice: ``None`` = legacy null-job rows."""
-    result_context_source: str
+    result_context_source: str = "legacy"
     """explicit | operational | legacy"""
 
 
@@ -126,26 +128,29 @@ def _photo_review_sort_key(p: Position) -> tuple[Any, ...]:
     return (seq_v, fn_l, sid_l, pcode, p.id)
 
 
-def _display_primaries_for_page_rows(
+def _display_products_for_page_rows(
     page_rows: list[Position],
     product_record_repo: ProductRecordRepository,
-) -> tuple[ProductRecord | None, ...]:
-    """Load display-primary products for the paginated slice (one batch query; order matches ``page_rows``)."""
+) -> tuple[tuple[ProductRecord | None, ...], tuple[tuple[ProductRecord, ...], ...]]:
+    """Load all + display-primary products for the page (one batch; order matches ``page_rows``)."""
     if not page_rows:
-        return ()
+        return (), ()
     batch = product_record_repo.list_by_position_ids([p.id for p in page_rows])
     by_position: defaultdict[str, list[ProductRecord]] = defaultdict(list)
     for pr in batch:
         by_position[pr.position_id].append(pr)
     primaries: list[ProductRecord | None] = []
+    all_products: list[tuple[ProductRecord, ...]] = []
     for p in page_rows:
-        primaries.append(select_display_primary_product(by_position.get(p.id, ())))
-    if len(primaries) != len(page_rows):
+        pos_products = tuple(by_position.get(p.id, ()))
+        all_products.append(pos_products)
+        primaries.append(select_display_primary_product(pos_products))
+    if len(primaries) != len(page_rows) or len(all_products) != len(page_rows):
         raise RuntimeError(
-            "internal invariant: primary_products length must match positions page length "
-            f"({len(primaries)} != {len(page_rows)})"
+            "internal invariant: products length must match positions page length "
+            f"({len(primaries)}/{len(all_products)} != {len(page_rows)})"
         )
-    return tuple(primaries)
+    return tuple(primaries), tuple(all_products)
 
 
 class ListAislePositionsUseCase:
@@ -278,11 +283,14 @@ class ListAislePositionsUseCase:
         start = (page - 1) * page_size
         page_rows = consolidated_sorted[start : start + page_size]
 
-        primaries = _display_primaries_for_page_rows(page_rows, self._product_record_repo)
+        primaries, products = _display_products_for_page_rows(
+            page_rows, self._product_record_repo
+        )
 
         return ListAislePositionsResult(
             positions=tuple(page_rows),
             primary_products=primaries,
+            products=products,
             total_items=total,
             page=page,
             page_size=page_size,

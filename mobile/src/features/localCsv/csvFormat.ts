@@ -6,6 +6,8 @@
  * - Server assigns ingestion_source=LOCAL_CSV_IMPORT; clients must not declare it as `source`
  * - Extra headers (company_id, …) are allowed; backend required set is a subset
  * - Schema 1.1 adds optional `label_id` (D1 physical sticker; empty for legacy PIPE/DI1)
+ * - `row_count` (CSV records) may exceed included photo count: 1 photo → 0..N product rows
+ * - Position-only photos emit `source=LOCAL_POSITION_LABEL` with empty product fields
  */
 
 import { sha256Hex as realSha256Hex } from '../../core/payloadFingerprint';
@@ -35,6 +37,8 @@ export const LOCAL_CSV_HEADERS = [
   'level',
   'marker_index',
   'marker_total',
+  'position_label_id',
+  'position_payload_raw',
   'internal_code',
   'label_id',
   'quantity',

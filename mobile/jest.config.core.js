@@ -33,6 +33,7 @@ module.exports = {
     '<rootDir>/tests/labelPayloadContracts.test.ts',
     '<rootDir>/tests/productLabelChecksumVectors.test.ts',
     '<rootDir>/tests/productLabelMultiConsolidator.test.ts',
+    '<rootDir>/tests/mobileMultiLabelPhysical.test.ts',
     '<rootDir>/tests/positionLabelPayload.test.ts',
     '<rootDir>/tests/databaseCorruption.test.ts',
     '<rootDir>/tests/databaseMigrations.test.ts',

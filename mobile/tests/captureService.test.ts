@@ -73,6 +73,7 @@ function session(overrides: Partial<CaptureSessionRow> = {}): CaptureSessionRow 
     capture_freeze_generation: 0,
     active_freeze_id: null,
     upload_policy: null,
+    active_position_json: null,
     created_at: now,
     updated_at: now,
     ...overrides,
@@ -211,6 +212,12 @@ class FakeRepo {
     const row = this.sessions.get(id);
     if (!row) throw new Error('missing session');
     this.sessions.set(id, { ...row, status });
+  }
+
+  async updateActivePositionJson(id: string, activePositionJson: string | null) {
+    const row = this.sessions.get(id);
+    if (!row) throw new Error('missing session');
+    this.sessions.set(id, { ...row, active_position_json: activePositionJson });
   }
 
   async markCaptureFrozen(

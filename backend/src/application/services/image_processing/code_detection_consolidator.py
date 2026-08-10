@@ -163,25 +163,29 @@ class CodeDetectionConsolidator:
                 if len(products) > 1
                 else CodeConsolidationStatus.RESOLVED
             )
+            warnings: list[str] = []
+            if len(products) > 1:
+                warnings.append("MULTI_PRODUCT_IMAGE")
+            if rejections:
+                warnings.append("D1_PARTIAL_REJECTIONS")
             return CodeConsolidationResult(
                 status=status,
                 internal_code=primary.internal_code,
                 quantity=primary.quantity,
                 selected_detection_index=primary.selected_detection_index,
                 distinct_codes=tuple(p.internal_code for p in products),
-                warnings=("MULTI_PRODUCT_IMAGE",) if len(products) > 1 else (),
+                warnings=tuple(warnings),
                 product_results=tuple(products),
                 rejections=tuple(rejections),
             )
 
-        if has_d1_attempt and not d1_by_label:
-            # Only failed D1 / unknown versions — do not invent legacy counts from noise.
-            if rejections:
-                return CodeConsolidationResult(
-                    status=CodeConsolidationStatus.NO_VALID_CODE,
-                    warnings=("D1_CANDIDATES_FAILED",),
-                    rejections=tuple(rejections),
-                )
+        if has_d1_attempt:
+            # Any recognized Dinamic D1 attempt (even if all invalid) blocks legacy revive.
+            return CodeConsolidationResult(
+                status=CodeConsolidationStatus.NO_VALID_CODE,
+                warnings=("D1_CANDIDATES_FAILED",),
+                rejections=tuple(rejections),
+            )
 
         # ---- Legacy path (no D1 labels): preserve prior ≤1 logical code semantics ----
         return self._consolidate_legacy(detections, rejections=rejections)

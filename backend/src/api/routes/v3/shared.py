@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, NoReturn, cast
+from typing import Any, NoReturn, Sequence, cast
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -34,6 +34,7 @@ from src.api.schemas.inventory_schemas import (
 )
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
+    PositionDetectedProductItem,
     PositionProductBlock,
     PositionQuantityBlock,
     PositionSummaryResponse,
@@ -990,6 +991,7 @@ def position_to_summary(
     primary_product: ProductRecord | None = None,
     *,
     include_technical_snapshot: bool = True,
+    detected_products: Sequence[ProductRecord] | None = None,
 ) -> PositionSummaryResponse:
     """Map domain position (+ optional primary product) to the public summary contract.
 
@@ -1001,11 +1003,25 @@ def position_to_summary(
         primary_product,
         corrected_quantity=corrected_quantity,
     )
-    return _position_summary_response_from_view(
+    summary = _position_summary_response_from_view(
         p,
         view,
         include_technical_snapshot=include_technical_snapshot,
     )
+    if not detected_products:
+        return summary
+    items = [
+        PositionDetectedProductItem(
+            product_record_id=pr.id,
+            sku=pr.sku,
+            detected_quantity=pr.detected_quantity,
+            corrected_quantity=pr.corrected_quantity,
+            label_id=pr.label_id,
+            qty_source=pr.qty_source,
+        )
+        for pr in detected_products
+    ]
+    return summary.model_copy(update={"detected_products": items})
 
 
 def evidence_to_response(e: Evidence) -> EvidenceResponse:

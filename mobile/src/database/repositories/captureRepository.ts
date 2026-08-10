@@ -111,6 +111,21 @@ export class CaptureRepository {
     return this.db.getFirstAsync<CaptureSessionRow>('SELECT * FROM capture_sessions WHERE id = ?;', id);
   }
 
+  /** Persist or clear the session-scoped active DINAMIC_POSITION snapshot. */
+  async updateActivePositionJson(id: string, activePositionJson: string | null): Promise<void> {
+    const now = new Date().toISOString();
+    await withSqliteBusyRetry(() =>
+      this.db.runAsync(
+        `UPDATE capture_sessions
+         SET active_position_json = ?, updated_at = ?
+         WHERE id = ?;`,
+        activePositionJson,
+        now,
+        id,
+      ),
+    );
+  }
+
   async listActivitySessions(): Promise<CaptureSessionRow[]> {
     const placeholders = OPEN_CAPTURE_SESSION_STATUSES.map(() => '?').join(', ');
     return this.db.getAllAsync<CaptureSessionRow>(

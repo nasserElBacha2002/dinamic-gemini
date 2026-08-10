@@ -150,3 +150,63 @@ def test_render_idempotent_hash_stable() -> None:
     a = renderer.render(payload=payload, display=display, preset=preset, fmt="PNG")
     b = renderer.render(payload=payload, display=display, preset=preset, fmt="PNG")
     assert a.artifact_hash == b.artifact_hash
+
+
+def test_hierarchy_png_keeps_scannable_qr_on_100x100() -> None:
+    """Hierarchy fields must not push QR off-canvas on MM_100x100."""
+    svc = PositioningLabelSigningService(
+        PositioningLabelSigningConfig(secret="render-secret", key_version=1)
+    )
+    payload = svc.sign_payload(
+        build_positioning_label_payload(
+            public_label_id="pos_hier_qr",
+            version=2,
+            pallet="02",
+            side="LEFT",
+            level=1,
+            marker_index=6,
+            marker_total=10,
+        )
+    )
+    display = PositioningLabelDisplayData(
+        depot_name="etiquetas-interna",
+        aisle_code="",
+        position_code="02 LEFT N1 06/10",
+        public_label_id="pos_hier_qr",
+        payload_version=2,
+        marker_version=1,
+        template_version=2,
+        pallet="02",
+        side="LEFT",
+        level=1,
+        marker_index=6,
+        marker_total=10,
+    )
+    preset = get_positioning_label_preset("MM_100x100")
+    png = PositioningLabelRenderer().render(
+        payload=payload, display=display, preset=preset, fmt="PNG"
+    )
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(png.content)).convert("RGB")
+    decoded = ""
+    try:
+        from pyzbar.pyzbar import decode as zbar_decode
+
+        decoded_list = zbar_decode(img)
+        if decoded_list:
+            decoded = decoded_list[0].data.decode("utf-8")
+    except Exception:
+        decoded = ""
+    if not decoded:
+        import cv2
+        import numpy as np
+
+        decoded, _pts, _ = cv2.QRCodeDetector().detectAndDecode(np.array(img))
+    assert decoded, "hierarchy PNG must keep a scannable QR"
+    assert "DINAMIC_POSITION" in decoded
+    assert "pos_hier_qr" in decoded
+    # Lower third should contain substantial QR ink (not crushed into footer).
+    lower = img.crop((0, img.height * 2 // 5, img.width, img.height))
+    ink = sum(1 for px in lower.getdata() if px != (255, 255, 255))
+    assert ink > 5000, f"expected QR ink in lower band, got {ink}"

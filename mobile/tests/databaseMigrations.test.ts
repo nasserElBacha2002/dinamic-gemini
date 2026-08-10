@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -133,6 +133,21 @@ describe('SQLite migrations', () => {
     expect(v22?.name).toBe('local_csv_exports');
     expect(v22?.sql).toContain('CREATE TABLE IF NOT EXISTS local_csv_exports');
     expect(v22?.sql).toContain('content_fingerprint');
+  });
+
+  it('adds v24 session active_position_json and draft position_snapshot_json', () => {
+    const v24 = MIGRATIONS.find((m) => m.version === 24);
+    expect(v24?.name).toBe('session_active_position_and_draft_snapshot');
+    expect(v24?.sql).toContain('ALTER TABLE capture_sessions ADD COLUMN active_position_json');
+    expect(v24?.sql).toContain('ALTER TABLE local_detection_drafts ADD COLUMN position_snapshot_json');
+  });
+
+  it('adds v25 draft multi-product columns', () => {
+    const v25 = MIGRATIONS.find((m) => m.version === 25);
+    expect(v25?.name).toBe('draft_multi_product_results');
+    expect(v25?.sql).toContain('product_results_json');
+    expect(v25?.sql).toContain('label_id');
+    expect(v25?.sql).toContain('position_detected');
   });
 });
 

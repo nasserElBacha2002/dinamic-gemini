@@ -272,6 +272,28 @@ describe('label print CSS contracts', () => {
     expect(screen.getByTestId('label-observations-value').textContent).toContain('Controlar');
   });
 
+  it('keeps long description and observations readable with large typography classes', () => {
+    const longDescription =
+      'Producto refrigerado de alta rotación con descripción extendida para validar wrap en impresión A4 horizontal sin cortar tipografía.';
+    const longObservations =
+      'Observaciones operativas prolongadas: verificar temperatura, sellado, fecha de vencimiento y coincidencia de label_id físico antes de despachar.';
+    render(
+      <PrintableLabel
+        data={{
+          ...sampleData,
+          description: longDescription,
+          observations: longObservations,
+          scanPayload: 'D1|A1B2C3D4E5|SKU100|4|6',
+        }}
+        headerDate="17/07"
+      />
+    );
+    expect(screen.getByTestId('label-description-value').textContent).toContain(longDescription);
+    expect(screen.getByTestId('label-observations-value').textContent).toContain(longObservations);
+    expect(labelPrintCss).toMatch(/\.label-field-main-value/);
+    expect(document.querySelector('.label-field-main-value')).not.toBeNull();
+  });
+
   it('does not render additional-data section when optional fields are empty', () => {
     render(
       <PrintableLabel

@@ -1167,6 +1167,9 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
                 "POSITION_LABEL_RENDER_FAILED",
                 "POSITION_LABEL_CLIENT_MISMATCH",
                 "POSITION_LABEL_IDEMPOTENCY_CONFLICT",
+                "POSITION_LABEL_HIERARCHY_INCOMPLETE",
+                "POSITION_LABEL_HIERARCHY_INVALID",
+                "POSITION_LABEL_MARKER_ACTIVE_EXISTS",
             }
         ),
         detail=lambda e: str(e) or HTTP_DETAIL_POSITION_LABEL_CONFLICT,

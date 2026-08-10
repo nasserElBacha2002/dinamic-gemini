@@ -36,6 +36,10 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
       scanOwner?: string | null;
       scanGeneration?: number;
       comparisonStatus?: string | null;
+      positionSnapshotJson?: string | null;
+      labelId?: string | null;
+      productResultsJson?: string | null;
+      positionDetected?: boolean | null;
     }): Promise<LocalDetectionDraftRow> {
       const existing = rows.find(
         (r) =>
@@ -80,6 +84,14 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
         synced_at: existing?.synced_at ?? null,
         sync_lease_token: existing?.sync_lease_token ?? null,
         sync_lease_expires_at: existing?.sync_lease_expires_at ?? null,
+        position_snapshot_json:
+          input.positionSnapshotJson ?? existing?.position_snapshot_json ?? null,
+        label_id: input.labelId ?? existing?.label_id ?? null,
+        product_results_json:
+          input.productResultsJson ?? existing?.product_results_json ?? null,
+        position_detected: input.positionDetected
+          ? 1
+          : (existing?.position_detected ?? 0),
         detected_at: existing?.detected_at ?? now,
         created_at: existing?.created_at ?? now,
         updated_at: now,

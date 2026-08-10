@@ -658,6 +658,23 @@ ALTER TABLE local_csv_exports ADD COLUMN freeze_id TEXT;
 ALTER TABLE local_csv_exports ADD COLUMN checksum_algorithm TEXT NOT NULL DEFAULT 'sha256';
 `,
   },
+  {
+    version: 24,
+    name: 'session_active_position_and_draft_snapshot',
+    sql: `
+ALTER TABLE capture_sessions ADD COLUMN active_position_json TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN position_snapshot_json TEXT;
+`,
+  },
+  {
+    version: 25,
+    name: 'draft_multi_product_results',
+    sql: `
+ALTER TABLE local_detection_drafts ADD COLUMN label_id TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN product_results_json TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN position_detected INTEGER NOT NULL DEFAULT 0;
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

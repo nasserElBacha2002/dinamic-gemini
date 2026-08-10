@@ -8,7 +8,10 @@ from typing import Any
 
 import pyodbc
 
-from src.application.errors import IdempotencyKeyReusedError
+from src.application.errors import (
+    ClientPositionLabelConflictError,
+    IdempotencyKeyReusedError,
+)
 from src.database.sqlserver import SqlServerClient
 from src.domain.client_position_label.entities import (
     ClientPositionLabel,
@@ -16,12 +19,28 @@ from src.domain.client_position_label.entities import (
     ClientPositionLabelSignatureStatus,
     ClientPositionLabelStatus,
 )
+from src.infrastructure.database.sql_unique_violation import is_sql_unique_violation
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 
-def _is_idempotency_unique_violation(exc: pyodbc.IntegrityError) -> bool:
+def _is_idempotency_unique_violation(exc: BaseException) -> bool:
     return "uq_client_position_labels_client_idempotency" in str(exc).lower()
 
+
+def _is_active_marker_unique_violation(exc: BaseException) -> bool:
+    return "uq_client_position_labels_active_marker" in str(exc).lower()
+
+
+def _map_label_integrity_error(exc: BaseException) -> None:
+    if _is_idempotency_unique_violation(exc):
+        raise IdempotencyKeyReusedError(
+            "IDEMPOTENCY_KEY_REUSED: key already registered"
+        ) from exc
+    if _is_active_marker_unique_violation(exc):
+        raise ClientPositionLabelConflictError(
+            "Active marker already exists for this hierarchy index",
+            code="POSITION_LABEL_MARKER_ACTIVE_EXISTS",
+        ) from exc
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
@@ -191,6 +210,32 @@ class SqlClientPositionLabelRepository:
             row = cur.fetchone()
         return _row_to_label(row) if row else None
 
+    def list_active_by_hierarchy(
+        self,
+        client_id: str,
+        *,
+        pallet: str,
+        side: str,
+        level: int,
+        marker_total: int,
+    ) -> list[ClientPositionLabel]:
+        with self._client.cursor() as cur:
+            cur.execute(
+                _LABEL_SELECT
+                + " WHERE client_id = ? AND status = 'ACTIVE'"
+                + " AND pallet = ? AND side = ? AND level = ? AND marker_total = ?"
+                + " ORDER BY marker_index ASC, id ASC",
+                (
+                    client_id,
+                    (pallet or "").strip(),
+                    (side or "").strip().upper(),
+                    int(level),
+                    int(marker_total),
+                ),
+            )
+            rows = cur.fetchall()
+        return [_row_to_label(row) for row in rows]
+
     def list_by_client(
         self,
         client_id: str,
@@ -252,59 +297,64 @@ class SqlClientPositionLabelRepository:
             row = cur.fetchone()
         return int(getattr(row, "cnt", 0) or 0)
 
+    @staticmethod
+    def _insert_label(cur: object, label: ClientPositionLabel) -> None:
+        payload_json = json.dumps(label.canonical_payload, ensure_ascii=False, sort_keys=True)
+        cur.execute(  # type: ignore[attr-defined]
+            """
+            INSERT INTO client_position_labels (
+                id, client_id, public_identifier, name, normalized_name, description,
+                status, payload_version, canonical_payload, payload_hash,
+                signature, signature_algorithm, signature_key_version, signature_status,
+                created_by, created_at, updated_at, invalidated_at, invalidation_reason,
+                idempotency_key, idempotency_request_hash,
+                pallet, side, level, marker_index, marker_total
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?,
+                ?, ?, ?, ?, ?
+            )
+            """,
+            (
+                label.id,
+                label.client_id,
+                label.public_identifier,
+                label.name,
+                label.normalized_name,
+                label.description,
+                label.status.value,
+                int(label.payload_version),
+                payload_json,
+                label.payload_hash,
+                label.signature,
+                label.signature_algorithm,
+                label.signature_key_version,
+                label.signature_status.value,
+                label.created_by,
+                label.created_at,
+                label.updated_at,
+                label.invalidated_at,
+                label.invalidation_reason,
+                label.idempotency_key,
+                label.idempotency_request_hash,
+                label.pallet,
+                label.side,
+                label.level,
+                label.marker_index,
+                label.marker_total,
+            ),
+        )
+
     def save(self, label: ClientPositionLabel) -> ClientPositionLabel:
         payload_json = json.dumps(label.canonical_payload, ensure_ascii=False, sort_keys=True)
         existing = self.get_by_id(label.id)
         try:
             with self._client.cursor() as cur:
                 if existing is None:
-                    cur.execute(
-                        """
-                        INSERT INTO client_position_labels (
-                            id, client_id, public_identifier, name, normalized_name, description,
-                            status, payload_version, canonical_payload, payload_hash,
-                            signature, signature_algorithm, signature_key_version, signature_status,
-                            created_by, created_at, updated_at, invalidated_at, invalidation_reason,
-                            idempotency_key, idempotency_request_hash,
-                            pallet, side, level, marker_index, marker_total
-                        ) VALUES (
-                            ?, ?, ?, ?, ?, ?,
-                            ?, ?, ?, ?,
-                            ?, ?, ?, ?,
-                            ?, ?, ?, ?, ?,
-                            ?, ?,
-                            ?, ?, ?, ?, ?
-                        )
-                        """,
-                        (
-                            label.id,
-                            label.client_id,
-                            label.public_identifier,
-                            label.name,
-                            label.normalized_name,
-                            label.description,
-                            label.status.value,
-                            int(label.payload_version),
-                            payload_json,
-                            label.payload_hash,
-                            label.signature,
-                            label.signature_algorithm,
-                            label.signature_key_version,
-                            label.signature_status.value,
-                            label.created_by,
-                            label.created_at,
-                            label.updated_at,
-                            label.invalidated_at,
-                            label.invalidation_reason,
-                            label.idempotency_key,
-                            label.idempotency_request_hash,
-                            label.pallet,
-                            label.side,
-                            label.level,
-                            label.marker_index,
-                            label.marker_total,
-                        ),
-                    )
+                    self._insert_label(cur, label)
                 else:
                     cur.execute(
                         """
@@ -344,12 +394,33 @@ class SqlClientPositionLabelRepository:
                         ),
                     )
         except pyodbc.IntegrityError as exc:
-            if _is_idempotency_unique_violation(exc):
-                raise IdempotencyKeyReusedError(
-                    "IDEMPOTENCY_KEY_REUSED: key already registered"
-                ) from exc
+            _map_label_integrity_error(exc)
             raise
         return label
+
+    def save_many(self, labels: list[ClientPositionLabel]) -> list[ClientPositionLabel]:
+        if not labels:
+            return []
+        try:
+            with self._client.begin_transaction() as tx:
+                cur = tx.connection.cursor()
+                try:
+                    for label in labels:
+                        self._insert_label(cur, label)
+                    tx.commit()
+                except Exception:
+                    tx.rollback()
+                    raise
+                finally:
+                    cur.close()
+        except pyodbc.IntegrityError as exc:
+            _map_label_integrity_error(exc)
+            raise
+        except Exception as exc:
+            if is_sql_unique_violation(exc):
+                _map_label_integrity_error(exc)
+            raise
+        return labels
 
     def get_artifact(
         self,
