@@ -53,6 +53,7 @@ class InventoryRepository(ABC):
         """Return all inventories. Order is implementation-defined (SQL impl: created_at DESC)."""
         ...
 
+    @abstractmethod
     def compare_and_set_status(
         self,
         inventory_id: str,
@@ -64,19 +65,11 @@ class InventoryRepository(ABC):
     ) -> bool:
         """Atomically set status when current row status equals ``expected_current``.
 
-        Returns True if the row was updated. Production adapters (SQL / memory) MUST
-        override with a true compare-and-set. This default exists for test doubles
-        that store entities in-process; reconciliation always calls this method
-        (never optional via getattr).
+        Returns True if the row was updated. Implementations MUST provide a true
+        compare-and-set (SQL ``UPDATE … WHERE status = ?``, or an in-process lock).
+        There is no non-atomic read/check/save default.
         """
-        inv = self.get_by_id(inventory_id)
-        if inv is None or inv.status != expected_current:
-            return False
-        inv.status = new_status
-        inv.updated_at = updated_at
-        inv.completed_at = completed_at
-        self.save(inv)
-        return True
+        ...
 
 
 class ClientRepository(ABC):

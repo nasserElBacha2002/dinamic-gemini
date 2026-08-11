@@ -32,6 +32,7 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.storage.artifact_store import StoredArtifact
 from tests.support.access_principal_helpers import platform_principal, policy_for
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
 class FixedClock:
@@ -42,7 +43,7 @@ class FixedClock:
         return self._now
 
 
-class StubInventoryRepo(InventoryRepository):
+class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self, inventories: list[Inventory] | None = None) -> None:
         self._store = {i.id: i for i in (inventories or [])}
 

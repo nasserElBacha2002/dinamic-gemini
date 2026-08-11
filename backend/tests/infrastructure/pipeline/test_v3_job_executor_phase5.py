@@ -43,6 +43,7 @@ from src.pipeline.run_metadata import (
     build_run_metadata,
     default_empty_block,
 )
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
@@ -78,6 +79,7 @@ class InMemoryAisleRepo(AisleRepository):
 
 
 class NoopRepo(
+    ExplicitInventoryCompareAndSet,
     EvidenceRepository,
     PositionRepository,
     ProductRecordRepository,
@@ -153,7 +155,7 @@ class NoopRepo(
         return {}
 
 
-class InMemoryInventoryRepo(InventoryRepository):
+class InMemoryInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self) -> None:
         self._store: dict[str, Inventory] = {}
 

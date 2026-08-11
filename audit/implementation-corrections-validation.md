@@ -1,34 +1,29 @@
-# Implementation corrections validation — Phase 3 state reconciliation
+# Implementation corrections validation — Phase 3 contract cleanup + Phase 4 docs
 
 **Date:** 2026-08-11
 
 ## Scope
 
-Mandatory corrections after Phase 3 code review (verify-after-write, typed outcomes,
-mandatory CAS, SQL race vs aisle worker, bounded retry). Does **not** reimplement
-Phases 0–2.
+Final contractual corrections after Phase 3 functional fixes and Phase 4
+`NO_ACTION_REQUIRED`. No Stored Procedures, triggers, or migrations.
 
 ## Fixes
 
-1. `InventoryStatusReconciler.repair` uses optimistic CAS + verify-after-write with
-   `MAX_RECONCILE_ATTEMPTS = 3` (no infinite loop; `RETRY_EXHAUSTED` leaves detectable drift).
-2. Typed `InventoryStatusRepairOutcome` / `InventoryStatusRepairResult` (no `None` overload).
-3. `reconcile() -> bool` = `True` only when outcome is `REPAIRED`.
-4. `compare_and_set_status` on `InventoryRepository`; reconciler always calls it (no `getattr`).
-5. Removed productive mutate+save fallback from reconciler; SQL CAS remains
-   `UPDATE ... WHERE id = ? AND status = ?`.
-6. `completed_at` set on enter COMPLETED / cleared on leave; never finish repair with
-   COMPLETED when aisles no longer imply completed (verify-after-write).
-7. SQL integration: reconciler vs aisle → PROCESSING / FAILED (Events, no sleep sync);
-   concurrent repair asserts exactly one `REPAIRED`; fresh connection authority;
-   detect-only zero writes; backfill repair then idempotent.
-8. Unit reason matrix for all reason codes + retry exhaustion test double.
+1. `InventoryRepository.compare_and_set_status` is `@abstractmethod` (no non-atomic default).
+2. SQL/Memory CAS retained; test stubs use `ExplicitInventoryCompareAndSet` or delegate.
+3. Terminal outcomes: `CONSISTENT | REPAIRED | NOT_FOUND | RETRY_EXHAUSTED`; conflicts via
+   `last_conflict_reason` (`CAS_MISS` / `SOURCE_CHANGED`).
+4. Backfill no longer branches on non-terminal outcomes.
+5. Removed production `before_cas_hook`; SQL races use `BarrierInventoryRepository` in tests.
+6. Verify-after-write docs match optimistic semantics.
+7. SQL metadata-only `completed_at` repair cases A/B.
+8. `reconcile()` callers audited; wrapper logs exhaustion (`False` ≠ consistent).
+9. Phase 4 report: File / Class-Method / Persistence primitive per candidate.
 
-## Pytest
+## Pytest (Phase 3 suite)
 
 ```bash
 cd backend
-
 .venv/bin/python -m pytest \
   tests/domain/test_derive_inventory_status.py \
   tests/unit/inventory_status/ \
@@ -43,7 +38,16 @@ cd backend
 
 ```text
 exit code: 0
-passed: 65
+passed: 67
+failed: 0
+skipped: 0
+```
+
+## Pytest (Phase 4 DB regression)
+
+```text
+exit code: 0
+passed: 47
 failed: 0
 skipped: 0
 ```
@@ -55,22 +59,22 @@ exit code: 0
 All checks passed!
 ```
 
+(import order auto-fixed on stub mixin files)
+
 ## Mypy
+
+```bash
+.venv/bin/mypy \
+  src/application/ports/repositories.py \
+  src/application/services/inventory_status_reconciler.py \
+  src/application/use_cases/inventories/backfill_inventory_statuses.py \
+  tests/support/inventory_repository_cas.py
+```
 
 ```text
 exit code: 0
-Success: no issues found in 6 source files
+Success: no issues found in 4 source files
 ```
-
-## Evidence pack (gitignored dumps)
-
-Regenerated from the working tree after these corrections (not reused from Phases 0–2):
-
-- `implementation-corrections-status.txt`
-- `implementation-corrections-diffstat.txt`
-- `implementation-corrections-diff.txt`
-- `review/implementation-corrections-*.txt`
-- `review/phase3-state-reconciliation-corrections-*.txt`
 
 ## Status
 
@@ -79,10 +83,9 @@ PHASE_0: COMPLETE
 PHASE_1: COMPLETE
 PHASE_2: COMPLETE
 PHASE_3: COMPLETE
+PHASE_4: NO_ACTION_REQUIRED
 
-Stored Procedures added: 0
-Triggers added: 0
+Stored Procedures total: 0
+Triggers total: 0
 New migrations: 0
-Reconciliation jobs added: 0
-Drift detectors added: 1
 ```

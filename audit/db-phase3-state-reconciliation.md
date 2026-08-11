@@ -45,29 +45,47 @@ No CANCELLED/ARCHIVED inventory states exist — no destructive overwrite of suc
 
 - Derive returns reason codes; status-only wrapper kept for compatibility.
 - `detect()` / `repair()` / `reconcile()` on `InventoryStatusReconciler`.
-- `InventoryStatusDrift` + typed `InventoryStatusRepairOutcome` / `InventoryStatusRepairResult`.
+- Terminal outcomes: `CONSISTENT | REPAIRED | NOT_FOUND | RETRY_EXHAUSTED` (+ optional
+  `last_conflict_reason`: `CAS_MISS | SOURCE_CHANGED`).
 - Repair: CAS + verify-after-write + bounded retry (`MAX_RECONCILE_ATTEMPTS = 3`).
-- Zero writes when `stored == expected` (and `completed_at` consistent); no false `updated_at` bumps.
-- Structured logs: `detected|consistent|repaired|cas_miss|source_changed|retry_exhausted`.
-- `InventoryRepository.compare_and_set_status` (SQL/memory override; reconciler never uses `getattr`).
+- `REPAIRED` = matched fresh aisle snapshot at verify-after-write (not a forever lock guarantee).
+- `InventoryRepository.compare_and_set_status` is **abstractmethod** (SQL UPDATE WHERE / memory lock).
+- No production `before_cas_hook`; race tests use `BarrierInventoryRepository` under `tests/`.
 - CLI `--detect-only` on `python -m src.backfill_inventory_status`.
-- Unit + SQL tests: reason matrix, retry exhaustion, concurrent repair winner, reconciler vs aisle
-  PROCESSING/FAILED, detect-only zero writes, backfill idempotency, fresh-connection asserts.
 
 ## Detect vs repair architecture
 
 ```text
 detect(inventory_id) → InventoryStatusDrift | None              # read-only
-repair(inventory_id) → InventoryStatusRepairResult              # typed outcomes
+repair(inventory_id) → InventoryStatusRepairResult              # typed terminal outcomes
 reconcile(inventory_id) → bool                                 # True only if REPAIRED
+                                                             # False ≠ consistent (may be RETRY_EXHAUSTED)
 ```
+
+### `reconcile()` callers (audited)
+
+| Caller | Type | Notes |
+| ------ | ---- | ----- |
+| `BackfillInventoryStatusesUseCase` | uses `repair()` | Counts REPAIRED / RETRY_EXHAUSTED+drift |
+| `AisleSourceAssetMaterializer` | A/B best-effort | `reconcile()`; exhaustion logged by wrapper |
+| `AisleReviewLifecycleSync` | A/B best-effort | same |
+| `AisleJobLaunchService` | A/B best-effort | same |
+| `V3JobExecutionStateService.reconcile_inventory_for_aisle` | A/B best-effort | same |
+| `CreateAisleUseCase` / `DeleteAisleSourceAssetUseCase` | A/B best-effort | same |
+| `FinalizeAuthoritativeAisle` / `ApplyAisleRevision` | A/B best-effort | same |
+| `manage_local_csv_import` post-commit | A/B best-effort | same |
+| `terminalize_promote_reconcile` | A/B best-effort | same |
+
+Type A = cares whether a write happened (`bool`). Type B = wants converged projection; must not treat
+`reconcile() is False` as “consistent”. Wrapper logs `retry_exhausted_via_reconcile_wrapper`.
+Call sites that need hard guarantees should call `repair()` and branch on outcome.
 
 Admin: `BackfillInventoryStatusesUseCase(detect_only=True|False)`.
 
 ## Concurrency model
 
-Short read of inventory + aisles → derive → CAS `UPDATE … WHERE status = expected_current`.  
-CAS miss → no blind overwrite; safe to retry later.
+Short read of inventory + aisles → derive → CAS `UPDATE … WHERE status = expected_current` →
+re-read aisles (verify-after-write) → retry on CAS miss / source change (bounded).
 
 ## Post-commit recovery
 

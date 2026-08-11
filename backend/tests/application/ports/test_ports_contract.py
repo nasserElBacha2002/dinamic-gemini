@@ -22,11 +22,12 @@ from src.application.ports.services import (
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 # --- Repository stubs ---
 
 
-class StubInventoryRepository(InventoryRepository):
+class StubInventoryRepository(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self) -> None:
         self._store: dict[str, Inventory] = {}
 

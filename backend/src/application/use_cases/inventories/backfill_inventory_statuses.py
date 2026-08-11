@@ -58,12 +58,10 @@ class BackfillInventoryStatusesUseCase:
                 updated += 1
                 if result.drift is not None:
                     drifts.append(result.drift)
-            elif result.drift is not None and result.outcome in (
-                InventoryStatusRepairOutcome.RETRY_EXHAUSTED,
-                InventoryStatusRepairOutcome.SOURCE_CHANGED,
-                InventoryStatusRepairOutcome.CAS_MISS,
+            elif (
+                result.outcome == InventoryStatusRepairOutcome.RETRY_EXHAUSTED
+                and result.drift is not None
             ):
-                # Drift remains detectable for a later run; do not count as updated.
                 drifts.append(result.drift)
         return BackfillInventoryStatusesResult(
             inventories_scanned=scanned,

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -31,12 +30,19 @@ MAX_RECONCILE_ATTEMPTS = 3
 
 
 class InventoryStatusRepairOutcome(str, Enum):
+    """Terminal outcomes of ``repair`` (never intermediate retry states)."""
+
     CONSISTENT = "consistent"
     REPAIRED = "repaired"
     NOT_FOUND = "not_found"
+    RETRY_EXHAUSTED = "retry_exhausted"
+
+
+class InventoryStatusConflictReason(str, Enum):
+    """Last optimistic conflict observed before success or ``RETRY_EXHAUSTED``."""
+
     CAS_MISS = "cas_miss"
     SOURCE_CHANGED = "source_changed"
-    RETRY_EXHAUSTED = "retry_exhausted"
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,7 @@ class InventoryStatusRepairResult:
     outcome: InventoryStatusRepairOutcome
     drift: InventoryStatusDrift | None = None
     attempts: int = 0
+    last_conflict_reason: InventoryStatusConflictReason | None = None
 
 
 class InventoryStatusReconciler:
@@ -66,7 +73,6 @@ class InventoryStatusReconciler:
         clock: Clock,
         *,
         max_attempts: int = MAX_RECONCILE_ATTEMPTS,
-        before_cas_hook: Callable[[], None] | None = None,
     ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")
@@ -74,8 +80,6 @@ class InventoryStatusReconciler:
         self._aisle_repo = aisle_repo
         self._clock = clock
         self._max_attempts = max_attempts
-        # Test-only hook: invoked after derive, immediately before CAS (deterministic races).
-        self._before_cas_hook = before_cas_hook
 
     def detect(self, inventory_id: str, *, log: bool = True) -> InventoryStatusDrift | None:
         """Return drift when stored status differs from aisle-derived expectation (read-only)."""
@@ -114,11 +118,13 @@ class InventoryStatusReconciler:
     def repair(self, inventory_id: str) -> InventoryStatusRepairResult:
         """Idempotent repair with CAS + verify-after-write (bounded retries).
 
-        After a successful ``REPAIRED`` outcome, ``inventory.status`` matches
-        ``derive(current active aisles)`` unless aisles mutate after this call returns.
+        ``REPAIRED`` means the persisted status matched a fresh aisle snapshot at the
+        verify-after-write verification point. An aisle mutation occurring after that
+        verification may create new drift and is expected to trigger a subsequent
+        reconciliation. This is optimistic concurrency without holding aisle locks.
         """
         started = time.perf_counter()
-        last_outcome = InventoryStatusRepairOutcome.CONSISTENT
+        last_conflict: InventoryStatusConflictReason | None = None
         last_drift: InventoryStatusDrift | None = None
 
         for attempt in range(1, self._max_attempts + 1):
@@ -127,12 +133,12 @@ class InventoryStatusReconciler:
                 return InventoryStatusRepairResult(
                     outcome=InventoryStatusRepairOutcome.NOT_FOUND,
                     attempts=attempt,
+                    last_conflict_reason=last_conflict,
                 )
 
             scope = scope_from_aisles(self._aisle_repo.list_by_inventory(inventory_id))
             derivation = derive_inventory_status_with_reason(scope.operational_aisles)
             if derivation.status == inv.status:
-                # Also ensure completed_at consistency for COMPLETED / non-COMPLETED.
                 if not _completed_at_needs_fix(inv.status, inv.completed_at):
                     logger.debug(
                         "status_reconcile entity_type=inventory entity_id=%s action=consistent "
@@ -145,8 +151,8 @@ class InventoryStatusReconciler:
                     return InventoryStatusRepairResult(
                         outcome=InventoryStatusRepairOutcome.CONSISTENT,
                         attempts=attempt,
+                        last_conflict_reason=last_conflict,
                     )
-                # Status matches but completed_at is wrong — still repair via CAS.
                 expected = derivation.status
                 stored = inv.status
                 reason = derivation.reason
@@ -173,9 +179,6 @@ class InventoryStatusReconciler:
             now = self._clock.now()
             completed_at = _completed_at_for_transition(stored, expected, inv.completed_at, now)
 
-            if self._before_cas_hook is not None:
-                self._before_cas_hook()
-
             cas_ok = self._inventory_repo.compare_and_set_status(
                 inventory_id,
                 expected_current=stored,
@@ -184,7 +187,7 @@ class InventoryStatusReconciler:
                 completed_at=completed_at,
             )
             if not cas_ok:
-                last_outcome = InventoryStatusRepairOutcome.CAS_MISS
+                last_conflict = InventoryStatusConflictReason.CAS_MISS
                 logger.info(
                     "status_reconcile entity_type=inventory entity_id=%s action=cas_miss "
                     "stored_status=%s expected_status=%s reason=%s attempt=%s",
@@ -204,6 +207,7 @@ class InventoryStatusReconciler:
                 return InventoryStatusRepairResult(
                     outcome=InventoryStatusRepairOutcome.NOT_FOUND,
                     attempts=attempt,
+                    last_conflict_reason=last_conflict,
                 )
 
             if (
@@ -231,9 +235,10 @@ class InventoryStatusReconciler:
                     outcome=InventoryStatusRepairOutcome.REPAIRED,
                     drift=drift,
                     attempts=attempt,
+                    last_conflict_reason=last_conflict,
                 )
 
-            last_outcome = InventoryStatusRepairOutcome.SOURCE_CHANGED
+            last_conflict = InventoryStatusConflictReason.SOURCE_CHANGED
             last_drift = InventoryStatusDrift(
                 entity_id=inventory_id,
                 stored_status=persisted.status.value,
@@ -249,28 +254,42 @@ class InventoryStatusReconciler:
                 expected_after.reason,
                 attempt,
             )
-            # Loop retries to converge on the new aisle snapshot.
 
         logger.warning(
             "status_reconcile entity_type=inventory entity_id=%s action=retry_exhausted "
-            "last_outcome=%s attempts=%s",
+            "last_conflict=%s attempts=%s",
             inventory_id,
-            last_outcome.value,
+            last_conflict.value if last_conflict else None,
             self._max_attempts,
         )
         return InventoryStatusRepairResult(
             outcome=InventoryStatusRepairOutcome.RETRY_EXHAUSTED,
             drift=last_drift,
             attempts=self._max_attempts,
+            last_conflict_reason=last_conflict,
         )
 
     def reconcile(self, inventory_id: str) -> bool:
         """Backward-compatible wrapper: True only when an effective repair occurred.
 
-        ``False`` covers consistent, not-found, cas_miss (exhausted), source_changed
-        (exhausted), and retry_exhausted — callers that need detail should use ``repair``.
+        ``False`` means no write from this call — covering ``CONSISTENT``, ``NOT_FOUND``,
+        and ``RETRY_EXHAUSTED``. Do **not** treat ``False`` as proof of consistency:
+        exhaustion leaves detectable drift for a later ``repair`` / backfill.
+
+        Callers that must guarantee convergence (or distinguish exhaustion) should call
+        ``repair()`` and inspect ``InventoryStatusRepairResult.outcome``.
         """
-        return self.repair(inventory_id).outcome == InventoryStatusRepairOutcome.REPAIRED
+        result = self.repair(inventory_id)
+        if result.outcome == InventoryStatusRepairOutcome.RETRY_EXHAUSTED:
+            logger.warning(
+                "status_reconcile entity_type=inventory entity_id=%s "
+                "action=retry_exhausted_via_reconcile_wrapper "
+                "last_conflict=%s attempts=%s",
+                inventory_id,
+                result.last_conflict_reason.value if result.last_conflict_reason else None,
+                result.attempts,
+            )
+        return result.outcome == InventoryStatusRepairOutcome.REPAIRED
 
 
 def _completed_at_for_transition(

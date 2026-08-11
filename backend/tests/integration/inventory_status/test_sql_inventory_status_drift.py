@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 import pytest
 
+from src.application.ports.repositories import InventoryRepository
 from src.application.services.inventory_status_reconciler import (
     InventoryStatusReconciler,
     InventoryStatusRepairOutcome,
@@ -40,6 +42,49 @@ class FixedClock:
 
     def now(self) -> datetime:
         return self._moment
+
+
+class BarrierInventoryRepository(InventoryRepository):
+    """Test-only proxy: pause before CAS for deterministic reconciler-vs-worker races."""
+
+    def __init__(
+        self,
+        inner: InventoryRepository,
+        *,
+        ready: threading.Event,
+        worker_done: threading.Event,
+    ) -> None:
+        self._inner = inner
+        self._ready = ready
+        self._worker_done = worker_done
+
+    def save(self, inventory: Inventory) -> None:
+        self._inner.save(inventory)
+
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
+        return self._inner.get_by_id(inventory_id)
+
+    def list_all(self) -> Sequence[Inventory]:
+        return self._inner.list_all()
+
+    def compare_and_set_status(
+        self,
+        inventory_id: str,
+        *,
+        expected_current: InventoryStatus,
+        new_status: InventoryStatus,
+        updated_at: datetime,
+        completed_at: datetime | None,
+    ) -> bool:
+        self._ready.set()
+        assert self._worker_done.wait(timeout=30), "worker did not finish before CAS"
+        return self._inner.compare_and_set_status(
+            inventory_id,
+            expected_current=expected_current,
+            new_status=new_status,
+            updated_at=updated_at,
+            completed_at=completed_at,
+        )
 
 
 def _fresh_client(sql_client):
@@ -140,7 +185,6 @@ def test_sql_concurrent_repair_converges(sql_client) -> None:
         if o
         in (
             InventoryStatusRepairOutcome.CONSISTENT,
-            InventoryStatusRepairOutcome.CAS_MISS,
             InventoryStatusRepairOutcome.RETRY_EXHAUSTED,
         )
     ]
@@ -164,24 +208,21 @@ def _race_aisle_mutation(
     expected_inventory_status: InventoryStatus,
 ) -> None:
     inv_id, aisle_id = _seed(sql_client, aisle_status=AisleStatus.COMPLETED)
-    ready_to_mutate = threading.Event()
-    mutate_done = threading.Event()
+    ready = threading.Event()
+    worker_done = threading.Event()
     errors: list[BaseException] = []
     repair_outcome: list[InventoryStatusRepairOutcome] = []
-
-    def before_cas() -> None:
-        ready_to_mutate.set()
-        assert mutate_done.wait(timeout=30), "worker did not mutate aisle in time"
 
     def repair_thread() -> None:
         try:
             client = _fresh_client(sql_client)
+            inner = SqlInventoryRepository(client)
+            barrier_repo = BarrierInventoryRepository(inner, ready=ready, worker_done=worker_done)
             r = InventoryStatusReconciler(
-                SqlInventoryRepository(client),
+                barrier_repo,
                 SqlAisleRepository(client),
                 FixedClock(),
                 max_attempts=3,
-                before_cas_hook=before_cas,
             )
             repair_outcome.append(r.repair(inv_id).outcome)
         except BaseException as exc:  # noqa: BLE001
@@ -189,7 +230,7 @@ def _race_aisle_mutation(
 
     def worker_thread() -> None:
         try:
-            assert ready_to_mutate.wait(timeout=30), "repair did not reach pre-CAS"
+            assert ready.wait(timeout=30), "repair did not reach pre-CAS"
             client = _fresh_client(sql_client)
             aisle_repo = SqlAisleRepository(client)
             aisle = aisle_repo.get_by_id(aisle_id)
@@ -197,10 +238,10 @@ def _race_aisle_mutation(
             aisle.status = worker_aisle_status
             aisle.updated_at = datetime.now(timezone.utc)
             aisle_repo.save(aisle)
-            mutate_done.set()
+            worker_done.set()
         except BaseException as exc:  # noqa: BLE001
             errors.append(exc)
-            mutate_done.set()
+            worker_done.set()
 
     t_repair = threading.Thread(target=repair_thread)
     t_worker = threading.Thread(target=worker_thread)
@@ -247,6 +288,62 @@ def test_sql_reconciler_vs_aisle_failed(sql_client) -> None:
         worker_aisle_status=AisleStatus.FAILED,
         expected_inventory_status=InventoryStatus.FAILED,
     )
+
+
+def test_sql_completed_at_null_while_status_completed_repairs(sql_client) -> None:
+    """Metadata-only drift: COMPLETED + completed_at NULL with completed aisles."""
+    inv_id, aisle_id = _seed(sql_client, aisle_status=AisleStatus.COMPLETED)
+    now = datetime.now(timezone.utc)
+    client = _fresh_client(sql_client)
+    with client.cursor() as cur:
+        cur.execute(
+            "UPDATE inventories SET status = ?, completed_at = NULL, updated_at = ? WHERE id = ?",
+            (InventoryStatus.COMPLETED.value, now, inv_id),
+        )
+
+    inv_repo = SqlInventoryRepository(client)
+    aisle_repo = SqlAisleRepository(client)
+    before = inv_repo.get_by_id(inv_id)
+    assert before is not None
+    assert before.status == InventoryStatus.COMPLETED
+    assert before.completed_at is None
+
+    result = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now)).repair(inv_id)
+    assert result.outcome == InventoryStatusRepairOutcome.REPAIRED
+
+    fresh = SqlInventoryRepository(_fresh_client(sql_client)).get_by_id(inv_id)
+    assert fresh is not None
+    assert fresh.status == InventoryStatus.COMPLETED
+    assert fresh.completed_at is not None
+    _ = aisle_id
+
+
+def test_sql_completed_at_set_while_status_processing_clears(sql_client) -> None:
+    """Metadata-only drift: PROCESSING + completed_at set with processing aisles."""
+    inv_id, aisle_id = _seed(sql_client, aisle_status=AisleStatus.PROCESSING)
+    now = datetime.now(timezone.utc)
+    client = _fresh_client(sql_client)
+    with client.cursor() as cur:
+        cur.execute(
+            "UPDATE inventories SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+            (InventoryStatus.PROCESSING.value, now, now, inv_id),
+        )
+
+    inv_repo = SqlInventoryRepository(client)
+    aisle_repo = SqlAisleRepository(client)
+    before = inv_repo.get_by_id(inv_id)
+    assert before is not None
+    assert before.status == InventoryStatus.PROCESSING
+    assert before.completed_at is not None
+
+    result = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now)).repair(inv_id)
+    assert result.outcome == InventoryStatusRepairOutcome.REPAIRED
+
+    fresh = SqlInventoryRepository(_fresh_client(sql_client)).get_by_id(inv_id)
+    assert fresh is not None
+    assert fresh.status == InventoryStatus.PROCESSING
+    assert fresh.completed_at is None
+    _ = aisle_id
 
 
 def test_sql_backfill_detect_only_zero_writes(sql_client) -> None:

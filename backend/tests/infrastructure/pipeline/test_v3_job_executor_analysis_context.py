@@ -30,6 +30,7 @@ from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 from tests.support.job_repository_test_base import JobRepositoryTestBase
 from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
@@ -98,7 +99,7 @@ class InMemoryAisleRepo(AisleRepository):
         return None
 
 
-class InMemoryInventoryRepo(InventoryRepository):
+class InMemoryInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self) -> None:
         self._store: dict[str, Inventory] = {}
 
@@ -178,6 +179,7 @@ class InMemorySupplierReferenceImageRepo(SupplierReferenceImageRepository):
 
 
 class NoopRepo(
+    ExplicitInventoryCompareAndSet,
     EvidenceRepository,
     PositionRepository,
     ProductRecordRepository,

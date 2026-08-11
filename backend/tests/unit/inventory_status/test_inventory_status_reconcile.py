@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import pytest
 
 from src.application.services.inventory_status_reconciler import (
+    InventoryStatusConflictReason,
     InventoryStatusReconciler,
     InventoryStatusRepairOutcome,
 )
@@ -40,16 +41,47 @@ class FixedClock:
 _NOW = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
 
 
-def _stack(*, max_attempts: int = 3, before_cas_hook=None):
-    inv_repo = MemoryInventoryRepository()
-    aisle_repo = MemoryAisleRepository()
+class _MutatingSourceInventoryRepo(MemoryInventoryRepository):
+    """Test double: mutates aisle source immediately before each CAS."""
+
+    def __init__(self, aisle_repo: MemoryAisleRepository, aisle_id: str) -> None:
+        super().__init__()
+        self._aisle_repo = aisle_repo
+        self._aisle_id = aisle_id
+        self._n = 0
+
+    def compare_and_set_status(
+        self,
+        inventory_id: str,
+        *,
+        expected_current: InventoryStatus,
+        new_status: InventoryStatus,
+        updated_at: datetime,
+        completed_at: datetime | None,
+    ) -> bool:
+        self._n += 1
+        aisle = self._aisle_repo.get_by_id(self._aisle_id)
+        assert aisle is not None
+        aisle.status = AisleStatus.PROCESSING if self._n % 2 else AisleStatus.FAILED
+        self._aisle_repo.save(aisle)
+        return super().compare_and_set_status(
+            inventory_id,
+            expected_current=expected_current,
+            new_status=new_status,
+            updated_at=updated_at,
+            completed_at=completed_at,
+        )
+
+
+def _stack(*, max_attempts: int = 3, inv_repo=None, aisle_repo=None):
+    aisle_repo = aisle_repo or MemoryAisleRepository()
+    inv_repo = inv_repo or MemoryInventoryRepository()
     clock = FixedClock(_NOW)
     reconciler = InventoryStatusReconciler(
         inv_repo,
         aisle_repo,
         clock,
         max_attempts=max_attempts,
-        before_cas_hook=before_cas_hook,
     )
     return inv_repo, aisle_repo, reconciler
 
@@ -58,11 +90,7 @@ def _stack(*, max_attempts: int = 3, before_cas_hook=None):
     ("aisles", "expected_status", "expected_reason"),
     [
         ((), InventoryStatus.DRAFT, REASON_NO_OPERATIONAL_AISLES),
-        (
-            (AisleStatus.FAILED,),
-            InventoryStatus.FAILED,
-            REASON_ANY_AISLE_FAILED,
-        ),
+        ((AisleStatus.FAILED,), InventoryStatus.FAILED, REASON_ANY_AISLE_FAILED),
         (
             (AisleStatus.QUEUED,),
             InventoryStatus.PROCESSING,
@@ -164,7 +192,6 @@ def test_reconcile_false_when_consistent() -> None:
 
 
 def test_post_commit_reconcile_failure_then_retry_repairs() -> None:
-    """Primary aisle change committed; reconciler fails once; later repair converges."""
     inv_repo, aisle_repo, reconciler = _stack()
     inv_repo.save(Inventory("inv-4", "X", InventoryStatus.DRAFT, _NOW, _NOW))
     aisle = Aisle("a1", "inv-4", "A", AisleStatus.CREATED, _NOW, _NOW)
@@ -229,38 +256,33 @@ def test_repair_sets_and_clears_completed_at() -> None:
 
 
 def test_retry_exhausted_when_source_keeps_changing() -> None:
-    inv_repo, aisle_repo, _ = _stack()
-    inv_repo.save(Inventory("inv-8", "X", InventoryStatus.DRAFT, _NOW, _NOW))
+    aisle_repo = MemoryAisleRepository()
     aisle_repo.save(Aisle("a1", "inv-8", "A", AisleStatus.COMPLETED, _NOW, _NOW))
-
-    flip = {"n": 0}
-
-    def mutate_before_cas() -> None:
-        flip["n"] += 1
-        aisle = aisle_repo.get_by_id("a1")
-        assert aisle is not None
-        # Alternate PROCESSING <-> FAILED so verify-after-write always disagrees
-        # with the status just written from the pre-hook snapshot.
-        aisle.status = AisleStatus.PROCESSING if flip["n"] % 2 else AisleStatus.FAILED
-        aisle_repo.save(aisle)
+    inv_repo = _MutatingSourceInventoryRepo(aisle_repo, "a1")
+    inv_repo.save(Inventory("inv-8", "X", InventoryStatus.DRAFT, _NOW, _NOW))
 
     reconciler = InventoryStatusReconciler(
         inv_repo,
         aisle_repo,
         FixedClock(_NOW),
         max_attempts=2,
-        before_cas_hook=mutate_before_cas,
     )
     result = reconciler.repair("inv-8")
     assert result.outcome == InventoryStatusRepairOutcome.RETRY_EXHAUSTED
     assert result.attempts == 2
-    # Still repairable once the source stops changing.
+    assert result.last_conflict_reason == InventoryStatusConflictReason.SOURCE_CHANGED
+
     aisle = aisle_repo.get_by_id("a1")
     assert aisle is not None
     aisle.status = AisleStatus.FAILED
     aisle_repo.save(aisle)
-    later = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(_NOW)).repair("inv-8")
+    # Recover with a non-mutating repo (source stopped changing).
+    stable_repo = MemoryInventoryRepository()
+    current = inv_repo.get_by_id("inv-8")
+    assert current is not None
+    stable_repo.save(current)
+    later = InventoryStatusReconciler(stable_repo, aisle_repo, FixedClock(_NOW)).repair("inv-8")
     assert later.outcome == InventoryStatusRepairOutcome.REPAIRED
-    assert inv_repo.get_by_id("inv-8").status == InventoryStatus.FAILED
-    assert inv_repo.get_by_id("inv-8").completed_at is None
-    assert InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(_NOW)).detect("inv-8") is None
+    assert stable_repo.get_by_id("inv-8").status == InventoryStatus.FAILED
+    assert stable_repo.get_by_id("inv-8").completed_at is None
+    assert InventoryStatusReconciler(stable_repo, aisle_repo, FixedClock(_NOW)).detect("inv-8") is None

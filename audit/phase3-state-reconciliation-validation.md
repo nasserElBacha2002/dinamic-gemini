@@ -1,16 +1,16 @@
-# Phase 3 validation — state reconciliation (post-corrections)
+# Phase 3 validation — state reconciliation (contract cleanup)
 
 **Date:** 2026-08-11
 
-## Corrections covered
+## Corrections covered (final)
 
-- Verify-after-write + bounded retry (`MAX_RECONCILE_ATTEMPTS = 3`)
-- Typed `InventoryStatusRepairOutcome` / `InventoryStatusRepairResult`
-- `reconcile() -> bool` wrapper (`True` only on effective repair)
-- `compare_and_set_status` on `InventoryRepository` (no `getattr`, no mutate+save fallback in reconciler)
-- SQL races: reconciler vs aisle PROCESSING / FAILED; concurrent repair exact winner
-- Detect-only + repair backfill SQL; reason matrix; `completed_at` enter/leave COMPLETED
-- Thread `join` + `assert not t.is_alive()`; fresh SQL connection for final asserts
+- Abstract mandatory `compare_and_set_status` (no non-atomic ABC default)
+- Terminal outcomes only; `last_conflict_reason` for CAS_MISS / SOURCE_CHANGED
+- `before_cas_hook` removed from production reconciler
+- Deterministic SQL races via `BarrierInventoryRepository` (tests only)
+- Accurate verify-after-write documentation
+- SQL `completed_at` metadata-only repair cases
+- `reconcile()` caller audit + exhaustion logging on wrapper
 
 ## Pytest
 
@@ -31,65 +31,16 @@ cd backend
 
 ```text
 exit code: 0
-passed: 65
+passed: 67
 failed: 0
 skipped: 0
 ```
 
-## Ruff
-
-```bash
-.venv/bin/ruff check \
-  src/application/services/inventory_status_reconciler.py \
-  src/application/use_cases/inventories/backfill_inventory_statuses.py \
-  src/backfill_inventory_status.py \
-  src/domain/inventory \
-  src/infrastructure/repositories/memory_inventory_repository.py \
-  src/infrastructure/repositories/sql_inventory_repository.py \
-  tests/domain/test_derive_inventory_status.py \
-  tests/unit/inventory_status \
-  tests/integration/inventory_status
-```
+## Ruff / Mypy
 
 ```text
-exit code: 0
-All checks passed!
-```
-
-## Mypy
-
-```bash
-.venv/bin/mypy \
-  src/application/services/inventory_status_reconciler.py \
-  src/application/use_cases/inventories/backfill_inventory_statuses.py \
-  src/backfill_inventory_status.py \
-  src/domain/inventory/derive_status_from_aisles.py \
-  src/infrastructure/repositories/memory_inventory_repository.py \
-  src/infrastructure/repositories/sql_inventory_repository.py
-```
-
-```text
-exit code: 0
-Success: no issues found in 6 source files
-```
-
-## Definition of Done checklist
-
-```text
-reconciler vs reconciler ✅
-reconciler vs aisle PROCESSING ✅
-reconciler vs aisle FAILED ✅
-CAS contract explicit ✅
-no getattr fallback ✅
-bounded retry ✅
-thread termination ✅
-completed_at consistent ✅
-detect-only SQL zero writes ✅
-reason matrix ✅
-post-commit recovery ✅
-pytest ✅
-ruff ✅
-mypy ✅
+ruff: exit 0
+mypy (repositories + reconciler + backfill + stub CAS helper): exit 0
 ```
 
 ## Phase status
@@ -99,14 +50,9 @@ PHASE_0: COMPLETE
 PHASE_1: COMPLETE
 PHASE_2: COMPLETE
 PHASE_3: COMPLETE
+PHASE_4: NO_ACTION_REQUIRED
 
-Stored Procedures added: 0
-Triggers added: 0
+Stored Procedures total: 0
+Triggers total: 0
 New migrations: 0
-Reconciliation jobs added: 0
-Drift detectors added: 1
 ```
-
-## Skips
-
-None in the suite above when SQL Server is available.

@@ -61,6 +61,24 @@ Los hot paths de claim de cola ya usan `UPDATE … OUTPUT` en un solo statement.
 | P4-5 | Migration / image `sp_getapplock` | SP **nativo** SQL Server | Deploy / short coordination | **Not an app SP candidate** |
 | P4-6 | Inventory status CAS / reconcile | `UPDATE … WHERE status = ?` + verify-after-write | Fase 3 | **NO_ACTION** |
 
+### Source locations (demonstrable)
+
+| ID | File | Class / Method | Persistence primitive |
+| -- | ---- | -------------- | --------------------- |
+| P4-1 | `backend/src/infrastructure/repositories/sql_local_inventory_package_repository.py` | `SqlLocalInventoryPackageRepository.confirm_package_atomically` | PLAN TX + STAGE outside + APPLY TX; `UPDLOCK` package then CSV |
+| P4-2 | `backend/src/infrastructure/repositories/sql_local_csv_import_repository.py` | `SqlLocalCsvImportRepository.confirm_import_atomically` | Single TX / nested cursor; productive via `SqlLocalCsvInventoryResultWriter.apply_import` |
+| P4-2b | `backend/src/infrastructure/repositories/local_csv_inventory_result_writer.py` | `SqlLocalCsvInventoryResultWriter.apply_import` | `executemany` (+ scoped `fast_executemany` on productive INSERT) |
+| P4-3 | `backend/src/infrastructure/repositories/sql_inventory_counted_product_label_repository.py` | `SqlInventoryCountedProductLabelRepository.try_claim` | Single `INSERT` + unique violation → False (`UQ_icpl_aisle_label`) |
+| P4-4a | `backend/src/infrastructure/repositories/sql_job_repository.py` | `SqlJobRepository.claim_next_queued_job` | CTE + `UPDATE … OUTPUT` + `UPDLOCK, READPAST, ROWLOCK` |
+| P4-4b | `backend/src/infrastructure/repositories/sql_job_repository.py` | `SqlJobRepository.try_claim_starting_to_running` | Explicit TX; job+aisle `UPDLOCK`; CAS STARTING→RUNNING + lease |
+| P4-4c | `backend/src/infrastructure/repositories/sql_asset_processing_command_repository.py` | `try_claim` / `try_claim_next_queued` | `UPDATE … OUTPUT` (+ `UPDLOCK, READPAST` on next-queued) |
+| P4-4d | `backend/src/infrastructure/persistence/sql_artifact_publication_outbox_store.py` | `claim_due_entries` | CTE + `UPDATE … OUTPUT` + `UPDLOCK, READPAST, ROWLOCK` |
+| P4-4e | `backend/src/infrastructure/persistence/sql_artifact_publication_outbox_store.py` | `claim_entry` | `SELECT … UPDLOCK` + versioned `UPDATE` |
+| P4-5 | `backend/src/database/migrations/service.py` | migration runner applock | Native `EXEC sp_getapplock` (not an application SP) |
+| P4-5b | `backend/src/infrastructure/persistence/image_result_applock.py` | image-result coordination | Native `sp_getapplock` |
+| P4-6 | `backend/src/infrastructure/repositories/sql_inventory_repository.py` | `SqlInventoryRepository.compare_and_set_status` | `UPDATE inventories … WHERE id = ? AND status = ?` |
+| P4-6b | `backend/src/application/services/inventory_status_reconciler.py` | `InventoryStatusReconciler.repair` | Optimistic CAS + verify-after-write + bounded retry |
+
 ### Inventory table (detail)
 
 | ID | Flow | Current DB calls (approx, hot path) | Transaction | Concurrency mechanism | Volume | Candidate SP | Class |
