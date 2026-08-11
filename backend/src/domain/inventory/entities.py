@@ -53,6 +53,7 @@ class Inventory:
 
     def mark_processing(self, now: datetime) -> None:
         self.status = InventoryStatus.PROCESSING
+        self.completed_at = None
         self.updated_at = now
 
     def mark_completed(self, now: datetime) -> None:
@@ -62,4 +63,5 @@ class Inventory:
 
     def mark_failed(self, now: datetime) -> None:
         self.status = InventoryStatus.FAILED
+        self.completed_at = None
         self.updated_at = now

@@ -44,6 +44,28 @@ def test_inventory_mark_completed_sets_completed_at() -> None:
     assert inv.updated_at == later
 
 
+def test_inventory_leave_completed_clears_completed_at() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0)
+    inv = Inventory(
+        id="inv1",
+        name="Test",
+        status=InventoryStatus.COMPLETED,
+        created_at=now,
+        updated_at=now,
+        completed_at=now,
+    )
+    later = datetime(2025, 3, 6, 14, 0, 0)
+    inv.mark_processing(later)
+    assert inv.status == InventoryStatus.PROCESSING
+    assert inv.completed_at is None
+    assert inv.updated_at == later
+
+    inv.mark_completed(later)
+    inv.mark_failed(later)
+    assert inv.status == InventoryStatus.FAILED
+    assert inv.completed_at is None
+
+
 def test_inventory_mark_failed() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0)
     inv = Inventory(
@@ -55,6 +77,7 @@ def test_inventory_mark_failed() -> None:
     )
     inv.mark_failed(now)
     assert inv.status == InventoryStatus.FAILED
+    assert inv.completed_at is None
 
 
 # --- Aisle ---
