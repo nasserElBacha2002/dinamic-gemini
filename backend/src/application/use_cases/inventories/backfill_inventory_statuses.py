@@ -15,6 +15,7 @@ from src.application.ports.repositories import InventoryRepository
 from src.application.services.inventory_status_reconciler import (
     InventoryStatusDrift,
     InventoryStatusReconciler,
+    InventoryStatusRepairOutcome,
 )
 
 
@@ -52,10 +53,18 @@ class BackfillInventoryStatusesUseCase:
                 if drift is not None:
                     drifts.append(drift)
                 continue
-            repaired = self._status_reconciler.repair(inv.id)
-            if repaired is not None:
+            result = self._status_reconciler.repair(inv.id)
+            if result.outcome == InventoryStatusRepairOutcome.REPAIRED:
                 updated += 1
-                drifts.append(repaired)
+                if result.drift is not None:
+                    drifts.append(result.drift)
+            elif result.drift is not None and result.outcome in (
+                InventoryStatusRepairOutcome.RETRY_EXHAUSTED,
+                InventoryStatusRepairOutcome.SOURCE_CHANGED,
+                InventoryStatusRepairOutcome.CAS_MISS,
+            ):
+                # Drift remains detectable for a later run; do not count as updated.
+                drifts.append(result.drift)
         return BackfillInventoryStatusesResult(
             inventories_scanned=scanned,
             inventories_updated=updated,

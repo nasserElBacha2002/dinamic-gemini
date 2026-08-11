@@ -45,19 +45,21 @@ No CANCELLED/ARCHIVED inventory states exist — no destructive overwrite of suc
 
 - Derive returns reason codes; status-only wrapper kept for compatibility.
 - `detect()` / `repair()` / `reconcile()` on `InventoryStatusReconciler`.
-- `InventoryStatusDrift` contract.
-- Zero writes when `stored == expected`; no false `updated_at` bumps.
-- Structured logs: `action=detected|repaired|consistent|cas_miss`.
-- SQL + memory `compare_and_set_status`.
+- `InventoryStatusDrift` + typed `InventoryStatusRepairOutcome` / `InventoryStatusRepairResult`.
+- Repair: CAS + verify-after-write + bounded retry (`MAX_RECONCILE_ATTEMPTS = 3`).
+- Zero writes when `stored == expected` (and `completed_at` consistent); no false `updated_at` bumps.
+- Structured logs: `detected|consistent|repaired|cas_miss|source_changed|retry_exhausted`.
+- `InventoryRepository.compare_and_set_status` (SQL/memory override; reconciler never uses `getattr`).
 - CLI `--detect-only` on `python -m src.backfill_inventory_status`.
-- Unit + SQL integration tests (detect, repair, idempotency, concurrency, post-commit recovery).
+- Unit + SQL tests: reason matrix, retry exhaustion, concurrent repair winner, reconciler vs aisle
+  PROCESSING/FAILED, detect-only zero writes, backfill idempotency, fresh-connection asserts.
 
 ## Detect vs repair architecture
 
 ```text
-detect(inventory_id) → InventoryStatusDrift | None   # read-only
-repair(inventory_id) → drift if written               # idempotent
-reconcile(inventory_id) → bool                        # repair wrapper (call-site compatible)
+detect(inventory_id) → InventoryStatusDrift | None              # read-only
+repair(inventory_id) → InventoryStatusRepairResult              # typed outcomes
+reconcile(inventory_id) → bool                                 # True only if REPAIRED
 ```
 
 Admin: `BackfillInventoryStatusesUseCase(detect_only=True|False)`.

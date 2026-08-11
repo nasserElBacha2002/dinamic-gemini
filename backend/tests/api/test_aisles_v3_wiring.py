@@ -76,6 +76,23 @@ class _InventoryReadProxyClearClient(InventoryRepository):
     def list_all(self) -> Sequence[Inventory]:
         return self._inner.list_all()
 
+    def compare_and_set_status(
+        self,
+        inventory_id: str,
+        *,
+        expected_current: InventoryStatus,
+        new_status: InventoryStatus,
+        updated_at: datetime,
+        completed_at: datetime | None,
+    ) -> bool:
+        return self._inner.compare_and_set_status(
+            inventory_id,
+            expected_current=expected_current,
+            new_status=new_status,
+            updated_at=updated_at,
+            completed_at=completed_at,
+        )
+
 
 def _pinv(name: str, **kwargs: Any):
     """Create inventory via API; default test mode unless a case exercises production."""

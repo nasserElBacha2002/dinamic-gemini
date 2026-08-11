@@ -20,7 +20,7 @@ from src.domain.client_supplier.entities import ClientSupplier
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.evidence.entities import Evidence
-from src.domain.inventory.entities import Inventory
+from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.claim import JobClaimResult, StaleReclaimResult
 from src.domain.jobs.entities import Job
 from src.domain.jobs.lease import JobLease, LeaseRenewalResult, LeaseWriteResult
@@ -52,6 +52,31 @@ class InventoryRepository(ABC):
     def list_all(self) -> Sequence[Inventory]:
         """Return all inventories. Order is implementation-defined (SQL impl: created_at DESC)."""
         ...
+
+    def compare_and_set_status(
+        self,
+        inventory_id: str,
+        *,
+        expected_current: InventoryStatus,
+        new_status: InventoryStatus,
+        updated_at: datetime,
+        completed_at: datetime | None,
+    ) -> bool:
+        """Atomically set status when current row status equals ``expected_current``.
+
+        Returns True if the row was updated. Production adapters (SQL / memory) MUST
+        override with a true compare-and-set. This default exists for test doubles
+        that store entities in-process; reconciliation always calls this method
+        (never optional via getattr).
+        """
+        inv = self.get_by_id(inventory_id)
+        if inv is None or inv.status != expected_current:
+            return False
+        inv.status = new_status
+        inv.updated_at = updated_at
+        inv.completed_at = completed_at
+        self.save(inv)
+        return True
 
 
 class ClientRepository(ABC):
