@@ -18,6 +18,7 @@ from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 from tests.support.job_repository_test_base import JobRepositoryTestBase
 
@@ -85,7 +86,7 @@ class _MemAisleRepo(AisleRepository):
         return None
 
 
-class _MemInventoryRepo(InventoryRepository):
+class _MemInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self, inventory: Inventory) -> None:
         self._inventory = inventory
 

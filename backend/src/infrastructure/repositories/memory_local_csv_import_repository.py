@@ -7,10 +7,11 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
 
+from src.application.ports.local_csv_import_repository import LocalCsvProductiveApplier
+from src.application.ports.sql_cursor import SqlCursorLike
 from src.domain.local_csv_import.entities import (
     LocalCsvImport,
     LocalCsvImportRow,
-    LocalCsvProductiveResult,
 )
 from src.domain.local_csv_import.errors import (
     LOCAL_CSV_EXPORT_CONFLICT,
@@ -41,8 +42,12 @@ class MemoryLocalCsvImportRepository:
         )
 
     def find_confirmed_secondary_keys(
-        self, keys: set[tuple[str, str]]
+        self,
+        keys: set[tuple[str, str]],
+        *,
+        cursor: SqlCursorLike | None = None,
     ) -> set[tuple[str, str]]:
+        _ = cursor
         if not keys:
             return set()
         return {
@@ -68,6 +73,40 @@ class MemoryLocalCsvImportRepository:
             self._by_id[record.id] = record
             return record
 
+    def select_rows_to_import_on_cursor(
+        self,
+        cur: SqlCursorLike,
+        *,
+        inventory_id: str,
+        export_id: str,
+        conflict_policy: str,
+    ) -> tuple[LocalCsvImport, tuple[LocalCsvImportRow, ...], bool]:
+        _ = cur
+        record = self.get_by_export_id(inventory_id=inventory_id, export_id=export_id)
+        if record is None:
+            raise LocalCsvImportError(
+                LOCAL_CSV_EXPORT_NOT_PREVIEWED, "export_id has not been previewed"
+            )
+        if record.status == "CONFIRMED":
+            return record, (), True
+
+        eligible = {
+            row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"
+        }
+        conflict_keys = self.find_confirmed_secondary_keys(eligible)
+        if conflict_keys and conflict_policy == "REJECT":
+            raise LocalCsvImportError(
+                LOCAL_CSV_SECONDARY_CONFLICT,
+                "One or more capture_session_id + capture_photo_id keys already exist",
+            )
+
+        to_import = tuple(
+            row
+            for row in record.rows
+            if row.status == "PREVIEW_VALID" and row.secondary_key not in conflict_keys
+        )
+        return record, to_import, False
+
     def confirm_import_atomically(
         self,
         *,
@@ -75,45 +114,36 @@ class MemoryLocalCsvImportRepository:
         export_id: str,
         conflict_policy: str,
         confirmed_by_user_id: str | None,
-        apply_productive: Callable[
-            [LocalCsvImport, tuple[LocalCsvImportRow, ...], str | None],
-            tuple[LocalCsvProductiveResult, ...],
-        ],
+        apply_productive: LocalCsvProductiveApplier,
         clock_now: Callable[[], datetime],
+        cursor: SqlCursorLike | None = None,
     ) -> tuple[LocalCsvImport, bool]:
         with self._lock:
-            record = self.get_by_export_id(inventory_id=inventory_id, export_id=export_id)
-            if record is None:
-                raise LocalCsvImportError(
-                    LOCAL_CSV_EXPORT_NOT_PREVIEWED, "export_id has not been previewed"
-                )
-            if record.status == "CONFIRMED":
+            record, to_import, already_confirmed = self.select_rows_to_import_on_cursor(
+                cursor,  # type: ignore[arg-type]
+                inventory_id=inventory_id,
+                export_id=export_id,
+                conflict_policy=conflict_policy,
+            )
+            if already_confirmed:
                 return record, True
 
-            eligible = {
-                row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"
-            }
-            conflicts = self.find_confirmed_secondary_keys(eligible)
-            if conflicts and conflict_policy == "REJECT":
-                raise LocalCsvImportError(
-                    LOCAL_CSV_SECONDARY_CONFLICT,
-                    "One or more capture_session_id + capture_photo_id keys already exist",
-                )
+            conflict_keys = self.find_confirmed_secondary_keys(
+                {row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"}
+            )
 
-            to_import: list[LocalCsvImportRow] = []
+            applied = apply_productive(
+                record, to_import, confirmed_by_user_id, cursor=cursor
+            )
+            by_row_id = {r.import_row_id: r for r in applied}
             updated_rows: list[LocalCsvImportRow] = []
             for row in record.rows:
                 if row.status != "PREVIEW_VALID":
                     updated_rows.append(row)
                     continue
-                if row.secondary_key in conflicts:
+                if row.secondary_key in conflict_keys:
                     updated_rows.append(replace(row, status="DUPLICATE"))
                     continue
-                to_import.append(row)
-
-            applied = apply_productive(record, tuple(to_import), confirmed_by_user_id)
-            by_row_id = {r.import_row_id: r for r in applied}
-            for row in to_import:
                 result = by_row_id.get(row.id)
                 updated_rows.append(
                     replace(
@@ -126,7 +156,6 @@ class MemoryLocalCsvImportRepository:
                     )
                 )
 
-            # Preserve order by original row_number
             updated_rows.sort(key=lambda r: r.row_number)
             now = clock_now()
             confirmed = replace(

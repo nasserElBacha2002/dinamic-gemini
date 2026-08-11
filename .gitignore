@@ -113,6 +113,17 @@ audit-results/phase-4/*-stdout.txt
 audit-results/phase-4/*-stderr.txt
 audit-results/phase-4/*-npm-audit.json
 
+# Large Git evidence dumps under audit/ (keep *.md validation/architecture reports).
+audit/implementation-*-diff.txt
+audit/implementation-*-diffstat.txt
+audit/implementation-*-status.txt
+audit/phase*-diff.txt
+audit/phase*-diffstat.txt
+audit/phase*-status.txt
+audit/*-corrections-diff.txt
+audit/*-corrections-diffstat.txt
+audit/*-corrections-status.txt
+
 # Phase 4 security hardening dumps (repo root; never commit)
 phase4-security-hardening-*.txt
 **/phase4-security-hardening-*.txt

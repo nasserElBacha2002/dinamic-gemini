@@ -26,6 +26,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from tests.support.client_repository_stubs import ClientSupplierRepositoryBatchMixin
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
 class FixedClock:
@@ -36,7 +37,7 @@ class FixedClock:
         return self._now
 
 
-class StubInventoryRepo(InventoryRepository):
+class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self, inventories: list[Inventory] | None = None) -> None:
         self._store = {i.id: i for i in (inventories or [])}
 

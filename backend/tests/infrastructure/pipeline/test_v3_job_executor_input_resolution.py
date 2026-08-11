@@ -26,6 +26,7 @@ from src.domain.jobs.entities import Job
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
 from src.infrastructure.repositories.sql_source_asset_repository import _row_to_asset
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 from tests.support.job_repository_test_base import JobRepositoryTestBase
 from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
@@ -169,7 +170,7 @@ class _NoopRepo(
         return {}
 
 
-class _InventoryRepo(InventoryRepository):
+class _InventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self, inventory: Inventory) -> None:
         self._inventory = inventory
 

@@ -89,8 +89,7 @@ class SqlInventoryRepository(InventoryRepository):
                         processing_mode, primary_provider_name, primary_model_name,
                         primary_prompt_key, primary_prompt_version, client_id,
                         identification_mode
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         inventory.id,
@@ -105,9 +104,38 @@ class SqlInventoryRepository(InventoryRepository):
                         inventory.primary_prompt_key,
                         inventory.primary_prompt_version,
                         inventory.client_id,
-                        inventory.identification_mode.value if inventory.identification_mode else None,
+                        inventory.identification_mode.value
+                        if inventory.identification_mode
+                        else None,
                     ),
                 )
+
+    def compare_and_set_status(
+        self,
+        inventory_id: str,
+        *,
+        expected_current: InventoryStatus,
+        new_status: InventoryStatus,
+        updated_at: datetime,
+        completed_at: datetime | None,
+    ) -> bool:
+        """Atomic status transition: UPDATE only when current status matches ``expected_current``."""
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                """
+                UPDATE inventories
+                SET status = ?, updated_at = ?, completed_at = ?
+                WHERE id = ? AND status = ?
+                """,
+                (
+                    new_status.value,
+                    _ensure_utc(updated_at),
+                    _ensure_utc(completed_at),
+                    inventory_id,
+                    expected_current.value,
+                ),
+            )
+            return int(cur.rowcount or 0) > 0
 
     def get_by_id(self, inventory_id: str) -> Inventory | None:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:

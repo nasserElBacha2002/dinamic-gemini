@@ -16,6 +16,7 @@ from src.application.use_cases.inventories.update_inventory_name import (
 )
 from src.domain.aisle_identification.modes import AisleIdentificationMode
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
 class FixedClock:
@@ -26,7 +27,7 @@ class FixedClock:
         return self._now
 
 
-class StubInventoryRepo(InventoryRepository):
+class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self, inventories: list[Inventory] | None = None) -> None:
         self._store = {i.id: i for i in (inventories or [])}
         self.save_calls = 0

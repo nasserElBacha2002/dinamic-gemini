@@ -7,9 +7,10 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import InventoryRepository
 from src.application.use_cases.inventories.list_inventories import ListInventoriesUseCase
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
-class StubInventoryRepo(InventoryRepository):
+class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self, inventories: list[Inventory]) -> None:
         self._store = {inv.id: inv for inv in inventories}
 

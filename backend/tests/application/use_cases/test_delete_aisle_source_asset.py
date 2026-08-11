@@ -30,6 +30,7 @@ from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.storage.artifact_store import StoredArtifact
 from tests.support.access_principal_helpers import platform_principal, policy_for
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
@@ -41,7 +42,7 @@ class FixedClock:
         return self._now
 
 
-class StubInventoryRepo(InventoryRepository):
+class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self, inventories: list[Inventory] | None = None) -> None:
         self._store = {i.id: i for i in (inventories or [])}
 

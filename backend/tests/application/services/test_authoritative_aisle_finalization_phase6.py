@@ -31,6 +31,7 @@ from src.infrastructure.repositories.memory_authoritative_aisle_finalization_rep
 from src.infrastructure.repositories.memory_authoritative_local_code_scan_repository import (
     MemoryAuthoritativeLocalCodeScanRepository,
 )
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
 class _FixedClock:
@@ -56,7 +57,7 @@ class _MemAisleRepo:
 
 
 @dataclass
-class _MemInvRepo:
+class _MemInvRepo(ExplicitInventoryCompareAndSet):
     inventories: dict[str, Inventory]
 
     def get_by_id(self, inventory_id: str) -> Inventory | None:

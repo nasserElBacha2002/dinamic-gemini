@@ -11,9 +11,10 @@ from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import InventoryRepository
 from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
-class StubInventoryRepo(InventoryRepository):
+class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self) -> None:
         self._store: dict[str, Inventory] = {}
 

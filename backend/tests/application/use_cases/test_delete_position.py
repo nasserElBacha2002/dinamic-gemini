@@ -15,6 +15,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
 class FixedClock:
@@ -25,7 +26,7 @@ class FixedClock:
         return self._now
 
 
-class StubInventoryRepo:
+class StubInventoryRepo(ExplicitInventoryCompareAndSet):
     def __init__(self, inv: Inventory | None = None) -> None:
         self._store = {} if inv is None else {inv.id: inv}
 

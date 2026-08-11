@@ -19,6 +19,7 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
 class FixedClock:
@@ -29,7 +30,7 @@ class FixedClock:
         return self._now
 
 
-class StubInventoryRepo(InventoryRepository):
+class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self, inv: Inventory) -> None:
         self._inv = inv
 

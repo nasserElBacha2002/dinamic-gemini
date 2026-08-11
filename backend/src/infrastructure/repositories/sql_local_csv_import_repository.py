@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
+from typing import Any
 
+from src.application.ports.local_csv_import_repository import LocalCsvProductiveApplier
+from src.application.ports.sql_cursor import SqlCursorLike
 from src.database.sqlserver import SqlServerClient
 from src.domain.local_csv_import.entities import (
     LocalCsvImport,
     LocalCsvImportRow,
-    LocalCsvProductiveResult,
 )
 from src.domain.local_csv_import.errors import (
     LOCAL_CSV_EXPORT_CONFLICT,
@@ -19,7 +21,42 @@ from src.domain.local_csv_import.errors import (
     LOCAL_CSV_SECONDARY_CONFLICT,
     LocalCsvImportError,
 )
+from src.infrastructure.database.sql_batch import (
+    EXECUTEMANY_IMPORT_ROW_PARAM_SET_CHUNK,
+    SQL_VALUES_PAIR_CHUNK_SIZE,
+    chunked,
+    cursor_executemany,
+)
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
+
+# Must stay aligned with ``local_csv_row_secondary_key`` prefixes.
+_SECONDARY_KEY_PREFIXES = ("label:", "pos:", "photo:")
+
+
+def partition_secondary_key_candidates(
+    keys: set[tuple[str, str]],
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Split secondary keys into (label pairs, photo/pos pairs).
+
+    Raises ``ValueError`` for unknown suffixes so new key shapes fail loudly until
+    the candidate-scoped SQL is updated.
+    """
+    label_pairs: list[tuple[str, str]] = []
+    photo_pairs: list[tuple[str, str]] = []
+    for session, suffix in keys:
+        if suffix.startswith("label:"):
+            label_pairs.append((session, suffix[len("label:") :]))
+        elif suffix.startswith("pos:"):
+            photo_pairs.append((session, suffix[len("pos:") :]))
+        elif suffix.startswith("photo:"):
+            photo_pairs.append((session, suffix[len("photo:") :]))
+        else:
+            raise ValueError(
+                "unsupported local_csv secondary_key suffix "
+                f"{suffix!r}; expected one of {_SECONDARY_KEY_PREFIXES}"
+            )
+    return label_pairs, photo_pairs
+
 
 _IMPORT_COLUMNS = (
     "id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
@@ -181,13 +218,92 @@ class SqlLocalCsvImportRepository:
         return self.get_by_id(str(row.id)) if row else None
 
     def find_confirmed_secondary_keys(
-        self, keys: set[tuple[str, str]]
+        self,
+        keys: set[tuple[str, str]],
+        *,
+        cursor: SqlCursorLike | None = None,
     ) -> set[tuple[str, str]]:
+        """Return intersection of ``keys`` with already-IMPORTED confirmed secondary keys.
+
+        Candidate-scoped: join VALUES of requested (session, label|photo) pairs instead of
+        scanning all historical CONFIRMED/IMPORTED rows into Python.
+        """
         from src.domain.local_csv_import.entities import local_csv_row_secondary_key
 
+        if not keys:
+            return set()
+
+        label_pairs, photo_pairs = partition_secondary_key_candidates(keys)
         found: set[tuple[str, str]] = set()
-        # Load confirmed imported rows and compute the same secondary_key as preview.
-        with self._client.cursor() as cur:
+
+        def _consume_rows(rows: Sequence[Any]) -> None:
+            for row in rows:
+                key = local_csv_row_secondary_key(
+                    capture_session_id=str(row.capture_session_id),
+                    capture_photo_id=str(row.capture_photo_id),
+                    label_id=(str(row.label_id).strip() if row.label_id else None),
+                    detection_source=(
+                        str(row.detection_source).strip() if row.detection_source else None
+                    ),
+                )
+                if key in keys:
+                    found.add(key)
+
+        def _scan(cur: SqlCursorLike) -> None:
+            for chunk in chunked(label_pairs, SQL_VALUES_PAIR_CHUNK_SIZE):
+                values_sql = ", ".join("(?, ?)" for _ in chunk)
+                flat: list[str] = [v for pair in chunk for v in pair]
+                cur.execute(
+                    "SELECT r.capture_session_id, r.capture_photo_id, r.label_id, r.detection_source "
+                    "FROM local_csv_import_rows r "
+                    "JOIN local_csv_imports i ON i.id = r.import_id "
+                    f"INNER JOIN (VALUES {values_sql}) AS c(session_id, label_id) "
+                    "ON c.session_id = r.capture_session_id AND c.label_id = r.label_id "
+                    "WHERE i.status = 'CONFIRMED' AND r.status = 'IMPORTED' "
+                    "AND r.label_id IS NOT NULL",
+                    tuple(flat),
+                )
+                _consume_rows(cur.fetchall())
+
+            for chunk in chunked(photo_pairs, SQL_VALUES_PAIR_CHUNK_SIZE):
+                values_sql = ", ".join("(?, ?)" for _ in chunk)
+                flat = [v for pair in chunk for v in pair]
+                cur.execute(
+                    "SELECT r.capture_session_id, r.capture_photo_id, r.label_id, r.detection_source "
+                    "FROM local_csv_import_rows r "
+                    "JOIN local_csv_imports i ON i.id = r.import_id "
+                    f"INNER JOIN (VALUES {values_sql}) AS c(session_id, photo_id) "
+                    "ON c.session_id = r.capture_session_id "
+                    "AND c.photo_id = r.capture_photo_id "
+                    "WHERE i.status = 'CONFIRMED' AND r.status = 'IMPORTED' "
+                    "AND r.label_id IS NULL",
+                    tuple(flat),
+                )
+                _consume_rows(cur.fetchall())
+
+        if cursor is not None:
+            _scan(cursor)
+        else:
+            with self._client.cursor() as cur:
+                _scan(cur)
+        return found
+
+    def find_confirmed_secondary_keys_full_scan(
+        self,
+        keys: set[tuple[str, str]],
+        *,
+        cursor: SqlCursorLike | None = None,
+    ) -> set[tuple[str, str]]:
+        """Legacy full-scan semantics — used for parity tests only (not hot path)."""
+        from src.domain.local_csv_import.entities import local_csv_row_secondary_key
+
+        if not keys:
+            return set()
+        # Validate prefixes even on the legacy path so unknown key shapes fail loudly.
+        partition_secondary_key_candidates(keys)
+        found: set[tuple[str, str]] = set()
+
+        def _scan(cur: SqlCursorLike) -> None:
             cur.execute(
                 "SELECT r.capture_session_id, r.capture_photo_id, r.label_id, r.detection_source "
                 "FROM local_csv_import_rows r "
@@ -205,6 +321,12 @@ class SqlLocalCsvImportRepository:
                 )
                 if key in keys:
                     found.add(key)
+
+        if cursor is not None:
+            _scan(cursor)
+        else:
+            with self._client.cursor() as cur:
+                _scan(cur)
         return found
 
     def stage_or_get_existing(self, record: LocalCsvImport) -> LocalCsvImport:
@@ -226,6 +348,54 @@ class SqlLocalCsvImportRepository:
                 ) from exc
             return existing
 
+    def select_rows_to_import_on_cursor(
+        self,
+        cur: SqlCursorLike,
+        *,
+        inventory_id: str,
+        export_id: str,
+        conflict_policy: str,
+    ) -> tuple[LocalCsvImport, tuple[LocalCsvImportRow, ...], bool]:
+        """UPDLOCK import, resolve conflicts, return rows to import without mutating."""
+        cur.execute(
+            f"SELECT {_IMPORT_COLUMNS} FROM local_csv_imports WITH (UPDLOCK, ROWLOCK) "
+            "WHERE inventory_id = ? AND export_id = ?",
+            (inventory_id, export_id),
+        )
+        header = cur.fetchone()
+        if not header:
+            raise LocalCsvImportError(
+                LOCAL_CSV_EXPORT_NOT_PREVIEWED, "export_id has not been previewed"
+            )
+        cur.execute(
+            f"SELECT {_ROW_COLUMNS} FROM local_csv_import_rows "
+            "WHERE import_id = ? ORDER BY row_number",
+            (str(header.id),),
+        )
+        rows = tuple(_row_from_db(row) for row in cur.fetchall())
+        record = _import_from_db(header, rows)
+        if record.status == "CONFIRMED":
+            return record, (), True
+
+        eligible = {
+            row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"
+        }
+        conflict_keys = self.find_confirmed_secondary_keys(eligible, cursor=cur)
+        if conflict_keys and conflict_policy == "REJECT":
+            raise LocalCsvImportError(
+                LOCAL_CSV_SECONDARY_CONFLICT,
+                "One or more capture_session_id + capture_photo_id keys already exist",
+            )
+
+        to_import: list[LocalCsvImportRow] = []
+        for row in record.rows:
+            if row.status != "PREVIEW_VALID":
+                continue
+            if row.secondary_key in conflict_keys:
+                continue
+            to_import.append(row)
+        return record, tuple(to_import), False
+
     def confirm_import_atomically(
         self,
         *,
@@ -233,96 +403,105 @@ class SqlLocalCsvImportRepository:
         export_id: str,
         conflict_policy: str,
         confirmed_by_user_id: str | None,
-        apply_productive: Callable[
-            [LocalCsvImport, tuple[LocalCsvImportRow, ...], str | None],
-            tuple[LocalCsvProductiveResult, ...],
-        ],
+        apply_productive: LocalCsvProductiveApplier,
+        clock_now: Callable[[], datetime],
+        cursor: SqlCursorLike | None = None,
+    ) -> tuple[LocalCsvImport, bool]:
+        if cursor is not None:
+            return self._confirm_import_on_cursor(
+                cursor,
+                inventory_id=inventory_id,
+                export_id=export_id,
+                conflict_policy=conflict_policy,
+                confirmed_by_user_id=confirmed_by_user_id,
+                apply_productive=apply_productive,
+                clock_now=clock_now,
+            )
+        with self._client.begin_transaction() as txn:
+            with sql_repository_cursor(self._client, connection=txn.connection) as cur:
+                result = self._confirm_import_on_cursor(
+                    cur,
+                    inventory_id=inventory_id,
+                    export_id=export_id,
+                    conflict_policy=conflict_policy,
+                    confirmed_by_user_id=confirmed_by_user_id,
+                    apply_productive=apply_productive,
+                    clock_now=clock_now,
+                )
+            txn.commit()
+            return result
+
+    def _confirm_import_on_cursor(
+        self,
+        cur: SqlCursorLike,
+        *,
+        inventory_id: str,
+        export_id: str,
+        conflict_policy: str,
+        confirmed_by_user_id: str | None,
+        apply_productive: LocalCsvProductiveApplier,
         clock_now: Callable[[], datetime],
     ) -> tuple[LocalCsvImport, bool]:
-        with sql_repository_cursor(self._client) as cur:
-            cur.execute(
-                f"SELECT {_IMPORT_COLUMNS} FROM local_csv_imports WITH (UPDLOCK, ROWLOCK) "
-                "WHERE inventory_id = ? AND export_id = ?",
-                (inventory_id, export_id),
-            )
-            header = cur.fetchone()
-            if not header:
-                raise LocalCsvImportError(
-                    LOCAL_CSV_EXPORT_NOT_PREVIEWED, "export_id has not been previewed"
-                )
-            cur.execute(
-                f"SELECT {_ROW_COLUMNS} FROM local_csv_import_rows "
-                "WHERE import_id = ? ORDER BY row_number",
-                (str(header.id),),
-            )
-            rows = tuple(_row_from_db(row) for row in cur.fetchall())
-            record = _import_from_db(header, rows)
-            if record.status == "CONFIRMED":
-                return record, True
+        record, to_import, already_confirmed = self.select_rows_to_import_on_cursor(
+            cur,
+            inventory_id=inventory_id,
+            export_id=export_id,
+            conflict_policy=conflict_policy,
+        )
+        if already_confirmed:
+            return record, True
 
-            eligible = {
-                row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"
-            }
-            conflicts = self.find_confirmed_secondary_keys(eligible)
-            if conflicts and conflict_policy == "REJECT":
-                raise LocalCsvImportError(
-                    LOCAL_CSV_SECONDARY_CONFLICT,
-                    "One or more capture_session_id + capture_photo_id keys already exist",
-                )
+        conflict_keys = self.find_confirmed_secondary_keys(
+            {row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"},
+            cursor=cur,
+        )
 
-            to_import: list[LocalCsvImportRow] = []
-            updated_rows: list[LocalCsvImportRow] = []
-            for row in record.rows:
-                if row.status != "PREVIEW_VALID":
-                    updated_rows.append(row)
-                    continue
-                if row.secondary_key in conflicts:
-                    updated_rows.append(replace(row, status="DUPLICATE"))
-                    continue
-                to_import.append(row)
-
-            # Must use the caller-provided callback (CSV writer or package
-            # materializer+writer). Do not bypass it with self._writer — package
-            # confirm injects source-asset materialization here.
-            applied = apply_productive(
-                record, tuple(to_import), confirmed_by_user_id
-            )
-            by_row_id = {r.import_row_id: r for r in applied}
-            for row in to_import:
-                result = by_row_id.get(row.id)
-                updated_rows.append(
-                    replace(
-                        row,
-                        status="IMPORTED",
-                        productive_result_id=result.id if result else None,
-                        requires_review=(
-                            bool(result.requires_review) if result else row.requires_review
-                        ),
-                    )
+        applied = apply_productive(
+            record, to_import, confirmed_by_user_id, cursor=cur
+        )
+        by_row_id = {r.import_row_id: r for r in applied}
+        updated_rows: list[LocalCsvImportRow] = []
+        for row in record.rows:
+            if row.status != "PREVIEW_VALID":
+                updated_rows.append(row)
+                continue
+            if row.secondary_key in conflict_keys:
+                updated_rows.append(replace(row, status="DUPLICATE"))
+                continue
+            result = by_row_id.get(row.id)
+            updated_rows.append(
+                replace(
+                    row,
+                    status="IMPORTED",
+                    productive_result_id=result.id if result else None,
+                    requires_review=(
+                        bool(result.requires_review) if result else row.requires_review
+                    ),
                 )
-            updated_rows.sort(key=lambda r: r.row_number)
-            now = clock_now()
-            confirmed = replace(
-                record,
-                status="CONFIRMED",
-                valid_rows=sum(row.status == "IMPORTED" for row in updated_rows),
-                duplicate_rows=sum(row.status == "DUPLICATE" for row in updated_rows),
-                rejected_rows=sum(row.status == "REJECTED" for row in updated_rows),
-                conflict_policy=conflict_policy,
-                confirmed_at=now,
-                confirmed_by_user_id=confirmed_by_user_id,
-                updated_at=now,
-                rows=tuple(updated_rows),
             )
-            self._persist(cur, confirmed)
-            return confirmed, False
+        updated_rows.sort(key=lambda r: r.row_number)
+        now = clock_now()
+        confirmed = replace(
+            record,
+            status="CONFIRMED",
+            valid_rows=sum(row.status == "IMPORTED" for row in updated_rows),
+            duplicate_rows=sum(row.status == "DUPLICATE" for row in updated_rows),
+            rejected_rows=sum(row.status == "REJECTED" for row in updated_rows),
+            conflict_policy=conflict_policy,
+            confirmed_at=now,
+            confirmed_by_user_id=confirmed_by_user_id,
+            updated_at=now,
+            rows=tuple(updated_rows),
+        )
+        self._persist(cur, confirmed)
+        return confirmed, False
 
     def save(self, record: LocalCsvImport) -> LocalCsvImport:
         with sql_repository_cursor(self._client) as cur:
             self._persist(cur, record)
         return record
 
-    def _persist(self, cur: object, record: LocalCsvImport) -> None:
+    def _persist(self, cur: SqlCursorLike, record: LocalCsvImport) -> None:
         values = (
             record.export_id,
             record.schema_version,
@@ -341,15 +520,15 @@ class SqlLocalCsvImportRepository:
             record.updated_at,
             record.id,
         )
-        cur.execute(  # type: ignore[attr-defined]
+        cur.execute(
             "UPDATE local_csv_imports SET export_id=?, schema_version=?, inventory_id=?, "
             "device_id=?, exported_at=?, status=?, content_hash=?, total_rows=?, valid_rows=?, "
             "rejected_rows=?, duplicate_rows=?, conflict_policy=?, confirmed_at=?, "
             "confirmed_by_user_id=?, updated_at=? WHERE id=?",
             values,
         )
-        if cur.rowcount == 0:  # type: ignore[attr-defined]
-            cur.execute(  # type: ignore[attr-defined]
+        if cur.rowcount == 0:
+            cur.execute(
                 "INSERT INTO local_csv_imports "
                 "(id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
                 "content_hash, total_rows, valid_rows, rejected_rows, duplicate_rows, "
@@ -360,8 +539,55 @@ class SqlLocalCsvImportRepository:
         # Upsert rows in place. Never DELETE+re-INSERT after productive results exist:
         # FK_local_csv_productive_row references import_row_id.
         keep_ids = {row.id for row in record.rows}
+        update_sql = (
+            "UPDATE local_csv_import_rows SET import_id=?, row_number=?, inventory_id=?, "
+            "aisle_id=?, capture_session_id=?, capture_photo_id=?, client_file_id=?, "
+            "capture_order=?, captured_at=?, position_code=?, internal_code=?, quantity=?, "
+            "quantity_status=?, detection_status=?, detection_source=?, ingestion_source=?, "
+            "requires_review=?, error_code=?, notes=?, status=?, validation_errors_json=?, "
+            "validation_warnings_json=?, productive_result_id=?, label_id=?, "
+            "position_label_id=?, position_payload_raw=? WHERE id=?"
+        )
+        insert_sql = (
+            "INSERT INTO local_csv_import_rows "
+            f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(27))})"
+        )
+        update_params: list[tuple[object, ...]] = []
+        insert_by_id: dict[str, tuple[object, ...]] = {}
         for row in record.rows:
-            row_values = (
+            update_params.append(
+                (
+                    row.import_id,
+                    row.row_number,
+                    row.inventory_id,
+                    row.aisle_id,
+                    row.capture_session_id,
+                    row.capture_photo_id,
+                    row.client_file_id,
+                    row.capture_order,
+                    row.captured_at,
+                    row.position_code,
+                    row.internal_code,
+                    row.quantity,
+                    row.quantity_status,
+                    row.detection_status,
+                    row.detection_source,
+                    row.ingestion_source,
+                    row.requires_review,
+                    row.error_code,
+                    row.notes,
+                    row.status,
+                    json.dumps(row.validation_errors),
+                    json.dumps(row.validation_warnings),
+                    row.productive_result_id,
+                    row.label_id,
+                    row.position_label_id,
+                    row.position_payload_raw,
+                    row.id,
+                )
+            )
+            insert_by_id[row.id] = (
+                row.id,
                 row.import_id,
                 row.row_number,
                 row.inventory_id,
@@ -388,55 +614,37 @@ class SqlLocalCsvImportRepository:
                 row.label_id,
                 row.position_label_id,
                 row.position_payload_raw,
-                row.id,
             )
-            cur.execute(  # type: ignore[attr-defined]
-                "UPDATE local_csv_import_rows SET import_id=?, row_number=?, inventory_id=?, "
-                "aisle_id=?, capture_session_id=?, capture_photo_id=?, client_file_id=?, "
-                "capture_order=?, captured_at=?, position_code=?, internal_code=?, quantity=?, "
-                "quantity_status=?, detection_status=?, detection_source=?, ingestion_source=?, "
-                "requires_review=?, error_code=?, notes=?, status=?, validation_errors_json=?, "
-                "validation_warnings_json=?, productive_result_id=?, label_id=?, "
-                "position_label_id=?, position_payload_raw=? WHERE id=?",
-                row_values,
+
+        for chunk in chunked(update_params, EXECUTEMANY_IMPORT_ROW_PARAM_SET_CHUNK):
+            cursor_executemany(
+                cur,
+                update_sql,
+                chunk,
+                operation="local_csv_import_rows.update",
+                use_fast_executemany=False,
             )
-            if cur.rowcount == 0:  # type: ignore[attr-defined]
-                cur.execute(  # type: ignore[attr-defined]
-                    "INSERT INTO local_csv_import_rows "
-                    f"({_ROW_COLUMNS}) VALUES ({', '.join('?' for _ in range(27))})",
-                    (
-                        row.id,
-                        row.import_id,
-                        row.row_number,
-                        row.inventory_id,
-                        row.aisle_id,
-                        row.capture_session_id,
-                        row.capture_photo_id,
-                        row.client_file_id,
-                        row.capture_order,
-                        row.captured_at,
-                        row.position_code,
-                        row.internal_code,
-                        row.quantity,
-                        row.quantity_status,
-                        row.detection_status,
-                        row.detection_source,
-                        row.ingestion_source,
-                        row.requires_review,
-                        row.error_code,
-                        row.notes,
-                        row.status,
-                        json.dumps(row.validation_errors),
-                        json.dumps(row.validation_warnings),
-                        row.productive_result_id,
-                        row.label_id,
-                        row.position_label_id,
-                        row.position_payload_raw,
-                    ),
-                )
+
+        cur.execute(
+            "SELECT id FROM local_csv_import_rows WHERE import_id = ?",
+            (record.id,),
+        )
+        existing_ids = {str(row.id) for row in cur.fetchall()}
+        missing_params = [
+            insert_by_id[row_id] for row_id in insert_by_id if row_id not in existing_ids
+        ]
+        for chunk in chunked(missing_params, EXECUTEMANY_IMPORT_ROW_PARAM_SET_CHUNK):
+            cursor_executemany(
+                cur,
+                insert_sql,
+                chunk,
+                operation="local_csv_import_rows.insert",
+                use_fast_executemany=False,
+            )
+
         if keep_ids:
             placeholders = ", ".join("?" for _ in keep_ids)
-            cur.execute(  # type: ignore[attr-defined]
+            cur.execute(
                 "DELETE FROM local_csv_import_rows WHERE import_id = ? AND id NOT IN "
                 f"({placeholders}) AND NOT EXISTS ("
                 "SELECT 1 FROM local_csv_productive_results p "
@@ -444,7 +652,7 @@ class SqlLocalCsvImportRepository:
                 (record.id, *keep_ids),
             )
         else:
-            cur.execute(  # type: ignore[attr-defined]
+            cur.execute(
                 "DELETE FROM local_csv_import_rows WHERE import_id = ? AND NOT EXISTS ("
                 "SELECT 1 FROM local_csv_productive_results p "
                 "WHERE p.import_row_id = local_csv_import_rows.id)",

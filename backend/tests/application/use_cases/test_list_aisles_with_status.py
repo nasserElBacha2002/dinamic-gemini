@@ -33,11 +33,12 @@ from src.infrastructure.repositories.memory_client_supplier_repository import (
 )
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
-class StubInventoryRepo(InventoryRepository):
+class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(
         self,
         inventory_ids: set[str] | None = None,

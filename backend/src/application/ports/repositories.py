@@ -20,7 +20,7 @@ from src.domain.client_supplier.entities import ClientSupplier
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.evidence.entities import Evidence
-from src.domain.inventory.entities import Inventory
+from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.claim import JobClaimResult, StaleReclaimResult
 from src.domain.jobs.entities import Job
 from src.domain.jobs.lease import JobLease, LeaseRenewalResult, LeaseWriteResult
@@ -51,6 +51,24 @@ class InventoryRepository(ABC):
     @abstractmethod
     def list_all(self) -> Sequence[Inventory]:
         """Return all inventories. Order is implementation-defined (SQL impl: created_at DESC)."""
+        ...
+
+    @abstractmethod
+    def compare_and_set_status(
+        self,
+        inventory_id: str,
+        *,
+        expected_current: InventoryStatus,
+        new_status: InventoryStatus,
+        updated_at: datetime,
+        completed_at: datetime | None,
+    ) -> bool:
+        """Atomically set status when current row status equals ``expected_current``.
+
+        Returns True if the row was updated. Implementations MUST provide a true
+        compare-and-set (SQL ``UPDATE … WHERE status = ?``, or an in-process lock).
+        There is no non-atomic read/check/save default.
+        """
         ...
 
 

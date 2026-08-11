@@ -12,9 +12,10 @@ from src.application.use_cases.aisles.create_aisle import InventoryNotFoundError
 from src.application.use_cases.aisles.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
-class StubInventoryRepo(InventoryRepository):
+class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
     def __init__(self, inventory_ids: set[str] | None = None) -> None:
         self._ids = inventory_ids or set()
 
