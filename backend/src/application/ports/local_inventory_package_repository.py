@@ -6,12 +6,38 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
+from src.application.ports.sql_cursor import SqlCursorLike
 from src.domain.local_csv_import.entities import (
     LocalCsvImport,
     LocalCsvImportRow,
     LocalCsvProductiveResult,
 )
 from src.domain.local_inventory_package.entities import LocalInventoryPackage
+
+
+class PackageConfirmProductiveApplier(Protocol):
+    def __call__(
+        self,
+        record: LocalCsvImport,
+        rows_to_import: tuple[LocalCsvImportRow, ...],
+        confirmed_by_user_id: str | None,
+        package: LocalInventoryPackage,
+        *,
+        cursor: SqlCursorLike | None = None,
+    ) -> tuple[LocalCsvProductiveResult, ...]: ...
+
+
+class PackageConfirmEvidenceStager(Protocol):
+    """Create SourceAssets only for rows already selected for import (outside SQL locks)."""
+
+    def __call__(
+        self,
+        package: LocalInventoryPackage,
+        record: LocalCsvImport,
+        rows_to_import: tuple[LocalCsvImportRow, ...],
+    ) -> dict[str, str]:
+        """Return capture_photo_id → source_asset_id."""
+        ...
 
 
 class LocalInventoryPackageRepository(Protocol):
@@ -30,9 +56,16 @@ class LocalInventoryPackageRepository(Protocol):
         export_id: str,
         conflict_policy: str,
         confirmed_by_user_id: str | None,
-        apply_productive: Callable[
-            [LocalCsvImport, tuple[LocalCsvImportRow, ...], str | None, LocalInventoryPackage],
-            tuple[LocalCsvProductiveResult, ...],
-        ],
+        apply_productive: PackageConfirmProductiveApplier,
         clock_now: Callable[[], datetime],
-    ) -> tuple[LocalInventoryPackage, bool]: ...
+        stage_evidence: PackageConfirmEvidenceStager | None = None,
+    ) -> tuple[LocalInventoryPackage, bool]:
+        """Confirm package + CSV under one final SQL transaction.
+
+        When ``stage_evidence`` is provided, conflict resolution runs first under a
+        short planning lock, evidence is staged outside locks for ``rows_to_import``
+        only, then the apply/confirm transaction revalidates under lock.
+
+        Lock order on apply: package → csv import.
+        """
+        ...

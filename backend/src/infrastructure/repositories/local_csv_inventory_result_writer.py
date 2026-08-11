@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 
+from src.application.ports.sql_cursor import SqlCursorLike
 from src.domain.local_csv_import.entities import (
     LocalCsvImport,
     LocalCsvImportRow,
@@ -13,6 +16,24 @@ from src.domain.local_csv_import.entities import (
     local_csv_row_secondary_key,
 )
 from src.domain.local_csv_import.sources import INGESTION_SOURCE_LOCAL_CSV_IMPORT
+from src.infrastructure.database.sql_batch import (
+    EXECUTEMANY_PRODUCTIVE_PARAM_SET_CHUNK,
+    SQL_IN_CHUNK_SIZE,
+    chunked,
+    cursor_executemany,
+)
+
+logger = logging.getLogger(__name__)
+
+_PRODUCTIVE_INSERT_SQL = (
+    "INSERT INTO local_csv_productive_results "
+    "(id, inventory_id, aisle_id, import_id, import_row_id, capture_session_id, "
+    "capture_photo_id, client_file_id, capture_order, position_code, internal_code, "
+    "quantity, quantity_status, detection_status, detection_source, ingestion_source, "
+    "requires_review, has_image_evidence, source_asset_id, confirmed_by_user_id, "
+    "created_at, updated_at, label_id, position_label_id, position_payload_raw) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
 
 
 class MemoryLocalCsvInventoryResultWriter:
@@ -27,7 +48,9 @@ class MemoryLocalCsvInventoryResultWriter:
         rows_to_import: tuple[LocalCsvImportRow, ...],
         confirmed_by_user_id: str | None,
         image_evidence_by_import_row_id: dict[str, str] | None = None,
+        cursor: SqlCursorLike | None = None,
     ) -> tuple[LocalCsvProductiveResult, ...]:
+        _ = cursor  # memory writer has no SQL cursor; signature matches SQL path
         evidence = image_evidence_by_import_row_id or {}
         now = datetime.now(timezone.utc)
         applied: list[LocalCsvProductiveResult] = []
@@ -88,9 +111,12 @@ class MemoryLocalCsvInventoryResultWriter:
     def list_for_inventory(self, inventory_id: str) -> tuple[LocalCsvProductiveResult, ...]:
         return tuple(r for r in self._by_id.values() if r.inventory_id == inventory_id)
 
+    def list_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]:
+        return tuple(r for r in self._by_id.values() if r.import_id == import_id)
+
 
 class SqlLocalCsvInventoryResultWriter:
-    """SQL Server writer — inserts productive rows inside the caller's transaction cursor when provided."""
+    """SQL Server writer — batch inserts productive rows on the caller's TX cursor when provided."""
 
     def __init__(self, client: object) -> None:
         self._client = client
@@ -101,7 +127,7 @@ class SqlLocalCsvInventoryResultWriter:
         record: LocalCsvImport,
         rows_to_import: tuple[LocalCsvImportRow, ...],
         confirmed_by_user_id: str | None,
-        cursor: object | None = None,
+        cursor: SqlCursorLike | None = None,
         image_evidence_by_import_row_id: dict[str, str] | None = None,
     ) -> tuple[LocalCsvProductiveResult, ...]:
         from src.infrastructure.database.sql_transaction import sql_repository_cursor
@@ -110,26 +136,26 @@ class SqlLocalCsvInventoryResultWriter:
         now = datetime.now(timezone.utc)
         applied: list[LocalCsvProductiveResult] = []
 
-        def _run(cur: object) -> None:
+        def _run(cur: SqlCursorLike) -> None:
+            started = time.perf_counter()
+            if not rows_to_import:
+                return
+
+            existing_by_row_id = self._fetch_existing_by_import_row_ids(
+                cur, [row.id for row in rows_to_import]
+            )
+
+            insert_params: list[tuple[object, ...]] = []
+            new_results: list[LocalCsvProductiveResult] = []
             for row in rows_to_import:
-                cur.execute(  # type: ignore[attr-defined]
-                    "SELECT id FROM local_csv_productive_results WHERE import_row_id = ?",
-                    (row.id,),
-                )
-                existing = cur.fetchone()  # type: ignore[attr-defined]
-                if existing:
-                    cur.execute(  # type: ignore[attr-defined]
-                        "SELECT * FROM local_csv_productive_results WHERE id = ?",
-                        (str(existing.id),),
-                    )
-                    db_row = cur.fetchone()  # type: ignore[attr-defined]
-                    applied.append(_productive_from_db(db_row))
+                existing = existing_by_row_id.get(row.id)
+                if existing is not None:
+                    applied.append(existing)
                     continue
                 requires_review = bool(row.requires_review) or not (row.position_code or "").strip()
                 source_asset_id = evidence.get(row.id)
-                result_id = str(uuid.uuid4())
                 result = LocalCsvProductiveResult(
-                    id=result_id,
+                    id=str(uuid.uuid4()),
                     inventory_id=record.inventory_id,
                     aisle_id=row.aisle_id,
                     import_id=record.id,
@@ -155,43 +181,37 @@ class SqlLocalCsvInventoryResultWriter:
                     position_label_id=(row.position_label_id or "").strip() or None,
                     position_payload_raw=(row.position_payload_raw or "").strip() or None,
                 )
-                cur.execute(  # type: ignore[attr-defined]
-                    "INSERT INTO local_csv_productive_results "
-                    "(id, inventory_id, aisle_id, import_id, import_row_id, capture_session_id, "
-                    "capture_photo_id, client_file_id, capture_order, position_code, internal_code, "
-                    "quantity, quantity_status, detection_status, detection_source, ingestion_source, "
-                    "requires_review, has_image_evidence, source_asset_id, confirmed_by_user_id, "
-                    "created_at, updated_at, label_id, position_label_id, position_payload_raw) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        result.id,
-                        result.inventory_id,
-                        result.aisle_id,
-                        result.import_id,
-                        result.import_row_id,
-                        result.capture_session_id,
-                        result.capture_photo_id,
-                        result.client_file_id,
-                        result.capture_order,
-                        result.position_code,
-                        result.internal_code,
-                        result.quantity,
-                        result.quantity_status,
-                        result.detection_status,
-                        result.detection_source,
-                        result.ingestion_source,
-                        1 if result.requires_review else 0,
-                        1 if result.has_image_evidence else 0,
-                        result.source_asset_id,
-                        result.confirmed_by_user_id,
-                        result.created_at,
-                        result.updated_at,
-                        result.label_id,
-                        result.position_label_id,
-                        result.position_payload_raw,
-                    ),
-                )
+                insert_params.append(_productive_insert_params(result))
+                new_results.append(result)
                 applied.append(result)
+
+            executemany_calls = 0
+            for chunk in chunked(insert_params, EXECUTEMANY_PRODUCTIVE_PARAM_SET_CHUNK):
+                cursor_executemany(
+                    cur,
+                    _PRODUCTIVE_INSERT_SQL,
+                    chunk,
+                    operation="local_csv_productive_results.insert",
+                    # Enabled after SQL benches (100/1000 rows) + NULL/datetime rollback tests.
+                    # Scoped to this INSERT only; restored on the shared TX cursor after each call.
+                    use_fast_executemany=True,
+                )
+                executemany_calls += 1
+
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            logger.info(
+                "apply_import inventory_id=%s import_id=%s row_count=%s "
+                "existing=%s inserted=%s parameter_sets=%s executemany_calls=%s "
+                "duration_ms=%.2f",
+                record.inventory_id,
+                record.id,
+                len(rows_to_import),
+                len(rows_to_import) - len(new_results),
+                len(new_results),
+                len(insert_params),
+                executemany_calls,
+                duration_ms,
+            )
 
         if cursor is not None:
             _run(cursor)
@@ -208,6 +228,64 @@ class SqlLocalCsvInventoryResultWriter:
                 (inventory_id,),
             )
             return tuple(_productive_from_db(row) for row in cur.fetchall())
+
+    def list_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]:
+        with self._client.cursor() as cur:  # type: ignore[attr-defined]
+            cur.execute(
+                "SELECT * FROM local_csv_productive_results WHERE import_id = ? "
+                "ORDER BY created_at, id",
+                (import_id,),
+            )
+            return tuple(_productive_from_db(row) for row in cur.fetchall())
+
+    @staticmethod
+    def _fetch_existing_by_import_row_ids(
+        cur: SqlCursorLike, import_row_ids: list[str]
+    ) -> dict[str, LocalCsvProductiveResult]:
+        existing: dict[str, LocalCsvProductiveResult] = {}
+        if not import_row_ids:
+            return existing
+        for chunk in chunked(import_row_ids, SQL_IN_CHUNK_SIZE):
+            placeholders = ", ".join("?" for _ in chunk)
+            cur.execute(
+                "SELECT * FROM local_csv_productive_results "
+                f"WHERE import_row_id IN ({placeholders})",
+                tuple(chunk),
+            )
+            for db_row in cur.fetchall():
+                result = _productive_from_db(db_row)
+                existing[result.import_row_id] = result
+        return existing
+
+
+def _productive_insert_params(result: LocalCsvProductiveResult) -> tuple[object, ...]:
+    return (
+        result.id,
+        result.inventory_id,
+        result.aisle_id,
+        result.import_id,
+        result.import_row_id,
+        result.capture_session_id,
+        result.capture_photo_id,
+        result.client_file_id,
+        result.capture_order,
+        result.position_code,
+        result.internal_code,
+        result.quantity,
+        result.quantity_status,
+        result.detection_status,
+        result.detection_source,
+        result.ingestion_source,
+        1 if result.requires_review else 0,
+        1 if result.has_image_evidence else 0,
+        result.source_asset_id,
+        result.confirmed_by_user_id,
+        result.created_at,
+        result.updated_at,
+        result.label_id,
+        result.position_label_id,
+        result.position_payload_raw,
+    )
 
 
 def _productive_from_db(row: object) -> LocalCsvProductiveResult:

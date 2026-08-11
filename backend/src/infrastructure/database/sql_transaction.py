@@ -92,7 +92,12 @@ class SqlServerTransaction:
         self._state = TransactionState.CLOSED
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        self.close()
+        # Caller owns commit; any ACTIVE exit (exception or forgotten commit) rolls back.
+        try:
+            if self._state == TransactionState.ACTIVE:
+                self.rollback()
+        finally:
+            self.close()
 
 
 @contextmanager

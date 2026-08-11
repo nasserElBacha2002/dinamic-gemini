@@ -8,6 +8,7 @@ from src.application.ports.clock import Clock
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.local_csv_inventory_result_writer import LocalCsvInventoryResultWriter
 from src.application.ports.repositories import AisleRepository, InventoryRepository
+from src.application.ports.sql_cursor import SqlCursorLike
 from src.application.services.local_csv_parser import ParsedLocalCsvRow, parse_local_csv
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.domain.local_csv_import.entities import (
@@ -221,13 +222,10 @@ class ConfirmLocalCsvImport:
             apply_productive=self._apply_productive,
             clock_now=self._clock.now,
         )
-        results = tuple(
-            r for r in self._result_writer.list_for_inventory(inventory_id) if r.import_id == confirmed.id
-        )
+        results = self._result_writer.list_for_import(confirmed.id)
         if self._position_materializer is not None and results:
-            # Fresh confirm already materializes in _apply_productive; duplicate path needs this.
-            if duplicate:
-                self._position_materializer.materialize(results, now=self._clock.now())
+            self._position_materializer.materialize(results, now=self._clock.now())
+        if results:
             self._mark_aisles_processed(inventory_id, results)
         return confirmed, duplicate
 
@@ -253,15 +251,15 @@ class ConfirmLocalCsvImport:
         record: LocalCsvImport,
         rows_to_import: tuple[LocalCsvImportRow, ...],
         confirmed_by_user_id: str | None,
+        *,
+        cursor: SqlCursorLike | None = None,
     ):
-        results = self._result_writer.apply_import(
+        return self._result_writer.apply_import(
             record=record,
             rows_to_import=rows_to_import,
             confirmed_by_user_id=confirmed_by_user_id,
+            cursor=cursor,
         )
-        if self._position_materializer is not None and results:
-            self._position_materializer.materialize(results, now=self._clock.now())
-        return results
 
 
 class GetLocalCsvImport:
