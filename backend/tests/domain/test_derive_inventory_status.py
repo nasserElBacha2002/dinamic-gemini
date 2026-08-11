@@ -36,6 +36,23 @@ def test_processed_implies_in_review_for_inventory() -> None:
     )
 
 
+def test_in_review_aisle_implies_inventory_in_review() -> None:
+    assert (
+        derive_inventory_status_from_aisles((_aisle(AisleStatus.IN_REVIEW),))
+        == InventoryStatus.IN_REVIEW
+    )
+
+
+def test_processing_beats_processed() -> None:
+    aisles = (_aisle(AisleStatus.PROCESSED, "P"), _aisle(AisleStatus.PROCESSING, "X"))
+    assert derive_inventory_status_from_aisles(aisles) == InventoryStatus.PROCESSING
+
+
+def test_failed_beats_processing() -> None:
+    aisles = (_aisle(AisleStatus.PROCESSING, "P"), _aisle(AisleStatus.FAILED, "F"))
+    assert derive_inventory_status_from_aisles(aisles) == InventoryStatus.FAILED
+
+
 def test_all_completed() -> None:
     aisles = (_aisle(AisleStatus.COMPLETED, "1"), _aisle(AisleStatus.COMPLETED, "2"))
     assert derive_inventory_status_from_aisles(aisles) == InventoryStatus.COMPLETED

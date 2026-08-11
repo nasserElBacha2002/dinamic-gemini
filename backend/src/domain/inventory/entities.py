@@ -4,8 +4,12 @@ Inventory domain entity — v3.0 (Documento técnico §7.1).
 Represents an inventory session.
 
 Persisted states: draft → processing → in_review → completed | failed.
-`draft`: no aisles. Once aisles exist, status is reconciled from aisle aggregates
-(see `derive_inventory_status_from_aisles` + `InventoryStatusReconciler`).
+
+``inventories.status`` is a **fully derived projection** of active aisle statuses
+(SOURCE OF TRUTH = aisle rows; DERIVED STATE = inventory.status). See
+``derive_inventory_status_from_aisles`` / ``InventoryStatusReconciler`` for
+detect + idempotent repair. There is no independent CANCELLED/ARCHIVED inventory
+status today — do not invent terminal guards that do not exist in the domain.
 """
 
 from __future__ import annotations
