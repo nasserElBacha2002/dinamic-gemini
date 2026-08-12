@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import InventoryRepository
+from src.application.services.inventory_soft_delete import reject_if_inventory_deleted
 from src.application.services.legacy_processing_guard import (
     reject_legacy_mode_for_new_configuration,
 )
@@ -44,6 +45,7 @@ class UpdateInventoryUseCase:
         inventory = self._inventory_repo.get_by_id(command.inventory_id)
         if inventory is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
+        reject_if_inventory_deleted(inventory)
 
         changed = False
         if command.name is not None:

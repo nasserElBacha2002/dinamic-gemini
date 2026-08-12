@@ -16,8 +16,10 @@ export {
   getInventories,
   getInventory,
   getInventoryMetrics,
+  softDeleteInventories,
   updateInventory,
 } from './inventoriesApi';
+export type { SoftDeleteInventoriesResponse } from './inventoriesApi';
 export type { AislesListQuery } from './aislesApi';
 export {
   activateAisle,

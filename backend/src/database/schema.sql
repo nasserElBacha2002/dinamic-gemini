@@ -151,6 +151,21 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventorie
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'identification_mode')
     ALTER TABLE inventories ADD identification_mode VARCHAR(32) NULL;
 GO
+
+-- Soft delete (mirror 0096).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'deleted_at')
+    ALTER TABLE inventories ADD deleted_at DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'deleted_by')
+    ALTER TABLE inventories ADD deleted_by VARCHAR(64) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE object_id = OBJECT_ID('inventories') AND name = 'IX_inventories_deleted_at'
+)
+    CREATE NONCLUSTERED INDEX IX_inventories_deleted_at
+        ON inventories (deleted_at)
+        WHERE deleted_at IS NULL;
+GO
 IF NOT EXISTS (
     SELECT * FROM sys.check_constraints WHERE name = 'CK_inventories_identification_mode'
 )

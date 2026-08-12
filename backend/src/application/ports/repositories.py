@@ -50,7 +50,7 @@ class InventoryRepository(ABC):
 
     @abstractmethod
     def list_all(self) -> Sequence[Inventory]:
-        """Return all inventories. Order is implementation-defined (SQL impl: created_at DESC)."""
+        """Return active inventories (exclude soft-deleted). Order is implementation-defined."""
         ...
 
     @abstractmethod

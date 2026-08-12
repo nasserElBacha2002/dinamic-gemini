@@ -18,6 +18,7 @@ from src.application.errors import (
 from src.application.ports.capture_repositories import CaptureSessionRepository
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
+from src.application.services.inventory_soft_delete import reject_if_inventory_deleted
 from src.domain.aisle.entities import Aisle
 from src.domain.capture.entities import CaptureSession, CaptureSessionStatus
 from src.domain.inventory.entities import Inventory
@@ -46,6 +47,11 @@ class InventoryAccessPolicy:
         if inventory is None:
             self._log_denied(principal, resource_type="inventory", resource_id=inventory_id)
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
+        try:
+            reject_if_inventory_deleted(inventory)
+        except InventoryNotFoundError:
+            self._log_denied(principal, resource_type="inventory", resource_id=inventory_id)
+            raise
         if principal.is_platform:
             return inventory
         principal_client = (principal.client_id or "").strip() or None

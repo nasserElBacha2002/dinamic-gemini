@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Link } from '@mui/material';
+import { Box, Button, Checkbox, DialogContentText, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import type { Inventory, InventoryListItem } from '../api/types';
 import { ApiError } from '../api/types';
@@ -8,6 +8,7 @@ import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
 import {
+  ConfirmDialog,
   ErrorAlert,
   FilterToolbar,
   RelatedEntityCell,
@@ -19,7 +20,13 @@ import {
 } from '../components/ui';
 import { PageHeader } from '../components/shell';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
-import { useDebouncedSearchInput, useInventoriesList, useCreateInventory, useTableState } from '../hooks';
+import {
+  useDebouncedSearchInput,
+  useInventoriesList,
+  useCreateInventory,
+  useSoftDeleteInventories,
+  useTableState,
+} from '../hooks';
 import { DEFAULT_LIST_PAGE_SIZE, TABLE_SERVER_SEARCH_DEBOUNCE_MS } from '../constants/dataTable';
 import { pathToClient, pathToInventory } from '../constants/appRoutes';
 import { INVENTORY_LIST_EMPTY_MESSAGE_KEY, INVENTORY_LIST_EMPTY_TITLE_KEY } from '../constants/uiCopy';
@@ -32,6 +39,9 @@ export default function InventoriesList() {
   const { showSnackbar } = useAppSnackbar();
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const {
     page,
     pageSize,
@@ -67,6 +77,37 @@ export default function InventoriesList() {
   const { data, isLoading, isError, error, refetch } = useInventoriesList(listQuery);
   const inventories: InventoryListItem[] = data?.items ?? [];
   const createMutation = useCreateInventory();
+  const softDeleteMutation = useSoftDeleteInventories();
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page, pageSize, sortBy, sortDir, searchApplied]);
+
+  const pageIds = useMemo(() => inventories.map((inv) => inv.id), [inventories]);
+  const selectedCount = selectedIds.size;
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const somePageSelected = pageIds.some((id) => selectedIds.has(id));
+
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  };
 
   const errorMessage =
     isError && error
@@ -82,24 +123,59 @@ export default function InventoriesList() {
     if (created.id) navigate(pathToInventory(created.id));
   };
 
+  const handleConfirmDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setDeleteError(null);
+    try {
+      await softDeleteMutation.mutateAsync(ids);
+      setConfirmOpen(false);
+      setSelectedIds(new Set());
+      showSnackbar(t('inventory.deleted_snackbar', { count: ids.length }), 'success');
+    } catch (err) {
+      setDeleteError(resolveApiErrorMessage(err, 'inventory.delete_error'));
+    }
+  };
+
   const columns = useMemo<DataTableColumn<InventoryListItem>[]>(
     () => [
+      {
+        id: 'select',
+        label: (
+          <Checkbox
+            size="small"
+            checked={allPageSelected}
+            indeterminate={somePageSelected && !allPageSelected}
+            onChange={toggleAllPage}
+            disabled={pageIds.length === 0 || isLoading}
+            inputProps={{ 'aria-label': t('inventory.select_all_page') }}
+            data-testid="inventories-select-all"
+          />
+        ),
+        sortable: false,
+        width: 48,
+        cell: (inv) => (
+          <span data-datatable-skip-row-click="" onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              size="small"
+              checked={selectedIds.has(inv.id)}
+              onChange={() => toggleOne(inv.id)}
+              inputProps={{ 'aria-label': t('inventory.select_row', { name: inv.name }) }}
+              data-testid={`inventories-select-${inv.id}`}
+            />
+          </span>
+        ),
+      },
       {
         id: 'name',
         label: t('inventory.column_inventory'),
         sortable: true,
         serverSortKey: 'name',
         cell: (inv) => (
-          <Link
-            component="button"
-            type="button"
-            underline="hover"
-            color="text.primary"
-            sx={{ fontWeight: 600, textAlign: 'left' }}
-            onClick={() => navigate(pathToInventory(inv.id))}
-          >
-            {inv.name}
-          </Link>
+          <LinkLikeName
+            name={inv.name}
+            onNavigate={() => navigate(pathToInventory(inv.id))}
+          />
         ),
       },
       {
@@ -173,7 +249,15 @@ export default function InventoriesList() {
         cell: (inv) => formatDate(inv.last_activity_at ?? undefined),
       },
     ],
-    [navigate, t]
+    [
+      allPageSelected,
+      isLoading,
+      navigate,
+      pageIds.length,
+      selectedIds,
+      somePageSelected,
+      t,
+    ]
   );
 
   const listErrorProps =
@@ -186,15 +270,34 @@ export default function InventoriesList() {
       <PageHeader
         a11yTitle={t('inventory.page_a11y')}
         primaryActions={
-          <Button
-            variant="contained"
-            onClick={() => {
-              setCreateError(null);
-              setCreateOpen(true);
-            }}
-          >
-            {t('inventory.create')}
-          </Button>
+          <Stack direction="row" spacing={1} alignItems="center">
+            {selectedCount > 0 ? (
+              <Typography variant="body2" color="text.secondary" data-testid="inventories-selected-count">
+                {t('inventory.selected_count', { count: selectedCount })}
+              </Typography>
+            ) : null}
+            <Button
+              variant="outlined"
+              color="error"
+              disabled={selectedCount === 0 || softDeleteMutation.isPending}
+              onClick={() => {
+                setDeleteError(null);
+                setConfirmOpen(true);
+              }}
+              data-testid="inventories-delete-selected"
+            >
+              {t('inventory.delete_selected')}
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => {
+                setCreateError(null);
+                setCreateOpen(true);
+              }}
+            >
+              {t('inventory.create')}
+            </Button>
+          </Stack>
         }
       />
 
@@ -246,6 +349,20 @@ export default function InventoriesList() {
             ),
             ariaLabel: (inv) => inv.name,
             fields: [
+              {
+                id: 'select',
+                label: t('inventory.select_column'),
+                value: (inv) => (
+                  <Checkbox
+                    size="small"
+                    checked={selectedIds.has(inv.id)}
+                    onChange={() => toggleOne(inv.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    inputProps={{ 'aria-label': t('inventory.select_row', { name: inv.name }) }}
+                    data-testid={`inventories-select-mobile-${inv.id}`}
+                  />
+                ),
+              },
               {
                 id: 'client',
                 label: t('inventory.column_client'),
@@ -338,6 +455,45 @@ export default function InventoriesList() {
         onError={setCreateError}
         createInventoryFn={createMutation.mutateAsync}
       />
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onClose={() => {
+          if (softDeleteMutation.isPending) return;
+          setConfirmOpen(false);
+          setDeleteError(null);
+        }}
+        title={t('inventory.delete_confirm_title', { count: selectedCount })}
+        description={
+          <Box>
+            <DialogContentText>
+              {t('inventory.delete_confirm_body', { count: selectedCount })}
+            </DialogContentText>
+          </Box>
+        }
+        confirmLabel={t('inventory.delete_confirm_action')}
+        confirmColor="error"
+        loading={softDeleteMutation.isPending}
+        confirmPendingLabel={t('common.working')}
+        errorMessage={deleteError}
+        onConfirm={() => void handleConfirmDelete()}
+      />
     </>
+  );
+}
+
+function LinkLikeName({ name, onNavigate }: { name: string; onNavigate: () => void }) {
+  return (
+    <Button
+      variant="text"
+      color="inherit"
+      onClick={(e) => {
+        e.stopPropagation();
+        onNavigate();
+      }}
+      sx={{ fontWeight: 600, textAlign: 'left', justifyContent: 'flex-start', p: 0, minWidth: 0 }}
+    >
+      {name}
+    </Button>
   );
 }

@@ -50,6 +50,14 @@ class Inventory:
     client_id: str | None = None
     #: Optional aisle identification override; null inherits client/system. Not production/test.
     identification_mode: AisleIdentificationMode | None = None
+    #: Soft delete timestamp; NULL means active. Not an InventoryStatus.
+    deleted_at: datetime | None = None
+    #: Actor id that performed soft delete (AuthUser.id); optional.
+    deleted_by: str | None = None
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
 
     def mark_processing(self, now: datetime) -> None:
         self.status = InventoryStatus.PROCESSING
@@ -65,3 +73,12 @@ class Inventory:
         self.status = InventoryStatus.FAILED
         self.completed_at = None
         self.updated_at = now
+
+    def mark_deleted(self, now: datetime, *, deleted_by: str | None = None) -> bool:
+        """Soft-delete this inventory. Returns False if already deleted (idempotent)."""
+        if self.deleted_at is not None:
+            return False
+        self.deleted_at = now
+        self.deleted_by = deleted_by
+        self.updated_at = now
+        return True

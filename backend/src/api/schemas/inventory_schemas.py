@@ -62,6 +62,24 @@ class UpdateInventoryRequest(BaseModel):
         return self
 
 
+class SoftDeleteInventoriesRequest(BaseModel):
+    """POST /api/v3/inventories/bulk-soft-delete body."""
+
+    inventory_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Inventory ids to soft-delete. Duplicates are ignored.",
+    )
+
+
+class SoftDeleteInventoriesResponse(BaseModel):
+    """Deterministic bulk soft-delete result (idempotent)."""
+
+    deleted_ids: list[str]
+    already_deleted_ids: list[str]
+    not_found_ids: list[str]
+
+
 class PrimaryExecutionConfigResponse(BaseModel):
     """Operational primary config snapshot (production inventories)."""
 

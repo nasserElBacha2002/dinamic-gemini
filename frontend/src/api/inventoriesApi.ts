@@ -85,3 +85,21 @@ export async function updateInventory(
     body,
   });
 }
+
+export interface SoftDeleteInventoriesResponse {
+  deleted_ids: string[];
+  already_deleted_ids: string[];
+  not_found_ids: string[];
+}
+
+export async function softDeleteInventories(
+  inventoryIds: string[]
+): Promise<SoftDeleteInventoriesResponse> {
+  return apiRequestJson<SoftDeleteInventoriesResponse>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/bulk-soft-delete`,
+    {
+      method: 'POST',
+      body: { inventory_ids: inventoryIds },
+    }
+  );
+}

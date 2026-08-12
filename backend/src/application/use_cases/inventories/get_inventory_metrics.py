@@ -11,6 +11,7 @@ from src.application.errors import InventoryNotFoundError
 from src.application.ports.contracts import InventoryMetricsResult
 from src.application.ports.repositories import InventoryRepository
 from src.application.ports.services import MetricsCalculator
+from src.application.services.inventory_soft_delete import reject_if_inventory_deleted
 
 
 class GetInventoryMetricsUseCase:
@@ -26,4 +27,5 @@ class GetInventoryMetricsUseCase:
         inv = self._inventory_repo.get_by_id(inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
+        reject_if_inventory_deleted(inv)
         return self._metrics_calculator.calculate_inventory_metrics(inventory_id)
