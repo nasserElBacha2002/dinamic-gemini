@@ -209,6 +209,19 @@ class PositionRepository(ABC):
     @abstractmethod
     def get_by_id(self, position_id: str) -> Position | None: ...
 
+    def get_by_ids(self, position_ids: Sequence[str]) -> Sequence[Position]:
+        """Batch load positions by id (missing ids omitted). Default loops ``get_by_id``."""
+        out: list[Position] = []
+        for pid in position_ids:
+            position = self.get_by_id(str(pid))
+            if position is not None:
+                out.append(position)
+        return out
+
+    def get_by_ids_for_update(self, position_ids: Sequence[str]) -> Sequence[Position]:
+        """Batch load with row locks when the backend supports it (SQL UPDLOCK)."""
+        return self.get_by_ids(position_ids)
+
     @abstractmethod
     def list_by_aisle(
         self,
@@ -240,8 +253,16 @@ class PositionRepository(ABC):
 
     @abstractmethod
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
-        """List positions for multiple aisles (e.g. for metrics)."""
+        """List operational positions for multiple aisles (excludes deleted + merged sources)."""
         ...
+
+    def list_active_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
+        """Alias for operational multi-aisle reads (same as ``list_by_aisles``)."""
+        return self.list_by_aisles(aisle_ids)
+
+    def list_all_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
+        """List all positions including deleted and merged sources (history/audit)."""
+        return self.list_by_aisles(aisle_ids)
 
 
 class ProductRecordRepository(ABC):

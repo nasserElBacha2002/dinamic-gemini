@@ -69,6 +69,8 @@ export {
   useCancelAisleJob,
   useRetryAisleJob,
   useRunAisleMerge,
+  usePreviewPositionMerge,
+  useConfirmPositionMerge,
   useUploadAisleAssets,
   useUploadAisleAssetsFlex,
   useDeleteAisleSourceAsset,

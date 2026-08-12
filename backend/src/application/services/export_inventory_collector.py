@@ -117,7 +117,12 @@ class ExportInventoryCollector:
             key=lambda a: (natural_sort_key_parts(a.code), a.created_at, a.id),
         )
         aisle_ids = [a.id for a in sorted_aisles]
-        all_positions = list(self._position_repo.list_by_aisles(aisle_ids)) if aisle_ids else []
+        if include_deleted_rows:
+            all_positions = (
+                list(self._position_repo.list_all_by_aisles(aisle_ids)) if aisle_ids else []
+            )
+        else:
+            all_positions = list(self._position_repo.list_by_aisles(aisle_ids)) if aisle_ids else []
         by_aisle: defaultdict[str, list[Position]] = defaultdict(list)
         for p in all_positions:
             by_aisle[p.aisle_id].append(p)
@@ -171,7 +176,10 @@ class ExportInventoryCollector:
             raise AisleNotFoundError(
                 f"Aisle {aisle_id} not found or does not belong to inventory {inventory_id}"
             )
-        positions = list(self._position_repo.list_by_aisles([aisle_id]))
+        if include_deleted_rows:
+            positions = list(self._position_repo.list_all_by_aisles([aisle_id]))
+        else:
+            positions = list(self._position_repo.list_by_aisles([aisle_id]))
         bundle = self._collect_aisle(
             inv,
             aisle,
@@ -213,9 +221,16 @@ class ExportInventoryCollector:
         ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=explicit_job_id)
         slice_job = ctx.job_id_for_slice
         if include_deleted_rows:
-            candidates = list(aisle_positions)
+            # Caller should pass rows from list_all_by_aisles; still never double-count merge sources.
+            candidates = [p for p in aisle_positions if not p.is_merged_source]
         else:
-            candidates = [p for p in aisle_positions if p.status != PositionStatus.DELETED]
+            # list_by_aisles already excludes deleted + merged; keep deleted filter for safety.
+            candidates = [
+                p
+                for p in aisle_positions
+                if p.status != PositionStatus.DELETED and not p.is_merged_source
+            ]
+
         if slice_job is None:
             raw = [p for p in candidates if p.job_id is None]
         else:

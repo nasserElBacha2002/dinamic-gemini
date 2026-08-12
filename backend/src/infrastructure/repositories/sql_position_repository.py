@@ -127,6 +127,11 @@ def _row_to_position(row: Any) -> Position:
         corrected_position_code=getattr(row, "corrected_position_code", None),
         job_id=getattr(row, "job_id", None),
         creation_source=_creation_source_from_row(row, pid),
+        merged_into_position_id=normalize_db_str(
+            getattr(row, "merged_into_position_id", None)
+        )
+        or None,
+        merged_at=_ensure_utc(getattr(row, "merged_at", None)),
     )
 
 
@@ -156,7 +161,8 @@ class SqlPositionRepository(PositionRepository):
                 UPDATE positions
                 SET aisle_id = ?, status = ?, review_resolution = ?, confidence = ?, needs_review = ?,
                     primary_evidence_id = ?, updated_at = ?, detected_summary_json = ?, corrected_summary_json = ?,
-                    corrected_position_code = ?, job_id = ?, creation_source = ?
+                    corrected_position_code = ?, job_id = ?, creation_source = ?,
+                    merged_into_position_id = ?, merged_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -174,6 +180,8 @@ class SqlPositionRepository(PositionRepository):
                     position.corrected_position_code,
                     position.job_id,
                     position.creation_source.value,
+                    position.merged_into_position_id,
+                    _ensure_utc(position.merged_at),
                     position.id,
                 ),
             )
@@ -183,9 +191,10 @@ class SqlPositionRepository(PositionRepository):
                     INSERT INTO positions (
                         id, aisle_id, status, review_resolution, confidence, needs_review,
                         primary_evidence_id, created_at, updated_at, detected_summary_json,
-                        corrected_summary_json, corrected_position_code, job_id, creation_source
+                        corrected_summary_json, corrected_position_code, job_id, creation_source,
+                        merged_into_position_id, merged_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         position.id,
@@ -204,6 +213,8 @@ class SqlPositionRepository(PositionRepository):
                         position.corrected_position_code,
                         position.job_id,
                         position.creation_source.value,
+                        position.merged_into_position_id,
+                        _ensure_utc(position.merged_at),
                     ),
                 )
 
@@ -213,7 +224,7 @@ class SqlPositionRepository(PositionRepository):
                 """
                 SELECT id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id,
                        created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code,
-                       job_id, creation_source
+                       job_id, creation_source, merged_into_position_id, merged_at
                 FROM positions WHERE id = ?
                 """,
                 (position_id,),
@@ -222,6 +233,45 @@ class SqlPositionRepository(PositionRepository):
         if not row:
             return None
         return _row_to_position(row)
+
+    def get_by_ids(self, position_ids: Sequence[str]) -> Sequence[Position]:
+        ids = [str(pid).strip() for pid in position_ids if str(pid).strip()]
+        if not ids:
+            return []
+        placeholders = ",".join("?" * len(ids))
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                f"""
+                SELECT id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id,
+                       created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code,
+                       job_id, creation_source, merged_into_position_id, merged_at
+                FROM positions
+                WHERE id IN ({placeholders})
+                """,  # nosec B608
+                list(ids),
+            )
+            rows = cur.fetchall()
+        return [_row_to_position(row) for row in rows]
+
+    def get_by_ids_for_update(self, position_ids: Sequence[str]) -> Sequence[Position]:
+        ids = sorted({str(pid).strip() for pid in position_ids if str(pid).strip()})
+        if not ids:
+            return []
+        placeholders = ",".join("?" * len(ids))
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                f"""
+                SELECT id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id,
+                       created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code,
+                       job_id, creation_source, merged_into_position_id, merged_at
+                FROM positions WITH (UPDLOCK, ROWLOCK)
+                WHERE id IN ({placeholders})
+                ORDER BY id ASC
+                """,  # nosec B608
+                list(ids),
+            )
+            rows = cur.fetchall()
+        return [_row_to_position(row) for row in rows]
 
     def list_by_aisle(
         self,
@@ -256,6 +306,8 @@ class SqlPositionRepository(PositionRepository):
             # Soft-deleted positions stay in storage but are hidden from aisle results.
             conditions.append("p.status <> ?")
             params.append(PositionStatus.DELETED.value)
+        # Operator-merged sources stay in storage but are hidden from aisle results lists.
+        conditions.append("p.merged_into_position_id IS NULL")
         if needs_review is not None:
             conditions.append("p.needs_review = ?")
             params.append(needs_review)
@@ -279,7 +331,8 @@ class SqlPositionRepository(PositionRepository):
             sql = f"""
                 SELECT DISTINCT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
                        p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json,
-                       p.corrected_position_code, p.job_id, p.creation_source
+                       p.corrected_position_code, p.job_id, p.creation_source,
+                       p.merged_into_position_id, p.merged_at
                 FROM positions p
                 INNER JOIN product_records pr ON pr.position_id = p.id
                 WHERE {where}
@@ -290,7 +343,8 @@ class SqlPositionRepository(PositionRepository):
             sql = f"""
                 SELECT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
                        p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json,
-                       p.corrected_position_code, p.job_id, p.creation_source
+                       p.corrected_position_code, p.job_id, p.creation_source,
+                       p.merged_into_position_id, p.merged_at
                 FROM positions p
                 WHERE {where}
                 {order_clause}
@@ -322,16 +376,39 @@ class SqlPositionRepository(PositionRepository):
         )
 
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
+        """Operational multi-aisle list: excludes deleted and merged sources."""
         if not aisle_ids:
             return []
         placeholders = ",".join("?" * len(aisle_ids))
-        # IN clause: placeholders only; aisle_ids bound as parameters.
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"""
                 SELECT id, aisle_id, status, confidence, needs_review, primary_evidence_id,
                        review_resolution, created_at, updated_at, detected_summary_json, corrected_summary_json,
-                       corrected_position_code, job_id, creation_source
+                       corrected_position_code, job_id, creation_source,
+                       merged_into_position_id, merged_at
+                FROM positions
+                WHERE aisle_id IN ({placeholders})
+                  AND status <> ?
+                  AND merged_into_position_id IS NULL
+                ORDER BY created_at ASC, id ASC
+                """,  # nosec B608
+                [*list(aisle_ids), PositionStatus.DELETED.value],
+            )
+            rows = cur.fetchall()
+        return [_row_to_position(row) for row in rows]
+
+    def list_all_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
+        if not aisle_ids:
+            return []
+        placeholders = ",".join("?" * len(aisle_ids))
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                f"""
+                SELECT id, aisle_id, status, confidence, needs_review, primary_evidence_id,
+                       review_resolution, created_at, updated_at, detected_summary_json, corrected_summary_json,
+                       corrected_position_code, job_id, creation_source,
+                       merged_into_position_id, merged_at
                 FROM positions
                 WHERE aisle_id IN ({placeholders})
                 ORDER BY created_at ASC, id ASC
@@ -350,7 +427,10 @@ class SqlPositionRepository(PositionRepository):
                     WHEN EXISTS (
                         SELECT 1
                         FROM positions
-                        WHERE aisle_id = ? AND needs_review = 1
+                        WHERE aisle_id = ?
+                          AND needs_review = 1
+                          AND merged_into_position_id IS NULL
+                          AND status <> 'deleted'
                     )
                     THEN 1
                     ELSE 0

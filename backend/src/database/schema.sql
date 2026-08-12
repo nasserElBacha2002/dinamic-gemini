@@ -1028,6 +1028,59 @@ IF NOT EXISTS (
         WHERE job_id IS NOT NULL;
 GO
 
+-- Operator position merge (mirror 0097).
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.positions') AND name = N'merged_into_position_id'
+)
+BEGIN
+    ALTER TABLE dbo.positions ADD merged_into_position_id VARCHAR(36) NULL;
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.foreign_keys
+    WHERE name = N'FK_positions_merged_into' AND parent_object_id = OBJECT_ID(N'dbo.positions')
+)
+BEGIN
+    ALTER TABLE dbo.positions
+        ADD CONSTRAINT FK_positions_merged_into
+        FOREIGN KEY (merged_into_position_id) REFERENCES dbo.positions(id);
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.positions') AND name = N'merged_at'
+)
+BEGIN
+    ALTER TABLE dbo.positions ADD merged_at DATETIME2 NULL;
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.check_constraints
+    WHERE name = N'CK_positions_merged_into_not_self'
+      AND parent_object_id = OBJECT_ID(N'dbo.positions')
+)
+BEGIN
+    ALTER TABLE dbo.positions
+        ADD CONSTRAINT CK_positions_merged_into_not_self
+        CHECK (
+            merged_into_position_id IS NULL
+            OR merged_into_position_id <> id
+        );
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.positions')
+      AND name = N'IX_positions_merged_into'
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_positions_merged_into
+        ON dbo.positions (aisle_id, merged_into_position_id)
+        WHERE merged_into_position_id IS NOT NULL;
+END
+GO
+
 IF OBJECT_ID('position_manual_image_coverage', 'U') IS NULL
 BEGIN
     CREATE TABLE position_manual_image_coverage (

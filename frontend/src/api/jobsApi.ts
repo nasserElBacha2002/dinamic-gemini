@@ -371,6 +371,41 @@ export async function submitReviewAction(
   );
 }
 
+/** POST .../positions/merge/preview — operator position merge preview (no mutation). */
+export async function previewPositionMerge(
+  inventoryId: string,
+  aisleId: string,
+  resultIds: string[]
+): Promise<import('./types').PositionMergePreviewResponse> {
+  const inv = encodeURIComponent(inventoryId);
+  const aisle = encodeURIComponent(aisleId);
+  return apiRequestJson(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/positions/merge/preview`,
+    {
+      method: 'POST',
+      body: { result_ids: resultIds },
+    }
+  );
+}
+
+/** POST .../positions/merge — confirm operator position merge (re-validates server-side). */
+export async function confirmPositionMerge(
+  inventoryId: string,
+  aisleId: string,
+  resultIds: string[],
+  previewToken: string
+): Promise<import('./types').PositionMergeConfirmResponse> {
+  const inv = encodeURIComponent(inventoryId);
+  const aisle = encodeURIComponent(aisleId);
+  return apiRequestJson(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/positions/merge`,
+    {
+      method: 'POST',
+      body: { result_ids: resultIds, preview_token: previewToken },
+    }
+  );
+}
+
 export interface JobImageResultsQuery {
   result_status?: 'all' | 'with_result' | 'without_result';
   page?: number;

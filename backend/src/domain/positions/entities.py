@@ -40,6 +40,7 @@ class PositionReviewResolution(str, Enum):
     IMAGE_MISMATCH = "image_mismatch"
     MANUAL_CREATED = "manual_created"
     DELETED = "deleted"
+    MERGED = "merged"
 
 
 class PositionCreationSource(str, Enum):
@@ -73,3 +74,10 @@ class Position:
     #: FK to ``inventory_jobs`` when persisted from a pipeline run; ``None`` = legacy pre-multi-run row.
     job_id: str | None = None
     creation_source: PositionCreationSource = PositionCreationSource.AUTOMATIC
+    #: When set, this row was operator-merged into the survivor and is hidden from normal lists.
+    merged_into_position_id: str | None = None
+    merged_at: datetime | None = None
+
+    @property
+    def is_merged_source(self) -> bool:
+        return bool(self.merged_into_position_id and str(self.merged_into_position_id).strip())

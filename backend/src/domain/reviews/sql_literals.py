@@ -74,3 +74,4 @@ SQL_EQ_DELETE_POSITION = review_action_sql_eq(ReviewActionType.DELETE_POSITION)
 SQL_EQ_CREATE_MANUAL_RESULT_FROM_IMAGE = review_action_sql_eq(
     ReviewActionType.CREATE_MANUAL_RESULT_FROM_IMAGE
 )
+SQL_EQ_MERGE_POSITIONS = review_action_sql_eq(ReviewActionType.MERGE_POSITIONS)

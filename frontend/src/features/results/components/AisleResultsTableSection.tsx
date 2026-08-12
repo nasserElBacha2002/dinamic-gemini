@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Box, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Checkbox, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import type { ResultSummary } from '../types';
 import type { ResultsFilterKind } from '../selectors';
@@ -8,6 +8,7 @@ import {
   StatusBadge,
   TableSearchField,
   TableSection,
+  type DataTableColumn,
 } from '../../../components/ui';
 import ResultsQuickFilters from './ResultsQuickFilters';
 import ResultsFilteredEmptyState from './ResultsFilteredEmptyState';
@@ -80,6 +81,13 @@ export interface AisleResultsTableSectionProps {
   onPageSizeChange: (pageSize: number) => void;
   /** Column sort UI; parent applies ordering before pagination. */
   columnSort?: DataTableSortModel;
+  selectedIds?: Set<string>;
+  onToggleOne?: (id: string) => void;
+  onToggleAllPage?: (ids: string[], select: boolean) => void;
+  onClearSelection?: () => void;
+  onMergeSelected?: () => void;
+  mergeSelectedDisabled?: boolean;
+  mergeSelectedLoading?: boolean;
 }
 
 export default function AisleResultsTableSection({
@@ -105,18 +113,70 @@ export default function AisleResultsTableSection({
   onPageChange,
   onPageSizeChange,
   columnSort,
+  selectedIds,
+  onToggleOne,
+  onToggleAllPage,
+  onClearSelection,
+  onMergeSelected,
+  mergeSelectedDisabled,
+  mergeSelectedLoading,
 }: AisleResultsTableSectionProps) {
   const { t } = useTranslation();
+  const selectionEnabled = Boolean(selectedIds && onToggleOne && onToggleAllPage);
+  const pageIds = tableRows.map((r) => (r.sourcePositionId?.trim() || r.id));
+  const selectedCount = selectedIds?.size ?? 0;
+  const allPageSelected =
+    selectionEnabled && pageIds.length > 0 && pageIds.every((id) => selectedIds!.has(id));
+  const somePageSelected =
+    selectionEnabled && pageIds.some((id) => selectedIds!.has(id));
 
-  const columns = useMemo(
-    () =>
-      buildResultsTableColumns({
-        t,
-        dash: t('common.em_dash'),
-        onOpenReview,
-      }),
-    [t, onOpenReview]
-  );
+  const columns = useMemo(() => {
+    const base = buildResultsTableColumns({
+      t,
+      dash: t('common.em_dash'),
+      onOpenReview,
+    });
+    if (!selectionEnabled) return base;
+    const selectCol: DataTableColumn<ResultSummary> = {
+      id: 'select',
+      label: (
+        <Checkbox
+          size="small"
+          checked={allPageSelected}
+          indeterminate={!allPageSelected && somePageSelected}
+          onChange={() => onToggleAllPage!(pageIds, !allPageSelected)}
+          inputProps={{ 'aria-label': t('positions.merge_select_all_page') }}
+          data-testid="aisle-results-select-all"
+          data-datatable-skip-row-click
+        />
+      ),
+      width: 48,
+      cell: (r) => {
+        const mergeId = r.sourcePositionId?.trim() || r.id;
+        return (
+          <Checkbox
+            size="small"
+            checked={selectedIds!.has(mergeId)}
+            onChange={() => onToggleOne!(mergeId)}
+            inputProps={{ 'aria-label': t('positions.merge_select_row') }}
+            data-testid={`aisle-results-select-${mergeId}`}
+            data-datatable-skip-row-click
+          />
+        );
+      },
+    };
+    return [selectCol, ...base];
+  }, [
+    t,
+    onOpenReview,
+    selectionEnabled,
+    allPageSelected,
+    somePageSelected,
+    selectedIds,
+    onToggleOne,
+    onToggleAllPage,
+    tableRows,
+  ]);
 
   const activeFilterCount = (filter !== 'all' ? 1 : 0) + (tableSort !== 'photo' ? 1 : 0);
 
@@ -139,6 +199,42 @@ export default function AisleResultsTableSection({
       </Box>
 
       <AisleResultsMergeFeedback feedback={mergeFeedback} />
+
+      {selectionEnabled ? (
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          sx={{ mb: 1.5, flexWrap: 'wrap' }}
+        >
+          {selectedCount > 0 ? (
+            <Typography variant="body2" color="text.secondary" data-testid="aisle-results-selected-count">
+              {t('positions.merge_selected_count', { count: selectedCount })}
+            </Typography>
+          ) : null}
+          <Button
+            size="small"
+            variant="contained"
+            disabled={mergeSelectedDisabled ?? selectedCount < 2}
+            onClick={onMergeSelected}
+            data-testid="aisle-results-merge-selected"
+          >
+            {mergeSelectedLoading
+              ? t('common.loading')
+              : t('positions.merge_selected_action')}
+          </Button>
+          {selectedCount > 0 && onClearSelection ? (
+            <Button
+              size="small"
+              variant="text"
+              onClick={onClearSelection}
+              data-testid="aisle-results-clear-selection"
+            >
+              {t('positions.merge_clear_selection')}
+            </Button>
+          ) : null}
+        </Stack>
+      ) : null}
 
       <FilterToolbar
         primary={

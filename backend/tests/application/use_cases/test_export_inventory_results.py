@@ -367,6 +367,85 @@ def test_export_excludes_deleted_positions() -> None:
     assert rows[0]["position_id"] == "p-ok"
 
 
+def test_export_excludes_merged_sources_keeps_survivor_qty() -> None:
+    """After merge, sources must not appear as operational export rows; qty matches survivor."""
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle("a1", "inv-1", "B1", AisleStatus.COMPLETED, NOW, NOW)
+    positions = [
+        Position(
+            id="p-survivor",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "SKU-M", "final_quantity": 7},
+        ),
+        Position(
+            id="p-src-a",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            merged_into_position_id="p-survivor",
+            merged_at=NOW,
+            detected_summary_json={"internal_code": "SKU-M", "final_quantity": 4},
+        ),
+        Position(
+            id="p-src-b",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            merged_into_position_id="p-survivor",
+            merged_at=NOW,
+            detected_summary_json={"internal_code": "SKU-M", "final_quantity": 3},
+        ),
+    ]
+    products = [
+        ProductRecord(
+            id="pr-s",
+            position_id="p-survivor",
+            sku="SKU-M",
+            detected_quantity=7,
+            confidence=0.9,
+            created_at=NOW,
+            updated_at=NOW,
+        ),
+        ProductRecord(
+            id="pr-a",
+            position_id="p-src-a",
+            sku="SKU-M",
+            detected_quantity=4,
+            confidence=0.9,
+            created_at=NOW,
+            updated_at=NOW,
+        ),
+        ProductRecord(
+            id="pr-b",
+            position_id="p-src-b",
+            sku="SKU-M",
+            detected_quantity=3,
+            confidence=0.9,
+            created_at=NOW,
+            updated_at=NOW,
+        ),
+    ]
+    uc = _uc(inv=inv, aisles=[aisle], positions=positions, products=products)
+    _, rows = _parse_csv(uc.execute_csv("inv-1"))
+    assert len(rows) == 1
+    assert rows[0]["position_id"] == "p-survivor"
+    assert int(rows[0]["final_quantity"]) == 7
+
+
 def test_export_sku_consolidation_single_row() -> None:
     """Two raw positions same SKU consolidate like list endpoint."""
     inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)

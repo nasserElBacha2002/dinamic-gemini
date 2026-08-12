@@ -252,6 +252,18 @@ class PositionDeletedError(Exception):
     """Raised when a review action is attempted on a position that is already logically deleted."""
 
 
+class PositionMergeValidationError(Exception):
+    """Raised when operator position merge input fails validation (HTTP 422)."""
+
+
+class PositionMergeConflictError(Exception):
+    """Raised when operator position merge cannot proceed due to domain conflicts (HTTP 409)."""
+
+
+class PositionMergeStalePreviewError(Exception):
+    """Raised when confirm preview_token no longer matches loaded rows (HTTP 409)."""
+
+
 class ReviewMutationNotAllowedError(Exception):
     """Raised when a review mutation targets a position outside the operational result slice."""
 

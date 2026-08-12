@@ -308,6 +308,7 @@ class AppContainer:
         self._manual_image_coverage_repo = None
         self._job_image_coverage_repo = None
         self._manual_image_result_uow_factory = None
+        self._position_merge_uow_factory = None
         self._artifact_publication_outbox_store: ArtifactPublicationOutboxStore | None = None
         self._finalization_recovery_store = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
@@ -407,6 +408,7 @@ class AppContainer:
         self._manual_image_coverage_repo = None
         self._job_image_coverage_repo = None
         self._manual_image_result_uow_factory = None
+        self._position_merge_uow_factory = None
         self._counted_product_label_repo = None
         self._metrics_calculator = None
         self._raw_label_repo = None
@@ -1598,6 +1600,24 @@ class AppContainer:
                 lifecycle,
             )
         return self._manual_image_result_uow_factory
+
+    def get_position_merge_uow_factory(self):
+        """Transactional UoW for operator position merge (SQL); ``None`` in memory mode."""
+        if self._position_merge_uow_factory is not None:
+            return self._position_merge_uow_factory
+        from src.infrastructure.persistence.sql_position_merge_unit_of_work import (
+            build_sql_position_merge_uow_factory,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._position_merge_uow_factory = build_sql_position_merge_uow_factory(
+                self._get_v3_sql_client(),
+                self.get_clock(),
+            )
+        else:
+            self._position_merge_uow_factory = None
+        return self._position_merge_uow_factory
 
     def get_counted_product_label_repo(self):
         """Aisle-scoped D1 label_id claim store (SQL or memory singleton)."""
