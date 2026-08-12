@@ -11,6 +11,7 @@ from fastapi.responses import Response
 
 from src.api.constants.error_wire import HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED
 from src.api.dependencies import (
+    get_access_principal,
     get_aisle_identification_configuration_query,
     get_create_inventory_use_case,
     get_export_inventory_package_zip_use_case,
@@ -19,6 +20,7 @@ from src.api.dependencies import (
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
     get_list_inventory_list_items_use_case,
+    get_soft_delete_inventories_use_case,
     get_update_inventory_name_use_case,
 )
 from src.api.errors import reraise_if_mapped
@@ -26,6 +28,8 @@ from src.api.schemas.inventory_schemas import (
     CreateInventoryRequest,
     InventoryMetricsResponse,
     InventoryResponse,
+    SoftDeleteInventoriesRequest,
+    SoftDeleteInventoriesResponse,
     UpdateInventoryRequest,
 )
 from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
@@ -36,6 +40,7 @@ from src.api.schemas.processing_schemas import (
     ProcessingProviderOptionsResponse,
 )
 from src.api.services.identification_mode_response import api_fields_from_configuration
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import ClientNotFoundError, InventoryNotFoundError
 from src.application.services.aisle_identification_configuration_query import (
     AisleIdentificationConfigurationQuery,
@@ -63,6 +68,10 @@ from src.application.use_cases.inventories.get_inventory import GetInventoryUseC
 from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.inventories.list_inventory_list_items import (
     ListInventoryListItemsUseCase,
+)
+from src.application.use_cases.inventories.soft_delete_inventories import (
+    SoftDeleteInventoriesCommand,
+    SoftDeleteInventoriesUseCase,
 )
 from src.application.use_cases.inventories.update_inventory_name import (
     UpdateInventoryNameCommand,
@@ -111,6 +120,29 @@ def create_inventory(
     except ClientNotFoundError as e:
         reraise_if_mapped(e)
         raise
+
+
+@router.post("/bulk-soft-delete", response_model=SoftDeleteInventoriesResponse)
+def bulk_soft_delete_inventories(
+    payload: SoftDeleteInventoriesRequest,
+    use_case: SoftDeleteInventoriesUseCase = Depends(get_soft_delete_inventories_use_case),
+    principal: AccessPrincipal = Depends(get_access_principal),
+) -> SoftDeleteInventoriesResponse:
+    """Soft-delete one or more inventories (sets deleted_at). Idempotent; no hard delete."""
+    try:
+        result = use_case.execute(
+            SoftDeleteInventoriesCommand(
+                inventory_ids=tuple(payload.inventory_ids),
+                principal=principal,
+            )
+        )
+        return SoftDeleteInventoriesResponse(
+            deleted_ids=list(result.deleted_ids),
+            already_deleted_ids=list(result.already_deleted_ids),
+            not_found_ids=list(result.not_found_ids),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 @router.patch("/{inventory_id}", response_model=InventoryResponse)

@@ -17,6 +17,7 @@ import {
   createClientSupplier,
   createManualImageResult,
   deleteSupplierReferenceImage,
+  softDeleteInventories,
   startAisleProcessing,
   cancelAisleJob,
   retryAisleJob,
@@ -64,6 +65,17 @@ export function useCreateInventory() {
     mutationFn: (body: CreateInventoryRequest) => createInventory(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.list() });
+    },
+  });
+}
+
+export function useSoftDeleteInventories() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (inventoryIds: string[]) => softDeleteInventories(inventoryIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.list() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.all });
     },
   });
 }

@@ -8,6 +8,7 @@ Supplier/client-supplier reference images under ``client_suppliers/`` are always
 from __future__ import annotations
 
 import logging
+import errno
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -227,6 +228,34 @@ def list_gcs_objects(*, storage_client: Any, bucket_name: str, prefix: str) -> l
     return summaries
 
 
+def _is_remote_not_found_error(exc: BaseException) -> bool:
+    """True when delete raced with an already-removed object (idempotent success)."""
+    try:
+        from google.api_core.exceptions import NotFound as GcsNotFound
+
+        if isinstance(exc, GcsNotFound):
+            return True
+    except ImportError:
+        pass
+    code = getattr(exc, "code", None)
+    if code == 404:
+        return True
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None) or getattr(response, "status", None)
+    if status == 404:
+        return True
+    if isinstance(response, dict):
+        err_code = str((response.get("Error") or {}).get("Code") or "")
+        if err_code in ("404", "NoSuchKey", "NotFound"):
+            return True
+    msg = str(exc).lower()
+    return (
+        "no such object" in msg
+        or "the specified key does not exist" in msg
+        or "404" in msg
+    )
+
+
 def delete_gcs_objects(
     *,
     storage_client: Any,
@@ -246,6 +275,15 @@ def delete_gcs_objects(
             deleted += 1
             bytes_deleted += obj.size_bytes
         except Exception as exc:
+            if _is_remote_not_found_error(exc):
+                # List→delete race or prior cleanup: desired end state already reached.
+                deleted += 1
+                bytes_deleted += obj.size_bytes
+                logger.info(
+                    "gcs_cleanup_delete_noop_missing key=%s",
+                    obj.key,
+                )
+                continue
             errors.append(f"gcs delete failed key={obj.key!r}: {exc}")
             logger.warning("gcs_cleanup_delete_failed key=%s", obj.key)
     return deleted, bytes_deleted, errors
@@ -284,6 +322,11 @@ def delete_s3_objects(
             deleted += 1
             bytes_deleted += obj.size_bytes
         except Exception as exc:
+            if _is_remote_not_found_error(exc):
+                deleted += 1
+                bytes_deleted += obj.size_bytes
+                logger.info("s3_cleanup_delete_noop_missing key=%s", obj.key)
+                continue
             errors.append(f"s3 delete failed key={obj.key!r}: {exc}")
             logger.warning("s3_cleanup_delete_failed key=%s", obj.key)
     return deleted, bytes_deleted, errors
@@ -388,8 +431,15 @@ def scan_local_root(root: Path) -> list[Path]:
         if not _path_inside_root(base, root):
             continue
         for name in filenames:
-            candidate = (base / name).resolve()
-            if candidate.is_symlink():
+            raw = base / name
+            if raw.is_symlink():
+                continue
+            try:
+                candidate = raw.resolve(strict=True)
+            except (FileNotFoundError, OSError):
+                # Gone between walk and resolve (race) or dangling entry — skip.
+                continue
+            if candidate.is_symlink() or not candidate.is_file():
                 continue
             if _path_inside_root(candidate, root):
                 files.append(candidate)
@@ -438,7 +488,12 @@ def cleanup_local_roots(
                     continue
             try:
                 size = int(file_path.stat().st_size)
+            except FileNotFoundError:
+                # Already removed (list→stat race); desired end state reached.
+                continue
             except OSError as exc:
+                if getattr(exc, "errno", None) == errno.ENOENT:
+                    continue
                 errors.append(f"stat failed path={file_path}: {exc}")
                 continue
             files_found += 1
@@ -449,7 +504,14 @@ def cleanup_local_roots(
                 file_path.unlink(missing_ok=True)
                 files_deleted += 1
                 bytes_deleted += size
+            except FileNotFoundError:
+                files_deleted += 1
+                bytes_deleted += size
             except OSError as exc:
+                if getattr(exc, "errno", None) == errno.ENOENT:
+                    files_deleted += 1
+                    bytes_deleted += size
+                    continue
                 errors.append(f"delete failed path={file_path}: {exc}")
                 logger.warning("local_cleanup_delete_failed path=%s", file_path)
     if not dry_run:

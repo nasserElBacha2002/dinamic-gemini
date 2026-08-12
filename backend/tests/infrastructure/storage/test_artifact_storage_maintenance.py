@@ -98,6 +98,89 @@ def test_delete_gcs_objects_dry_run_does_not_delete() -> None:
     assert blobs["v3/uploads/a.jpg"].deleted is False
 
 
+def test_delete_gcs_objects_treats_404_as_idempotent_success() -> None:
+    class _MissingBlob:
+        def __init__(self, name: str, size: int) -> None:
+            self.name = name
+            self.size = size
+
+        def delete(self) -> None:
+            raise Exception(
+                "404 DELETE https://storage.googleapis.com/...: "
+                f"No such object: bucket-a/{self.name}"
+            )
+
+    blobs = {"v3/uploads/gone.jpg": _MissingBlob("v3/uploads/gone.jpg", 42)}
+    client = _FakeGcsClient(blobs)  # type: ignore[arg-type]
+    from src.infrastructure.storage.artifact_storage_maintenance import ObjectSummary
+
+    deleted, bytes_deleted, errors = delete_gcs_objects(
+        storage_client=client,
+        bucket_name="bucket-a",
+        objects=[ObjectSummary(key="v3/uploads/gone.jpg", size_bytes=42)],
+        dry_run=False,
+    )
+    assert errors == []
+    assert deleted == 1
+    assert bytes_deleted == 42
+
+
+def test_delete_gcs_objects_treats_google_not_found_as_success() -> None:
+    from google.api_core.exceptions import NotFound
+
+    class _NotFoundBlob:
+        def __init__(self, name: str, size: int) -> None:
+            self.name = name
+            self.size = size
+
+        def delete(self) -> None:
+            raise NotFound(f"No such object: bucket-a/{self.name}")
+
+    client = _FakeGcsClient({"v3/uploads/x.jpg": _NotFoundBlob("v3/uploads/x.jpg", 7)})  # type: ignore[arg-type]
+    from src.infrastructure.storage.artifact_storage_maintenance import ObjectSummary
+
+    deleted, bytes_deleted, errors = delete_gcs_objects(
+        storage_client=client,
+        bucket_name="bucket-a",
+        objects=[ObjectSummary(key="v3/uploads/x.jpg", size_bytes=7)],
+        dry_run=False,
+    )
+    assert errors == []
+    assert deleted == 1
+    assert bytes_deleted == 7
+
+
+def test_local_cleanup_missing_file_during_stat_is_not_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "output"
+    target = output / "v3_uploads" / "uploads" / "aisles" / "gone.jpg"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"abc")
+    resolved = target.resolve()
+
+    roots, v3_uploads = build_local_cleanup_roots(
+        output_dir=str(output),
+        staging_prefix="capture/staging",
+        include_pipeline_temp=False,
+    )
+
+    import src.infrastructure.storage.artifact_storage_maintenance as maint
+
+    monkeypatch.setattr(maint, "scan_local_root", lambda _root: [resolved])
+    resolved.unlink()
+
+    ff, _, fd, _, _, _, errors = cleanup_local_roots(
+        roots=roots,
+        v3_uploads_root=v3_uploads,
+        staging_prefix="capture/staging",
+        dry_run=False,
+    )
+    assert errors == []
+    assert ff == 0
+    assert fd == 0
+
+
 def test_run_remote_cleanup_refuses_empty_prefix() -> None:
     store = _FakeGcsStore(_FakeGcsClient({}))
     section = run_remote_cleanup(

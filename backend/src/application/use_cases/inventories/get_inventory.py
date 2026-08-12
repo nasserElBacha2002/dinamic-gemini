@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import InventoryRepository
+from src.application.services.inventory_soft_delete import reject_if_inventory_deleted
 from src.domain.inventory.entities import Inventory
 
 
@@ -19,4 +20,5 @@ class GetInventoryUseCase:
         inv = self._inventory_repo.get_by_id(inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
+        reject_if_inventory_deleted(inv)
         return inv

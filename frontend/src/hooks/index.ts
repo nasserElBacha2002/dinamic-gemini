@@ -59,6 +59,7 @@ export {
   useUploadSupplierReferenceImages,
   useDeleteSupplierReferenceImage,
   useCreateInventory,
+  useSoftDeleteInventories,
   useUpdateInventory,
   useCreateAisle,
   useUpdateAisle,

@@ -134,6 +134,7 @@ from src.application.use_cases.inventories.list_inventory_list_items import (
     ListInventoryListItemsUseCase,
 )
 from src.application.use_cases.inventories.update_inventory_name import UpdateInventoryNameUseCase
+from src.application.use_cases.inventories.soft_delete_inventories import SoftDeleteInventoriesUseCase
 from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.positions.delete_position import DeletePositionUseCase
 from src.application.use_cases.positions.get_position_code_scan_evidence import (
@@ -400,6 +401,13 @@ def get_update_inventory_name_use_case(
     clock: Clock = Depends(get_clock),
 ) -> UpdateInventoryNameUseCase:
     return UpdateInventoryNameUseCase(inventory_repo=repo, clock=clock)
+
+
+def get_soft_delete_inventories_use_case(
+    repo: InventoryRepository = Depends(get_inventory_repo),
+    clock: Clock = Depends(get_clock),
+) -> SoftDeleteInventoriesUseCase:
+    return SoftDeleteInventoriesUseCase(inventory_repo=repo, clock=clock)
 
 
 def get_create_client_use_case(

@@ -30,7 +30,7 @@ class MemoryInventoryRepository(InventoryRepository):
 
     def list_all(self) -> Sequence[Inventory]:
         with self._lock:
-            return list(self._store.values())
+            return [inv for inv in self._store.values() if not inv.is_deleted]
 
     def compare_and_set_status(
         self,

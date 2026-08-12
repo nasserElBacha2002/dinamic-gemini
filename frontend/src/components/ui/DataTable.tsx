@@ -63,7 +63,7 @@ export interface DataTableMobileConfig<T> {
 export interface DataTableColumn<T> {
   /** Stable id; for `sortable` columns this is often sent as API `sort_by` when parent wires it that way. */
   id: string;
-  label: string;
+  label: ReactNode;
   align?: 'left' | 'right' | 'center';
   sortable?: boolean;
   sortType?: DataTableSortType;
