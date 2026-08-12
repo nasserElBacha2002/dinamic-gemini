@@ -7,8 +7,8 @@ Supplier/client-supplier reference images under ``client_suppliers/`` are always
 
 from __future__ import annotations
 
-import logging
 import errno
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path

@@ -133,8 +133,10 @@ from src.application.use_cases.inventories.list_inventories import ListInventori
 from src.application.use_cases.inventories.list_inventory_list_items import (
     ListInventoryListItemsUseCase,
 )
+from src.application.use_cases.inventories.soft_delete_inventories import (
+    SoftDeleteInventoriesUseCase,
+)
 from src.application.use_cases.inventories.update_inventory_name import UpdateInventoryNameUseCase
-from src.application.use_cases.inventories.soft_delete_inventories import SoftDeleteInventoriesUseCase
 from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.positions.delete_position import DeletePositionUseCase
 from src.application.use_cases.positions.get_position_code_scan_evidence import (
