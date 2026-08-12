@@ -42,6 +42,8 @@ import {
   useAislesList,
   useAisleMergeResults,
   useRunAisleMerge,
+  usePreviewPositionMerge,
+  useConfirmPositionMerge,
   useAisleJobsList,
   useJobImageResults,
   usePromoteAisleOperationalJob,
@@ -81,11 +83,12 @@ import {
   AisleResultsNoJobsAlert,
   AisleResultsHeader,
   AisleResultsTableSection,
+  PositionMergePreviewDialog,
   JobImageResultsViewToggle,
   JobImageResultsGrid,
   ManualImageResultDrawer,
 } from '../features/results/components';
-import type { JobImageResultItem } from '../api/types';
+import type { JobImageResultItem, PositionMergePreviewResponse } from '../api/types';
 import { buildResultsTableColumns } from '../features/results/components/resultsTableColumns';
 import { mergeConsolidatedDetail } from '../features/results/adapters/aislePositionsFormatters';
 import {
@@ -146,6 +149,12 @@ export default function AislePositionsPage() {
   const legacyFilterHydratedRef = useRef(false);
   const queryClient = useQueryClient();
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
+  const previewPositionMergeMutation = usePreviewPositionMerge(inventoryId ?? '', aisleId ?? '');
+  const confirmPositionMergeMutation = useConfirmPositionMerge(inventoryId ?? '', aisleId ?? '');
+  const [selectedResultIds, setSelectedResultIds] = useState<Set<string>>(() => new Set());
+  const [mergePreviewOpen, setMergePreviewOpen] = useState(false);
+  const [mergePreview, setMergePreview] = useState<PositionMergePreviewResponse | null>(null);
+  const [mergePreviewError, setMergePreviewError] = useState<string | null>(null);
   const promoteMutation = usePromoteAisleOperationalJob(inventoryId ?? '', aisleId ?? '');
   const updateAisleMutation = useUpdateAisle(inventoryId ?? '');
   const deactivateAisleMutation = useDeactivateAisle(inventoryId ?? '');
@@ -1090,10 +1099,90 @@ export default function AislePositionsPage() {
             sortDir: resultsColumnSortDir,
             onSortChange: handleResultsColumnSortChange,
           }}
+          selectedIds={selectedResultIds}
+          onToggleOne={(id) => {
+            setSelectedResultIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            });
+          }}
+          onToggleAllPage={(ids, select) => {
+            setSelectedResultIds((prev) => {
+              const next = new Set(prev);
+              for (const id of ids) {
+                if (select) next.add(id);
+                else next.delete(id);
+              }
+              return next;
+            });
+          }}
+          onClearSelection={() => setSelectedResultIds(new Set())}
+          onMergeSelected={() => {
+            void (async () => {
+              setMergePreviewError(null);
+              setMergePreview(null);
+              setMergePreviewOpen(true);
+              try {
+                const preview = await previewPositionMergeMutation.mutateAsync(
+                  Array.from(selectedResultIds)
+                );
+                setMergePreview(preview);
+              } catch (e) {
+                setMergePreviewError(getVisibleErrorMessage(e, 'results') ?? t('common.error'));
+              }
+            })();
+          }}
+          mergeSelectedDisabled={selectedResultIds.size < 2 || previewPositionMergeMutation.isPending}
+          mergeSelectedLoading={previewPositionMergeMutation.isPending}
         />
       ) : null}
         </>
       ) : null}
+
+      <PositionMergePreviewDialog
+        open={mergePreviewOpen}
+        preview={mergePreview}
+        loading={previewPositionMergeMutation.isPending}
+        confirming={confirmPositionMergeMutation.isPending}
+        errorMessage={mergePreviewError}
+        onClose={() => {
+          if (confirmPositionMergeMutation.isPending) return;
+          setMergePreviewOpen(false);
+          setMergePreview(null);
+          setMergePreviewError(null);
+        }}
+        onConfirm={() => {
+          if (!mergePreview?.preview_token) return;
+          void (async () => {
+            setMergePreviewError(null);
+            try {
+              await confirmPositionMergeMutation.mutateAsync({
+                resultIds: Array.from(selectedResultIds),
+                previewToken: mergePreview.preview_token,
+              });
+              setMergePreviewOpen(false);
+              setMergePreview(null);
+              setSelectedResultIds(new Set());
+              showSnackbar(t('positions.merge_success'), 'success');
+              void refetch();
+            } catch (e) {
+              const code =
+                e instanceof ApiError && typeof e.data?.code === 'string'
+                  ? e.data.code.trim()
+                  : '';
+              if (code === 'POSITION_MERGE_STALE_PREVIEW') {
+                setMergePreviewError(t('positions.merge_stale_preview'));
+              } else if (code === 'POSITION_MERGE_CONFLICT') {
+                setMergePreviewError(getVisibleErrorMessage(e, 'results') ?? t('common.error'));
+              } else {
+                setMergePreviewError(getVisibleErrorMessage(e, 'results') ?? t('common.error'));
+              }
+            }
+          })();
+        }}
+      />
 
       <ManualImageResultDrawer
         open={Boolean(manualResultItem)}

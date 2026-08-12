@@ -24,6 +24,7 @@ class ReviewActionType(str, Enum):
     MARK_IMAGE_MISMATCH = "mark_image_mismatch"
     DELETE_POSITION = "delete_position"
     CREATE_MANUAL_RESULT_FROM_IMAGE = "create_manual_result_from_image"
+    MERGE_POSITIONS = "merge_positions"
 
 
 @dataclass

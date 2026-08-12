@@ -21,6 +21,17 @@ class MemoryPositionRepository(PositionRepository):
     def get_by_id(self, position_id: str) -> Position | None:
         return self._store.get(position_id)
 
+    def get_by_ids(self, position_ids: Sequence[str]) -> Sequence[Position]:
+        out: list[Position] = []
+        for pid in position_ids:
+            position = self._store.get(str(pid))
+            if position is not None:
+                out.append(position)
+        return out
+
+    def get_by_ids_for_update(self, position_ids: Sequence[str]) -> Sequence[Position]:
+        return self.get_by_ids(position_ids)
+
     def list_by_aisle(
         self,
         aisle_id: str,
@@ -45,6 +56,7 @@ class MemoryPositionRepository(PositionRepository):
             positions = [p for p in positions if (p.status.value == status)]
         else:
             positions = [p for p in positions if p.status != PositionStatus.DELETED]
+        positions = [p for p in positions if not p.is_merged_source]
         if needs_review is not None:
             positions = [p for p in positions if p.needs_review == needs_review]
         if min_confidence is not None:
@@ -87,9 +99,23 @@ class MemoryPositionRepository(PositionRepository):
 
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
         aid_set = set(aisle_ids)
+        return [
+            p
+            for p in self._store.values()
+            if p.aisle_id in aid_set
+            and p.status != PositionStatus.DELETED
+            and not p.is_merged_source
+        ]
+
+    def list_all_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
+        aid_set = set(aisle_ids)
         return [p for p in self._store.values() if p.aisle_id in aid_set]
 
     def aisle_has_needs_review(self, aisle_id: str) -> bool:
         return any(
-            p.aisle_id == aisle_id and p.needs_review for p in self._store.values()
+            p.aisle_id == aisle_id
+            and p.needs_review
+            and not p.is_merged_source
+            and p.status != PositionStatus.DELETED
+            for p in self._store.values()
         )

@@ -85,6 +85,7 @@ export type MutationInvalidationsObsEvent = {
     | 'useCancelAisleJob'
     | 'useRetryAisleJob'
     | 'useRunAisleMerge'
+    | 'useConfirmPositionMerge'
     | 'usePromoteAisleOperationalJob';
   labels: string[];
 };

@@ -1574,6 +1574,63 @@ export interface RunMergeResponse {
   product_records_updated: number;
 }
 
+/** Operator position-row merge (distinct from aisle label merge). */
+export interface PositionMergeConflictDto {
+  code: string;
+  message: string;
+  values: string[];
+}
+
+export interface PositionMergeWarningDto {
+  code: string;
+  message: string;
+  values: string[];
+}
+
+export interface PositionMergeSourceDto {
+  position_id: string;
+  sku?: string | null;
+  internal_code?: string | null;
+  barcode?: string | null;
+  description?: string | null;
+  quantity: number;
+  position_code?: string | null;
+  source_image_id?: string | null;
+  source_image_filename?: string | null;
+  job_id?: string | null;
+  confidence?: number | null;
+  status?: string | null;
+  review_resolution?: string | null;
+}
+
+export interface PositionMergeProposedResultDto {
+  survivor_id?: string | null;
+  sku?: string | null;
+  internal_code?: string | null;
+  description?: string | null;
+  quantity?: number | null;
+  position_code?: string | null;
+  source_count: number;
+  image_count: number;
+  product_identity?: string | null;
+}
+
+export interface PositionMergePreviewResponse {
+  can_merge: boolean;
+  preview_token: string;
+  sources: PositionMergeSourceDto[];
+  merged_result: PositionMergeProposedResultDto;
+  warnings: PositionMergeWarningDto[];
+  conflicts: PositionMergeConflictDto[];
+}
+
+export interface PositionMergeConfirmResponse {
+  survivor_id: string;
+  merged_quantity: number;
+  source_ids: string[];
+  already_merged: boolean;
+}
+
 export interface MergeResultItemResponse {
   id: string;
   position_id?: string | null;

@@ -8,10 +8,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 
 from src.api.dependencies import (
+    get_access_principal,
+    get_confirm_merge_positions_use_case,
     get_get_position_code_scan_evidence_use_case,
     get_get_position_detail_use_case,
     get_list_aisle_positions_use_case,
     get_position_reconciliation_repo,
+    get_preview_merge_positions_use_case,
     get_result_evidence_query_service,
 )
 from src.api.errors import mapped_http_exception
@@ -25,6 +28,16 @@ from src.api.schemas.code_scan_schemas import (
     PositionCodeScanEvidenceSummaryResponse,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
+from src.api.schemas.position_merge_schemas import (
+    PositionMergeConfirmRequest,
+    PositionMergeConfirmResponse,
+    PositionMergeConflictDto,
+    PositionMergePreviewResponse,
+    PositionMergeProposedResultDto,
+    PositionMergeRequest,
+    PositionMergeSourceDto,
+    PositionMergeWarningDto,
+)
 from src.api.schemas.position_schemas import (
     PositionDetailResponse,
     PositionListResponse,
@@ -33,6 +46,7 @@ from src.api.schemas.position_schemas import (
     ResultsByPositionGroupResponse,
     ResultsByPositionResponse,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.position_overrides.effective_position_reader import (
@@ -57,6 +71,10 @@ from src.application.use_cases.positions.get_position_detail import GetPositionD
 from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsCommand,
     ListAislePositionsUseCase,
+)
+from src.application.use_cases.positions.merge_positions import (
+    ConfirmMergePositionsUseCase,
+    PreviewMergePositionsUseCase,
 )
 from src.config import load_settings
 from src.runtime.app_container import get_app_container
@@ -685,3 +703,107 @@ def get_position_code_scan_evidence(
         ),
         detections=[_detection_to_response(d) for d in result.detections],
     )
+
+
+def _preview_to_response(result) -> PositionMergePreviewResponse:
+    return PositionMergePreviewResponse(
+        can_merge=result.can_merge,
+        preview_token=result.preview_token,
+        sources=[
+            PositionMergeSourceDto(
+                position_id=s.position_id,
+                sku=s.sku,
+                internal_code=s.internal_code,
+                barcode=s.barcode,
+                description=s.description,
+                quantity=s.quantity,
+                position_code=s.declared_position_code or s.position_code,
+                source_image_id=s.source_image_id,
+                source_image_filename=s.source_image_filename,
+                job_id=s.job_id,
+                confidence=s.confidence,
+                status=s.status,
+                review_resolution=s.review_resolution,
+            )
+            for s in result.sources
+        ],
+        merged_result=PositionMergeProposedResultDto(
+            survivor_id=result.survivor_id,
+            sku=result.merged_sku,
+            internal_code=result.merged_internal_code,
+            description=result.merged_description,
+            quantity=result.merged_quantity,
+            position_code=result.merged_position_code,
+            source_count=result.source_count,
+            image_count=result.image_count,
+            product_identity=result.product_identity,
+        ),
+        warnings=[
+            PositionMergeWarningDto(code=w.code, message=w.message, values=list(w.values))
+            for w in result.warnings
+        ],
+        conflicts=[
+            PositionMergeConflictDto(code=c.code, message=c.message, values=list(c.values))
+            for c in result.conflicts
+        ],
+    )
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/positions/merge/preview",
+    response_model=PositionMergePreviewResponse,
+)
+def preview_merge_positions(
+    inventory_id: str,
+    aisle_id: str,
+    body: PositionMergeRequest,
+    principal: AccessPrincipal = Depends(get_access_principal),
+    uc: PreviewMergePositionsUseCase = Depends(get_preview_merge_positions_use_case),
+) -> PositionMergePreviewResponse:
+    """Preview operator position merge without mutating data."""
+    try:
+        result = uc.execute(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            result_ids=body.result_ids,
+            principal=principal,
+        )
+        return _preview_to_response(result)
+    except Exception as e:
+        mapped = mapped_http_exception(e)
+        if mapped is not None:
+            raise mapped from e
+        raise
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/positions/merge",
+    response_model=PositionMergeConfirmResponse,
+)
+def confirm_merge_positions(
+    inventory_id: str,
+    aisle_id: str,
+    body: PositionMergeConfirmRequest,
+    principal: AccessPrincipal = Depends(get_access_principal),
+    uc: ConfirmMergePositionsUseCase = Depends(get_confirm_merge_positions_use_case),
+) -> PositionMergeConfirmResponse:
+    """Confirm operator position merge after preview (re-validates server-side)."""
+    try:
+        result = uc.execute(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            result_ids=body.result_ids,
+            preview_token=body.preview_token,
+            principal=principal,
+        )
+        return PositionMergeConfirmResponse(
+            survivor_id=result.survivor_id,
+            merged_quantity=result.merged_quantity,
+            source_ids=list(result.source_ids),
+            already_merged=result.already_merged,
+        )
+    except Exception as e:
+        mapped = mapped_http_exception(e)
+        if mapped is not None:
+            raise mapped from e
+        raise

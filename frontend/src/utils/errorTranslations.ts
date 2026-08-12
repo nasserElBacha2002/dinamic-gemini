@@ -65,6 +65,9 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   POSITION_LABEL_MARKER_ACTIVE_EXISTS: 'position_labels.error_marker_active_exists',
   POSITION_LABEL_NAME_CONFLICT: 'position_labels.error_name_conflict',
   IDEMPOTENCY_KEY_REUSED: 'position_labels.error_idempotency_conflict',
+  POSITION_MERGE_STALE_PREVIEW: 'positions.merge_stale_preview',
+  POSITION_MERGE_CONFLICT: 'positions.merge_conflict_generic',
+  POSITION_MERGE_VALIDATION: 'positions.merge_validation_generic',
 };
 
 export function v3StructuredErrorCodeToTranslationKey(code: string): string | null {

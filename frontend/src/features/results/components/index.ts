@@ -18,6 +18,7 @@ export { default as AisleResultsNoJobsAlert } from './AisleResultsNoJobsAlert';
 export { default as AisleResultsHeader } from './AisleResultsHeader';
 export { default as AisleResultsMergeFeedback } from './AisleResultsMergeFeedback';
 export { default as AisleResultsTableSection } from './AisleResultsTableSection';
+export { default as PositionMergePreviewDialog } from './PositionMergePreviewDialog';
 
 export * from './detail';
 export * from './imageCoverage';

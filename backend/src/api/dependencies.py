@@ -1809,6 +1809,49 @@ def get_delete_position_use_case(
     )
 
 
+def get_preview_merge_positions_use_case(
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+):
+    from src.application.use_cases.positions.merge_positions import PreviewMergePositionsUseCase
+
+    return PreviewMergePositionsUseCase(
+        access_policy=access_policy,
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+    )
+
+
+def get_confirm_merge_positions_use_case(
+    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    review_repo: ReviewActionRepository = Depends(get_review_action_repo),
+    clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
+):
+    from src.application.use_cases.positions.merge_positions import ConfirmMergePositionsUseCase
+
+    return ConfirmMergePositionsUseCase(
+        access_policy=access_policy,
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        review_repo=review_repo,
+        clock=clock,
+        aisle_review_sync=aisle_review_sync,
+        uow_factory=get_app_container().get_position_merge_uow_factory(),
+    )
+
+
 def get_run_aisle_merge_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),

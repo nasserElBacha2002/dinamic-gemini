@@ -67,6 +67,8 @@ export {
   getJobAuditability,
   getJobAuditabilityPath,
   listAisleJobs,
+  previewPositionMerge,
+  confirmPositionMerge,
   promoteAisleOperationalJob,
   retryAisleJob,
   submitReviewAction,

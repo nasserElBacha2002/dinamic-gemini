@@ -22,6 +22,8 @@ import {
   cancelAisleJob,
   retryAisleJob,
   runAisleMerge,
+  previewPositionMerge,
+  confirmPositionMerge,
   uploadAisleAssetsBatch,
   aisleAssetsResponseToOutcomes,
   deleteAisleSourceAsset,
@@ -445,6 +447,27 @@ export function useRunAisleMerge(inventoryId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
       recordMutationInvalidationsObs({
         flow: 'useRunAisleMerge',
+        labels: ['inventories.positions'],
+      });
+    },
+  });
+}
+
+export function usePreviewPositionMerge(inventoryId: string, aisleId: string) {
+  return useMutation({
+    mutationFn: (resultIds: string[]) => previewPositionMerge(inventoryId, aisleId, resultIds),
+  });
+}
+
+export function useConfirmPositionMerge(inventoryId: string, aisleId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { resultIds: string[]; previewToken: string }) =>
+      confirmPositionMerge(inventoryId, aisleId, vars.resultIds, vars.previewToken),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.positions(inventoryId, aisleId) });
+      recordMutationInvalidationsObs({
+        flow: 'useConfirmPositionMerge',
         labels: ['inventories.positions'],
       });
     },
