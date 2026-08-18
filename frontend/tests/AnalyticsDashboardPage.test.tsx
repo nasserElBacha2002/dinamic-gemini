@@ -769,11 +769,14 @@ describe('AnalyticsDashboardPage', () => {
     it('writes date_to immediately without pressing Actualizar', async () => {
       setupMocks();
       const router = renderPageWithRouter('/analitica?tab=proveedores');
+      const defaults = createDefaultAnalyticsFilters();
+      // Must stay >= default dateFrom; otherwise normalizeAnalyticsFilters resets to today.
+      const dateTo = defaults.dateFrom;
 
-      fireEvent.change(screen.getByLabelText(/^hasta$/i), { target: { value: '2026-07-15' } });
+      fireEvent.change(screen.getByLabelText(/^hasta$/i), { target: { value: dateTo } });
 
       await waitFor(() => {
-        expect(new URLSearchParams(router.state.location.search).get('date_to')).toBe('2026-07-15');
+        expect(new URLSearchParams(router.state.location.search).get('date_to')).toBe(dateTo);
       });
     });
 
