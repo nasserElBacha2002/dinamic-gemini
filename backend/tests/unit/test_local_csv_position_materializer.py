@@ -276,26 +276,39 @@ def test_schema_11_parse_and_materialize_claims_label_once() -> None:
     assert position_repo.get_by_id(position_id_for_productive("prod-label-2")) is None
 
 
-def test_materialize_unknown_label_skips() -> None:
+def test_materialize_unknown_label_falls_back_to_csv_with_review() -> None:
     mat, position_repo, product_repo, _ = _materializer()
-    assert mat.materialize([_result(label_id=LABEL_ID)], now=NOW) == 0
-    assert position_repo.get_by_id(position_id_for_productive("prod-1")) is None
-    assert product_repo.get_by_id(product_id_for_productive("prod-1")) is None
+    assert mat.materialize([_result(label_id=LABEL_ID)], now=NOW) == 1
+    pos = position_repo.get_by_id(position_id_for_productive("prod-1"))
+    assert pos is not None
+    assert pos.needs_review is True
+    assert pos.detected_summary_json is not None
+    assert pos.detected_summary_json.get("label_registry_status") == "unresolved"
+    assert pos.detected_summary_json.get("label_authority") == "csv_fallback"
+    product = product_repo.get_by_id(product_id_for_productive("prod-1"))
+    assert product is not None
+    assert product.label_id == LABEL_ID
+    assert product.sku == ISSUED_SKU
+    assert product.detected_quantity == ISSUED_QTY
 
 
-def test_materialize_client_mismatch_skips() -> None:
+def test_materialize_client_mismatch_falls_back_to_csv_with_review() -> None:
     issued = MemoryIssuedProductLabelRepository()
     _issue(issued, client_id="client-a")
     mat, position_repo, product_repo, _ = _materializer(
         issued=issued,
         inventory_repo=_inventory_repo(client_id="client-b"),
     )
-    assert mat.materialize([_result(label_id=LABEL_ID)], now=NOW) == 0
-    assert position_repo.list_by_aisle("aisle-1", job_id=None) == []
-    assert product_repo.get_by_id(product_id_for_productive("prod-1")) is None
+    assert mat.materialize([_result(label_id=LABEL_ID)], now=NOW) == 1
+    pos = position_repo.get_by_id(position_id_for_productive("prod-1"))
+    assert pos is not None
+    assert pos.needs_review is True
+    product = product_repo.get_by_id(product_id_for_productive("prod-1"))
+    assert product is not None
+    assert product.sku == ISSUED_SKU
 
 
-def test_materialize_sku_mismatch_skips() -> None:
+def test_materialize_sku_mismatch_falls_back_to_csv_with_review() -> None:
     issued = MemoryIssuedProductLabelRepository()
     _issue(issued)
     mat, position_repo, product_repo, _ = _materializer(issued=issued)
@@ -304,13 +317,18 @@ def test_materialize_sku_mismatch_skips() -> None:
             [_result(label_id=LABEL_ID, internal_code="OTHER", quantity=ISSUED_QTY)],
             now=NOW,
         )
-        == 0
+        == 1
     )
-    assert position_repo.list_by_aisle("aisle-1", job_id=None) == []
-    assert product_repo.get_by_id(product_id_for_productive("prod-1")) is None
+    pos = position_repo.get_by_id(position_id_for_productive("prod-1"))
+    assert pos is not None
+    assert pos.needs_review is True
+    product = product_repo.get_by_id(product_id_for_productive("prod-1"))
+    assert product is not None
+    assert product.sku == "OTHER"
+    assert product.detected_quantity == ISSUED_QTY
 
 
-def test_materialize_qty_mismatch_skips() -> None:
+def test_materialize_qty_mismatch_falls_back_to_csv_with_review() -> None:
     issued = MemoryIssuedProductLabelRepository()
     _issue(issued)
     mat, position_repo, product_repo, _ = _materializer(issued=issued)
@@ -319,10 +337,14 @@ def test_materialize_qty_mismatch_skips() -> None:
             [_result(label_id=LABEL_ID, internal_code=ISSUED_SKU, quantity=9)],
             now=NOW,
         )
-        == 0
+        == 1
     )
-    assert position_repo.list_by_aisle("aisle-1", job_id=None) == []
-    assert product_repo.get_by_id(product_id_for_productive("prod-1")) is None
+    pos = position_repo.get_by_id(position_id_for_productive("prod-1"))
+    assert pos is not None
+    assert pos.needs_review is True
+    product = product_repo.get_by_id(product_id_for_productive("prod-1"))
+    assert product is not None
+    assert product.detected_quantity == 9
 
 
 def test_materialize_valid_claim() -> None:

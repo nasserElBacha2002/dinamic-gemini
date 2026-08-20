@@ -3,6 +3,10 @@
 Writes legacy-scoped ``Position`` + ``ProductRecord`` rows (``job_id=None``) so
 ``GET .../positions`` shows import results the same way as pre-multi-run / legacy
 pipeline results when ``aisles.operational_job_id`` is unset.
+
+When a row carries ``label_id``, the issued-label registry is used to authorize
+SKU/qty when possible. If the registry cannot resolve the label, the CSV/device
+values are still materialized with ``needs_review=True`` (no silent drop).
 """
 
 from __future__ import annotations
@@ -89,7 +93,12 @@ def _qty_parse_status(qty: int, raw_quantity: int | None) -> str:
     return "valid_positive"
 
 
-def _detected_summary(result: LocalCsvProductiveResult) -> dict:
+def _detected_summary(
+    result: LocalCsvProductiveResult,
+    *,
+    label_registry_status: str | None = None,
+    label_authority: str | None = None,
+) -> dict:
     position_code = (result.position_code or "").strip() or None
     internal = (result.internal_code or "").strip() or None
     qty = _quantity_for(result)
@@ -129,6 +138,10 @@ def _detected_summary(result: LocalCsvProductiveResult) -> dict:
     position_label_id = (result.position_label_id or "").strip() or None
     if position_label_id:
         summary["position_label_id"] = position_label_id
+    if label_registry_status:
+        summary["label_registry_status"] = label_registry_status
+    if label_authority:
+        summary["label_authority"] = label_authority
     return summary
 
 
@@ -347,10 +360,16 @@ class LocalCsvPositionMaterializer:
         now: datetime,
         inventory_client_id: str | None = None,
     ) -> bool:
-        if not self._validate_position_payload(
+        # Invalid positioning payloads must not hide inventory lines from package/CSV
+        # imports. Skip enrichment and still materialize the counted row.
+        position_payload_ok = self._validate_position_payload(
             result, inventory_client_id=inventory_client_id
-        ):
-            return False
+        )
+        if not position_payload_ok:
+            logger.warning(
+                "local_csv_position_payload_ignored_for_materialize productive_id=%s",
+                result.id,
+            )
 
         position_id = position_id_for_productive(result.id)
         product_id = product_id_for_productive(result.id)
@@ -359,6 +378,8 @@ class LocalCsvPositionMaterializer:
         qty = _quantity_for(result)
         needs_review = bool(result.requires_review) or sku == "UNKNOWN" or result.quantity is None
         label_id = (result.label_id or "").strip().upper() or None
+        label_registry_status: str | None = None
+        label_authority: str | None = None
 
         existing = self._position_repo.get_by_id(position_id)
         created_at = existing.created_at if existing is not None else now
@@ -369,32 +390,56 @@ class LocalCsvPositionMaterializer:
                 result, label_id=label_id, inventory_client_id=inventory_client_id
             )
             if resolved is None:
-                return False
-            sku, qty = resolved
-            needs_review = bool(result.requires_review)
-            claimed = self._counted_product_label_repo.try_claim(
-                InventoryCountedProductLabel(
-                    id=str(uuid.uuid4()),
-                    inventory_id=result.inventory_id,
-                    aisle_id=result.aisle_id,
-                    label_id=label_id,
-                    first_product_record_id=product_id,
-                    first_source_asset_id=(result.source_asset_id or "").strip() or position_id,
-                    first_job_id="",
-                    first_position_id=position_id,
-                    created_at=now,
+                # Generic handoff path: device/CSV values remain visible even when the
+                # issued-label registry cannot authorize the label_id yet.
+                label_registry_status = "unresolved"
+                label_authority = "csv_fallback"
+                needs_review = True
+                logger.warning(
+                    "local_csv_label_unresolved_fallback productive_id=%s label_id=%s "
+                    "sku=%s qty=%s",
+                    result.id,
+                    label_id,
+                    sku,
+                    qty,
                 )
-            )
-            if not claimed:
-                # Idempotent re-import / cross-row dedupe: never create a second ProductRecord.
-                # Still refresh position when it already exists from the winning claim path.
-                if existing is None:
-                    return False
-                save_product = False
+            else:
+                sku, qty = resolved
+                needs_review = bool(result.requires_review)
+                label_registry_status = "ok"
+                label_authority = "issued"
+                claimed = self._counted_product_label_repo.try_claim(
+                    InventoryCountedProductLabel(
+                        id=str(uuid.uuid4()),
+                        inventory_id=result.inventory_id,
+                        aisle_id=result.aisle_id,
+                        label_id=label_id,
+                        first_product_record_id=product_id,
+                        first_source_asset_id=(result.source_asset_id or "").strip()
+                        or position_id,
+                        first_job_id="",
+                        first_position_id=position_id,
+                        created_at=now,
+                    )
+                )
+                if not claimed:
+                    # Idempotent re-import / cross-row dedupe: never create a second ProductRecord.
+                    # Still refresh position when it already exists from the winning claim path.
+                    if existing is None:
+                        return False
+                    save_product = False
 
         # Link the package photo as primary evidence so list ``has_evidence`` is true
         # (canonical view keys has_evidence off primary_evidence_id).
         evidence_asset_id = (result.source_asset_id or "").strip() or None
+
+        summary = _detected_summary(
+            result,
+            label_registry_status=label_registry_status,
+            label_authority=label_authority,
+        )
+        if not position_payload_ok:
+            summary["position_payload_status"] = "ignored_invalid"
 
         position = Position(
             id=position_id,
@@ -406,7 +451,7 @@ class LocalCsvPositionMaterializer:
             created_at=created_at,
             updated_at=now,
             review_resolution=None,
-            detected_summary_json=_detected_summary(result),
+            detected_summary_json=summary,
             corrected_summary_json=None,
             corrected_position_code=position_code,
             job_id=None,
