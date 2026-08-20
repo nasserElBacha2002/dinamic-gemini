@@ -12,9 +12,11 @@ function read(rel: string): string {
 }
 
 describe('mobile capture bug-fix source contracts', () => {
-  it('App keeps review after local save and opens local_completed in review', () => {
+  it('App auto-confirms drafts then uploads; local_completed opens in review', () => {
     const app = read('App.tsx');
-    expect(app).toMatch(/completeLocalSession\(\{\s*uploadPolicy:\s*'MANUAL'[\s\S]*?setScreen\('review'\)/);
+    expect(app).toMatch(/confirmResolvedDraftsForSession/);
+    expect(app).toMatch(/completeReview\(\)/);
+    expect(app).toMatch(/setSessionPreparationMode\(sid, 'CODE_SCAN'\)/);
     expect(app).not.toMatch(
       /work\.kind === 'local_completed' \? 'uploads' : 'review'/,
     );
@@ -25,19 +27,24 @@ describe('mobile capture bug-fix source contracts', () => {
     expect(app).toMatch(/onLayout/);
   });
 
-  it('ReviewScreen gates export via canExportSession and supports local_completed', () => {
+  it('ReviewScreen keeps ZIP enabled except while exporting', () => {
     const review = read('src/screens/ReviewScreen.tsx');
     expect(review).toMatch(/canExportSession/);
     expect(review).toMatch(/runLocalCsvExport/);
     expect(review).toMatch(/isLocalCompleted/);
     expect(review).toMatch(/Exportar ZIP/);
+    expect(review).toMatch(/Subir fotos y resultados/);
+    expect(review).not.toMatch(/Guardar solo en el dispositivo/);
+    expect(review).toMatch(/disabled=\{exportBusy \|\| !sessionId \|\| !services\.localCsvExport\}/);
+    expect(review).not.toMatch(/disabled=\{!exportGate\.ok/);
   });
 
-  it('LocalActivityScreen offers Exportar ZIP for saved sessions', () => {
+  it('LocalActivityScreen offers Exportar ZIP for any session with CSV export', () => {
     const activity = read('src/screens/LocalActivityScreen.tsx');
     expect(activity).toMatch(/Exportar ZIP/);
     expect(activity).toMatch(/runLocalCsvExport/);
-    expect(activity).toMatch(/local_completed/);
+    expect(activity).toMatch(/csvExport && services\.localCsvExport/);
+    expect(activity).not.toMatch(/exportableKind &&/);
   });
 
   it('CaptureService exposes startNewSession / forceNew and does not delete on prepare', () => {

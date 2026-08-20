@@ -77,8 +77,7 @@ export function LocalActivityScreen({
         </View>
       }
       renderItem={({ item }) => {
-        const exportableKind =
-          item.kind === 'local_completed' || item.kind === 'capture_review';
+        const exportBusy = exportingId === item.sessionId;
         return (
           <Card>
             <Text style={styles.cardTitle}>
@@ -93,11 +92,11 @@ export function LocalActivityScreen({
             {exportHints[item.sessionId] ? (
               <Text style={styles.notif}>{exportHints[item.sessionId]}</Text>
             ) : null}
-            {exportingId === item.sessionId ? <ActivityIndicator /> : null}
+            {exportBusy ? <ActivityIndicator /> : null}
             <Button label="Abrir" onPress={() => onOpenSession(item)} />
-            {exportableKind && csvExport && services.localCsvExport ? (
+            {csvExport && services.localCsvExport ? (
               <Button
-                label="Exportar ZIP (CSV + fotos)"
+                label={exportBusy ? 'Exportando ZIP…' : 'Exportar ZIP (CSV + fotos)'}
                 disabled={exportingId !== null}
                 onPress={() => {
                   setExportingId(item.sessionId);

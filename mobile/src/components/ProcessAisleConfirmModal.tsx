@@ -41,6 +41,8 @@ export interface ProcessAisleConfirmModalProps {
   uploadLocalMessage?: string | null;
   /** When false, hide "Subir resultado local" (server process does not require local confirm). */
   allowUploadLocalResults?: boolean;
+  /** When false, hide "Procesar fotos" (AI / server job). */
+  allowServerProcess?: boolean;
   onClose: () => void;
   onConfirm: (selection: IdentificationModeSelection) => void;
   /** Sync one result (preferred) or all pending for this aisle session. */
@@ -64,6 +66,7 @@ export function ProcessAisleConfirmModal({
   uploadLocalBusy = false,
   uploadLocalMessage = null,
   allowUploadLocalResults = false,
+  allowServerProcess = true,
   onClose,
   onConfirm,
   onUploadLocalResults,
@@ -78,10 +81,12 @@ export function ProcessAisleConfirmModal({
 
   useEffect(() => {
     if (!visible) return;
-    setStep('menu');
+    setStep(
+      allowUploadLocalResults && !allowServerProcess ? 'upload_local' : 'menu',
+    );
     setDraft(selectionFromPreference(preference));
     setSelectedResultId(null);
-  }, [visible, preference]);
+  }, [visible, preference, allowUploadLocalResults, allowServerProcess]);
 
   const selectedLabel = labelForIdentificationMode(preferenceFromSelection(draft));
   const anyBusy = busy || uploadLocalBusy;
@@ -115,13 +120,15 @@ export function ProcessAisleConfirmModal({
                 ) : null}
                 <Text style={[styles.row, { marginTop: 12 }]}>¿Qué querés hacer?</Text>
 
-                <ActionRow
-                  title="Procesar fotos"
-                  description="Sube el trabajo al servidor con las fotos cargadas. No hace falta confirmar borradores locales (podés editar en la app administrativa)."
-                  disabled={anyBusy}
-                  testID="process-aisle-action-process"
-                  onPress={() => setStep('process')}
-                />
+                {allowServerProcess ? (
+                  <ActionRow
+                    title="Procesar fotos"
+                    description="Sube el trabajo al servidor con las fotos cargadas. No hace falta confirmar borradores locales (podés editar en la app administrativa)."
+                    disabled={anyBusy}
+                    testID="process-aisle-action-process"
+                    onPress={() => setStep('process')}
+                  />
+                ) : null}
                 {allowUploadLocalResults ? (
                   <ActionRow
                     title="Subir resultado local"
@@ -250,9 +257,11 @@ export function ProcessAisleConfirmModal({
                 {error ? <ErrorText text={error} /> : null}
                 <View style={styles.nav}>
                   <SmallButton
-                    label="Volver"
+                    label={allowServerProcess ? 'Volver' : 'Cerrar'}
                     disabled={anyBusy}
-                    onPress={() => setStep('menu')}
+                    onPress={() =>
+                      allowServerProcess ? setStep('menu') : onClose()
+                    }
                   />
                   <Button
                     label={

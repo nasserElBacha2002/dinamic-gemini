@@ -111,4 +111,58 @@ export class ConfirmLocalResultService {
       confirmedAt: input.confirmedAt ?? new Date().toISOString(),
     });
   }
+
+  /**
+   * Auto-confirm stable photos that already have a usable local CODE_SCAN draft.
+   * Skips photos without an internal code (operator can still export ZIP).
+   */
+  async confirmResolvedDraftsForSession(input: {
+    readonly sessionId: string;
+    readonly confirmedByUserId: string;
+    readonly photos: readonly {
+      readonly id: string;
+      readonly client_file_id: string | null;
+      readonly status: string;
+    }[];
+  }): Promise<{ readonly confirmed: number; readonly skipped: number }> {
+    if (!this.isEnabled()) {
+      return { confirmed: 0, skipped: input.photos.length };
+    }
+    const existing = await this.confirmed.listForSession(input.sessionId);
+    const confirmedPhotoIds = new Set(existing.map((r) => r.capture_photo_id));
+    let confirmed = 0;
+    let skipped = 0;
+    for (const photo of input.photos) {
+      if (photo.status !== 'stable') {
+        skipped += 1;
+        continue;
+      }
+      if (confirmedPhotoIds.has(photo.id)) {
+        confirmed += 1;
+        continue;
+      }
+      const draft = await this.getLatestDraftForPhoto(photo.id);
+      const code = draft?.internal_code?.trim() ?? '';
+      if (!code) {
+        skipped += 1;
+        continue;
+      }
+      const quantityStatus =
+        draft?.quantity_status === 'PRESENT' || draft?.quantity != null ? 'PRESENT' : 'MISSING';
+      await this.confirm({
+        capturePhotoId: photo.id,
+        captureSessionId: input.sessionId,
+        clientFileId: photo.client_file_id,
+        confirmedByUserId: input.confirmedByUserId,
+        edits: {
+          internalCode: code,
+          quantity: draft?.quantity ?? null,
+          quantityStatus,
+        },
+        draft,
+      });
+      confirmed += 1;
+    }
+    return { confirmed, skipped };
+  }
 }

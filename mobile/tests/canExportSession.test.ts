@@ -108,22 +108,18 @@ function photo(overrides: Partial<CapturePhotoRow> = {}): CapturePhotoRow {
 }
 
 describe('canExportSession', () => {
-  it('allows local_completed with freeze and stable photos', () => {
+  it('allows local_completed with photos (no freeze required)', () => {
     const gate = canExportSession({
-      session: session(),
+      session: session({ active_freeze_id: null, capture_frozen_photo_count: 0 }),
       photos: [photo()],
     });
     expect(gate.ok).toBe(true);
   });
 
-  it('allows review with stable photos even without freeze id', () => {
+  it('allows uploading sessions so ZIP stays available after handoff', () => {
     const gate = canExportSession({
-      session: session({
-        status: 'review',
-        active_freeze_id: null,
-        capture_frozen_photo_count: 0,
-      }),
-      photos: [photo()],
+      session: session({ status: 'uploading', active_freeze_id: null }),
+      photos: [photo({ status: 'unstable' })],
     });
     expect(gate.ok).toBe(true);
   });
@@ -149,10 +145,11 @@ describe('canExportSession', () => {
     ).toBe(false);
   });
 
-  it('isSessionExportableStatus matches review and local_completed', () => {
+  it('isSessionExportableStatus allows handoff and upload statuses', () => {
     expect(isSessionExportableStatus('local_completed')).toBe(true);
     expect(isSessionExportableStatus('review')).toBe(true);
-    expect(isSessionExportableStatus('uploading')).toBe(false);
+    expect(isSessionExportableStatus('uploading')).toBe(true);
+    expect(isSessionExportableStatus('cancelled')).toBe(false);
   });
 });
 

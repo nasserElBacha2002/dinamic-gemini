@@ -89,4 +89,43 @@ describe('ConfirmLocalResultService', () => {
       }),
     );
   });
+
+  it('auto-confirms stable photos with draft codes', async () => {
+    const upsert = jest.fn(async () => ({ id: 'r1', capture_photo_id: 'p1' }));
+    const listForSession = jest.fn(async () => []);
+    const listForPhoto = jest.fn(async () => [
+      {
+        internal_code: 'SKU-1',
+        quantity: 3,
+        quantity_status: 'PRESENT',
+        status: 'READY',
+        detected_symbology: 'QR_CODE',
+        parser_version: '1.1.0',
+        detector_version: 'mlkit-1',
+        prepared_asset_fingerprint: `sha256:${'b'.repeat(64)}`,
+      },
+    ]);
+    const service = new ConfirmLocalResultService(
+      { ...DEFAULT_FEATURE_FLAGS, mobileAuthoritativeLocalCodeScan: true },
+      { upsertConfirmed: upsert, listForSession } as never,
+      { listForPhoto } as never,
+    );
+    const result = await service.confirmResolvedDraftsForSession({
+      sessionId: 's1',
+      confirmedByUserId: 'u1',
+      photos: [
+        { id: 'p1', client_file_id: 'cf1', status: 'stable' },
+        { id: 'p2', client_file_id: 'cf2', status: 'error' },
+      ],
+    });
+    expect(result).toEqual({ confirmed: 1, skipped: 1 });
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        confirmedInternalCode: 'SKU-1',
+        confirmedQuantity: 3,
+        source: 'LOCAL_CODE_SCAN',
+      }),
+    );
+  });
 });

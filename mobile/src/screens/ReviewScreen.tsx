@@ -15,11 +15,14 @@ export interface ReviewScreenProps {
   services: AppServices;
   snapshot: CaptureSnapshot | null;
   onBack: () => void;
-  /** Upload now — parent runs completeReview + enqueue. */
+  /**
+   * Upload photos + local results to the server (no AI reprocess).
+   * Parent runs confirm drafts (if needed) + completeReview + enqueue.
+   */
   onConfirm: (sessionId: string) => void;
-  /** Persist local only (MANUAL) — no upload enqueue. */
+  /** @deprecated Prefer onConfirm / ZIP export — kept for tests / legacy wiring */
   onSaveLocalOnly?: (sessionId: string) => void;
-  /** Persist local and enqueue when connectivity returns (WHEN_CONNECTED). */
+  /** @deprecated Prefer onConfirm / ZIP export */
   onSaveLocalWhenConnected?: (sessionId: string) => void;
   /** @deprecated Prefer onSaveLocalOnly / onSaveLocalWhenConnected */
   onSaveLocal?: (sessionId: string) => void;
@@ -33,9 +36,6 @@ export function ReviewScreen({
   snapshot,
   onBack,
   onConfirm,
-  onSaveLocalOnly,
-  onSaveLocalWhenConnected,
-  onSaveLocal,
   onError,
   onOpenUploads,
 }: ReviewScreenProps) {
@@ -60,6 +60,8 @@ export function ReviewScreen({
     exportInProgress: exportBusy,
   });
 
+  const twoWayHandoff = localCompletion;
+
   return (
     <PhotoWorkList
       photos={photos}
@@ -76,22 +78,22 @@ export function ReviewScreen({
             {isLocalCompleted ? 'Captura guardada' : 'Revisión'} ·{' '}
             {context?.inventoryName ?? 'Inventario'} / {context?.aisleName ?? 'Pasillo'}
           </Text>
+          {twoWayHandoff && !isLocalCompleted ? (
+            <Text style={styles.notif}>
+              Elegí una opción: subir fotos y resultados locales al servidor (sin reprocesar con
+              IA), o exportar un ZIP para importar después.
+            </Text>
+          ) : null}
           {isLocalCompleted ? (
             <Text style={styles.notif}>
-              Guardada solo en el dispositivo. Podés exportar el ZIP o subir cuando corresponda.
+              Guardada en el dispositivo. Podés exportar el ZIP o continuar la carga al servidor.
             </Text>
           ) : null}
           <Text style={styles.row}>
             Estables: {counts.stable} · Excluidas: {counts.excluded} · Errores: {counts.errors}
           </Text>
-          {localCompletion && !isLocalCompleted ? (
-            <Text style={styles.notif}>
-              Resultado detectado localmente (CODE_SCAN). La exportación genera un ZIP con
-              el CSV y las fotos del freeze para importar luego en el sistema.
-            </Text>
-          ) : null}
           {!canConfirm && !isLocalCompleted ? (
-            <ErrorText text="Resolvé errores o esperá validaciones antes de confirmar." />
+            <ErrorText text="Resolvé errores o esperá validaciones antes de continuar." />
           ) : null}
           {exportHint ? <Text style={styles.row}>{exportHint}</Text> : null}
           {exportBusy ? <ActivityIndicator /> : null}
@@ -104,7 +106,9 @@ export function ReviewScreen({
           ) : null}
           {!isLocalCompleted ? (
             <Button
-              label="Subir imágenes ahora"
+              label={
+                twoWayHandoff ? 'Subir fotos y resultados' : 'Confirmar y continuar'
+              }
               disabled={!canConfirm}
               onPress={() => {
                 if (!sessionId) {
@@ -115,38 +119,12 @@ export function ReviewScreen({
               }}
             />
           ) : onOpenUploads && sessionId ? (
-            <Button label="Ir a cargas" onPress={() => onOpenUploads(sessionId)} />
-          ) : null}
-          {!isLocalCompleted && localCompletion && (onSaveLocalOnly || onSaveLocal) ? (
-            <Button
-              label="Guardar solo en el dispositivo"
-              disabled={!canConfirm}
-              onPress={() => {
-                if (!sessionId) {
-                  onError('No se encontró la sesión de captura.');
-                  return;
-                }
-                (onSaveLocalOnly ?? onSaveLocal)?.(sessionId);
-              }}
-            />
-          ) : null}
-          {!isLocalCompleted && localCompletion && (onSaveLocalWhenConnected || onSaveLocal) ? (
-            <Button
-              label="Guardar y subir cuando haya conexión"
-              disabled={!canConfirm}
-              onPress={() => {
-                if (!sessionId) {
-                  onError('No se encontró la sesión de captura.');
-                  return;
-                }
-                (onSaveLocalWhenConnected ?? onSaveLocal)?.(sessionId);
-              }}
-            />
+            <Button label="Continuar carga al servidor" onPress={() => onOpenUploads(sessionId)} />
           ) : null}
           {csvExport ? (
             <Button
-              label="Exportar ZIP (CSV + fotos)"
-              disabled={!exportGate.ok || !sessionId || !services.localCsvExport}
+              label={exportBusy ? 'Exportando ZIP…' : 'Exportar ZIP (CSV + fotos)'}
+              disabled={exportBusy || !sessionId || !services.localCsvExport}
               onPress={() => {
                 if (!sessionId || !services.localCsvExport) {
                   onError('Exportación no disponible.');
@@ -172,19 +150,6 @@ export function ReviewScreen({
                     onError(userMessageForLocalCsvExportError(mapLocalCsvExportError(e)));
                   })
                   .finally(() => setExportBusy(false));
-              }}
-            />
-          ) : null}
-          {!localCompletion && !isLocalCompleted ? (
-            <Button
-              label="Confirmar y continuar"
-              disabled={!canConfirm}
-              onPress={() => {
-                if (!sessionId) {
-                  onError('No se encontró la sesión de captura.');
-                  return;
-                }
-                onConfirm(sessionId);
               }}
             />
           ) : null}
