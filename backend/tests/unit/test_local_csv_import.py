@@ -304,3 +304,59 @@ def test_empty_position_forces_requires_review_on_productive() -> None:
     confirm.execute(inventory_id="inventory-1", export_id=staged.export_id)
     result = writer.list_for_inventory("inventory-1")[0]
     assert result.requires_review is True
+
+
+def test_preview_revalidates_rejected_rows_when_aisle_appears() -> None:
+    """Stale PREVIEWED+REJECTED must not block retry after aisle exists."""
+    inventory_repo = MemoryInventoryRepository()
+    inventory_repo.save(
+        Inventory(
+            id="inventory-1",
+            name="Inventory",
+            status=InventoryStatus.DRAFT,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    aisle_repo = MemoryAisleRepository()
+    import_repo = MemoryLocalCsvImportRepository()
+    preview = PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=import_repo,
+        clock=FixedClock(),
+        enabled=True,
+    )
+    content = _csv_bytes()
+    first = preview.execute(inventory_id="inventory-1", content=content)
+    assert first.rejected_rows == 1
+    assert first.rows[0].status == "REJECTED"
+    assert "aisle_id:not_in_inventory" in first.rows[0].validation_errors
+    first_id = first.id
+    first_row_id = first.rows[0].id
+
+    aisle_repo.save(
+        Aisle(
+            id="aisle-1",
+            inventory_id="inventory-1",
+            code="A",
+            status=AisleStatus.CREATED,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    second = preview.execute(inventory_id="inventory-1", content=content)
+    assert second.id == first_id
+    assert second.rows[0].id == first_row_id
+    assert second.rejected_rows == 0
+    assert second.rows[0].status == "PREVIEW_VALID"
+    assert second.rows[0].validation_errors == ()
+
+
+def test_preview_idempotent_when_no_rejected_rows() -> None:
+    preview, _, _, _, _, _ = _use_cases()
+    content = _csv_bytes()
+    first = preview.execute(inventory_id="inventory-1", content=content)
+    second = preview.execute(inventory_id="inventory-1", content=content)
+    assert second.id == first.id
+    assert second.rows[0].id == first.rows[0].id

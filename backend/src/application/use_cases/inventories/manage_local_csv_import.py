@@ -9,7 +9,11 @@ from src.application.ports.local_csv_import_repository import LocalCsvImportRepo
 from src.application.ports.local_csv_inventory_result_writer import LocalCsvInventoryResultWriter
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.ports.sql_cursor import SqlCursorLike
-from src.application.services.local_csv_parser import ParsedLocalCsvRow, parse_local_csv
+from src.application.services.local_csv_parser import (
+    ParsedLocalCsv,
+    ParsedLocalCsvRow,
+    parse_local_csv,
+)
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.domain.local_csv_import.entities import (
     LocalCsvImport,
@@ -83,10 +87,35 @@ class PreviewLocalCsvImport:
                     LOCAL_CSV_EXPORT_CONFLICT,
                     "export_id already exists with different CSV content",
                 )
-            return existing
+            # Idempotent success / confirmed: keep staged record.
+            # PREVIEWED with rejects: re-validate (aisle membership, parser rules)
+            # so a later deploy or aisle create is not stuck on stale REJECTED rows.
+            if existing.status == "CONFIRMED" or existing.rejected_rows == 0:
+                return existing
+            return self._build_and_persist_preview(
+                inventory_id=inventory_id,
+                parsed=parsed,
+                existing=existing,
+            )
 
+        return self._build_and_persist_preview(
+            inventory_id=inventory_id,
+            parsed=parsed,
+            existing=None,
+        )
+
+    def _build_and_persist_preview(
+        self,
+        *,
+        inventory_id: str,
+        parsed: ParsedLocalCsv,
+        existing: LocalCsvImport | None,
+    ) -> LocalCsvImport:
         aisle_ids = {a.id for a in self._aisle_repo.list_by_inventory(inventory_id)}
-        import_id = str(uuid.uuid4())
+        import_id = existing.id if existing is not None else str(uuid.uuid4())
+        prior_by_number = (
+            {row.row_number: row for row in existing.rows} if existing is not None else {}
+        )
         seen_keys: set[tuple[str, str]] = set()
         rows: list[LocalCsvImportRow] = []
         for parsed_row in parsed.rows:
@@ -108,12 +137,22 @@ class PreviewLocalCsvImport:
                 capture_session_id=values["capture_session_id"],
                 capture_photo_id=values["capture_photo_id"],
                 label_id=(values.get("label_id") or "").strip() or None,
-                detection_source=(values.get("source") or "").strip() or None,
+                detection_source=(
+                    (parsed_row.detection_source or values.get("source") or "").strip() or None
+                ),
             )
             if secondary_key in seen_keys:
                 errors.append("secondary_key:duplicate_in_file")
             seen_keys.add(secondary_key)
-            rows.append(self._to_row(import_id, parsed_row, tuple(dict.fromkeys(errors))))
+            prior = prior_by_number.get(parsed_row.row_number)
+            rows.append(
+                self._to_row(
+                    import_id,
+                    parsed_row,
+                    tuple(dict.fromkeys(errors)),
+                    row_id=prior.id if prior is not None else None,
+                )
+            )
 
         now = self._clock.now()
         rejected = sum(row.status == "REJECTED" for row in rows)
@@ -130,15 +169,21 @@ class PreviewLocalCsvImport:
             valid_rows=len(rows) - rejected,
             rejected_rows=rejected,
             duplicate_rows=0,
-            created_at=now,
+            created_at=existing.created_at if existing is not None else now,
             updated_at=now,
             rows=tuple(rows),
         )
+        if existing is not None:
+            return self._import_repo.save(record)
         return self._import_repo.stage_or_get_existing(record)
 
     @staticmethod
     def _to_row(
-        import_id: str, parsed: ParsedLocalCsvRow, errors: tuple[str, ...]
+        import_id: str,
+        parsed: ParsedLocalCsvRow,
+        errors: tuple[str, ...],
+        *,
+        row_id: str | None = None,
     ) -> LocalCsvImportRow:
         values = parsed.values
         requires_review = bool(parsed.requires_review)
@@ -149,7 +194,7 @@ class PreviewLocalCsvImport:
         position_label_id = (values.get("position_label_id") or "").strip() or None
         position_payload_raw = (values.get("position_payload_raw") or "").strip() or None
         return LocalCsvImportRow(
-            id=str(uuid.uuid4()),
+            id=row_id or str(uuid.uuid4()),
             import_id=import_id,
             row_number=parsed.row_number,
             inventory_id=values["inventory_id"],
