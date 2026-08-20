@@ -122,7 +122,11 @@ export interface AppServices {
   readonly localCsvExport: LocalCsvExportService | null;
   readonly confirmLocalResult: Pick<
     ConfirmLocalResultService,
-    'isEnabled' | 'getLatestDraftForPhoto' | 'resolveSource' | 'confirm'
+    | 'isEnabled'
+    | 'getLatestDraftForPhoto'
+    | 'resolveSource'
+    | 'confirm'
+    | 'confirmResolvedDraftsForSession'
   >;
   readonly preliminarySync: PreliminaryDetectionSyncService;
   readonly authoritativeLocalSync: AuthoritativeLocalResultSyncService;
@@ -258,6 +262,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     isEnabled: () => confirmLocalResultBase.isEnabled(),
     getLatestDraftForPhoto: (id: string) => confirmLocalResultBase.getLatestDraftForPhoto(id),
     resolveSource: confirmLocalResultBase.resolveSource.bind(confirmLocalResultBase),
+    confirmResolvedDraftsForSession: (
+      args: Parameters<ConfirmLocalResultService['confirmResolvedDraftsForSession']>[0],
+    ) => confirmLocalResultBase.confirmResolvedDraftsForSession(args),
     confirm: async (args: Parameters<ConfirmLocalResultService['confirm']>[0]) => {
       const row = await confirmLocalResultBase.confirm(args);
       const session = await captureRepo.getSession(args.captureSessionId);

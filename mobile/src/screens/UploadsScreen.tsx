@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Image, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Text, View } from 'react-native';
 
 import { ProcessAisleConfirmModal } from '../components/ProcessAisleConfirmModal';
 import { hasForeignUploadLease, UPLOAD_WORKER_OWNER_JS } from '../core/uploadLease';
 import type { LocalDetectionDraftRow } from '../database/repositories/localDetectionDraftRepository';
 import type { ConfirmedLocalResultRow } from '../database/repositories/confirmedLocalResultRepository';
 import type { CapturePhotoRow } from '../database/schema/captureSchema';
+import { canExportSession } from '../features/localCsv/canExportSession';
+import {
+  mapLocalCsvExportError,
+  runLocalCsvExport,
+  userMessageForLocalCsvExportError,
+} from '../features/localCsv/runLocalCsvExport';
 import {
   formatLocalScanDetection,
   labelForLocalScanStatus,
@@ -43,29 +49,31 @@ function labelForUploadStatus(photo: CapturePhotoRow): string {
   }
   switch (photo.upload_status) {
     case 'not_queued':
-      return 'Pendiente';
+      return 'Pendiente de subir';
     case 'queued':
-      return 'En cola';
+      return 'En cola de subida';
     case 'preparing':
-      return 'Preparando';
-    case 'uploading':
-      return 'Subiendo';
+      return 'Preparando para subir';
+    case 'uploading': {
+      const pct = Math.round(photo.upload_progress ?? 0);
+      return pct > 0 && pct < 100 ? `Subiendo… ${pct}%` : 'Subiendo al servidor…';
+    }
     case 'uploaded':
-      return 'Completado';
+      return '✓ En el servidor';
     case 'retryable_error':
       return photo.last_upload_error_message
         ? `Error de carga: ${photo.last_upload_error_message}`
-        : 'Reintentando';
+        : 'Error — reintentar';
     case 'permanent_error':
       return photo.last_upload_error_message
         ? `Error: ${photo.last_upload_error_message}`
-        : 'Error';
+        : 'Error permanente';
     case 'excluded':
       return 'Excluida';
     case 'remote_delete_pending':
       return 'Eliminación remota pendiente';
     case 'remote_deleted':
-      return 'Eliminada';
+      return 'Eliminada del servidor';
     default:
       return photo.upload_status;
   }
@@ -198,6 +206,11 @@ export function UploadsScreen({
   const [localResults, setLocalResults] = useState<ConfirmedLocalResultRow[]>([]);
   const [uploadLocalBusy, setUploadLocalBusy] = useState(false);
   const [uploadLocalMessage, setUploadLocalMessage] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportHint, setExportHint] = useState<string | null>(null);
+  const [sessionRow, setSessionRow] = useState<
+    Awaited<ReturnType<AppServices['capture']['getSessionSnapshot']>>['session'] | null
+  >(null);
 
   const refresh = useCallback(() => {
     void services.uploadQueue.getSessionProgress(sessionId).then(setProgress);
@@ -266,7 +279,10 @@ export function UploadsScreen({
   }, [refresh, services]);
   useEffect(() => {
     const snap = services.capture.subscribe((s) => {
-      if (s.session?.id === sessionId) setPhotos(s.photos);
+      if (s.session?.id === sessionId) {
+        setPhotos(s.photos);
+        setSessionRow(s.session);
+      }
     });
     void services.capture.loadSession(sessionId, false);
     return snap;
@@ -283,6 +299,17 @@ export function UploadsScreen({
       p.upload_status === 'not_queued',
   ).length;
   const uploadedCount = uploadPhotos.filter((p) => p.upload_status === 'uploaded').length;
+  const trackedCount = uploadPhotos.filter(
+    (p) => p.upload_status !== 'excluded' && p.upload_status !== 'remote_deleted',
+  ).length;
+  const allUploaded = trackedCount > 0 && uploadedCount >= trackedCount && pendingUploads === 0;
+  const csvExport = services.config.flags.mobileCsvExport !== false;
+  const exportGate = canExportSession({
+    session: sessionRow,
+    photos,
+    csvExportEnabled: csvExport,
+    exportInProgress: exportBusy,
+  });
 
   const openConfirm = () => {
     if (!ready || busy) return;
@@ -398,32 +425,41 @@ export function UploadsScreen({
               Cargas · {progress?.inventoryName ?? ''} / {progress?.aisleName ?? ''}
             </Text>
             <Text style={styles.row}>
-              Cargadas: {progress?.uploaded ?? 0} · Pendientes: {progress?.pending ?? 0} · Subiendo:{' '}
-              {progress?.uploading ?? 0} · Con error: {(progress?.retryable ?? 0) + (progress?.permanent ?? 0)}
+              En el servidor: {uploadedCount} de {trackedCount || progress?.totalStable || 0}
+              {pendingUploads > 0 ? ` · Faltan: ${pendingUploads}` : ''}
+              {(progress?.retryable ?? 0) + (progress?.permanent ?? 0) > 0
+                ? ` · Con error: ${(progress?.retryable ?? 0) + (progress?.permanent ?? 0)}`
+                : ''}
             </Text>
             <BackgroundUploadHint services={services} onResume={refresh} />
-            {uploadedCount > 0 && pendingUploads === 0 ? (
-              <Text style={styles.muted}>
-                Fotos ya en el servidor ({uploadedCount}). Siguiente paso: confirmar resultados
-                locales (opcional) o «Procesar pasillo».
+            {allUploaded ? (
+              <Text style={styles.notif}>
+                ✓ Todas las fotos ya están en el servidor ({uploadedCount}).
+                {services.config.flags.mobileAuthoritativeLocalCodeScan
+                  ? ' Siguiente paso: subir resultados locales.'
+                  : ' Siguiente paso: procesar pasillo.'}
               </Text>
             ) : pendingUploads > 0 ? (
               <Text style={styles.muted}>
-                Subiendo {pendingUploads} foto(s). Si no avanza, tocá «Reanudar cola» o
-                «Reintentar todo».
+                Subiendo {pendingUploads} foto(s)… {uploadedCount}/{trackedCount || '—'} en el
+                servidor. Si no avanza, tocá «Reanudar cola» o «Reintentar todo».
               </Text>
             ) : (
               <Text style={styles.muted}>No hay fotos pendientes de carga en esta sesión.</Text>
             )}
+            {exportHint ? <Text style={styles.notif}>{exportHint}</Text> : null}
+            {exportBusy ? <ActivityIndicator /> : null}
             {authSyncPending > 0 ? (
               <Text style={styles.muted}>
                 Sync de resultados locales confirmados: {authSyncPending} pendiente(s). No bloquea
                 la carga de fotos; reintenta en segundo plano.
               </Text>
             ) : null}
-            <Text style={styles.muted}>
-              Tipo de trabajo: {labelForIdentificationMode(identificationModePreference)}
-            </Text>
+            {!services.config.flags.mobileAuthoritativeLocalCodeScan ? (
+              <Text style={styles.muted}>
+                Tipo de trabajo: {labelForIdentificationMode(identificationModePreference)}
+              </Text>
+            ) : null}
             {localScanSummary && localScanSummary.scanned > 0 ? (
               <Text style={styles.muted}>
                 Escaneo local: {localScanSummary.scanned} · Detectadas:{' '}
@@ -457,7 +493,13 @@ export function UploadsScreen({
               />
             ) : null}
             <Button
-              label={busy ? 'Validando...' : 'Procesar pasillo'}
+              label={
+                busy
+                  ? 'Validando...'
+                  : services.config.flags.mobileAuthoritativeLocalCodeScan
+                    ? 'Subir resultados locales'
+                    : 'Procesar pasillo'
+              }
               disabled={!ready || busy}
               onPress={openConfirm}
             />
@@ -471,19 +513,52 @@ export function UploadsScreen({
                 })}
               </Text>
             ) : null}
+            {csvExport && services.localCsvExport ? (
+              <Button
+                label={exportBusy ? 'Exportando ZIP…' : 'Exportar ZIP (CSV + fotos)'}
+                disabled={exportBusy}
+                onPress={() => {
+                  if (!services.localCsvExport) {
+                    onError('Exportación no disponible.');
+                    return;
+                  }
+                  if (!exportGate.ok) {
+                    onError(exportGate.reason);
+                    return;
+                  }
+                  setExportBusy(true);
+                  setExportHint(null);
+                  void runLocalCsvExport(services.localCsvExport, sessionId)
+                    .then(({ exported }) => {
+                      setExportHint(
+                        `ZIP listo · ${exported.rowCount} filas · ${exported.photoCount} fotos · ${
+                          exported.checksumSha256.slice(0, 12)
+                        }…`,
+                      );
+                    })
+                    .catch((e) => {
+                      onError(userMessageForLocalCsvExportError(mapLocalCsvExportError(e)));
+                    })
+                    .finally(() => setExportBusy(false));
+                }}
+              />
+            ) : null}
           </View>
         }
         ListEmptyComponent={<Text style={styles.muted}>Sin fotografías en cola.</Text>}
         renderItem={({ item: photo }) => {
           const draft = localDraftByPhoto[photo.id];
           const detection = formatLocalScanDetection(draft);
+          const uploaded = photo.upload_status === 'uploaded';
           return (
             <View style={styles.photoCard}>
               <Image source={{ uri: photo.uri }} style={styles.thumb} />
               <Text style={styles.photoText} numberOfLines={1}>
                 {photo.display_name}
               </Text>
-              <Text style={styles.photoText}>{labelForUploadStatus(photo)}</Text>
+              <Text style={uploaded ? styles.notif : styles.photoText}>
+                {labelForUploadStatus(photo)}
+              </Text>
               {labelForLocalScanStatus(draft?.status, draft?.error_code) ? (
                 <Text style={styles.muted} numberOfLines={2}>
                   {labelForLocalScanStatus(draft?.status, draft?.error_code)}
@@ -544,6 +619,10 @@ export function UploadsScreen({
         allowUploadLocalResults={Boolean(
           services.config.flags.mobileAuthoritativeLocalCodeScan,
         )}
+        allowServerProcess={
+          !services.config.flags.mobileAuthoritativeLocalCodeScan ||
+          Boolean(services.config.flags.mobileServerReprocess)
+        }
         onClose={() => {
           if (busy || uploadLocalBusy) return;
           setConfirmVisible(false);

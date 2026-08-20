@@ -392,48 +392,31 @@ export default function App(): JSX.Element {
               setScreen('local-result-review');
               return;
             }
-            void services.capture
-              .completeReview()
-              .then((sid) => {
-                setWorkSessionId(sid);
-                if (identificationModePreference) {
-                  void services.uploadQueue.setSessionPreparationMode(
-                    sid,
-                    identificationModePreference,
-                  );
-                }
-                void services.uploadQueue.enqueueSession(sid);
-                setScreen('uploads');
-              })
-              .catch((e) => setError(messageOf(e)));
-          }}
-          onSaveLocalOnly={(sessionId) => {
-            setWorkSessionId(sessionId);
-            void services.capture
-              .completeLocalSession({ uploadPolicy: 'MANUAL' })
-              .then(({ sessionId: sid }) => {
-                setWorkSessionId(sid);
-                refreshLocalWork();
-                // Stay on review (read-only / local_completed) so Exportar ZIP remains available.
-                setScreen('review');
-              })
-              .catch((e) => setError(messageOf(e)));
-          }}
-          onSaveLocalWhenConnected={(sessionId) => {
-            setWorkSessionId(sessionId);
-            void services.capture
-              .completeLocalSession({ uploadPolicy: 'WHEN_CONNECTED' })
-              .then(({ sessionId: sid, uploadPolicy }) => {
-                setWorkSessionId(sid);
-                if (uploadPolicy === 'WHEN_CONNECTED' || uploadPolicy === 'NOW') {
-                  void services.uploadQueue.enqueueSession(sid).catch(() => {
-                    // Scheduling failure must not undo local close.
+            void (async () => {
+              try {
+                if (
+                  services.config.flags.mobileAuthoritativeLocalCodeScan &&
+                  auth?.user?.id
+                ) {
+                  const snap =
+                    capture?.session?.id === sessionId
+                      ? capture
+                      : await services.capture.loadSession(sessionId, false);
+                  await services.confirmLocalResult.confirmResolvedDraftsForSession({
+                    sessionId,
+                    confirmedByUserId: auth.user.id,
+                    photos: snap.photos,
                   });
                 }
-                refreshLocalWork();
-                setScreen('review');
-              })
-              .catch((e) => setError(messageOf(e)));
+                const sid = await services.capture.completeReview();
+                setWorkSessionId(sid);
+                await services.uploadQueue.setSessionPreparationMode(sid, 'CODE_SCAN');
+                await services.uploadQueue.enqueueSession(sid);
+                setScreen('uploads');
+              } catch (e) {
+                setError(messageOf(e));
+              }
+            })();
           }}
           onOpenUploads={(sessionId) => {
             setWorkSessionId(sessionId);

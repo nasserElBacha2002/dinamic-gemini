@@ -26,6 +26,19 @@ describe('UploadsScreen JSX hygiene', () => {
     expect(source).toMatch(/mobileAuthoritativeLocalCodeScan/);
   });
 
+  it('hides AI process when local upload path is primary', () => {
+    expect(source).toMatch(/allowServerProcess=/);
+    expect(source).toMatch(/mobileServerReprocess/);
+    expect(source).toMatch(/Subir resultados locales/);
+  });
+
+  it('makes upload completion and ZIP availability explicit', () => {
+    expect(source).toMatch(/Todas las fotos ya están en el servidor/);
+    expect(source).toMatch(/En el servidor/);
+    expect(source).toMatch(/Exportar ZIP \(CSV \+ fotos\)/);
+    expect(source).toMatch(/disabled=\{exportBusy\}/);
+  });
+
   it('uses session-scoped or result-scoped sync from the aisle dialog path', () => {
     expect(source).toMatch(/syncPendingForSession|syncResults/);
     expect(source).not.toMatch(/authoritativeLocalSync\s*\.\s*syncPending\s*\(\s*\)/);

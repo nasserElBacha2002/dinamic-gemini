@@ -261,6 +261,10 @@ export function ProcessingScreen({
         allowUploadLocalResults={Boolean(
           services.config.flags.mobileAuthoritativeLocalCodeScan,
         )}
+        allowServerProcess={
+          !services.config.flags.mobileAuthoritativeLocalCodeScan ||
+          Boolean(services.config.flags.mobileServerReprocess)
+        }
         onClose={() => {
           if (busy || uploadLocalBusy) return;
           setConfirmVisible(false);
