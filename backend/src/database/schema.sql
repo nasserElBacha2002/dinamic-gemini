@@ -2276,3 +2276,4007 @@ IF NOT EXISTS (
     CREATE NONCLUSTERED INDEX IX_gfbr_job_status
         ON global_fallback_batch_requests(job_id, status, batch_index);
 GO
+
+-- >>> FOLDED_FROM_MIGRATIONS_BEGIN (auto; keep schema.sql aligned with migrations/versions)
+-- Idempotent DDL copied from migrations/versions so clean installs match latest schema.
+-- Safe alongside db_migrate apply (IF NOT EXISTS / COL_LENGTH guards).
+-- Prefer: update the migration, then re-run this script.
+
+-- ----- folded from 0009_add_position_corrected_code.sql -----
+-- v3.3.4 — Persist corrected position code for manual review flow
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('positions') AND name = 'corrected_position_code')
+    ALTER TABLE positions ADD corrected_position_code VARCHAR(64) NULL;
+GO
+GO
+
+-- ----- folded from 0031_global_prompt_configs_foundation.sql -----
+-- Phase D9 — global prompt configs persistence foundation (additive only).
+-- model_scope_key normalizes NULL model_name to a deterministic scope sentinel.
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'global_prompt_configs')
+BEGIN
+    CREATE TABLE global_prompt_configs (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        scope_type VARCHAR(32) NOT NULL CONSTRAINT DF_global_prompt_configs_scope_type DEFAULT ('global'),
+        provider_name VARCHAR(32) NULL,
+        model_name VARCHAR(128) NULL,
+        model_scope_key AS (CASE WHEN model_name IS NULL THEN '#NULL#' ELSE 'M:' + model_name END) PERSISTED,
+        instructions_text NVARCHAR(MAX) NOT NULL,
+        version INT NOT NULL,
+        is_active BIT NOT NULL CONSTRAINT DF_global_prompt_configs_is_active DEFAULT (0),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT CK_global_prompt_configs_scope_type_global
+            CHECK (scope_type = 'global'),
+        CONSTRAINT CK_global_prompt_configs_global_null_provider_model
+            CHECK (scope_type <> 'global' OR (provider_name IS NULL AND model_name IS NULL))
+    );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_global_prompt_configs_scope'
+      AND object_id = OBJECT_ID('global_prompt_configs')
+)
+    CREATE INDEX IX_global_prompt_configs_scope
+        ON global_prompt_configs(scope_type, provider_name, model_name, created_at DESC);
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_global_prompt_configs_scope_version'
+      AND object_id = OBJECT_ID('global_prompt_configs')
+)
+    CREATE UNIQUE INDEX UQ_global_prompt_configs_scope_version
+        ON global_prompt_configs(scope_type, provider_name, model_scope_key, version);
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_global_prompt_configs_one_active'
+      AND object_id = OBJECT_ID('global_prompt_configs')
+)
+    CREATE UNIQUE INDEX UQ_global_prompt_configs_one_active
+        ON global_prompt_configs(scope_type, provider_name, model_scope_key)
+        WHERE is_active = 1;
+GO
+GO
+
+-- ----- folded from 0033_aisle_code_scans.sql -----
+-- Phase 1 — Aisle QR/barcode code scan runs and detections (auxiliary flow; independent of AI worker).
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'aisle_code_scan_runs')
+BEGIN
+    CREATE TABLE aisle_code_scan_runs (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        total_assets INT NOT NULL,
+        processed_assets INT NOT NULL,
+        failed_assets INT NOT NULL,
+        total_codes_found INT NOT NULL,
+        total_qr_found INT NOT NULL,
+        total_barcodes_found INT NOT NULL,
+        started_at DATETIME2 NOT NULL,
+        finished_at DATETIME2 NULL,
+        error_message NVARCHAR(2048) NULL,
+        scanner_engine VARCHAR(64) NOT NULL,
+        is_latest BIT NOT NULL CONSTRAINT DF_aisle_code_scan_runs_is_latest DEFAULT 0,
+        created_by VARCHAR(128) NULL,
+        metadata_json NVARCHAR(MAX) NULL,
+        CONSTRAINT FK_aisle_code_scan_runs_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_aisle_code_scan_runs_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id)
+    );
+    CREATE INDEX IX_aisle_code_scan_runs_inventory_aisle ON aisle_code_scan_runs(inventory_id, aisle_id);
+    CREATE INDEX IX_aisle_code_scan_runs_aisle_started ON aisle_code_scan_runs(aisle_id, started_at);
+    CREATE INDEX IX_aisle_code_scan_runs_latest ON aisle_code_scan_runs(inventory_id, aisle_id, is_latest);
+END;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'aisle_code_scan_detections')
+BEGIN
+    CREATE TABLE aisle_code_scan_detections (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        run_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        code_type VARCHAR(16) NOT NULL,
+        code_value NVARCHAR(2048) NOT NULL,
+        normalized_code_value NVARCHAR(2048) NOT NULL,
+        bounding_box_json NVARCHAR(MAX) NULL,
+        confidence FLOAT NULL,
+        detection_status VARCHAR(32) NOT NULL,
+        scanner_engine VARCHAR(64) NOT NULL,
+        metadata_json NVARCHAR(MAX) NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_aisle_code_scan_detections_run FOREIGN KEY (run_id) REFERENCES aisle_code_scan_runs(id),
+        CONSTRAINT FK_aisle_code_scan_detections_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_aisle_code_scan_detections_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT FK_aisle_code_scan_detections_asset FOREIGN KEY (asset_id) REFERENCES source_assets(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IX_aisle_code_scan_detections_run ON aisle_code_scan_detections(run_id);
+    CREATE INDEX IX_aisle_code_scan_detections_asset ON aisle_code_scan_detections(asset_id);
+    CREATE INDEX IX_aisle_code_scan_detections_aisle_norm ON aisle_code_scan_detections(aisle_id, normalized_code_value);
+    CREATE INDEX IX_aisle_code_scan_detections_scope ON aisle_code_scan_detections(inventory_id, aisle_id);
+END;
+GO
+GO
+
+-- ----- folded from 0034_aisle_code_scan_constraints.sql -----
+-- Phase 1 corrections — aisle code scan: one latest run per aisle + enum CHECK constraints.
+-- Safe when 0033 was applied without these constraints (idempotent).
+
+-- Replace non-unique latest index with filtered unique index (one is_latest=1 per inventory/aisle).
+IF EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_aisle_code_scan_runs_latest' AND object_id = OBJECT_ID('aisle_code_scan_runs')
+)
+    DROP INDEX IX_aisle_code_scan_runs_latest ON aisle_code_scan_runs;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UX_aisle_code_scan_runs_one_latest' AND object_id = OBJECT_ID('aisle_code_scan_runs')
+)
+BEGIN
+    CREATE UNIQUE INDEX UX_aisle_code_scan_runs_one_latest
+    ON aisle_code_scan_runs(inventory_id, aisle_id)
+    WHERE is_latest = 1;
+END;
+GO
+
+-- Run status enum
+IF OBJECT_ID('aisle_code_scan_runs', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.check_constraints
+       WHERE name = 'CK_aisle_code_scan_runs_status'
+         AND parent_object_id = OBJECT_ID('aisle_code_scan_runs')
+   )
+BEGIN
+    ALTER TABLE aisle_code_scan_runs
+    ADD CONSTRAINT CK_aisle_code_scan_runs_status CHECK (
+        status IN ('running', 'completed', 'completed_with_warnings', 'failed')
+    );
+END;
+GO
+
+-- Detection enums
+IF OBJECT_ID('aisle_code_scan_detections', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.check_constraints
+       WHERE name = 'CK_aisle_code_scan_detections_code_type'
+         AND parent_object_id = OBJECT_ID('aisle_code_scan_detections')
+   )
+BEGIN
+    ALTER TABLE aisle_code_scan_detections
+    ADD CONSTRAINT CK_aisle_code_scan_detections_code_type CHECK (
+        code_type IN ('qr', 'barcode', 'datamatrix', 'unknown')
+    );
+END;
+GO
+
+IF OBJECT_ID('aisle_code_scan_detections', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.check_constraints
+       WHERE name = 'CK_aisle_code_scan_detections_detection_status'
+         AND parent_object_id = OBJECT_ID('aisle_code_scan_detections')
+   )
+BEGIN
+    ALTER TABLE aisle_code_scan_detections
+    ADD CONSTRAINT CK_aisle_code_scan_detections_detection_status CHECK (
+        detection_status IN ('detected', 'duplicate', 'low_confidence', 'error')
+    );
+END;
+GO
+GO
+
+-- ----- folded from 0035_code_scan_detection_matching.sql -----
+-- Phase 4 — read-only code scan matching fields on detections (audit snapshot).
+
+IF COL_LENGTH('aisle_code_scan_detections', 'matched_position_id') IS NULL
+BEGIN
+    ALTER TABLE aisle_code_scan_detections ADD matched_position_id VARCHAR(36) NULL;
+    ALTER TABLE aisle_code_scan_detections ADD match_status VARCHAR(32) NULL;
+    ALTER TABLE aisle_code_scan_detections ADD match_type VARCHAR(64) NULL;
+    ALTER TABLE aisle_code_scan_detections ADD match_confidence FLOAT NULL;
+    ALTER TABLE aisle_code_scan_detections ADD match_metadata_json NVARCHAR(MAX) NULL;
+    ALTER TABLE aisle_code_scan_detections ADD matched_at DATETIME2 NULL;
+END;
+GO
+
+IF OBJECT_ID('aisle_code_scan_detections', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.foreign_keys
+       WHERE name = 'FK_aisle_code_scan_detections_matched_position'
+         AND parent_object_id = OBJECT_ID('aisle_code_scan_detections')
+   )
+BEGIN
+    ALTER TABLE aisle_code_scan_detections
+    ADD CONSTRAINT FK_aisle_code_scan_detections_matched_position
+        FOREIGN KEY (matched_position_id) REFERENCES positions(id);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_aisle_code_scan_detections_aisle_match_status'
+      AND object_id = OBJECT_ID('aisle_code_scan_detections')
+)
+    CREATE INDEX IX_aisle_code_scan_detections_aisle_match_status
+    ON aisle_code_scan_detections(aisle_id, match_status);
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_aisle_code_scan_detections_aisle_matched_position'
+      AND object_id = OBJECT_ID('aisle_code_scan_detections')
+)
+    CREATE INDEX IX_aisle_code_scan_detections_aisle_matched_position
+    ON aisle_code_scan_detections(aisle_id, matched_position_id);
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_aisle_code_scan_detections_run_match_status'
+      AND object_id = OBJECT_ID('aisle_code_scan_detections')
+)
+    CREATE INDEX IX_aisle_code_scan_detections_run_match_status
+    ON aisle_code_scan_detections(run_id, match_status);
+GO
+GO
+
+-- ----- folded from 0036_code_scan_matching_constraints.sql -----
+-- Phase 4 corrections — CHECK constraints for code scan match fields.
+-- Positions use soft-delete (status=deleted); FK kept without ON DELETE (audit snapshot).
+
+IF OBJECT_ID('aisle_code_scan_detections', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.check_constraints
+       WHERE name = 'CK_aisle_code_scan_detections_match_status'
+         AND parent_object_id = OBJECT_ID('aisle_code_scan_detections')
+   )
+BEGIN
+    ALTER TABLE aisle_code_scan_detections
+    ADD CONSTRAINT CK_aisle_code_scan_detections_match_status
+    CHECK (
+        match_status IS NULL OR match_status IN (
+            'not_evaluated',
+            'matched',
+            'no_match',
+            'multiple_candidates',
+            'conflict'
+        )
+    );
+END;
+GO
+
+IF OBJECT_ID('aisle_code_scan_detections', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.check_constraints
+       WHERE name = 'CK_aisle_code_scan_detections_match_type'
+         AND parent_object_id = OBJECT_ID('aisle_code_scan_detections')
+   )
+BEGIN
+    ALTER TABLE aisle_code_scan_detections
+    ADD CONSTRAINT CK_aisle_code_scan_detections_match_type
+    CHECK (
+        match_type IS NULL OR match_type IN (
+            'barcode_exact',
+            'sku_exact',
+            'internal_code_exact',
+            'position_code_exact',
+            'pallet_id_exact',
+            'qr_payload_sku_exact',
+            'qr_payload_barcode_exact',
+            'multiple_candidates',
+            'no_match'
+        )
+    );
+END;
+GO
+GO
+
+-- ----- folded from 0037_inventory_jobs_finalization_metadata.sql -----
+-- Phase 3.2 — Job finalization progress metadata on inventory_jobs
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'finalization_status')
+    ALTER TABLE inventory_jobs ADD finalization_status VARCHAR(32) NOT NULL DEFAULT 'not_started';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'current_finalization_step')
+    ALTER TABLE inventory_jobs ADD current_finalization_step VARCHAR(64) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'last_completed_finalization_step')
+    ALTER TABLE inventory_jobs ADD last_completed_finalization_step VARCHAR(64) NOT NULL DEFAULT 'none';
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'finalization_error_code')
+    ALTER TABLE inventory_jobs ADD finalization_error_code VARCHAR(64) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'finalization_error_metadata')
+    ALTER TABLE inventory_jobs ADD finalization_error_metadata NVARCHAR(MAX) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'finalization_started_at')
+    ALTER TABLE inventory_jobs ADD finalization_started_at DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'finalization_completed_at')
+    ALTER TABLE inventory_jobs ADD finalization_completed_at DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'domain_persisted_at')
+    ALTER TABLE inventory_jobs ADD domain_persisted_at DATETIME2 NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'artifacts_published_at')
+    ALTER TABLE inventory_jobs ADD artifacts_published_at DATETIME2 NULL;
+GO
+GO
+
+-- ----- folded from 0038_job_finalization_stages_and_artifact_manifest.sql -----
+-- Phase 3.3 — Authoritative finalization stage evidence and artifact manifest
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'job_finalization_stages')
+CREATE TABLE job_finalization_stages (
+    job_id VARCHAR(64) NOT NULL,
+    stage VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'unknown',
+    evidence_level VARCHAR(32) NOT NULL DEFAULT 'unknown',
+    completed_at DATETIME2 NULL,
+    verified_at DATETIME2 NULL,
+    verification_source VARCHAR(128) NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    last_error_code VARCHAR(64) NULL,
+    last_error_metadata NVARCHAR(MAX) NULL,
+    version INT NOT NULL DEFAULT 1,
+    created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT PK_job_finalization_stages PRIMARY KEY (job_id, stage)
+);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_job_finalization_stages_job_id')
+    CREATE INDEX IX_job_finalization_stages_job_id ON job_finalization_stages (job_id);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_job_finalization_stages_status_updated')
+    CREATE INDEX IX_job_finalization_stages_status_updated ON job_finalization_stages (status, updated_at);
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'job_artifact_manifest')
+CREATE TABLE job_artifact_manifest (
+    job_id VARCHAR(64) NOT NULL,
+    artifact_kind VARCHAR(64) NOT NULL,
+    required BIT NOT NULL DEFAULT 1,
+    storage_key VARCHAR(512) NULL,
+    content_hash VARCHAR(128) NULL,
+    size_bytes BIGINT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    published_at DATETIME2 NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    last_error NVARCHAR(2048) NULL,
+    version INT NOT NULL DEFAULT 1,
+    created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT PK_job_artifact_manifest PRIMARY KEY (job_id, artifact_kind)
+);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_job_artifact_manifest_job_id')
+    CREATE INDEX IX_job_artifact_manifest_job_id ON job_artifact_manifest (job_id);
+GO
+GO
+
+-- ----- folded from 0039_job_finalization_recovery_attempts.sql -----
+-- Phase 3.4 — Manual finalization recovery audit and lease tracking
+-- Foreign keys omitted: job rows may be purged under retention while audit history remains.
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'job_finalization_recovery_attempts')
+CREATE TABLE job_finalization_recovery_attempts (
+    id VARCHAR(64) NOT NULL,
+    recovery_id VARCHAR(64) NOT NULL,
+    job_id VARCHAR(64) NOT NULL,
+    operation VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'running',
+    started_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    finished_at DATETIME2 NULL,
+    requested_by VARCHAR(128) NOT NULL,
+    source VARCHAR(64) NOT NULL,
+    initial_assessment_outcome VARCHAR(64) NOT NULL,
+    initial_blocking_reason VARCHAR(128) NULL,
+    final_assessment_outcome VARCHAR(64) NULL,
+    final_blocking_reason VARCHAR(128) NULL,
+    error_code VARCHAR(64) NULL,
+    sanitized_error NVARCHAR(2048) NULL,
+    lease_expires_at DATETIME2 NULL,
+    created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT PK_job_finalization_recovery_attempts PRIMARY KEY (id)
+);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_job_finalization_recovery_attempts_job_id')
+    CREATE INDEX IX_job_finalization_recovery_attempts_job_id
+        ON job_finalization_recovery_attempts (job_id, started_at DESC);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_job_finalization_recovery_attempts_status')
+    CREATE INDEX IX_job_finalization_recovery_attempts_status
+        ON job_finalization_recovery_attempts (status, lease_expires_at);
+GO
+GO
+
+-- ----- folded from 0040_artifact_publication_outbox.sql -----
+-- Phase 3.5 — Durable artifact publication outbox
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'artifact_publication_outbox')
+CREATE TABLE artifact_publication_outbox (
+    id VARCHAR(64) NOT NULL,
+    job_id VARCHAR(64) NOT NULL,
+    artifact_kind VARCHAR(64) NOT NULL,
+    required BIT NOT NULL DEFAULT 1,
+    source_type VARCHAR(64) NOT NULL DEFAULT 'exact_local_source',
+    source_reference NVARCHAR(1024) NULL,
+    destination_key VARCHAR(512) NULL,
+    content_hash VARCHAR(128) NULL,
+    size_bytes BIGINT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    attempt_count INT NOT NULL DEFAULT 0,
+    max_attempts INT NOT NULL DEFAULT 5,
+    next_attempt_at DATETIME2 NULL,
+    claimed_at DATETIME2 NULL,
+    claimed_by VARCHAR(128) NULL,
+    lease_expires_at DATETIME2 NULL,
+    last_error_code VARCHAR(64) NULL,
+    last_error_message NVARCHAR(2048) NULL,
+    created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    published_at DATETIME2 NULL,
+    version INT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_artifact_publication_outbox PRIMARY KEY (id),
+    CONSTRAINT UQ_artifact_publication_outbox_job_kind UNIQUE (job_id, artifact_kind),
+    CONSTRAINT CK_artifact_publication_outbox_attempt_count CHECK (attempt_count >= 0),
+    CONSTRAINT CK_artifact_publication_outbox_max_attempts CHECK (max_attempts > 0),
+    CONSTRAINT CK_artifact_publication_outbox_version CHECK (version > 0),
+    CONSTRAINT CK_artifact_publication_outbox_size_bytes CHECK (size_bytes IS NULL OR size_bytes >= 0)
+);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_artifact_publication_outbox_status_next')
+    CREATE INDEX IX_artifact_publication_outbox_status_next
+        ON artifact_publication_outbox (status, next_attempt_at);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_artifact_publication_outbox_job_id')
+    CREATE INDEX IX_artifact_publication_outbox_job_id
+        ON artifact_publication_outbox (job_id);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_artifact_publication_outbox_lease_expires')
+    CREATE INDEX IX_artifact_publication_outbox_lease_expires
+        ON artifact_publication_outbox (lease_expires_at);
+GO
+GO
+
+-- ----- folded from 0041_artifact_publication_durable_sources_and_checksums.sql -----
+-- Phase 3.5 corrections — durable staging checksums and due-work indexing
+-- SQL Server requires separate batches: ALTER ADD column, then UPDATE referencing it.
+
+IF COL_LENGTH('artifact_publication_outbox', 'source_sha256') IS NULL
+    ALTER TABLE artifact_publication_outbox ADD source_sha256 VARCHAR(128) NULL;
+IF COL_LENGTH('artifact_publication_outbox', 'storage_etag') IS NULL
+    ALTER TABLE artifact_publication_outbox ADD storage_etag VARCHAR(128) NULL;
+IF COL_LENGTH('artifact_publication_outbox', 'storage_checksum_value') IS NULL
+    ALTER TABLE artifact_publication_outbox ADD storage_checksum_value VARCHAR(128) NULL;
+IF COL_LENGTH('artifact_publication_outbox', 'storage_checksum_algorithm') IS NULL
+    ALTER TABLE artifact_publication_outbox ADD storage_checksum_algorithm VARCHAR(32) NULL;
+IF COL_LENGTH('artifact_publication_outbox', 'verified_at') IS NULL
+    ALTER TABLE artifact_publication_outbox ADD verified_at DATETIME2 NULL;
+IF COL_LENGTH('artifact_publication_outbox', 'verification_level') IS NULL
+    ALTER TABLE artifact_publication_outbox ADD verification_level VARCHAR(32) NULL;
+GO
+
+-- Backfill legacy content_hash into source_sha256 when present
+UPDATE artifact_publication_outbox
+SET source_sha256 = content_hash
+WHERE source_sha256 IS NULL AND content_hash IS NOT NULL;
+GO
+
+IF COL_LENGTH('job_artifact_manifest', 'source_sha256') IS NULL
+    ALTER TABLE job_artifact_manifest ADD source_sha256 VARCHAR(128) NULL;
+IF COL_LENGTH('job_artifact_manifest', 'storage_etag') IS NULL
+    ALTER TABLE job_artifact_manifest ADD storage_etag VARCHAR(128) NULL;
+IF COL_LENGTH('job_artifact_manifest', 'verification_level') IS NULL
+    ALTER TABLE job_artifact_manifest ADD verification_level VARCHAR(32) NULL;
+IF COL_LENGTH('job_artifact_manifest', 'verified_at') IS NULL
+    ALTER TABLE job_artifact_manifest ADD verified_at DATETIME2 NULL;
+GO
+
+UPDATE job_artifact_manifest
+SET source_sha256 = content_hash
+WHERE source_sha256 IS NULL AND content_hash IS NOT NULL;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_artifact_publication_outbox_status')
+    ALTER TABLE artifact_publication_outbox ADD CONSTRAINT CK_artifact_publication_outbox_status
+        CHECK (status IN ('pending','claimed','published','retry_scheduled','permanently_failed','canceled'));
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_artifact_publication_outbox_source_type')
+    ALTER TABLE artifact_publication_outbox ADD CONSTRAINT CK_artifact_publication_outbox_source_type
+        CHECK (source_type IN ('exact_durable_source','exact_local_source','reconstructable','unavailable'));
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_artifact_publication_outbox_due_work')
+    CREATE INDEX IX_artifact_publication_outbox_due_work
+        ON artifact_publication_outbox (status, next_attempt_at, lease_expires_at)
+        INCLUDE (job_id, artifact_kind, version);
+GO
+GO
+
+-- ----- folded from 0044_source_assets_upload_idempotency.sql -----
+-- Additive idempotency keys for aisle source-asset multipart uploads (per request / client file).
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'upload_batch_id')
+    ALTER TABLE source_assets ADD upload_batch_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('source_assets') AND name = 'upload_client_file_id')
+    ALTER TABLE source_assets ADD upload_client_file_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_source_assets_aisle_upload_batch_client'
+      AND object_id = OBJECT_ID('source_assets')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_source_assets_aisle_upload_batch_client
+        ON source_assets(aisle_id, upload_batch_id, upload_client_file_id)
+        WHERE upload_batch_id IS NOT NULL AND upload_client_file_id IS NOT NULL;
+GO
+GO
+
+-- ----- folded from 0045_job_source_assets.sql -----
+-- Job ↔ source asset snapshot for Observability (historical inputs per job attempt).
+
+IF OBJECT_ID('job_source_assets', 'U') IS NULL
+BEGIN
+    CREATE TABLE job_source_assets (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        source_asset_id VARCHAR(36) NOT NULL,
+        asset_role VARCHAR(32) NOT NULL,
+        position_order INT NOT NULL,
+        checksum VARCHAR(128) NULL,
+        storage_key NVARCHAR(1024) NULL,
+        mime_type VARCHAR(255) NULL,
+        size_bytes BIGINT NULL,
+        width INT NULL,
+        height INT NULL,
+        stage VARCHAR(64) NULL,
+        provider_request_id VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_job_source_assets PRIMARY KEY (id)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_job_source_assets_job_order'
+      AND object_id = OBJECT_ID('job_source_assets')
+)
+    CREATE NONCLUSTERED INDEX IX_job_source_assets_job_order
+        ON job_source_assets(job_id, position_order, asset_role);
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_job_source_assets_job_asset_role'
+      AND object_id = OBJECT_ID('job_source_assets')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_job_source_assets_job_asset_role
+        ON job_source_assets(job_id, source_asset_id, asset_role);
+GO
+GO
+
+-- ----- folded from 0046_job_source_assets_original_filename.sql -----
+-- Observability corrections — job_source_assets: original filename + versioned-snapshot metadata.
+--
+-- source_asset_id remains a HISTORICAL reference only (Strategy Option B): source_assets rows may be
+-- deleted (retention, aisle mutation) after a job attempt completes, so no FK is added against
+-- source_assets(id). job_source_assets is the durable snapshot of what a job attempt actually used;
+-- it must remain readable even if the originating source_assets row is gone.
+
+-- 1) original_filename — display name for Observability input catalog (prefer over storage_key basename).
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('job_source_assets') AND name = 'original_filename'
+)
+    ALTER TABLE job_source_assets ADD original_filename NVARCHAR(512) NULL;
+GO
+
+-- 2) Optional versioned-snapshot / derived-asset columns (additive, all nullable or defaulted).
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('job_source_assets') AND name = 'transformation'
+)
+    ALTER TABLE job_source_assets ADD transformation NVARCHAR(128) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('job_source_assets') AND name = 'source_parent_id'
+)
+    ALTER TABLE job_source_assets ADD source_parent_id VARCHAR(36) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('job_source_assets') AND name = 'artifact_id'
+)
+    ALTER TABLE job_source_assets ADD artifact_id VARCHAR(64) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('job_source_assets') AND name = 'snapshot_version'
+)
+    ALTER TABLE job_source_assets ADD snapshot_version INT NOT NULL
+        CONSTRAINT DF_job_source_assets_snapshot_version DEFAULT 1;
+GO
+
+-- 3) Integrity: job_id -> inventory_jobs(id) ON DELETE CASCADE (job attempt owns its input snapshot).
+-- Guarded on inventory_jobs existing so this migration is safe to run against any deployment order.
+IF OBJECT_ID('inventory_jobs', 'U') IS NOT NULL
+   AND OBJECT_ID('job_source_assets', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.foreign_keys
+       WHERE name = 'FK_job_source_assets_job'
+         AND parent_object_id = OBJECT_ID('job_source_assets')
+   )
+BEGIN
+    ALTER TABLE job_source_assets
+        ADD CONSTRAINT FK_job_source_assets_job
+        FOREIGN KEY (job_id) REFERENCES inventory_jobs(id) ON DELETE CASCADE;
+END;
+GO
+
+-- 4) Value integrity — defensive CHECK constraints (idempotent).
+IF OBJECT_ID('job_source_assets', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.check_constraints
+       WHERE name = 'CK_job_source_assets_position_order'
+         AND parent_object_id = OBJECT_ID('job_source_assets')
+   )
+BEGIN
+    ALTER TABLE job_source_assets
+        ADD CONSTRAINT CK_job_source_assets_position_order CHECK (position_order >= 0);
+END;
+GO
+
+IF OBJECT_ID('job_source_assets', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.check_constraints
+       WHERE name = 'CK_job_source_assets_size_bytes'
+         AND parent_object_id = OBJECT_ID('job_source_assets')
+   )
+BEGIN
+    ALTER TABLE job_source_assets
+        ADD CONSTRAINT CK_job_source_assets_size_bytes CHECK (size_bytes IS NULL OR size_bytes >= 0);
+END;
+GO
+
+-- 5) Query support for versioned snapshots (provider_request_id-scoped lookups). Additive only —
+-- the existing UQ_job_source_assets_job_asset_role unique index (job_id, source_asset_id, asset_role)
+-- is left untouched to avoid breaking current replace-for-job semantics.
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_job_source_assets_job_provider_request'
+      AND object_id = OBJECT_ID('job_source_assets')
+)
+    CREATE NONCLUSTERED INDEX IX_job_source_assets_job_provider_request
+        ON job_source_assets(job_id, provider_request_id, position_order, asset_role);
+GO
+GO
+
+-- ----- folded from 0047_position_creation_source_and_manual_coverage.sql -----
+-- Position creation_source (automatic | manual) + unique manual coverage per (job_id, source_asset_id).
+-- Additive / idempotent. Does NOT enforce 1:1 image↔position for automatic results.
+
+-- 1) positions.creation_source
+IF NOT EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('positions') AND name = 'creation_source'
+)
+BEGIN
+    ALTER TABLE positions ADD creation_source VARCHAR(16) NOT NULL
+        CONSTRAINT DF_positions_creation_source DEFAULT 'automatic';
+END;
+GO
+
+-- Backfill any unexpected NULLs (defensive if column was added differently).
+IF EXISTS (
+    SELECT * FROM sys.columns
+    WHERE object_id = OBJECT_ID('positions') AND name = 'creation_source'
+)
+BEGIN
+    UPDATE positions SET creation_source = 'automatic' WHERE creation_source IS NULL OR LTRIM(RTRIM(creation_source)) = '';
+END;
+GO
+
+IF OBJECT_ID('positions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.check_constraints
+       WHERE name = 'CK_positions_creation_source'
+         AND parent_object_id = OBJECT_ID('positions')
+   )
+BEGIN
+    ALTER TABLE positions
+        ADD CONSTRAINT CK_positions_creation_source
+        CHECK (creation_source IN ('automatic', 'manual'));
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_positions_job_creation_source'
+      AND object_id = OBJECT_ID('positions')
+)
+    CREATE NONCLUSTERED INDEX IX_positions_job_creation_source
+        ON positions(job_id, creation_source)
+        WHERE job_id IS NOT NULL;
+GO
+
+-- 2) Manual coverage link table — at most one manual result per (job_id, source_asset_id).
+IF OBJECT_ID('position_manual_image_coverage', 'U') IS NULL
+BEGIN
+    CREATE TABLE position_manual_image_coverage (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        source_asset_id VARCHAR(36) NOT NULL,
+        position_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        created_by_user_id VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_position_manual_image_coverage PRIMARY KEY (id),
+        CONSTRAINT UQ_manual_coverage_job_asset UNIQUE (job_id, source_asset_id),
+        CONSTRAINT FK_manual_coverage_position FOREIGN KEY (position_id) REFERENCES positions(id)
+    );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_manual_coverage_position'
+      AND object_id = OBJECT_ID('position_manual_image_coverage')
+)
+    CREATE NONCLUSTERED INDEX IX_manual_coverage_position
+        ON position_manual_image_coverage(position_id);
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_manual_coverage_job'
+      AND object_id = OBJECT_ID('position_manual_image_coverage')
+)
+    CREATE NONCLUSTERED INDEX IX_manual_coverage_job
+        ON position_manual_image_coverage(job_id);
+GO
+
+-- 3) Supporting indexes for image↔result resolution (skip if already present).
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_job_source_assets_job_source_asset'
+      AND object_id = OBJECT_ID('job_source_assets')
+)
+    CREATE NONCLUSTERED INDEX IX_job_source_assets_job_source_asset
+        ON job_source_assets(job_id, source_asset_id, position_order);
+GO
+
+IF OBJECT_ID('result_evidence', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT * FROM sys.indexes
+       WHERE name = 'IX_result_evidence_job_source_asset_id'
+         AND object_id = OBJECT_ID('result_evidence')
+   )
+    CREATE NONCLUSTERED INDEX IX_result_evidence_job_source_asset_id
+        ON result_evidence(job_id, source_asset_id);
+GO
+
+IF OBJECT_ID('result_evidence', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT * FROM sys.indexes
+       WHERE name = 'IX_result_evidence_job_source_image_id'
+         AND object_id = OBJECT_ID('result_evidence')
+   )
+    CREATE NONCLUSTERED INDEX IX_result_evidence_job_source_image_id
+        ON result_evidence(job_id, source_image_id);
+GO
+GO
+
+-- ----- folded from 0053_code_scan_processing_strategy.sql -----
+-- Phase 3 — CODE_SCAN execution strategy.
+-- Additive + idempotent. Widens the inventory_jobs.execution_strategy CHECK to allow
+-- 'CODE_SCAN' and adds an optional per-attempt code-scan detections table for audit.
+-- Keep aligned with backend/src/database/schema.sql.
+
+-- 1) Guard: reject unknown persisted execution_strategy values before touching the constraint.
+IF EXISTS (
+    SELECT 1 FROM inventory_jobs
+    WHERE execution_strategy NOT IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY', 'CODE_SCAN')
+)
+BEGIN
+    THROW 50056, 'Invalid inventory_jobs.execution_strategy values found; fix data before 0053 constraint widening.', 1;
+END;
+GO
+
+-- 2) Recreate the execution_strategy CHECK to include CODE_SCAN (drop-then-add; idempotent).
+IF EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_execution_strategy')
+    ALTER TABLE inventory_jobs DROP CONSTRAINT CK_inventory_jobs_execution_strategy;
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_execution_strategy')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_execution_strategy
+    CHECK (execution_strategy IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY', 'CODE_SCAN'));
+GO
+
+-- 3) Optional per-attempt code-scan detections audit table (distinct from the sync-API
+--    aisle_code_scan_detections table, which is left untouched).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'job_asset_code_scan_detections')
+BEGIN
+    CREATE TABLE job_asset_code_scan_detections (
+        id VARCHAR(64) NOT NULL PRIMARY KEY,
+        job_id VARCHAR(64) NOT NULL,
+        asset_id VARCHAR(64) NOT NULL,
+        attempt_id VARCHAR(64) NULL,
+        detection_index INT NOT NULL,
+        symbology VARCHAR(32) NOT NULL,
+        normalized_value NVARCHAR(512) NULL,
+        raw_value_hash VARCHAR(64) NULL,
+        bounding_box_json NVARCHAR(MAX) NULL,
+        scanner_name VARCHAR(64) NULL,
+        scanner_version VARCHAR(64) NULL,
+        preprocessing_variant VARCHAR(32) NULL,
+        is_selected BIT NOT NULL DEFAULT (0),
+        created_at DATETIME2 NOT NULL DEFAULT (SYSUTCDATETIME()),
+        CONSTRAINT UQ_job_asset_code_scan_detections_attempt_idx
+            UNIQUE (attempt_id, detection_index)
+    );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes WHERE name = 'IX_job_asset_code_scan_detections_job_asset'
+)
+    CREATE INDEX IX_job_asset_code_scan_detections_job_asset
+    ON job_asset_code_scan_detections (job_id, asset_id);
+GO
+GO
+
+-- ----- folded from 0060_asset_processing_commands.sql -----
+-- Phase 7 corrections: durable asset processing commands + action idempotency.
+-- Additive / idempotent for SQL Server.
+
+IF OBJECT_ID('asset_processing_commands', 'U') IS NULL
+BEGIN
+    CREATE TABLE asset_processing_commands (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        command_type VARCHAR(64) NOT NULL,
+        requested_strategy VARCHAR(64) NULL,
+        status VARCHAR(32) NOT NULL,
+        idempotency_key VARCHAR(128) NULL,
+        expected_state_version INT NULL,
+        actor NVARCHAR(256) NULL,
+        reason NVARCHAR(500) NULL,
+        payload_json NVARCHAR(MAX) NULL,
+        worker_token VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        claimed_at DATETIME2 NULL,
+        completed_at DATETIME2 NULL,
+        error_code VARCHAR(128) NULL,
+        error_message NVARCHAR(2000) NULL,
+        CONSTRAINT PK_asset_processing_commands PRIMARY KEY (id),
+        CONSTRAINT CK_apc_status CHECK (
+            status IN ('QUEUED', 'CLAIMED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED')
+        ),
+        CONSTRAINT CK_apc_command_type CHECK (
+            command_type IN (
+                'REPROCESS_FROM_SOURCE',
+                'RETRY_PERSISTENCE',
+                'SEND_TO_EXTERNAL',
+                'RECONCILE_RESULT'
+            )
+        )
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_apc_job_status_created'
+      AND object_id = OBJECT_ID('asset_processing_commands')
+)
+    CREATE NONCLUSTERED INDEX IX_apc_job_status_created
+        ON asset_processing_commands(job_id, status, created_at);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_apc_claim_queue'
+      AND object_id = OBJECT_ID('asset_processing_commands')
+)
+    CREATE NONCLUSTERED INDEX IX_apc_claim_queue
+        ON asset_processing_commands(status, created_at)
+        INCLUDE (job_id, asset_id, command_type)
+        WHERE status = 'QUEUED';
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_apc_job_asset_created'
+      AND object_id = OBJECT_ID('asset_processing_commands')
+)
+    CREATE NONCLUSTERED INDEX IX_apc_job_asset_created
+        ON asset_processing_commands(job_id, asset_id, created_at DESC);
+GO
+
+IF OBJECT_ID('processing_action_idempotency', 'U') IS NULL
+BEGIN
+    CREATE TABLE processing_action_idempotency (
+        id VARCHAR(36) NOT NULL,
+        action_type VARCHAR(64) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        idempotency_key VARCHAR(128) NOT NULL,
+        request_hash VARCHAR(64) NOT NULL,
+        response_json NVARCHAR(MAX) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        state_version INT NULL,
+        actor NVARCHAR(256) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_processing_action_idempotency PRIMARY KEY (id),
+        CONSTRAINT UQ_pai_action_scope_key UNIQUE (action_type, job_id, asset_id, idempotency_key)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_pai_job_asset'
+      AND object_id = OBJECT_ID('processing_action_idempotency')
+)
+    CREATE NONCLUSTERED INDEX IX_pai_job_asset
+        ON processing_action_idempotency(job_id, asset_id, created_at DESC);
+GO
+
+-- Read-model helpers for operational list (filtered indexes when tables exist).
+IF OBJECT_ID('job_asset_processing_states', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_japs_job_status_updated'
+          AND object_id = OBJECT_ID('job_asset_processing_states')
+   )
+    CREATE NONCLUSTERED INDEX IX_japs_job_status_updated
+        ON job_asset_processing_states(job_id, status, updated_at DESC);
+GO
+
+IF OBJECT_ID('processing_attempts', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_pa_job_asset_finished'
+          AND object_id = OBJECT_ID('processing_attempts')
+   )
+    CREATE NONCLUSTERED INDEX IX_pa_job_asset_finished
+        ON processing_attempts(job_id, asset_id, finished_at DESC, attempt_number DESC);
+GO
+GO
+
+-- ----- folded from 0062_mobile_preliminary_detections.sql -----
+-- Phase 4: mobile preliminary CODE_SCAN drafts (diagnostic only — not authoritative).
+-- Additive / idempotent. Does not touch positions, jobs, or final results.
+-- Forward-only: disable ingest via SERVER_PRELIMINARY_DETECTION_INGEST=false.
+-- Formal rollback (dev/test only): DROP TABLE IF EXISTS mobile_preliminary_detections;
+
+IF OBJECT_ID('mobile_preliminary_detections', 'U') IS NULL
+BEGIN
+    CREATE TABLE mobile_preliminary_detections (
+        id VARCHAR(36) NOT NULL,
+        draft_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        client_file_id VARCHAR(36) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        internal_code NVARCHAR(64) NULL,
+        quantity INT NULL,
+        quantity_status VARCHAR(16) NULL,
+        detected_format VARCHAR(32) NULL,
+        detected_symbology VARCHAR(32) NULL,
+        candidate_count INT NOT NULL CONSTRAINT DF_mpd_candidate_count DEFAULT (0),
+        parser_version VARCHAR(32) NOT NULL,
+        detector_version VARCHAR(64) NOT NULL,
+        prepared_asset_sha256 VARCHAR(80) NOT NULL,
+        payload_hash VARCHAR(80) NULL,
+        processing_ms INT NULL,
+        detected_at DATETIME2 NULL,
+        received_at DATETIME2 NOT NULL,
+        expires_at DATETIME2 NOT NULL,
+        validation_status VARCHAR(32) NOT NULL,
+        validation_error_code VARCHAR(64) NULL,
+        schema_version VARCHAR(8) NOT NULL CONSTRAINT DF_mpd_schema_version DEFAULT ('1'),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_mobile_preliminary_detections PRIMARY KEY (id),
+        CONSTRAINT UQ_mpd_draft_id UNIQUE (draft_id),
+        CONSTRAINT UQ_mpd_client_versions_hash UNIQUE (
+            client_file_id, detector_version, parser_version, prepared_asset_sha256
+        ),
+        CONSTRAINT FK_mpd_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_mpd_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT FK_mpd_asset FOREIGN KEY (asset_id) REFERENCES source_assets(id),
+        CONSTRAINT CK_mpd_validation_status CHECK (
+            validation_status IN ('PENDING_ASSET', 'RECEIVED', 'VALIDATED', 'REJECTED', 'CONFLICT')
+        ),
+        CONSTRAINT CK_mpd_candidate_count CHECK (candidate_count >= 0),
+        CONSTRAINT CK_mpd_quantity CHECK (quantity IS NULL OR quantity > 0),
+        CONSTRAINT CK_mpd_status CHECK (
+            status IN (
+                'RESOLVED', 'UNRESOLVED', 'INVALID', 'AMBIGUOUS', 'FAILED',
+                'FAILED_RETRYABLE', 'DETECTED_UNVERIFIED', 'NOT_APPLICABLE'
+            )
+        )
+    );
+END
+GO
+
+-- Idempotent strengtheners if an earlier Phase-4 table lacked columns/constraints.
+IF OBJECT_ID('mobile_preliminary_detections', 'U') IS NOT NULL
+   AND COL_LENGTH('mobile_preliminary_detections', 'expires_at') IS NULL
+BEGIN
+    ALTER TABLE mobile_preliminary_detections ADD expires_at DATETIME2 NULL;
+    UPDATE mobile_preliminary_detections
+       SET expires_at = DATEADD(day, 90, received_at)
+     WHERE expires_at IS NULL;
+    ALTER TABLE mobile_preliminary_detections ALTER COLUMN expires_at DATETIME2 NOT NULL;
+END
+GO
+
+IF OBJECT_ID('mobile_preliminary_detections', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.check_constraints
+        WHERE name = 'CK_mpd_candidate_count'
+          AND parent_object_id = OBJECT_ID('mobile_preliminary_detections')
+   )
+    ALTER TABLE mobile_preliminary_detections
+        ADD CONSTRAINT CK_mpd_candidate_count CHECK (candidate_count >= 0);
+GO
+
+IF OBJECT_ID('mobile_preliminary_detections', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.check_constraints
+        WHERE name = 'CK_mpd_quantity'
+          AND parent_object_id = OBJECT_ID('mobile_preliminary_detections')
+   )
+    ALTER TABLE mobile_preliminary_detections
+        ADD CONSTRAINT CK_mpd_quantity CHECK (quantity IS NULL OR quantity > 0);
+GO
+
+IF OBJECT_ID('mobile_preliminary_detections', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.foreign_keys
+        WHERE name = 'FK_mpd_inventory'
+          AND parent_object_id = OBJECT_ID('mobile_preliminary_detections')
+   )
+    ALTER TABLE mobile_preliminary_detections
+        ADD CONSTRAINT FK_mpd_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_mpd_aisle_received'
+      AND object_id = OBJECT_ID('mobile_preliminary_detections')
+)
+    CREATE NONCLUSTERED INDEX IX_mpd_aisle_received
+        ON mobile_preliminary_detections(aisle_id, received_at);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_mpd_asset'
+      AND object_id = OBJECT_ID('mobile_preliminary_detections')
+)
+    CREATE NONCLUSTERED INDEX IX_mpd_asset
+        ON mobile_preliminary_detections(asset_id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_mpd_client_file'
+      AND object_id = OBJECT_ID('mobile_preliminary_detections')
+)
+    CREATE NONCLUSTERED INDEX IX_mpd_client_file
+        ON mobile_preliminary_detections(client_file_id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_mpd_expires_at'
+      AND object_id = OBJECT_ID('mobile_preliminary_detections')
+)
+    CREATE NONCLUSTERED INDEX IX_mpd_expires_at
+        ON mobile_preliminary_detections(expires_at);
+GO
+GO
+
+-- ----- folded from 0063_preliminary_detection_reconciliations.sql -----
+-- Phase 5: preliminary vs remote reconciliation (diagnostic only).
+-- Forward-only. Disable via SERVER_PRELIMINARY_RECONCILIATION=false.
+-- Rollback (dev/test): DROP TABLE IF EXISTS preliminary_detection_reconciliations;
+
+IF OBJECT_ID('preliminary_detection_reconciliations', 'U') IS NULL
+BEGIN
+    CREATE TABLE preliminary_detection_reconciliations (
+        id VARCHAR(36) NOT NULL,
+        preliminary_detection_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        remote_result_id VARCHAR(36) NULL,
+        job_id VARCHAR(36) NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        client_file_id VARCHAR(36) NOT NULL,
+        local_status VARCHAR(32) NOT NULL,
+        local_internal_code NVARCHAR(64) NULL,
+        local_quantity INT NULL,
+        remote_status VARCHAR(32) NULL,
+        remote_internal_code NVARCHAR(64) NULL,
+        remote_quantity INT NULL,
+        outcome VARCHAR(64) NOT NULL,
+        not_comparable_reason VARCHAR(64) NULL,
+        local_parser_version VARCHAR(32) NULL,
+        local_detector_version VARCHAR(64) NULL,
+        remote_pipeline_version VARCHAR(64) NULL,
+        local_detected_at DATETIME2 NULL,
+        remote_completed_at DATETIME2 NULL,
+        compared_at DATETIME2 NOT NULL,
+        comparison_version VARCHAR(16) NOT NULL,
+        reconciliation_status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_preliminary_detection_reconciliations PRIMARY KEY (id),
+        CONSTRAINT UQ_pdr_preliminary_version UNIQUE (preliminary_detection_id, comparison_version),
+        CONSTRAINT FK_pdr_preliminary FOREIGN KEY (preliminary_detection_id)
+            REFERENCES mobile_preliminary_detections(id),
+        CONSTRAINT FK_pdr_asset FOREIGN KEY (asset_id) REFERENCES source_assets(id),
+        CONSTRAINT FK_pdr_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT CK_pdr_reconciliation_status CHECK (
+            reconciliation_status IN (
+                'PENDING', 'RUNNING', 'COMPLETED', 'NOT_COMPARABLE',
+                'RETRY_SCHEDULED', 'FAILED_TERMINAL'
+            )
+        )
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_pdr_inventory_aisle'
+      AND object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_pdr_inventory_aisle
+        ON preliminary_detection_reconciliations(inventory_id, aisle_id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_pdr_aisle_compared'
+      AND object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_pdr_aisle_compared
+        ON preliminary_detection_reconciliations(aisle_id, compared_at);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_pdr_asset'
+      AND object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_pdr_asset
+        ON preliminary_detection_reconciliations(asset_id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_pdr_outcome'
+      AND object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_pdr_outcome
+        ON preliminary_detection_reconciliations(outcome);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_pdr_client_file'
+      AND object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_pdr_client_file
+        ON preliminary_detection_reconciliations(client_file_id);
+GO
+GO
+
+-- ----- folded from 0064_preliminary_reconciliation_corrections.sql -----
+-- Phase 5 corrections: reconciliation identity, lease/retry, revision, FKs.
+-- Forward-only additive on 0063. Do not edit 0063 if already applied.
+-- Rollback (dev/test): drop new columns/constraints carefully or DROP TABLE.
+
+-- Drop old unique (preliminary + version only) if present.
+IF EXISTS (
+    SELECT 1 FROM sys.key_constraints
+    WHERE name = 'UQ_pdr_preliminary_version'
+      AND parent_object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    ALTER TABLE preliminary_detection_reconciliations
+        DROP CONSTRAINT UQ_pdr_preliminary_version;
+GO
+
+-- job_id required for identity (backfill empty → keep nullable then constrain new rows in app).
+IF COL_LENGTH('preliminary_detection_reconciliations', 'remote_result_fingerprint') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD remote_result_fingerprint VARCHAR(80) NOT NULL
+            CONSTRAINT DF_pdr_remote_fp DEFAULT ('PENDING');
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'revision') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD revision INT NOT NULL CONSTRAINT DF_pdr_revision DEFAULT (1);
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'supersedes_id') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD supersedes_id VARCHAR(36) NULL;
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'row_version') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD row_version INT NOT NULL CONSTRAINT DF_pdr_row_version DEFAULT (1);
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'attempt_count') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD attempt_count INT NOT NULL CONSTRAINT DF_pdr_attempt_count DEFAULT (0);
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'next_retry_at') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD next_retry_at DATETIME2 NULL;
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'lease_token') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD lease_token VARCHAR(64) NULL;
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'lease_expires_at') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD lease_expires_at DATETIME2 NULL;
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'last_error_code') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD last_error_code VARCHAR(64) NULL;
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'app_version') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD app_version VARCHAR(32) NULL;
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'device_model') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD device_model VARCHAR(64) NULL;
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'preparation_profile') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD preparation_profile VARCHAR(64) NULL;
+GO
+
+IF COL_LENGTH('preliminary_detection_reconciliations', 'expires_at') IS NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD expires_at DATETIME2 NULL;
+GO
+
+-- Identity supporting reprocess: one row per draft + comparison_version + job.
+IF NOT EXISTS (
+    SELECT 1 FROM sys.key_constraints
+    WHERE name = 'UQ_pdr_preliminary_version_job'
+      AND parent_object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+BEGIN
+    -- Normalize NULL job_id for unique (should not happen for new rows).
+    UPDATE preliminary_detection_reconciliations
+       SET job_id = 'LEGACY-UNKNOWN'
+     WHERE job_id IS NULL;
+
+    ALTER TABLE preliminary_detection_reconciliations
+        ALTER COLUMN job_id VARCHAR(36) NOT NULL;
+
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD CONSTRAINT UQ_pdr_preliminary_version_job
+            UNIQUE (preliminary_detection_id, comparison_version, job_id);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = 'FK_pdr_inventory'
+      AND parent_object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD CONSTRAINT FK_pdr_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = 'FK_pdr_job'
+      AND parent_object_id = OBJECT_ID('preliminary_detection_reconciliations')
+) AND OBJECT_ID('inventory_jobs', 'U') IS NOT NULL
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD CONSTRAINT FK_pdr_job FOREIGN KEY (job_id) REFERENCES inventory_jobs(id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = 'CK_pdr_not_comparable_reason'
+      AND parent_object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    ALTER TABLE preliminary_detection_reconciliations
+        ADD CONSTRAINT CK_pdr_not_comparable_reason CHECK (
+            (outcome <> 'NOT_COMPARABLE' AND not_comparable_reason IS NULL)
+            OR (outcome = 'NOT_COMPARABLE' AND not_comparable_reason IS NOT NULL)
+            OR reconciliation_status IN ('PENDING', 'RUNNING', 'RETRY_SCHEDULED')
+        );
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_pdr_worker_due'
+      AND object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_pdr_worker_due
+        ON preliminary_detection_reconciliations(reconciliation_status, next_retry_at)
+        INCLUDE (lease_expires_at, attempt_count);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_pdr_job'
+      AND object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_pdr_job
+        ON preliminary_detection_reconciliations(job_id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_pdr_expires'
+      AND object_id = OBJECT_ID('preliminary_detection_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_pdr_expires
+        ON preliminary_detection_reconciliations(expires_at)
+        WHERE expires_at IS NOT NULL;
+GO
+GO
+
+-- ----- folded from 0065_authoritative_local_code_scan_results.sql -----
+-- Intermediate phase: operator-confirmed local CODE_SCAN results (authoritative).
+-- Additive / idempotent. Positions applied at /process via ProcessingResultPersister.
+-- Forward-only: disable via SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST=false.
+-- Formal rollback (dev/test only): DROP TABLE IF EXISTS authoritative_local_code_scan_results;
+--
+-- Window: AUTHORITATIVE_SYNCED (row stored) → FINAL_POSITION_APPLIED (applied_at set at /process).
+
+IF OBJECT_ID('authoritative_local_code_scan_results', 'U') IS NULL
+BEGIN
+    CREATE TABLE authoritative_local_code_scan_results (
+        id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        client_file_id VARCHAR(36) NOT NULL,
+        result_version INT NOT NULL,
+        supersedes_result_id VARCHAR(36) NULL,
+        is_current BIT NOT NULL CONSTRAINT DF_alcsr_is_current DEFAULT (1),
+        internal_code NVARCHAR(64) NOT NULL,
+        quantity INT NULL,
+        quantity_status VARCHAR(16) NOT NULL,
+        source VARCHAR(32) NOT NULL,
+        detected_internal_code NVARCHAR(64) NULL,
+        detected_quantity INT NULL,
+        detected_symbology VARCHAR(32) NULL,
+        parser_version VARCHAR(32) NOT NULL,
+        detector_version VARCHAR(64) NOT NULL,
+        prepared_asset_sha256 VARCHAR(80) NOT NULL,
+        content_hash VARCHAR(80) NOT NULL,
+        confirmed_by VARCHAR(36) NOT NULL,
+        client_confirmed_at DATETIME2 NULL,
+        server_confirmed_at DATETIME2 NOT NULL,
+        server_received_at DATETIME2 NOT NULL,
+        confirmed_at DATETIME2 NOT NULL, -- = server_confirmed_at (compat)
+        applied_job_id VARCHAR(36) NULL,
+        applied_at DATETIME2 NULL,
+        row_version INT NOT NULL CONSTRAINT DF_alcsr_row_version DEFAULT (1),
+        schema_version VARCHAR(8) NOT NULL CONSTRAINT DF_alcsr_schema_version DEFAULT ('1'),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_authoritative_local_code_scan_results PRIMARY KEY (id),
+        CONSTRAINT UQ_alcsr_asset_version UNIQUE (asset_id, result_version),
+        CONSTRAINT FK_alcsr_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_alcsr_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT FK_alcsr_asset FOREIGN KEY (asset_id) REFERENCES source_assets(id),
+        CONSTRAINT CK_alcsr_result_version CHECK (result_version >= 1),
+        CONSTRAINT CK_alcsr_quantity CHECK (quantity IS NULL OR quantity > 0),
+        CONSTRAINT CK_alcsr_quantity_status CHECK (
+            quantity_status IN ('PRESENT', 'MISSING')
+        ),
+        CONSTRAINT CK_alcsr_source CHECK (
+            source IN ('LOCAL_CODE_SCAN', 'LOCAL_MANUAL_CORRECTION')
+        ),
+        CONSTRAINT CK_alcsr_qty_consistency CHECK (
+            (quantity_status = 'PRESENT' AND quantity IS NOT NULL AND quantity > 0)
+            OR (quantity_status = 'MISSING' AND quantity IS NULL)
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('authoritative_local_code_scan_results', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_alcsr_aisle_current'
+          AND object_id = OBJECT_ID('authoritative_local_code_scan_results')
+   )
+    CREATE INDEX IX_alcsr_aisle_current
+        ON authoritative_local_code_scan_results (inventory_id, aisle_id, is_current);
+GO
+
+IF OBJECT_ID('authoritative_local_code_scan_results', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_alcsr_asset_current'
+          AND object_id = OBJECT_ID('authoritative_local_code_scan_results')
+   )
+    CREATE INDEX IX_alcsr_asset_current
+        ON authoritative_local_code_scan_results (asset_id, is_current);
+GO
+
+IF OBJECT_ID('authoritative_local_code_scan_results', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'UQ_alcsr_asset_current'
+          AND object_id = OBJECT_ID('authoritative_local_code_scan_results')
+   )
+    CREATE UNIQUE INDEX UQ_alcsr_asset_current
+        ON authoritative_local_code_scan_results (asset_id)
+        WHERE is_current = 1;
+GO
+
+-- Note: mobile_preliminary_detections.confirmed_result_id intentionally NOT added;
+-- preliminary drafts remain diagnostic-only; link via client_file_id / asset_id when needed.
+GO
+
+-- ----- folded from 0066_authoritative_aisle_finalization.sql -----
+-- Phase 6: authoritative aisle finalization (local CODE_SCAN close without remote reprocess).
+-- Additive / idempotent. Disable via SERVER_AUTHORITATIVE_AISLE_FINALIZATION=false.
+-- Formal rollback (dev/test only):
+--   DROP TABLE IF EXISTS authoritative_aisle_finalization_items;
+--   DROP TABLE IF EXISTS authoritative_aisle_finalization_locks;
+--   DROP TABLE IF EXISTS authoritative_aisle_excluded_assets;
+--   DROP TABLE IF EXISTS authoritative_aisle_finalizations;
+
+IF OBJECT_ID('authoritative_aisle_finalizations', 'U') IS NULL
+BEGIN
+    CREATE TABLE authoritative_aisle_finalizations (
+        id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        capture_session_id VARCHAR(36) NULL,
+        finalization_version INT NOT NULL,
+        status VARCHAR(40) NOT NULL,
+        total_assets INT NOT NULL,
+        applied_assets INT NOT NULL,
+        excluded_assets INT NOT NULL,
+        position_count INT NOT NULL,
+        expected_asset_count INT NULL,
+        content_hash VARCHAR(80) NOT NULL,
+        confirmed_by VARCHAR(36) NOT NULL,
+        confirmed_at DATETIME2 NOT NULL,
+        completed_at DATETIME2 NULL,
+        is_current BIT NOT NULL CONSTRAINT DF_aaf_is_current DEFAULT (1),
+        row_version INT NOT NULL CONSTRAINT DF_aaf_row_version DEFAULT (1),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_authoritative_aisle_finalizations PRIMARY KEY (id),
+        CONSTRAINT UQ_aaf_aisle_version UNIQUE (aisle_id, finalization_version),
+        CONSTRAINT FK_aaf_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_aaf_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT CK_aaf_finalization_version CHECK (finalization_version >= 1),
+        CONSTRAINT CK_aaf_counts CHECK (
+            total_assets >= 0 AND applied_assets >= 0 AND excluded_assets >= 0
+            AND position_count >= 0
+            AND applied_assets + excluded_assets <= total_assets
+        ),
+        CONSTRAINT CK_aaf_status CHECK (
+            status IN (
+                'FINALIZING',
+                'COMPLETED_BY_LOCAL_AUTHORITY',
+                'FINALIZATION_FAILED',
+                'CANCELED'
+            )
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('authoritative_aisle_finalizations', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_aaf_aisle_current'
+          AND object_id = OBJECT_ID('authoritative_aisle_finalizations')
+   )
+    CREATE UNIQUE INDEX IX_aaf_aisle_current
+        ON authoritative_aisle_finalizations (aisle_id)
+        WHERE is_current = 1;
+GO
+
+IF OBJECT_ID('authoritative_aisle_finalization_items', 'U') IS NULL
+BEGIN
+    CREATE TABLE authoritative_aisle_finalization_items (
+        id VARCHAR(36) NOT NULL,
+        finalization_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        authoritative_result_id VARCHAR(36) NULL,
+        position_id VARCHAR(36) NULL,
+        item_status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_aafi PRIMARY KEY (id),
+        CONSTRAINT UQ_aafi_finalization_asset UNIQUE (finalization_id, asset_id),
+        CONSTRAINT FK_aafi_finalization FOREIGN KEY (finalization_id)
+            REFERENCES authoritative_aisle_finalizations(id),
+        CONSTRAINT CK_aafi_item_status CHECK (
+            item_status IN ('CONFIRMED_AND_APPLIED', 'EXCLUDED')
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('authoritative_aisle_finalization_items', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_aafi_finalization'
+          AND object_id = OBJECT_ID('authoritative_aisle_finalization_items')
+   )
+    CREATE INDEX IX_aafi_finalization
+        ON authoritative_aisle_finalization_items (finalization_id);
+GO
+
+IF OBJECT_ID('authoritative_aisle_excluded_assets', 'U') IS NULL
+BEGIN
+    CREATE TABLE authoritative_aisle_excluded_assets (
+        id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        reason VARCHAR(40) NOT NULL,
+        excluded_by VARCHAR(36) NOT NULL,
+        excluded_at DATETIME2 NOT NULL,
+        is_current BIT NOT NULL CONSTRAINT DF_aaea_is_current DEFAULT (1),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_aaea PRIMARY KEY (id),
+        CONSTRAINT FK_aaea_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_aaea_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT CK_aaea_reason CHECK (
+            reason IN (
+                'DUPLICATE_PHOTO',
+                'INVALID_PHOTO',
+                'NOT_INVENTORY_LABEL',
+                'USER_EXCLUDED',
+                'CAPTURE_ERROR'
+            )
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('authoritative_aisle_excluded_assets', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'UQ_aaea_aisle_asset_current'
+          AND object_id = OBJECT_ID('authoritative_aisle_excluded_assets')
+   )
+    CREATE UNIQUE INDEX UQ_aaea_aisle_asset_current
+        ON authoritative_aisle_excluded_assets (aisle_id, asset_id)
+        WHERE is_current = 1;
+GO
+
+IF OBJECT_ID('authoritative_aisle_excluded_assets', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_aaea_aisle_current'
+          AND object_id = OBJECT_ID('authoritative_aisle_excluded_assets')
+   )
+    CREATE INDEX IX_aaea_aisle_current
+        ON authoritative_aisle_excluded_assets (inventory_id, aisle_id, is_current);
+GO
+
+IF OBJECT_ID('authoritative_aisle_finalization_locks', 'U') IS NULL
+BEGIN
+    CREATE TABLE authoritative_aisle_finalization_locks (
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        owner_token VARCHAR(64) NOT NULL,
+        lease_expires_at DATETIME2 NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_aafl PRIMARY KEY (aisle_id),
+        CONSTRAINT FK_aafl_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_aafl_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id)
+    );
+END
+GO
+GO
+
+-- ----- folded from 0067_server_reprocess_runs.sql -----
+-- Phase 7: optional server reprocess (proposals; no automatic overwrite of current results).
+-- Additive / idempotent. Disable via SERVER_SERVER_REPROCESS=false.
+-- Formal rollback (dev/test only):
+--   DROP TABLE IF EXISTS server_reprocess_adoption_items;
+--   DROP TABLE IF EXISTS server_reprocess_adoptions;
+--   DROP TABLE IF EXISTS server_reprocess_proposals;
+--   DROP TABLE IF EXISTS server_reprocess_run_assets;
+--   DROP TABLE IF EXISTS server_reprocess_runs;
+--   DROP TABLE IF EXISTS server_reprocess_locks;
+
+IF OBJECT_ID('server_reprocess_runs', 'U') IS NULL
+BEGIN
+    CREATE TABLE server_reprocess_runs (
+        id VARCHAR(36) NOT NULL,
+        request_id VARCHAR(64) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        source_session_id VARCHAR(36) NULL,
+        company_id VARCHAR(36) NULL,
+        run_type VARCHAR(40) NOT NULL,
+        strategy VARCHAR(40) NULL,
+        scope_type VARCHAR(40) NOT NULL,
+        scope_json NVARCHAR(MAX) NOT NULL,
+        snapshot_json NVARCHAR(MAX) NOT NULL,
+        processing_mode VARCHAR(40) NOT NULL,
+        reason VARCHAR(80) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        review_status VARCHAR(40) NOT NULL,
+        requested_by VARCHAR(36) NOT NULL,
+        requested_at DATETIME2 NOT NULL,
+        started_at DATETIME2 NULL,
+        completed_at DATETIME2 NULL,
+        canceled_at DATETIME2 NULL,
+        failed_at DATETIME2 NULL,
+        failure_code VARCHAR(80) NULL,
+        failure_message NVARCHAR(500) NULL,
+        pipeline_version VARCHAR(64) NULL,
+        model_version VARCHAR(64) NULL,
+        prompt_version VARCHAR(64) NULL,
+        supplier_profile_id VARCHAR(36) NULL,
+        linked_job_id VARCHAR(36) NULL,
+        has_prior_authority BIT NOT NULL CONSTRAINT DF_srr_has_prior DEFAULT (1),
+        row_version INT NOT NULL CONSTRAINT DF_srr_row_version DEFAULT (1),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_server_reprocess_runs PRIMARY KEY (id),
+        CONSTRAINT UQ_srr_request_id UNIQUE (request_id),
+        CONSTRAINT FK_srr_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_srr_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT CK_srr_run_type CHECK (
+            run_type IN (
+                'INITIAL_SERVER_PROCESSING',
+                'SERVER_REPROCESS',
+                'LOCAL_AUTHORITY_APPLY'
+            )
+        ),
+        CONSTRAINT CK_srr_scope_type CHECK (
+            scope_type IN (
+                'FULL_AISLE',
+                'SELECTED_ASSETS',
+                'FAILED_ONLY',
+                'UNRECOGNIZED_ONLY',
+                'PENDING_REVIEW_ONLY'
+            )
+        ),
+        CONSTRAINT CK_srr_status CHECK (
+            status IN (
+                'REQUESTED',
+                'QUEUED',
+                'RUNNING',
+                'COMPLETED',
+                'FAILED',
+                'CANCELED',
+                'TIMED_OUT',
+                'PARTIAL'
+            )
+        ),
+        CONSTRAINT CK_srr_review_status CHECK (
+            review_status IN (
+                'NOT_REVIEWED',
+                'REVIEW_IN_PROGRESS',
+                'REVIEW_COMPLETED',
+                'DISCARDED',
+                'ADOPTED_PARTIALLY',
+                'ADOPTED_COMPLETELY'
+            )
+        ),
+        CONSTRAINT CK_srr_processing_mode CHECK (
+            processing_mode IN (
+                'CODE_SCAN',
+                'INTERNAL_OCR',
+                'GLOBAL_FALLBACK',
+                'AUTO_PIPELINE'
+            )
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('server_reprocess_runs', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_srr_aisle_requested'
+          AND object_id = OBJECT_ID('server_reprocess_runs')
+   )
+    CREATE INDEX IX_srr_aisle_requested
+        ON server_reprocess_runs (aisle_id, requested_at DESC);
+GO
+
+IF OBJECT_ID('server_reprocess_run_assets', 'U') IS NULL
+BEGIN
+    CREATE TABLE server_reprocess_run_assets (
+        id VARCHAR(36) NOT NULL,
+        run_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        asset_hash VARCHAR(128) NULL,
+        previous_result_id VARCHAR(36) NULL,
+        previous_position_id VARCHAR(36) NULL,
+        previous_internal_code NVARCHAR(128) NULL,
+        previous_quantity DECIMAL(18, 4) NULL,
+        previous_resolved BIT NOT NULL CONSTRAINT DF_srra_prev_resolved DEFAULT (0),
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_server_reprocess_run_assets PRIMARY KEY (id),
+        CONSTRAINT UQ_srra_run_asset UNIQUE (run_id, asset_id),
+        CONSTRAINT FK_srra_run FOREIGN KEY (run_id) REFERENCES server_reprocess_runs(id)
+    );
+END
+GO
+
+IF OBJECT_ID('server_reprocess_run_assets', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_srra_run'
+          AND object_id = OBJECT_ID('server_reprocess_run_assets')
+   )
+    CREATE INDEX IX_srra_run ON server_reprocess_run_assets (run_id);
+GO
+
+IF OBJECT_ID('server_reprocess_proposals', 'U') IS NULL
+BEGIN
+    CREATE TABLE server_reprocess_proposals (
+        id VARCHAR(36) NOT NULL,
+        run_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        remote_result_id VARCHAR(36) NULL,
+        previous_result_id VARCHAR(36) NULL,
+        previous_position_id VARCHAR(36) NULL,
+        status VARCHAR(40) NOT NULL,
+        difference_type VARCHAR(64) NOT NULL,
+        internal_code NVARCHAR(128) NULL,
+        quantity DECIMAL(18, 4) NULL,
+        confidence FLOAT NULL,
+        source VARCHAR(64) NULL,
+        pipeline_version VARCHAR(64) NULL,
+        remote_resolved BIT NOT NULL CONSTRAINT DF_srp_remote_resolved DEFAULT (0),
+        review_status VARCHAR(40) NOT NULL CONSTRAINT DF_srp_review DEFAULT ('NOT_REVIEWED'),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_server_reprocess_proposals PRIMARY KEY (id),
+        CONSTRAINT UQ_srp_run_asset UNIQUE (run_id, asset_id),
+        CONSTRAINT FK_srp_run FOREIGN KEY (run_id) REFERENCES server_reprocess_runs(id),
+        CONSTRAINT CK_srp_status CHECK (
+            status IN (
+                'PROPOSED',
+                'ADOPTED',
+                'KEPT_CURRENT',
+                'DEFERRED',
+                'DISCARDED',
+                'STALE',
+                'NOT_COMPARABLE'
+            )
+        ),
+        CONSTRAINT CK_srp_difference CHECK (
+            difference_type IN (
+                'SAME_RESULT',
+                'CODE_CHANGED',
+                'QUANTITY_CHANGED',
+                'CODE_AND_QUANTITY_CHANGED',
+                'PREVIOUS_UNRESOLVED_REMOTE_RESOLVED',
+                'PREVIOUS_RESOLVED_REMOTE_UNRESOLVED',
+                'REMOTE_AMBIGUOUS',
+                'NO_PREVIOUS_RESULT',
+                'NOT_COMPARABLE',
+                'NOT_COMPARABLE_GLOBAL_BATCH'
+            )
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('server_reprocess_proposals', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_srp_run_diff'
+          AND object_id = OBJECT_ID('server_reprocess_proposals')
+   )
+    CREATE INDEX IX_srp_run_diff
+        ON server_reprocess_proposals (run_id, difference_type);
+GO
+
+IF OBJECT_ID('server_reprocess_adoptions', 'U') IS NULL
+BEGIN
+    CREATE TABLE server_reprocess_adoptions (
+        id VARCHAR(36) NOT NULL,
+        adoption_id VARCHAR(64) NOT NULL,
+        run_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        adopted_by VARCHAR(36) NOT NULL,
+        adopted_at DATETIME2 NOT NULL,
+        item_count INT NOT NULL,
+        adopted_count INT NOT NULL,
+        kept_count INT NOT NULL,
+        deferred_count INT NOT NULL,
+        row_version INT NOT NULL CONSTRAINT DF_sra_row_version DEFAULT (1),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_server_reprocess_adoptions PRIMARY KEY (id),
+        CONSTRAINT UQ_sra_adoption_id UNIQUE (adoption_id),
+        CONSTRAINT FK_sra_run FOREIGN KEY (run_id) REFERENCES server_reprocess_runs(id),
+        CONSTRAINT CK_sra_status CHECK (
+            status IN ('COMPLETED', 'FAILED', 'ROLLED_BACK')
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('server_reprocess_adoption_items', 'U') IS NULL
+BEGIN
+    CREATE TABLE server_reprocess_adoption_items (
+        id VARCHAR(36) NOT NULL,
+        adoption_row_id VARCHAR(36) NOT NULL,
+        proposal_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        action VARCHAR(32) NOT NULL,
+        expected_previous_result_id VARCHAR(36) NULL,
+        new_result_id VARCHAR(36) NULL,
+        new_position_id VARCHAR(36) NULL,
+        edit_internal_code NVARCHAR(128) NULL,
+        edit_quantity DECIMAL(18, 4) NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_server_reprocess_adoption_items PRIMARY KEY (id),
+        CONSTRAINT UQ_srai_adoption_proposal UNIQUE (adoption_row_id, proposal_id),
+        CONSTRAINT FK_srai_adoption FOREIGN KEY (adoption_row_id)
+            REFERENCES server_reprocess_adoptions(id),
+        CONSTRAINT FK_srai_proposal FOREIGN KEY (proposal_id)
+            REFERENCES server_reprocess_proposals(id),
+        CONSTRAINT CK_srai_action CHECK (
+            action IN ('ADOPT', 'KEEP_CURRENT', 'EDIT_AND_ADOPT', 'DEFER')
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('server_reprocess_locks', 'U') IS NULL
+BEGIN
+    CREATE TABLE server_reprocess_locks (
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        owner_token VARCHAR(64) NOT NULL,
+        expires_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_server_reprocess_locks PRIMARY KEY (aisle_id)
+    );
+END
+GO
+GO
+
+-- ----- folded from 0068_server_reprocess_adoption_content_hash.sql -----
+-- Phase 7 corrections: adoption content_hash for idempotent payload replay.
+-- Additive. Do not alter 0067 if already applied.
+-- Formal rollback (dev/test only):
+--   ALTER TABLE server_reprocess_adoptions DROP CONSTRAINT UQ_sra_adoption_hash;
+--   ALTER TABLE server_reprocess_adoptions DROP COLUMN content_hash;
+
+IF OBJECT_ID('server_reprocess_adoptions', 'U') IS NOT NULL
+   AND COL_LENGTH('server_reprocess_adoptions', 'content_hash') IS NULL
+BEGIN
+    ALTER TABLE server_reprocess_adoptions
+        ADD content_hash VARCHAR(80) NOT NULL
+            CONSTRAINT DF_sra_content_hash DEFAULT ('');
+END
+GO
+
+IF OBJECT_ID('server_reprocess_adoptions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_sra_run_content_hash'
+          AND object_id = OBJECT_ID('server_reprocess_adoptions')
+   )
+    CREATE INDEX IX_sra_run_content_hash
+        ON server_reprocess_adoptions (run_id, content_hash);
+GO
+
+IF OBJECT_ID('server_reprocess_runs', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_srr_aisle_status'
+          AND object_id = OBJECT_ID('server_reprocess_runs')
+   )
+    CREATE INDEX IX_srr_aisle_status
+        ON server_reprocess_runs (aisle_id, status, requested_at DESC);
+GO
+GO
+
+-- ----- folded from 0069_aisle_revisions_phase8.sql -----
+-- Phase 8: aisle revisions, position versions, finalization lineage.
+-- Additive / idempotent. Disable via SERVER_AISLE_REVISIONS=false.
+-- Formal rollback (dev/test only):
+--   DROP TABLE IF EXISTS aisle_revision_items;
+--   DROP TABLE IF EXISTS aisle_revision_locks;
+--   DROP TABLE IF EXISTS aisle_revisions;
+--   DROP TABLE IF EXISTS position_versions;
+--   ALTER TABLE authoritative_aisle_finalizations DROP COLUMN supersedes_finalization_id;
+--   ALTER TABLE authoritative_aisle_finalizations DROP COLUMN revision_id;
+--   ALTER TABLE aisles DROP COLUMN revision_status;
+
+IF COL_LENGTH('aisles', 'revision_status') IS NULL
+BEGIN
+    ALTER TABLE aisles ADD revision_status VARCHAR(32) NULL;
+END
+GO
+
+IF COL_LENGTH('authoritative_aisle_finalizations', 'supersedes_finalization_id') IS NULL
+BEGIN
+    ALTER TABLE authoritative_aisle_finalizations
+        ADD supersedes_finalization_id VARCHAR(36) NULL;
+END
+GO
+
+IF COL_LENGTH('authoritative_aisle_finalizations', 'revision_id') IS NULL
+BEGIN
+    ALTER TABLE authoritative_aisle_finalizations
+        ADD revision_id VARCHAR(36) NULL;
+END
+GO
+
+IF OBJECT_ID('position_versions', 'U') IS NULL
+BEGIN
+    CREATE TABLE position_versions (
+        id VARCHAR(36) NOT NULL,
+        position_id VARCHAR(36) NOT NULL,
+        version INT NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        internal_code VARCHAR(128) NOT NULL,
+        quantity INT NULL,
+        result_id VARCHAR(36) NULL,
+        is_current BIT NOT NULL CONSTRAINT DF_pv_is_current DEFAULT (1),
+        supersedes_position_version_id VARCHAR(36) NULL,
+        revision_id VARCHAR(36) NULL,
+        revision_item_id VARCHAR(36) NULL,
+        created_by VARCHAR(36) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        content_hash VARCHAR(80) NOT NULL,
+        CONSTRAINT PK_position_versions PRIMARY KEY (id),
+        CONSTRAINT UQ_pv_position_version UNIQUE (position_id, version),
+        CONSTRAINT FK_pv_position FOREIGN KEY (position_id) REFERENCES positions(id),
+        CONSTRAINT FK_pv_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT CK_pv_version CHECK (version >= 1)
+    );
+END
+GO
+
+IF OBJECT_ID('position_versions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_pv_position_current'
+          AND object_id = OBJECT_ID('position_versions')
+   )
+    CREATE UNIQUE INDEX IX_pv_position_current
+        ON position_versions (position_id)
+        WHERE is_current = 1;
+GO
+
+IF OBJECT_ID('position_versions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_pv_aisle_asset'
+          AND object_id = OBJECT_ID('position_versions')
+   )
+    CREATE INDEX IX_pv_aisle_asset
+        ON position_versions (aisle_id, asset_id);
+GO
+
+IF OBJECT_ID('aisle_revisions', 'U') IS NULL
+BEGIN
+    CREATE TABLE aisle_revisions (
+        id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        base_finalization_id VARCHAR(36) NOT NULL,
+        new_finalization_id VARCHAR(36) NULL,
+        revision_type VARCHAR(40) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        reason NVARCHAR(500) NOT NULL,
+        requested_by VARCHAR(36) NOT NULL,
+        requested_at DATETIME2 NOT NULL,
+        started_at DATETIME2 NULL,
+        completed_at DATETIME2 NULL,
+        canceled_at DATETIME2 NULL,
+        failed_at DATETIME2 NULL,
+        failure_code VARCHAR(64) NULL,
+        failure_message NVARCHAR(500) NULL,
+        apply_id VARCHAR(36) NULL,
+        snapshot_json NVARCHAR(MAX) NOT NULL,
+        content_hash VARCHAR(80) NOT NULL,
+        row_version INT NOT NULL CONSTRAINT DF_ar_row_version DEFAULT (1),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_aisle_revisions PRIMARY KEY (id),
+        CONSTRAINT FK_ar_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_ar_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT CK_ar_revision_type CHECK (
+            revision_type IN (
+                'MANUAL_CORRECTION',
+                'SERVER_PROPOSAL_ADOPTION',
+                'ROLLBACK',
+                'EXCLUSION_CHANGE',
+                'REOPEN_AND_EDIT'
+            )
+        ),
+        CONSTRAINT CK_ar_status CHECK (
+            status IN (
+                'DRAFT',
+                'OPEN',
+                'IN_REVIEW',
+                'READY_TO_APPLY',
+                'APPLYING',
+                'COMPLETED',
+                'CANCELED',
+                'FAILED',
+                'CONFLICTED'
+            )
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('aisle_revisions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_ar_aisle_status'
+          AND object_id = OBJECT_ID('aisle_revisions')
+   )
+    CREATE INDEX IX_ar_aisle_status
+        ON aisle_revisions (aisle_id, status);
+GO
+
+IF OBJECT_ID('aisle_revisions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_ar_aisle_open'
+          AND object_id = OBJECT_ID('aisle_revisions')
+   )
+    CREATE UNIQUE INDEX IX_ar_aisle_open
+        ON aisle_revisions (aisle_id)
+        WHERE status IN ('DRAFT', 'OPEN', 'IN_REVIEW', 'READY_TO_APPLY', 'APPLYING');
+GO
+
+IF OBJECT_ID('aisle_revision_items', 'U') IS NULL
+BEGIN
+    CREATE TABLE aisle_revision_items (
+        id VARCHAR(36) NOT NULL,
+        revision_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        base_result_id VARCHAR(36) NULL,
+        base_position_id VARCHAR(36) NULL,
+        proposed_internal_code VARCHAR(128) NULL,
+        proposed_quantity INT NULL,
+        proposed_exclusion_state VARCHAR(16) NULL,
+        proposal_source VARCHAR(40) NOT NULL,
+        proposal_reference_id VARCHAR(36) NULL,
+        change_reason NVARCHAR(500) NULL,
+        item_status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_ari PRIMARY KEY (id),
+        CONSTRAINT UQ_ari_revision_asset UNIQUE (revision_id, asset_id),
+        CONSTRAINT FK_ari_revision FOREIGN KEY (revision_id) REFERENCES aisle_revisions(id),
+        CONSTRAINT CK_ari_proposal_source CHECK (
+            proposal_source IN (
+                'MANUAL',
+                'SERVER_REPROCESS_PROPOSAL',
+                'ROLLBACK_SOURCE',
+                'EXCLUSION_CHANGE',
+                'UNCHANGED'
+            )
+        ),
+        CONSTRAINT CK_ari_item_status CHECK (
+            item_status IN (
+                'UNCHANGED',
+                'MODIFIED',
+                'EXCLUDED',
+                'RESTORED',
+                'ADOPT_REMOTE',
+                'ROLLED_BACK',
+                'CONFLICTED'
+            )
+        ),
+        CONSTRAINT CK_ari_exclusion_state CHECK (
+            proposed_exclusion_state IS NULL
+            OR proposed_exclusion_state IN ('EXCLUDE', 'RESTORE', 'KEEP')
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('aisle_revision_items', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_ari_revision'
+          AND object_id = OBJECT_ID('aisle_revision_items')
+   )
+    CREATE INDEX IX_ari_revision
+        ON aisle_revision_items (revision_id);
+GO
+
+IF OBJECT_ID('aisle_revision_locks', 'U') IS NULL
+BEGIN
+    CREATE TABLE aisle_revision_locks (
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        owner_token VARCHAR(64) NOT NULL,
+        lease_expires_at DATETIME2 NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_aisle_revision_locks PRIMARY KEY (aisle_id)
+    );
+END
+GO
+GO
+
+-- ----- folded from 0070_aisle_revision_corrections.sql -----
+-- Phase 8 corrections: apply content hash, position CAS columns, uniqueness constraints.
+-- Additive / idempotent. Requires 0069_aisle_revisions_phase8.
+-- Formal rollback (dev/test only):
+--   ALTER TABLE aisle_revisions DROP COLUMN apply_content_hash;
+--   ALTER TABLE aisle_revision_items DROP COLUMN base_position_version_id;
+--   ALTER TABLE aisle_revision_items DROP COLUMN base_position_row_version;
+--   DROP INDEX IF EXISTS UQ_ar_apply_id ON aisle_revisions;
+--   DROP INDEX IF EXISTS IX_ar_inventory_status ON aisle_revisions;
+--   DROP INDEX IF EXISTS IX_ar_new_finalization ON aisle_revisions;
+--   DROP INDEX IF EXISTS IX_pv_revision ON position_versions;
+
+IF COL_LENGTH('aisle_revisions', 'apply_content_hash') IS NULL
+BEGIN
+    ALTER TABLE aisle_revisions ADD apply_content_hash VARCHAR(80) NULL;
+END
+GO
+
+IF COL_LENGTH('aisle_revision_items', 'base_position_version_id') IS NULL
+BEGIN
+    ALTER TABLE aisle_revision_items ADD base_position_version_id VARCHAR(36) NULL;
+END
+GO
+
+IF COL_LENGTH('aisle_revision_items', 'base_position_row_version') IS NULL
+BEGIN
+    ALTER TABLE aisle_revision_items ADD base_position_row_version INT NULL;
+END
+GO
+
+-- Unique apply_id when present (idempotent retries share the same id).
+IF OBJECT_ID('aisle_revisions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'UQ_ar_apply_id'
+          AND object_id = OBJECT_ID('aisle_revisions')
+   )
+    CREATE UNIQUE INDEX UQ_ar_apply_id
+        ON aisle_revisions (apply_id)
+        WHERE apply_id IS NOT NULL;
+GO
+
+-- One current exclusion per asset (Phase 6 table; reinforce if missing).
+IF OBJECT_ID('authoritative_aisle_excluded_assets', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'UQ_aaea_current_asset'
+          AND object_id = OBJECT_ID('authoritative_aisle_excluded_assets')
+   )
+    CREATE UNIQUE INDEX UQ_aaea_current_asset
+        ON authoritative_aisle_excluded_assets (aisle_id, asset_id)
+        WHERE is_current = 1;
+GO
+
+IF OBJECT_ID('aisle_revision_items', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_ari_revision_asset'
+          AND object_id = OBJECT_ID('aisle_revision_items')
+   )
+    CREATE INDEX IX_ari_revision_asset
+        ON aisle_revision_items (revision_id, asset_id);
+GO
+
+-- Inventory-wide revision listings (0069 only indexed by aisle).
+IF OBJECT_ID('aisle_revisions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_ar_inventory_status'
+          AND object_id = OBJECT_ID('aisle_revisions')
+   )
+    CREATE INDEX IX_ar_inventory_status
+        ON aisle_revisions (inventory_id, status);
+GO
+
+-- Trace a published finalization back to the revision that created it.
+IF OBJECT_ID('aisle_revisions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_ar_new_finalization'
+          AND object_id = OBJECT_ID('aisle_revisions')
+   )
+    CREATE INDEX IX_ar_new_finalization
+        ON aisle_revisions (new_finalization_id)
+        WHERE new_finalization_id IS NOT NULL;
+GO
+
+-- Audit every position version a revision produced.
+IF OBJECT_ID('position_versions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.indexes
+        WHERE name = 'IX_pv_revision'
+          AND object_id = OBJECT_ID('position_versions')
+   )
+    CREATE INDEX IX_pv_revision
+        ON position_versions (revision_id)
+        WHERE revision_id IS NOT NULL;
+GO
+GO
+
+-- ----- folded from 0073_inventory_jobs_retry_of_unique.sql -----
+/*
+  0073_inventory_jobs_retry_of_unique.sql
+
+  Phase 5 corrections — at most one child job per retry_of_job_id (idempotent recovery).
+
+  Preflight / rollback / reapply: see 0073_README.md in this directory.
+  Rollback: DROP INDEX IF EXISTS UX_inventory_jobs_retry_of_job_id ON dbo.inventory_jobs;
+*/
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'UX_inventory_jobs_retry_of_job_id'
+      AND object_id = OBJECT_ID(N'dbo.inventory_jobs')
+)
+BEGIN
+    -- Pre-check: duplicate parents would block index creation.
+    IF EXISTS (
+        SELECT retry_of_job_id
+        FROM dbo.inventory_jobs
+        WHERE retry_of_job_id IS NOT NULL
+        GROUP BY retry_of_job_id
+        HAVING COUNT(*) > 1
+    )
+    BEGIN
+        RAISERROR(
+            'Cannot create UX_inventory_jobs_retry_of_job_id: duplicate retry_of_job_id rows exist',
+            16,
+            1
+        );
+        RETURN;
+    END;
+
+    CREATE UNIQUE NONCLUSTERED INDEX UX_inventory_jobs_retry_of_job_id
+        ON dbo.inventory_jobs(retry_of_job_id)
+        WHERE retry_of_job_id IS NOT NULL;
+END;
+GO
+GO
+
+-- ----- folded from 0077_aisle_location_label_artifacts.sql -----
+/*
+  0077_aisle_location_label_artifacts.sql
+
+  Phase 2 — durable rendered positioning label artifacts (PDF/PNG).
+
+  Apply: db_migrate apply / service.apply_pending (UP only).
+  Rollback (manual): 0077_aisle_location_label_artifacts.down.sql
+*/
+
+IF OBJECT_ID(N'dbo.aisle_location_label_artifacts', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.aisle_location_label_artifacts (
+        id VARCHAR(36) NOT NULL CONSTRAINT PK_aisle_location_label_artifacts PRIMARY KEY,
+        label_id VARCHAR(36) NOT NULL,
+        format VARCHAR(16) NOT NULL,
+        preset VARCHAR(32) NOT NULL,
+        template_version INT NOT NULL,
+        marker_version INT NOT NULL,
+        storage_provider VARCHAR(32) NOT NULL,
+        storage_bucket VARCHAR(255) NULL,
+        storage_key VARCHAR(512) NOT NULL,
+        content_type VARCHAR(128) NOT NULL,
+        file_size_bytes BIGINT NOT NULL,
+        artifact_hash VARCHAR(64) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_aisle_location_label_artifacts_label
+            FOREIGN KEY (label_id) REFERENCES dbo.aisle_location_labels(id),
+        CONSTRAINT CK_aisle_location_label_artifacts_format
+            CHECK (format IN (N'PDF', N'PNG')),
+        CONSTRAINT CK_aisle_location_label_artifacts_sizes
+            CHECK (template_version >= 1 AND marker_version >= 1 AND file_size_bytes >= 0)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_aisle_location_label_artifacts_identity'
+      AND object_id = OBJECT_ID(N'dbo.aisle_location_label_artifacts')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_aisle_location_label_artifacts_identity
+        ON dbo.aisle_location_label_artifacts(
+            label_id, format, preset, template_version, marker_version
+        );
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_aisle_location_label_artifacts_label_created'
+      AND object_id = OBJECT_ID(N'dbo.aisle_location_label_artifacts')
+)
+    CREATE NONCLUSTERED INDEX IX_aisle_location_label_artifacts_label_created
+        ON dbo.aisle_location_label_artifacts(label_id, created_at DESC);
+GO
+GO
+
+-- ----- folded from 0078_phase2_positioning_label_hardening.sql -----
+/*
+  0078_phase2_positioning_label_hardening.sql
+
+  Phase 2 corrections:
+  - aisle_locations.public_identifier (payload position_id)
+  - aisle_location_labels.replaced_at
+  - artifact lifecycle status + failure fields
+  - nullable storage fields for PENDING reservation
+
+  Rollback: 0078_phase2_positioning_label_hardening.down.sql
+*/
+
+-- ---------------------------------------------------------------------------
+-- aisle_locations.public_identifier
+-- ---------------------------------------------------------------------------
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_locations') AND name = N'public_identifier'
+)
+    ALTER TABLE dbo.aisle_locations ADD public_identifier VARCHAR(64) NULL;
+GO
+
+-- Backfill existing rows (stable public ids distinct from internal UUID).
+UPDATE dbo.aisle_locations
+SET public_identifier = CONCAT(N'loc_', REPLACE(CONVERT(VARCHAR(36), id), N'-', N''))
+WHERE public_identifier IS NULL;
+GO
+
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_locations') AND name = N'public_identifier'
+)
+AND NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_locations')
+      AND name = N'public_identifier'
+      AND is_nullable = 0
+)
+BEGIN
+    ALTER TABLE dbo.aisle_locations ALTER COLUMN public_identifier VARCHAR(64) NOT NULL;
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_aisle_locations_public_identifier'
+      AND object_id = OBJECT_ID(N'dbo.aisle_locations')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_aisle_locations_public_identifier
+        ON dbo.aisle_locations(public_identifier);
+GO
+
+-- ---------------------------------------------------------------------------
+-- aisle_location_labels.replaced_at
+-- ---------------------------------------------------------------------------
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_location_labels') AND name = N'replaced_at'
+)
+    ALTER TABLE dbo.aisle_location_labels ADD replaced_at DATETIME2 NULL;
+GO
+
+-- ---------------------------------------------------------------------------
+-- artifact lifecycle
+-- ---------------------------------------------------------------------------
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_location_label_artifacts') AND name = N'status'
+)
+    ALTER TABLE dbo.aisle_location_label_artifacts ADD status VARCHAR(16) NOT NULL
+        CONSTRAINT DF_aisle_location_label_artifacts_status DEFAULT (N'READY');
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_location_label_artifacts') AND name = N'failure_code'
+)
+    ALTER TABLE dbo.aisle_location_label_artifacts ADD failure_code VARCHAR(64) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_location_label_artifacts') AND name = N'failure_detail'
+)
+    ALTER TABLE dbo.aisle_location_label_artifacts ADD failure_detail NVARCHAR(500) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_location_label_artifacts') AND name = N'updated_at'
+)
+    ALTER TABLE dbo.aisle_location_label_artifacts ADD updated_at DATETIME2 NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_location_label_artifacts') AND name = N'render_owner'
+)
+    ALTER TABLE dbo.aisle_location_label_artifacts ADD render_owner VARCHAR(64) NULL;
+GO
+
+UPDATE dbo.aisle_location_label_artifacts
+SET updated_at = created_at
+WHERE updated_at IS NULL;
+GO
+
+-- Allow PENDING rows before storage upload completes.
+IF EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.aisle_location_label_artifacts')
+      AND name = N'storage_key'
+      AND is_nullable = 0
+)
+    ALTER TABLE dbo.aisle_location_label_artifacts ALTER COLUMN storage_key VARCHAR(512) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_aisle_location_label_artifacts_status'
+)
+    ALTER TABLE dbo.aisle_location_label_artifacts
+        ADD CONSTRAINT CK_aisle_location_label_artifacts_status
+        CHECK (status IN (N'PENDING', N'RENDERING', N'READY', N'FAILED'));
+GO
+GO
+
+-- ----- folded from 0079_client_position_labels.sql -----
+/*
+  0079_client_position_labels.sql
+
+  Simplify positioning labels to client scope:
+  - New dbo.client_position_labels (no inventory/aisle ownership)
+  - New dbo.client_position_label_artifacts
+  - Migrate labels from aisle_location_labels when present
+  - Preserve public_identifier when possible
+
+  Rollback: 0079_client_position_labels.down.sql
+*/
+
+-- ---------------------------------------------------------------------------
+-- client_position_labels
+-- ---------------------------------------------------------------------------
+IF OBJECT_ID(N'dbo.client_position_labels', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.client_position_labels (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NOT NULL,
+        public_identifier VARCHAR(64) NOT NULL,
+        name NVARCHAR(200) NOT NULL,
+        normalized_name NVARCHAR(200) NOT NULL,
+        description NVARCHAR(1000) NULL,
+        status VARCHAR(32) NOT NULL
+            CONSTRAINT DF_client_position_labels_status DEFAULT ('ACTIVE'),
+        payload_version INT NOT NULL
+            CONSTRAINT DF_client_position_labels_payload_version DEFAULT (1),
+        canonical_payload NVARCHAR(MAX) NOT NULL,
+        payload_hash VARCHAR(128) NULL,
+        signature NVARCHAR(128) NULL,
+        signature_algorithm VARCHAR(32) NULL,
+        signature_key_version INT NULL,
+        signature_status VARCHAR(32) NOT NULL
+            CONSTRAINT DF_client_position_labels_sig_status DEFAULT ('UNSIGNED'),
+        created_by VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        invalidated_at DATETIME2 NULL,
+        invalidation_reason NVARCHAR(512) NULL,
+        idempotency_key NVARCHAR(128) NULL,
+        idempotency_request_hash VARCHAR(64) NULL,
+        CONSTRAINT PK_client_position_labels PRIMARY KEY (id),
+        CONSTRAINT FK_client_position_labels_client
+            FOREIGN KEY (client_id) REFERENCES dbo.clients(id),
+        CONSTRAINT CK_client_position_labels_status CHECK (status IN ('ACTIVE', 'INVALIDATED')),
+        CONSTRAINT CK_client_position_labels_signature_status CHECK (
+            signature_status IN ('NOT_IMPLEMENTED', 'UNSIGNED', 'SIGNED')
+        )
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_client_position_labels_public_identifier'
+      AND object_id = OBJECT_ID(N'dbo.client_position_labels')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_client_position_labels_public_identifier
+        ON dbo.client_position_labels(public_identifier);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_client_position_labels_client_status'
+      AND object_id = OBJECT_ID(N'dbo.client_position_labels')
+)
+    CREATE NONCLUSTERED INDEX IX_client_position_labels_client_status
+        ON dbo.client_position_labels(client_id, status, created_at DESC);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_client_position_labels_client_idempotency'
+      AND object_id = OBJECT_ID(N'dbo.client_position_labels')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_client_position_labels_client_idempotency
+        ON dbo.client_position_labels(client_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL;
+GO
+
+-- ---------------------------------------------------------------------------
+-- client_position_label_artifacts
+-- ---------------------------------------------------------------------------
+IF OBJECT_ID(N'dbo.client_position_label_artifacts', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.client_position_label_artifacts (
+        id VARCHAR(36) NOT NULL,
+        label_id VARCHAR(36) NOT NULL,
+        format VARCHAR(8) NOT NULL,
+        preset VARCHAR(32) NOT NULL,
+        template_version INT NOT NULL,
+        marker_version INT NOT NULL,
+        content_type VARCHAR(64) NOT NULL,
+        file_size_bytes BIGINT NOT NULL,
+        artifact_hash VARCHAR(64) NOT NULL,
+        storage_key NVARCHAR(512) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_client_position_label_artifacts PRIMARY KEY (id),
+        CONSTRAINT CK_client_position_label_artifacts_format CHECK (format IN ('PDF', 'PNG')),
+        CONSTRAINT FK_client_position_label_artifacts_label
+            FOREIGN KEY (label_id) REFERENCES dbo.client_position_labels(id)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_client_position_label_artifacts_identity'
+      AND object_id = OBJECT_ID(N'dbo.client_position_label_artifacts')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_client_position_label_artifacts_identity
+        ON dbo.client_position_label_artifacts(label_id, format, preset, template_version, marker_version);
+GO
+
+-- ---------------------------------------------------------------------------
+-- Data migrate: aisle_location_labels → client_position_labels
+-- ---------------------------------------------------------------------------
+IF OBJECT_ID(N'dbo.aisle_location_labels', N'U') IS NOT NULL
+   AND OBJECT_ID(N'dbo.aisle_locations', N'U') IS NOT NULL
+BEGIN
+    INSERT INTO dbo.client_position_labels (
+        id, client_id, public_identifier, name, normalized_name, description,
+        status, payload_version, canonical_payload, payload_hash,
+        signature, signature_algorithm, signature_key_version, signature_status,
+        created_by, created_at, updated_at, invalidated_at, invalidation_reason,
+        idempotency_key, idempotency_request_hash
+    )
+    SELECT
+        l.id,
+        l.client_id,
+        l.public_identifier,
+        COALESCE(NULLIF(LTRIM(RTRIM(loc.display_name)), N''), loc.code),
+        UPPER(COALESCE(NULLIF(LTRIM(RTRIM(loc.normalized_code)), N''), loc.code)),
+        loc.description,
+        CASE WHEN l.status = N'INVALIDATED' THEN N'INVALIDATED' ELSE N'ACTIVE' END,
+        l.payload_version,
+        CASE
+            WHEN ISJSON(CONVERT(NVARCHAR(MAX), l.payload_json)) = 1
+                THEN CONVERT(NVARCHAR(MAX), l.payload_json)
+            ELSE N'{"type":"DINAMIC_POSITION","version":1,"label_id":"' + l.public_identifier + N'"}'
+        END,
+        l.payload_hash,
+        CASE
+            WHEN ISJSON(CONVERT(NVARCHAR(MAX), l.payload_json)) = 1
+                THEN JSON_VALUE(CONVERT(NVARCHAR(MAX), l.payload_json), '$.signature')
+            ELSE NULL
+        END,
+        CASE WHEN l.signature_status = N'SIGNED' THEN N'HMAC-SHA256' ELSE NULL END,
+        CASE
+            WHEN ISJSON(CONVERT(NVARCHAR(MAX), l.payload_json)) = 1
+                THEN TRY_CONVERT(INT, JSON_VALUE(CONVERT(NVARCHAR(MAX), l.payload_json), '$.key_version'))
+            ELSE NULL
+        END,
+        CASE
+            WHEN l.signature_status IN (N'SIGNED', N'UNSIGNED', N'NOT_IMPLEMENTED')
+                THEN l.signature_status
+            ELSE N'UNSIGNED'
+        END,
+        l.generated_by,
+        l.generated_at,
+        COALESCE(l.generated_at, SYSUTCDATETIME()),
+        l.invalidated_at,
+        l.invalidation_reason,
+        l.idempotency_key,
+        l.idempotency_request_hash
+    FROM dbo.aisle_location_labels l
+    INNER JOIN dbo.aisle_locations loc ON loc.id = l.location_id
+    WHERE NOT EXISTS (
+        SELECT 1 FROM dbo.client_position_labels c WHERE c.id = l.id
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM dbo.client_position_labels c2
+        WHERE c2.public_identifier = l.public_identifier
+    );
+END
+GO
+
+IF OBJECT_ID(N'dbo.aisle_location_label_artifacts', N'U') IS NOT NULL
+BEGIN
+    INSERT INTO dbo.client_position_label_artifacts (
+        id, label_id, format, preset, template_version, marker_version,
+        content_type, file_size_bytes, artifact_hash, storage_key, created_at
+    )
+    SELECT
+        a.id, a.label_id, a.format, a.preset, a.template_version, a.marker_version,
+        a.content_type, a.file_size_bytes, a.artifact_hash,
+        COALESCE(a.storage_key, N'migrated-empty'), a.created_at
+    FROM dbo.aisle_location_label_artifacts a
+    INNER JOIN dbo.client_position_labels c ON c.id = a.label_id
+    WHERE a.storage_key IS NOT NULL
+      AND LTRIM(RTRIM(a.storage_key)) <> N''
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.client_position_label_artifacts x WHERE x.id = a.id
+      );
+END
+GO
+GO
+
+-- ----- folded from 0080_image_position_label_detections.sql -----
+/*
+  0080_image_position_label_detections.sql
+
+  Phase 3 — persist per-image DINAMIC_POSITION detections (no product binding).
+
+  Rollback: 0080_image_position_label_detections.down.sql
+*/
+
+IF OBJECT_ID(N'dbo.image_position_label_detections', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.image_position_label_detections (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        source_asset_id VARCHAR(36) NOT NULL,
+        client_image_id VARCHAR(64) NULL,
+        ordered_capture_session_id VARCHAR(36) NULL,
+        sequence_number INT NULL,
+        position_label_id VARCHAR(36) NULL,
+        public_identifier VARCHAR(64) NULL,
+        position_name_snapshot NVARCHAR(200) NULL,
+        payload_version INT NULL,
+        signature_status VARCHAR(32) NOT NULL,
+        detection_status VARCHAR(64) NOT NULL,
+        confidence FLOAT NULL,
+        bounding_box_json NVARCHAR(MAX) NULL,
+        rotation_degrees FLOAT NULL,
+        raw_payload_hash VARCHAR(128) NULL,
+        detector_name VARCHAR(64) NOT NULL,
+        detector_version VARCHAR(64) NOT NULL,
+        metadata_json NVARCHAR(MAX) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_image_position_label_detections PRIMARY KEY (id),
+        CONSTRAINT FK_ipld_client FOREIGN KEY (client_id) REFERENCES dbo.clients(id),
+        CONSTRAINT FK_ipld_inventory FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id),
+        CONSTRAINT FK_ipld_job FOREIGN KEY (job_id) REFERENCES dbo.inventory_jobs(id),
+        CONSTRAINT FK_ipld_asset FOREIGN KEY (source_asset_id) REFERENCES dbo.source_assets(id),
+        CONSTRAINT FK_ipld_label FOREIGN KEY (position_label_id) REFERENCES dbo.client_position_labels(id),
+        CONSTRAINT CK_ipld_signature_status CHECK (
+            signature_status IN ('VALID', 'INVALID', 'MISSING', 'SKIPPED', 'UNKNOWN_KEY')
+        )
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_ipld_asset_detector_hash_status'
+      AND object_id = OBJECT_ID(N'dbo.image_position_label_detections')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_ipld_asset_detector_hash_status
+        ON dbo.image_position_label_detections(
+            source_asset_id,
+            detector_version,
+            detection_status,
+            raw_payload_hash
+        );
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_ipld_job'
+      AND object_id = OBJECT_ID(N'dbo.image_position_label_detections')
+)
+    CREATE NONCLUSTERED INDEX IX_ipld_job
+        ON dbo.image_position_label_detections(job_id, sequence_number, created_at);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_ipld_asset'
+      AND object_id = OBJECT_ID(N'dbo.image_position_label_detections')
+)
+    CREATE NONCLUSTERED INDEX IX_ipld_asset
+        ON dbo.image_position_label_detections(source_asset_id, detection_status);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_ipld_label'
+      AND object_id = OBJECT_ID(N'dbo.image_position_label_detections')
+)
+    CREATE NONCLUSTERED INDEX IX_ipld_label
+        ON dbo.image_position_label_detections(position_label_id)
+        WHERE position_label_id IS NOT NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_ipld_client_status'
+      AND object_id = OBJECT_ID(N'dbo.image_position_label_detections')
+)
+    CREATE NONCLUSTERED INDEX IX_ipld_client_status
+        ON dbo.image_position_label_detections(client_id, detection_status, created_at DESC);
+GO
+GO
+
+-- ----- folded from 0081_image_position_label_detections_job_scope.sql -----
+/*
+  0081_image_position_label_detections_job_scope.sql
+
+  Phase 3 corrections:
+  - Job-scoped unique identity (preserve history across jobs)
+  - detection_status CHECK
+  - Drop pre-0081 asset-only unique index
+
+  Rollback: 0081_image_position_label_detections_job_scope.down.sql
+*/
+
+IF EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_ipld_asset_detector_hash_status'
+      AND object_id = OBJECT_ID(N'dbo.image_position_label_detections')
+)
+    DROP INDEX UQ_ipld_asset_detector_hash_status ON dbo.image_position_label_detections;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_ipld_job_asset_detector_hash_status'
+      AND object_id = OBJECT_ID(N'dbo.image_position_label_detections')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_ipld_job_asset_detector_hash_status
+        ON dbo.image_position_label_detections(
+            job_id,
+            source_asset_id,
+            detector_version,
+            detection_status,
+            raw_payload_hash
+        );
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = N'CK_ipld_detection_status'
+      AND parent_object_id = OBJECT_ID(N'dbo.image_position_label_detections')
+)
+BEGIN
+    ALTER TABLE dbo.image_position_label_detections WITH NOCHECK
+    ADD CONSTRAINT CK_ipld_detection_status CHECK (
+        detection_status IN (
+            'VALID',
+            'INVALID_JSON',
+            'INVALID_TYPE',
+            'UNSUPPORTED_VERSION',
+            'UNSUPPORTED_LEGACY_PAYLOAD',
+            'MISSING_LABEL_ID',
+            'MISSING_SIGNATURE',
+            'INVALID_SIGNATURE',
+            'UNKNOWN_KEY_VERSION',
+            'SIGNATURE_VALIDATION_SKIPPED',
+            'LABEL_NOT_FOUND',
+            'LABEL_INVALIDATED',
+            'CLIENT_MISMATCH',
+            'DUPLICATE_POSITION_CODES',
+            'AMBIGUOUS_POSITION_DETECTION',
+            'PAYLOAD_TOO_LARGE',
+            'DECODE_TIMEOUT',
+            'DETECTION_FAILED',
+            'DETECTION_CONTEXT_INVALID',
+            'NO_LABEL',
+            'FEATURE_DISABLED'
+        )
+    );
+END
+GO
+GO
+
+-- ----- folded from 0082_position_reconciliation.sql -----
+/*
+  0082_position_reconciliation.sql
+
+  Phase 4 — durable sequential product-to-position reconciliation.
+  Rollback: 0082_position_reconciliation.down.sql
+*/
+
+IF OBJECT_ID(N'dbo.position_reconciliations', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.position_reconciliations (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        ordered_capture_session_id VARCHAR(36) NULL,
+        reconciliation_name VARCHAR(100) NOT NULL,
+        reconciliation_version VARCHAR(32) NOT NULL,
+        input_fingerprint VARCHAR(64) NOT NULL,
+        status VARCHAR(16) NOT NULL,
+        started_at DATETIME2 NOT NULL,
+        completed_at DATETIME2 NULL,
+        failure_code VARCHAR(64) NULL,
+        attempt_count INT NOT NULL,
+        assigned_count INT NOT NULL,
+        unassigned_count INT NOT NULL,
+        sequence_gap_count INT NOT NULL,
+        metadata_json NVARCHAR(MAX) NULL,
+        is_active BIT NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        superseded_at DATETIME2 NULL,
+        CONSTRAINT PK_position_reconciliations PRIMARY KEY (id),
+        CONSTRAINT FK_position_reconciliations_client FOREIGN KEY (client_id) REFERENCES dbo.clients(id),
+        CONSTRAINT FK_position_reconciliations_inventory FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id),
+        CONSTRAINT FK_position_reconciliations_job FOREIGN KEY (job_id) REFERENCES dbo.inventory_jobs(id),
+        CONSTRAINT CK_position_reconciliations_status CHECK (
+            status IN ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'STALE')
+        )
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'UQ_position_reconciliations_active_job'
+      AND object_id = OBJECT_ID(N'dbo.position_reconciliations')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_position_reconciliations_active_job
+        ON dbo.position_reconciliations(job_id) WHERE is_active = 1;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'IX_position_reconciliations_job'
+      AND object_id = OBJECT_ID(N'dbo.position_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_position_reconciliations_job
+        ON dbo.position_reconciliations(job_id, created_at DESC);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'IX_position_reconciliations_status'
+      AND object_id = OBJECT_ID(N'dbo.position_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_position_reconciliations_status
+        ON dbo.position_reconciliations(status, updated_at);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'IX_position_reconciliations_version'
+      AND object_id = OBJECT_ID(N'dbo.position_reconciliations')
+)
+    CREATE NONCLUSTERED INDEX IX_position_reconciliations_version
+        ON dbo.position_reconciliations(reconciliation_version, job_id);
+GO
+
+IF OBJECT_ID(N'dbo.product_position_assignments', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.product_position_assignments (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        result_id VARCHAR(36) NOT NULL,
+        source_asset_id VARCHAR(36) NOT NULL,
+        ordered_capture_session_id VARCHAR(36) NULL,
+        sequence_number INT NULL,
+        position_label_id VARCHAR(36) NULL,
+        position_name_snapshot NVARCHAR(200) NULL,
+        source_detection_id VARCHAR(36) NULL,
+        assignment_status VARCHAR(64) NOT NULL,
+        assignment_reason VARCHAR(128) NOT NULL,
+        assignment_source VARCHAR(32) NULL,
+        reconciliation_id VARCHAR(36) NOT NULL,
+        reconciliation_version VARCHAR(32) NOT NULL,
+        is_active BIT NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        superseded_at DATETIME2 NULL,
+        CONSTRAINT PK_product_position_assignments PRIMARY KEY (id),
+        CONSTRAINT FK_ppa_client FOREIGN KEY (client_id) REFERENCES dbo.clients(id),
+        CONSTRAINT FK_ppa_inventory FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id),
+        CONSTRAINT FK_ppa_job FOREIGN KEY (job_id) REFERENCES dbo.inventory_jobs(id),
+        CONSTRAINT FK_ppa_result FOREIGN KEY (result_id) REFERENCES dbo.product_records(id),
+        CONSTRAINT FK_ppa_asset FOREIGN KEY (source_asset_id) REFERENCES dbo.source_assets(id),
+        CONSTRAINT FK_ppa_label FOREIGN KEY (position_label_id) REFERENCES dbo.client_position_labels(id),
+        CONSTRAINT FK_ppa_detection FOREIGN KEY (source_detection_id) REFERENCES dbo.image_position_label_detections(id),
+        CONSTRAINT FK_ppa_reconciliation FOREIGN KEY (reconciliation_id) REFERENCES dbo.position_reconciliations(id)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'UQ_ppa_active_job_result'
+      AND object_id = OBJECT_ID(N'dbo.product_position_assignments')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_ppa_active_job_result
+        ON dbo.product_position_assignments(job_id, result_id) WHERE is_active = 1;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ppa_job' AND object_id = OBJECT_ID(N'dbo.product_position_assignments'))
+    CREATE NONCLUSTERED INDEX IX_ppa_job ON dbo.product_position_assignments(job_id);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ppa_result' AND object_id = OBJECT_ID(N'dbo.product_position_assignments'))
+    CREATE NONCLUSTERED INDEX IX_ppa_result ON dbo.product_position_assignments(result_id);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ppa_position_label' AND object_id = OBJECT_ID(N'dbo.product_position_assignments'))
+    CREATE NONCLUSTERED INDEX IX_ppa_position_label ON dbo.product_position_assignments(position_label_id) WHERE position_label_id IS NOT NULL;
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ppa_assignment_status' AND object_id = OBJECT_ID(N'dbo.product_position_assignments'))
+    CREATE NONCLUSTERED INDEX IX_ppa_assignment_status ON dbo.product_position_assignments(assignment_status, job_id);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ppa_reconciliation_version' AND object_id = OBJECT_ID(N'dbo.product_position_assignments'))
+    CREATE NONCLUSTERED INDEX IX_ppa_reconciliation_version ON dbo.product_position_assignments(reconciliation_version, job_id);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ppa_is_active' AND object_id = OBJECT_ID(N'dbo.product_position_assignments'))
+    CREATE NONCLUSTERED INDEX IX_ppa_is_active ON dbo.product_position_assignments(is_active, job_id);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ppa_sequence_number' AND object_id = OBJECT_ID(N'dbo.product_position_assignments'))
+    CREATE NONCLUSTERED INDEX IX_ppa_sequence_number ON dbo.product_position_assignments(job_id, sequence_number);
+GO
+GO
+
+-- ----- folded from 0083_position_reconciliation_hardening.sql -----
+/*
+  0083_position_reconciliation_hardening.sql
+
+  Enforce valid and internally consistent Phase 4 assignment rows.
+*/
+
+ALTER TABLE dbo.product_position_assignments WITH CHECK
+ADD CONSTRAINT CK_ppa_assignment_status CHECK (
+    assignment_status IN (
+        'ASSIGNED_AUTOMATIC',
+        'UNASSIGNED_NO_PREVIOUS_POSITION',
+        'UNASSIGNED_AFTER_AMBIGUOUS_POSITION',
+        'UNASSIGNED_INVALID_POSITION',
+        'UNASSIGNED_UNORDERED_ASSET',
+        'SKIPPED_NO_ITEM_RESULT'
+    )
+);
+GO
+
+ALTER TABLE dbo.product_position_assignments WITH CHECK
+ADD CONSTRAINT CK_ppa_assignment_source CHECK (
+    assignment_source IS NULL OR assignment_source = 'AUTOMATIC'
+);
+GO
+
+ALTER TABLE dbo.product_position_assignments WITH CHECK
+ADD CONSTRAINT CK_ppa_automatic_evidence CHECK (
+    assignment_status <> 'ASSIGNED_AUTOMATIC'
+    OR (position_label_id IS NOT NULL AND source_detection_id IS NOT NULL)
+);
+GO
+
+ALTER TABLE dbo.product_position_assignments WITH CHECK
+ADD CONSTRAINT CK_ppa_unassigned_position_null CHECK (
+    assignment_status = 'ASSIGNED_AUTOMATIC' OR position_label_id IS NULL
+);
+GO
+GO
+
+-- ----- folded from 0084_manual_product_position_overrides.sql -----
+/*
+  Phase 6: immutable manual product-position override revisions.
+  Automatic assignments and reconciliations remain unchanged.
+*/
+IF OBJECT_ID(N'dbo.manual_product_position_overrides', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.manual_product_position_overrides (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        result_id VARCHAR(36) NOT NULL,
+        source_asset_id VARCHAR(36) NULL,
+        automatic_assignment_id VARCHAR(36) NULL,
+        automatic_reconciliation_id VARCHAR(36) NULL,
+        previous_effective_position_label_id VARCHAR(36) NULL,
+        new_position_label_id VARCHAR(36) NULL,
+        new_position_name_snapshot NVARCHAR(200) NULL,
+        override_action VARCHAR(32) NOT NULL,
+        reason_code VARCHAR(64) NOT NULL,
+        reason_text NVARCHAR(1000) NULL,
+        -- External JWT subject: deliberately no FK; application validates non-empty value.
+        created_by_user_id VARCHAR(128) NOT NULL,
+        created_by_role VARCHAR(64) NOT NULL,
+        idempotency_key VARCHAR(128) NOT NULL,
+        version INT NOT NULL,
+        is_active BIT NOT NULL,
+        superseded_override_id VARCHAR(36) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        deactivated_at DATETIME2 NULL,
+        CONSTRAINT PK_manual_product_position_overrides PRIMARY KEY (id),
+        CONSTRAINT FK_mppo_client FOREIGN KEY (client_id) REFERENCES dbo.clients(id),
+        CONSTRAINT FK_mppo_inventory FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id),
+        CONSTRAINT FK_mppo_aisle FOREIGN KEY (aisle_id) REFERENCES dbo.aisles(id),
+        CONSTRAINT FK_mppo_job FOREIGN KEY (job_id) REFERENCES dbo.inventory_jobs(id),
+        CONSTRAINT FK_mppo_result FOREIGN KEY (result_id) REFERENCES dbo.product_records(id),
+        CONSTRAINT FK_mppo_asset FOREIGN KEY (source_asset_id) REFERENCES dbo.source_assets(id),
+        CONSTRAINT FK_mppo_auto_assignment FOREIGN KEY (automatic_assignment_id)
+            REFERENCES dbo.product_position_assignments(id),
+        CONSTRAINT FK_mppo_auto_reconciliation FOREIGN KEY (automatic_reconciliation_id)
+            REFERENCES dbo.position_reconciliations(id),
+        CONSTRAINT FK_mppo_previous_label FOREIGN KEY (previous_effective_position_label_id)
+            REFERENCES dbo.client_position_labels(id),
+        CONSTRAINT FK_mppo_new_label FOREIGN KEY (new_position_label_id)
+            REFERENCES dbo.client_position_labels(id),
+        CONSTRAINT FK_mppo_superseded FOREIGN KEY (superseded_override_id)
+            REFERENCES dbo.manual_product_position_overrides(id),
+        CONSTRAINT CK_mppo_version CHECK (version > 0),
+        CONSTRAINT CK_mppo_action CHECK (
+            override_action IN (
+                'ASSIGN_POSITION', 'CHANGE_POSITION', 'REMOVE_POSITION', 'RESTORE_AUTOMATIC'
+            )
+        ),
+        CONSTRAINT CK_mppo_reason CHECK (
+            reason_code IN (
+                'WRONG_POSITION_DETECTED', 'PRODUCT_MOVED', 'SEQUENCE_ERROR',
+                'POSITION_LABEL_NOT_VISIBLE', 'POSITION_LABEL_INVALID', 'AMBIGUOUS_IMAGE',
+                'MISSING_POSITION_LABEL', 'OPERATOR_VERIFICATION', 'DATA_CORRECTION', 'OTHER'
+            )
+        ),
+        CONSTRAINT CK_mppo_action_position CHECK (
+            (override_action IN ('ASSIGN_POSITION', 'CHANGE_POSITION')
+                AND new_position_label_id IS NOT NULL)
+            OR (override_action IN ('REMOVE_POSITION', 'RESTORE_AUTOMATIC')
+                AND new_position_label_id IS NULL)
+        ),
+        CONSTRAINT CK_mppo_restore_inactive CHECK (
+            override_action <> 'RESTORE_AUTOMATIC' OR is_active = 0
+        ),
+        CONSTRAINT CK_mppo_other_reason_text CHECK (
+            reason_code <> 'OTHER' OR LEN(LTRIM(RTRIM(ISNULL(reason_text, '')))) > 0
+        )
+    );
+END
+GO
+
+IF OBJECT_ID(N'dbo.product_position_effective_versions', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.product_position_effective_versions (
+        job_id VARCHAR(36) NOT NULL,
+        result_id VARCHAR(36) NOT NULL,
+        version INT NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_product_position_effective_versions PRIMARY KEY (job_id, result_id),
+        CONSTRAINT FK_ppev_job FOREIGN KEY (job_id) REFERENCES dbo.inventory_jobs(id),
+        CONSTRAINT FK_ppev_result FOREIGN KEY (result_id) REFERENCES dbo.product_records(id),
+        CONSTRAINT CK_ppev_version CHECK (version > 0)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_manual_position_override_active'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_manual_position_override_active
+        ON dbo.manual_product_position_overrides(job_id, result_id) WHERE is_active = 1;
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_manual_position_override_idempotency'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_manual_position_override_idempotency
+        ON dbo.manual_product_position_overrides(client_id, idempotency_key);
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_mppo_job_result_version'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_mppo_job_result_version
+        ON dbo.manual_product_position_overrides(job_id, result_id, version);
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_job_result'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_job_result
+        ON dbo.manual_product_position_overrides(job_id, result_id, version DESC);
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_new_label'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_new_label
+        ON dbo.manual_product_position_overrides(new_position_label_id)
+        WHERE new_position_label_id IS NOT NULL;
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_created_by'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_created_by
+        ON dbo.manual_product_position_overrides(created_by_user_id);
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_created_at'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_created_at
+        ON dbo.manual_product_position_overrides(created_at);
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_mppo_active_reason'
+      AND object_id = OBJECT_ID(N'dbo.manual_product_position_overrides')
+)
+    CREATE NONCLUSTERED INDEX IX_mppo_active_reason
+        ON dbo.manual_product_position_overrides(is_active, reason_code);
+GO
+GO
+
+-- ----- folded from 0085_ipld_legacy_unsigned_detection_status.sql -----
+/*
+  0085_ipld_legacy_unsigned_detection_status.sql
+
+  Allow LEGACY_UNSIGNED_REQUIRES_REVIEW in image_position_label_detections.detection_status.
+
+  Domain/enum already emits this status when a stored unsigned position label matches the
+  QR payload. Migration 0081 CHECK omitted it, so persistence raised IntegrityError and
+  position detections were dropped — product↔position reconciliation then stayed unassigned.
+
+  Rollback: 0085_ipld_legacy_unsigned_detection_status.down.sql
+*/
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = N'CK_ipld_detection_status'
+      AND parent_object_id = OBJECT_ID(N'dbo.image_position_label_detections')
+)
+    ALTER TABLE dbo.image_position_label_detections DROP CONSTRAINT CK_ipld_detection_status;
+GO
+
+ALTER TABLE dbo.image_position_label_detections WITH NOCHECK
+ADD CONSTRAINT CK_ipld_detection_status CHECK (
+    detection_status IN (
+        'VALID',
+        'INVALID_JSON',
+        'INVALID_TYPE',
+        'UNSUPPORTED_VERSION',
+        'UNSUPPORTED_LEGACY_PAYLOAD',
+        'MISSING_LABEL_ID',
+        'MISSING_SIGNATURE',
+        'INVALID_SIGNATURE',
+        'UNKNOWN_KEY_VERSION',
+        'SIGNATURE_VALIDATION_SKIPPED',
+        'LABEL_NOT_FOUND',
+        'LABEL_INVALIDATED',
+        'CLIENT_MISMATCH',
+        'DUPLICATE_POSITION_CODES',
+        'AMBIGUOUS_POSITION_DETECTION',
+        'PAYLOAD_TOO_LARGE',
+        'DECODE_TIMEOUT',
+        'DETECTION_FAILED',
+        'DETECTION_CONTEXT_INVALID',
+        'NO_LABEL',
+        'FEATURE_DISABLED',
+        'LEGACY_UNSIGNED_REQUIRES_REVIEW'
+    )
+);
+GO
+GO
+
+-- ----- folded from 0086_local_csv_imports.sql -----
+/*
+  Local CSV import staging + productive results (ingestion channel vs detection source).
+  Version 0086 — replaces the misnumbered WIP formerly named 0074_local_csv_imports
+  (which collided with 0074_ordered_capture_sessions_and_positioning_foundation).
+  Does not create source_assets or fake photos.
+
+  Column types match dbo.inventories(id) / dbo.aisles(id): VARCHAR(36).
+*/
+
+IF OBJECT_ID(N'dbo.local_csv_imports', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.local_csv_imports (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        export_id NVARCHAR(255) NOT NULL,
+        schema_version NVARCHAR(16) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        device_id NVARCHAR(255) NOT NULL,
+        exported_at DATETIME2 NOT NULL,
+        status NVARCHAR(32) NOT NULL,
+        content_hash NVARCHAR(80) NOT NULL,
+        total_rows INT NOT NULL,
+        valid_rows INT NOT NULL,
+        rejected_rows INT NOT NULL,
+        duplicate_rows INT NOT NULL CONSTRAINT DF_local_csv_imports_duplicate_rows DEFAULT 0,
+        conflict_policy NVARCHAR(16) NULL,
+        confirmed_at DATETIME2 NULL,
+        confirmed_by_user_id VARCHAR(128) NULL,
+        csv_company_id NVARCHAR(255) NULL,
+        csv_client_id NVARCHAR(255) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_local_csv_imports_inventory
+            FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id),
+        CONSTRAINT UX_local_csv_imports_inventory_export UNIQUE (inventory_id, export_id),
+        CONSTRAINT CK_local_csv_imports_status
+            CHECK (status IN ('PREVIEWED', 'CONFIRMED'))
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.local_csv_import_rows', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.local_csv_import_rows (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        import_id VARCHAR(36) NOT NULL,
+        row_number INT NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        capture_session_id NVARCHAR(255) NOT NULL,
+        capture_photo_id NVARCHAR(255) NOT NULL,
+        client_file_id NVARCHAR(255) NOT NULL,
+        capture_order INT NULL,
+        captured_at DATETIME2 NULL,
+        position_code NVARCHAR(255) NOT NULL,
+        internal_code NVARCHAR(255) NULL,
+        quantity INT NULL,
+        quantity_status NVARCHAR(64) NOT NULL,
+        detection_status NVARCHAR(64) NOT NULL,
+        -- Detection provenance from CSV column `source` (LOCAL_CODE_SCAN, …).
+        detection_source NVARCHAR(64) NOT NULL,
+        -- Server-assigned channel; never taken from the client as authoritative.
+        ingestion_source NVARCHAR(64) NOT NULL
+            CONSTRAINT DF_local_csv_import_rows_ingestion
+            DEFAULT N'LOCAL_CSV_IMPORT',
+        requires_review BIT NOT NULL,
+        error_code NVARCHAR(255) NULL,
+        notes NVARCHAR(2000) NULL,
+        status NVARCHAR(32) NOT NULL,
+        validation_errors_json NVARCHAR(MAX) NOT NULL,
+        validation_warnings_json NVARCHAR(MAX) NOT NULL,
+        productive_result_id VARCHAR(36) NULL,
+        CONSTRAINT FK_local_csv_import_rows_import
+            FOREIGN KEY (import_id) REFERENCES dbo.local_csv_imports(id) ON DELETE CASCADE,
+        CONSTRAINT UX_local_csv_import_rows_number UNIQUE (import_id, row_number),
+        CONSTRAINT CK_local_csv_import_rows_detection_source
+            CHECK (detection_source IN (
+                N'LOCAL_PENDING',
+                N'LOCAL_CODE_SCAN',
+                N'LOCAL_MANUAL',
+                N'LOCAL_MANUAL_CORRECTION',
+                N'LOCAL_POSITION_LABEL',
+                N'LOCAL_CODE_SCAN_SHADOW'
+            )),
+        CONSTRAINT CK_local_csv_import_rows_ingestion_source
+            CHECK (ingestion_source = N'LOCAL_CSV_IMPORT'),
+        CONSTRAINT CK_local_csv_import_rows_status
+            CHECK (status IN ('PREVIEW_VALID', 'REJECTED', 'IMPORTED', 'DUPLICATE', 'REQUIRES_REVIEW'))
+    );
+
+    CREATE INDEX IX_local_csv_import_rows_secondary
+        ON dbo.local_csv_import_rows(capture_session_id, capture_photo_id, status);
+
+    CREATE UNIQUE INDEX UX_local_csv_import_rows_imported_secondary
+        ON dbo.local_csv_import_rows(capture_session_id, capture_photo_id)
+        WHERE status = 'IMPORTED';
+END;
+GO
+
+IF OBJECT_ID(N'dbo.local_csv_productive_results', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.local_csv_productive_results (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        inventory_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        import_id VARCHAR(36) NOT NULL,
+        import_row_id VARCHAR(36) NOT NULL,
+        capture_session_id NVARCHAR(255) NOT NULL,
+        capture_photo_id NVARCHAR(255) NOT NULL,
+        client_file_id NVARCHAR(255) NOT NULL,
+        capture_order INT NULL,
+        position_code NVARCHAR(255) NULL,
+        internal_code NVARCHAR(255) NULL,
+        quantity INT NULL,
+        quantity_status NVARCHAR(64) NOT NULL,
+        detection_status NVARCHAR(64) NOT NULL,
+        detection_source NVARCHAR(64) NOT NULL,
+        ingestion_source NVARCHAR(64) NOT NULL,
+        requires_review BIT NOT NULL,
+        has_image_evidence BIT NOT NULL
+            CONSTRAINT DF_local_csv_productive_has_image DEFAULT 0,
+        confirmed_by_user_id VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_local_csv_productive_inventory
+            FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id),
+        CONSTRAINT FK_local_csv_productive_import
+            FOREIGN KEY (import_id) REFERENCES dbo.local_csv_imports(id),
+        CONSTRAINT FK_local_csv_productive_row
+            FOREIGN KEY (import_row_id) REFERENCES dbo.local_csv_import_rows(id),
+        CONSTRAINT UX_local_csv_productive_import_row UNIQUE (import_row_id),
+        CONSTRAINT UX_local_csv_productive_secondary UNIQUE (capture_session_id, capture_photo_id),
+        CONSTRAINT CK_local_csv_productive_ingestion
+            CHECK (ingestion_source = N'LOCAL_CSV_IMPORT'),
+        CONSTRAINT CK_local_csv_productive_no_fake_image
+            CHECK (has_image_evidence = 0)
+    );
+
+    CREATE INDEX IX_local_csv_productive_inventory
+        ON dbo.local_csv_productive_results(inventory_id, aisle_id);
+END;
+GO
+GO
+
+-- ----- folded from 0087_local_inventory_packages.sql -----
+/*
+  Local inventory ZIP package import + productive image evidence.
+  Version 0087.
+
+  - Relaxes CK_local_csv_productive_no_fake_image so package imports may set
+    has_image_evidence=1 with source_asset_id.
+  - Adds staging tables for package preview/confirm.
+*/
+
+IF COL_LENGTH(N'dbo.local_csv_productive_results', N'source_asset_id') IS NULL
+BEGIN
+    ALTER TABLE dbo.local_csv_productive_results
+        ADD source_asset_id VARCHAR(36) NULL;
+END;
+GO
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = N'CK_local_csv_productive_no_fake_image'
+      AND parent_object_id = OBJECT_ID(N'dbo.local_csv_productive_results')
+)
+BEGIN
+    ALTER TABLE dbo.local_csv_productive_results
+        DROP CONSTRAINT CK_local_csv_productive_no_fake_image;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = N'CK_local_csv_productive_image_evidence'
+      AND parent_object_id = OBJECT_ID(N'dbo.local_csv_productive_results')
+)
+BEGIN
+    ALTER TABLE dbo.local_csv_productive_results
+        ADD CONSTRAINT CK_local_csv_productive_image_evidence
+        CHECK (
+            (has_image_evidence = 0 AND source_asset_id IS NULL)
+            OR (has_image_evidence = 1 AND source_asset_id IS NOT NULL)
+        );
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE name = N'FK_local_csv_productive_source_asset'
+      AND parent_object_id = OBJECT_ID(N'dbo.local_csv_productive_results')
+)
+BEGIN
+    ALTER TABLE dbo.local_csv_productive_results
+        ADD CONSTRAINT FK_local_csv_productive_source_asset
+        FOREIGN KEY (source_asset_id) REFERENCES dbo.source_assets(id);
+END;
+GO
+
+IF OBJECT_ID(N'dbo.local_inventory_packages', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.local_inventory_packages (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        inventory_id VARCHAR(36) NOT NULL,
+        export_id NVARCHAR(255) NOT NULL,
+        csv_import_id VARCHAR(36) NOT NULL,
+        package_kind NVARCHAR(64) NOT NULL,
+        package_version INT NOT NULL,
+        status NVARCHAR(32) NOT NULL,
+        package_checksum_sha256 NVARCHAR(80) NULL,
+        csv_checksum_sha256 NVARCHAR(80) NOT NULL,
+        expected_photo_count INT NOT NULL,
+        included_photo_count INT NOT NULL,
+        aisle_id VARCHAR(36) NULL,
+        capture_session_id NVARCHAR(255) NULL,
+        freeze_id NVARCHAR(255) NULL,
+        staging_dir NVARCHAR(1024) NOT NULL,
+        confirmed_at DATETIME2 NULL,
+        confirmed_by_user_id VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_local_inventory_packages_inventory
+            FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id),
+        CONSTRAINT FK_local_inventory_packages_csv_import
+            FOREIGN KEY (csv_import_id) REFERENCES dbo.local_csv_imports(id),
+        CONSTRAINT UX_local_inventory_packages_inventory_export
+            UNIQUE (inventory_id, export_id),
+        CONSTRAINT CK_local_inventory_packages_status
+            CHECK (status IN ('PREVIEWED', 'CONFIRMED'))
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.local_inventory_package_photos', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.local_inventory_package_photos (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        package_id VARCHAR(36) NOT NULL,
+        capture_photo_id NVARCHAR(255) NOT NULL,
+        client_file_id NVARCHAR(255) NOT NULL,
+        sequence_number INT NULL,
+        file_name NVARCHAR(255) NOT NULL,
+        mime_type NVARCHAR(128) NOT NULL,
+        size_bytes INT NOT NULL,
+        sha256 NVARCHAR(80) NOT NULL,
+        width INT NULL,
+        height INT NULL,
+        asset_variant NVARCHAR(32) NOT NULL,
+        staging_path NVARCHAR(1024) NOT NULL,
+        source_asset_id VARCHAR(36) NULL,
+        CONSTRAINT FK_local_inventory_package_photos_package
+            FOREIGN KEY (package_id) REFERENCES dbo.local_inventory_packages(id) ON DELETE CASCADE,
+        CONSTRAINT UX_local_inventory_package_photos_capture
+            UNIQUE (package_id, capture_photo_id)
+    );
+END;
+GO
+GO
+
+-- ----- folded from 0088_product_label_identity.sql -----
+/*
+  0088_product_label_identity.sql
+
+  Physical product labels (D1 format):
+  - issued_product_labels: mint/print registry (global unique label_id, never recycle)
+  - inventory_counted_product_labels: inventory-scoped counting uniqueness
+  - product_records.label_id: optional FK-ish identity on counted rows
+
+  Rollback: 0088_product_label_identity.down.sql
+*/
+
+-- ---------------------------------------------------------------------------
+-- issued_product_labels (print / mint)
+-- ---------------------------------------------------------------------------
+IF OBJECT_ID(N'dbo.issued_product_labels', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.issued_product_labels (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NOT NULL,
+        label_id VARCHAR(16) NOT NULL,
+        internal_code NVARCHAR(48) NOT NULL,
+        quantity INT NOT NULL,
+        format_version VARCHAR(8) NOT NULL
+            CONSTRAINT DF_issued_product_labels_format DEFAULT ('D1'),
+        checksum CHAR(1) NOT NULL,
+        payload NVARCHAR(160) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        created_by VARCHAR(128) NULL,
+        CONSTRAINT PK_issued_product_labels PRIMARY KEY (id),
+        CONSTRAINT FK_issued_product_labels_client
+            FOREIGN KEY (client_id) REFERENCES dbo.clients(id),
+        CONSTRAINT CK_issued_product_labels_quantity CHECK (quantity >= 1)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_issued_product_labels_label_id'
+      AND object_id = OBJECT_ID(N'dbo.issued_product_labels')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_issued_product_labels_label_id
+        ON dbo.issued_product_labels(label_id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_issued_product_labels_client'
+      AND object_id = OBJECT_ID(N'dbo.issued_product_labels')
+)
+    CREATE NONCLUSTERED INDEX IX_issued_product_labels_client
+        ON dbo.issued_product_labels(client_id, created_at DESC);
+GO
+
+-- ---------------------------------------------------------------------------
+-- inventory_counted_product_labels (dedupe across photos within inventory)
+-- ---------------------------------------------------------------------------
+IF OBJECT_ID(N'dbo.inventory_counted_product_labels', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.inventory_counted_product_labels (
+        id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        label_id VARCHAR(16) NOT NULL,
+        first_product_record_id VARCHAR(36) NOT NULL,
+        first_source_asset_id VARCHAR(36) NOT NULL,
+        first_job_id VARCHAR(36) NOT NULL,
+        first_position_id VARCHAR(36) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_inventory_counted_product_labels PRIMARY KEY (id),
+        CONSTRAINT FK_icpl_inventory
+            FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_icpl_inventory_label'
+      AND object_id = OBJECT_ID(N'dbo.inventory_counted_product_labels')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_icpl_inventory_label
+        ON dbo.inventory_counted_product_labels(inventory_id, label_id);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_icpl_label'
+      AND object_id = OBJECT_ID(N'dbo.inventory_counted_product_labels')
+)
+    CREATE NONCLUSTERED INDEX IX_icpl_label
+        ON dbo.inventory_counted_product_labels(label_id);
+GO
+
+-- ---------------------------------------------------------------------------
+-- product_records.label_id (nullable for legacy)
+-- ---------------------------------------------------------------------------
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.product_records') AND name = N'label_id'
+)
+    ALTER TABLE dbo.product_records ADD label_id VARCHAR(16) NULL;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_product_records_label_id'
+      AND object_id = OBJECT_ID(N'dbo.product_records')
+)
+    CREATE NONCLUSTERED INDEX IX_product_records_label_id
+        ON dbo.product_records(label_id)
+        WHERE label_id IS NOT NULL;
+GO
+GO
+
+-- ----- folded from 0089_product_label_identity_hardening.sql -----
+/*
+  0089_product_label_identity_hardening.sql
+
+  Corrective constraints for D1 product labels (0088 already created tables).
+  - Tighten issued quantity / label_id length
+  - Document: no FK product_records.label_id → issued (legacy NULL; scan may precede sync)
+  - Document: no FK on inventory_counted first_* ids (insert order: claim before product_record
+    is created with preallocated UUID; claim row may outlive product on rollback races —
+    claim and product share the same UoW TX so orphan claims are avoided by rollback)
+
+  Rollback: 0089_product_label_identity_hardening.down.sql
+*/
+
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_issued_product_labels_quantity')
+    ALTER TABLE dbo.issued_product_labels DROP CONSTRAINT CK_issued_product_labels_quantity;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints WHERE name = N'CK_issued_product_labels_quantity_range'
+)
+    ALTER TABLE dbo.issued_product_labels
+        ADD CONSTRAINT CK_issued_product_labels_quantity_range
+        CHECK (quantity BETWEEN 1 AND 99999999);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints WHERE name = N'CK_issued_product_labels_label_id_len'
+)
+    ALTER TABLE dbo.issued_product_labels
+        ADD CONSTRAINT CK_issued_product_labels_label_id_len
+        CHECK (LEN(label_id) = 10);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints WHERE name = N'CK_issued_product_labels_checksum_len'
+)
+    ALTER TABLE dbo.issued_product_labels
+        ADD CONSTRAINT CK_issued_product_labels_checksum_len
+        CHECK (LEN(checksum) = 1);
+GO
+GO
+
+-- ----- folded from 0090_local_csv_product_label_id.sql -----
+/*
+  0090_local_csv_product_label_id.sql
+
+  Persist optional D1 physical product label_id on local CSV import rows and
+  productive results (schema 1.1). Nullable for legacy schema 1 / empty cells.
+
+  Rollback: 0090_local_csv_product_label_id.down.sql
+*/
+
+IF COL_LENGTH(N'dbo.local_csv_import_rows', N'label_id') IS NULL
+BEGIN
+    ALTER TABLE dbo.local_csv_import_rows
+        ADD label_id NVARCHAR(10) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.local_csv_productive_results', N'label_id') IS NULL
+BEGIN
+    ALTER TABLE dbo.local_csv_productive_results
+        ADD label_id NVARCHAR(10) NULL;
+END;
+GO
+GO
+
+-- ----- folded from 0091_client_position_label_hierarchy.sql -----
+/*
+  0091_client_position_label_hierarchy.sql
+
+  Optional pallet/side/level/marker hierarchy columns on client_position_labels
+  for positioning label payload V2.
+
+  Rollback: 0091_client_position_label_hierarchy.down.sql
+*/
+
+IF COL_LENGTH(N'dbo.client_position_labels', N'pallet') IS NULL
+BEGIN
+    ALTER TABLE dbo.client_position_labels ADD pallet NVARCHAR(64) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.client_position_labels', N'side') IS NULL
+BEGIN
+    ALTER TABLE dbo.client_position_labels ADD side VARCHAR(8) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.client_position_labels', N'level') IS NULL
+BEGIN
+    ALTER TABLE dbo.client_position_labels ADD level INT NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.client_position_labels', N'marker_index') IS NULL
+BEGIN
+    ALTER TABLE dbo.client_position_labels ADD marker_index INT NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.client_position_labels', N'marker_total') IS NULL
+BEGIN
+    ALTER TABLE dbo.client_position_labels ADD marker_total INT NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_client_position_labels_side'
+)
+    ALTER TABLE dbo.client_position_labels
+        ADD CONSTRAINT CK_client_position_labels_side
+        CHECK (side IS NULL OR side IN ('LEFT', 'RIGHT'));
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_client_position_labels_level'
+)
+    ALTER TABLE dbo.client_position_labels
+        ADD CONSTRAINT CK_client_position_labels_level
+        CHECK (level IS NULL OR level >= 1);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_client_position_labels_marker'
+)
+    ALTER TABLE dbo.client_position_labels
+        ADD CONSTRAINT CK_client_position_labels_marker
+        CHECK (
+            (marker_index IS NULL AND marker_total IS NULL)
+            OR (
+                marker_index IS NOT NULL
+                AND marker_total IS NOT NULL
+                AND marker_index >= 1
+                AND marker_total >= 1
+                AND marker_index <= marker_total
+            )
+        );
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_client_position_labels_client_hierarchy'
+      AND object_id = OBJECT_ID(N'dbo.client_position_labels')
+)
+    CREATE NONCLUSTERED INDEX IX_client_position_labels_client_hierarchy
+        ON dbo.client_position_labels(client_id, pallet, side, level);
+GO
+GO
+
+-- ----- folded from 0092_client_position_label_active_marker_unique.sql -----
+/*
+  0092_client_position_label_active_marker_unique.sql
+
+  Enforce one ACTIVE marker identity per (client_id, pallet, side, level, marker_index).
+  Reprint must invalidate the previous ACTIVE label before creating a replacement.
+
+  Rollback: 0092_client_position_label_active_marker_unique.down.sql
+*/
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_client_position_labels_active_marker'
+      AND object_id = OBJECT_ID(N'dbo.client_position_labels')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_client_position_labels_active_marker
+        ON dbo.client_position_labels(client_id, pallet, side, level, marker_index)
+        WHERE status = 'ACTIVE' AND pallet IS NOT NULL;
+GO
+GO
+
+-- ----- folded from 0093_local_csv_position_payload.sql -----
+/*
+  0093_local_csv_position_payload.sql
+
+  Optional positioning label id + raw DINAMIC_POSITION payload on local CSV
+  import rows and productive results.
+
+  Rollback: 0093_local_csv_position_payload.down.sql
+*/
+
+IF COL_LENGTH(N'dbo.local_csv_import_rows', N'position_label_id') IS NULL
+BEGIN
+    ALTER TABLE dbo.local_csv_import_rows
+        ADD position_label_id NVARCHAR(64) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.local_csv_import_rows', N'position_payload_raw') IS NULL
+BEGIN
+    ALTER TABLE dbo.local_csv_import_rows
+        ADD position_payload_raw NVARCHAR(MAX) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.local_csv_productive_results', N'position_label_id') IS NULL
+BEGIN
+    ALTER TABLE dbo.local_csv_productive_results
+        ADD position_label_id NVARCHAR(64) NULL;
+END;
+GO
+
+IF COL_LENGTH(N'dbo.local_csv_productive_results', N'position_payload_raw') IS NULL
+BEGIN
+    ALTER TABLE dbo.local_csv_productive_results
+        ADD position_payload_raw NVARCHAR(MAX) NULL;
+END;
+GO
+GO
+
+-- ----- folded from 0094_local_csv_multi_product_secondary.sql -----
+/*
+  Version 0094 — local CSV productive uniqueness by label_id (multi-product per photo).
+
+  Before: UNIQUE(capture_session_id, capture_photo_id) collapsed N D1 products on one photo.
+  After:  UNIQUE filtered on (capture_session_id, label_id) when label_id present;
+          legacy/position rows without label_id use import_row_id uniqueness only
+          (plus application-level secondary_key for cross-import conflicts).
+*/
+
+IF EXISTS (
+    SELECT 1 FROM sys.key_constraints
+    WHERE name = N'UX_local_csv_productive_secondary'
+      AND parent_object_id = OBJECT_ID(N'dbo.local_csv_productive_results')
+)
+BEGIN
+    ALTER TABLE dbo.local_csv_productive_results
+        DROP CONSTRAINT UX_local_csv_productive_secondary;
+END
+GO
+
+IF EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UX_local_csv_import_rows_imported_secondary'
+      AND object_id = OBJECT_ID(N'dbo.local_csv_import_rows')
+)
+BEGIN
+    DROP INDEX UX_local_csv_import_rows_imported_secondary ON dbo.local_csv_import_rows;
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UX_local_csv_productive_label'
+      AND object_id = OBJECT_ID(N'dbo.local_csv_productive_results')
+)
+BEGIN
+    -- SQL Server filtered indexes disallow LTRIM/RTRIM (error 10735).
+    -- Empty label_id must be normalized to NULL in application code.
+    CREATE UNIQUE INDEX UX_local_csv_productive_label
+        ON dbo.local_csv_productive_results (capture_session_id, label_id)
+        WHERE label_id IS NOT NULL;
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UX_local_csv_import_rows_imported_label'
+      AND object_id = OBJECT_ID(N'dbo.local_csv_import_rows')
+)
+BEGIN
+    CREATE UNIQUE INDEX UX_local_csv_import_rows_imported_label
+        ON dbo.local_csv_import_rows (capture_session_id, label_id)
+        WHERE status = N'IMPORTED'
+          AND label_id IS NOT NULL;
+END
+GO
+GO
+
+-- ----- folded from 0095_aisle_scoped_counted_product_labels.sql -----
+/*
+  Version 0095 — D1 label_id count-once uniqueness is aisle-scoped (pasillo), not inventory.
+
+  Before: UNIQUE(inventory_id, label_id) blocked the same physical sticker across aisles
+          in one inventory (and reprocess of another pasillo reused prior claims).
+  After:  UNIQUE(aisle_id, label_id); inventory_id retained for audit/traceability.
+*/
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.inventory_counted_product_labels')
+      AND name = N'aisle_id'
+)
+BEGIN
+    ALTER TABLE dbo.inventory_counted_product_labels
+        ADD aisle_id VARCHAR(36) NULL;
+END
+GO
+
+-- Backfill from job target (CODE_SCAN / pipeline claims).
+UPDATE icpl
+SET aisle_id = j.target_id
+FROM dbo.inventory_counted_product_labels AS icpl
+INNER JOIN dbo.inventory_jobs AS j
+    ON j.id = icpl.first_job_id
+   AND j.target_type = N'aisle'
+WHERE icpl.aisle_id IS NULL
+  AND NULLIF(LTRIM(RTRIM(icpl.first_job_id)), N'') IS NOT NULL;
+GO
+
+-- Backfill remaining from first position.
+UPDATE icpl
+SET aisle_id = p.aisle_id
+FROM dbo.inventory_counted_product_labels AS icpl
+INNER JOIN dbo.positions AS p
+    ON p.id = icpl.first_position_id
+WHERE icpl.aisle_id IS NULL;
+GO
+
+-- Orphan claims that cannot be scoped must not block the new unique index.
+DELETE FROM dbo.inventory_counted_product_labels
+WHERE aisle_id IS NULL;
+GO
+
+IF EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_icpl_inventory_label'
+      AND object_id = OBJECT_ID(N'dbo.inventory_counted_product_labels')
+)
+BEGIN
+    DROP INDEX UQ_icpl_inventory_label ON dbo.inventory_counted_product_labels;
+END
+GO
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'dbo.inventory_counted_product_labels')
+      AND name = N'aisle_id'
+      AND is_nullable = 1
+)
+BEGIN
+    ALTER TABLE dbo.inventory_counted_product_labels
+        ALTER COLUMN aisle_id VARCHAR(36) NOT NULL;
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_icpl_aisle'
+      AND parent_object_id = OBJECT_ID(N'dbo.inventory_counted_product_labels')
+)
+BEGIN
+    ALTER TABLE dbo.inventory_counted_product_labels
+        ADD CONSTRAINT FK_icpl_aisle
+            FOREIGN KEY (aisle_id) REFERENCES dbo.aisles(id);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'UQ_icpl_aisle_label'
+      AND object_id = OBJECT_ID(N'dbo.inventory_counted_product_labels')
+)
+BEGIN
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_icpl_aisle_label
+        ON dbo.inventory_counted_product_labels(aisle_id, label_id);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = N'IX_icpl_inventory_label'
+      AND object_id = OBJECT_ID(N'dbo.inventory_counted_product_labels')
+)
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_icpl_inventory_label
+        ON dbo.inventory_counted_product_labels(inventory_id, label_id);
+END
+GO
+GO
+
+-- <<< FOLDED_FROM_MIGRATIONS_END
