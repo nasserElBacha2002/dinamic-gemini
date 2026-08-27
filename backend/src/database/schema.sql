@@ -2277,11 +2277,10 @@ IF NOT EXISTS (
         ON global_fallback_batch_requests(job_id, status, batch_index);
 GO
 
-
--- >>> FOLDED_FROM_MIGRATIONS_BEGIN (auto; keep schema.sql aligned through 0097)
--- Idempotent DDL folded from migrations/versions so clean installs match schema version 0097.
--- Safe to re-run alongside db_migrate apply (IF NOT EXISTS / COL_LENGTH guards).
--- Do not edit ad-hoc; update the matching migration and re-fold, or append both.
+-- >>> FOLDED_FROM_MIGRATIONS_BEGIN (auto; keep schema.sql aligned with migrations/versions)
+-- Idempotent DDL copied from migrations/versions so clean installs match latest schema.
+-- Safe alongside db_migrate apply (IF NOT EXISTS / COL_LENGTH guards).
+-- Prefer: update the migration, then re-run this script.
 
 -- ----- folded from 0009_add_position_corrected_code.sql -----
 -- v3.3.4 — Persist corrected position code for manual review flow

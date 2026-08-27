@@ -138,18 +138,18 @@
 
 ## 6. Modelo de datos
 
-**Bootstrap:** `backend/src/database/schema.sql` (snapshot histórico idempotente; ~38 `CREATE TABLE`)  
+**Bootstrap:** `backend/src/database/schema.sql` (idempotente; alineado con migraciones hasta **0097**, ~79 `CREATE TABLE`)  
 **Incremental:** `backend/src/database/migrations/versions/` → **última: `0097_positions_merge.sql`**  
-**Contrato de instalación (código):** `0001_baseline.sql` es solo un marcador (`SELECT 1`). Entornos nuevos deben: (1) aplicar `schema.sql`, (2) correr migraciones `0001`…`0097`. Un DB ya migrado hasta `0097` está completo aunque `schema.sql` no liste todas las tablas.
+**Contrato de instalación:** (1) aplicar `schema.sql`, (2) `db_migrate apply` (`0001` es marcador; el resto es no-op idempotente si el bootstrap ya trae el DDL).  
 
-**Relación schema.sql ↔ migraciones (verificado 2026-08-27):**
+**Alineación schema.sql ↔ migraciones (2026-08-27):**
 
 | Hecho | Detalle |
 |-------|---------|
-| Columnas recientes en bootstrap | `inventories.deleted_at` (0096) y `positions.merged_into_position_id` (0097) **sí** están en `schema.sql` |
-| Tablas solo en migraciones | ~42 `CREATE TABLE` (p. ej. code scans, artifact outbox, authoritative finalization, server reprocess, aisle revisions, `client_position_labels`, local CSV/packages, preliminary detections) **no** tienen `CREATE TABLE` en `schema.sql` |
-| Convención de mantenimiento | Varias migraciones dicen “Keep aligned with schema.sql”; en la práctica el bootstrap se actualizó de forma parcial (ALTER en tablas core + algunos bloques positioning/processing), no como dump 1:1 de 0097 |
-| Riesgo real | Usar **solo** `schema.sql` sin `db_migrate apply` deja el schema incompleto. Con bootstrap + apply hasta 0097, no hay “hueco” operativo. Drift de docs/mantenimiento, no de DBs ya migradas |
+| Estado | **Alineados** — verificación `python backend/scripts/fold_migrations_into_schema.py --check` |
+| Mecánica | Sección `FOLDED_FROM_MIGRATIONS_*` en `schema.sql` incorpora el DDL de migraciones que no estaban en el bootstrap histórico |
+| Mantenimiento | Al agregar migraciones nuevas: actualizar `versions/*.sql` y re-ejecutar `fold_migrations_into_schema.py` |
+| Exclusión deliberada | `inventory_visual_references` (creada y dropeada en 0029) no vuelve al bootstrap |
 
 ### Tablas / áreas clave
 
@@ -360,7 +360,7 @@ Comandos: `pytest` (raíz); `cd frontend && npm run typecheck && npm test`; `cd 
 
 ### HIGH
 
-3. **`schema.sql` no es snapshot completo de 0097** — faltan ~42 tablas solo creadas en migraciones; instalaciones correctas requieren bootstrap + `apply`. DBs ya en 0097 no están “rotas” por este gap; el riesgo es clean-install mal documentado / mantenimiento DDL duplicado.
+3. **Mantenimiento DDL dual** — `schema.sql` y `versions/*.sql` deben avanzar juntos (script `fold_migrations_into_schema.py --check`). Olvidar el fold tras una migración nueva reintroduce drift en clean installs.
 4. **Jobs/leases/finalization concurrencia:** claim + on-demand spawn + embedded worker posibles race/doble ejecución si mal configurado; leases fencing existe (0072) pero superficie compleja.
 5. **Desalineación auth frontend↔backend:** tipos `administrator` vs `platform_admin`/`company_admin`; gates UI por username string.
 6. **Documentación de deploy incompleta:** falta `docs/deployment/DEV-VERCEL.md`; README no documenta OpenCloud/GCS como DEV real.
@@ -426,7 +426,7 @@ Modificar con especial cuidado (contratos, datos, dinero/LLM cost, seguridad):
 | Acceso / IDOR / tenant | `inventory_access_policy.py`, `auth/service.py`, `api/dependencies.py` |
 | Disparar o debuggear un job | `start_aisle_processing.py`, `aisle_job_launch_service.py`, `jobs/worker.py`, `v3_job_executor.py` |
 | Pipeline / prompts / provider | `pipeline/hybrid_inventory_pipeline.py`, `pipeline/stages/`, `llm/`, `pipeline/providers/registry.py` |
-| SQL / migración | `schema.sql` + **última migración** en `versions/`, `scripts/db_migrate.py` |
+| SQL / migración | `schema.sql` (incl. fold), `migrations/versions/`, `scripts/db_migrate.py`, `scripts/fold_migrations_into_schema.py` |
 | UI operador | `frontend/src/pages/`, `features/inventories|results|processing`, hooks |
 | Captura mobile | `mobile/README.md`, `runtime/bootstrap/createAppServices.ts`, `features/upload`, `database/` |
 | Deploy DEV | `docs/deployment/DEV-OPENCLOUD.md`, `backend/docker-compose.yml`, GHA deploy + quality-gate |
@@ -457,7 +457,8 @@ Solo lo que **no** se puede cerrar solo con el repo:
 |----------|--------|
 | Contexto reconstruible | Sí, con alta confianza desde código + migraciones + workflows |
 | Listo para implementar cambios incrementales | **READY_WITH_RISKS** |
-| Bloqueantes antes de features multi-tenant | Aislar listados clients/inventories; alinear tipos auth FE/BE; clean-install = `schema.sql` + migrate apply (no solo bootstrap) |
+| Bloqueantes antes de features multi-tenant | Aislar listados clients/inventories; alinear tipos auth FE/BE |
+| SQL / schema | Tras nueva migración: `fold_migrations_into_schema.py` + `--check`; clean-install = `schema.sql` + `db_migrate apply` |
 
 ---
 
