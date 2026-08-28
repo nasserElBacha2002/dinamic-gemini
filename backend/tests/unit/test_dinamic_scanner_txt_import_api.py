@@ -82,6 +82,9 @@ def _route_auth_override():
 
 def test_preview_route_returns_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SERVER_DINAMIC_SCANNER_TXT_IMPORT_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
     mock_preview = MagicMock()
     mock_preview.execute.return_value = _preview_result(inventory_id="inventory-1")
     app.dependency_overrides[get_preview_dinamic_scanner_txt_import_use_case] = lambda: mock_preview
@@ -150,6 +153,9 @@ def test_preview_accepts_file_at_max_bytes(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_confirm_route_returns_persisted_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SERVER_DINAMIC_SCANNER_TXT_IMPORT_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
     preview = _preview_result(inventory_id="inventory-1")
     confirm_result = DinamicScannerTxtConfirmResult(
         aisle_code=preview.aisle_code,
