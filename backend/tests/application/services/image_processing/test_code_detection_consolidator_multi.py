@@ -161,3 +161,16 @@ def test_invalid_d1_plus_legacy_barcode_yields_zero() -> None:
     assert result.product_results == ()
     assert "D1_CANDIDATES_FAILED" in result.warnings
     assert result.internal_code is None
+
+
+def test_malformed_d1_plus_legacy_barcode_yields_zero() -> None:
+    """D1| grammar mismatch must not revive legacy pipe parsing."""
+    malformed = "D1|BAD|X|1|Z"
+    result = CodeDetectionConsolidator().consolidate(
+        [_det(malformed, 0), _det("SKU123|1000", 1, code="SKU123", qty=1000)]
+    )
+    assert result.status is CodeConsolidationStatus.NO_VALID_CODE
+    assert result.product_results == ()
+    assert "D1_CANDIDATES_FAILED" in result.warnings
+    assert result.internal_code is None
+    assert any(r.validation_status == "MALFORMED" for r in result.rejections)

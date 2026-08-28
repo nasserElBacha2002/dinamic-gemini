@@ -1,9 +1,11 @@
 import { describe, expect, it, beforeEach } from '@jest/globals';
 import {
   applyPositionScan,
-  clearActivePosition,
   clearAllActivePositions,
+  clearInMemoryPositionState,
   getActivePosition,
+  hydratePositionSessionFromDrafts,
+  resetPositionSession,
 } from '../src/features/localCodeScan/activePositionStore';
 import {
   classifyDinamicPositionPayload,
@@ -62,20 +64,75 @@ describe('positionLabelPayload', () => {
 
   it('keeps active position session-scoped (A does not leak to B)', () => {
     const rawA = v2Payload({ label_id: 'POS-A', pallet: '1' });
-    applyPositionScan('session-A', rawA);
+    const result = applyPositionScan('session-A', rawA);
+    expect(result.kind).toBe('applied');
     expect(getActivePosition('session-A')?.positionLabelId).toBe('POS-A');
     expect(getActivePosition('session-B')).toBeNull();
-    clearActivePosition('session-A');
+    resetPositionSession('session-A');
     expect(getActivePosition('session-A')).toBeNull();
   });
 
   it('applyPositionScan is session scoped', () => {
     const raw = v2Payload({ label_id: 'pos_xyz', pallet: '1', side: 'RIGHT', level: 2, marker_index: 2, marker_total: 2 });
-    const active = applyPositionScan('sess-1', raw);
+    const result = applyPositionScan('sess-1', raw);
+    expect(result.kind).toBe('applied');
+    if (result.kind !== 'applied') throw new Error('expected applied');
+    const active = result.state;
     expect(active?.formattedMarker).toBe('02/02');
     expect(active?.validationStatus).toBe('STRUCTURALLY_VALID_UNVERIFIED');
     expect(active?.rawPayload).toBe(raw);
     expect(getActivePosition('sess-1')?.labelId).toBe('pos_xyz');
     expect(getActivePosition('other')).toBeNull();
+  });
+
+  it('rejects duplicate position.label_id within session; allows different positions', () => {
+    const pos1 = v2Payload({ label_id: 'POS001', pallet: '04', side: 'RIGHT' });
+    const pos2 = v2Payload({ label_id: 'POS002', pallet: '05', side: 'LEFT' });
+    expect(applyPositionScan('sess-dedupe', pos1).kind).toBe('applied');
+    expect(applyPositionScan('sess-dedupe', pos2).kind).toBe('applied');
+    expect(getActivePosition('sess-dedupe')?.labelId).toBe('POS002');
+    const dup = applyPositionScan('sess-dedupe', pos2);
+    expect(dup.kind).toBe('duplicate');
+    if (dup.kind !== 'duplicate') throw new Error('expected duplicate');
+    expect(dup.state.labelId).toBe('POS002');
+    const dupPos1 = applyPositionScan('sess-dedupe', pos1);
+    expect(dupPos1.kind).toBe('duplicate');
+  });
+
+  it('rehydrates seen position ids from persisted drafts after in-memory loss', () => {
+    const pos1 = v2Payload({ label_id: 'POS001', pallet: '04', side: 'RIGHT' });
+    const pos2 = v2Payload({ label_id: 'POS002', pallet: '05', side: 'LEFT' });
+    expect(applyPositionScan('sess-restart', pos1).kind).toBe('applied');
+    const snap1 = getActivePosition('sess-restart')!;
+    expect(applyPositionScan('sess-restart', pos2).kind).toBe('applied');
+    const snap2 = getActivePosition('sess-restart')!;
+
+    clearInMemoryPositionState('sess-restart');
+    expect(getActivePosition('sess-restart')).toBeNull();
+
+    hydratePositionSessionFromDrafts('sess-restart', [
+      {
+        position_detected: 1,
+        position_snapshot_json: JSON.stringify(snap1),
+        updated_at: '2026-08-10T00:00:01Z',
+      },
+      {
+        position_detected: 1,
+        position_snapshot_json: JSON.stringify(snap2),
+        updated_at: '2026-08-10T00:00:02Z',
+      },
+    ]);
+
+    expect(getActivePosition('sess-restart')?.labelId).toBe('POS002');
+    expect(applyPositionScan('sess-restart', pos1).kind).toBe('duplicate');
+    expect(getActivePosition('sess-restart')?.labelId).toBe('POS002');
+  });
+
+  it('allows same position label in a different capture session after rehydration', () => {
+    const pos1 = v2Payload({ label_id: 'POS001', pallet: '04', side: 'RIGHT' });
+    applyPositionScan('sess-a', pos1);
+    clearInMemoryPositionState('sess-a');
+    hydratePositionSessionFromDrafts('sess-b', []);
+    expect(applyPositionScan('sess-b', pos1).kind).toBe('applied');
   });
 });

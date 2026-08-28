@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from src.application.services.dinamic_scanner_txt_parser import (
@@ -10,6 +13,23 @@ from src.domain.dinamic_scanner_txt.errors import (
     TXT_EMPTY,
     DinamicScannerTxtImportError,
 )
+from src.domain.product_labels.format import build_product_label_payload
+
+_VECTORS = (
+    Path(__file__).resolve().parents[3]
+    / "contracts"
+    / "product-labels"
+    / "v1"
+    / "checksum-vectors.json"
+)
+
+
+def _load_vectors() -> dict:
+    return json.loads(_VECTORS.read_text(encoding="utf-8"))
+
+
+def _valid_d1_line(label_id: str = "A1B2C3D4E5", sku: str = "SKU001", qty: int = 100) -> str:
+    return build_product_label_payload(label_id=label_id, internal_code=sku, quantity=qty)
 
 
 def _txt(*lines: str) -> bytes:
@@ -20,7 +40,7 @@ def test_parser_single_product_with_position() -> None:
     parsed = parse_dinamic_scanner_txt(
         _txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
+            _valid_d1_line(),
         )
     )
 
@@ -35,8 +55,8 @@ def test_parser_multiple_products_same_position() -> None:
     parsed = parse_dinamic_scanner_txt(
         _txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
-            "D1|LABEL00002|SKU002|50|B",
+            _valid_d1_line(label_id="A1B2C3D4E5", sku="SKU001", qty=100),
+            _valid_d1_line(label_id="FGHJKMNPQR", sku="SKU002", qty=50),
         )
     )
 
@@ -47,9 +67,9 @@ def test_parser_position_change() -> None:
     parsed = parse_dinamic_scanner_txt(
         _txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
+            _valid_d1_line(label_id="A1B2C3D4E5", sku="SKU001", qty=100),
             "POSITION|POS002|05|LEFT",
-            "D1|LABEL00002|SKU002|50|B",
+            _valid_d1_line(label_id="FGHJKMNPQR", sku="SKU002", qty=50),
         )
     )
 
@@ -61,11 +81,11 @@ def test_parser_invalid_position_resets_active_context() -> None:
     parsed = parse_dinamic_scanner_txt(
         _txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL1|SKU1|10|A",
+            _valid_d1_line(label_id="A1B2C3D4E5", sku="SKU1", qty=10),
             "POSITION|MALFORMADA",
-            "D1|LABEL2|SKU2|20|B",
+            _valid_d1_line(label_id="FGHJKMNPQR", sku="SKU2", qty=20),
             "POSITION|POS002|05|LEFT",
-            "D1|LABEL3|SKU3|30|C",
+            _valid_d1_line(label_id="STVWXYZ234", sku="SKU3", qty=30),
         )
     )
 
@@ -82,7 +102,7 @@ def test_parser_rejects_invalid_side() -> None:
 
 
 def test_parser_product_before_position_is_rejected() -> None:
-    parsed = parse_dinamic_scanner_txt(_txt("D1|LABEL00001|SKU001|100|A"))
+    parsed = parse_dinamic_scanner_txt(_txt(_valid_d1_line()))
     assert "product:no_valid_active_position" in parsed.products[0].errors
 
 
@@ -105,3 +125,38 @@ def test_aisle_code_from_filename_strips_extension() -> None:
 def test_aisle_code_rejects_path_traversal() -> None:
     with pytest.raises(DinamicScannerTxtImportError):
         aisle_code_from_txt_filename("../secret.txt")
+
+
+def test_txt_valid_d1_accepted() -> None:
+    line = _valid_d1_line()
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", line))
+    assert parsed.products[0].errors == ()
+
+
+def test_txt_checksum_invalid_rejected() -> None:
+    vectors = _load_vectors()
+    bad = next(
+        v["tampered_payload"]
+        for v in vectors["vectors"]
+        if v["name"] == "checksum-fail-tampered-qty"
+    )
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", bad))
+    assert "d1:checksum_failed" in parsed.products[0].errors
+
+
+def test_txt_malformed_d1_rejected() -> None:
+    vectors = _load_vectors()
+    raw = next(
+        v["raw"]
+        for v in vectors["vectors"]
+        if v["name"] == "malformed-grammar-bad-label"
+    )
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", raw))
+    assert "d1:malformed" in parsed.products[0].errors
+
+
+def test_txt_d2_rejected() -> None:
+    vectors = _load_vectors()
+    raw = next(v["raw"] for v in vectors["vectors"] if v["name"] == "unknown-version-d2")
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", raw))
+    assert "d1:unknown_version" in parsed.products[0].errors

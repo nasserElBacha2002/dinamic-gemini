@@ -16,7 +16,7 @@ vi.mock('../../src/api/request', () => ({
 describe('labelForPositionDetectionStatus', () => {
   it('covers known resolved and unresolved statuses', () => {
     expect(labelForPositionDetectionStatus('VALID')).toBe(
-      'Etiqueta de posicionamiento resuelta',
+      'Firma válida — posición resuelta',
     );
     expect(labelForPositionDetectionStatus('LEGACY_UNSIGNED_REQUIRES_REVIEW')).toContain(
       'sin firma',

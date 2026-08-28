@@ -171,6 +171,21 @@ def parse_product_label_payload(raw: str) -> ParsedProductLabelPayload:
 
     match = _D1_PATTERN.match(text)
     if not match:
+        # D1|… that fails strict grammar is still a D1 attempt — must not fall through
+        # as NOT_OUR_FORMAT (that enables legacy revival on server-side consolidation).
+        if text.upper().startswith("D1|"):
+            parts = text.split("|")
+            return ParsedProductLabelPayload(
+                status=ProductLabelValidationStatus.MALFORMED,
+                format_version=PRODUCT_LABEL_FORMAT_VERSION,
+                label_id=parts[1].strip().upper() or None if len(parts) > 1 else None,
+                internal_code=parts[2].strip() or None if len(parts) > 2 else None,
+                quantity=None,
+                checksum_received=parts[4].strip().upper() or None if len(parts) > 4 else None,
+                checksum_expected=None,
+                raw_value=text,
+                detail="d1_grammar_mismatch",
+            )
         return ParsedProductLabelPayload(
             status=ProductLabelValidationStatus.NOT_OUR_FORMAT,
             format_version=None,

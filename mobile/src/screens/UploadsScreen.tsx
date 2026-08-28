@@ -559,9 +559,9 @@ export function UploadsScreen({
               <Text style={uploaded ? styles.notif : styles.photoText}>
                 {labelForUploadStatus(photo)}
               </Text>
-              {labelForLocalScanStatus(draft?.status, draft?.error_code) ? (
+              {labelForLocalScanStatus(draft?.status, draft?.error_code, draft?.rejections_json) ? (
                 <Text style={styles.muted} numberOfLines={2}>
-                  {labelForLocalScanStatus(draft?.status, draft?.error_code)}
+                  {labelForLocalScanStatus(draft?.status, draft?.error_code, draft?.rejections_json)}
                 </Text>
               ) : null}
               {detection ? (

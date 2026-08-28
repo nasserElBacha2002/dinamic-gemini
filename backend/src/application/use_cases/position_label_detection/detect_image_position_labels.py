@@ -15,14 +15,15 @@ from src.application.ports.image_position_label_detection_repository import (
 )
 from src.application.services.position_label_detection.code_classifier import CodeClassifier
 from src.application.services.position_label_detection.payload_parser import (
-    ParsedPositionLabelPayload,
     PositionLabelPayloadParser,
+)
+from src.application.services.position_label_detection.position_label_policy import (
+    PositionLabelPolicyService,
 )
 from src.application.services.position_label_detection.resolver import PositionLabelResolver
 from src.application.services.position_label_detection.validation_service import (
     PositionLabelValidationService,
 )
-from src.domain.client_position_label.entities import ClientPositionLabelSignatureStatus
 from src.domain.position_label_detection.entities import (
     DETECTOR_NAME,
     DETECTOR_VERSION,
@@ -87,6 +88,7 @@ class ImagePositionDetectionUseCase:
         parser: PositionLabelPayloadParser,
         validator: PositionLabelValidationService,
         resolver: PositionLabelResolver,
+        policy: PositionLabelPolicyService,
         repo: ImagePositionLabelDetectionRepository,
         clock: Clock,
         detection_enabled: bool,
@@ -100,6 +102,7 @@ class ImagePositionDetectionUseCase:
         self._parser = parser
         self._validator = validator
         self._resolver = resolver
+        self._policy = policy
         self._repo = repo
         self._clock = clock
         self._detection_enabled = bool(detection_enabled)
@@ -352,16 +355,44 @@ class ImagePositionDetectionUseCase:
     ) -> ImagePositionLabelDetection:
         parsed = self._parser.parse(code.raw_value)
         if parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE and parsed.label_id:
-            # Accept catalog UNSIGNED labels (v1 or v2) that were issued while HMAC was
-            # unconfigured. Signed labels missing a QR signature stay MISSING_SIGNATURE.
-            unsigned = self._try_resolve_unsigned_label(
-                command=command,
-                code=code,
+            legacy = self._policy.try_accept_unsigned_legacy(
                 parsed=parsed,
-                now=now,
+                expected_client_id=command.client_id,
             )
-            if unsigned is not None:
-                return unsigned
+            if legacy is not None:
+                assert legacy.label is not None
+                label = legacy.label
+                logger.info(
+                    "position_label_resolved_unsigned client_id=%s job_id=%s asset_id=%s label_id=%s "
+                    "detection_status=%s policy_decision=%s detector_version=%s correlation_id=%s",
+                    command.client_id,
+                    command.job_id,
+                    command.source_asset_id,
+                    label.public_identifier,
+                    legacy.detection_status.value,
+                    legacy.policy_decision.value,
+                    self._detector_version,
+                    command.correlation_id,
+                )
+                return self._build_row(
+                    command,
+                    now=now,
+                    status=legacy.detection_status,
+                    signature_status=legacy.signature_status,
+                    payload_hash=parsed.payload_hash or label.payload_hash,
+                    public_identifier=label.public_identifier,
+                    position_label_id=label.id,
+                    position_name_snapshot=label.name,
+                    payload_version=parsed.version or label.payload_version,
+                    bounding_box_json=code.bounding_box,
+                    rotation_degrees=code.rotation_degrees,
+                    confidence=code.confidence,
+                    detail=legacy.detail,
+                    metadata={
+                        **legacy.metadata,
+                        **_payload_hierarchy_meta(parsed.payload),
+                    },
+                )
         if parsed.status is not PositionLabelDetectionStatus.VALID:
             logger.info(
                 "position_label_validation_failed client_id=%s job_id=%s asset_id=%s "
@@ -391,7 +422,13 @@ class ImagePositionDetectionUseCase:
                 rotation_degrees=code.rotation_degrees,
                 confidence=code.confidence,
                 detail=parsed.detail,
-                metadata=_payload_hierarchy_meta(parsed.payload),
+                metadata={
+                    **PositionLabelPolicyService.metadata_for_reject(
+                        signature_status=signature_status,
+                        validation_status=parsed.status,
+                    ),
+                    **_payload_hierarchy_meta(parsed.payload),
+                },
             )
 
         validated = self._validator.validate(parsed)
@@ -419,6 +456,13 @@ class ImagePositionDetectionUseCase:
                 rotation_degrees=code.rotation_degrees,
                 confidence=code.confidence,
                 detail=validated.detail,
+                metadata={
+                    **PositionLabelPolicyService.metadata_for_reject(
+                        signature_status=validated.signature_status,
+                        validation_status=validated.detection_status,
+                    ),
+                    **_payload_hierarchy_meta(parsed.payload),
+                },
             )
 
         assert parsed.label_id is not None
@@ -492,63 +536,10 @@ class ImagePositionDetectionUseCase:
             bounding_box_json=code.bounding_box,
             rotation_degrees=code.rotation_degrees,
             confidence=code.confidence,
-            metadata=_payload_hierarchy_meta(parsed.payload),
-        )
-
-    def _try_resolve_unsigned_label(
-        self,
-        *,
-        command: ImagePositionDetectionCommand,
-        code: DetectedCode,
-        parsed: ParsedPositionLabelPayload,
-        now: datetime,
-    ) -> ImagePositionLabelDetection | None:
-        assert parsed.label_id is not None
-        resolved = self._resolver.resolve(
-            public_label_id=parsed.label_id,
-            expected_client_id=command.client_id,
-        )
-        if resolved.detection_status is not PositionLabelDetectionStatus.VALID:
-            return None
-        assert resolved.label is not None
-        label = resolved.label
-        if label.signature_status is not ClientPositionLabelSignatureStatus.UNSIGNED:
-            return None
-        # Stored unsigned payloads are {type, version, label_id} — match QR content.
-        stored = label.canonical_payload or {}
-        if stored.get("signature"):
-            return None
-        if (stored.get("type") or "").strip() != "DINAMIC_POSITION":
-            return None
-        if (stored.get("label_id") or "").strip() != parsed.label_id.strip():
-            return None
-        logger.info(
-            "position_label_resolved_unsigned client_id=%s job_id=%s asset_id=%s label_id=%s "
-            "detection_status=%s detector_version=%s correlation_id=%s",
-            command.client_id,
-            command.job_id,
-            command.source_asset_id,
-            label.public_identifier,
-            PositionLabelDetectionStatus.LEGACY_UNSIGNED_REQUIRES_REVIEW.value,
-            self._detector_version,
-            command.correlation_id,
-        )
-        return self._build_row(
-            command,
-            now=now,
-            status=PositionLabelDetectionStatus.LEGACY_UNSIGNED_REQUIRES_REVIEW,
-            signature_status=PositionLabelSignatureStatus.MISSING,
-            payload_hash=parsed.payload_hash or label.payload_hash,
-            public_identifier=label.public_identifier,
-            position_label_id=label.id,
-            position_name_snapshot=label.name,
-            payload_version=parsed.version or label.payload_version,
-            bounding_box_json=code.bounding_box,
-            rotation_degrees=code.rotation_degrees,
-            confidence=code.confidence,
-            detail="unsigned_label_accepted",
             metadata={
-                "unsigned_acceptance": True,
+                **PositionLabelPolicyService.metadata_for_accept(
+                    signature_status=validated.signature_status,
+                ),
                 **_payload_hierarchy_meta(parsed.payload),
             },
         )

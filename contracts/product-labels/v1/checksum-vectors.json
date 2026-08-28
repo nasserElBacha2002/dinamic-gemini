@@ -3,50 +3,238 @@
   "algorithm": "weighted_mod36",
   "canonical_body": "D1|<label_id>|<internal_code>|<quantity>",
   "payload": "D1|<label_id>|<internal_code>|<quantity>|<checksum>",
-  "normalization": "trim only; no OCR substitutions; label_id uppercased A-Z0-9 Crockford-like",
+  "normalization": "trim only; no OCR substitutions; label_id uppercased Crockford-like",
   "vectors": [
     {
       "name": "basic",
+      "category": "VALID",
       "label_id": "A1B2C3D4E5",
       "internal_code": "SKU100",
       "quantity": 4,
       "checksum": "6",
-      "payload": "D1|A1B2C3D4E5|SKU100|4|6"
+      "payload": "D1|A1B2C3D4E5|SKU100|4|6",
+      "expected_status": "VALID"
     },
     {
-      "name": "alphanumeric",
+      "name": "alphanumeric-sku",
+      "category": "VALID",
       "label_id": "0123456789",
       "internal_code": "ABC123",
       "quantity": 1,
       "checksum": "S",
-      "payload": "D1|0123456789|ABC123|1|S"
+      "payload": "D1|0123456789|ABC123|1|S",
+      "expected_status": "VALID"
     },
     {
       "name": "same-sku-diff-id",
+      "category": "VALID",
       "label_id": "FGHJKMNPQR",
       "internal_code": "SKU100",
       "quantity": 6,
       "checksum": "0",
-      "payload": "D1|FGHJKMNPQR|SKU100|6|0"
+      "payload": "D1|FGHJKMNPQR|SKU100|6|0",
+      "expected_status": "VALID"
+    },
+    {
+      "name": "numeric-sku",
+      "category": "VALID",
+      "label_id": "6YD0S6WVMM",
+      "internal_code": "232424090",
+      "quantity": 1000,
+      "checksum": "5",
+      "payload": "D1|6YD0S6WVMM|232424090|1000|5",
+      "expected_status": "VALID"
+    },
+    {
+      "name": "quantity-min",
+      "category": "VALID",
+      "label_id": "A1B2C3D4E5",
+      "internal_code": "SKU100",
+      "quantity": 1,
+      "checksum": "C",
+      "payload": "D1|A1B2C3D4E5|SKU100|1|C",
+      "expected_status": "VALID"
+    },
+    {
+      "name": "quantity-max",
+      "category": "VALID",
+      "label_id": "A1B2C3D4E5",
+      "internal_code": "SKU100",
+      "quantity": 99999999,
+      "checksum": "Q",
+      "payload": "D1|A1B2C3D4E5|SKU100|99999999|Q",
+      "expected_status": "VALID"
+    },
+    {
+      "name": "lowercase-normalized",
+      "category": "VALID",
+      "label_id": "a1b2c3d4e5",
+      "internal_code": "sku100",
+      "quantity": 4,
+      "checksum": "6",
+      "payload": "D1|A1B2C3D4E5|sku100|4|6",
+      "expected_status": "VALID"
     },
     {
       "name": "checksum-fail-tampered-qty",
+      "category": "CHECKSUM_FAILED",
       "label_id": "A1B2C3D4E5",
       "internal_code": "SKU100",
       "quantity": 4,
       "checksum": "6",
+      "payload": "D1|A1B2C3D4E5|SKU100|4|6",
       "tampered_payload": "D1|A1B2C3D4E5|SKU100|5|6",
       "expected_status": "CHECKSUM_FAILED"
     },
     {
+      "name": "checksum-fail-wrong-char",
+      "category": "CHECKSUM_FAILED",
+      "tampered_payload": "D1|A1B2C3D4E5|SKU100|99999999|0",
+      "expected_status": "CHECKSUM_FAILED"
+    },
+    {
+      "name": "unknown-version-d2",
+      "category": "UNKNOWN_VERSION",
+      "raw": "D2|A1B2C3D4E5|SKU100|4|6",
+      "expected_status": "UNKNOWN_VERSION"
+    },
+    {
+      "name": "unknown-version-d3",
+      "category": "UNKNOWN_VERSION",
+      "raw": "D3|A1B2C3D4E5|SKU100|4|6",
+      "expected_status": "UNKNOWN_VERSION"
+    },
+    {
+      "name": "unknown-version-d10",
+      "category": "UNKNOWN_VERSION",
+      "raw": "D10|A1B2C3D4E5|SKU100|4|6",
+      "expected_status": "UNKNOWN_VERSION"
+    },
+    {
       "name": "not-our-format-ean",
+      "category": "NOT_OUR_FORMAT",
       "raw": "7790001234567",
       "expected_status": "NOT_OUR_FORMAT"
     },
     {
-      "name": "unknown-version",
-      "raw": "D2|A1B2C3D4E5|SKU100|4|6",
-      "expected_status": "UNKNOWN_VERSION"
+      "name": "legacy-pipe",
+      "category": "NOT_OUR_FORMAT",
+      "raw": "SKU100|4",
+      "expected_status": "NOT_OUR_FORMAT"
+    },
+    {
+      "name": "malformed-missing-checksum",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100|4",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-extra-field",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100|4|6|EXTRA",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-empty-label-id",
+      "category": "MALFORMED",
+      "raw": "D1||SKU100|4|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-label-id-9",
+      "category": "MALFORMED",
+      "raw": "D1|ABCDEFGHJ|SKU100|4|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-label-id-11",
+      "category": "MALFORMED",
+      "raw": "D1|ABCDEFGHJKM|SKU100|4|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-label-id-invalid-char",
+      "category": "MALFORMED",
+      "raw": "D1|ABCDEFGHIO|SKU100|4|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-empty-sku",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5||4|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-sku-49-chars",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|4|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-sku-with-pipe",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU|100|4|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-empty-quantity",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100||6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-quantity-zero",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100|0|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-quantity-leading-zero",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100|01|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-quantity-negative",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100|-1|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-quantity-decimal",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100|1.5|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-quantity-over-max",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100|100000000|6",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-empty-checksum",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100|4|",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-checksum-two-chars",
+      "category": "MALFORMED",
+      "raw": "D1|A1B2C3D4E5|SKU100|4|AB",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-grammar-bad-label",
+      "category": "MALFORMED",
+      "raw": "D1|BAD|X|1|Z",
+      "expected_status": "MALFORMED"
+    },
+    {
+      "name": "malformed-empty",
+      "category": "MALFORMED",
+      "raw": "",
+      "expected_status": "MALFORMED"
     }
   ]
 }

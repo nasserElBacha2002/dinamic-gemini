@@ -19,6 +19,9 @@ from src.application.services.position_label_detection.code_classifier import ( 
 from src.application.services.position_label_detection.payload_parser import (  # noqa: E402
     PositionLabelPayloadParser,
 )
+from src.application.services.position_label_detection.position_label_policy import (  # noqa: E402
+    PositionLabelPolicyService,
+)
 from src.application.services.position_label_detection.resolver import (  # noqa: E402
     PositionLabelResolver,
 )
@@ -117,13 +120,15 @@ def _use_case(payload: dict):
         )
     )
     signing = _signing()
+    resolver = PositionLabelResolver(label_repo=labels)
     return ImagePositionDetectionUseCase(
         classifier=CodeClassifier(max_payload_bytes=4096),
         parser=PositionLabelPayloadParser(max_payload_bytes=4096),
         validator=PositionLabelValidationService(
             signing=signing, signature_validation_enabled=True
         ),
-        resolver=PositionLabelResolver(label_repo=labels),
+        resolver=resolver,
+        policy=PositionLabelPolicyService(resolver=resolver, allow_unsigned_legacy=True),
         repo=MemoryImagePositionLabelDetectionRepository(),
         clock=_Clock(),
         detection_enabled=True,

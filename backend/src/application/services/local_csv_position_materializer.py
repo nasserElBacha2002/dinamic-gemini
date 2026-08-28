@@ -34,6 +34,7 @@ from src.application.services.product_labels.issued_product_label_resolver impor
 from src.domain.aisle_location.payload import validate_positioning_payload
 from src.domain.client_position_label.entities import ClientPositionLabelStatus
 from src.domain.local_csv_import.entities import LocalCsvProductiveResult
+from src.domain.local_csv_import.sources import INGESTION_SOURCE_DINAMIC_SCANNER_TXT
 from src.domain.positions.entities import Position, PositionCreationSource, PositionStatus
 from src.domain.product_labels.format import (
     build_product_label_payload,
@@ -259,7 +260,8 @@ class LocalCsvPositionMaterializer:
             )
             return False
         signing = self._positioning_signing
-        if signing is not None and signing.can_sign:
+        skip_hmac = (result.ingestion_source or "").strip() == INGESTION_SOURCE_DINAMIC_SCANNER_TXT
+        if signing is not None and signing.can_sign and not skip_hmac:
             if not signing.verify_payload(payload):
                 logger.warning(
                     "local_csv_position_payload_hmac_failed productive_id=%s",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 
 from src.domain.client_position_label.hierarchy import PositionSide
@@ -17,9 +18,13 @@ from src.domain.dinamic_scanner_txt.errors import (
     TXT_TOO_MANY_LINES,
     DinamicScannerTxtImportError,
 )
+from src.domain.product_labels.format import (
+    ProductLabelValidationStatus,
+    parse_product_label_payload,
+)
 
 _POSITION_PREFIX = "POSITION|"
-_D1_PREFIX = "D1|"
+_VERSIONED_PRODUCT_PATTERN = re.compile(r"^D\d+\|", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -57,28 +62,37 @@ def _split_pipe_record(line: str, *, expected_parts: int, record_kind: str) -> t
     return parts, ()
 
 
-def _validate_d1_fields(parts: list[str]) -> tuple[int | None, tuple[str, ...]]:
-    errors: list[str] = []
-    _kind, label_id, internal_code, quantity_raw, checksum = parts
-    if not (label_id or "").strip():
-        errors.append("label_id:required")
-    if not (internal_code or "").strip():
-        errors.append("internal_code:required")
-    if not (checksum or "").strip():
-        errors.append("checksum:required")
-    quantity: int | None = None
-    qty_text = (quantity_raw or "").strip()
-    if not qty_text:
-        errors.append("quantity:required")
-    else:
-        try:
-            quantity = int(qty_text)
-        except ValueError:
-            errors.append("quantity:invalid_integer")
-        else:
-            if quantity <= 0:
-                errors.append("quantity:must_be_positive")
-    return quantity, tuple(errors)
+def _d1_errors_from_canonical(line: str) -> tuple[str, str, int | None, str, tuple[str, ...]]:
+    """Validate D1 via domain parser; return extracted fields + error codes."""
+    parsed = parse_product_label_payload(line)
+    if parsed.status is ProductLabelValidationStatus.VALID:
+        return (
+            parsed.label_id or "",
+            parsed.internal_code or "",
+            parsed.quantity,
+            parsed.checksum_received or "",
+            (),
+        )
+    if parsed.status is ProductLabelValidationStatus.CHECKSUM_FAILED:
+        return (
+            parsed.label_id or "",
+            parsed.internal_code or "",
+            parsed.quantity,
+            parsed.checksum_received or "",
+            ("d1:checksum_failed",),
+        )
+    if parsed.status is ProductLabelValidationStatus.UNKNOWN_VERSION:
+        return ("", "", None, "", ("d1:unknown_version",))
+    if parsed.status is ProductLabelValidationStatus.MALFORMED:
+        parts = line.split("|")
+        return (
+            (parts[1] if len(parts) > 1 else "").strip(),
+            (parts[2] if len(parts) > 2 else "").strip(),
+            None,
+            (parts[4] if len(parts) > 4 else "").strip(),
+            ("d1:malformed",),
+        )
+    return ("", "", None, "", ("d1:invalid",))
 
 
 def _validate_position_fields(parts: list[str]) -> tuple[str, str, str, tuple[str, ...]]:
@@ -162,27 +176,25 @@ def parse_dinamic_scanner_txt(
             positions.append(current_position)
             continue
 
-        if line.startswith(_D1_PREFIX):
-            parts, count_errors = _split_pipe_record(line, expected_parts=5, record_kind="D1")
-            errors = list(count_errors)
-            quantity: int | None = None
+        if _VERSIONED_PRODUCT_PATTERN.match(line):
             label_id = ""
             internal_code = ""
+            quantity: int | None = None
             checksum = ""
-            if not count_errors:
-                _kind, label_id, internal_code, _qty, checksum = parts
-                quantity, field_errors = _validate_d1_fields(parts)
-                errors.extend(field_errors)
+            label_id, internal_code, quantity, checksum, field_errors = _d1_errors_from_canonical(
+                line
+            )
+            errors = list(field_errors)
             position = current_position
             if current_position is None:
                 errors.append("product:no_valid_active_position")
             products.append(
                 ParsedScannerProduct(
                     line_number=line_number,
-                    label_id=(label_id or "").strip(),
-                    internal_code=(internal_code or "").strip(),
+                    label_id=label_id,
+                    internal_code=internal_code,
                     quantity=quantity,
-                    checksum=(checksum or "").strip(),
+                    checksum=checksum,
                     position=position,
                     errors=tuple(dict.fromkeys(errors)),
                     warnings=(),

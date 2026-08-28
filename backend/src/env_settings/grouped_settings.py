@@ -2055,6 +2055,18 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: POSITION_LABEL_SIGNATURE_VALIDATION_ENABLED (default true)."
         ),
     )
+    positioning_allow_unsigned_legacy: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITIONING_ALLOW_UNSIGNED_LEGACY", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, catalog-registered v1 UNSIGNED position labels without QR signature "
+            "may resolve as LEGACY_UNSIGNED_REQUIRES_REVIEW (requires_review). "
+            "When false, missing signature is always REJECT (MISSING_SIGNATURE). "
+            "Env: POSITIONING_ALLOW_UNSIGNED_LEGACY (default true for backward compatibility)."
+        ),
+    )
     position_label_detection_persistence_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("POSITION_LABEL_DETECTION_PERSISTENCE_ENABLED", "true").strip().lower()
