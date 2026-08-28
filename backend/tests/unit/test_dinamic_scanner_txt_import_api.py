@@ -102,11 +102,50 @@ def test_preview_route_returns_metadata(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_preview_route_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SERVER_DINAMIC_SCANNER_TXT_IMPORT_ENABLED", "false")
+    from src.config import reload_settings
+
+    reload_settings()
     response = client.post(
         "/api/v3/inventories/inventory-1/dinamic-scanner-txt-imports/preview",
         files={"file": ("A1.txt", BytesIO(b"POSITION|P|01|RIGHT\n"), "text/plain")},
     )
     assert response.status_code == 404
+    assert response.json().get("code") == "DINAMIC_SCANNER_TXT_IMPORT_DISABLED"
+
+
+def test_preview_rejects_file_over_max_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SERVER_DINAMIC_SCANNER_TXT_IMPORT_ENABLED", "true")
+    monkeypatch.setenv("SERVER_DINAMIC_SCANNER_TXT_IMPORT_MAX_BYTES", "100")
+    from src.config import reload_settings
+
+    reload_settings()
+    body = b"x" * 101
+    response = client.post(
+        "/api/v3/inventories/inventory-1/dinamic-scanner-txt-imports/preview",
+        files={"file": ("A1.txt", BytesIO(body), "text/plain")},
+    )
+    assert response.status_code == 413, response.text
+    assert response.json().get("code") == "DINAMIC_SCANNER_TXT_FILE_TOO_LARGE"
+
+
+def test_preview_accepts_file_at_max_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SERVER_DINAMIC_SCANNER_TXT_IMPORT_ENABLED", "true")
+    monkeypatch.setenv("SERVER_DINAMIC_SCANNER_TXT_IMPORT_MAX_BYTES", "100")
+    from src.config import reload_settings
+
+    reload_settings()
+    mock_preview = MagicMock()
+    mock_preview.execute.return_value = _preview_result(inventory_id="inventory-1")
+    app.dependency_overrides[get_preview_dinamic_scanner_txt_import_use_case] = lambda: mock_preview
+    try:
+        body = b"x" * 100
+        response = client.post(
+            "/api/v3/inventories/inventory-1/dinamic-scanner-txt-imports/preview",
+            files={"file": ("A1.txt", BytesIO(body), "text/plain")},
+        )
+    finally:
+        app.dependency_overrides.pop(get_preview_dinamic_scanner_txt_import_use_case, None)
+    assert response.status_code == 200, response.text
 
 
 def test_confirm_route_returns_persisted_metadata(monkeypatch: pytest.MonkeyPatch) -> None:

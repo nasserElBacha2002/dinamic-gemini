@@ -131,6 +131,14 @@ def test_same_result_id_different_content_conflicts():
     assert result.error_code == AUTH_IDEMPOTENCY_CONFLICT
 
 
+def test_same_result_id_different_label_id_conflicts():
+    uc, _ = _uc()
+    uc.execute(_cmd(label_id="A1B2C3D4E5"))
+    result = uc.execute(_cmd(label_id="FGHJKMNPQR"))
+    assert result.status == "CONFLICT"
+    assert result.error_code == AUTH_IDEMPOTENCY_CONFLICT
+
+
 def test_new_version_supersedes_atomically():
     uc, repo = _uc()
     uc.execute(_cmd())

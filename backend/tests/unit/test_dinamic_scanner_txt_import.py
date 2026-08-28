@@ -191,12 +191,31 @@ def _build_preview_confirm(
         csv_confirm=confirm_csv,
         enabled=True,
     )
-    return preview, confirm, import_repo, writer
+    return preview, confirm, import_repo, writer, position_repo, product_repo
+
+
+def test_preview_does_not_materialize_productive_rows() -> None:
+    """Phase 4: preview must not create ProductRecord, Position, or productive writer rows."""
+    inventory_repo, aisle_repo, supplier_repo, inventory_id, _ = _seed_inventory_with_client()
+    preview, _, _, writer, position_repo, product_repo = _build_preview_confirm(
+        inventory_repo, aisle_repo, supplier_repo
+    )
+    preview.execute(
+        inventory_id=inventory_id,
+        content=_txt(
+            "POSITION|POS001|04|RIGHT",
+            "D1|A1B2C3D4E5|SKU001|100|E",
+        ),
+        filename="Pasillo_A_04.txt",
+    )
+    assert writer.list_for_inventory(inventory_id) == ()
+    assert not position_repo._store  # noqa: SLF001 — preview purity snapshot
+    assert not product_repo._store  # noqa: SLF001
 
 
 def test_preview_does_not_create_aisle() -> None:
     inventory_repo, aisle_repo, supplier_repo, inventory_id, _ = _seed_inventory_with_client()
-    preview, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    preview, _, _, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
 
     result = preview.execute(
         inventory_id=inventory_id,
@@ -231,7 +250,7 @@ def test_preview_reuses_existing_aisle_without_creating() -> None:
             client_supplier_id=supplier_ids[0],
         )
     )
-    preview, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    preview, _, _, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
 
     result = preview.execute(
         inventory_id=inventory_id,
@@ -249,7 +268,7 @@ def test_preview_reuses_existing_aisle_without_creating() -> None:
 
 def test_confirm_creates_aisle_and_preserves_metadata() -> None:
     inventory_repo, aisle_repo, supplier_repo, inventory_id, _ = _seed_inventory_with_client()
-    preview, confirm, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    preview, confirm, _, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
     staged = preview.execute(
         inventory_id=inventory_id,
         content=_txt(
@@ -275,7 +294,7 @@ def test_confirm_creates_aisle_and_preserves_metadata() -> None:
 
 def test_confirm_is_idempotent_on_duplicate_export() -> None:
     inventory_repo, aisle_repo, supplier_repo, inventory_id, _ = _seed_inventory_with_client()
-    preview, confirm, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    preview, confirm, _, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
     staged = preview.execute(
         inventory_id=inventory_id,
         content=_txt(
@@ -295,7 +314,7 @@ def test_supplier_ambiguous_on_confirm_when_multiple_suppliers() -> None:
     inventory_repo, aisle_repo, supplier_repo, inventory_id, _ = _seed_inventory_with_client(
         supplier_count=2
     )
-    preview, confirm, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    preview, confirm, _, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
     staged = preview.execute(
         inventory_id=inventory_id,
         content=_txt(
@@ -325,7 +344,7 @@ def test_duplicate_label_id_in_file_is_rejected_on_preview() -> None:
             client_supplier_id=supplier_ids[0],
         )
     )
-    preview, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    preview, _, _, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
     result = preview.execute(
         inventory_id=inventory_id,
         content=_txt(
@@ -353,7 +372,7 @@ def test_confirm_applies_txt_results_without_image() -> None:
             client_supplier_id=supplier_ids[0],
         )
     )
-    preview, confirm, _, writer = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    preview, confirm, _, writer, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
     staged = preview.execute(
         inventory_id=inventory_id,
         content=_txt(

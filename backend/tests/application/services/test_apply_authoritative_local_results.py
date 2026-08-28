@@ -11,6 +11,7 @@ from src.application.errors import (
     AuthoritativeResultApplyFailedError,
     AuthoritativeResultStateConflictError,
 )
+from src.application.ports.issued_product_label_repository import IssuedProductLabel
 from src.application.services.image_processing.apply_authoritative_local_results import (
     LOCAL_AUTHORITY_STRATEGY,
     RESOLVED_BY_LOCAL_AUTHORITY,
@@ -20,6 +21,9 @@ from src.application.services.image_processing.processing_result_persister impor
     PersistOutcome,
     PersistSkipReason,
 )
+from src.application.services.product_labels.issued_product_label_resolver import (
+    IssuedProductLabelResolver,
+)
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.authoritative_local_code_scan.entities import AuthoritativeLocalCodeScanResult
 from src.domain.image_processing.job_asset_processing_state import (
@@ -27,8 +31,17 @@ from src.domain.image_processing.job_asset_processing_state import (
     JobAssetProcessingStatus,
 )
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.product_labels.format import (
+    build_product_label_payload,
+    parse_product_label_payload,
+)
+from src.domain.product_labels.processed import ProductLabelOutcomeStatus
 from src.infrastructure.repositories.memory_authoritative_local_code_scan_repository import (
     MemoryAuthoritativeLocalCodeScanRepository,
+)
+from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_issued_product_label_repository import (
+    MemoryIssuedProductLabelRepository,
 )
 from src.infrastructure.repositories.memory_job_asset_processing_state_repository import (
     MemoryJobAssetProcessingStateRepository,
@@ -76,6 +89,64 @@ def _row(**overrides) -> AuthoritativeLocalCodeScanResult:
     )
     base.update(overrides)
     return AuthoritativeLocalCodeScanResult(**base)
+
+
+def _inventory_repo(*, client_id: str = "client-a") -> MemoryInventoryRepository:
+    from src.domain.inventory.entities import Inventory, InventoryStatus
+
+    repo = MemoryInventoryRepository()
+    now = datetime(2026, 7, 24, tzinfo=timezone.utc)
+    repo.save(
+        Inventory(
+            id="inv-1",
+            client_id=client_id,
+            name="Test",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    return repo
+
+
+def _issued_resolver(*, label_id: str = "A1B2C3D4E5") -> IssuedProductLabelResolver:
+    payload = build_product_label_payload(
+        label_id=label_id, internal_code="SKU100", quantity=4
+    )
+    parsed = parse_product_label_payload(payload)
+    repo = MemoryIssuedProductLabelRepository()
+    repo.save(
+        IssuedProductLabel(
+            id="iss-1",
+            client_id="client-a",
+            label_id=label_id,
+            internal_code="SKU100",
+            quantity=4,
+            format_version="D1",
+            checksum=str(parsed.checksum_received),
+            payload=payload,
+            created_at=datetime(2026, 7, 24, tzinfo=timezone.utc),
+        )
+    )
+    return IssuedProductLabelResolver(issued_repo=repo)
+
+
+def _svc(
+    *,
+    repo: MemoryAuthoritativeLocalCodeScanRepository,
+    state_repo: MemoryJobAssetProcessingStateRepository,
+    persister: MagicMock,
+    with_d1: bool = False,
+) -> ApplyAuthoritativeLocalResultsService:
+    return ApplyAuthoritativeLocalResultsService(
+        authoritative_repo=repo,
+        result_persister=persister,
+        state_repo=state_repo,
+        clock=_Clock(),
+        enabled=True,
+        inventory_repo=_inventory_repo() if with_d1 else None,
+        issued_label_resolver=_issued_resolver() if with_d1 else None,
+    )
 
 
 def _job() -> Job:
@@ -205,7 +276,168 @@ def test_apply_success_marks_local_authority():
 def test_apply_passes_label_id_into_product_results_for_claim():
     repo = MemoryAuthoritativeLocalCodeScanRepository()
     repo.create_authoritative_version(
-        new_result=_row(label_id="A1B2C3D4E5"),
+        new_result=_row(
+            label_id="A1B2C3D4E5",
+            internal_code="SKU100",
+            quantity=4,
+        ),
+        expected_current_id=None,
+        expected_row_version=None,
+    )
+    state_repo = MemoryJobAssetProcessingStateRepository()
+    now = _Clock().now()
+    state_repo.save(
+        JobAssetProcessingState(
+            id="s1",
+            job_id="job-1",
+            asset_id="asset-1",
+            status=JobAssetProcessingStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+    )
+    persister = MagicMock()
+    persister.persist.return_value = PersistOutcome(
+        persisted=True, reconciled=False, active_result_id="ar-1"
+    )
+    svc = _svc(repo=repo, state_repo=state_repo, persister=persister, with_d1=True)
+    svc.apply_for_job(
+        job=_job(), aisle_id="aisle-1", inventory_id="inv-1", assets=[_asset()]
+    )
+    kwargs = persister.persist.call_args.kwargs
+    result = kwargs["result"]
+    assert result.product_results
+    p = result.product_results[0]
+    assert p.label_id == "A1B2C3D4E5"
+    assert p.validation_status is ProductLabelOutcomeStatus.VALID
+    assert p.checksum is not None
+    assert result.additional_fields.get("label_id") == "A1B2C3D4E5"
+
+
+def test_apply_label_id_missing_quantity_fail_closed_no_legacy_fallback():
+    repo = MemoryAuthoritativeLocalCodeScanRepository()
+    repo.create_authoritative_version(
+        new_result=_row(
+            label_id="A1B2C3D4E5",
+            internal_code="SKU100",
+            quantity=None,
+            quantity_status="MISSING",
+        ),
+        expected_current_id=None,
+        expected_row_version=None,
+    )
+    state_repo = MemoryJobAssetProcessingStateRepository()
+    now = _Clock().now()
+    state_repo.save(
+        JobAssetProcessingState(
+            id="s1",
+            job_id="job-1",
+            asset_id="asset-1",
+            status=JobAssetProcessingStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+    )
+    persister = MagicMock()
+    persister.persist.return_value = PersistOutcome(
+        persisted=False,
+        reconciled=False,
+        skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY,
+    )
+    svc = _svc(repo=repo, state_repo=state_repo, persister=persister, with_d1=True)
+    with pytest.raises(AuthoritativeResultApplyFailedError):
+        svc.apply_for_job(
+            job=_job(), aisle_id="aisle-1", inventory_id="inv-1", assets=[_asset()]
+        )
+    result = persister.persist.call_args.kwargs["result"]
+    assert result.internal_code == ""
+    assert result.product_results[0].validation_status is ProductLabelOutcomeStatus.QUANTITY_INVALID
+
+
+def test_apply_manual_correction_ignores_label_id():
+    repo = MemoryAuthoritativeLocalCodeScanRepository()
+    repo.create_authoritative_version(
+        new_result=_row(
+            label_id="A1B2C3D4E5",
+            internal_code="SKU100",
+            quantity=4,
+            source="LOCAL_MANUAL_CORRECTION",
+        ),
+        expected_current_id=None,
+        expected_row_version=None,
+    )
+    state_repo = MemoryJobAssetProcessingStateRepository()
+    now = _Clock().now()
+    state_repo.save(
+        JobAssetProcessingState(
+            id="s1",
+            job_id="job-1",
+            asset_id="asset-1",
+            status=JobAssetProcessingStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+    )
+    persister = MagicMock()
+    persister.persist.return_value = PersistOutcome(
+        persisted=True, reconciled=False, active_result_id="ar-1"
+    )
+    svc = _svc(repo=repo, state_repo=state_repo, persister=persister, with_d1=True)
+    svc.apply_for_job(
+        job=_job(), aisle_id="aisle-1", inventory_id="inv-1", assets=[_asset()]
+    )
+    p = persister.persist.call_args.kwargs["result"].product_results[0]
+    assert p.label_id is None
+    assert p.detail == "authoritative_manual_correction"
+
+
+def test_apply_sku_mismatch_not_promoted_to_valid():
+    repo = MemoryAuthoritativeLocalCodeScanRepository()
+    repo.create_authoritative_version(
+        new_result=_row(
+            label_id="A1B2C3D4E5",
+            internal_code="SKU999",
+            quantity=4,
+        ),
+        expected_current_id=None,
+        expected_row_version=None,
+    )
+    state_repo = MemoryJobAssetProcessingStateRepository()
+    now = _Clock().now()
+    state_repo.save(
+        JobAssetProcessingState(
+            id="s1",
+            job_id="job-1",
+            asset_id="asset-1",
+            status=JobAssetProcessingStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+    )
+    persister = MagicMock()
+    persister.persist.return_value = PersistOutcome(
+        persisted=False,
+        reconciled=False,
+        skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY,
+    )
+    svc = _svc(repo=repo, state_repo=state_repo, persister=persister, with_d1=True)
+    with pytest.raises(AuthoritativeResultApplyFailedError):
+        svc.apply_for_job(
+            job=_job(), aisle_id="aisle-1", inventory_id="inv-1", assets=[_asset()]
+        )
+    p = persister.persist.call_args.kwargs["result"].product_results[0]
+    assert p.validation_status is ProductLabelOutcomeStatus.PAYLOAD_MISMATCH
+
+
+def test_apply_historical_row_without_label_id_uses_legacy_product_spec():
+    """Historical authoritative rows (label_id=NULL) apply without inventing sticker id."""
+    repo = MemoryAuthoritativeLocalCodeScanRepository()
+    repo.create_authoritative_version(
+        new_result=_row(label_id=None),
         expected_current_id=None,
         expected_row_version=None,
     )
@@ -236,11 +468,11 @@ def test_apply_passes_label_id_into_product_results_for_claim():
     svc.apply_for_job(
         job=_job(), aisle_id="aisle-1", inventory_id="inv-1", assets=[_asset()]
     )
-    kwargs = persister.persist.call_args.kwargs
-    result = kwargs["result"]
+    result = persister.persist.call_args.kwargs["result"]
     assert result.product_results
-    assert result.product_results[0].label_id == "A1B2C3D4E5"
-    assert result.additional_fields.get("label_id") == "A1B2C3D4E5"
+    assert result.product_results[0].label_id is None
+    assert result.product_results[0].detail == "authoritative_local_legacy_no_label_id"
+    assert result.additional_fields.get("label_id") is None
 
 
 def test_persist_skip_fail_closed():

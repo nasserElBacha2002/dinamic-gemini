@@ -939,6 +939,9 @@ class V3JobExecutor:
                 from src.application.services.image_processing.apply_authoritative_local_results import (
                     ApplyAuthoritativeLocalResultsService,
                 )
+                from src.application.services.product_labels.issued_product_label_resolver import (
+                    IssuedProductLabelResolver,
+                )
 
                 try:
                     auth_repo = container.get_authoritative_local_code_scan_repo()
@@ -950,6 +953,9 @@ class V3JobExecutor:
                     raise AuthoritativeResultRepositoryUnavailableError(
                         f"Authoritative repo unavailable for job_id={job_id}"
                     ) from exc
+                issued_resolver = IssuedProductLabelResolver(
+                    issued_repo=container.get_issued_product_label_repo()
+                )
                 apply_authoritative = ApplyAuthoritativeLocalResultsService(
                     authoritative_repo=auth_repo,
                     result_persister=persister,
@@ -957,6 +963,8 @@ class V3JobExecutor:
                     clock=self._clock,
                     enabled=True,
                     require_all_assets=True,
+                    inventory_repo=container.get_inventory_repo(),
+                    issued_label_resolver=issued_resolver,
                 )
 
             orch = build_default_code_scan_orchestrator(
