@@ -23,6 +23,7 @@ from src.domain.authoritative_local_code_scan.entities import (
     AuthoritativeQuantityStatus,
     AuthoritativeResultSource,
 )
+from src.domain.product_labels.format import LABEL_ID_ALPHABET, LABEL_ID_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,8 @@ class PersistAuthoritativeLocalCodeScanCommand:
     #: Client-reported confirm time (stored as client_confirmed_at only).
     confirmed_at: datetime | None
     confirmed_by_user_id: str | None = None
+    #: Optional D1 physical sticker id (never inferred from SKU).
+    label_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +94,11 @@ class AuthoritativeIngestDisabledError(Exception):
     pass
 
 
+def _normalize_optional_label_id(raw: str | None) -> str | None:
+    value = (raw or "").strip().upper() or None
+    return value
+
+
 def _canonical_content_hash(
     *,
     internal_code: str,
@@ -105,6 +113,7 @@ def _canonical_content_hash(
     prepared_asset_sha256: str,
     client_file_id: str,
     asset_id: str,
+    label_id: str | None = None,
 ) -> str:
     payload = {
         "asset_id": asset_id,
@@ -120,6 +129,9 @@ def _canonical_content_hash(
         "detector_version": detector_version,
         "prepared_asset_sha256": prepared_asset_sha256.lower(),
     }
+    # Include label_id only when present so historical hashes (no key) stay stable.
+    if label_id:
+        payload["label_id"] = label_id
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
@@ -178,6 +190,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             )
 
         result_id = command.result_id.strip()
+        label_id = _normalize_optional_label_id(command.label_id)
         content_hash = _canonical_content_hash(
             internal_code=command.internal_code.strip(),
             quantity=command.quantity,
@@ -191,6 +204,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             prepared_asset_sha256=command.prepared_asset_sha256.strip(),
             client_file_id=client_file,
             asset_id=command.asset_id.strip(),
+            label_id=label_id,
         )
 
         existing = self._repo.get_by_id(result_id)
@@ -278,6 +292,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             schema_version=(command.schema_version or "1").strip() or "1",
             created_at=now,
             updated_at=now,
+            label_id=label_id,
         )
 
         try:
@@ -323,11 +338,12 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
 
         logger.info(
             "authoritative_local.persisted result_id=%s asset_id=%s version=%s "
-            "source=%s supersedes=%s confirmed_by=%s applied_at=%s",
+            "source=%s label_id=%s supersedes=%s confirmed_by=%s applied_at=%s",
             saved.id,
             saved.asset_id,
             saved.result_version,
             saved.source,
+            saved.label_id,
             saved.supersedes_result_id,
             saved.confirmed_by,
             saved.applied_at,
@@ -405,4 +421,10 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         sym = (command.detected_symbology or "").strip().upper()
         if sym and sym not in _ALLOWED_SYMBOLOGY:
             errors.append("detected_symbology_invalid")
+        label_id = _normalize_optional_label_id(command.label_id)
+        if label_id is not None:
+            if len(label_id) != LABEL_ID_LENGTH or any(
+                ch not in LABEL_ID_ALPHABET for ch in label_id
+            ):
+                errors.append("label_id_invalid")
         return errors

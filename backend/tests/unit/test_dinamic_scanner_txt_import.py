@@ -202,7 +202,7 @@ def test_preview_does_not_create_aisle() -> None:
         inventory_id=inventory_id,
         content=_txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
+            "D1|A1B2C3D4E5|SKU001|100|E",
         ),
         filename="Pasillo_A_04.txt",
     )
@@ -237,7 +237,7 @@ def test_preview_reuses_existing_aisle_without_creating() -> None:
         inventory_id=inventory_id,
         content=_txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
+            "D1|A1B2C3D4E5|SKU001|100|E",
         ),
         filename="Pasillo_A_04.txt",
     )
@@ -254,7 +254,7 @@ def test_confirm_creates_aisle_and_preserves_metadata() -> None:
         inventory_id=inventory_id,
         content=_txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
+            "D1|A1B2C3D4E5|SKU001|100|E",
         ),
         filename="Pasillo_A_04.txt",
     )
@@ -280,7 +280,7 @@ def test_confirm_is_idempotent_on_duplicate_export() -> None:
         inventory_id=inventory_id,
         content=_txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
+            "D1|A1B2C3D4E5|SKU001|100|E",
         ),
         filename="Pasillo_A_04.txt",
     )
@@ -300,7 +300,7 @@ def test_supplier_ambiguous_on_confirm_when_multiple_suppliers() -> None:
         inventory_id=inventory_id,
         content=_txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
+            "D1|A1B2C3D4E5|SKU001|100|E",
         ),
         filename="New_Aisle.txt",
     )
@@ -330,8 +330,8 @@ def test_duplicate_label_id_in_file_is_rejected_on_preview() -> None:
         inventory_id=inventory_id,
         content=_txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|DUPLICATE1|SKU001|100|A",
-            "D1|DUPLICATE1|SKU002|50|B",
+            "D1|A1B2C3D4E5|SKU001|100|E",
+            "D1|A1B2C3D4E5|SKU002|50|E",
         ),
         filename="Aisle.txt",
     )
@@ -358,7 +358,7 @@ def test_confirm_applies_txt_results_without_image() -> None:
         inventory_id=inventory_id,
         content=_txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
+            "D1|A1B2C3D4E5|SKU001|100|E",
         ),
         filename="Pasillo_A_04.txt",
     )
@@ -405,7 +405,7 @@ def test_converter_maps_position_and_quantity() -> None:
     parsed_txt = parse_dinamic_scanner_txt(
         _txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|LABEL00001|SKU001|100|A",
+            "D1|A1B2C3D4E5|SKU001|100|E",
         )
     )
     parsed_csv = build_parsed_local_csv_from_scanner_txt(

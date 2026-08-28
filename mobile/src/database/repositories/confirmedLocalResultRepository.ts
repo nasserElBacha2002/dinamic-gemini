@@ -25,6 +25,8 @@ export interface ConfirmedLocalResultRow {
   readonly confirmed_quantity: number | null;
   readonly quantity_status: ConfirmedQuantityStatus;
   readonly source: ConfirmedLocalResultSource;
+  /** Optional D1 physical sticker id from local draft (nullable for legacy rows). */
+  readonly label_id: string | null;
   readonly detected_symbology: string | null;
   readonly parser_version: string;
   readonly detector_version: string;
@@ -56,6 +58,7 @@ export class ConfirmedLocalResultRepository {
     readonly confirmedQuantity: number | null;
     readonly quantityStatus: ConfirmedQuantityStatus;
     readonly source: ConfirmedLocalResultSource;
+    readonly labelId?: string | null;
     readonly detectedSymbology: string | null;
     readonly parserVersion: string;
     readonly detectorVersion: string;
@@ -76,6 +79,7 @@ export class ConfirmedLocalResultRepository {
           confirmed_quantity = ?,
           quantity_status = ?,
           source = ?,
+          label_id = ?,
           detected_symbology = ?,
           parser_version = ?,
           detector_version = ?,
@@ -96,6 +100,7 @@ export class ConfirmedLocalResultRepository {
         input.confirmedQuantity,
         input.quantityStatus,
         input.source,
+        input.labelId ?? null,
         input.detectedSymbology,
         input.parserVersion,
         input.detectorVersion,
@@ -118,11 +123,11 @@ export class ConfirmedLocalResultRepository {
       `INSERT INTO confirmed_local_results (
         id, capture_photo_id, capture_session_id, client_file_id, asset_id,
         detected_internal_code, detected_quantity, confirmed_internal_code, confirmed_quantity,
-        quantity_status, source, detected_symbology, parser_version, detector_version,
+        quantity_status, source, label_id, detected_symbology, parser_version, detector_version,
         prepared_asset_sha256, confirmed_by_user_id, confirmed_at,
         sync_status, sync_attempt_count, next_retry_at, sync_last_error_code,
         row_version, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, NULL, NULL, 1, ?, ?);`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, NULL, NULL, 1, ?, ?);`,
       id,
       input.capturePhotoId,
       input.captureSessionId,
@@ -134,6 +139,7 @@ export class ConfirmedLocalResultRepository {
       input.confirmedQuantity,
       input.quantityStatus,
       input.source,
+      input.labelId ?? null,
       input.detectedSymbology,
       input.parserVersion,
       input.detectorVersion,

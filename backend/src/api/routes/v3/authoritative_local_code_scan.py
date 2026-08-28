@@ -57,6 +57,7 @@ def put_authoritative_local_code_scan(
                 quantity=body.quantity,
                 quantity_status=body.quantity_status,
                 source=body.source,
+                label_id=body.label_id,
                 detected_internal_code=body.detected_internal_code,
                 detected_quantity=body.detected_quantity,
                 detected_symbology=body.detected_symbology,

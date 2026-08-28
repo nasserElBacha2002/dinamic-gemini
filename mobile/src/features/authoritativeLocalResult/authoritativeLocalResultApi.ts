@@ -8,6 +8,8 @@ export interface AuthoritativeLocalCodeScanRequest {
   readonly quantity: number | null;
   readonly quantity_status: 'PRESENT' | 'MISSING';
   readonly source: 'LOCAL_CODE_SCAN' | 'LOCAL_MANUAL_CORRECTION';
+  /** Optional D1 physical sticker id (additive; omit/null for legacy). */
+  readonly label_id?: string | null;
   readonly detected_internal_code: string | null;
   readonly detected_quantity: number | null;
   readonly detected_symbology: string | null;

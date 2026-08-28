@@ -48,6 +48,37 @@ def _payload_hierarchy_meta(payload: dict[str, Any] | None) -> dict[str, Any]:
     return out
 
 
+def _norm_hierarchy_text(value: object) -> str:
+    return str(value or "").strip().upper()
+
+
+def _qr_hierarchy_matches_catalog(
+    qr_payload: dict[str, Any] | None,
+    canonical: dict[str, Any],
+) -> bool:
+    """Reject when QR hierarchy fields disagree with catalog SoT (fail-closed).
+
+    Compares only fields present on both sides. Catalog-only or QR-only extras are OK
+    for unsigned/v1 labels that omit hierarchy.
+    """
+    if not isinstance(qr_payload, dict):
+        return True
+    for key in ("pallet", "side", "level", "marker_index", "marker_total", "label_id"):
+        if key not in canonical or key not in qr_payload:
+            continue
+        cat = canonical.get(key)
+        qr = qr_payload.get(key)
+        if key in ("level", "marker_index", "marker_total"):
+            try:
+                if int(cat) != int(qr):
+                    return False
+            except (TypeError, ValueError):
+                return False
+        elif _norm_hierarchy_text(cat) != _norm_hierarchy_text(qr):
+            return False
+    return True
+
+
 @dataclass(frozen=True)
 class ImagePositionDetectionCommand:
     client_id: str
@@ -406,7 +437,12 @@ class ImagePositionDetectionUseCase:
                 command.correlation_id,
             )
             # MISSING only when the payload truly lacks a signature field.
-            if parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE or not parsed.signature:
+            if parsed.status is PositionLabelDetectionStatus.UNKNOWN_KEY_VERSION:
+                signature_status = PositionLabelSignatureStatus.UNKNOWN_KEY
+            elif (
+                parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE
+                or not parsed.signature
+            ):
                 signature_status = PositionLabelSignatureStatus.MISSING
             else:
                 signature_status = PositionLabelSignatureStatus.INVALID
@@ -512,14 +548,49 @@ class ImagePositionDetectionUseCase:
             )
 
         assert resolved.label is not None
+        if not _qr_hierarchy_matches_catalog(parsed.payload, resolved.label.canonical_payload or {}):
+            logger.info(
+                "position_label_catalog_mismatch client_id=%s job_id=%s asset_id=%s "
+                "label_id=%s detector_version=%s correlation_id=%s",
+                command.client_id,
+                command.job_id,
+                command.source_asset_id,
+                parsed.label_id,
+                self._detector_version,
+                command.correlation_id,
+            )
+            return self._build_row(
+                command,
+                now=now,
+                status=PositionLabelDetectionStatus.INVALID_TYPE,
+                signature_status=validated.signature_status,
+                payload_hash=parsed.payload_hash,
+                public_identifier=parsed.label_id,
+                position_label_id=None,
+                payload_version=parsed.version,
+                bounding_box_json=code.bounding_box,
+                rotation_degrees=code.rotation_degrees,
+                confidence=code.confidence,
+                detail="catalog_hierarchy_mismatch",
+                metadata={
+                    **PositionLabelPolicyService.metadata_for_reject(
+                        signature_status=validated.signature_status,
+                        validation_status=PositionLabelDetectionStatus.INVALID_TYPE,
+                    ),
+                    **_payload_hierarchy_meta(parsed.payload),
+                },
+            )
         logger.info(
             "position_label_resolved client_id=%s job_id=%s asset_id=%s label_id=%s "
-            "detection_status=%s detector_version=%s correlation_id=%s",
+            "detection_status=%s policy_decision=%s detector_version=%s correlation_id=%s",
             command.client_id,
             command.job_id,
             command.source_asset_id,
             resolved.label.public_identifier,
             PositionLabelDetectionStatus.VALID.value,
+            PositionLabelPolicyService.metadata_for_accept(
+                signature_status=validated.signature_status,
+            ).get("policy_decision"),
             self._detector_version,
             command.correlation_id,
         )

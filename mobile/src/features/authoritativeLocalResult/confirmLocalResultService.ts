@@ -103,6 +103,8 @@ export class ConfirmLocalResultService {
       confirmedQuantity,
       quantityStatus: input.edits.quantityStatus,
       source,
+      // Physical sticker identity from draft — never inferred from SKU/internal_code.
+      labelId: draft?.label_id ?? null,
       detectedSymbology: draft?.detected_symbology ?? null,
       parserVersion: draft?.parser_version ?? LABEL_PAYLOAD_PARSER_VERSION,
       detectorVersion: draft?.detector_version ?? LOCAL_CODE_DETECTOR_VERSION,

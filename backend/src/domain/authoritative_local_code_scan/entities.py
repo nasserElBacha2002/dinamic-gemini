@@ -52,3 +52,5 @@ class AuthoritativeLocalCodeScanResult:
     schema_version: str
     created_at: datetime
     updated_at: datetime
+    #: Optional D1 physical sticker id (nullable for historical / legacy confirmations).
+    label_id: str | None = None

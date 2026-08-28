@@ -110,7 +110,7 @@ export function labelForPositionDetectionStatus(
       if (!trimmed) {
         return 'Sin etiqueta de posición';
       }
-      return `Estado de detección desconocido: ${trimmed}`;
+      return `Estado de etiqueta de posición: ${trimmed}`;
     }
   }
 }

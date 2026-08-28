@@ -43,6 +43,33 @@ from src.domain.product_labels.format import (
 from src.domain.product_labels.processed import ProductLabelOutcomeStatus
 from src.domain.products.entities import ProductRecord
 
+logger = logging.getLogger(__name__)
+
+
+def _norm_hierarchy_text(value: object) -> str:
+    return str(value or "").strip().upper()
+
+
+def _txt_hierarchy_matches_catalog(payload: dict, canonical: dict) -> bool:
+    """TXT auto-position requires catalog pallet+side; never invent hierarchy from TXT."""
+    cat_pallet = _norm_hierarchy_text(canonical.get("pallet"))
+    cat_side = _norm_hierarchy_text(canonical.get("side"))
+    if not cat_pallet or not cat_side:
+        return False
+    txt_pallet = _norm_hierarchy_text(payload.get("pallet"))
+    txt_side = _norm_hierarchy_text(payload.get("side"))
+    if not txt_pallet or not txt_side:
+        return False
+    return txt_pallet == cat_pallet and txt_side == cat_side
+
+
+def _txt_has_position_claim(result: LocalCsvProductiveResult) -> bool:
+    return bool(
+        (result.position_code or "").strip()
+        or (result.position_label_id or "").strip()
+        or (result.position_payload_raw or "").strip()
+    )
+
 # Stable namespace so re-confirm is idempotent without scanning aisle history.
 _LOCAL_CSV_POSITION_NS = uuid.UUID("a7e1c4d2-9b3f-4e8a-91d0-6f2c5b8e4a11")
 
@@ -52,8 +79,6 @@ SUMMARY_INGESTION_SOURCE = "ingestion_source"
 
 # Position-marker photos are capture context, not inventory line items.
 _POSITION_MARKER_SOURCES = frozenset({"LOCAL_POSITION_LABEL"})
-
-logger = logging.getLogger(__name__)
 
 
 def is_inventory_line_result(result: LocalCsvProductiveResult) -> bool:
@@ -238,9 +263,24 @@ class LocalCsvPositionMaterializer:
         *,
         inventory_client_id: str | None,
     ) -> bool:
-        """Validate optional positioning payload; fail-closed on invalid structure/HMAC/registry."""
+        """Validate optional positioning payload; fail-closed on invalid structure/HMAC/registry.
+
+        TXT (``DINAMIC_SCANNER_TXT``) does not embed HMAC. Trust is catalog authority:
+        ACTIVE label + client scope + pallet/side match against ``canonical_payload``.
+        Skipping HMAC for TXT is not a cryptographic accept — hierarchy must still match.
+        """
         raw = (result.position_payload_raw or "").strip()
+        is_txt = (result.ingestion_source or "").strip() == INGESTION_SOURCE_DINAMIC_SCANNER_TXT
         if not raw:
+            # CSV historically allows missing position payload. TXT claiming a position
+            # without raw evidence cannot auto-apply position_code.
+            if is_txt and _txt_has_position_claim(result):
+                logger.warning(
+                    "local_csv_position_txt_missing_evidence productive_id=%s "
+                    "reason=missing_position_evidence",
+                    result.id,
+                )
+                return False
             return True
         try:
             payload = json.loads(raw)
@@ -260,8 +300,7 @@ class LocalCsvPositionMaterializer:
             )
             return False
         signing = self._positioning_signing
-        skip_hmac = (result.ingestion_source or "").strip() == INGESTION_SOURCE_DINAMIC_SCANNER_TXT
-        if signing is not None and signing.can_sign and not skip_hmac:
+        if signing is not None and signing.can_sign and not is_txt:
             if not signing.verify_payload(payload):
                 logger.warning(
                     "local_csv_position_payload_hmac_failed productive_id=%s",
@@ -269,20 +308,54 @@ class LocalCsvPositionMaterializer:
                 )
                 return False
         if self._client_position_label_repo is None:
+            if is_txt:
+                logger.warning(
+                    "local_csv_position_txt_requires_catalog productive_id=%s",
+                    result.id,
+                )
+                return False
             return True
         public_id = str(payload.get("label_id") or "").strip()
-        label = self._client_position_label_repo.get_by_public_identifier(public_id)
-        if label is None and (result.position_label_id or "").strip():
-            label = self._client_position_label_repo.get_by_id(
-                (result.position_label_id or "").strip()
-            )
-        if label is None:
+        if not public_id:
             logger.warning(
-                "local_csv_position_label_unknown productive_id=%s public_id=%s",
+                "local_csv_position_label_unknown productive_id=%s reason=missing_label_id",
                 result.id,
-                public_id,
             )
             return False
+        # TXT must resolve by public_identifier only — never treat DB internal id as public.
+        if is_txt:
+            label = self._client_position_label_repo.get_by_public_identifier(public_id)
+            if label is None:
+                logger.warning(
+                    "local_csv_position_label_unknown productive_id=%s public_id=%s "
+                    "reason=unknown_position_label",
+                    result.id,
+                    public_id,
+                )
+                return False
+            claimed = (result.position_label_id or "").strip()
+            if claimed and claimed != label.public_identifier:
+                logger.warning(
+                    "local_csv_position_txt_label_id_mismatch productive_id=%s "
+                    "payload_label_id=%s claimed=%s",
+                    result.id,
+                    public_id,
+                    claimed,
+                )
+                return False
+        else:
+            label = self._client_position_label_repo.get_by_public_identifier(public_id)
+            if label is None and (result.position_label_id or "").strip():
+                label = self._client_position_label_repo.get_by_id(
+                    (result.position_label_id or "").strip()
+                )
+            if label is None:
+                logger.warning(
+                    "local_csv_position_label_unknown productive_id=%s public_id=%s",
+                    result.id,
+                    public_id,
+                )
+                return False
         if label.status != ClientPositionLabelStatus.ACTIVE:
             logger.warning(
                 "local_csv_position_label_inactive productive_id=%s label_id=%s",
@@ -295,6 +368,28 @@ class LocalCsvPositionMaterializer:
             logger.warning(
                 "local_csv_position_label_client_mismatch productive_id=%s",
                 result.id,
+            )
+            return False
+        if is_txt and not _txt_hierarchy_matches_catalog(
+            payload, label.canonical_payload or {}
+        ):
+            canon = label.canonical_payload or {}
+            reason = (
+                "catalog_hierarchy_missing"
+                if not (
+                    _norm_hierarchy_text(canon.get("pallet"))
+                    and _norm_hierarchy_text(canon.get("side"))
+                )
+                else "catalog_hierarchy_mismatch"
+            )
+            logger.warning(
+                "local_csv_position_txt_hierarchy_rejected productive_id=%s "
+                "public_id=%s reason=%s txt_pallet=%s txt_side=%s",
+                result.id,
+                public_id,
+                reason,
+                payload.get("pallet"),
+                payload.get("side"),
             )
             return False
         return True
@@ -367,18 +462,26 @@ class LocalCsvPositionMaterializer:
         position_payload_ok = self._validate_position_payload(
             result, inventory_client_id=inventory_client_id
         )
+        is_txt = (result.ingestion_source or "").strip() == INGESTION_SOURCE_DINAMIC_SCANNER_TXT
         if not position_payload_ok:
             logger.warning(
-                "local_csv_position_payload_ignored_for_materialize productive_id=%s",
+                "local_csv_position_payload_ignored_for_materialize productive_id=%s "
+                "ingestion_source=%s",
                 result.id,
+                result.ingestion_source,
             )
 
         position_id = position_id_for_productive(result.id)
         product_id = product_id_for_productive(result.id)
         position_code = (result.position_code or "").strip() or None
+        # TXT without catalog-consistent hierarchy must not keep adulterated position_code.
+        if is_txt and not position_payload_ok:
+            position_code = None
         sku = _sku_for(result)
         qty = _quantity_for(result)
         needs_review = bool(result.requires_review) or sku == "UNKNOWN" or result.quantity is None
+        if is_txt and not position_payload_ok:
+            needs_review = True
         label_id = (result.label_id or "").strip().upper() or None
         label_registry_status: str | None = None
         label_authority: str | None = None
@@ -407,7 +510,10 @@ class LocalCsvPositionMaterializer:
                 )
             else:
                 sku, qty = resolved
-                needs_review = bool(result.requires_review)
+                # Keep TXT position-validation failures on review even when D1 resolves.
+                needs_review = bool(result.requires_review) or (
+                    is_txt and not position_payload_ok
+                )
                 label_registry_status = "ok"
                 label_authority = "issued"
                 claimed = self._counted_product_label_repo.try_claim(

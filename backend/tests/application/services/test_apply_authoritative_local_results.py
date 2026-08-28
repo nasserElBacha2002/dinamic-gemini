@@ -202,6 +202,47 @@ def test_apply_success_marks_local_authority():
     assert fresh.applied_at is not None
 
 
+def test_apply_passes_label_id_into_product_results_for_claim():
+    repo = MemoryAuthoritativeLocalCodeScanRepository()
+    repo.create_authoritative_version(
+        new_result=_row(label_id="A1B2C3D4E5"),
+        expected_current_id=None,
+        expected_row_version=None,
+    )
+    state_repo = MemoryJobAssetProcessingStateRepository()
+    now = _Clock().now()
+    state_repo.save(
+        JobAssetProcessingState(
+            id="s1",
+            job_id="job-1",
+            asset_id="asset-1",
+            status=JobAssetProcessingStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+            version=1,
+        )
+    )
+    persister = MagicMock()
+    persister.persist.return_value = PersistOutcome(
+        persisted=True, reconciled=False, active_result_id="ar-1"
+    )
+    svc = ApplyAuthoritativeLocalResultsService(
+        authoritative_repo=repo,
+        result_persister=persister,
+        state_repo=state_repo,
+        clock=_Clock(),
+        enabled=True,
+    )
+    svc.apply_for_job(
+        job=_job(), aisle_id="aisle-1", inventory_id="inv-1", assets=[_asset()]
+    )
+    kwargs = persister.persist.call_args.kwargs
+    result = kwargs["result"]
+    assert result.product_results
+    assert result.product_results[0].label_id == "A1B2C3D4E5"
+    assert result.additional_fields.get("label_id") == "A1B2C3D4E5"
+
+
 def test_persist_skip_fail_closed():
     repo = MemoryAuthoritativeLocalCodeScanRepository()
     repo.create_authoritative_version(

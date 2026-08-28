@@ -18,6 +18,9 @@ from src.application.services.position_label_detection.resolver import PositionL
 from src.application.services.position_label_detection.validation_service import (
     PositionLabelValidationService,
 )
+from src.application.services.position_reconciliation.transitions import (
+    resolve_position_transition,
+)
 from src.application.services.positioning_label_signing import (
     PositioningLabelSigningConfig,
     PositioningLabelSigningService,
@@ -34,9 +37,11 @@ from src.domain.client_position_label.entities import (
 )
 from src.domain.position_label_detection.entities import (
     DetectedCode,
+    ImagePositionLabelDetection,
     PositionLabelDetectionStatus,
     PositionLabelSignatureStatus,
 )
+from src.domain.position_reconciliation.entities import PositionTransitionAction
 from src.infrastructure.repositories.memory_client_position_label_repository import (
     MemoryClientPositionLabelRepository,
 )
@@ -126,8 +131,6 @@ def _run(
     *,
     client_id: str = "client-1",
 ) -> ImagePositionLabelDetection:
-    from src.domain.position_label_detection.entities import ImagePositionLabelDetection
-
     result = use_case.execute(
         ImagePositionDetectionCommand(
             client_id=client_id,
@@ -186,7 +189,7 @@ def test_v2_signature_removed_is_missing_not_legacy() -> None:
     _save_label(
         labels,
         public_id="pos_v2_strip",
-        payload=payload,
+        payload=signed,
         signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
     )
     unsigned_raw = json.dumps(payload, separators=(",", ":"))
@@ -309,3 +312,130 @@ def test_legacy_v1_unsigned_flag_off_rejects() -> None:
     det = _run(_use_case(labels=labels, allow_unsigned_legacy=False), raw)
     assert det.detection_status is PositionLabelDetectionStatus.MISSING_SIGNATURE
     assert det.metadata_json.get("policy_decision") == PositionLabelPolicyDecision.REJECT.value
+
+
+def test_tampered_pallet_invalidates_signature() -> None:
+    labels = MemoryClientPositionLabelRepository()
+    signing = _signing()
+    payload = build_positioning_label_payload(
+        public_label_id="pos_hier",
+        pallet="01",
+        side="LEFT",
+        level=1,
+        marker_index=1,
+        marker_total=1,
+    )
+    signed = signing.sign_payload(payload)
+    _save_label(labels, public_id="pos_hier", payload=signed)
+    tampered = dict(signed)
+    tampered["pallet"] = "99"
+    det = _run(
+        _use_case(labels=labels, signing=signing),
+        json.dumps(tampered, separators=(",", ":")),
+    )
+    assert det.detection_status is PositionLabelDetectionStatus.INVALID_SIGNATURE
+    assert det.metadata_json.get("policy_decision") == PositionLabelPolicyDecision.REJECT.value
+
+
+def test_tampered_side_invalidates_signature() -> None:
+    labels = MemoryClientPositionLabelRepository()
+    signing = _signing()
+    payload = build_positioning_label_payload(
+        public_label_id="pos_side",
+        pallet="01",
+        side="LEFT",
+        level=1,
+        marker_index=1,
+        marker_total=1,
+    )
+    signed = signing.sign_payload(payload)
+    _save_label(labels, public_id="pos_side", payload=signed)
+    tampered = dict(signed)
+    tampered["side"] = "RIGHT"
+    det = _run(
+        _use_case(labels=labels, signing=signing),
+        json.dumps(tampered, separators=(",", ":")),
+    )
+    assert det.detection_status is PositionLabelDetectionStatus.INVALID_SIGNATURE
+
+
+def test_key_version_tamper_without_matching_secret_rejects() -> None:
+    labels = MemoryClientPositionLabelRepository()
+    signing = _signing(key_version=1)
+    payload = signing.sign_payload(
+        build_positioning_label_payload(public_label_id="pos_kv", version=1)
+    )
+    _save_label(labels, public_id="pos_kv", payload=payload)
+    tampered = dict(payload)
+    tampered["key_version"] = 2
+    det = _run(
+        _use_case(labels=labels, signing=signing),
+        json.dumps(tampered, separators=(",", ":")),
+    )
+    assert det.detection_status in {
+        PositionLabelDetectionStatus.UNKNOWN_KEY_VERSION,
+        PositionLabelDetectionStatus.INVALID_SIGNATURE,
+    }
+    assert det.metadata_json.get("policy_decision") == PositionLabelPolicyDecision.REJECT.value
+
+
+def test_catalog_hierarchy_mismatch_rejects_despite_valid_signature() -> None:
+    labels = MemoryClientPositionLabelRepository()
+    signing = _signing()
+    qr_payload = build_positioning_label_payload(
+        public_label_id="pos_mismatch",
+        pallet="01",
+        side="LEFT",
+        level=1,
+        marker_index=1,
+        marker_total=1,
+    )
+    signed = signing.sign_payload(qr_payload)
+    catalog = build_positioning_label_payload(
+        public_label_id="pos_mismatch",
+        pallet="04",
+        side="LEFT",
+        level=1,
+        marker_index=1,
+        marker_total=1,
+    )
+    _save_label(labels, public_id="pos_mismatch", payload=catalog)
+    det = _run(
+        _use_case(labels=labels, signing=signing),
+        json.dumps(signed, separators=(",", ":")),
+    )
+    assert det.detection_status is PositionLabelDetectionStatus.INVALID_TYPE
+    assert det.metadata_json.get("detail") == "catalog_hierarchy_mismatch"
+    assert det.position_label_id is None
+
+
+def test_validation_enabled_without_secret_is_not_valid() -> None:
+    labels = MemoryClientPositionLabelRepository()
+    empty = PositioningLabelSigningService(
+        PositioningLabelSigningConfig(secret=None, key_version=1, required=False)
+    )
+    payload = {
+        "type": "DINAMIC_POSITION",
+        "version": 1,
+        "label_id": "pos_nosecret",
+        "key_version": 1,
+        "signature": "a" * 64,
+    }
+    _save_label(labels, public_id="pos_nosecret", payload=payload)
+    det = _run(_use_case(labels=labels, signing=empty), json.dumps(payload, separators=(",", ":")))
+    assert det.detection_status is PositionLabelDetectionStatus.UNKNOWN_KEY_VERSION
+    assert det.signature_status is PositionLabelSignatureStatus.UNKNOWN_KEY
+    assert det.metadata_json.get("policy_decision") == PositionLabelPolicyDecision.REJECT.value
+
+
+def test_label_not_found_despite_valid_signature() -> None:
+    signing = _signing()
+    payload = signing.sign_payload(
+        build_positioning_label_payload(public_label_id="pos_ghost", version=1)
+    )
+    det = _run(
+        _use_case(labels=MemoryClientPositionLabelRepository(), signing=signing),
+        json.dumps(payload, separators=(",", ":")),
+    )
+    assert det.detection_status is PositionLabelDetectionStatus.LABEL_NOT_FOUND
+    assert resolve_position_transition(det.detection_status) is PositionTransitionAction.CLEAR_POSITION

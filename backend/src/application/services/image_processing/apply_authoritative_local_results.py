@@ -38,6 +38,10 @@ from src.domain.image_processing.job_asset_processing_state import (
     JobAssetProcessingStatus,
 )
 from src.domain.jobs.entities import Job
+from src.domain.product_labels.processed import (
+    ProcessedProductLabel,
+    ProductLabelOutcomeStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +142,26 @@ class ApplyAuthoritativeLocalResultsService:
         if state is not None and state.status == JobAssetProcessingStatus.RESOLVED:
             return self._handle_already_resolved(job=job, state=state, row=row)
 
+        label_id = (row.label_id or "").strip().upper() or None
+        product_results: list[ProcessedProductLabel] = []
+        code = (row.internal_code or "").strip()
+        if code:
+            product_results.append(
+                ProcessedProductLabel(
+                    label_id=label_id,
+                    internal_code=code,
+                    quantity=row.quantity if row.quantity is not None else 0,
+                    format_version="D1" if label_id else None,
+                    checksum=None,
+                    validation_status=ProductLabelOutcomeStatus.VALID,
+                    detail=(
+                        "authoritative_local"
+                        if label_id
+                        else "authoritative_local_legacy_no_label_id"
+                    ),
+                )
+            )
+
         result = ImageProcessingResult(
             job_id=job.id,
             asset_id=row.asset_id,
@@ -148,10 +172,13 @@ class ApplyAuthoritativeLocalResultsService:
             quantity=row.quantity,
             execution_scope=ExecutionScope.SINGLE_ASSET,
             error_code=RESOLVED_BY_LOCAL_AUTHORITY,
+            product_results=product_results,
             additional_fields={
                 "authoritative_result_id": row.id,
                 "authoritative_source": row.source,
                 "authoritative_version": row.result_version,
+                "label_id": label_id,
+                "ingestion_source": "MOBILE_AUTHORITATIVE",
             },
         )
         try:
@@ -211,12 +238,13 @@ class ApplyAuthoritativeLocalResultsService:
 
         logger.info(
             "authoritative_local.applied result_id=%s asset_id=%s job_id=%s "
-            "version=%s source=%s",
+            "version=%s source=%s label_id=%s",
             row.id,
             row.asset_id,
             job.id,
             row.result_version,
             row.source,
+            row.label_id,
         )
         return "applied"
 

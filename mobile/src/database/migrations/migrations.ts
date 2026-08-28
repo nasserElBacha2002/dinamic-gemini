@@ -682,6 +682,13 @@ ALTER TABLE local_detection_drafts ADD COLUMN position_detected INTEGER NOT NULL
 ALTER TABLE local_detection_drafts ADD COLUMN rejections_json TEXT;
 `,
   },
+  {
+    version: 27,
+    name: 'confirmed_local_results_label_id',
+    sql: `
+ALTER TABLE confirmed_local_results ADD COLUMN label_id TEXT;
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {
