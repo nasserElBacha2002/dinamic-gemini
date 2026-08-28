@@ -7,12 +7,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.domain.local_csv_import.sources import INGESTION_SOURCE_LOCAL_CSV_IMPORT
-
-IngestionSourceLiteral = Literal[
-    "LOCAL_CSV_IMPORT",
-    "DINAMIC_SCANNER_TXT",
-]
+from src.domain.local_csv_import.sources import (
+    INGESTION_SOURCE_LOCAL_CSV_IMPORT,
+    IngestionSource,
+)
 
 
 class ConfirmLocalCsvImportRequest(BaseModel):
@@ -38,7 +36,7 @@ class LocalCsvImportRowResponse(BaseModel):
     """Detection provenance from CSV column `source`."""
     source: str
     """Server-assigned ingestion channel."""
-    ingestion_source: IngestionSourceLiteral = INGESTION_SOURCE_LOCAL_CSV_IMPORT
+    ingestion_source: IngestionSource = INGESTION_SOURCE_LOCAL_CSV_IMPORT
     requires_review: bool
     error_code: str | None
     notes: str | None

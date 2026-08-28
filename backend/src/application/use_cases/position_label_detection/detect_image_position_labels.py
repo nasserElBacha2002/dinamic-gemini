@@ -52,6 +52,19 @@ def _norm_hierarchy_text(value: object) -> str:
     return str(value or "").strip().upper()
 
 
+def _hierarchy_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
 def _qr_hierarchy_matches_catalog(
     qr_payload: dict[str, Any] | None,
     canonical: dict[str, Any],
@@ -69,10 +82,11 @@ def _qr_hierarchy_matches_catalog(
         cat = canonical.get(key)
         qr = qr_payload.get(key)
         if key in ("level", "marker_index", "marker_total"):
-            try:
-                if int(cat) != int(qr):
-                    return False
-            except (TypeError, ValueError):
+            cat_int = _hierarchy_int(cat)
+            qr_int = _hierarchy_int(qr)
+            if cat_int is None or qr_int is None:
+                return False
+            if cat_int != qr_int:
                 return False
         elif _norm_hierarchy_text(cat) != _norm_hierarchy_text(qr):
             return False
