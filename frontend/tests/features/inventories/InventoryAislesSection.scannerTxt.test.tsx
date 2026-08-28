@@ -22,30 +22,35 @@ function WithProviders({ children }: { children: ReactNode }) {
   );
 }
 
-function makeRow(id: string, code: string): AisleInventoryTableRow {
+function makeTxtRow(): AisleInventoryTableRow {
   return {
     presentation: {
-      id,
-      code,
+      id: 'aisle-txt',
+      code: 'P5',
       isActive: true,
-      clientSupplierId: null,
-      clientSupplierName: null,
-      aisleStatusLabel: 'Draft',
-      aisleStatusSemantic: 'neutral',
+      clientSupplierId: 'sup-1',
+      clientSupplierName: 'etiqueta-interna',
+      aisleStatusLabel: 'aisle.scanner_txt_import_badge',
+      aisleStatusSemantic: 'info',
       assetsCount: 0,
-      assetsCountDisplay: '0',
-      positionsCount: 0,
-      positionsCountDisplay: '0',
+      assetsCountDisplay: 'aisle.scanner_txt_assets_display',
+      positionsCount: 5,
+      positionsCountDisplay: '5',
       pendingReviewCount: 0,
       pendingReviewDisplay: '0',
-      lastUpdatedSortKey: null,
-      lastUpdatedDisplay: '—',
+      lastUpdatedSortKey: '2026-08-28T00:00:00Z',
+      lastUpdatedDisplay: '28/8/2026',
       latestRun: null,
       referenceUsage: null,
-      isScannerTxtImport: false,
+      isScannerTxtImport: true,
     },
     action: {
-      processMenuAisle: { id, status: 'draft', assets_count: 0 },
+      processMenuAisle: {
+        id: 'aisle-txt',
+        status: 'processed',
+        assets_count: 0,
+        has_dinamic_scanner_txt_import: true,
+      },
       observabilityInitialRunId: null,
     },
   };
@@ -63,26 +68,20 @@ const baseProps = {
   onRequestProcess: vi.fn(),
   aislesDataLoaded: true,
   processingAisleId: null as string | null,
+  uploadingAisleId: null as string | null,
   onOpenCreateAisle: vi.fn(),
 };
 
-describe('InventoryAislesSection upload buttons', () => {
-  it('disables all upload buttons while any aisle is uploading', () => {
-    const rows = [makeRow('aisle-a', 'A-1'), makeRow('aisle-b', 'B-1')];
+describe('InventoryAislesSection scanner TXT import', () => {
+  it('hides the process action for TXT-imported aisles', () => {
+    const row = makeTxtRow();
     render(
       <WithProviders>
-        <InventoryAislesSection
-          {...baseProps}
-          tableRows={rows}
-          filteredTableRows={rows}
-          uploadingAisleId="aisle-a"
-        />
+        <InventoryAislesSection {...baseProps} tableRows={[row]} filteredTableRows={[row]} />
       </WithProviders>
     );
 
-    expect(screen.getByTestId('aisle-action-upload-aisle-a')).toBeDisabled();
-    expect(screen.getByTestId('aisle-action-upload-aisle-b')).toBeDisabled();
-    expect(screen.getByTestId('aisle-action-upload-aisle-a')).toHaveTextContent('uploads.photos.uploadingButton');
-    expect(screen.getByTestId('aisle-action-upload-aisle-b')).toHaveTextContent('aisle.upload_assets');
+    expect(screen.queryByTestId('aisle-action-process-aisle-txt')).not.toBeInTheDocument();
+    expect(screen.getByText('aisle.scanner_txt_import_badge')).toBeInTheDocument();
   });
 });

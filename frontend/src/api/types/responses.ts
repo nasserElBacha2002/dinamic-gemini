@@ -219,6 +219,8 @@ export interface Aisle {
   positions_count?: number;
   pending_review_positions_count?: number;
   last_activity_at?: string | null;
+  /** True when productive results came from Dinamic Scanner TXT import (no CV job). */
+  has_dinamic_scanner_txt_import?: boolean;
   identification_mode?: AisleIdentificationMode | string | null;
   effective_identification_mode?: AisleIdentificationMode | string;
   identification_mode_source?: AisleIdentificationModeSource | string;

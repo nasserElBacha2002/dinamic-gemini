@@ -61,7 +61,7 @@ def partition_secondary_key_candidates(
 _IMPORT_COLUMNS = (
     "id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
     "content_hash, total_rows, valid_rows, rejected_rows, duplicate_rows, conflict_policy, "
-    "confirmed_at, confirmed_by_user_id, created_at, updated_at"
+    "confirmed_at, confirmed_by_user_id, source_metadata_json, created_at, updated_at"
 )
 _ROW_COLUMNS = (
     "id, import_id, row_number, inventory_id, aisle_id, capture_session_id, capture_photo_id, "
@@ -177,6 +177,11 @@ def _import_from_db(row: object, rows: tuple[LocalCsvImportRow, ...]) -> LocalCs
         confirmed_by_user_id=(
             str(getattr(row, "confirmed_by_user_id"))
             if getattr(row, "confirmed_by_user_id", None) is not None
+            else None
+        ),
+        source_metadata_json=(
+            str(getattr(row, "source_metadata_json"))
+            if getattr(row, "source_metadata_json", None) is not None
             else None
         ),
         created_at=_utc_required(getattr(row, "created_at"), field="created_at"),
@@ -517,6 +522,7 @@ class SqlLocalCsvImportRepository:
             record.conflict_policy,
             record.confirmed_at,
             record.confirmed_by_user_id,
+            record.source_metadata_json,
             record.updated_at,
             record.id,
         )
@@ -524,7 +530,7 @@ class SqlLocalCsvImportRepository:
             "UPDATE local_csv_imports SET export_id=?, schema_version=?, inventory_id=?, "
             "device_id=?, exported_at=?, status=?, content_hash=?, total_rows=?, valid_rows=?, "
             "rejected_rows=?, duplicate_rows=?, conflict_policy=?, confirmed_at=?, "
-            "confirmed_by_user_id=?, updated_at=? WHERE id=?",
+            "confirmed_by_user_id=?, source_metadata_json=?, updated_at=? WHERE id=?",
             values,
         )
         if cur.rowcount == 0:
@@ -532,9 +538,29 @@ class SqlLocalCsvImportRepository:
                 "INSERT INTO local_csv_imports "
                 "(id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
                 "content_hash, total_rows, valid_rows, rejected_rows, duplicate_rows, "
-                "conflict_policy, confirmed_at, confirmed_by_user_id, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (record.id, *values[:-2], record.created_at, record.updated_at),
+                "conflict_policy, confirmed_at, confirmed_by_user_id, source_metadata_json, "
+                "created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.id,
+                    record.export_id,
+                    record.schema_version,
+                    record.inventory_id,
+                    record.device_id,
+                    record.exported_at,
+                    record.status,
+                    record.content_hash,
+                    record.total_rows,
+                    record.valid_rows,
+                    record.rejected_rows,
+                    record.duplicate_rows,
+                    record.conflict_policy,
+                    record.confirmed_at,
+                    record.confirmed_by_user_id,
+                    record.source_metadata_json,
+                    record.created_at,
+                    record.updated_at,
+                ),
             )
         # Upsert rows in place. Never DELETE+re-INSERT after productive results exist:
         # FK_local_csv_productive_row references import_row_id.

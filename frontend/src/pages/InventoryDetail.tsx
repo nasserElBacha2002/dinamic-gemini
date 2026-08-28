@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Alert, Box, Button, Typography } from '@mui/material';
 import { ApiError } from '../api/types';
+import type { ImportInventorySuccess } from '../api/types';
 import { queryKeys } from '../api/queryKeys';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { rowMatchesSearchQuery } from '../utils/tableSearch';
@@ -228,31 +229,54 @@ export default function InventoryDetail() {
         inventoryId={inventoryId ?? ''}
         aisleLabelById={Object.fromEntries(aisles.map((a) => [a.id, a.code || a.id]))}
         onClose={() => setImportPackageOpen(false)}
-        onSuccess={(result) => {
+        onSuccess={(result: ImportInventorySuccess) => {
+          if (result.kind === 'txt') {
+            const txt = result.data;
+            showSnackbar(
+              t('inventory.import_package.success_snackbar_txt_aisle', {
+                aisle: txt.aisle_code || txt.aisle_id,
+                rows: txt.csv_import?.valid_rows ?? 0,
+                positions: txt.positions_imported,
+              }),
+              'success'
+            );
+            if (inventoryId) {
+              void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+              void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+              if (txt.aisle_id) {
+                void queryClient.invalidateQueries({
+                  queryKey: queryKeys.inventories.positions(inventoryId, txt.aisle_id),
+                });
+                navigate(pathToAislePositions(inventoryId, txt.aisle_id));
+              }
+            }
+            return;
+          }
+          const zip = result.data;
           const aisleLabel =
-            (result.aisle_id && aisles.find((a) => a.id === result.aisle_id)?.code) ||
-            result.aisle_id;
+            (zip.aisle_id && aisles.find((a) => a.id === zip.aisle_id)?.code) ||
+            zip.aisle_id;
           showSnackbar(
             aisleLabel
               ? t('inventory.import_package.success_snackbar_aisle', {
                   aisle: aisleLabel,
-                  photos: result.included_photo_count,
-                  rows: result.csv_import?.valid_rows ?? 0,
+                  photos: zip.included_photo_count,
+                  rows: zip.csv_import?.valid_rows ?? 0,
                 })
               : t('inventory.import_package.success_snackbar', {
-                  photos: result.included_photo_count,
-                  rows: result.csv_import?.valid_rows ?? 0,
+                  photos: zip.included_photo_count,
+                  rows: zip.csv_import?.valid_rows ?? 0,
                 }),
             'success'
           );
           if (inventoryId) {
             void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
             void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-            if (result.aisle_id) {
+            if (zip.aisle_id) {
               void queryClient.invalidateQueries({
-                queryKey: queryKeys.inventories.positions(inventoryId, result.aisle_id),
+                queryKey: queryKeys.inventories.positions(inventoryId, zip.aisle_id),
               });
-              navigate(pathToAislePositions(inventoryId, result.aisle_id));
+              navigate(pathToAislePositions(inventoryId, zip.aisle_id));
             }
           }
         }}

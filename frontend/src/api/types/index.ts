@@ -14,3 +14,4 @@ export * from './extractionProfile';
 export * from './processing';
 export * from './aisleLocations';
 export * from './localInventoryPackages';
+export * from './dinamicScannerTxtImports';

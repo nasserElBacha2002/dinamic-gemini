@@ -53,6 +53,7 @@ function makeRow(
       lastUpdatedDisplay: '—',
       latestRun: null,
       referenceUsage: null,
+      isScannerTxtImport: false,
       ...overrides,
     },
     action: {

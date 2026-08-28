@@ -1,0 +1,24 @@
+"""Errors for Dinamic Scanner TXT inventory import."""
+
+from __future__ import annotations
+
+TXT_IMPORT_DISABLED = "DINAMIC_SCANNER_TXT_IMPORT_DISABLED"
+TXT_FILENAME_REQUIRED = "DINAMIC_SCANNER_TXT_FILENAME_REQUIRED"
+TXT_INVALID_FILENAME = "DINAMIC_SCANNER_TXT_INVALID_FILENAME"
+TXT_INVALID_EXTENSION = "DINAMIC_SCANNER_TXT_INVALID_EXTENSION"
+TXT_EMPTY_AISLE_NAME = "DINAMIC_SCANNER_TXT_EMPTY_AISLE_NAME"
+TXT_INVALID_ENCODING = "DINAMIC_SCANNER_TXT_INVALID_ENCODING"
+TXT_EMPTY = "DINAMIC_SCANNER_TXT_EMPTY"
+TXT_TOO_MANY_LINES = "DINAMIC_SCANNER_TXT_TOO_MANY_LINES"
+TXT_LINE_TOO_LONG = "DINAMIC_SCANNER_TXT_LINE_TOO_LONG"
+TXT_SUPPLIER_AMBIGUOUS = "DINAMIC_SCANNER_TXT_SUPPLIER_AMBIGUOUS"
+
+
+class DinamicScannerTxtImportDisabledError(Exception):
+    """Raised when TXT import feature flag is off."""
+
+
+class DinamicScannerTxtImportError(Exception):
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code

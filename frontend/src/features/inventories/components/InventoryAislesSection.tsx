@@ -70,8 +70,9 @@ function buildAisleRowActions(params: {
   const processState = computeProcessAisleMenuState(row.action.processMenuAisle, menuCtx);
   const uploadDisabled = Boolean(uploadingAisleId) || inactive;
   const processDisabled = processState.disabled || inactive;
+  const hideProcess = row.presentation.isScannerTxtImport;
 
-  return [
+  const items: RowActionMenuItem[] = [
     {
       id: 'upload',
       label: uploadingAisleId === p.id ? t('uploads.photos.uploadingButton') : t('aisle.upload_assets'),
@@ -85,7 +86,9 @@ function buildAisleRowActions(params: {
       onClick: () =>
         navigate(pathToAisleObservability(inventoryId, p.id, row.action.observabilityInitialRunId)),
     },
-    {
+  ];
+  if (!hideProcess) {
+    items.push({
       id: 'process',
       label: processingAisleId === p.id ? t('common.starting') : t('aisle.process_start'),
       disabled: processDisabled,
@@ -95,8 +98,9 @@ function buildAisleRowActions(params: {
           ? t(processState.disabledReasonKey)
           : undefined,
       onClick: () => void onRequestProcess(p.id, p.code, p.clientSupplierId ?? null),
-    },
-  ];
+    });
+  }
+  return items;
 }
 
 export default function InventoryAislesSection({
@@ -300,6 +304,9 @@ export default function InventoryAislesSection({
         sortable: false,
         width: 104,
         cell: (row) => {
+          if (row.presentation.isScannerTxtImport) {
+            return null;
+          }
           const processState = computeProcessAisleMenuState(row.action.processMenuAisle, menuCtx);
           const p = row.presentation;
           const inactive = !p.isActive;

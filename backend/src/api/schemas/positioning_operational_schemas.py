@@ -72,6 +72,7 @@ class AisleOperationalPositioningViewResponse(BaseModel):
     supported_reprocess_modes: list[str] = Field(default_factory=list)
     last_updated_at: datetime | None = None
     feature_flags: dict[str, bool] = Field(default_factory=dict)
+    has_dinamic_scanner_txt_import: bool = False
 
 
 class PositioningSequenceFrameDto(BaseModel):
@@ -157,6 +158,7 @@ def view_to_response(view: AisleOperationalPositioningView) -> AisleOperationalP
         supported_reprocess_modes=list(view.supported_reprocess_modes),
         last_updated_at=view.last_updated_at,
         feature_flags=dict(view.feature_flags),
+        has_dinamic_scanner_txt_import=view.has_dinamic_scanner_txt_import,
     )
 
 

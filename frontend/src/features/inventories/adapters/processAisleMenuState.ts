@@ -6,7 +6,9 @@ import type { Aisle } from '../../../api/types';
 import { deriveEffectiveJobDisplayState } from '../../../utils/deriveJobDisplayState';
 
 /** Minimal aisle fields for process-menu gating (avoids tying the helper to full list DTOs). */
-export type AisleProcessMenuInput = Pick<Aisle, 'id' | 'status' | 'assets_count'>;
+export type AisleProcessMenuInput = Pick<Aisle, 'id' | 'status' | 'assets_count'> & {
+  has_dinamic_scanner_txt_import?: boolean;
+};
 
 export type ProcessAisleMenuDisabledReasonKey =
   | 'aisle.upload_error_verify'
@@ -44,6 +46,9 @@ export function computeProcessAisleMenuState(
   aisle: AisleProcessMenuInput,
   ctx: ProcessAisleMenuContext
 ): ProcessAisleMenuState {
+  if (aisle.has_dinamic_scanner_txt_import) {
+    return { disabled: true };
+  }
   const busy = isAisleProcessingBusy(aisle, ctx.processingAisleId);
   const noListYet = !ctx.aislesDataLoaded;
   const missingAssets = ctx.aislesDataLoaded && (aisle.assets_count ?? 0) < 1;

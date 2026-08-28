@@ -42,6 +42,7 @@ function makeRow(id: string, code: string): AisleInventoryTableRow {
       lastUpdatedDisplay: '—',
       latestRun: null,
       referenceUsage: null,
+      isScannerTxtImport: false,
     },
     action: {
       processMenuAisle: { id, status: 'draft', assets_count: 0 },

@@ -88,7 +88,19 @@ const MAP: Record<string, ProcessingStatePresentation> = {
   },
 };
 
-export function presentationForProcessingState(state: string): ProcessingStatePresentation {
+export function presentationForProcessingState(
+  state: string,
+  options?: { scannerTxtImport?: boolean },
+): ProcessingStatePresentation {
+  if (options?.scannerTxtImport) {
+    return {
+      label: 'Importado de TXT',
+      description:
+        'Los resultados provienen de un archivo TXT del escáner; no requiere procesamiento CV.',
+      primaryAction: null,
+      secondaryAction: null,
+    };
+  }
   const key = (state || '').trim().toUpperCase();
   return (
     MAP[key] ?? {

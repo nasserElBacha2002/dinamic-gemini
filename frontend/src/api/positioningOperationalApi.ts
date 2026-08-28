@@ -63,6 +63,7 @@ export interface AisleOperationalPositioningViewDto {
   supported_reprocess_modes: string[];
   last_updated_at: string | null;
   feature_flags: Record<string, boolean>;
+  has_dinamic_scanner_txt_import?: boolean;
 }
 
 export interface PositioningSequenceFrameDto {

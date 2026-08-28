@@ -715,6 +715,7 @@ def get_list_aisles_with_status_use_case(
     source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
     result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
     client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    container=Depends(get_app_container),
 ) -> ListAislesWithStatusUseCase:
     return ListAislesWithStatusUseCase(
         inventory_repo=inventory_repo,
@@ -724,6 +725,7 @@ def get_list_aisles_with_status_use_case(
         source_asset_repo=source_asset_repo,
         result_context_resolver=result_context_resolver,
         client_supplier_repo=client_supplier_repo,
+        local_csv_result_writer=container.get_local_csv_result_writer(),
     )
 
 
@@ -1146,6 +1148,138 @@ def get_get_local_inventory_package_use_case():
     return GetLocalInventoryPackage(
         package_repo=get_app_container().get_local_inventory_package_repo(),
         enabled=bool(getattr(settings, "server_local_inventory_package_enabled", False)),
+    )
+
+
+def _dinamic_scanner_txt_import_enabled(settings) -> bool:
+    return bool(getattr(settings, "server_dinamic_scanner_txt_import_enabled", False))
+
+
+def _csv_import_pipeline_enabled(settings) -> bool:
+    return (
+        bool(getattr(settings, "server_csv_import_enabled", False))
+        or bool(getattr(settings, "server_local_inventory_package_enabled", False))
+        or _dinamic_scanner_txt_import_enabled(settings)
+    )
+
+
+def get_preview_dinamic_scanner_txt_import_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    clock: Clock = Depends(get_clock),
+    create_aisle: CreateAisleUseCase = Depends(get_create_aisle_use_case),
+):
+    from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
+    from src.application.use_cases.inventories.manage_dinamic_scanner_txt_import import (
+        PreviewDinamicScannerTxtImport,
+    )
+    from src.application.use_cases.inventories.manage_local_csv_import import (
+        PreviewLocalCsvImport,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    container = get_app_container()
+    csv_preview = PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=container.get_local_csv_import_repo(),
+        clock=clock,
+        enabled=_csv_import_pipeline_enabled(settings),
+    )
+    aisle_resolver = DinamicScannerAisleResolver(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=client_supplier_repo,
+        create_aisle=create_aisle,
+    )
+    return PreviewDinamicScannerTxtImport(
+        inventory_repo=inventory_repo,
+        aisle_resolver=aisle_resolver,
+        import_repo=container.get_local_csv_import_repo(),
+        csv_preview=csv_preview,
+        clock=clock,
+        enabled=_dinamic_scanner_txt_import_enabled(settings),
+        max_lines=int(getattr(settings, "server_dinamic_scanner_txt_max_lines", 50_000)),
+        max_line_length=int(
+            getattr(settings, "server_dinamic_scanner_txt_max_line_length", 512)
+        ),
+    )
+
+
+def get_confirm_dinamic_scanner_txt_import_use_case(
+    clock: Clock = Depends(get_clock),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+    create_aisle: CreateAisleUseCase = Depends(get_create_aisle_use_case),
+):
+    from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
+    from src.application.services.local_csv_position_materializer import (
+        LocalCsvPositionMaterializer,
+    )
+    from src.application.services.positioning_label_signing import (
+        PositioningLabelSigningConfig,
+        PositioningLabelSigningService,
+        parse_previous_secrets,
+    )
+    from src.application.services.product_labels.issued_product_label_resolver import (
+        IssuedProductLabelResolver,
+    )
+    from src.application.use_cases.inventories.manage_dinamic_scanner_txt_import import (
+        ConfirmDinamicScannerTxtImport,
+    )
+    from src.application.use_cases.inventories.manage_local_csv_import import (
+        ConfirmLocalCsvImport,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    container = get_app_container()
+    signing = PositioningLabelSigningService(
+        PositioningLabelSigningConfig(
+            secret=settings.positioning_label_hmac_secret or None,
+            key_version=int(settings.positioning_label_hmac_key_version),
+            previous_secrets=parse_previous_secrets(
+                settings.positioning_label_hmac_previous_secrets
+            ),
+            required=bool(settings.positioning_label_signing_required),
+        )
+    )
+    csv_confirm = ConfirmLocalCsvImport(
+        import_repo=container.get_local_csv_import_repo(),
+        result_writer=container.get_local_csv_result_writer(),
+        clock=clock,
+        enabled=_csv_import_pipeline_enabled(settings),
+        position_materializer=LocalCsvPositionMaterializer(
+            position_repo=position_repo,
+            product_record_repo=product_record_repo,
+            counted_product_label_repo=container.get_counted_product_label_repo(),
+            issued_label_resolver=IssuedProductLabelResolver(
+                issued_repo=container.get_issued_product_label_repo()
+            ),
+            inventory_repo=inventory_repo,
+            client_position_label_repo=container.get_client_position_label_repo(),
+            positioning_signing=signing if signing.can_sign else None,
+        ),
+        aisle_repo=aisle_repo,
+        status_reconciler=status_reconciler,
+    )
+    aisle_resolver = DinamicScannerAisleResolver(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=client_supplier_repo,
+        create_aisle=create_aisle,
+    )
+    return ConfirmDinamicScannerTxtImport(
+        import_repo=container.get_local_csv_import_repo(),
+        aisle_resolver=aisle_resolver,
+        csv_confirm=csv_confirm,
+        enabled=_dinamic_scanner_txt_import_enabled(settings),
     )
 
 
@@ -2962,6 +3096,7 @@ def get_aisle_operational_positioning_view_use_case(
     from src.config import load_settings
 
     settings = load_settings()
+    container = get_app_container()
     return GetAisleOperationalPositioningViewUseCase(
         status_use_case=status_use_case,
         inventory_repo=inventory_repo,
@@ -2979,6 +3114,7 @@ def get_aisle_operational_positioning_view_use_case(
         recovery_enabled=settings.position_processing_recovery_enabled,
         overrides_enabled=settings.position_manual_overrides_enabled,
         enrichment_enabled=settings.position_results_enrichment_enabled,
+        local_csv_result_writer=container.get_local_csv_result_writer(),
     )
 
 

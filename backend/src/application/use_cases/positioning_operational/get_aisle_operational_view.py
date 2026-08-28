@@ -17,6 +17,7 @@ from src.application.ports.image_position_label_detection_repository import (
 )
 from src.application.ports.job_image_coverage_repository import JobImageCoverageRepository
 from src.application.ports.job_source_asset_repository import JobSourceAssetRepository
+from src.application.ports.local_csv_inventory_result_writer import LocalCsvInventoryResultWriter
 from src.application.ports.manual_position_override_repository import (
     ManualPositionOverrideRepository,
 )
@@ -53,6 +54,7 @@ from src.application.services.positioning_operational.warnings_builder import (
 from src.application.use_cases.aisles.get_aisle_processing_status import (
     GetAisleProcessingStatusUseCase,
 )
+from src.domain.local_csv_import.sources import INGESTION_SOURCE_DINAMIC_SCANNER_TXT
 from src.domain.position_overrides.entities import EffectivePositionSource
 from src.domain.position_reconciliation.entities import AssignmentStatus, ReconciliationStatus
 from src.domain.positioning_operational.entities import (
@@ -99,6 +101,7 @@ class GetAisleOperationalPositioningViewUseCase:
         recovery_enabled: bool = True,
         overrides_enabled: bool = False,
         enrichment_enabled: bool = True,
+        local_csv_result_writer: LocalCsvInventoryResultWriter | None = None,
     ) -> None:
         self._status = status_use_case
         self._inventory_repo = inventory_repo
@@ -118,6 +121,7 @@ class GetAisleOperationalPositioningViewUseCase:
         self._recovery_enabled = bool(recovery_enabled)
         self._overrides_enabled = bool(overrides_enabled)
         self._enrichment_enabled = bool(enrichment_enabled)
+        self._local_csv_result_writer = local_csv_result_writer
 
     def execute(
         self, command: GetAisleOperationalPositioningViewCommand
@@ -258,6 +262,15 @@ class GetAisleOperationalPositioningViewUseCase:
             if recon_status == ReconciliationStatus.STALE.value and stale_count == 0:
                 stale_count = total_results
 
+        has_dinamic_scanner_txt_import = False
+        if self._local_csv_result_writer is not None:
+            txt_aisle_ids = self._local_csv_result_writer.aisle_ids_with_ingestion_source(
+                command.inventory_id,
+                (command.aisle_id,),
+                INGESTION_SOURCE_DINAMIC_SCANNER_TXT,
+            )
+            has_dinamic_scanner_txt_import = command.aisle_id in txt_aisle_ids
+
         allowed = resolve_positioning_allowed_actions(
             principal=command.principal,
             processing_state=processing.state,
@@ -269,6 +282,7 @@ class GetAisleOperationalPositioningViewUseCase:
             recovery_enabled=self._recovery_enabled,
             overrides_enabled=self._overrides_enabled,
             reconciliation_status=recon_status,
+            block_processing_start=has_dinamic_scanner_txt_import,
         )
         allowed_names = frozenset(name for name, enabled in allowed.as_dict().items() if enabled)
 
@@ -346,4 +360,5 @@ class GetAisleOperationalPositioningViewUseCase:
                 "POSITION_PROCESSING_RECOVERY_ENABLED": self._recovery_enabled,
                 "POSITION_MANUAL_OVERRIDES_ENABLED": self._overrides_enabled,
             },
+            has_dinamic_scanner_txt_import=has_dinamic_scanner_txt_import,
         )

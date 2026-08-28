@@ -104,6 +104,7 @@ class LocalCsvImport:
     confirmed_at: datetime | None = None
     conflict_policy: str | None = None
     confirmed_by_user_id: str | None = None
+    source_metadata_json: str | None = None
     rows: tuple[LocalCsvImportRow, ...] = field(default_factory=tuple)
 
 

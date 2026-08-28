@@ -19,6 +19,7 @@ from datetime import datetime
 
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.contracts import AisleTableQuery
+from src.application.ports.local_csv_inventory_result_writer import LocalCsvInventoryResultWriter
 from src.application.ports.repositories import (
     AisleRepository,
     ClientSupplierRepository,
@@ -31,6 +32,7 @@ from src.application.services.result_context_resolver import ResultContextResolv
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
+from src.domain.local_csv_import.sources import INGESTION_SOURCE_DINAMIC_SCANNER_TXT
 from src.domain.positions.entities import Position
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,7 @@ class AisleWithLatestJob:
     pending_review_positions_count: int = 0
     last_activity_at: datetime | None = None
     client_supplier_name: str | None = None
+    has_dinamic_scanner_txt_import: bool = False
 
 
 def _aisle_last_activity_at(
@@ -106,6 +109,7 @@ class ListAislesWithStatusUseCase:
         source_asset_repo: SourceAssetRepository,
         result_context_resolver: ResultContextResolver,
         client_supplier_repo: ClientSupplierRepository,
+        local_csv_result_writer: LocalCsvInventoryResultWriter | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -114,6 +118,7 @@ class ListAislesWithStatusUseCase:
         self._source_asset_repo = source_asset_repo
         self._resolver = result_context_resolver
         self._client_supplier_repo = client_supplier_repo
+        self._local_csv_result_writer = local_csv_result_writer
 
     def _enrich_supplier_names(
         self,
@@ -188,6 +193,13 @@ class ListAislesWithStatusUseCase:
         for p in positions:
             by_aisle_pos[p.aisle_id].append(p)
         asset_rollups = self._source_asset_repo.summarize_assets_for_aisles(list(aisle_ids))
+        txt_import_aisle_ids: frozenset[str] = frozenset()
+        if self._local_csv_result_writer is not None:
+            txt_import_aisle_ids = self._local_csv_result_writer.aisle_ids_with_ingestion_source(
+                inventory_id,
+                aisle_ids,
+                INGESTION_SOURCE_DINAMIC_SCANNER_TXT,
+            )
 
         rows: list[AisleWithLatestJob] = []
         for a in aisles:
@@ -207,6 +219,7 @@ class ListAislesWithStatusUseCase:
                     positions_count=len(pos_list),
                     pending_review_positions_count=pending,
                     last_activity_at=last_at,
+                    has_dinamic_scanner_txt_import=a.id in txt_import_aisle_ids,
                 )
             )
 

@@ -61,6 +61,7 @@ def resolve_positioning_allowed_actions(
     recovery_enabled: bool,
     overrides_enabled: bool,
     reconciliation_status: str | None,
+    block_processing_start: bool = False,
 ) -> PositioningAllowedActions:
     """Single authority for process/reprocess/recover/correct buttons."""
     if not operational_ux_enabled:
@@ -77,6 +78,7 @@ def resolve_positioning_allowed_actions(
         and can_start_new
         and not busy
         and not recoverable
+        and not block_processing_start
     )
     recover = (
         recovery_enabled

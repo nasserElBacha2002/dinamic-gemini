@@ -53,6 +53,8 @@ export interface AisleInventoryRowPresentation {
   lastUpdatedSortKey: string | null;
   latestRun: LatestRunSnapshotViewModel | null;
   referenceUsage: ReferenceUsageRowViewModel | null;
+  /** Productive results imported from Dinamic Scanner TXT (no image assets / CV job). */
+  isScannerTxtImport: boolean;
 }
 
 /**
@@ -91,18 +93,29 @@ export function toAisleInventoryRowPresentation(aisle: AisleListItem, emptyLabel
     : null;
 
   const aisleDisplay = deriveAisleEffectiveDisplayState(aisle, run);
-  const aisleStatusLabel =
-    aisleDisplay === 'processing' && run
+  const isScannerTxtImport = Boolean(aisle.has_dinamic_scanner_txt_import);
+  const aisleStatusLabel = isScannerTxtImport
+    ? i18n.t('aisle.scanner_txt_import_badge')
+    : aisleDisplay === 'processing' && run
       ? getJobProcessingStatusLabel(run, i18n.t.bind(i18n))
       : getAisleStatusLabel(String(aisle.status));
-  const aisleStatusSemantic =
-    aisleDisplay === 'failed'
+  const aisleStatusSemantic = isScannerTxtImport
+    ? 'info'
+    : aisleDisplay === 'failed'
       ? 'error'
       : aisleDisplay === 'completed_with_finalization_warning'
         ? 'warning'
         : aisleDisplay === 'completed'
           ? 'success'
           : aisleStatusToBadgeSemantic(String(aisle.status));
+
+  const assetsCountDisplay = isScannerTxtImport
+    ? i18n.t('aisle.scanner_txt_assets_display', {
+        count: typeof aisle.positions_count === 'number' ? aisle.positions_count : 0,
+      })
+    : typeof aisle.assets_count === 'number'
+      ? aisle.assets_count
+      : emptyLabel;
 
   return {
     id: aisle.id,
@@ -113,8 +126,7 @@ export function toAisleInventoryRowPresentation(aisle: AisleListItem, emptyLabel
     aisleStatusLabel,
     aisleStatusSemantic,
     assetsCount: aisle.assets_count,
-    assetsCountDisplay:
-      typeof aisle.assets_count === 'number' ? aisle.assets_count : emptyLabel,
+    assetsCountDisplay,
     positionsCount: aisle.positions_count,
     positionsCountDisplay:
       typeof aisle.positions_count === 'number' ? aisle.positions_count : emptyLabel,
@@ -127,6 +139,7 @@ export function toAisleInventoryRowPresentation(aisle: AisleListItem, emptyLabel
     lastUpdatedSortKey: (aisle.last_activity_at ?? aisle.updated_at ?? null) as string | null,
     latestRun,
     referenceUsage: toReferenceUsageRowViewModel(aisle),
+    isScannerTxtImport,
   };
 }
 
@@ -137,6 +150,7 @@ export function toAisleInventoryRowActionContext(aisle: AisleListItem): AisleInv
       id: aisle.id,
       status: aisle.status,
       assets_count: aisle.assets_count,
+      has_dinamic_scanner_txt_import: aisle.has_dinamic_scanner_txt_import,
     },
     observabilityInitialRunId: run?.id ?? null,
   };

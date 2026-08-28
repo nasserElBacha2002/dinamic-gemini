@@ -6,6 +6,7 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from src.application.ports.sql_cursor import SqlCursorLike
@@ -93,7 +94,7 @@ class MemoryLocalCsvInventoryResultWriter:
                     quantity_status=row.quantity_status,
                     detection_status=row.detection_status,
                     detection_source=row.detection_source,
-                    ingestion_source=INGESTION_SOURCE_LOCAL_CSV_IMPORT,
+                    ingestion_source=row.ingestion_source or INGESTION_SOURCE_LOCAL_CSV_IMPORT,
                     requires_review=requires_review,
                     has_image_evidence=source_asset_id is not None,
                     source_asset_id=source_asset_id,
@@ -113,6 +114,25 @@ class MemoryLocalCsvInventoryResultWriter:
 
     def list_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]:
         return tuple(r for r in self._by_id.values() if r.import_id == import_id)
+
+    def aisle_ids_with_ingestion_source(
+        self,
+        inventory_id: str,
+        aisle_ids: Sequence[str],
+        ingestion_source: str,
+    ) -> frozenset[str]:
+        target = (ingestion_source or "").strip()
+        if not target or not aisle_ids:
+            return frozenset()
+        wanted = frozenset(aisle_ids)
+        with self._lock:
+            return frozenset(
+                r.aisle_id
+                for r in self._by_id.values()
+                if r.inventory_id == inventory_id
+                and r.aisle_id in wanted
+                and r.ingestion_source == target
+            )
 
 
 class SqlLocalCsvInventoryResultWriter:
@@ -170,7 +190,7 @@ class SqlLocalCsvInventoryResultWriter:
                     quantity_status=row.quantity_status,
                     detection_status=row.detection_status,
                     detection_source=row.detection_source,
-                    ingestion_source=INGESTION_SOURCE_LOCAL_CSV_IMPORT,
+                    ingestion_source=row.ingestion_source or INGESTION_SOURCE_LOCAL_CSV_IMPORT,
                     requires_review=requires_review,
                     has_image_evidence=source_asset_id is not None,
                     source_asset_id=source_asset_id,
@@ -237,6 +257,28 @@ class SqlLocalCsvInventoryResultWriter:
                 (import_id,),
             )
             return tuple(_productive_from_db(row) for row in cur.fetchall())
+
+    def aisle_ids_with_ingestion_source(
+        self,
+        inventory_id: str,
+        aisle_ids: Sequence[str],
+        ingestion_source: str,
+    ) -> frozenset[str]:
+        target = (ingestion_source or "").strip()
+        if not target or not aisle_ids:
+            return frozenset()
+        found: set[str] = set()
+        with self._client.cursor() as cur:  # type: ignore[attr-defined]
+            for chunk in chunked(list(aisle_ids), SQL_IN_CHUNK_SIZE):
+                placeholders = ", ".join("?" for _ in chunk)
+                cur.execute(
+                    "SELECT DISTINCT aisle_id FROM local_csv_productive_results "
+                    f"WHERE inventory_id = ? AND ingestion_source = ? "
+                    f"AND aisle_id IN ({placeholders})",
+                    (inventory_id, target, *chunk),
+                )
+                found.update(str(row[0]) for row in cur.fetchall() if row[0])
+        return frozenset(found)
 
     @staticmethod
     def _fetch_existing_by_import_row_ids(
