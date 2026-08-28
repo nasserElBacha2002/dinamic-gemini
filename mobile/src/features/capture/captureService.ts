@@ -21,7 +21,7 @@ import {
   type CaptureFinishStage,
 } from './finishObservability';
 import { CaptureFreezeService } from './captureFreezeService';
-import { resetSessionPosition } from '../localCodeScan/activePositionStore';
+import { resetPositionSession } from '../localCodeScan/activePositionStore';
 
 export type UploadPolicy = 'MANUAL' | 'WHEN_CONNECTED' | 'NOW';
 
@@ -941,7 +941,7 @@ export class CaptureService {
       await this.repo.setUploadPolicy(sessionId, policy);
       await this.repo.updateSessionStatus(sessionId, 'local_completed');
       await this.repo.updateActivePositionJson(sessionId, null);
-      resetSessionPosition(sessionId);
+      resetPositionSession(sessionId);
       await this.loadSession(sessionId, false);
       this.logger.info('session_finish', {
         sessionId,
@@ -967,7 +967,7 @@ export class CaptureService {
     await this.stopForeground();
     await this.repo.updateSessionStatus(sessionId, 'cancelled', true);
     await this.repo.updateActivePositionJson(sessionId, null);
-    resetSessionPosition(sessionId);
+    resetPositionSession(sessionId);
     this.clearCurrentSession();
   }
 

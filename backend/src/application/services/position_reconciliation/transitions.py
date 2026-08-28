@@ -12,6 +12,12 @@ _CLEAR_STATUSES = frozenset(
         "CLIENT_MISMATCH",
         "LABEL_INVALIDATED",
         "AMBIGUOUS_POSITION_DETECTION",
+        # Explicit DINAMIC_POSITION candidates that failed validation/policy — clear
+        # forward-fill so a later product does not inherit the previous position.
+        "LABEL_NOT_FOUND",
+        "INVALID_TYPE",
+        "UNKNOWN_KEY_VERSION",
+        "MISSING_SIGNATURE",
     }
 )
 
@@ -19,7 +25,6 @@ _KEEP_STATUSES = frozenset(
     {
         "NO_LABEL",
         "INVALID_JSON",
-        "INVALID_TYPE",
         "FEATURE_DISABLED",
         "DETECTION_FAILED",
         "DETECTION_CONTEXT_INVALID",
@@ -28,10 +33,7 @@ _KEEP_STATUSES = frozenset(
         "UNSUPPORTED_VERSION",
         "UNSUPPORTED_LEGACY_PAYLOAD",
         "MISSING_LABEL_ID",
-        "MISSING_SIGNATURE",
         "UNKNOWN_KEY",
-        "UNKNOWN_KEY_VERSION",
-        "LABEL_NOT_FOUND",
         "DUPLICATE",
         "DUPLICATE_POSITION_CODES",
         "SIGNATURE_VALIDATION_SKIPPED",

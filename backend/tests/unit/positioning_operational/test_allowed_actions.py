@@ -111,3 +111,20 @@ def test_warnings_skip_no_detections_when_resolved_present() -> None:
     )
     codes = {w.code for w in warnings}
     assert "NO_POSITION_LABEL_DETECTIONS" not in codes
+
+
+def test_block_processing_start_for_scanner_txt_import() -> None:
+    actions = resolve_positioning_allowed_actions(
+        principal=_principal("platform_admin", is_platform=True),
+        processing_state="IDLE",
+        can_start_new=True,
+        recoverable=False,
+        has_result_job=False,
+        operational_ux_enabled=True,
+        reprocessing_enabled=True,
+        recovery_enabled=True,
+        overrides_enabled=True,
+        reconciliation_status=None,
+        block_processing_start=True,
+    )
+    assert actions.process is False

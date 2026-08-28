@@ -3,6 +3,8 @@ import {
   compareLocalVsServer,
 } from '../src/features/localCodeScan/localCodeScanStrategy';
 import { resolveLocalScanProcessingMode } from '../src/core/imagePreparationPolicy';
+import { buildProductLabelPayload } from '../src/core/productLabelFormat';
+import type { ObservabilityEvent } from '../src/observability';
 import type {
   LocalDetectionDraftRepository,
   LocalDetectionDraftRow,
@@ -280,6 +282,169 @@ describe('LocalCodeScanStrategy', () => {
       flagEnabled: true,
     });
     expect(status).toBe('FAILED');
+  });
+});
+
+describe('LocalCodeScanStrategy position dedupe', () => {
+  const sessionId = 'session-pos';
+  const baseInput = {
+    captureSessionId: sessionId,
+    clientFileId: 'cf-pos',
+    preparedUri: 'file:///tmp/prepared.jpg',
+    preparedAssetFingerprint: 'sha256:pos',
+    processingMode: 'CODE_SCAN' as const,
+    flagEnabled: true,
+  };
+
+  beforeEach(async () => {
+    const { clearAllActivePositions } = await import(
+      '../src/features/localCodeScan/activePositionStore'
+    );
+    clearAllActivePositions();
+  });
+
+  const posPayload = (labelId: string) =>
+    JSON.stringify({
+      type: 'DINAMIC_POSITION',
+      version: 2,
+      label_id: labelId,
+      pallet: '04',
+      side: 'RIGHT',
+      level: 1,
+      marker_index: 1,
+      marker_total: 1,
+    });
+
+  it('calls onActivePositionChanged once; duplicate skips callback and sets POSITION_LABEL_DUPLICATE', async () => {
+    const drafts = createMemoryDrafts();
+    const obsEvents: ObservabilityEvent[] = [];
+    let positionCallbacks = 0;
+    const posRaw = posPayload('POS001');
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [{ rawValue: posRaw, symbology: 'QR_CODE' }],
+      evaluateCapability: async () => 'SUPPORTED',
+      reporter: { emit: (event) => { obsEvents.push(event); } },
+      onActivePositionChanged: async () => {
+        positionCallbacks += 1;
+      },
+    });
+
+    await strategy.execute({ ...baseInput, capturePhotoId: 'photo-pos-1' });
+    expect(positionCallbacks).toBe(1);
+    expect(drafts.rows[0]?.error_code).toBe('POSITION_LABEL_DETECTED');
+
+    await strategy.execute({ ...baseInput, capturePhotoId: 'photo-pos-2' });
+    expect(positionCallbacks).toBe(1);
+    expect(drafts.rows[1]?.error_code).toBe('POSITION_LABEL_DUPLICATE');
+    const trace = obsEvents.find((e) => e.name === 'local_scan_multilabel_trace' && e.attributes?.duplicate_position);
+    expect(trace?.attributes?.duplicate_position).toBe(true);
+  });
+
+  it('rehydrates from prior drafts after in-memory loss and treats repeat scan as duplicate', async () => {
+    const drafts = createMemoryDrafts();
+    let positionCallbacks = 0;
+    const pos1 = posPayload('POS001');
+    const pos2 = posPayload('POS002');
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [{ rawValue: pos1, symbology: 'QR_CODE' }],
+      evaluateCapability: async () => 'SUPPORTED',
+      onActivePositionChanged: async () => {
+        positionCallbacks += 1;
+      },
+    });
+    await strategy.execute({ ...baseInput, capturePhotoId: 'photo-r1' });
+
+    const strategy2 = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [{ rawValue: pos2, symbology: 'QR_CODE' }],
+      evaluateCapability: async () => 'SUPPORTED',
+      onActivePositionChanged: async () => {
+        positionCallbacks += 1;
+      },
+    });
+    await strategy2.execute({ ...baseInput, capturePhotoId: 'photo-r2' });
+    expect(positionCallbacks).toBe(2);
+
+    const { clearInMemoryPositionState } = await import(
+      '../src/features/localCodeScan/activePositionStore'
+    );
+    clearInMemoryPositionState(sessionId);
+
+    const strategy3 = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [{ rawValue: pos1, symbology: 'QR_CODE' }],
+      evaluateCapability: async () => 'SUPPORTED',
+      onActivePositionChanged: async () => {
+        positionCallbacks += 1;
+      },
+    });
+    await strategy3.execute({ ...baseInput, capturePhotoId: 'photo-r3' });
+    expect(positionCallbacks).toBe(2);
+    expect(drafts.rows[2]?.error_code).toBe('POSITION_LABEL_DUPLICATE');
+  });
+
+  it('preserves valid D1 when position is duplicate on same photo', async () => {
+    const drafts = createMemoryDrafts();
+    const obsEvents: ObservabilityEvent[] = [];
+    let positionCallbacks = 0;
+    const posRaw = posPayload('POS001');
+    const d1First = buildProductLabelPayload({
+      labelId: 'A1B2C3D4E5',
+      internalCode: 'SKU100',
+      quantity: 4,
+    });
+    const d1Second = buildProductLabelPayload({
+      labelId: 'FGHJKMNPQR',
+      internalCode: 'SKU200',
+      quantity: 2,
+    });
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [
+        { rawValue: posRaw, symbology: 'QR_CODE', detectionIndex: 0 },
+        { rawValue: d1First, symbology: 'QR_CODE', detectionIndex: 1 },
+      ],
+      evaluateCapability: async () => 'SUPPORTED',
+      reporter: { emit: (event) => { obsEvents.push(event); } },
+      onActivePositionChanged: async () => {
+        positionCallbacks += 1;
+      },
+    });
+
+    const statusFirst = await strategy.execute({ ...baseInput, capturePhotoId: 'photo-first' });
+    expect(statusFirst).toBe('RESOLVED');
+    expect(positionCallbacks).toBe(1);
+    expect(JSON.parse(drafts.rows[0]!.product_results_json!)).toHaveLength(1);
+    expect(drafts.rows[0]?.error_code).toBeNull();
+
+    const strategyDup = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [
+        { rawValue: posRaw, symbology: 'QR_CODE', detectionIndex: 0 },
+        { rawValue: d1Second, symbology: 'QR_CODE', detectionIndex: 1 },
+      ],
+      evaluateCapability: async () => 'SUPPORTED',
+      reporter: { emit: (event) => { obsEvents.push(event); } },
+      onActivePositionChanged: async () => {
+        positionCallbacks += 1;
+      },
+    });
+    const statusSecond = await strategyDup.execute({ ...baseInput, capturePhotoId: 'photo-dup-d1' });
+    expect(statusSecond).toBe('RESOLVED');
+    expect(positionCallbacks).toBe(1);
+    expect(JSON.parse(drafts.rows[1]!.product_results_json!)).toHaveLength(1);
+    expect(drafts.rows[1]?.error_code).toBeNull();
+    expect(drafts.rows[1]?.internal_code).toBe('SKU200');
+    expect(drafts.rows[1]?.label_id).toBe('FGHJKMNPQR');
+    const trace = obsEvents.find(
+      (e) =>
+        e.name === 'local_scan_multilabel_trace' &&
+        e.attributes?.capture_photo_id === 'photo-dup-d1',
+    );
+    expect(trace?.attributes?.duplicate_position).toBe(true);
+    expect(trace?.attributes?.d1_valid_count).toBe(1);
   });
 });
 

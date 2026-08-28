@@ -90,7 +90,30 @@ describe('inventory view-model adapters', () => {
 
     const action = toAisleInventoryRowActionContext(aisle);
     expect(action.observabilityInitialRunId).toBe('job-1');
-    expect(action.processMenuAisle).toEqual({ id: 'a1', status: 'processed', assets_count: 2 });
+    expect(action.processMenuAisle).toEqual({
+      id: 'a1',
+      status: 'processed',
+      assets_count: 2,
+      has_dinamic_scanner_txt_import: undefined,
+    });
+  });
+
+  it('toAisleInventoryRowPresentation marks scanner TXT import aisles', () => {
+    const aisle = {
+      id: 'p5',
+      code: 'P5',
+      status: 'processed',
+      assets_count: 0,
+      positions_count: 5,
+      has_dinamic_scanner_txt_import: true,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    } as unknown as AisleListItem;
+
+    const pres = toAisleInventoryRowPresentation(aisle, '—');
+    expect(pres.isScannerTxtImport).toBe(true);
+    expect(pres.aisleStatusLabel).toBe('Importado de TXT');
+    expect(String(pres.assetsCountDisplay)).toContain('5');
   });
 
   it('toAisleInventoryTableRow aggregates presentation and action', () => {

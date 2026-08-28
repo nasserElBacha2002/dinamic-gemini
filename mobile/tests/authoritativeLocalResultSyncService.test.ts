@@ -31,6 +31,7 @@ function confirmed(over: Partial<ConfirmedLocalResultRow> = {}): ConfirmedLocalR
     confirmed_quantity: 1,
     quantity_status: 'PRESENT',
     source: 'LOCAL_CODE_SCAN',
+    label_id: null,
     detected_symbology: 'QR_CODE',
     parser_version: '1.1.0',
     detector_version: 'mlkit-1',

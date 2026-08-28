@@ -9,6 +9,9 @@ from src.application.services.position_label_detection.code_classifier import Co
 from src.application.services.position_label_detection.payload_parser import (
     PositionLabelPayloadParser,
 )
+from src.application.services.position_label_detection.position_label_policy import (
+    PositionLabelPolicyService,
+)
 from src.application.services.position_label_detection.resolver import PositionLabelResolver
 from src.application.services.position_label_detection.validation_service import (
     PositionLabelValidationService,
@@ -55,6 +58,38 @@ def _signing(secret: str = "test-secret-16chars") -> PositioningLabelSigningServ
 def _signed_payload(label_id: str = "pos_test_1") -> dict:
     base = build_positioning_label_payload(public_label_id=label_id, version=1)
     return _signing().sign_payload(base)
+
+
+def _detection_use_case(
+    *,
+    label_repo: MemoryClientPositionLabelRepository,
+    detection_repo: MemoryImagePositionLabelDetectionRepository | None = None,
+    allow_unsigned_legacy: bool = True,
+    signing: PositioningLabelSigningService | None = None,
+    **overrides,
+) -> ImagePositionDetectionUseCase:
+    signing_svc = signing or _signing()
+    det_repo = detection_repo or MemoryImagePositionLabelDetectionRepository()
+    resolver = PositionLabelResolver(label_repo=label_repo)
+    params: dict = {
+        "classifier": CodeClassifier(max_payload_bytes=4096),
+        "parser": PositionLabelPayloadParser(max_payload_bytes=4096),
+        "validator": PositionLabelValidationService(
+            signing=signing_svc, signature_validation_enabled=True
+        ),
+        "resolver": resolver,
+        "policy": PositionLabelPolicyService(
+            resolver=resolver,
+            allow_unsigned_legacy=allow_unsigned_legacy,
+        ),
+        "repo": det_repo,
+        "clock": _Clock(),
+        "detection_enabled": True,
+        "persistence_enabled": True,
+        "max_codes_per_image": 16,
+    }
+    params.update(overrides)
+    return ImagePositionDetectionUseCase(**params)
 
 
 def test_classifier_routes_position_vs_item() -> None:
@@ -149,18 +184,8 @@ def test_use_case_valid_and_idempotent() -> None:
     )
     repo_labels.save(label)
     signing = _signing()
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=signing, signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=repo_labels),
-        repo=repo_det,
-        clock=_Clock(),
-        detection_enabled=True,
-        persistence_enabled=True,
-        max_codes_per_image=16,
+    use_case = _detection_use_case(
+        label_repo=repo_labels, detection_repo=repo_det, signing=signing
     )
     code = DetectedCode(
         symbology="QR_CODE",
@@ -208,18 +233,8 @@ def test_use_case_ambiguous_two_positions() -> None:
                 updated_at=now,
             )
         )
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=signing, signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=repo_labels),
-        repo=repo_det,
-        clock=_Clock(),
-        detection_enabled=True,
-        persistence_enabled=True,
-        max_codes_per_image=16,
+    use_case = _detection_use_case(
+        label_repo=repo_labels, detection_repo=repo_det, signing=signing
     )
     p1 = signing.sign_payload(build_positioning_label_payload(public_label_id="pos_1"))
     p2 = signing.sign_payload(build_positioning_label_payload(public_label_id="pos_2"))
@@ -251,18 +266,9 @@ def test_use_case_ambiguous_two_positions() -> None:
 
 
 def test_feature_flag_disabled_skips_detection() -> None:
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=_signing(), signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=MemoryClientPositionLabelRepository()),
-        repo=MemoryImagePositionLabelDetectionRepository(),
-        clock=_Clock(),
+    use_case = _detection_use_case(
+        label_repo=MemoryClientPositionLabelRepository(),
         detection_enabled=False,
-        persistence_enabled=True,
-        max_codes_per_image=16,
     )
     result = use_case.execute(
         ImagePositionDetectionCommand(
@@ -308,19 +314,7 @@ def test_unsigned_active_label_accepted_when_qr_missing_signature() -> None:
             signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
         )
     )
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=_signing(), signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=repo_labels),
-        repo=repo_det,
-        clock=_Clock(),
-        detection_enabled=True,
-        persistence_enabled=True,
-        max_codes_per_image=16,
-    )
+    use_case = _detection_use_case(label_repo=repo_labels, detection_repo=repo_det)
     raw = '{"type":"DINAMIC_POSITION","version":1,"label_id":"pos_unsigned"}'
     result = use_case.execute(
         ImagePositionDetectionCommand(
@@ -343,8 +337,8 @@ def test_unsigned_active_label_accepted_when_qr_missing_signature() -> None:
     assert result.detections[0].public_identifier == "pos_unsigned"
 
 
-def test_unsigned_v2_active_label_accepted_when_qr_missing_signature() -> None:
-    """Hierarchy v2 labels issued UNSIGNED (no HMAC) must still set position via review path."""
+def test_unsigned_v2_missing_signature_rejected_not_legacy() -> None:
+    """v2 payloads without signature must never downgrade to legacy unsigned."""
     import json
 
     repo_labels = MemoryClientPositionLabelRepository()
@@ -374,19 +368,7 @@ def test_unsigned_v2_active_label_accepted_when_qr_missing_signature() -> None:
             signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
         )
     )
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=_signing(), signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=repo_labels),
-        repo=repo_det,
-        clock=_Clock(),
-        detection_enabled=True,
-        persistence_enabled=True,
-        max_codes_per_image=16,
-    )
+    use_case = _detection_use_case(label_repo=repo_labels, detection_repo=repo_det)
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     result = use_case.execute(
         ImagePositionDetectionCommand(
@@ -400,12 +382,11 @@ def test_unsigned_v2_active_label_accepted_when_qr_missing_signature() -> None:
         )
     )
     assert len(result.detections) == 1
-    assert (
-        result.detections[0].detection_status
-        is PositionLabelDetectionStatus.LEGACY_UNSIGNED_REQUIRES_REVIEW
-    )
-    assert result.detections[0].public_identifier == "pos_v2_unsigned"
-    assert result.detections[0].metadata_json.get("pallet") == "02"
+    det = result.detections[0]
+    assert det.detection_status is PositionLabelDetectionStatus.MISSING_SIGNATURE
+    assert det.public_identifier == "pos_v2_unsigned"
+    assert det.metadata_json.get("policy_decision") == "REJECT"
+    assert det.metadata_json.get("pallet") == "02"
 
 
 def test_use_case_position_plus_item_keeps_both() -> None:
@@ -429,19 +410,7 @@ def test_use_case_position_plus_item_keeps_both() -> None:
             updated_at=now,
         )
     )
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=_signing(), signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=repo_labels),
-        repo=repo_det,
-        clock=_Clock(),
-        detection_enabled=True,
-        persistence_enabled=True,
-        max_codes_per_image=16,
-    )
+    use_case = _detection_use_case(label_repo=repo_labels, detection_repo=repo_det)
     result = use_case.execute(
         ImagePositionDetectionCommand(
             client_id="client-1",
@@ -492,19 +461,7 @@ def test_use_case_duplicate_same_label_consolidates() -> None:
             updated_at=now,
         )
     )
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=_signing(), signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=repo_labels),
-        repo=repo_det,
-        clock=_Clock(),
-        detection_enabled=True,
-        persistence_enabled=True,
-        max_codes_per_image=16,
-    )
+    use_case = _detection_use_case(label_repo=repo_labels, detection_repo=repo_det)
     raw = json.dumps(payload, separators=(",", ":"))
     result = use_case.execute(
         ImagePositionDetectionCommand(
@@ -537,19 +494,7 @@ def test_use_case_label_not_found() -> None:
     import json
 
     payload = _signed_payload("pos_missing")
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=_signing(), signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=MemoryClientPositionLabelRepository()),
-        repo=MemoryImagePositionLabelDetectionRepository(),
-        clock=_Clock(),
-        detection_enabled=True,
-        persistence_enabled=True,
-        max_codes_per_image=16,
-    )
+    use_case = _detection_use_case(label_repo=MemoryClientPositionLabelRepository())
     result = use_case.execute(
         ImagePositionDetectionCommand(
             client_id="client-1",
@@ -578,16 +523,8 @@ def test_structured_error_codes() -> None:
 
 
 def test_max_codes_does_not_drop_item_candidates() -> None:
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=_signing(), signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=MemoryClientPositionLabelRepository()),
-        repo=MemoryImagePositionLabelDetectionRepository(),
-        clock=_Clock(),
-        detection_enabled=True,
+    use_case = _detection_use_case(
+        label_repo=MemoryClientPositionLabelRepository(),
         persistence_enabled=False,
         max_codes_per_image=2,
         persist_no_label=False,
@@ -626,19 +563,7 @@ def test_signature_disabled_is_not_operationally_valid() -> None:
 
 
 def test_missing_client_id_is_context_invalid() -> None:
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=_signing(), signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=MemoryClientPositionLabelRepository()),
-        repo=MemoryImagePositionLabelDetectionRepository(),
-        clock=_Clock(),
-        detection_enabled=True,
-        persistence_enabled=True,
-        max_codes_per_image=16,
-    )
+    use_case = _detection_use_case(label_repo=MemoryClientPositionLabelRepository())
     result = use_case.execute(
         ImagePositionDetectionCommand(
             client_id="  ",
@@ -674,19 +599,7 @@ def test_job_scoped_idempotency_preserves_history() -> None:
             updated_at=now,
         )
     )
-    use_case = ImagePositionDetectionUseCase(
-        classifier=CodeClassifier(max_payload_bytes=4096),
-        parser=PositionLabelPayloadParser(max_payload_bytes=4096),
-        validator=PositionLabelValidationService(
-            signing=_signing(), signature_validation_enabled=True
-        ),
-        resolver=PositionLabelResolver(label_repo=repo_labels),
-        repo=repo_det,
-        clock=_Clock(),
-        detection_enabled=True,
-        persistence_enabled=True,
-        max_codes_per_image=16,
-    )
+    use_case = _detection_use_case(label_repo=repo_labels, detection_repo=repo_det)
     raw = json.dumps(payload, separators=(",", ":"))
     code = DetectedCode(symbology="QR_CODE", raw_value=raw, normalized_value=raw)
     first = use_case.execute(

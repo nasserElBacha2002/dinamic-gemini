@@ -16,7 +16,17 @@ import {
   confirmLocalInventoryPackage,
   previewLocalInventoryPackage,
 } from '../../../api/localInventoryPackagesApi';
-import type { LocalInventoryPackageResponse } from '../../../api/types';
+import {
+  confirmDinamicScannerTxtImport,
+  isTxtImportFile,
+  isZipImportFile,
+  previewDinamicScannerTxtImport,
+} from '../../../api/dinamicScannerTxtImportsApi';
+import type {
+  DinamicScannerTxtImportResponse,
+  ImportInventorySuccess,
+  LocalInventoryPackageResponse,
+} from '../../../api/types';
 import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import BaseDialog from '../../../components/ui/BaseDialog';
@@ -27,10 +37,18 @@ export interface ImportLocalInventoryPackageDialogProps {
   /** Optional map of aisle_id → display label (usually aisle code). */
   aisleLabelById?: Record<string, string>;
   onClose: () => void;
-  onSuccess?: (result: LocalInventoryPackageResponse) => void;
+  onSuccess?: (result: ImportInventorySuccess) => void;
 }
 
 type ConflictPolicy = 'SKIP' | 'REJECT';
+
+type ImportPreview =
+  | { kind: 'zip'; data: LocalInventoryPackageResponse }
+  | { kind: 'txt'; data: DinamicScannerTxtImportResponse };
+
+function invalidImportFile(file: File): boolean {
+  return !isZipImportFile(file) && !isTxtImportFile(file);
+}
 
 export default function ImportLocalInventoryPackageDialog({
   open,
@@ -42,7 +60,7 @@ export default function ImportLocalInventoryPackageDialog({
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<LocalInventoryPackageResponse | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>('SKIP');
   const [busy, setBusy] = useState<'preview' | 'confirm' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,11 +85,20 @@ export default function ImportLocalInventoryPackageDialog({
       setError(t('inventory.import_package.file_required'));
       return;
     }
+    if (invalidImportFile(file)) {
+      setError(t('inventory.import_package.invalid_file_type'));
+      return;
+    }
     setError(null);
     setBusy('preview');
     try {
-      const result = await previewLocalInventoryPackage(inventoryId, file);
-      setPreview(result);
+      if (isTxtImportFile(file)) {
+        const result = await previewDinamicScannerTxtImport(inventoryId, file);
+        setPreview({ kind: 'txt', data: result });
+      } else {
+        const result = await previewLocalInventoryPackage(inventoryId, file);
+        setPreview({ kind: 'zip', data: result });
+      }
     } catch (e) {
       setPreview(null);
       setError(
@@ -90,11 +117,19 @@ export default function ImportLocalInventoryPackageDialog({
     setError(null);
     setBusy('confirm');
     try {
-      const result = await confirmLocalInventoryPackage(inventoryId, {
-        export_id: preview.export_id,
-        conflict_policy: conflictPolicy,
-      });
-      onSuccess?.(result);
+      if (preview.kind === 'txt') {
+        const result = await confirmDinamicScannerTxtImport(inventoryId, {
+          export_id: preview.data.csv_import.export_id,
+          conflict_policy: conflictPolicy,
+        });
+        onSuccess?.({ kind: 'txt', data: result });
+      } else {
+        const result = await confirmLocalInventoryPackage(inventoryId, {
+          export_id: preview.data.export_id,
+          conflict_policy: conflictPolicy,
+        });
+        onSuccess?.({ kind: 'zip', data: result });
+      }
       onClose();
     } catch (e) {
       setError(
@@ -108,9 +143,28 @@ export default function ImportLocalInventoryPackageDialog({
     }
   };
 
-  const csv = preview?.csv_import;
+  const csv =
+    preview?.kind === 'zip'
+      ? preview.data.csv_import
+      : preview?.kind === 'txt'
+        ? preview.data.csv_import
+        : null;
   const rejectedSample =
     csv?.rows.filter((r) => r.status === 'REJECTED').slice(0, 5) ?? [];
+  const exportId =
+    preview?.kind === 'zip' ? preview.data.export_id : preview?.data.csv_import.export_id;
+  const aisleId =
+    preview?.kind === 'zip'
+      ? preview.data.aisle_id
+      : preview?.kind === 'txt'
+        ? preview.data.aisle_id
+        : null;
+  const aisleLabel =
+    preview?.kind === 'txt'
+      ? preview.data.aisle_code
+      : aisleId
+        ? aisleLabelById?.[aisleId] ?? aisleId
+        : null;
 
   return (
     <BaseDialog
@@ -162,12 +216,16 @@ export default function ImportLocalInventoryPackageDialog({
             ref={inputRef}
             hidden
             type="file"
-            accept=".zip,application/zip"
+            accept=".zip,.txt,application/zip,text/plain"
             onChange={(e) => {
               const next = e.target.files?.[0] ?? null;
               setFile(next);
               setPreview(null);
-              setError(null);
+              setError(
+                next && invalidImportFile(next)
+                  ? t('inventory.import_package.invalid_file_type')
+                  : null
+              );
             }}
           />
         </Button>
@@ -181,22 +239,44 @@ export default function ImportLocalInventoryPackageDialog({
         {preview ? (
           <Box data-testid="import-package-preview-summary">
             <Alert severity="info" sx={{ mb: 1.5 }}>
-              {t('inventory.import_package.preview_ready', {
-                exportId: preview.export_id,
-                photos: preview.included_photo_count,
-                valid: csv?.valid_rows ?? 0,
-                total: csv?.total_rows ?? 0,
-                rejected: csv?.rejected_rows ?? 0,
-              })}
-              {preview.aisle_id ? (
+              {preview.kind === 'zip' ? (
+                t('inventory.import_package.preview_ready', {
+                  exportId,
+                  photos: preview.data.included_photo_count,
+                  valid: csv?.valid_rows ?? 0,
+                  total: csv?.total_rows ?? 0,
+                  rejected: csv?.rejected_rows ?? 0,
+                })
+              ) : (
+                t('inventory.import_package.preview_ready_txt', {
+                  exportId,
+                  aisle: preview.data.aisle_code,
+                  positions: preview.data.positions_imported,
+                  products: preview.data.products_imported,
+                  omitted: preview.data.omitted_records,
+                  valid: csv?.valid_rows ?? 0,
+                  total: csv?.total_rows ?? 0,
+                  rejected: csv?.rejected_rows ?? 0,
+                })
+              )}
+              {aisleLabel ? (
                 <Typography component="div" variant="body2" sx={{ mt: 0.75 }}>
-                  {t('inventory.import_package.preview_aisle', {
-                    aisle:
-                      aisleLabelById?.[preview.aisle_id] ?? preview.aisle_id,
-                  })}
+                  {preview.kind === 'txt' && preview.data.aisle_will_be_created
+                    ? t('inventory.import_package.preview_aisle_created', { aisle: aisleLabel })
+                    : t('inventory.import_package.preview_aisle', { aisle: aisleLabel })}
                 </Typography>
               ) : null}
             </Alert>
+            {preview.kind === 'txt' && preview.data.parse_warnings.length > 0 ? (
+              <Alert severity="warning" sx={{ mb: 1.5 }}>
+                {t('inventory.import_package.txt_warnings_hint')}
+                <Box component="ul" sx={{ m: 0, pl: 2 }}>
+                  {preview.data.parse_warnings.slice(0, 5).map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </Box>
+              </Alert>
+            ) : null}
             <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
               <InputLabel id="import-conflict-policy">
                 {t('inventory.import_package.conflict_policy')}

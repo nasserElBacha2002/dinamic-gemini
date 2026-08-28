@@ -399,6 +399,16 @@ class ProcessingResultPersister:
                         )
                         if not claimed:
                             products_skipped_duplicate += 1
+                            logger.info(
+                                "counted_product_label_duplicate_skip aisle_id=%s "
+                                "label_id=%s job_id=%s asset_id=%s "
+                                "ingestion_source=%s",
+                                aisle_id,
+                                label_id,
+                                job_id,
+                                asset_id,
+                                (result.additional_fields or {}).get("ingestion_source"),
+                            )
                             continue
 
                     products_to_save.append(

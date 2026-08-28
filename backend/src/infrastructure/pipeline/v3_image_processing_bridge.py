@@ -333,6 +333,9 @@ def _build_position_detection_use_case(settings):
     from src.application.services.position_label_detection.payload_parser import (
         PositionLabelPayloadParser,
     )
+    from src.application.services.position_label_detection.position_label_policy import (
+        PositionLabelPolicyService,
+    )
     from src.application.services.position_label_detection.resolver import (
         PositionLabelResolver,
     )
@@ -364,6 +367,7 @@ def _build_position_detection_use_case(settings):
         )
     )
     max_bytes = int(getattr(settings, "position_label_max_payload_bytes", 4096) or 4096)
+    resolver = PositionLabelResolver(label_repo=label_repo)
     return ImagePositionDetectionUseCase(
         classifier=CodeClassifier(max_payload_bytes=max_bytes),
         parser=PositionLabelPayloadParser(max_payload_bytes=max_bytes),
@@ -373,7 +377,13 @@ def _build_position_detection_use_case(settings):
                 getattr(settings, "position_label_signature_validation_enabled", True)
             ),
         ),
-        resolver=PositionLabelResolver(label_repo=label_repo),
+        resolver=resolver,
+        policy=PositionLabelPolicyService(
+            resolver=resolver,
+            allow_unsigned_legacy=bool(
+                getattr(settings, "positioning_allow_unsigned_legacy", True)
+            ),
+        ),
         repo=detection_repo,
         clock=clock,
         detection_enabled=True,

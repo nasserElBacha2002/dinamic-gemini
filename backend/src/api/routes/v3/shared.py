@@ -526,6 +526,7 @@ def aisle_to_response(
     client: Client | None = None,
     identification: IdentificationModeApiFields | None = None,
     client_supplier_name: str | None = None,
+    has_dinamic_scanner_txt_import: bool = False,
 ) -> AisleResponse:
     latest = None
     if latest_job is not None:
@@ -582,6 +583,7 @@ def aisle_to_response(
         identification_mode_source=cast(
             IdentificationModeSourceLiteral, id_fields.identification_mode_source
         ),
+        has_dinamic_scanner_txt_import=has_dinamic_scanner_txt_import,
     )
 
 

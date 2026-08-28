@@ -17,7 +17,7 @@ import {
   serializeProductRejections,
   type ProductLabelRejection,
 } from '../../core/productLabelRejection';
-import { applyPositionScan, getActivePosition } from './activePositionStore';
+import { applyPositionScan, getActivePosition, hydratePositionSessionFromDrafts } from './activePositionStore';
 import type { ActivePositionState } from '../../core/positionLabelPayload';
 import { parseDinamicPositionPayload } from '../../core/positionLabelPayload';
 
@@ -241,17 +241,25 @@ export class LocalCodeScanStrategy {
           ? candidates[consolidated.selectedIndex]?.rawValue
           : candidates[0]?.rawValue;
 
+      const sessionDrafts = await this.deps.drafts.listForSession(input.captureSessionId);
+      hydratePositionSessionFromDrafts(input.captureSessionId, sessionDrafts);
+
       // Resolve POSITION independently of products (same photo may contain both).
       const activeBefore = getActivePosition(input.captureSessionId);
       let appliedPosition: ActivePositionState | null = null;
+      let duplicatePosition = false;
       const positionRaw =
         consolidated.positionRawPayload ??
         candidates.find((c) => parseDinamicPositionPayload(c.rawValue) != null)?.rawValue ??
         null;
       if (positionRaw) {
-        appliedPosition = applyPositionScan(input.captureSessionId, positionRaw);
+        const positionResult = applyPositionScan(input.captureSessionId, positionRaw);
+        if (positionResult.kind === 'applied' || positionResult.kind === 'duplicate') {
+          appliedPosition = positionResult.state;
+          duplicatePosition = positionResult.kind === 'duplicate';
+        }
       }
-      if (appliedPosition && this.deps.onActivePositionChanged) {
+      if (appliedPosition && !duplicatePosition && this.deps.onActivePositionChanged) {
         await this.deps.onActivePositionChanged(input.captureSessionId, appliedPosition);
       }
 
@@ -259,7 +267,6 @@ export class LocalCodeScanStrategy {
       const positionDetected = Boolean(appliedPosition);
 
       // Session-scoped label_id dedupe (count once).
-      const sessionDrafts = await this.deps.drafts.listForSession(input.captureSessionId);
       const seenLabelIds = new Set<string>();
       for (const d of sessionDrafts) {
         if (d.capture_photo_id === input.capturePhotoId) continue;
@@ -351,20 +358,22 @@ export class LocalCodeScanStrategy {
         detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
         preparedAssetFingerprint: input.preparedAssetFingerprint,
         candidateCount: candidates.length,
-        errorCode: isPositionOnly
-          ? 'POSITION_LABEL_DETECTED'
-          : status === 'AMBIGUOUS'
-            ? consolidated.status
-            : status === 'INVALID' || status === 'DETECTED_UNVERIFIED'
-              ? parsedError ??
-                (d1Mode && products.length === 0
-                  ? 'D1_CANDIDATES_FAILED'
-                  : consolidated.warnings.includes('D1_CANDIDATES_FAILED')
+        errorCode: duplicatePosition && products.length === 0
+          ? 'POSITION_LABEL_DUPLICATE'
+          : isPositionOnly
+            ? 'POSITION_LABEL_DETECTED'
+            : status === 'AMBIGUOUS'
+              ? consolidated.status
+              : status === 'INVALID' || status === 'DETECTED_UNVERIFIED'
+                ? parsedError ??
+                  (d1Mode && products.length === 0
                     ? 'D1_CANDIDATES_FAILED'
-                    : 'NO_VALID_CODE')
-              : status === 'UNRESOLVED'
-                ? 'NO_DETECTIONS'
-                : null,
+                    : consolidated.warnings.includes('D1_CANDIDATES_FAILED')
+                      ? 'D1_CANDIDATES_FAILED'
+                      : 'NO_VALID_CODE')
+                : status === 'UNRESOLVED'
+                  ? 'NO_DETECTIONS'
+                  : null,
         processingMs,
         scanOwner: null,
         scanGeneration,
@@ -410,6 +419,7 @@ export class LocalCodeScanStrategy {
           stored_product_results_count: products.length,
           rejections_count: rejections.length,
           duplicate_labels: duplicateLabels,
+          duplicate_position: duplicatePosition,
           consolidation_status: consolidated.status,
         },
       });
@@ -441,6 +451,7 @@ export class LocalCodeScanStrategy {
           d1_mode: d1Mode,
           products_emitted: products.length,
           duplicate_labels: duplicateLabels,
+          duplicate_position: duplicatePosition,
           rejections_count: rejections.length,
           active_position_before: activeBefore?.labelId ?? null,
           position_detected: positionDetected,

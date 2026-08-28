@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol
 
 from src.application.ports.sql_cursor import SqlCursorLike
@@ -35,3 +36,10 @@ class LocalCsvInventoryResultWriter(Protocol):
     def list_for_inventory(self, inventory_id: str) -> tuple[LocalCsvProductiveResult, ...]: ...
 
     def list_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]: ...
+
+    def aisle_ids_with_ingestion_source(
+        self,
+        inventory_id: str,
+        aisle_ids: Sequence[str],
+        ingestion_source: str,
+    ) -> frozenset[str]: ...

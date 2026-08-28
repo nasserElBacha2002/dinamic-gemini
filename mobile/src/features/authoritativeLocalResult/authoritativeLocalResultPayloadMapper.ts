@@ -12,6 +12,7 @@ export function mapConfirmedToAuthoritativeRequest(
     quantity: row.confirmed_quantity,
     quantity_status: row.quantity_status,
     source: row.source,
+    label_id: row.label_id,
     detected_internal_code: row.detected_internal_code,
     detected_quantity: row.detected_quantity,
     detected_symbology: row.detected_symbology,

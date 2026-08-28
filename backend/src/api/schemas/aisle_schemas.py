@@ -124,3 +124,10 @@ class AisleResponse(BaseModel):
     identification_mode: IdentificationModeLiteral | None = None
     effective_identification_mode: IdentificationModeLiteral
     identification_mode_source: IdentificationModeSourceLiteral
+    has_dinamic_scanner_txt_import: bool = Field(
+        False,
+        description=(
+            "True when productive results for this aisle were imported from a Dinamic Scanner TXT "
+            "(no CV processing pipeline run)."
+        ),
+    )

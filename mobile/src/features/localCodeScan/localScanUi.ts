@@ -1,16 +1,45 @@
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
 import type { LocalDetectionDraftStatus } from '../../database/repositories/localDetectionDraftRepository';
+import { parseStoredProductRejections } from '../../core/productLabelRejection';
+
+function friendlyD1RejectionMessage(
+  rejectionsJson: string | null | undefined,
+): string | null {
+  const rejections = parseStoredProductRejections(rejectionsJson);
+  if (!rejections.length) return null;
+  const status = rejections[0]!.validationStatus.toUpperCase();
+  if (status.includes('CHECKSUM')) {
+    return 'Etiqueta inválida: checksum incorrecto';
+  }
+  if (status.includes('MALFORMED')) {
+    return 'Etiqueta Dinamic inválida';
+  }
+  if (status.includes('UNKNOWN_VERSION')) {
+    return 'Etiqueta Dinamic: versión no soportada';
+  }
+  return 'Etiqueta Dinamic inválida';
+}
 
 /** Operational-only copy — never presents local result as authoritative. */
 export function labelForLocalScanStatus(
   status: LocalDetectionDraftStatus | null | undefined,
   errorCode?: string | null,
+  rejectionsJson?: string | null,
 ): string | null {
   if (!status || status === 'NOT_APPLICABLE') {
     return null;
   }
+  if (errorCode === 'POSITION_LABEL_DUPLICATE') {
+    return 'Etiqueta de posición duplicada — ya registrada en esta sesión';
+  }
   if (errorCode === 'POSITION_LABEL_DETECTED') {
     return 'Etiqueta de posición detectada — se resolverá en servidor';
+  }
+  if (errorCode === 'D1_CANDIDATES_FAILED') {
+    return (
+      friendlyD1RejectionMessage(rejectionsJson) ??
+      'Etiqueta Dinamic inválida — se procesará en servidor'
+    );
   }
   switch (status) {
     case 'PENDING':
@@ -23,7 +52,10 @@ export function labelForLocalScanStatus(
     case 'UNRESOLVED':
       return 'Sin código detectado — se procesará en servidor';
     case 'INVALID':
-      return 'Código local inválido — se procesará en servidor';
+      return (
+        friendlyD1RejectionMessage(rejectionsJson) ??
+        'Código local inválido — se procesará en servidor'
+      );
     case 'AMBIGUOUS':
       return 'Código ambiguo — se procesará en servidor';
     case 'FAILED':
@@ -36,10 +68,13 @@ export function labelForLocalScanStatus(
 
 export function formatLocalScanDetection(draft: Pick<
   LocalDetectionDraftRow,
-  'status' | 'internal_code' | 'quantity' | 'error_code' | 'detected_symbology'
+  'status' | 'internal_code' | 'quantity' | 'error_code' | 'detected_symbology' | 'rejections_json'
 > | null | undefined): string | null {
   if (!draft || draft.status === 'NOT_APPLICABLE') {
     return null;
+  }
+  if (draft.error_code === 'POSITION_LABEL_DUPLICATE') {
+    return 'Posición duplicada en sesión';
   }
   if (draft.error_code === 'POSITION_LABEL_DETECTED') {
     const code = draft.internal_code?.trim();
@@ -51,6 +86,13 @@ export function formatLocalScanDetection(draft: Pick<
     return draft.detected_symbology
       ? `${draft.detected_symbology} · Etiqueta de posición`
       : 'Etiqueta de posición';
+  }
+  if (
+    draft.error_code === 'D1_CANDIDATES_FAILED' ||
+    (draft.status === 'INVALID' && draft.rejections_json)
+  ) {
+    const friendly = friendlyD1RejectionMessage(draft.rejections_json);
+    if (friendly) return friendly;
   }
   const parts: string[] = [];
   if (draft.internal_code) {

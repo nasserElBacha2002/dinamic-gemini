@@ -78,6 +78,38 @@ class PreviewLocalCsvImport:
                 LOCAL_CSV_INVENTORY_MISMATCH,
                 "CSV inventory_id does not match the path inventory_id",
             )
+        return self._preview_parsed(inventory_id=inventory_id, parsed=parsed)
+
+    def execute_from_parsed(
+        self,
+        *,
+        inventory_id: str,
+        parsed: ParsedLocalCsv,
+        pending_aisle_ids: frozenset[str] | None = None,
+    ) -> LocalCsvImport:
+        """Stage a preview from an already-built ParsedLocalCsv (e.g. scanner TXT converter)."""
+        return self._preview_parsed(
+            inventory_id=inventory_id,
+            parsed=parsed,
+            pending_aisle_ids=pending_aisle_ids,
+        )
+
+    def _preview_parsed(
+        self,
+        *,
+        inventory_id: str,
+        parsed: ParsedLocalCsv,
+        pending_aisle_ids: frozenset[str] | None = None,
+    ) -> LocalCsvImport:
+        if not self._enabled:
+            raise LocalCsvImportDisabledError()
+        if self._inventory_repo.get_by_id(inventory_id) is None:
+            raise LocalCsvImportError("INVENTORY_NOT_FOUND", f"Inventory {inventory_id} not found")
+        if parsed.inventory_id != inventory_id:
+            raise LocalCsvImportError(
+                LOCAL_CSV_INVENTORY_MISMATCH,
+                "Parsed import inventory_id does not match the path inventory_id",
+            )
         existing = self._import_repo.get_by_export_id(
             inventory_id=inventory_id, export_id=parsed.export_id
         )
@@ -85,23 +117,21 @@ class PreviewLocalCsvImport:
             if existing.content_hash != parsed.content_hash:
                 raise LocalCsvImportError(
                     LOCAL_CSV_EXPORT_CONFLICT,
-                    "export_id already exists with different CSV content",
+                    "export_id already exists with different import content",
                 )
-            # Idempotent success / confirmed: keep staged record.
-            # PREVIEWED with rejects: re-validate (aisle membership, parser rules)
-            # so a later deploy or aisle create is not stuck on stale REJECTED rows.
             if existing.status == "CONFIRMED" or existing.rejected_rows == 0:
                 return existing
             return self._build_and_persist_preview(
                 inventory_id=inventory_id,
                 parsed=parsed,
                 existing=existing,
+                pending_aisle_ids=pending_aisle_ids,
             )
-
         return self._build_and_persist_preview(
             inventory_id=inventory_id,
             parsed=parsed,
             existing=None,
+            pending_aisle_ids=pending_aisle_ids,
         )
 
     def _build_and_persist_preview(
@@ -110,6 +140,7 @@ class PreviewLocalCsvImport:
         inventory_id: str,
         parsed: ParsedLocalCsv,
         existing: LocalCsvImport | None,
+        pending_aisle_ids: frozenset[str] | None = None,
     ) -> LocalCsvImport:
         aisle_ids = {a.id for a in self._aisle_repo.list_by_inventory(inventory_id)}
         import_id = existing.id if existing is not None else str(uuid.uuid4())
@@ -131,8 +162,11 @@ class PreviewLocalCsvImport:
                     errors.append(f"{field}:inconsistent")
             if parsed_row.exported_at != parsed.exported_at:
                 errors.append("exported_at:inconsistent")
-            if values["aisle_id"] not in aisle_ids:
-                errors.append("aisle_id:not_in_inventory")
+            aisle_id = values["aisle_id"]
+            if aisle_id not in aisle_ids:
+                allowed_pending = pending_aisle_ids or frozenset()
+                if aisle_id not in allowed_pending:
+                    errors.append("aisle_id:not_in_inventory")
             secondary_key = local_csv_row_secondary_key(
                 capture_session_id=values["capture_session_id"],
                 capture_photo_id=values["capture_photo_id"],

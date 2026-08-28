@@ -16,10 +16,10 @@ vi.mock('../../src/api/request', () => ({
 describe('labelForPositionDetectionStatus', () => {
   it('covers known resolved and unresolved statuses', () => {
     expect(labelForPositionDetectionStatus('VALID')).toBe(
-      'Etiqueta de posicionamiento resuelta',
+      'Firma válida — posición resuelta',
     );
-    expect(labelForPositionDetectionStatus('LEGACY_UNSIGNED_REQUIRES_REVIEW')).toContain(
-      'sin firma',
+    expect(labelForPositionDetectionStatus('LEGACY_UNSIGNED_REQUIRES_REVIEW')).toMatch(
+      /sin firma/i,
     );
     expect(labelForPositionDetectionStatus('LABEL_NOT_FOUND')).toContain('no resuelta');
     expect(labelForPositionDetectionStatus('INVALID_SIGNATURE')).toContain('firma');
@@ -43,10 +43,10 @@ describe('labelForPositionDetectionStatus', () => {
 
   it('uses neutral copy for unknown statuses (does not invent unresolved)', () => {
     expect(labelForPositionDetectionStatus('SOMETHING_NEW')).toBe(
-      'Estado de detección desconocido: SOMETHING_NEW',
+      'Estado de etiqueta de posición: SOMETHING_NEW',
     );
     expect(labelForPositionDetectionStatus('POSITION_WEIRD')).toBe(
-      'Estado de detección desconocido: POSITION_WEIRD',
+      'Estado de etiqueta de posición: POSITION_WEIRD',
     );
   });
 });

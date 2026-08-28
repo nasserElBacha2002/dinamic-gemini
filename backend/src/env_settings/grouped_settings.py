@@ -1084,6 +1084,57 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: SERVER_LOCAL_INVENTORY_PACKAGE_MAX_BYTES."
         ),
     )
+    server_dinamic_scanner_txt_import_enabled: bool = Field(
+        default_factory=lambda: (
+            (
+                os.getenv("SERVER_DINAMIC_SCANNER_TXT_IMPORT_ENABLED", "").strip().lower()
+                in ("1", "true", "yes")
+            )
+            if (os.getenv("SERVER_DINAMIC_SCANNER_TXT_IMPORT_ENABLED") or "").strip()
+            else (
+                os.getenv("SERVER_LOCAL_INVENTORY_PACKAGE_ENABLED", "").strip().lower()
+                in ("1", "true", "yes")
+            )
+            if (os.getenv("SERVER_LOCAL_INVENTORY_PACKAGE_ENABLED") or "").strip()
+            else (
+                os.getenv("SERVER_CSV_IMPORT_ENABLED", "false").strip().lower()
+                in ("1", "true", "yes")
+            )
+        ),
+        description=(
+            "Enable Dinamic Scanner TXT aisle import (no images). "
+            "Defaults to SERVER_LOCAL_INVENTORY_PACKAGE_ENABLED or SERVER_CSV_IMPORT_ENABLED. "
+            "Env: SERVER_DINAMIC_SCANNER_TXT_IMPORT_ENABLED."
+        ),
+    )
+    server_dinamic_scanner_txt_import_max_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv(
+                "SERVER_DINAMIC_SCANNER_TXT_IMPORT_MAX_BYTES",
+                str(5 * 1024 * 1024),
+            )
+        ),
+        ge=1,
+        description=(
+            "Maximum Dinamic Scanner TXT file size in bytes. "
+            "Env: SERVER_DINAMIC_SCANNER_TXT_IMPORT_MAX_BYTES."
+        ),
+    )
+    server_dinamic_scanner_txt_max_lines: int = Field(
+        default_factory=lambda: int(os.getenv("SERVER_DINAMIC_SCANNER_TXT_MAX_LINES", "50000")),
+        ge=1,
+        description="Maximum lines per TXT file. Env: SERVER_DINAMIC_SCANNER_TXT_MAX_LINES.",
+    )
+    server_dinamic_scanner_txt_max_line_length: int = Field(
+        default_factory=lambda: int(
+            os.getenv("SERVER_DINAMIC_SCANNER_TXT_MAX_LINE_LENGTH", "512")
+        ),
+        ge=1,
+        description=(
+            "Maximum characters per TXT line. "
+            "Env: SERVER_DINAMIC_SCANNER_TXT_MAX_LINE_LENGTH."
+        ),
+    )
     server_preliminary_detection_ingest_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("SERVER_PRELIMINARY_DETECTION_INGEST", "false").strip().lower()
@@ -2002,6 +2053,18 @@ class LimitsAndSchemaSettings(BaseModel):
         description=(
             "Phase 3: verify HMAC on DINAMIC_POSITION payloads. "
             "Env: POSITION_LABEL_SIGNATURE_VALIDATION_ENABLED (default true)."
+        ),
+    )
+    positioning_allow_unsigned_legacy: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITIONING_ALLOW_UNSIGNED_LEGACY", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, catalog-registered v1 UNSIGNED position labels without QR signature "
+            "may resolve as LEGACY_UNSIGNED_REQUIRES_REVIEW (requires_review). "
+            "When false, missing signature is always REJECT (MISSING_SIGNATURE). "
+            "Env: POSITIONING_ALLOW_UNSIGNED_LEGACY (default true for backward compatibility)."
         ),
     )
     position_label_detection_persistence_enabled: bool = Field(

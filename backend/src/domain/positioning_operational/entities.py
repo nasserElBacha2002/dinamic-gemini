@@ -116,6 +116,7 @@ class AisleOperationalPositioningView:
     supported_reprocess_modes: tuple[str, ...] = ()
     last_updated_at: datetime | None = None
     feature_flags: dict[str, bool] = field(default_factory=dict)
+    has_dinamic_scanner_txt_import: bool = False
 
 
 @dataclass(frozen=True)

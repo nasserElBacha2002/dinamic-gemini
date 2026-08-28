@@ -56,9 +56,9 @@ export function labelForPositionDetectionStatus(
       : null;
   switch (status) {
     case 'VALID':
-      return 'Etiqueta de posicionamiento resuelta';
+      return 'Firma válida — posición resuelta';
     case 'LEGACY_UNSIGNED_REQUIRES_REVIEW':
-      return 'Etiqueta resuelta (sin firma; requiere revisión)';
+      return 'Sin firma — requiere revisión';
     case 'NO_LABEL':
     case 'FEATURE_DISABLED':
       return 'Sin etiqueta de posición';
@@ -110,7 +110,7 @@ export function labelForPositionDetectionStatus(
       if (!trimmed) {
         return 'Sin etiqueta de posición';
       }
-      return `Estado de detección desconocido: ${trimmed}`;
+      return `Estado de etiqueta de posición: ${trimmed}`;
     }
   }
 }
@@ -154,6 +154,13 @@ export function formatPositionDetectionSecondary(args: {
   }
   if (typeof meta.detail === 'string' && meta.detail.trim()) {
     lines.push(`Motivo: ${meta.detail.trim()}`);
+  }
+  const policyDecision = meta.policy_decision;
+  if (typeof policyDecision === 'string' && policyDecision.trim()) {
+    lines.push(`Política: ${policyDecision.trim()}`);
+  }
+  if (meta.requires_review === true) {
+    lines.push('Requiere revisión: sí');
   }
   return lines.join('\n');
 }

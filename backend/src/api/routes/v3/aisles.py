@@ -565,6 +565,7 @@ def list_aisles(
                     pending_review_positions_count=item.pending_review_positions_count,
                     last_activity_at=item.last_activity_at,
                     client_supplier_name=item.client_supplier_name,
+                    has_dinamic_scanner_txt_import=item.has_dinamic_scanner_txt_import,
                 )
                 for item in items
             ],

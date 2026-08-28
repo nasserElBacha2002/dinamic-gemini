@@ -18,6 +18,8 @@ class AuthoritativeLocalCodeScanRequest(BaseModel):
     quantity: int | None = Field(default=None, ge=1, le=99_999_999)
     quantity_status: Literal["PRESENT", "MISSING"] = "PRESENT"
     source: Literal["LOCAL_CODE_SCAN", "LOCAL_MANUAL_CORRECTION"] = "LOCAL_CODE_SCAN"
+    #: Optional D1 physical sticker id (additive; omitted/null for historical clients).
+    label_id: str | None = Field(default=None, max_length=64)
     detected_internal_code: str | None = Field(default=None, max_length=64)
     detected_quantity: int | None = Field(default=None, ge=1, le=99_999_999)
     detected_symbology: str | None = Field(default=None, max_length=32)

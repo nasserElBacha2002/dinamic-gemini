@@ -22,9 +22,17 @@ from src.application.ports.clock import Clock
 from src.application.ports.image_processing_repositories import (
     JobAssetProcessingStateRepository,
 )
+from src.application.ports.repositories import InventoryRepository
+from src.application.services.image_processing.authoritative_product_label_mapper import (
+    authoritative_blocks_legacy_persist_fallback,
+    build_product_results_for_authoritative_row,
+)
 from src.application.services.image_processing.processing_result_persister import (
     PersistSkipReason,
     ProcessingResultPersister,
+)
+from src.application.services.product_labels.issued_product_label_resolver import (
+    IssuedProductLabelResolver,
 )
 from src.domain.assets.entities import SourceAsset
 from src.domain.authoritative_local_code_scan.entities import AuthoritativeLocalCodeScanResult
@@ -38,6 +46,9 @@ from src.domain.image_processing.job_asset_processing_state import (
     JobAssetProcessingStatus,
 )
 from src.domain.jobs.entities import Job
+from src.domain.product_labels.processed import (
+    ProcessedProductLabel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +75,8 @@ class ApplyAuthoritativeLocalResultsService:
         clock: Clock,
         enabled: bool,
         require_all_assets: bool = True,
+        inventory_repo: InventoryRepository | None = None,
+        issued_label_resolver: IssuedProductLabelResolver | None = None,
     ) -> None:
         self._repo = authoritative_repo
         self._persister = result_persister
@@ -71,6 +84,8 @@ class ApplyAuthoritativeLocalResultsService:
         self._clock = clock
         self._enabled = enabled
         self._require_all_assets = require_all_assets
+        self._inventory_repo = inventory_repo
+        self._issued_label_resolver = issued_label_resolver
 
     def apply_for_job(
         self,
@@ -138,20 +153,36 @@ class ApplyAuthoritativeLocalResultsService:
         if state is not None and state.status == JobAssetProcessingStatus.RESOLVED:
             return self._handle_already_resolved(job=job, state=state, row=row)
 
+        label_id = (row.label_id or "").strip().upper() or None
+        client_id = self._resolve_client_id(row.inventory_id)
+        product_results: list[ProcessedProductLabel] = build_product_results_for_authoritative_row(
+            row,
+            client_id=client_id,
+            issued_resolver=self._issued_label_resolver,
+        )
+        block_legacy_fallback = authoritative_blocks_legacy_persist_fallback(
+            row, product_results
+        )
+        persist_code = "" if block_legacy_fallback else row.internal_code
+        persist_quantity = None if block_legacy_fallback else row.quantity
+
         result = ImageProcessingResult(
             job_id=job.id,
             asset_id=row.asset_id,
             status=ImageResultStatus.RESOLVED_INTERNAL,
             processing_mode="CODE_SCAN",
             resolved_by=LOCAL_AUTHORITY_STRATEGY,
-            internal_code=row.internal_code,
-            quantity=row.quantity,
+            internal_code=persist_code,
+            quantity=persist_quantity,
             execution_scope=ExecutionScope.SINGLE_ASSET,
             error_code=RESOLVED_BY_LOCAL_AUTHORITY,
+            product_results=product_results,
             additional_fields={
                 "authoritative_result_id": row.id,
                 "authoritative_source": row.source,
                 "authoritative_version": row.result_version,
+                "label_id": label_id,
+                "ingestion_source": "MOBILE_AUTHORITATIVE",
             },
         )
         try:
@@ -211,14 +242,23 @@ class ApplyAuthoritativeLocalResultsService:
 
         logger.info(
             "authoritative_local.applied result_id=%s asset_id=%s job_id=%s "
-            "version=%s source=%s",
+            "version=%s source=%s label_id=%s",
             row.id,
             row.asset_id,
             job.id,
             row.result_version,
             row.source,
+            row.label_id,
         )
         return "applied"
+
+    def _resolve_client_id(self, inventory_id: str) -> str:
+        if self._inventory_repo is None:
+            return ""
+        inv = self._inventory_repo.get_by_id(inventory_id)
+        if inv is None:
+            return ""
+        return (getattr(inv, "client_id", None) or "").strip()
 
     def _handle_already_resolved(
         self,

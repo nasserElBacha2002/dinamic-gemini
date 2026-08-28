@@ -64,6 +64,7 @@ def _row_to_entity(row) -> AuthoritativeLocalCodeScanResult:
         schema_version=normalize_db_str(getattr(row, "schema_version", None)) or "1",
         created_at=_ensure_utc(getattr(row, "created_at", None)) or datetime.now(timezone.utc),
         updated_at=_ensure_utc(getattr(row, "updated_at", None)) or datetime.now(timezone.utc),
+        label_id=optional_nonempty_db_str(getattr(row, "label_id", None)),
     )
 
 
@@ -72,7 +73,8 @@ id, asset_id, inventory_id, aisle_id, client_file_id, result_version, supersedes
 is_current, internal_code, quantity, quantity_status, source, detected_internal_code,
 detected_quantity, detected_symbology, parser_version, detector_version, prepared_asset_sha256,
 content_hash, confirmed_by, client_confirmed_at, server_confirmed_at, server_received_at,
-confirmed_at, applied_job_id, applied_at, row_version, schema_version, created_at, updated_at
+confirmed_at, applied_job_id, applied_at, row_version, schema_version, created_at, updated_at,
+label_id
 """
 
 
@@ -261,9 +263,9 @@ class SqlAuthoritativeLocalCodeScanRepository:
                 parser_version, detector_version, prepared_asset_sha256, content_hash,
                 confirmed_by, client_confirmed_at, server_confirmed_at, server_received_at,
                 confirmed_at, applied_job_id, applied_at, row_version,
-                schema_version, created_at, updated_at
+                schema_version, created_at, updated_at, label_id
             ) VALUES (
-                ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
             )
             """,
             (
@@ -297,6 +299,7 @@ class SqlAuthoritativeLocalCodeScanRepository:
                 new_result.schema_version,
                 new_result.created_at,
                 new_result.updated_at,
+                (new_result.label_id or None),
             ),
         )
 

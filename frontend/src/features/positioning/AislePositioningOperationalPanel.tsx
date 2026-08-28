@@ -136,8 +136,11 @@ export default function AislePositioningOperationalPanel({
   }, [view, load]);
 
   const presentation = useMemo(
-    () => presentationForProcessingState(view?.processing_state ?? 'IDLE'),
-    [view?.processing_state],
+    () =>
+      presentationForProcessingState(view?.processing_state ?? 'IDLE', {
+        scannerTxtImport: Boolean(view?.has_dinamic_scanner_txt_import),
+      }),
+    [view?.processing_state, view?.has_dinamic_scanner_txt_import],
   );
 
   const onRecover = async () => {

@@ -200,7 +200,10 @@ describe('mobile multi-label physical corrections', () => {
     const parsed = parseDinamicPositionPayload(raw);
     expect(parsed?.signature).toBe('deadbeef');
     expect(parsed?.keyVersion).toBe(1);
-    const state = applyPositionScan('sess-raw', raw)!;
+    const applied = applyPositionScan('sess-raw', raw);
+    expect(applied.kind).toBe('applied');
+    if (applied.kind !== 'applied') throw new Error('expected applied');
+    const state = applied.state;
     expect(state.rawPayload).toBe(raw);
     expect(state.signature).toBe('deadbeef');
   });

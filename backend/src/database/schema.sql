@@ -3703,6 +3703,29 @@ BEGIN
 END
 GO
 
+-- v0099 — additive D1 label_id for Mobile authoritative → counted-product-label claims
+IF OBJECT_ID(N'dbo.authoritative_local_code_scan_results', N'U') IS NOT NULL
+   AND COL_LENGTH(N'dbo.authoritative_local_code_scan_results', N'label_id') IS NULL
+BEGIN
+    ALTER TABLE dbo.authoritative_local_code_scan_results
+        ADD label_id NVARCHAR(64) NULL;
+END;
+GO
+
+IF OBJECT_ID(N'dbo.authoritative_local_code_scan_results', N'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1
+       FROM sys.indexes
+       WHERE name = N'IX_alcsr_aisle_label'
+         AND object_id = OBJECT_ID(N'dbo.authoritative_local_code_scan_results')
+   )
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_alcsr_aisle_label
+        ON dbo.authoritative_local_code_scan_results (aisle_id, label_id)
+        WHERE label_id IS NOT NULL;
+END;
+GO
+
 IF OBJECT_ID('authoritative_local_code_scan_results', 'U') IS NOT NULL
    AND NOT EXISTS (
         SELECT 1 FROM sys.indexes
