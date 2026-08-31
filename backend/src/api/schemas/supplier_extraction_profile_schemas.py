@@ -50,6 +50,30 @@ class TestExtractionProfileResponse(BaseModel):
     persists_inventory: bool = False
 
 
+class TestLabelRecognitionCodeRequest(BaseModel):
+    """Non-persistent CODE_SCAN / structured payload dry-run (PR2)."""
+
+    label_kind: LabelKindLiteral = "ITEM"
+    raw_payload: str = Field(..., min_length=1, max_length=512)
+    symbology: str | None = Field(default=None, max_length=64)
+    profile_id: str | None = None
+    configuration: dict[str, Any] | None = None
+
+
+class TestLabelRecognitionCodeResponse(BaseModel):
+    label_kind: str
+    profile_source: str
+    structure: str
+    raw_payload: str
+    normalized_payload: str
+    extracted_fields: dict[str, Any] = Field(default_factory=dict)
+    validation_status: str
+    error_code: str | None = None
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    application_identifiers: list[str] | None = None
+    persists_inventory: bool = False
+
+
 class SupplierExtractionProfileResponse(BaseModel):
     id: str
     client_id: str

@@ -1975,6 +1975,17 @@ class AppContainer:
             profile_repo=self.get_supplier_extraction_profile_repo(),
         )
 
+    def get_test_label_recognition_code_use_case(self):
+        from src.application.use_cases.suppliers.test_label_recognition_code import (
+            LabelRecognitionCodeTesterUseCase,
+        )
+
+        return LabelRecognitionCodeTesterUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+        )
+
     def get_clone_supplier_extraction_profile_use_case(
         self,
     ) -> CloneSupplierExtractionProfileUseCase:

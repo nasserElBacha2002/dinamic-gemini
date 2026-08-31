@@ -4,21 +4,25 @@ from __future__ import annotations
 
 import logging
 import re
-from functools import lru_cache
-from re import Pattern
 
-try:
-    from re import _parser as sre_parse  # type: ignore[attr-defined]
-except ImportError:  # pragma: no cover
-    import sre_parse  # type: ignore[no-redef]
-
+from src.application.services.label_validation.payload_pattern import (
+    PayloadPatternError,
+)
+from src.application.services.label_validation.payload_pattern import (
+    compile_payload_pattern as _compile_payload_pattern_impl,
+)
+from src.application.services.label_validation.structured_payload_extractor import (
+    StructuredPayloadExtractor,
+)
 from src.application.services.position_label_detection.payload_parser import (
     ParsedPositionLabelPayload,
     PositionLabelPayloadParser,
 )
 from src.domain.client_supplier.extraction_profile import (
+    CharacterSetPolicy,
+    ChecksumPolicy,
     ExtractionProfileConfiguration,
-    QrPayloadFormat,
+    PayloadStructure,
 )
 from src.domain.label_profiles.entities import ResolvedLabelProfile
 from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
@@ -51,7 +55,6 @@ _D1_PREFIX = re.compile(r"^D1\|", re.IGNORECASE)
 _DINAMIC_POSITION_HINT = re.compile(r"DINAMIC_POSITION|\"type\"\s*:\s*\"DINAMIC", re.IGNORECASE)
 
 _MAX_PAYLOAD_FOR_REGEX = 512
-_COMPILED_PATTERN_CACHE_SIZE = 256
 
 # Re-export for callers that imported context from this module.
 __all__ = [
@@ -72,96 +75,34 @@ class LabelProfileConfigurationError(ValueError):
         self.message = message
 
 
-def _pattern_has_unsafe_nested_quantifiers(pattern: str) -> bool:
-    """Reject nested/ambiguous quantified constructs that enable classic ReDoS.
-
-    Structural policy (Option A): disallow a quantified subpattern that itself
-    contains another quantifier or alternation (``|``). Keeps simple char-class
-    and literal quantifiers (``^[A-Z]{3}[0-9]+$``) valid.
-    """
+def compile_payload_pattern(pattern: str):
+    """Compile and cache a supplier payload regex; reject unsafe/invalid patterns."""
     try:
-        tree = sre_parse.parse(pattern)
-    except re.error:
-        return False
-
-    def walk(ops: sre_parse.SubPattern, *, inside_quantified: bool) -> bool:
-        for op, av in ops:
-            if op in (sre_parse.MAX_REPEAT, sre_parse.MIN_REPEAT):
-                _min_r, _max_r, sub = av
-                if inside_quantified:
-                    return True
-                if walk(sub, inside_quantified=True):
-                    return True
-            elif op is sre_parse.SUBPATTERN:
-                sub = av[-1]
-                if walk(sub, inside_quantified=inside_quantified):
-                    return True
-            elif op is sre_parse.BRANCH:
-                if inside_quantified:
-                    return True
-                for branch in av[1]:
-                    if walk(branch, inside_quantified=inside_quantified):
-                        return True
-            elif op is sre_parse.GROUPREF_EXISTS:
-                # Conditional / advanced constructs — reject under quantified parents.
-                if inside_quantified:
-                    return True
-                yes = av[1]
-                no = av[2] if len(av) > 2 else None
-                if walk(yes, inside_quantified=inside_quantified):
-                    return True
-                if no is not None and walk(no, inside_quantified=inside_quantified):
-                    return True
-            elif op is sre_parse.ASSERT or op is sre_parse.ASSERT_NOT:
-                sub = av[1]
-                if walk(sub, inside_quantified=inside_quantified):
-                    return True
-        return False
-
-    return walk(tree, inside_quantified=False)
-
-
-@lru_cache(maxsize=_COMPILED_PATTERN_CACHE_SIZE)
-def compile_payload_pattern(pattern: str) -> Pattern[str]:
-    """Compile and cache a supplier payload regex; reject unsafe/invalid patterns.
-
-    Cache is bounded (``lru_cache``) and thread-safe under CPython GIL for
-    cache bookkeeping. Pattern length and payload length remain additional limits.
-    """
-    text = (pattern or "").strip()
-    if not text:
-        raise LabelProfileConfigurationError(
-            LabelValidationErrorCode.LABEL_PROFILE_CONFIGURATION_INVALID.value,
-            "custom_payload_pattern must not be empty",
-        )
-    if len(text) > 200:
-        raise LabelProfileConfigurationError(
-            LabelValidationErrorCode.LABEL_PROFILE_CONFIGURATION_INVALID.value,
-            "custom_payload_pattern exceeds 200 characters",
-        )
-    if _pattern_has_unsafe_nested_quantifiers(text):
-        raise LabelProfileConfigurationError(
-            LabelValidationErrorCode.LABEL_PROFILE_CONFIGURATION_INVALID.value,
-            "custom_payload_pattern has nested quantifiers or quantified alternation",
-        )
-    try:
-        return re.compile(text)
-    except re.error as exc:
-        raise LabelProfileConfigurationError(
-            LabelValidationErrorCode.LABEL_PROFILE_CONFIGURATION_INVALID.value,
-            f"invalid custom_payload_pattern: {exc}",
-        ) from exc
+        return _compile_payload_pattern_impl(pattern)
+    except PayloadPatternError as exc:
+        raise LabelProfileConfigurationError(exc.code, exc.message) from exc
 
 
 def validate_extraction_configuration_for_code_scan(
     configuration: ExtractionProfileConfiguration,
 ) -> None:
     """Fail early when activating/writing a SUPPLIER profile used by CODE_SCAN."""
+    from src.application.services.image_processing.extraction_profile_configuration import (
+        ExtractionProfileConfigurationError,
+    )
+    from src.application.services.label_validation.deterministic_config_validation import (
+        validate_deterministic_barcode_rules,
+    )
+
     if configuration.custom_payload_pattern:
         compile_payload_pattern(configuration.custom_payload_pattern)
     code_regex = configuration.validation_rules.code.regex
     if code_regex:
         compile_payload_pattern(code_regex)
+    try:
+        validate_deterministic_barcode_rules(configuration)
+    except ExtractionProfileConfigurationError as exc:
+        raise LabelProfileConfigurationError(exc.code, exc.message) from exc
 
 
 class LabelValidationService:
@@ -171,10 +112,12 @@ class LabelValidationService:
         self,
         *,
         position_parser: PositionLabelPayloadParser | None = None,
+        payload_extractor: StructuredPayloadExtractor | None = None,
     ) -> None:
         self._position_parser = position_parser or PositionLabelPayloadParser(
             max_payload_bytes=_DEFAULT_POSITION_MAX_PAYLOAD_BYTES
         )
+        self._extractor = payload_extractor or StructuredPayloadExtractor()
 
     def validate(
         self,
@@ -418,15 +361,6 @@ class LabelValidationService:
                 label_kind=label_kind,
             )
 
-        raw = (candidate.raw_payload or "").strip()
-        if len(raw) > _MAX_PAYLOAD_FOR_REGEX:
-            return LabelValidationResult.invalid(
-                error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
-                detail="payload exceeds validation length limit",
-                profile_source=LabelProfileSource.SUPPLIER,
-                label_kind=label_kind,
-            )
-
         if not self._symbology_accepted(candidate.symbology, config):
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_SYMBOLOGY_REJECTED.value,
@@ -435,19 +369,119 @@ class LabelValidationService:
                 label_kind=label_kind,
             )
 
+        extracted = self._extractor.extract(
+            raw_payload=candidate.raw_payload or "",
+            configuration=config,
+            label_kind=label_kind,
+            symbology=candidate.symbology,
+            recognition_source=candidate.recognition_source,
+        )
+        if not extracted.ok or extracted.candidate is None:
+            return LabelValidationResult.invalid(
+                error_code=extracted.error_code
+                or LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,
+                detail=extracted.detail,
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=label_kind,
+                diagnostics={
+                    "raw_payload": extracted.raw_payload,
+                    "normalized_payload": extracted.normalized_payload,
+                },
+            )
+
+        structured = extracted.candidate
+        rules = config.effective_deterministic()
+        normalized = extracted.normalized_payload
+
+        if rules.payload_structure is not PayloadStructure.GS1:
+            shape_err = self._validate_deterministic_shape(
+                normalized=normalized,
+                rules=rules,
+                config=config,
+                label_kind=label_kind,
+            )
+            if shape_err is not None:
+                return shape_err
+
+        if label_kind is LabelKind.ITEM:
+            return self._normalize_supplier_item(
+                structured, raw=extracted.raw_payload, config=config
+            )
+        return self._normalize_supplier_position(
+            structured, raw=extracted.raw_payload, config=config
+        )
+
+    def _validate_deterministic_shape(
+        self,
+        *,
+        normalized: str,
+        rules,
+        config: ExtractionProfileConfiguration,
+        label_kind: LabelKind,
+    ) -> LabelValidationResult | None:
+        prefix = (rules.expected_prefix or "").strip()
+        if prefix and not normalized.startswith(prefix):
+            return LabelValidationResult.invalid(
+                error_code=LabelValidationErrorCode.LABEL_PREFIX_MISMATCH.value,
+                detail=f"payload must start with {prefix!r}",
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=label_kind,
+            )
+        suffix = (rules.expected_suffix or "").strip()
+        if suffix and not normalized.endswith(suffix):
+            return LabelValidationResult.invalid(
+                error_code=LabelValidationErrorCode.LABEL_SUFFIX_MISMATCH.value,
+                detail=f"payload must end with {suffix!r}",
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=label_kind,
+            )
+
+        length = len(normalized)
+        if rules.exact_length is not None and length != int(rules.exact_length):
+            return LabelValidationResult.invalid(
+                error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
+                detail=f"payload length must be exactly {rules.exact_length}",
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=label_kind,
+            )
+        if rules.min_length is not None and length < int(rules.min_length):
+            return LabelValidationResult.invalid(
+                error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
+                detail=f"payload shorter than min_length {rules.min_length}",
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=label_kind,
+            )
+        if rules.max_length is not None and length > int(rules.max_length):
+            return LabelValidationResult.invalid(
+                error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
+                detail=f"payload longer than max_length {rules.max_length}",
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=label_kind,
+            )
+
+        charset_err = self._validate_charset(normalized, rules.character_set, label_kind)
+        if charset_err is not None:
+            return charset_err
+
         try:
-            pattern_text = config.custom_payload_pattern or config.validation_rules.code.regex
+            pattern_text = None
+            if rules.use_advanced_pattern or config.custom_payload_pattern:
+                pattern_text = config.custom_payload_pattern or config.validation_rules.code.regex
             if pattern_text:
                 compiled = compile_payload_pattern(pattern_text)
-                if not compiled.fullmatch(raw):
+                if not compiled.fullmatch(normalized):
                     return LabelValidationResult.invalid(
                         error_code=LabelValidationErrorCode.LABEL_PATTERN_MISMATCH.value,
                         detail="payload does not match custom_payload_pattern",
                         profile_source=LabelProfileSource.SUPPLIER,
                         label_kind=label_kind,
                     )
-            else:
-                code_err = self._validate_code_rules(raw, config, label_kind=label_kind)
+            elif config.deterministic is None:
+                # Legacy length/charset already applied via effective_deterministic;
+                # keep code-rule fallback for hyphen/slash when no v2 charset.
+                code_err = self._validate_code_rules(
+                    normalized, config, label_kind=label_kind
+                )
                 if code_err is not None:
                     return code_err
         except LabelProfileConfigurationError as exc:
@@ -459,43 +493,63 @@ class LabelValidationService:
                 label_kind=label_kind,
             )
 
-        if label_kind is LabelKind.ITEM:
-            return self._normalize_supplier_item(candidate, raw=raw, config=config)
-        return self._normalize_supplier_position(candidate, raw=raw, config=config)
+        if rules.checksum_policy is ChecksumPolicy.EAN_GTIN:
+            digits = "".join(ch for ch in normalized if ch.isdigit())
+            if not self._ean_checksum_ok(digits, config):
+                return LabelValidationResult.invalid(
+                    error_code=LabelValidationErrorCode.LABEL_CHECKSUM_FAILED.value,
+                    detail="EAN/GTIN checksum failed",
+                    profile_source=LabelProfileSource.SUPPLIER,
+                    label_kind=label_kind,
+                )
+        return None
 
-    def _extract_supplier_item_fields(
-        self,
-        candidate: CandidateLabel,
-        *,
-        raw: str,
-        config: ExtractionProfileConfiguration,
-    ) -> tuple[str, str | None, int | float | None]:
-        """Declarative whole-payload / CODE_QUANTITY_PIPE extraction only (Phase 2).
+    @staticmethod
+    def _ean_checksum_ok(digits: str, config: ExtractionProfileConfiguration) -> bool:
+        ean = config.validation_rules.ean
+        n = len(digits)
+        if n == 8 and ean.allow_ean8:
+            body = digits
+        elif n == 12 and ean.allow_ean12:
+            body = digits
+        elif n == 13 and ean.allow_ean13:
+            body = digits
+        elif n == 14 and ean.allow_ean14:
+            body = digits
+        else:
+            return False
+        if not ean.validate_checksum:
+            return True
+        total = 0
+        for i, ch in enumerate(reversed(body[:-1])):
+            total += int(ch) * (3 if i % 2 == 0 else 1)
+        check = (10 - (total % 10)) % 10
+        return check == int(body[-1])
 
-        Named-capture / delimiter / fixed-segment mapping is deferred to a later phase.
-        Never invents quantity=1.
-        """
-        sku = (candidate.sku or "").strip() or None
-        label_id = (candidate.label_id or "").strip() or None
-        quantity = candidate.quantity
-        formats = {str(f).strip().upper() for f in (config.qr_payload_formats or ())}
-        if (
-            QrPayloadFormat.CODE_QUANTITY_PIPE.value in formats
-            and "|" in raw
-            and quantity is None
-        ):
-            code_part, _, qty_part = raw.partition("|")
-            code_part = code_part.strip()
-            qty_part = qty_part.strip()
-            if code_part and qty_part.isdigit():
-                sku = sku or code_part
-                label_id = label_id or code_part
-                quantity = int(qty_part)
-        if not sku:
-            sku = raw
-        if not label_id:
-            label_id = raw
-        return sku, label_id, quantity
+    @staticmethod
+    def _validate_charset(
+        normalized: str, charset: CharacterSetPolicy, label_kind: LabelKind
+    ) -> LabelValidationResult | None:
+        if charset is CharacterSetPolicy.ANY:
+            return None
+        if charset is CharacterSetPolicy.NUMERIC:
+            ok = normalized.isdigit()
+        elif charset is CharacterSetPolicy.HEX:
+            ok = all(ch in "0123456789abcdefABCDEF" for ch in normalized)
+        elif charset is CharacterSetPolicy.UPPERCASE_ALPHANUMERIC:
+            ok = normalized.isalnum() and normalized.upper() == normalized
+        elif charset is CharacterSetPolicy.ALPHANUMERIC:
+            ok = normalized.isalnum()
+        else:
+            ok = True
+        if ok:
+            return None
+        return LabelValidationResult.invalid(
+            error_code=LabelValidationErrorCode.LABEL_CHARSET_MISMATCH.value,
+            detail=f"payload does not match character_set {charset.value}",
+            profile_source=LabelProfileSource.SUPPLIER,
+            label_kind=label_kind,
+        )
 
     def _normalize_supplier_item(
         self,
@@ -504,14 +558,22 @@ class LabelValidationService:
         raw: str,
         config: ExtractionProfileConfiguration,
     ) -> LabelValidationResult:
-        sku, label_id, quantity = self._extract_supplier_item_fields(
-            candidate, raw=raw, config=config
-        )
+        sku = (candidate.sku or "").strip()
+        label_id = (candidate.label_id or "").strip() or None
+        quantity = candidate.quantity
         required = {f.strip().lower() for f in config.required_fields}
-        if "internal_code" in required and not sku:
+        # Map legacy internal_code requirement onto sku.
+        if ("internal_code" in required or "sku" in required) and not sku:
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_REQUIRED_FIELD_MISSING.value,
-                detail="internal_code/sku required",
+                detail="sku/internal_code required",
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=LabelKind.ITEM,
+            )
+        if "label_id" in required and not label_id:
+            return LabelValidationResult.invalid(
+                error_code=LabelValidationErrorCode.LABEL_REQUIRED_FIELD_MISSING.value,
+                detail="label_id required by supplier profile",
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=LabelKind.ITEM,
             )
@@ -540,14 +602,35 @@ class LabelValidationService:
                     profile_source=LabelProfileSource.SUPPLIER,
                     label_kind=LabelKind.ITEM,
                 )
+        if not sku:
+            semantic = (config.semantic_type or "").strip().upper()
+            logistic = semantic in {
+                "SSCC",
+                "LOGISTIC_UNIT",
+                "PALLET",
+                "BOX",
+                "LPN",
+                "CONTAINER",
+            }
+            # Do not invent sku=SSCC for logistic units; label_id is the identity.
+            if not (logistic and label_id):
+                sku = (label_id or "").strip()
+        if not sku and not label_id:
+            return LabelValidationResult.invalid(
+                error_code=LabelValidationErrorCode.LABEL_REQUIRED_FIELD_MISSING.value,
+                detail="sku or label_id missing after structured extraction",
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=LabelKind.ITEM,
+            )
         return LabelValidationResult.valid(
             NormalizedItemLabel(
                 label_id=label_id,
-                sku=sku,
+                sku=sku or None,
                 quantity=qty_out,
                 raw_payload=raw,
                 profile_source=LabelProfileSource.SUPPLIER,
                 symbology=candidate.symbology,
+                metadata=dict(candidate.metadata),
             ),
             profile_source=LabelProfileSource.SUPPLIER,
             label_kind=LabelKind.ITEM,
@@ -560,9 +643,7 @@ class LabelValidationService:
         raw: str,
         config: ExtractionProfileConfiguration,
     ) -> LabelValidationResult:
-        # Phase 2: whole payload as position_id unless candidate already carries fields.
-        # Structured barcode field mapping (named capture / delimiter) is deferred.
-        position_id = (candidate.position_id or candidate.label_id or raw).strip()
+        position_id = (candidate.position_id or candidate.label_id or "").strip()
         pallet = (candidate.pallet or "").strip() or None
         side = (candidate.side or "").strip() or None
         level = (candidate.level or "").strip() or None
@@ -597,6 +678,7 @@ class LabelValidationService:
                 raw_payload=raw,
                 profile_source=LabelProfileSource.SUPPLIER,
                 symbology=candidate.symbology,
+                metadata=dict(candidate.metadata),
             ),
             profile_source=LabelProfileSource.SUPPLIER,
             label_kind=LabelKind.POSITION,

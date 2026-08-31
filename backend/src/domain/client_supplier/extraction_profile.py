@@ -220,9 +220,176 @@ class ExtractionValidationRules:
     quantity_integer_only: bool = True
 
 
+
+CONFIGURATION_SCHEMA_VERSION_V1 = 1
+CONFIGURATION_SCHEMA_VERSION_V2 = 2
+
+ITEM_FIELD_TARGETS: frozenset[str] = frozenset(
+    {"label_id", "sku", "quantity", "lot", "serial", "expiry_date"}
+)
+POSITION_FIELD_TARGETS: frozenset[str] = frozenset(
+    {"position_id", "pallet", "side", "level"}
+)
+
+
+class PayloadStructure(str, Enum):
+    """How a barcode/QR payload is structured."""
+
+    SIMPLE = "SIMPLE"
+    SEGMENTED = "SEGMENTED"
+    GS1 = "GS1"
+
+
+class CharacterSetPolicy(str, Enum):
+    NUMERIC = "NUMERIC"
+    ALPHANUMERIC = "ALPHANUMERIC"
+    UPPERCASE_ALPHANUMERIC = "UPPERCASE_ALPHANUMERIC"
+    HEX = "HEX"
+    ANY = "ANY"
+
+
+class CaseNormalization(str, Enum):
+    NONE = "NONE"
+    UPPER = "UPPER"
+    LOWER = "LOWER"
+
+
+class ChecksumPolicy(str, Enum):
+    NONE = "NONE"
+    EAN_GTIN = "EAN_GTIN"
+
+
+class ItemLabelSemanticType(str, Enum):
+    PRODUCT_SKU = "PRODUCT_SKU"
+    LOGISTIC_UNIT = "LOGISTIC_UNIT"
+    PALLET = "PALLET"
+    BOX = "BOX"
+    LPN = "LPN"
+    SSCC = "SSCC"
+    CONTAINER = "CONTAINER"
+    CUSTOM = "CUSTOM"
+
+
+class PositionLabelSemanticType(str, Enum):
+    LOCATION = "LOCATION"
+    AISLE_POSITION = "AISLE_POSITION"
+    PALLET_POSITION = "PALLET_POSITION"
+    RACK_POSITION = "RACK_POSITION"
+    CUSTOM = "CUSTOM"
+
+
+class FieldMappingSource(str, Enum):
+    WHOLE = "WHOLE"
+    SEGMENT = "SEGMENT"
+    APPLICATION_IDENTIFIER = "APPLICATION_IDENTIFIER"
+
+
+@dataclass(frozen=True)
+class PayloadExample:
+    """Non-authoritative fixture for activation checks / tester UX."""
+
+    raw_payload: str
+    symbology: str | None = None
+    description: str | None = None
+
+    def to_public_dict(self) -> dict[str, Any]:
+        return {
+            "raw_payload": self.raw_payload,
+            "symbology": self.symbology,
+            "description": self.description,
+        }
+
+
+@dataclass(frozen=True)
+class PayloadNormalizationRules:
+    """Normalize before deterministic validation / field extraction."""
+
+    trim_outer_whitespace: bool = True
+    case_normalization: CaseNormalization = CaseNormalization.NONE
+    remove_internal_spaces: bool = False
+    remove_hyphens: bool = False
+
+    def to_public_dict(self) -> dict[str, Any]:
+        return {
+            "trim_outer_whitespace": self.trim_outer_whitespace,
+            "case_normalization": self.case_normalization.value,
+            "remove_internal_spaces": self.remove_internal_spaces,
+            "remove_hyphens": self.remove_hyphens,
+        }
+
+
+@dataclass(frozen=True)
+class FieldMappingRule:
+    """Declarative map from whole payload, segment, or GS1 AI → core field."""
+
+    target: str
+    source: FieldMappingSource = FieldMappingSource.WHOLE
+    segment_index: int | None = None
+    application_identifier: str | None = None
+
+    def to_public_dict(self) -> dict[str, Any]:
+        return {
+            "target": self.target,
+            "source": self.source.value,
+            "segment_index": self.segment_index,
+            "application_identifier": self.application_identifier,
+        }
+
+
+@dataclass(frozen=True)
+class DeterministicBarcodeRules:
+    """Barcode/QR deterministic rules — distinct from visual_hints / OCR detection."""
+
+    expected_prefix: str | None = None
+    expected_suffix: str | None = None
+    exact_length: int | None = None
+    min_length: int | None = None
+    max_length: int | None = None
+    character_set: CharacterSetPolicy = CharacterSetPolicy.ANY
+    normalization: PayloadNormalizationRules = field(
+        default_factory=PayloadNormalizationRules
+    )
+    payload_structure: PayloadStructure = PayloadStructure.SIMPLE
+    delimiter: str | None = None
+    expected_segment_count: int | None = None
+    field_mappings: tuple[FieldMappingRule, ...] = ()
+    checksum_policy: ChecksumPolicy = ChecksumPolicy.NONE
+    use_advanced_pattern: bool = False
+    required_application_identifiers: tuple[str, ...] = ()
+    optional_application_identifiers: tuple[str, ...] = ()
+
+    def to_public_dict(self) -> dict[str, Any]:
+        return {
+            "expected_prefix": self.expected_prefix,
+            "expected_suffix": self.expected_suffix,
+            "exact_length": self.exact_length,
+            "min_length": self.min_length,
+            "max_length": self.max_length,
+            "character_set": self.character_set.value,
+            "normalization": self.normalization.to_public_dict(),
+            "payload_structure": self.payload_structure.value,
+            "delimiter": self.delimiter,
+            "expected_segment_count": self.expected_segment_count,
+            "field_mappings": [m.to_public_dict() for m in self.field_mappings],
+            "checksum_policy": self.checksum_policy.value,
+            "use_advanced_pattern": self.use_advanced_pattern,
+            "required_application_identifiers": list(
+                self.required_application_identifiers
+            ),
+            "optional_application_identifiers": list(
+                self.optional_application_identifiers
+            ),
+        }
+
+
 @dataclass(frozen=True)
 class ExtractionProfileConfiguration:
-    """Structured extraction rules — source of truth (not free-text prompts)."""
+    """Structured extraction / label-recognition rules — source of truth.
+
+    ``configuration_schema_version``:
+    - 1 = legacy OCR/extraction-oriented payload
+    - 2 = label recognition (deterministic barcode rules + visual hints)
+    """
 
     internal_code_sources: tuple[InternalCodeSourceRule, ...] = ()
     forbidden_internal_code_sources: tuple[str, ...] = ()
@@ -244,9 +411,22 @@ class ExtractionProfileConfiguration:
     aliases: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # Only the system default may enable this; custom profiles must stay False.
     allow_unconfigured_code_source_fallback: bool = False
+    configuration_schema_version: int = CONFIGURATION_SCHEMA_VERSION_V1
+    semantic_type: str | None = None
+    deterministic: DeterministicBarcodeRules | None = None
+    valid_examples: tuple[PayloadExample, ...] = ()
+    invalid_examples: tuple[PayloadExample, ...] = ()
+
+    def effective_deterministic(self) -> DeterministicBarcodeRules:
+        """Return explicit v2 rules or a legacy-compatible derived representation."""
+        if self.deterministic is not None:
+            return self.deterministic
+        return derive_legacy_deterministic_rules(self)
 
     def to_public_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
+            "configuration_schema_version": int(self.configuration_schema_version),
+            "semantic_type": self.semantic_type,
             "internal_code_sources": [
                 {
                     "field_key": s.field_key,
@@ -305,6 +485,19 @@ class ExtractionProfileConfiguration:
                     self.label_detection_rules.maximum_candidate_regions
                 ),
             },
+            "visual_hints": {
+                "label_detection_rules": {
+                    "enabled": self.label_detection_rules.enabled,
+                    "expected_background": self.label_detection_rules.expected_background.value,
+                    "expected_shape": self.label_detection_rules.expected_shape.value,
+                    "expected_orientation": (
+                        self.label_detection_rules.expected_orientation.value
+                    ),
+                    "primary_anchors": list(self.label_detection_rules.primary_anchors),
+                    "secondary_anchors": list(self.label_detection_rules.secondary_anchors),
+                    "allow_rotation": self.label_detection_rules.allow_rotation,
+                }
+            },
             "additional_fields": [
                 {
                     "field_key": f.field_key,
@@ -354,7 +547,90 @@ class ExtractionProfileConfiguration:
             "allow_unconfigured_code_source_fallback": (
                 self.allow_unconfigured_code_source_fallback
             ),
+            "valid_examples": [e.to_public_dict() for e in self.valid_examples],
+            "invalid_examples": [e.to_public_dict() for e in self.invalid_examples],
         }
+        if self.deterministic is not None:
+            out["deterministic"] = self.deterministic.to_public_dict()
+        return out
+
+
+def derive_legacy_deterministic_rules(
+    config: ExtractionProfileConfiguration,
+) -> DeterministicBarcodeRules:
+    """Map v1 OCR/extraction config into effective deterministic barcode rules."""
+    code = config.validation_rules.code
+    # Prefer ANY when an advanced pattern exists (regex is authoritative) or when
+    # legacy code rules allow hyphens/slashes that ALPHANUMERIC would reject.
+    charset = CharacterSetPolicy.ANY
+    if config.custom_payload_pattern or code.regex:
+        charset = CharacterSetPolicy.ANY
+    elif code.allow_digits and not code.allow_letters:
+        charset = CharacterSetPolicy.NUMERIC
+    elif (
+        code.allow_digits
+        and code.allow_letters
+        and not code.allow_spaces
+        and not code.allow_hyphen
+        and not code.allow_slash
+    ):
+        charset = CharacterSetPolicy.ALPHANUMERIC
+
+    mappings: list[FieldMappingRule] = []
+    structure = PayloadStructure.SIMPLE
+    delimiter: str | None = None
+    expected_segments: int | None = None
+    formats = {str(f).strip().upper() for f in (config.qr_payload_formats or ())}
+    # Prefer SIMPLE when PLAIN_CODE (or no exclusive PIPE) is available — default
+    # templates list both PLAIN and PIPE; do not force segmented on every legacy profile.
+    pipe_only = (
+        QrPayloadFormat.CODE_QUANTITY_PIPE.value in formats
+        and QrPayloadFormat.PLAIN_CODE.value not in formats
+        and QrPayloadFormat.DI1.value not in formats
+        and QrPayloadFormat.LABELED.value not in formats
+    )
+    if pipe_only:
+        structure = PayloadStructure.SEGMENTED
+        delimiter = "|"
+        expected_segments = 2
+        mappings = [
+            FieldMappingRule("label_id", FieldMappingSource.SEGMENT, 0),
+            FieldMappingRule("sku", FieldMappingSource.SEGMENT, 0),
+            FieldMappingRule("quantity", FieldMappingSource.SEGMENT, 1),
+        ]
+    else:
+        # Legacy CODE_SCAN assumed whole payload → identity fields.
+        mappings = [
+            FieldMappingRule("label_id", FieldMappingSource.WHOLE, None),
+            FieldMappingRule("sku", FieldMappingSource.WHOLE, None),
+            FieldMappingRule("position_id", FieldMappingSource.WHOLE, None),
+        ]
+
+    # Do not force EAN checksum on arbitrary supplier alphanumeric payloads.
+    checksum = ChecksumPolicy.NONE
+    if config.validation_rules.ean.validate_checksum and charset is CharacterSetPolicy.NUMERIC:
+        checksum = ChecksumPolicy.EAN_GTIN
+
+    return DeterministicBarcodeRules(
+        expected_prefix=None,
+        expected_suffix=None,
+        exact_length=code.exact_length,
+        min_length=code.min_length,
+        max_length=code.max_length,
+        character_set=charset,
+        normalization=PayloadNormalizationRules(
+            trim_outer_whitespace=True,
+            case_normalization=CaseNormalization.NONE,
+            remove_internal_spaces=False,
+            remove_hyphens=False,
+        ),
+        payload_structure=structure,
+        delimiter=delimiter,
+        expected_segment_count=expected_segments,
+        field_mappings=tuple(mappings),
+        checksum_policy=checksum,
+        use_advanced_pattern=bool(config.custom_payload_pattern or code.regex),
+    )
 
 
 def default_extraction_configuration() -> ExtractionProfileConfiguration:
@@ -483,6 +759,111 @@ def inventory_seven_digit_internal_code_template() -> ExtractionProfileConfigura
     )
 
 
+def gs1_sscc_template() -> ExtractionProfileConfiguration:
+    """Backend template for GS1 SSCC logistic-unit recognition (PR3 UI will surface)."""
+    return ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        semantic_type=ItemLabelSemanticType.SSCC.value,
+        required_fields=("label_id",),
+        quantity_rules=QuantityExtractionRules(
+            required=False,
+            minimum=1,
+            expected_presence=QuantityPresence.OPTIONAL,
+            missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
+        ),
+        accepted_barcode_formats=("CODE128", "DATABAR", "QR"),
+        deterministic=DeterministicBarcodeRules(
+            payload_structure=PayloadStructure.GS1,
+            required_application_identifiers=("00",),
+            field_mappings=(
+                FieldMappingRule(
+                    "label_id",
+                    FieldMappingSource.APPLICATION_IDENTIFIER,
+                    application_identifier="00",
+                ),
+            ),
+            character_set=CharacterSetPolicy.ANY,
+        ),
+        valid_examples=(
+            PayloadExample(
+                raw_payload="(00)000123456700000008",
+                symbology="CODE_128",
+                description="SSCC with valid check digit",
+            ),
+        ),
+        invalid_examples=(
+            PayloadExample(
+                raw_payload="(00)000123456700000009",
+                symbology="CODE_128",
+                description="SSCC with invalid check digit",
+            ),
+        ),
+    )
+
+
+def gs1_gtin_template() -> ExtractionProfileConfiguration:
+    """Backend template for GS1 GTIN (AI 01) with optional lot (AI 10)."""
+    return ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        semantic_type=ItemLabelSemanticType.PRODUCT_SKU.value,
+        required_fields=("sku",),
+        quantity_rules=QuantityExtractionRules(
+            required=False,
+            minimum=1,
+            expected_presence=QuantityPresence.OPTIONAL,
+            missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
+        ),
+        accepted_barcode_formats=("CODE128", "DATABAR", "QR", "EAN13"),
+        deterministic=DeterministicBarcodeRules(
+            payload_structure=PayloadStructure.GS1,
+            required_application_identifiers=("01",),
+            optional_application_identifiers=("10", "17", "21"),
+            field_mappings=(
+                FieldMappingRule(
+                    "sku",
+                    FieldMappingSource.APPLICATION_IDENTIFIER,
+                    application_identifier="01",
+                ),
+                FieldMappingRule(
+                    "label_id",
+                    FieldMappingSource.APPLICATION_IDENTIFIER,
+                    application_identifier="01",
+                ),
+                FieldMappingRule(
+                    "lot",
+                    FieldMappingSource.APPLICATION_IDENTIFIER,
+                    application_identifier="10",
+                ),
+                FieldMappingRule(
+                    "expiry_date",
+                    FieldMappingSource.APPLICATION_IDENTIFIER,
+                    application_identifier="17",
+                ),
+                FieldMappingRule(
+                    "serial",
+                    FieldMappingSource.APPLICATION_IDENTIFIER,
+                    application_identifier="21",
+                ),
+            ),
+            character_set=CharacterSetPolicy.ANY,
+        ),
+        valid_examples=(
+            PayloadExample(
+                raw_payload="(01)09521234500001",
+                symbology="CODE_128",
+                description="GTIN-14 with valid check digit",
+            ),
+        ),
+        invalid_examples=(
+            PayloadExample(
+                raw_payload="(01)09521234500002",
+                symbology="CODE_128",
+                description="GTIN with invalid check digit",
+            ),
+        ),
+    )
+
+
 @dataclass
 class SupplierExtractionProfile:
     """Versioned extraction profile scoped to client_id + supplier (client_supplier)."""
@@ -541,19 +922,34 @@ class ReferenceAnnotation:
 __all__ = [
     "AdditionalFieldRule",
     "AnchorMatchPolicy",
+    "CONFIGURATION_SCHEMA_VERSION_V1",
+    "CONFIGURATION_SCHEMA_VERSION_V2",
+    "CaseNormalization",
+    "CharacterSetPolicy",
+    "ChecksumPolicy",
     "CodeValidationRules",
+    "DeterministicBarcodeRules",
     "EanValidationRules",
     "ExtractionProfileConfiguration",
     "ExtractionProfileStatus",
     "ExtractionValidationRules",
     "FieldDataType",
+    "FieldMappingRule",
+    "FieldMappingSource",
     "INTERNAL_CODE_SOURCE_KEYS",
+    "ITEM_FIELD_TARGETS",
     "InternalCodeSourceRule",
+    "ItemLabelSemanticType",
     "LabelBackgroundHint",
     "LabelDetectionRules",
     "LabelOrientationHint",
     "LabelShapeHint",
     "MissingQuantityAction",
+    "POSITION_FIELD_TARGETS",
+    "PayloadExample",
+    "PayloadNormalizationRules",
+    "PayloadStructure",
+    "PositionLabelSemanticType",
     "QrPayloadFormat",
     "QuantityExtractionRules",
     "QuantityPresence",
@@ -563,5 +959,8 @@ __all__ = [
     "SupplierExtractionProfile",
     "UnanchoredCodeCandidatePolicy",
     "default_extraction_configuration",
+    "derive_legacy_deterministic_rules",
+    "gs1_gtin_template",
+    "gs1_sscc_template",
     "inventory_seven_digit_internal_code_template",
 ]

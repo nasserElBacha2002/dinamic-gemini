@@ -145,7 +145,7 @@ class CodeScanLabelClassifier:
                 result.status is LabelValidationStatus.VALID
                 and isinstance(result.label, NormalizedItemLabel)
             ):
-                identity = (result.label.label_id or result.label.sku).strip()
+                identity = ((result.label.label_id or result.label.sku) or "").strip()
                 if identity in seen_item_ids:
                     rejections.append(
                         ClassificationRejection(

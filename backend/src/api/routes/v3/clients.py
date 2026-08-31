@@ -39,6 +39,7 @@ from src.api.dependencies import (
     get_list_supplier_reference_annotations_use_case,
     get_list_supplier_reference_images_use_case,
     get_replace_supplier_reference_annotations_use_case,
+    get_test_label_recognition_code_use_case,
     get_update_client_use_case,
     get_upload_supplier_reference_images_use_case,
     get_upsert_client_supplier_label_profile_use_case,
@@ -75,6 +76,8 @@ from src.api.schemas.supplier_extraction_profile_schemas import (
     SupplierReferenceAnnotationsListResponse,
     TestExtractionProfileRequest,
     TestExtractionProfileResponse,
+    TestLabelRecognitionCodeRequest,
+    TestLabelRecognitionCodeResponse,
 )
 from src.api.schemas.supplier_prompt_config_schemas import (
     CreateSupplierPromptConfigRequest,
@@ -156,6 +159,10 @@ from src.application.use_cases.suppliers.manage_supplier_reference_images import
 from src.application.use_cases.suppliers.test_extraction_profile_diagnostic import (
     TestExtractionProfileCommand,
     TestExtractionProfileUseCase,
+)
+from src.application.use_cases.suppliers.test_label_recognition_code import (
+    LabelRecognitionCodeTestCommand,
+    LabelRecognitionCodeTesterUseCase,
 )
 from src.application.use_cases.suppliers.upload_supplier_reference_images import (
     ListSupplierReferenceImagesUseCase,
@@ -956,6 +963,49 @@ def test_supplier_extraction_profile(
         return TestExtractionProfileResponse(**result)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{client_id}/suppliers/{supplier_id}/extraction-profiles/test-code",
+    response_model=TestLabelRecognitionCodeResponse,
+)
+def test_supplier_label_recognition_code(
+    client_id: str,
+    supplier_id: str,
+    payload: TestLabelRecognitionCodeRequest,
+    use_case: LabelRecognitionCodeTesterUseCase = Depends(
+        get_test_label_recognition_code_use_case
+    ),
+) -> TestLabelRecognitionCodeResponse:
+    """Non-persistent structured payload / GS1 dry-run — never mutates inventory."""
+    if payload.configuration is None and not payload.profile_id:
+        raise HTTPException(
+            status_code=400,
+            detail="profile_id or configuration is required",
+        )
+    try:
+        kind = parse_label_kind(payload.label_kind)
+        if kind is None:
+            from src.domain.label_profiles.kinds import LabelKind
+
+            kind = LabelKind.ITEM
+        result = use_case.execute(
+            LabelRecognitionCodeTestCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                label_kind=kind,
+                raw_payload=payload.raw_payload,
+                symbology=payload.symbology,
+                profile_id=payload.profile_id,
+                configuration=payload.configuration,
+            )
+        )
+        return TestLabelRecognitionCodeResponse(**result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:

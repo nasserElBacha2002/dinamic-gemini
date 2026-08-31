@@ -39,6 +39,19 @@ class LabelValidationErrorCode(str, Enum):
     DINAMIC_POSITION_INVALID = "DINAMIC_POSITION_INVALID"
     AMBIGUOUS_LABEL_KIND = "AMBIGUOUS_LABEL_KIND"
     LABEL_PROFILE_SOURCE_MISMATCH = "LABEL_PROFILE_SOURCE_MISMATCH"
+    LABEL_PREFIX_MISMATCH = "LABEL_PREFIX_MISMATCH"
+    LABEL_SUFFIX_MISMATCH = "LABEL_SUFFIX_MISMATCH"
+    LABEL_LENGTH_MISMATCH = "LABEL_LENGTH_MISMATCH"
+    LABEL_CHARSET_MISMATCH = "LABEL_CHARSET_MISMATCH"
+    LABEL_SEGMENT_COUNT_MISMATCH = "LABEL_SEGMENT_COUNT_MISMATCH"
+    LABEL_FIELD_MAPPING_INVALID = "LABEL_FIELD_MAPPING_INVALID"
+    LABEL_CHECKSUM_FAILED = "LABEL_CHECKSUM_FAILED"
+    LABEL_GS1_INVALID = "LABEL_GS1_INVALID"
+    LABEL_GS1_REQUIRED_AI_MISSING = "LABEL_GS1_REQUIRED_AI_MISSING"
+    LABEL_GS1_CHECK_DIGIT_FAILED = "LABEL_GS1_CHECK_DIGIT_FAILED"
+    LABEL_GS1_FIELD_INVALID = "LABEL_GS1_FIELD_INVALID"
+    LABEL_GS1_SEPARATOR_INVALID = "LABEL_GS1_SEPARATOR_INVALID"
+    LABEL_PROFILE_EXAMPLE_MISMATCH = "LABEL_PROFILE_EXAMPLE_MISMATCH"
     NOT_OUR_FORMAT = "NOT_OUR_FORMAT"
 
 
@@ -89,10 +102,14 @@ class CandidateLabel:
 
 @dataclass(frozen=True)
 class NormalizedItemLabel:
-    """Validated ITEM label — strong invariants (not all-nullable)."""
+    """Validated ITEM label — strong invariants (not all-nullable).
+
+    Logistic units (SSCC/LPN) may set ``label_id`` without inventing a SKU.
+    At least one of ``sku`` or ``label_id`` must be present.
+    """
 
     label_id: str | None
-    sku: str
+    sku: str | None
     quantity: int | None
     raw_payload: str
     profile_source: LabelProfileSource
@@ -104,8 +121,10 @@ class NormalizedItemLabel:
     kind: LabelKind = field(default=LabelKind.ITEM, init=False)
 
     def __post_init__(self) -> None:
-        if not (self.sku or "").strip():
-            raise ValueError("NormalizedItemLabel.sku is required")
+        has_sku = bool((self.sku or "").strip())
+        has_label = bool((self.label_id or "").strip())
+        if not has_sku and not has_label:
+            raise ValueError("NormalizedItemLabel requires sku or label_id")
         if not (self.raw_payload or "").strip():
             raise ValueError("NormalizedItemLabel.raw_payload is required")
 

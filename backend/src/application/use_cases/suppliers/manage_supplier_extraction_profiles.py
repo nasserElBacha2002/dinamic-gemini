@@ -347,6 +347,17 @@ class CreateSupplierExtractionProfileVersionUseCase:
         if not command.activate:
             return created
         try:
+            from src.application.services.label_validation.profile_example_validation import (
+                validate_profile_examples_for_activation,
+            )
+
+            validate_profile_examples_for_activation(
+                created.configuration,
+                label_kind=created.label_kind or LabelKind.ITEM,
+            )
+        except ExtractionProfileConfigurationError as exc:
+            raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
+        try:
             return self._profile_repo.activate_version(
                 client_id=command.client_id,
                 supplier_id=command.supplier_id,
@@ -391,7 +402,18 @@ class ActivateSupplierExtractionProfileVersionUseCase:
         )
         try:
             validate_extraction_configuration_for_code_scan(profile.configuration)
+            from src.application.services.label_validation.profile_example_validation import (
+                validate_profile_examples_for_activation,
+            )
+            from src.domain.label_profiles.kinds import LabelKind as _LabelKind
+
+            kind = profile.label_kind or _LabelKind.ITEM
+            validate_profile_examples_for_activation(
+                profile.configuration, label_kind=kind
+            )
         except LabelProfileConfigurationError as exc:
+            raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
+        except ExtractionProfileConfigurationError as exc:
             raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
         try:
             return self._profile_repo.activate_version(

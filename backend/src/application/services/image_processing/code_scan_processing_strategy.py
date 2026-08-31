@@ -1185,8 +1185,6 @@ class CodeScanProcessingStrategy:
                     recognition_source=RecognitionSource.CODE_SCAN,
                     label_kind_hint=LabelKind.ITEM,
                     symbology=symbology_for_candidate(cand),
-                    label_id=raw,
-                    sku=raw,
                 ),
                 context=validation_ctx,
                 label_kind=LabelKind.ITEM,
@@ -1195,7 +1193,7 @@ class CodeScanProcessingStrategy:
                 result.label, NormalizedItemLabel
             ):
                 self._metrics.increment("code_scan_valid_total")
-                identity = (result.label.label_id or result.label.sku).strip()
+                identity = ((result.label.label_id or result.label.sku) or "").strip()
                 if identity in seen_ids:
                     rejections.append(
                         {

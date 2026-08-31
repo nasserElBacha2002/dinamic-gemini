@@ -1745,6 +1745,10 @@ def get_activate_supplier_extraction_profile_version_use_case():
     return get_app_container().get_activate_supplier_extraction_profile_version_use_case()
 
 
+def get_test_label_recognition_code_use_case():
+    return get_app_container().get_test_label_recognition_code_use_case()
+
+
 def get_clone_supplier_extraction_profile_use_case():
     return get_app_container().get_clone_supplier_extraction_profile_use_case()
 

@@ -27,15 +27,25 @@ def test_candidate_item_ok() -> None:
     assert c.raw_payload == "SUP00000001"
 
 
-def test_normalized_item_requires_sku() -> None:
+def test_normalized_item_requires_sku_or_label_id() -> None:
     with pytest.raises(ValueError):
         NormalizedItemLabel(
-            label_id="x",
+            label_id=None,
             sku="  ",
             quantity=1,
             raw_payload="x",
             profile_source=LabelProfileSource.SUPPLIER,
         )
+    # Logistic unit: label_id without sku is allowed.
+    n = NormalizedItemLabel(
+        label_id="000123456700000008",
+        sku=None,
+        quantity=None,
+        raw_payload="(00)000123456700000008",
+        profile_source=LabelProfileSource.SUPPLIER,
+    )
+    assert n.label_id == "000123456700000008"
+    assert n.sku is None
 
 
 def test_normalized_item_ok() -> None:
