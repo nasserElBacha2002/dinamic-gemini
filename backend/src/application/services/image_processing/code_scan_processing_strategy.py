@@ -14,9 +14,9 @@ Hard constraints (no OCR, no LLM fallback):
 - Technical problems (missing file, corrupt image, scanner unavailable, timeout) →
   FAILED_TECHNICAL.
 
-Supplier extraction-profile / OCR validation rules (exact_length, anchors, charset for
-printed text, etc.) apply only to INTERNAL_OCR. CODE_SCAN uses the deterministic
-parser + consolidator. External AI (Gemini, etc.) uses prompts, not OCR profile rules.
+Supplier CODE_SCAN custom rules (Phase 2) are applied via ``LabelValidationService`` when
+the job snapshot selects SUPPLIER for ITEM/POSITION. Dinamic D1 / DINAMIC_POSITION keep
+their existing parsers and fail-closed integrity. OCR profile rules remain INTERNAL_OCR-only.
 """
 
 from __future__ import annotations
@@ -39,6 +39,10 @@ from src.application.services.image_processing.code_detection_consolidator impor
     CodeDetectionConsolidator,
     CodeDetectionInput,
 )
+from src.application.services.image_processing.code_scan_label_classifier import (
+    CodeScanClassificationResult,
+    CodeScanLabelClassifier,
+)
 from src.application.services.image_processing.code_scan_session import (
     CodeScanSessionResult,
     CodeScanStopReason,
@@ -50,6 +54,11 @@ from src.application.services.image_processing.encoded_label_payload_parser impo
 from src.application.services.image_processing.processing_event_publisher import (
     ProcessingEventPublisher,
 )
+from src.application.services.label_validation import (
+    LabelValidationService,
+    item_profile_source,
+    position_profile_source,
+)
 from src.application.services.product_labels.issued_product_label_resolver import (
     IssuedProductLabelResolver,
 )
@@ -60,6 +69,21 @@ from src.domain.image_processing.contracts import (
     ImageProcessingContext,
     ImageProcessingResult,
     ImageResultStatus,
+)
+from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
+from src.domain.label_validation import (
+    CandidateLabel,
+    LabelValidationErrorCode,
+    LabelValidationStatus,
+    NormalizedItemLabel,
+    RecognitionSource,
+)
+from src.domain.label_validation.context import LabelValidationContext
+from src.domain.position_label_detection.entities import (
+    DETECTOR_NAME,
+    ImagePositionLabelDetection,
+    PositionLabelDetectionStatus,
+    PositionLabelSignatureStatus,
 )
 from src.domain.product_labels.format import parse_product_label_payload
 from src.domain.product_labels.processed import (
@@ -75,6 +99,7 @@ from src.infrastructure.code_scanning.pyzbar_code_scanner import PyzbarUnavailab
 logger = logging.getLogger(__name__)
 
 STRATEGY_KEY = "CODE_SCAN"
+_SUPPLIER_POSITION_DETECTOR_VERSION = "supplier-position-label-1.0.0"
 
 _SYMBOLOGY_BY_CODE_TYPE = {
     CodeType.QR: "QR_CODE",
@@ -155,6 +180,13 @@ def _sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()
 
 
+def _evidence_list_len(evidence: dict[str, Any] | None, key: str) -> int:
+    if not evidence:
+        return 0
+    value = evidence.get(key)
+    return len(value) if isinstance(value, list) else 0
+
+
 class SourceAssetContentReaderPort:
     """Structural port: ``read_image_bytes(asset) -> bytes``."""
 
@@ -177,6 +209,8 @@ class CodeScanProcessingStrategy:
         event_publisher: ProcessingEventPublisher | None = None,
         position_detection=None,
         issued_label_resolver: IssuedProductLabelResolver | None = None,
+        label_validation_service: LabelValidationService | None = None,
+        position_label_detection_repo=None,
     ) -> None:
         self._scanner = scanner
         self._reader = content_reader
@@ -187,6 +221,9 @@ class CodeScanProcessingStrategy:
         self._events = event_publisher
         self._position_detection = position_detection
         self._issued_label_resolver = issued_label_resolver
+        self._label_validation = label_validation_service or LabelValidationService()
+        self._classifier = CodeScanLabelClassifier(self._label_validation)
+        self._position_detection_repo = position_label_detection_repo
 
     def _publish_asset_event(
         self,
@@ -372,146 +409,185 @@ class CodeScanProcessingStrategy:
                 },
             )
 
+        validation_ctx = self._validation_context(context)
+        item_source = item_profile_source(validation_ctx)
+        position_source = position_profile_source(validation_ctx)
+        use_unified = validation_ctx.resolved_profiles is not None
+
         item_candidates = candidates
         position_meta: dict | None = None
-        if self._position_detection is not None:
-            position_started = time.monotonic()
-            try:
-                from src.application.use_cases.position_label_detection.detect_image_position_labels import (
-                    ImagePositionDetectionCommand,
-                )
-                from src.domain.position_label_detection.entities import DetectedCode
+        classification: CodeScanClassificationResult | None = None
+        duration_ms = int((time.monotonic() - started) * 1000)
 
-                client_id = (context.client_id or "").strip()
-                if not client_id:
-                    self._metrics.increment("position_label_detection_context_invalid_total")
-                    logger.info(
-                        "position_label_detection_context_invalid job_id=%s asset_id=%s "
-                        "code=POSITION_LABEL_DETECTION_CONTEXT_INVALID",
-                        context.job_id,
-                        context.asset_id,
-                    )
-                    position_meta = {
-                        "position_detection_count": 0,
-                        "position_ambiguous": False,
-                        "position_statuses": ["DETECTION_CONTEXT_INVALID"],
-                        "position_detection_duration_ms": int(
-                            (time.monotonic() - position_started) * 1000
-                        ),
-                    }
-                else:
-                    detected_codes = [
-                        DetectedCode(
-                            symbology=symbology_for_candidate(c),
-                            raw_value=c.code_value,
-                            normalized_value=(c.code_value or "").strip(),
-                            bounding_box=c.bounding_box_json,
-                            confidence=c.confidence,
-                            rotation_degrees=_float_if_present(
-                                c.metadata_json.get("rotation_degrees")
-                                if c.metadata_json is not None
-                                else None
-                            ),
-                            candidate_index=idx,
-                        )
-                        for idx, c in enumerate(candidates)
-                    ]
-                    pos_result = self._position_detection.execute(
-                        ImagePositionDetectionCommand(
-                            client_id=client_id,
-                            inventory_id=context.inventory_id,
-                            job_id=context.job_id,
-                            source_asset_id=context.asset_id,
-                            codes=detected_codes,
-                            client_image_id=getattr(asset, "upload_client_file_id", None),
-                            ordered_capture_session_id=getattr(
-                                asset, "ordered_capture_session_id", None
-                            ),
-                            sequence_number=getattr(asset, "sequence_number", None),
-                            correlation_id=context.job_id,
-                        )
-                    )
-                    position_indexes = set(pos_result.position_candidate_indexes)
-                    # Exclude only POSITION candidates by stable index — never by raw_value alone.
-                    if pos_result.disabled or pos_result.context_invalid:
-                        item_candidates = candidates
-                    else:
-                        item_candidates = [
-                            c
-                            for idx, c in enumerate(candidates)
-                            if idx not in position_indexes
-                        ]
-                    position_duration_ms = int((time.monotonic() - position_started) * 1000)
-                    position_meta = {
-                        "position_detection_count": len(pos_result.detections),
-                        "position_ambiguous": pos_result.ambiguous,
-                        "position_statuses": [
-                            d.detection_status.value for d in pos_result.detections
-                        ],
-                        "position_detection_duration_ms": position_duration_ms,
-                        "position_candidate_indexes": list(
-                            pos_result.position_candidate_indexes
-                        ),
-                    }
-                    self._metrics.increment("position_label_detection_total")
-                    self._metrics.increment(
-                        "position_label_detection_duration", amount=position_duration_ms
-                    )
-                    if any(d.detection_status.value == "VALID" for d in pos_result.detections):
-                        self._metrics.increment("position_label_detection_valid_total")
-                    if pos_result.ambiguous:
-                        self._metrics.increment("position_label_detection_ambiguous_total")
-                    if any(
-                        d.detection_status.value == "CLIENT_MISMATCH"
-                        for d in pos_result.detections
-                    ):
-                        self._metrics.increment("position_label_client_mismatch_total")
-                    if any(
-                        d.detection_status.value
-                        in (
-                            "INVALID_SIGNATURE",
-                            "CLIENT_MISMATCH",
-                            "LABEL_INVALIDATED",
-                            "LABEL_NOT_FOUND",
-                            "UNSUPPORTED_VERSION",
-                            "UNSUPPORTED_LEGACY_PAYLOAD",
-                            "MISSING_SIGNATURE",
-                            "PAYLOAD_TOO_LARGE",
-                            "SIGNATURE_VALIDATION_SKIPPED",
-                        )
-                        for d in pos_result.detections
-                    ):
-                        self._metrics.increment("position_label_detection_invalid_total")
-            except Exception:
-                # Position detection must not cancel item CODE_SCAN.
-                self._metrics.increment("position_label_detection_failed_total")
-                logger.exception(
-                    "position_label_detection_failed job_id=%s asset_id=%s",
-                    context.job_id,
-                    context.asset_id,
+        if use_unified:
+            classification = self._classifier.classify(
+                candidates, context=validation_ctx
+            )
+            self._metrics.increment(
+                "code_scan_candidate_total", amount=len(candidates)
+            )
+            if classification.has_ambiguity:
+                self._metrics.increment("code_scan_ambiguous_total")
+                ambiguity_evidence: dict[str, Any] = {
+                    "label_kind_ambiguity": True,
+                    "ambiguous_indexes": list(classification.ambiguous_indexes),
+                    "rejections": [
+                        {
+                            "detection_index": r.detection_index,
+                            "error_code": r.error_code,
+                            "raw_value_sha256": r.raw_payload_hash,
+                        }
+                        for r in classification.rejections
+                    ],
+                }
+                result = ImageProcessingResult(
+                    job_id=context.job_id,
+                    asset_id=context.asset_id,
+                    status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+                    processing_mode=mode,
+                    resolved_by=STRATEGY_KEY,
+                    evidence=ambiguity_evidence,
+                    warnings=["AMBIGUOUS_LABEL_KIND"],
+                    error_code=LabelValidationErrorCode.AMBIGUOUS_LABEL_KIND.value,
+                    execution_scope=ExecutionScope.SINGLE_ASSET,
+                    logical_asset_attempt=False,
+                    processing_duration_ms=duration_ms,
                 )
-                item_candidates = candidates
+                self._finalize_asset_event(context, result)
+                return result
+
+            if position_source is LabelProfileSource.SUPPLIER:
+                position_meta = self._materialize_supplier_positions(
+                    context=context,
+                    asset=asset,
+                    classification=classification,
+                    validation_ctx=validation_ctx,
+                )
+                claimed = set(classification.position_candidate_indexes) | {
+                    r.detection_index
+                    for r in classification.rejections
+                    if r.error_code
+                    and (
+                        "DINAMIC" in r.error_code
+                        or r.error_code
+                        == LabelValidationErrorCode.LABEL_PROFILE_SOURCE_MISMATCH.value
+                        or r.error_code == "DUPLICATE"
+                    )
+                }
+                item_candidates = [
+                    c
+                    for idx, c in enumerate(candidates)
+                    if idx not in claimed
+                    and idx not in {i.detection_index for i in classification.items}
+                ]
+                # Prefer classified ITEM candidates for SUPPLIER ITEM path.
+                if item_source is LabelProfileSource.SUPPLIER:
+                    item_candidates = list(classification.item_candidates)
+            elif self._position_detection is not None:
+                # DINAMIC POSITION: existing HMAC/catalog path, but only on non-ITEM indexes.
+                item_indexes = {i.detection_index for i in classification.items}
+                position_pool = [
+                    c
+                    for idx, c in enumerate(candidates)
+                    if idx not in item_indexes
+                ]
+                item_candidates, position_meta = self._run_dinamic_position_detection(
+                    context=context,
+                    asset=asset,
+                    candidates=candidates,
+                    position_pool=position_pool,
+                    protected_item_indexes=item_indexes,
+                )
+                if item_source is LabelProfileSource.SUPPLIER:
+                    item_candidates = list(classification.item_candidates)
+            elif item_source is LabelProfileSource.SUPPLIER:
+                item_candidates = list(classification.item_candidates)
+        else:
+            # Legacy jobs (no label_profiles): Dinamic position-first then consolidator.
+            if self._position_detection is not None:
+                item_candidates, position_meta = self._run_dinamic_position_detection(
+                    context=context,
+                    asset=asset,
+                    candidates=candidates,
+                    position_pool=candidates,
+                    protected_item_indexes=set(),
+                )
 
         detections = self._to_detection_inputs(item_candidates)
-        consolidated = self._consolidator.consolidate(detections)
+        evidence: dict[str, Any] | None = None
 
-        duration_ms = int((time.monotonic() - started) * 1000)
-        evidence = self._build_evidence(consolidated, detections, scan_session=scan_session)
-        if position_meta:
-            evidence = {**(evidence or {}), "position_label_detection": position_meta}
-        # Never apply OCR/supplier text-profile validation here. Profile rules are for
-        # INTERNAL_OCR; AI fallback uses prompts. CODE_SCAN is consolidator-only.
+        if item_source is LabelProfileSource.SUPPLIER and use_unified:
+            product_results, evidence, supplier_fail = self._resolve_supplier_products_from_classification(
+                context=context,
+                validation_ctx=validation_ctx,
+                classification=classification,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            if supplier_fail is not None:
+                self._finalize_asset_event(context, supplier_fail)
+                return supplier_fail
+            consolidated = self._consolidator.consolidate([])
+            duration_ms = int((time.monotonic() - started) * 1000)
+            evidence = evidence or self._build_evidence(
+                consolidated, detections, scan_session=scan_session
+            )
+            if position_meta:
+                evidence = {**(evidence or {}), "position_label_detection": position_meta}
+            if classification is not None and classification.rejections:
+                evidence = {
+                    **(evidence or {}),
+                    "supplier_label_rejections": [
+                        {
+                            "validation_status": r.error_code,
+                            "detail": r.detail,
+                            "detection_index": r.detection_index,
+                            "raw_value_sha256": r.raw_payload_hash,
+                        }
+                        for r in classification.rejections
+                        if r.label_kind is LabelKind.ITEM or r.label_kind is None
+                    ],
+                }
+        elif item_source is LabelProfileSource.SUPPLIER:
+            product_results, evidence, supplier_fail = self._resolve_supplier_products(
+                context=context,
+                validation_ctx=validation_ctx,
+                item_candidates=item_candidates,
+                scan_session=scan_session,
+                position_meta=position_meta,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                mode=mode,
+            )
+            if supplier_fail is not None:
+                self._finalize_asset_event(context, supplier_fail)
+                return supplier_fail
+            consolidated = self._consolidator.consolidate([])
+            duration_ms = int((time.monotonic() - started) * 1000)
+            evidence = evidence or self._build_evidence(
+                consolidated, detections, scan_session=scan_session
+            )
+            if position_meta:
+                evidence = {**(evidence or {}), "position_label_detection": position_meta}
+        else:
+            consolidated = self._consolidator.consolidate(detections)
 
-        product_results, evidence, registry_hard_fail = self._resolve_issued_products(
-            context=context,
-            consolidated=consolidated,
-            evidence=evidence,
-            duration_ms=duration_ms,
-            mode=mode,
-        )
-        if registry_hard_fail is not None:
-            self._finalize_asset_event(context, registry_hard_fail)
-            return registry_hard_fail
+            duration_ms = int((time.monotonic() - started) * 1000)
+            evidence = self._build_evidence(consolidated, detections, scan_session=scan_session)
+            if position_meta:
+                evidence = {**(evidence or {}), "position_label_detection": position_meta}
+
+            product_results, evidence, registry_hard_fail = self._resolve_issued_products(
+                context=context,
+                consolidated=consolidated,
+                evidence=evidence,
+                duration_ms=duration_ms,
+                mode=mode,
+            )
+            if registry_hard_fail is not None:
+                self._finalize_asset_event(context, registry_hard_fail)
+                return registry_hard_fail
+
+        # Never apply OCR text-profile validation here. OCR profile rules are for
+        # INTERNAL_OCR; AI fallback uses prompts.
 
         scan_warnings = self._scan_session_warnings(scan_session)
         if consolidated.product_results:
@@ -527,6 +603,8 @@ class CodeScanProcessingStrategy:
         if consolidated.status in (
             CodeConsolidationStatus.RESOLVED,
             CodeConsolidationStatus.RESOLVED_MULTI,
+        ) or (
+            item_source is LabelProfileSource.SUPPLIER and product_results
         ):
             # D1 path: consolidator produced product_results that must pass registry.
             if consolidated.product_results and not product_results:
@@ -560,7 +638,9 @@ class CodeScanProcessingStrategy:
                         if getattr(r, "label_id", None)
                     ],
                     len(consolidated.rejections)
-                    + len((evidence or {}).get("product_label_registry_rejections") or []),
+                    + _evidence_list_len(
+                        evidence, "product_label_registry_rejections"
+                    ),
                     scan_session.scan_complete,
                     scan_session.stop_reason.value,
                     (position_meta or {}).get("position_candidate_count"),
@@ -620,6 +700,31 @@ class CodeScanProcessingStrategy:
                 position_ok = any(
                     s in ("VALID", "SIGNATURE_VALIDATION_SKIPPED") for s in statuses
                 )
+                supplier_position_only = (
+                    position_meta.get("position_profile_source")
+                    == LabelProfileSource.SUPPLIER.value
+                    and position_ok
+                )
+                if supplier_position_only:
+                    # SUPPLIER POSITION materialized; absence of ITEM is not unrecognized.
+                    self._metrics.increment("code_scan.position_only")
+                    result = ImageProcessingResult(
+                        job_id=context.job_id,
+                        asset_id=context.asset_id,
+                        status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+                        processing_mode=mode,
+                        resolved_by=STRATEGY_KEY,
+                        evidence=evidence,
+                        warnings=list(consolidated.warnings)
+                        + scan_warnings
+                        + ["POSITION_LABEL_ONLY"],
+                        error_code="POSITION_LABEL_ONLY",
+                        execution_scope=ExecutionScope.SINGLE_ASSET,
+                        logical_asset_attempt=False,
+                        processing_duration_ms=duration_ms,
+                    )
+                    self._finalize_asset_event(context, result)
+                    return result
                 error_code = (
                     "POSITION_LABEL_ONLY"
                     if position_ok
@@ -713,6 +818,430 @@ class CodeScanProcessingStrategy:
             return
         if (time.monotonic() - started) > self._config.timeout_seconds:
             raise CodeScanTimeoutError(f"code scan exceeded {self._config.timeout_seconds}s budget")
+
+    def _validation_context(self, context: ImageProcessingContext) -> LabelValidationContext:
+        existing = context.label_validation_context
+        if existing is not None:
+            return existing
+        # Legacy jobs / missing plumbing → Dinamic-default empty context.
+        return LabelValidationContext(
+            resolved_profiles=None,
+            job_id=context.job_id,
+            client_id=context.client_id,
+        )
+
+    def _run_dinamic_position_detection(
+        self,
+        *,
+        context: ImageProcessingContext,
+        asset: SourceAsset,
+        candidates: list[CodeScanDetectionCandidate],
+        position_pool: list[CodeScanDetectionCandidate],
+        protected_item_indexes: set[int],
+    ) -> tuple[list[CodeScanDetectionCandidate], dict | None]:
+        """Existing Dinamic HMAC/catalog POSITION path (legacy + DINAMIC profile source)."""
+        if self._position_detection is None:
+            return candidates, None
+        position_started = time.monotonic()
+        try:
+            from src.application.use_cases.position_label_detection.detect_image_position_labels import (
+                ImagePositionDetectionCommand,
+            )
+            from src.domain.position_label_detection.entities import DetectedCode
+
+            client_id = (context.client_id or "").strip()
+            if not client_id:
+                self._metrics.increment("position_label_detection_context_invalid_total")
+                return candidates, {
+                    "position_detection_count": 0,
+                    "position_ambiguous": False,
+                    "position_statuses": ["DETECTION_CONTEXT_INVALID"],
+                    "position_detection_duration_ms": int(
+                        (time.monotonic() - position_started) * 1000
+                    ),
+                }
+
+            pool_ids = {id(c) for c in position_pool}
+            detected_codes = [
+                DetectedCode(
+                    symbology=symbology_for_candidate(c),
+                    raw_value=c.code_value,
+                    normalized_value=(c.code_value or "").strip(),
+                    bounding_box=c.bounding_box_json,
+                    confidence=c.confidence,
+                    rotation_degrees=_float_if_present(
+                        c.metadata_json.get("rotation_degrees")
+                        if c.metadata_json is not None
+                        else None
+                    ),
+                    candidate_index=idx,
+                )
+                for idx, c in enumerate(candidates)
+                if id(c) in pool_ids
+            ]
+            pos_result = self._position_detection.execute(
+                ImagePositionDetectionCommand(
+                    client_id=client_id,
+                    inventory_id=context.inventory_id,
+                    job_id=context.job_id,
+                    source_asset_id=context.asset_id,
+                    codes=detected_codes,
+                    client_image_id=getattr(asset, "upload_client_file_id", None),
+                    ordered_capture_session_id=getattr(
+                        asset, "ordered_capture_session_id", None
+                    ),
+                    sequence_number=getattr(asset, "sequence_number", None),
+                    correlation_id=context.job_id,
+                )
+            )
+            pos_indexes = set(pos_result.position_candidate_indexes)
+            if pos_result.disabled or pos_result.context_invalid:
+                item_candidates = list(candidates)
+            else:
+                item_candidates = [
+                    c
+                    for idx, c in enumerate(candidates)
+                    if idx not in pos_indexes
+                ]
+            if protected_item_indexes:
+                # Classifier already claimed ITEM indexes — keep them for ITEM path.
+                item_by_idx = {idx: c for idx, c in enumerate(candidates)}
+                merged = {
+                    idx: item_by_idx[idx]
+                    for idx in protected_item_indexes
+                    if idx in item_by_idx
+                }
+                for idx, c in enumerate(candidates):
+                    if idx not in pos_indexes and idx not in merged:
+                        # leftover non-position
+                        if idx not in protected_item_indexes:
+                            pass
+                item_candidates = [
+                    c
+                    for idx, c in enumerate(candidates)
+                    if idx in protected_item_indexes or idx not in pos_indexes
+                ]
+            position_duration_ms = int((time.monotonic() - position_started) * 1000)
+            position_meta = {
+                "position_detection_count": len(pos_result.detections),
+                "position_ambiguous": pos_result.ambiguous,
+                "position_statuses": [
+                    d.detection_status.value for d in pos_result.detections
+                ],
+                "position_detection_duration_ms": position_duration_ms,
+                "position_candidate_indexes": list(pos_result.position_candidate_indexes),
+                "position_profile_source": LabelProfileSource.DINAMIC.value,
+            }
+            self._metrics.increment("position_label_detection_total")
+            self._metrics.increment(
+                "position_label_detection_duration", amount=position_duration_ms
+            )
+            if any(d.detection_status.value == "VALID" for d in pos_result.detections):
+                self._metrics.increment("position_label_detection_valid_total")
+            if pos_result.ambiguous:
+                self._metrics.increment("position_label_detection_ambiguous_total")
+            return item_candidates, position_meta
+        except Exception:
+            self._metrics.increment("position_label_detection_failed_total")
+            logger.exception(
+                "position_label_detection_failed job_id=%s asset_id=%s",
+                context.job_id,
+                context.asset_id,
+            )
+            return candidates, None
+
+    def _materialize_supplier_positions(
+        self,
+        *,
+        context: ImageProcessingContext,
+        asset: SourceAsset,
+        classification: CodeScanClassificationResult,
+        validation_ctx: LabelValidationContext,
+    ) -> dict:
+        """Persist SUPPLIER POSITION via the same detection table as Dinamic."""
+        from datetime import datetime, timezone
+        from uuid import uuid4
+
+        positions = classification.positions
+        statuses: list[str] = []
+        indexes: list[int] = []
+        rows: list[ImagePositionLabelDetection] = []
+        now = datetime.now(timezone.utc)
+        client_id = (context.client_id or "").strip() or "unknown"
+        profile = (
+            validation_ctx.resolved_profiles.position
+            if validation_ctx.resolved_profiles
+            else None
+        )
+        for classified in positions:
+            label = classified.label
+            cand = classified.candidate
+            indexes.append(classified.detection_index)
+            statuses.append(PositionLabelDetectionStatus.VALID.value)
+            self._metrics.increment("code_scan_valid_total")
+            rows.append(
+                ImagePositionLabelDetection(
+                    id=str(uuid4()),
+                    client_id=client_id,
+                    inventory_id=context.inventory_id,
+                    job_id=context.job_id,
+                    source_asset_id=context.asset_id,
+                    client_image_id=getattr(asset, "upload_client_file_id", None),
+                    ordered_capture_session_id=getattr(
+                        asset, "ordered_capture_session_id", None
+                    ),
+                    sequence_number=getattr(asset, "sequence_number", None),
+                    position_label_id=None,
+                    public_identifier=label.position_id,
+                    position_name_snapshot=label.position_id,
+                    payload_version=None,
+                    signature_status=PositionLabelSignatureStatus.SKIPPED,
+                    detection_status=PositionLabelDetectionStatus.VALID,
+                    confidence=cand.confidence,
+                    bounding_box_json=cand.bounding_box_json,
+                    rotation_degrees=_float_if_present(
+                        cand.metadata_json.get("rotation_degrees")
+                        if cand.metadata_json is not None
+                        else None
+                    ),
+                    raw_payload_hash=_sha256_hex(label.raw_payload),
+                    detector_name=DETECTOR_NAME,
+                    detector_version=_SUPPLIER_POSITION_DETECTOR_VERSION,
+                    created_at=now,
+                    updated_at=now,
+                    metadata_json={
+                        "profile_source": LabelProfileSource.SUPPLIER.value,
+                        "label_kind": LabelKind.POSITION.value,
+                        "extraction_profile_id": (
+                            profile.extraction_profile_id if profile else None
+                        ),
+                        "extraction_profile_version": (
+                            profile.extraction_profile_version if profile else None
+                        ),
+                        "validation_outcome": LabelValidationStatus.VALID.value,
+                        "pallet": label.pallet,
+                        "side": label.side,
+                        "level": label.level,
+                    },
+                )
+            )
+
+        for rejection in classification.rejections:
+            if rejection.label_kind is LabelKind.POSITION or (
+                rejection.error_code
+                and (
+                    "DINAMIC" in rejection.error_code
+                    or rejection.error_code
+                    == LabelValidationErrorCode.LABEL_PROFILE_SOURCE_MISMATCH.value
+                )
+            ):
+                indexes.append(rejection.detection_index)
+                statuses.append(rejection.error_code or "INVALID")
+
+        if rows and self._position_detection_repo is not None:
+            self._position_detection_repo.replace_asset_detections_atomically(
+                job_id=context.job_id,
+                source_asset_id=context.asset_id,
+                detector_version=_SUPPLIER_POSITION_DETECTOR_VERSION,
+                detections=rows,
+            )
+            self._metrics.increment(
+                "position_label_detection_valid_total", amount=len(rows)
+            )
+        elif rows:
+            logger.warning(
+                "supplier_position_materialization_skipped_no_repo "
+                "job_id=%s asset_id=%s count=%s",
+                context.job_id,
+                context.asset_id,
+                len(rows),
+            )
+
+        return {
+            "supplier_position_detection_count": len(positions),
+            "position_detection_count": len(positions),
+            "position_candidate_indexes": indexes,
+            "position_statuses": statuses,
+            "position_profile_source": LabelProfileSource.SUPPLIER.value,
+            "position_ambiguous": False,
+            "normalized_positions": [
+                {
+                    "position_id": p.label.position_id,
+                    "pallet": p.label.pallet,
+                    "side": p.label.side,
+                    "level": p.label.level,
+                    "detection_index": p.detection_index,
+                }
+                for p in positions
+            ],
+        }
+
+    def _resolve_supplier_products_from_classification(
+        self,
+        *,
+        context: ImageProcessingContext,
+        validation_ctx: LabelValidationContext,
+        classification: CodeScanClassificationResult | None,
+        duration_ms: int,
+    ) -> tuple[list[ProcessedProductLabel], dict[str, Any] | None, ImageProcessingResult | None]:
+        if validation_ctx.item_extraction_configuration is None:
+            self._metrics.increment("code_scan_invalid_total")
+            fail = ImageProcessingResult(
+                job_id=context.job_id,
+                asset_id=context.asset_id,
+                status=ImageResultStatus.FAILED_TECHNICAL,
+                processing_mode=getattr(
+                    context.identification_mode, "value", str(context.identification_mode)
+                ),
+                error_code="SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED",
+                error_message=(
+                    "SUPPLIER ITEM profile requires snapshotted extraction configuration"
+                ),
+                processing_duration_ms=duration_ms,
+                warnings=["SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED"],
+            )
+            return [], None, fail
+        products: list[ProcessedProductLabel] = []
+        if classification is None:
+            return (
+                products,
+                {"label_profile_source": LabelProfileSource.SUPPLIER.value},
+                None,
+            )
+        for classified in classification.items:
+            label = classified.label
+            self._metrics.increment("code_scan_valid_total")
+            products.append(
+                ProcessedProductLabel(
+                    label_id=label.label_id,
+                    internal_code=label.sku,
+                    quantity=label.quantity,
+                    format_version="SUPPLIER",
+                    checksum=None,
+                    validation_status=ProductLabelOutcomeStatus.VALID,
+                    selected_detection_index=classified.detection_index,
+                    duplicate_detection_count=1,
+                    symbology=label.symbology,
+                    raw_payload=label.raw_payload,
+                    normalized_payload=label.raw_payload,
+                )
+            )
+        profile = (
+            validation_ctx.resolved_profiles.item
+            if validation_ctx.resolved_profiles
+            else None
+        )
+        evidence: dict[str, Any] = {
+            "label_profile_source": LabelProfileSource.SUPPLIER.value,
+            "label_kind": LabelKind.ITEM.value,
+            "recognition_source": RecognitionSource.CODE_SCAN.value,
+            "extraction_profile_id": profile.extraction_profile_id if profile else None,
+            "extraction_profile_version": (
+                profile.extraction_profile_version if profile else None
+            ),
+        }
+        return products, evidence, None
+
+    def _resolve_supplier_products(
+        self,
+        *,
+        context: ImageProcessingContext,
+        validation_ctx: LabelValidationContext,
+        item_candidates: list[CodeScanDetectionCandidate],
+        scan_session: CodeScanSessionResult,
+        position_meta: dict | None,
+        duration_ms: int,
+        mode: str,
+    ) -> tuple[list[ProcessedProductLabel], dict[str, Any] | None, ImageProcessingResult | None]:
+        """Validate ITEM candidates with snapshot SUPPLIER rules (no Dinamic issued registry)."""
+        del scan_session, position_meta, mode  # reserved for evidence extensions
+        if validation_ctx.item_extraction_configuration is None:
+            self._metrics.increment("code_scan_invalid_total")
+            fail = ImageProcessingResult(
+                job_id=context.job_id,
+                asset_id=context.asset_id,
+                status=ImageResultStatus.FAILED_TECHNICAL,
+                processing_mode=getattr(
+                    context.identification_mode, "value", str(context.identification_mode)
+                ),
+                error_code="SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED",
+                error_message=(
+                    "SUPPLIER ITEM profile requires snapshotted extraction configuration"
+                ),
+                processing_duration_ms=duration_ms,
+                warnings=["SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED"],
+            )
+            return [], None, fail
+
+        products: list[ProcessedProductLabel] = []
+        rejections: list[dict[str, object]] = []
+        seen_ids: set[str] = set()
+        for idx, cand in enumerate(item_candidates):
+            raw = (cand.code_value or "").strip()
+            self._metrics.increment("code_scan_candidate_total")
+            result = self._label_validation.validate(
+                CandidateLabel(
+                    raw_payload=raw,
+                    recognition_source=RecognitionSource.CODE_SCAN,
+                    label_kind_hint=LabelKind.ITEM,
+                    symbology=symbology_for_candidate(cand),
+                    label_id=raw,
+                    sku=raw,
+                ),
+                context=validation_ctx,
+                label_kind=LabelKind.ITEM,
+            )
+            if result.status is LabelValidationStatus.VALID and isinstance(
+                result.label, NormalizedItemLabel
+            ):
+                self._metrics.increment("code_scan_valid_total")
+                identity = (result.label.label_id or result.label.sku).strip()
+                if identity in seen_ids:
+                    rejections.append(
+                        {
+                            "validation_status": ProductLabelOutcomeStatus.DUPLICATE.value,
+                            "label_id": identity,
+                            "detection_index": idx,
+                        }
+                    )
+                    continue
+                seen_ids.add(identity)
+                products.append(
+                    ProcessedProductLabel(
+                        label_id=result.label.label_id,
+                        internal_code=result.label.sku,
+                        quantity=result.label.quantity,
+                        format_version="SUPPLIER",
+                        checksum=None,
+                        validation_status=ProductLabelOutcomeStatus.VALID,
+                        selected_detection_index=idx,
+                        duplicate_detection_count=1,
+                        symbology=result.label.symbology,
+                        raw_payload=result.label.raw_payload,
+                        normalized_payload=result.label.raw_payload,
+                    )
+                )
+            elif result.status is LabelValidationStatus.NOT_APPLICABLE:
+                self._metrics.increment("code_scan_not_applicable_total")
+            else:
+                self._metrics.increment("code_scan_invalid_total")
+                rejections.append(
+                    {
+                        "validation_status": result.error_code or result.status.value,
+                        "detail": result.detail,
+                        "detection_index": idx,
+                        "raw_value_sha256": _sha256_hex(raw),
+                    }
+                )
+
+        evidence: dict[str, Any] = {
+            "label_profile_source": LabelProfileSource.SUPPLIER.value,
+            "label_kind": LabelKind.ITEM.value,
+            "recognition_source": RecognitionSource.CODE_SCAN.value,
+        }
+        if rejections:
+            evidence["supplier_label_rejections"] = rejections
+        return products, evidence, None
 
     def _resolve_issued_products(
         self,

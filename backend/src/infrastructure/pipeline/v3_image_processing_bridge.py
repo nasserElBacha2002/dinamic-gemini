@@ -315,7 +315,18 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
         event_publisher=event_publisher,
         position_detection=_build_position_detection_use_case(settings),
         issued_label_resolver=issued_resolver,
+        position_label_detection_repo=_optional_position_detection_repo(),
     )
+
+
+def _optional_position_detection_repo():
+    try:
+        from src.runtime.app_container import get_app_container
+
+        return get_app_container().get_image_position_label_detection_repo()
+    except Exception:
+        logger.exception("code_scan.position_detection_repo_unavailable")
+        return None
 
 
 def _build_position_detection_use_case(settings):

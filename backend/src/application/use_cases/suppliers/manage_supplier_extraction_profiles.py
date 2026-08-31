@@ -31,6 +31,10 @@ from src.application.services.image_processing.extraction_profile_configuration 
     ExtractionProfileConfigurationError,
     parse_extraction_configuration,
 )
+from src.application.services.label_validation import (
+    LabelProfileConfigurationError,
+    validate_extraction_configuration_for_code_scan,
+)
 from src.domain.client_supplier.extraction_profile import (
     ExtractionProfileStatus,
     ReferenceAnnotation,
@@ -128,9 +132,14 @@ def _validate_supplier_in_client_scope(
 
 def _parse_configuration(raw: dict[str, Any] | None):
     try:
-        return parse_extraction_configuration(raw)
+        config = parse_extraction_configuration(raw)
     except ExtractionProfileConfigurationError as exc:
         raise SupplierExtractionProfileInvalidConfigurationError(str(exc)) from exc
+    try:
+        validate_extraction_configuration_for_code_scan(config)
+    except LabelProfileConfigurationError as exc:
+        raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
+    return config
 
 
 def _normalize_profile_key(profile_key: str | None) -> str:
@@ -374,12 +383,16 @@ class ActivateSupplierExtractionProfileVersionUseCase:
             client_id=command.client_id,
             supplier_id=command.supplier_id,
         )
-        _ensure_profile_in_scope(
+        profile = _ensure_profile_in_scope(
             self._profile_repo.get_by_id(command.profile_id),
             client_id=command.client_id,
             supplier_id=command.supplier_id,
             profile_id=command.profile_id,
         )
+        try:
+            validate_extraction_configuration_for_code_scan(profile.configuration)
+        except LabelProfileConfigurationError as exc:
+            raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
         try:
             return self._profile_repo.activate_version(
                 client_id=command.client_id,

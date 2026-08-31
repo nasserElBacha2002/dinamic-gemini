@@ -50,6 +50,7 @@ from src.domain.image_processing.processing_attempt import (
     ProcessingAttemptStatus,
 )
 from src.domain.jobs.entities import Job
+from src.domain.label_validation.context import LabelValidationContext
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,9 @@ class SingleAssetStrategyProcessor:
         self._reconciler = reconciler
         self._inventory_client_id = inventory_client_id
         self._external_fallback = external_fallback
+        # Job-scoped immutable validation context (one job at a time; no global mutable cache).
+        self._cached_validation_job_id: str | None = None
+        self._cached_label_validation_context: LabelValidationContext | None = None
 
     def _attempt_provider(self) -> str:
         return str(
@@ -229,6 +233,8 @@ class SingleAssetStrategyProcessor:
             supplier_extraction_profile=self._supplier_extraction_profile(job),
             profile_aware_validation_enabled=self._profile_aware_enabled(job),
             reference_template_annotations_enabled=self._annotations_enabled(job),
+            label_profiles=self._label_profiles(job),
+            label_validation_context=self._label_validation_context(job),
         )
 
         error: str | None = None
@@ -578,6 +584,29 @@ class SingleAssetStrategyProcessor:
     def _supplier_extraction_profile(self, job: Job) -> dict | None:
         snap = self._identification_execution(job).get("supplier_extraction_profile")
         return snap if isinstance(snap, dict) else None
+
+    def _label_profiles(self, job: Job) -> dict | None:
+        snap = self._identification_execution(job).get("label_profiles")
+        return snap if isinstance(snap, dict) else None
+
+    def _label_validation_context(self, job: Job):
+        from src.application.services.label_validation import (
+            build_label_validation_context_from_job,
+        )
+
+        if (
+            self._cached_validation_job_id == job.id
+            and self._cached_label_validation_context is not None
+        ):
+            return self._cached_label_validation_context
+        ctx = build_label_validation_context_from_job(
+            job_id=job.id,
+            client_id=self._resolve_client_id(job),
+            job_engine_params=job.engine_params_json,
+        )
+        self._cached_validation_job_id = job.id
+        self._cached_label_validation_context = ctx
+        return ctx
 
     def _profile_aware_enabled(self, job: Job) -> bool:
         flags = self._identification_execution(job).get("feature_flag_state")

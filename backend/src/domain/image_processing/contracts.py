@@ -10,6 +10,7 @@ from src.domain.aisle_identification.modes import (
     AisleIdentificationExecutionStrategy,
     AisleIdentificationMode,
 )
+from src.domain.label_validation.context import LabelValidationContext
 from src.domain.product_labels.processed import ProcessedProductLabel
 
 
@@ -49,6 +50,9 @@ class ImageProcessingContext:
     supplier_extraction_profile: dict[str, Any] | None = None
     profile_aware_validation_enabled: bool = False
     reference_template_annotations_enabled: bool = False
+    # Phase 2 — label profile snapshot + prebuilt validation context (job-scoped).
+    label_profiles: dict[str, Any] | None = None
+    label_validation_context: LabelValidationContext | None = None
 
 
 @dataclass

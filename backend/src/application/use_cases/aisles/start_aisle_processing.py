@@ -246,6 +246,84 @@ class StartAisleProcessingUseCase:
             current.sequence_version,
         )
 
+    def _embed_exact_label_profile_configurations(
+        self,
+        *,
+        label_profiles_snapshot: dict,
+        resolved_profiles,
+        client_id: str | None,
+    ) -> dict:
+        """Load SUPPLIER extraction configs by exact snapshot id/version; fail closed."""
+        from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
+
+        out = dict(label_profiles_snapshot)
+        for kind, resolved in (
+            (LabelKind.ITEM, resolved_profiles.item),
+            (LabelKind.POSITION, resolved_profiles.position),
+        ):
+            if resolved.source is not LabelProfileSource.SUPPLIER:
+                continue
+            if not (client_id or "").strip():
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    "client_id required to embed SUPPLIER extraction configuration"
+                )
+            key = "item" if kind is LabelKind.ITEM else "position"
+            block = out.get(key)
+            if not isinstance(block, dict):
+                continue
+            profile_id = (resolved.extraction_profile_id or "").strip()
+            if not profile_id:
+                raise ValueError(
+                    "SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED: "
+                    f"SUPPLIER {kind.value} requires extraction_profile_id in snapshot"
+                )
+            if self._extraction_profile_repo is None:
+                raise ValueError(
+                    "SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED: "
+                    "extraction profile repository unavailable for exact snapshot load"
+                )
+            entity = self._extraction_profile_repo.get_by_id(profile_id)
+            if entity is None:
+                raise ValueError(
+                    "SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED: "
+                    f"extraction profile {profile_id} not found for {kind.value}"
+                )
+            if str(entity.client_id).strip() != str(client_id).strip():
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    f"extraction profile {profile_id} client_id mismatch"
+                )
+            expected_supplier = (resolved.client_supplier_id or "").strip()
+            if expected_supplier and str(entity.supplier_id).strip() != expected_supplier:
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    f"extraction profile {profile_id} supplier_id mismatch"
+                )
+            entity_kind = entity.label_kind or LabelKind.ITEM
+            if entity_kind is not kind:
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    f"extraction profile {profile_id} label_kind={entity_kind.value} "
+                    f"expected {kind.value}"
+                )
+            if (
+                resolved.extraction_profile_version is not None
+                and int(entity.version) != int(resolved.extraction_profile_version)
+            ):
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    f"extraction profile {profile_id} version={entity.version} "
+                    f"expected {resolved.extraction_profile_version}"
+                )
+            out[key] = {
+                **block,
+                "extraction_profile_id": entity.id,
+                "extraction_profile_version": int(entity.version),
+                "configuration": entity.configuration.to_public_dict(),
+            }
+        return out
+
     def _return_existing_ordered_job(
         self,
         *,
@@ -793,6 +871,12 @@ class StartAisleProcessingUseCase:
             except SupplierLabelProfileNotConfiguredError:
                 raise
             label_profiles_snapshot = resolved_profiles.to_snapshot_dict()
+            # Exact profile id/version → embed immutable configuration (not legacy blob).
+            label_profiles_snapshot = self._embed_exact_label_profile_configurations(
+                label_profiles_snapshot=label_profiles_snapshot,
+                resolved_profiles=resolved_profiles,
+                client_id=client_id,
+            )
         engine_params_json = {
             "identification_execution": identification_execution_snapshot_dict(
                 decision,
