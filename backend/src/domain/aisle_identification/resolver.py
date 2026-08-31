@@ -1,17 +1,15 @@
 """Central resolver for aisle identification mode inheritance.
 
 Priority (highest first):
-  Request → Aisle → Inventory → Client → SYSTEM_DEFAULT (INTERNAL_OCR)
+  Request → Aisle → Inventory → Client → SYSTEM_DEFAULT (CODE_SCAN)
 
 Null overrides mean “inherit from the next level” and must not be treated as a mode.
 
-Position-label detection (Phase 3) runs inside CODE_SCAN execution. Prefer configuring
-CODE_SCAN explicitly on client/inventory/aisle (or request override) when positioning
-is required — do not change SYSTEM_DEFAULT globally for that purpose.
+Position-label detection runs inside CODE_SCAN execution. Vision (EXTERNAL_PROVIDER)
+is the post-scan recognition path when snapshotted fallback is enabled.
 
-New job starts reject effective LEGACY_LLM after resolution (see
-``reject_legacy_effective_mode_for_new_job``). Historical jobs that stored LEGACY
-remain readable; historical retries may re-execute that snapshot.
+New job starts reject effective LEGACY_LLM and INTERNAL_OCR after resolution.
+Historical jobs that stored those modes remain readable / retryable via snapshot.
 """
 
 from __future__ import annotations
@@ -60,6 +58,6 @@ def resolve_aisle_identification_mode(
             source=AisleIdentificationModeSource.CLIENT,
         )
     return AisleIdentificationModeResolution(
-        effective_mode=AisleIdentificationMode.INTERNAL_OCR,
+        effective_mode=AisleIdentificationMode.CODE_SCAN,
         source=AisleIdentificationModeSource.SYSTEM_DEFAULT,
     )

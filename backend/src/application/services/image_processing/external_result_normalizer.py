@@ -74,6 +74,8 @@ class ExternalResultNormalizer:
         client_id: str | None = None,
         supplier_extraction_profile: dict[str, Any] | None = None,
         profile_aware_validation_enabled: bool = False,
+        label_validation_context: Any | None = None,
+        job_engine_params: dict[str, Any] | None = None,
     ) -> ImageProcessingResult:
         base_fields = {
             "fallback_executed": True,
@@ -208,6 +210,39 @@ class ExternalResultNormalizer:
             )
 
         if profile_aware_validation_enabled:
+            ctx = label_validation_context
+            if ctx is None and isinstance(job_engine_params, dict):
+                try:
+                    from src.application.services.label_validation.job_validation_context import (
+                        build_label_validation_context_from_job,
+                    )
+
+                    ctx = build_label_validation_context_from_job(
+                        job_id=job_id,
+                        client_id=client_id,
+                        job_engine_params=job_engine_params,
+                    )
+                except Exception:
+                    logger = __import__("logging").getLogger(__name__)
+                    logger.exception(
+                        "vision.label_validation_context_failed job_id=%s asset_id=%s",
+                        job_id,
+                        asset_id,
+                    )
+                    ctx = None
+            if ctx is not None and getattr(ctx, "resolved_profiles", None) is not None:
+                from src.application.services.image_processing.vision_candidate_bridge import (
+                    normalize_vision_via_label_validation,
+                )
+
+                return normalize_vision_via_label_validation(
+                    job_id=job_id,
+                    asset_id=asset_id,
+                    analysis=analysis,
+                    validation_context=ctx,
+                    base_fields=base_fields,
+                    evidence=evidence,
+                )
             return self._normalize_via_profile(
                 job_id=job_id,
                 asset_id=asset_id,

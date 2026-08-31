@@ -722,6 +722,18 @@ class StartAisleProcessingUseCase:
             fallback_model = (
                 str(getattr(settings, "external_fallback_model", "") or "").strip() or None
             )
+            # Productive CODE_SCAN → Vision when provider+model are configured.
+            # Kill switch: CODE_SCAN_VISION_FALLBACK_ENABLED=false.
+            code_scan_vision = bool(
+                getattr(settings, "code_scan_vision_fallback_enabled", True)
+            )
+            if (
+                execution_strategy.value == "CODE_SCAN"
+                and code_scan_vision
+                and provider_key
+                and fallback_model
+            ):
+                fallback_enabled = True
             if fallback_enabled:
                 if not provider_key:
                     raise ValueError(

@@ -91,11 +91,12 @@ export default function AisleProcessingDialog({
       : modelKey || (productionMode && productionProvidersReady ? providerConfig?.default_model ?? '' : '');
 
   const usingInherited = identificationMode === INHERITED_IDENTIFICATION_MODE;
-  const effectiveDisplayMode = String(inheritedEffectiveMode || 'INTERNAL_OCR');
+  const effectiveDisplayMode = String(inheritedEffectiveMode || 'CODE_SCAN');
   const selectedExplicitMode = usingInherited ? effectiveDisplayMode : String(identificationMode);
   const showAiProviderControls = isLegacyIdentificationMode(selectedExplicitMode);
+  // Help for productive CODE_SCAN; INTERNAL_OCR help only when inherited historically.
   const showModeHelp =
-    selectedExplicitMode === 'INTERNAL_OCR' || selectedExplicitMode === 'CODE_SCAN';
+    selectedExplicitMode === 'CODE_SCAN' || selectedExplicitMode === 'INTERNAL_OCR';
   const showLegacyRetirementWarning = isLegacyIdentificationMode(selectedExplicitMode);
 
   const sourceLabel = identificationModeSource
@@ -192,11 +193,6 @@ export default function AisleProcessingDialog({
         {showModeHelp ? (
           <Alert severity="info" variant="outlined" data-testid="process-identification-mode-help">
             {t(`aisle.identification_mode_${selectedExplicitMode.toLowerCase()}_help`)}
-            {selectedExplicitMode === 'INTERNAL_OCR' ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {t('aisle.identification_ocr_fallback_note')}
-              </Typography>
-            ) : null}
           </Alert>
         ) : null}
         {showLegacyRetirementWarning ? (

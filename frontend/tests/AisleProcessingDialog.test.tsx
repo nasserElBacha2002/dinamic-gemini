@@ -40,7 +40,7 @@ describe('AisleProcessingDialog identification mode (Phase 8)', () => {
     onModelKeyChange: vi.fn(),
     identificationMode: INHERITED_IDENTIFICATION_MODE,
     onIdentificationModeChange: vi.fn(),
-    inheritedEffectiveMode: 'INTERNAL_OCR',
+    inheritedEffectiveMode: 'CODE_SCAN',
     identificationModeSource: 'CLIENT',
     providerOptsQuery: {
       data: {
@@ -76,7 +76,7 @@ describe('AisleProcessingDialog identification mode (Phase 8)', () => {
     confirmBusyLabel: false,
   };
 
-  it('does not offer LEGACY_LLM in the selector', () => {
+  it('offers CODE_SCAN and does not offer LEGACY_LLM or INTERNAL_OCR', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <AisleProcessingDialog {...baseProps} />
@@ -85,9 +85,13 @@ describe('AisleProcessingDialog identification mode (Phase 8)', () => {
     fireEvent.mouseDown(within(screen.getByTestId('process-identification-mode')).getByRole('combobox'));
     const listbox = screen.getByRole('listbox');
     expect(within(listbox).queryByText(/Procesamiento tradicional|Traditional processing|LEGACY_LLM/i)).not.toBeInTheDocument();
-    expect(within(listbox).getByRole('option', { name: /Escanear QR|Scan QR/i })).toBeInTheDocument();
-    expect(within(listbox).getByRole('option', { name: /^Leer etiqueta|^Read label/i })).toBeInTheDocument();
+    expect(within(listbox).getByRole('option', { name: /^Escanear QR|^Scan QR/i })).toBeInTheDocument();
+    expect(within(listbox).queryByRole('option', { name: /^Leer etiqueta|^Read label/i })).not.toBeInTheDocument();
     expect(within(listbox).queryByRole('option', { name: /LEGACY_LLM|tradicional|Traditional processing/i })).not.toBeInTheDocument();
+    const optionValues = within(listbox)
+      .getAllByRole('option')
+      .map((el) => el.getAttribute('data-value'));
+    expect(optionValues).toEqual([INHERITED_IDENTIFICATION_MODE, 'CODE_SCAN']);
   });
 
   it('defaults to the default-config sentinel with business wording', () => {
@@ -100,16 +104,20 @@ describe('AisleProcessingDialog identification mode (Phase 8)', () => {
     const inheritedOption = screen.getByTestId('process-identification-inherited-option');
     expect(inheritedOption).toHaveTextContent(
       i18n.t('aisle.identification_use_default', {
-        mode: i18n.t('aisle.identification_mode_internal_ocr'),
+        mode: i18n.t('aisle.identification_mode_code_scan'),
         source: i18n.t('aisle.identification_source_client'),
       })
     );
   });
 
-  it('hides AI provider controls for INTERNAL_OCR', () => {
+  it('hides AI provider controls when inherited historical mode is INTERNAL_OCR', () => {
     render(
       <I18nextProvider i18n={i18n}>
-        <AisleProcessingDialog {...baseProps} identificationMode="INTERNAL_OCR" />
+        <AisleProcessingDialog
+          {...baseProps}
+          identificationMode={INHERITED_IDENTIFICATION_MODE}
+          inheritedEffectiveMode="INTERNAL_OCR"
+        />
       </I18nextProvider>
     );
     expect(screen.queryByTestId('process-provider-select')).not.toBeInTheDocument();

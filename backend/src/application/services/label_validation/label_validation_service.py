@@ -33,6 +33,7 @@ from src.domain.label_validation import (
     LabelValidationStatus,
     NormalizedItemLabel,
     NormalizedPositionLabel,
+    RecognitionSource,
 )
 from src.domain.label_validation.context import LabelValidationContext
 from src.domain.position_label_detection.entities import PositionLabelDetectionStatus
@@ -361,7 +362,11 @@ class LabelValidationService:
                 label_kind=label_kind,
             )
 
-        if not self._symbology_accepted(candidate.symbology, config):
+        if not self._symbology_accepted(
+            candidate.symbology,
+            config,
+            recognition_source=candidate.recognition_source,
+        ):
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_SYMBOLOGY_REJECTED.value,
                 detail=f"symbology {candidate.symbology!r} not in accepted_barcode_formats",
@@ -686,9 +691,18 @@ class LabelValidationService:
 
     @staticmethod
     def _symbology_accepted(
-        symbology: str | None, config: ExtractionProfileConfiguration
+        symbology: str | None,
+        config: ExtractionProfileConfiguration,
+        *,
+        recognition_source: RecognitionSource | None = None,
     ) -> bool:
         if not config.accepted_barcode_formats:
+            return True
+        # Vision/OCR may recognize printable text without a barcode symbology.
+        if not symbology and recognition_source in (
+            RecognitionSource.VISION,
+            RecognitionSource.OCR,
+        ):
             return True
         if not symbology:
             return False

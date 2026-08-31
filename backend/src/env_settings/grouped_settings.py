@@ -1611,9 +1611,22 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5: when true, CODE_SCAN/INTERNAL_OCR jobs may run external fallback "
-            "after the internal pass (mode controlled by EXTERNAL_FALLBACK_MODE). "
-            "Default false. Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
+            "When true, CODE_SCAN jobs may run Vision (EXTERNAL_PROVIDER) after an "
+            "unresolved internal pass (mode: EXTERNAL_FALLBACK_MODE). "
+            "For CODE_SCAN, Vision also enables when CODE_SCAN_VISION_FALLBACK_ENABLED "
+            "is true (default) and provider+model are set. Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
+        ),
+    )
+    code_scan_vision_fallback_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_VISION_FALLBACK_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true (default), CODE_SCAN jobs auto-enable Vision fallback if "
+            "EXTERNAL_FALLBACK_PROVIDER and EXTERNAL_FALLBACK_MODEL are configured. "
+            "Set false to force CODE_SCAN-only (no Vision) unless "
+            "EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true. Env: CODE_SCAN_VISION_FALLBACK_ENABLED."
         ),
     )
     external_fallback_mode: str = Field(

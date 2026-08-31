@@ -47,9 +47,9 @@ def test_client_when_no_overrides() -> None:
     assert r.source == AisleIdentificationModeSource.CLIENT
 
 
-def test_system_default_internal_ocr() -> None:
+def test_system_default_code_scan() -> None:
     r = resolve_aisle_identification_mode()
-    assert r.effective_mode == AisleIdentificationMode.INTERNAL_OCR
+    assert r.effective_mode == AisleIdentificationMode.CODE_SCAN
     assert r.source == AisleIdentificationModeSource.SYSTEM_DEFAULT
 
 

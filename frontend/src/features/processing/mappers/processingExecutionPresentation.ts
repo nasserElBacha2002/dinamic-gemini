@@ -575,9 +575,9 @@ export function buildJobExecutionPresentation(
   };
 }
 
+/** Productive “process aisle” modes only — INTERNAL_OCR remains for historical display/filters. */
 export const PROCESS_AISLE_IDENTIFICATION_OPTIONS: AisleIdentificationMode[] = [
   'CODE_SCAN',
-  'INTERNAL_OCR',
 ];
 
 export function buildObsContentTabsForJob(options: {

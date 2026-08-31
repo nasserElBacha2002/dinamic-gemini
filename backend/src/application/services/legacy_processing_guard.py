@@ -1,15 +1,16 @@
-"""Phase 8 — guard against new LEGACY_LLM configurations and effective modes.
+"""Phase 8 — guard against new LEGACY_LLM / INTERNAL_OCR configurations and effective modes.
 
 Historical retry policy
 -----------------------
 ``RetryAisleJobUseCase`` reuses the original job's immutable identification snapshot
-(mode, source, execution strategy, engine_params). Historical LEGACY_LLM jobs **may**
-be re-executed via that path; residual creates are recorded as
-``legacy_mode_jobs_created_residual_total``.
+(mode, source, execution strategy, engine_params). Historical LEGACY_LLM and
+INTERNAL_OCR jobs **may** be re-executed via that path.
 
 ``StartAisleProcessingUseCase`` (new starts) always resolves the effective mode and
-rejects LEGACY_LLM / legacy aliases before persistence. Reading historical jobs remains
+rejects LEGACY_LLM / INTERNAL_OCR before persistence. Reading historical jobs remains
 allowed.
+
+Productive recognition stack for new jobs: CODE_SCAN → Vision (EXTERNAL_PROVIDER).
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ LEGACY_PROCESSING_MODE_NOT_ALLOWED_FOR_NEW_CONFIGURATION = (
 
 # Explicit policy constant for operators / docs (do not infer from call sites).
 HISTORICAL_LEGACY_RETRY_ALLOWED = True
+HISTORICAL_INTERNAL_OCR_RETRY_ALLOWED = True
 
 
 def is_legacy_identification_mode(mode: Any) -> bool:
@@ -52,19 +54,32 @@ def is_legacy_identification_mode(mode: Any) -> bool:
     }
 
 
+def is_retired_internal_ocr_mode(mode: Any) -> bool:
+    """INTERNAL_OCR is not selectable for new productive jobs/configs."""
+    if mode is None:
+        return False
+    if isinstance(mode, AisleIdentificationMode):
+        return mode is AisleIdentificationMode.INTERNAL_OCR
+    return str(mode).strip().upper() == AisleIdentificationMode.INTERNAL_OCR.value
+
+
+def is_blocked_productive_mode(mode: Any) -> bool:
+    return is_legacy_identification_mode(mode) or is_retired_internal_ocr_mode(mode)
+
+
 def reject_legacy_mode_for_new_configuration(
     mode: AisleIdentificationMode | str | None,
     *,
     context: str = "configuration",
 ) -> None:
-    """Block writing LEGACY_LLM onto client/inventory/aisle config.
+    """Block writing LEGACY_LLM or INTERNAL_OCR onto client/inventory/aisle config.
 
     Clearing the override (``None``) remains allowed so tenants can inherit
-    a non-legacy ancestor or system default after migration.
+    CODE_SCAN system default after migration.
     """
     if mode is None:
         return
-    if not is_legacy_identification_mode(mode):
+    if not is_blocked_productive_mode(mode):
         return
     raw = mode.value if isinstance(mode, AisleIdentificationMode) else str(mode)
     record_legacy_config_write_blocked(context=context, mode=raw)
@@ -81,12 +96,11 @@ def reject_legacy_effective_mode_for_new_job(
     *,
     requested_mode: AisleIdentificationMode | str | None = None,
 ) -> None:
-    """Block new job persistence when the *resolved* effective mode is legacy.
+    """Block new job persistence when the *resolved* effective mode is retired.
 
-    Central enforcement for StartAisleProcessing — covers override, aisle,
-    inventory, client, and system-default inheritance.
+    Covers LEGACY_LLM and INTERNAL_OCR (override, aisle, inventory, client, system).
     """
-    if not is_legacy_identification_mode(resolution.effective_mode):
+    if not is_blocked_productive_mode(resolution.effective_mode):
         return
     effective = resolution.effective_mode.value
     source = (
@@ -122,12 +136,8 @@ def reject_legacy_effective_mode_for_new_job(
 def reject_legacy_mode_for_new_job(
     mode: AisleIdentificationMode | str | None,
 ) -> None:
-    """Block an explicit LEGACY override on new job start.
-
-    Prefer ``reject_legacy_effective_mode_for_new_job`` after full resolution;
-    this helper remains for callers that only have the override value.
-    """
-    if mode is None or not is_legacy_identification_mode(mode):
+    """Block an explicit LEGACY / INTERNAL_OCR override on new job start."""
+    if mode is None or not is_blocked_productive_mode(mode):
         return
     raw = mode.value if isinstance(mode, AisleIdentificationMode) else str(mode)
     record_legacy_job_blocked(
@@ -170,10 +180,13 @@ def legacy_usage_metrics_snapshot() -> dict[str, int]:
 
 
 __all__ = [
+    "HISTORICAL_INTERNAL_OCR_RETRY_ALLOWED",
     "HISTORICAL_LEGACY_RETRY_ALLOWED",
     "LEGACY_PROCESSING_MODE_NOT_ALLOWED_FOR_NEW_CONFIGURATION",
     "LegacyProcessingModeNotAllowedError",
+    "is_blocked_productive_mode",
     "is_legacy_identification_mode",
+    "is_retired_internal_ocr_mode",
     "legacy_usage_metrics_snapshot",
     "note_historical_legacy_retry_created",
     "reject_legacy_effective_mode_for_new_job",
