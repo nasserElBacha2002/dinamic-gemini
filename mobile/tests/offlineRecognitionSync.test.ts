@@ -146,4 +146,69 @@ describe('offline recognition sync + readiness', () => {
     });
     expect(readiness.status).toBe('MISSING_SUPPLIER_PROFILE');
   });
+
+  it('skips replace only when revision content is identical', async () => {
+    const replaceBundle = jest.fn();
+    const repo = {
+      getSyncMeta: jest.fn(async () => ({
+        inventory_id: 'inv-1',
+        client_id: 'client-1',
+        bundle_schema_version: 1,
+        bundle_revision: 'same-hash',
+        synced_at: '2026-08-31T10:00:00Z',
+        generated_at: null,
+      })),
+      replaceBundle,
+    } as unknown as OfflineRecognitionConfigRepository;
+    const api = {
+      get: jest.fn(async () =>
+        sampleBundle({
+          bundle_revision: 'same-hash',
+          aisles: [
+            {
+              aisle_id: 'aisle-1',
+              client_supplier_id: 'sup-b',
+              item_profile_source_override: null,
+              position_profile_source_override: null,
+              effective_item_source: 'SUPPLIER',
+              effective_position_source: 'SUPPLIER',
+            },
+          ],
+        }),
+      ),
+    };
+    // Mobile trusts server revision string — when server content-hash changes, revision changes.
+    // When revision string matches, skip even if local aisles differ (server is source of truth).
+    const sync = new OfflineRecognitionSyncService(api as never, repo);
+    const result = await sync.syncInventory('inv-1');
+    expect(result.ok).toBe(true);
+    expect(result.skippedSameRevision).toBe(true);
+    expect(replaceBundle).not.toHaveBeenCalled();
+  });
+
+  it('replaces when supplier mapping revision changes', async () => {
+    const replaceBundle = jest.fn(async () => undefined);
+    const invalidate = jest.fn();
+    const repo = {
+      getSyncMeta: jest.fn(async () => ({
+        inventory_id: 'inv-1',
+        client_id: 'client-1',
+        bundle_schema_version: 1,
+        bundle_revision: 'old-hash',
+        synced_at: '2026-08-01T00:00:00Z',
+        generated_at: null,
+      })),
+      replaceBundle,
+    } as unknown as OfflineRecognitionConfigRepository;
+    const api = {
+      get: jest.fn(async () => sampleBundle({ bundle_revision: 'new-hash-after-supplier-b' })),
+    };
+    const resolver = { invalidate } as unknown as LocalLabelProfileResolver;
+    const sync = new OfflineRecognitionSyncService(api as never, repo, resolver);
+    const result = await sync.syncInventory('inv-1');
+    expect(result.ok).toBe(true);
+    expect(result.skippedSameRevision).toBeFalsy();
+    expect(replaceBundle).toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalled();
+  });
 });

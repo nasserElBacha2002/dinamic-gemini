@@ -61,7 +61,7 @@ class PersistAuthoritativeLocalCodeScanCommand:
     result_id: str
     schema_version: str
     client_file_id: str
-    internal_code: str
+    internal_code: str | None
     quantity: int | None
     quantity_status: str
     source: str
@@ -113,7 +113,7 @@ def _normalize_optional_label_id(raw: str | None) -> str | None:
 
 def _canonical_content_hash(
     *,
-    internal_code: str,
+    internal_code: str | None,
     quantity: int | None,
     quantity_status: str,
     source: str,
@@ -210,7 +210,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         result_id = command.result_id.strip()
         label_id = _normalize_optional_label_id(command.label_id)
         content_hash = _canonical_content_hash(
-            internal_code=command.internal_code.strip(),
+            internal_code=(command.internal_code or "").strip() or None,
             quantity=command.quantity,
             quantity_status=command.quantity_status.strip().upper(),
             source=command.source.strip().upper(),
@@ -270,7 +270,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         expected_current_id = current.id if current else None
         expected_row_version = current.row_version if current else None
 
-        code = command.internal_code.strip()
+        code = (command.internal_code or "").strip() or None
         qty_status = command.quantity_status.strip().upper()
         quantity = (
             command.quantity if qty_status == AuthoritativeQuantityStatus.PRESENT.value else None
@@ -402,9 +402,17 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             errors.append("client_file_id_required")
         if not (command.asset_id or "").strip():
             errors.append("asset_id_required")
+        profile_source = (command.profile_source or "").strip().upper()
+        label_id = _normalize_optional_label_id(command.label_id)
         code = (command.internal_code or "").strip()
+        identity_only = (
+            profile_source == "SUPPLIER"
+            and label_id is not None
+            and not code
+        )
         if not code:
-            errors.append("internal_code_required")
+            if not identity_only:
+                errors.append("internal_code_required")
         elif len(code) > _CODE_MAX:
             errors.append("internal_code_too_long")
         elif not _CODE_CHARSET.match(code):
@@ -439,9 +447,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         sym = (command.detected_symbology or "").strip().upper()
         if sym and sym not in _ALLOWED_SYMBOLOGY:
             errors.append("detected_symbology_invalid")
-        label_id = _normalize_optional_label_id(command.label_id)
         if label_id is not None:
-            profile_source = (command.profile_source or "").strip().upper()
             if profile_source == "SUPPLIER":
                 # Supplier identity labels are not D1 Crockford-10; allow configured charset range.
                 if len(label_id) < 1 or len(label_id) > 128 or not _CODE_CHARSET.match(label_id):
@@ -466,6 +472,19 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
                 AUTH_VALIDATION_FAILED,
                 ("supplier_profile_attestation_required",),
             )
+        from src.domain.label_profiles.kinds import parse_label_kind
+
+        kind = None
+        raw_kind = (command.label_kind or "").strip()
+        if raw_kind:
+            try:
+                kind = parse_label_kind(raw_kind)
+            except ValueError:
+                return self._rejected(
+                    command,
+                    AUTH_VALIDATION_FAILED,
+                    ("label_kind_invalid",),
+                )
         if self._exact_profile_service is None:
             return None
         from src.application.services.exact_extraction_profile_version import (
@@ -474,17 +493,10 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             ProfileVersionNotFoundError,
             ProfileVersionScopeMismatchError,
         )
-        from src.domain.label_profiles.kinds import LabelKind, parse_label_kind
 
         service = self._exact_profile_service
         if not isinstance(service, ExactExtractionProfileVersionService):
             return None
-        kind = None
-        if command.label_kind:
-            try:
-                kind = parse_label_kind(command.label_kind)
-            except Exception:
-                kind = None
         supplier_id = (command.client_supplier_id or "").strip()
         if not supplier_id:
             return self._rejected(

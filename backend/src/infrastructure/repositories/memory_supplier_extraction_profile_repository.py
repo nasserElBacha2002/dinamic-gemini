@@ -41,6 +41,24 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
                 return deepcopy(row)
         return None
 
+    def get_by_client_supplier_kind_version(
+        self,
+        client_id: str,
+        supplier_id: str,
+        label_kind: LabelKind,
+        version: int,
+    ) -> SupplierExtractionProfile | None:
+        want = effective_label_kind(label_kind)
+        for row in self._rows.values():
+            if (
+                row.client_id == client_id
+                and row.supplier_id == supplier_id
+                and row.version == version
+                and effective_label_kind(row.label_kind) is want
+            ):
+                return deepcopy(row)
+        return None
+
     def get_active(
         self, client_id: str, supplier_id: str
     ) -> SupplierExtractionProfile | None:

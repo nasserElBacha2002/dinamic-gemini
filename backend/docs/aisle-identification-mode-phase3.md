@@ -136,7 +136,7 @@ always snapshots `execution_strategy=CODE_SCAN` and the worker runs the per-imag
 |-----|---------|------|
 | `MAX_IMAGE_PROCESSING_CONCURRENCY` | 1 | ThreadPool workers for SINGLE_ASSET code scan. **Keep 1 in production** until SQL concurrency tests pass; values > 1 rely on the `ManualImageResultUnitOfWork` creating its own connection per `with uow` |
 | `CODE_SCAN_MAX_IMAGE_SIDE` | 2048 | Downscale before rotated-variant scanning |
-| `CODE_SCAN_VARIANTS_BUDGET_SECONDS` | 15 | Wall-clock budget checked **between** scan variants; does NOT interrupt a blocked native decode. (Alias: deprecated `CODE_SCAN_TIMEOUT_SECONDS`.) |
+| `CODE_SCAN_VARIANTS_BUDGET_SECONDS` | 15 | Wall-clock budget for **image preparation + barcode decode variants after source bytes are loaded**. Checked cooperatively between prepare/variant steps; does NOT interrupt a blocked native decode; does NOT cover storage/source load. (Alias: deprecated `CODE_SCAN_TIMEOUT_SECONDS`.) |
 | `CODE_SCAN_ENABLE_ROTATIONS` | true | Retry 90/180/270 when 0° finds nothing |
 | `CODE_SCAN_MAX_VARIANTS` | 4 | Max scan variants (0/90/180/270) |
 | `CODE_SCAN_QUANTITY_MAX` | 99999999 | Max accepted positive-integer quantity |
@@ -170,9 +170,12 @@ time (previously API-only). Without it, code scan surfaces `FAILED_TECHNICAL` pe
 
 - **No OCR and no LLM fallback**: if the label has no machine-readable QR/CODE128 the asset
   is `UNRECOGNIZED` (never sent to an LLM).
-- The variants budget (`CODE_SCAN_VARIANTS_BUDGET_SECONDS`) is a **wall-clock budget checked
-  between scan variants** — it does NOT interrupt a blocked native `pyzbar` decode already in
-  progress (no process-pool hard timeout in this phase).
+- The variants budget (`CODE_SCAN_VARIANTS_BUDGET_SECONDS`) is a **wall-clock budget for
+  image preparation + decode variants after source bytes are loaded**. Per variant it is
+  enforced cooperatively as ``CHECK → PREPARE → CHECK → DECODE → CHECK``. It does NOT
+  interrupt a blocked native `pyzbar` decode already in progress; once that call returns,
+  the budget is re-checked before declaring success or starting another variant. It does
+  **not** cover storage/source load latency.
 - `CODE_SCAN_ENABLE_PREPROCESSING` and `CODE_SCAN_MAX_TECHNICAL_ATTEMPTS` remain as reserved
   settings but have no effect (no preprocessing filters, no transient-retry loop);
   `CODE_SCAN_ALLOW_DECIMAL_QUANTITY` is unsupported and coerced to false.

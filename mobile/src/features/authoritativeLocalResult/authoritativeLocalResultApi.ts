@@ -4,7 +4,8 @@ export interface AuthoritativeLocalCodeScanRequest {
   readonly schema_version: string;
   readonly result_id: string;
   readonly client_file_id: string;
-  readonly internal_code: string;
+  /** Required for Dinamic; null for SUPPLIER identity-only (label_id present). */
+  readonly internal_code: string | null;
   readonly quantity: number | null;
   readonly quantity_status: 'PRESENT' | 'MISSING';
   readonly source: 'LOCAL_CODE_SCAN' | 'LOCAL_MANUAL_CORRECTION';

@@ -245,25 +245,7 @@ export class LocalCodeScanStrategy {
         offline,
       });
       let consolidated = profileAware.consolidation;
-      if (profileAware.profileMissing && offline) {
-        await this.deps.drafts.upsertDraft({
-          capturePhotoId: input.capturePhotoId,
-          captureSessionId: input.captureSessionId,
-          clientFileId: input.clientFileId,
-          status: 'FAILED',
-          parserVersion: LABEL_PAYLOAD_PARSER_VERSION,
-          detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
-          preparedAssetFingerprint: input.preparedAssetFingerprint,
-          errorCode: 'SUPPLIER_LABEL_PROFILE_NOT_AVAILABLE_OFFLINE',
-          candidateCount: candidates.length,
-          scanOwner: LOCAL_SCAN_OWNER,
-          scanGeneration,
-          comparisonStatus: 'PENDING',
-          recognitionProfileSnapshotJson: JSON.stringify(profileAware.recognitionSnapshot),
-          recognitionContext: input.recognitionContext ?? null,
-        });
-        return 'FAILED';
-      }
+      // Per-kind missing profiles: do not fail the whole scan when only POSITION (or ITEM) is missing.
       if (profileAware.ambiguous) {
         await this.deps.drafts.upsertDraft({
           capturePhotoId: input.capturePhotoId,
@@ -289,19 +271,21 @@ export class LocalCodeScanStrategy {
         profileAware.supplierItem?.status === 'VALID' &&
         consolidated.productResults.length === 0
       ) {
-        const sid = profileAware.supplierItem.labelId || profileAware.supplierItem.sku || '';
+        const labelId = profileAware.supplierItem.labelId || '';
+        const sku = profileAware.supplierItem.sku;
         const qty = profileAware.supplierItem.quantity;
+        // Never invent internal_code from label_id; identity-only keeps sku/internal_code null.
+        const internalCode = sku && sku.trim() ? sku.trim() : null;
         consolidated = {
           ...consolidated,
           status: qty == null ? 'MISSING_QUANTITY' : 'RESOLVED',
-          internalCode: profileAware.supplierItem.sku || sid || null,
+          internalCode,
           quantity: qty,
           productResults: [
             {
-              labelId: profileAware.supplierItem.labelId || sid,
-              internalCode: profileAware.supplierItem.sku || sid,
-              // ProductLabelResult.quantity is required; 0 means missing for SUPPLIER format.
-              quantity: qty ?? 0,
+              labelId: labelId || (internalCode ?? ''),
+              internalCode,
+              quantity: qty,
               formatVersion: 'SUPPLIER',
               checksum: '',
               validationStatus: 'VALID',

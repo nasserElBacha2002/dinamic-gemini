@@ -38,6 +38,7 @@ module.exports = {
     '<rootDir>/tests/aisleRevisionService.test.ts',
     '<rootDir>/tests/fase10ProductionHardening.test.ts',
     '<rootDir>/tests/offlineRecognitionSync.test.ts',
+    '<rootDir>/tests/offlineIdentityOnlyAndPerKind.test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],

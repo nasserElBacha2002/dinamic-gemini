@@ -131,7 +131,9 @@ def test_merge_a_at_0_b_at_90() -> None:
     b = build_product_label_payload(label_id="FGHJKMNPQR", internal_code="SKU_B", quantity=2)
     scanner = _AngleAwareScanner([[_cand(a)], [_cand(a), _cand(b)], [], []])
     strategy = _strategy(scanner, _png_bytes(), timeout_seconds=30)
-    session = strategy._scan_with_variants(_asset(), _png_bytes(), started=time.monotonic())
+    session = strategy._scan_with_variants(
+        _asset(), _png_bytes(), decode_budget_started_at=time.monotonic()
+    )
     values = {c.code_value for c in session.candidates}
     assert a in values and b in values
     assert session.scan_complete is True
@@ -147,14 +149,17 @@ def test_timeout_partial_preserves_a_and_marks_incomplete() -> None:
     calls = {"n": 0}
     original = strategy._check_timeout
 
-    def _check(started: float) -> None:
+    def _check(decode_budget_started_at: float, **kwargs) -> None:
         calls["n"] += 1
-        if calls["n"] > 1:
+        # Force timeout only after the first decoder variant has run (prepare checks first).
+        if scanner.calls >= 1:
             raise CodeScanTimeoutError("forced")
-        original(started)
+        original(decode_budget_started_at, **kwargs)
 
     strategy._check_timeout = _check  # type: ignore[method-assign]
-    session = strategy._scan_with_variants(_asset(), content, started=time.monotonic())
+    session = strategy._scan_with_variants(
+        _asset(), content, decode_budget_started_at=time.monotonic()
+    )
     assert len(session.candidates) == 1
     assert session.candidates[0].code_value == a
     assert session.scan_complete is False
@@ -162,6 +167,7 @@ def test_timeout_partial_preserves_a_and_marks_incomplete() -> None:
     assert session.partial_timeout is True
 
     calls["n"] = 0
+    scanner.calls = 0
     result = strategy.process(_context(), _asset())
     assert result.status is ImageResultStatus.RESOLVED_INTERNAL
     assert "CODE_SCAN_PARTIAL_TIMEOUT" in (result.warnings or [])
@@ -183,6 +189,8 @@ def test_max_candidates_budget_covers_seven_symbols() -> None:
     strategy = _strategy(
         scanner, _png_bytes(), enable_rotations=False, max_candidates_per_asset=24
     )
-    session = strategy._scan_with_variants(_asset(), _png_bytes(), started=time.monotonic())
+    session = strategy._scan_with_variants(
+        _asset(), _png_bytes(), decode_budget_started_at=time.monotonic()
+    )
     assert len(session.candidates) == 7
     assert session.scan_complete is True

@@ -5,9 +5,10 @@ GCS-backed artifact storage adapter (Phase 1).
 from __future__ import annotations
 
 import logging
+import time
 from datetime import timedelta
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 from src.application.ports.services import ArtifactStorage
 from src.infrastructure.storage.artifact_store import (
@@ -26,6 +27,10 @@ class GcsArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
     Key contract mirrors :class:`S3ArtifactStorageAdapter`:
     - public methods accept logical keys (no duplication of the configured bucket prefix)
     - ``put_object`` returns ``StoredArtifact.storage_key`` in logical form
+
+    Client lifecycle: one ``google.cloud.storage.Client`` per adapter instance.
+    ``build_artifact_storage`` constructs a single adapter per process/container,
+    so the client is reused across asset reads (not recreated per asset).
     """
 
     def __init__(
@@ -36,11 +41,14 @@ class GcsArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         project_id: str | None = None,
         signed_url_ttl_sec: int = 900,
         storage_client=None,
+        monotonic_fn=time.monotonic,
     ) -> None:
         self._bucket = (bucket or "").strip()
         self._prefix = (prefix or "").strip().strip("/")
         self._project_id = (project_id or "").strip() or None
         self._signed_url_ttl_sec = int(signed_url_ttl_sec)
+        self._monotonic = monotonic_fn
+        self._last_get_object_timings: dict[str, Any] | None = None
         if self._signed_url_ttl_sec <= 0:
             self._signed_url_ttl_sec = 900
         if storage_client is None:
@@ -64,6 +72,26 @@ class GcsArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
     @property
     def prefix(self) -> str:
         return self._prefix
+
+    @property
+    def storage_provider(self) -> str:
+        return "gcs"
+
+    @property
+    def last_get_object_timings(self) -> dict[str, Any] | None:
+        return dict(self._last_get_object_timings) if self._last_get_object_timings else None
+
+    def _credentials_expired_flag(self) -> bool | None:
+        """Best-effort ADC expired flag; never logs token material."""
+        creds = getattr(self._client, "_credentials", None)
+        if creds is None:
+            creds = getattr(self._client, "credentials", None)
+        if creds is None:
+            return None
+        expired = getattr(creds, "expired", None)
+        if isinstance(expired, bool):
+            return expired
+        return None
 
     def _gcs_bucket(self):
         return self._client.bucket(self._bucket)
@@ -143,17 +171,63 @@ class GcsArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
 
     def get_object(self, key: str) -> ArtifactDownload:
         blob, object_key = self._blob(key)
+        total_started = self._monotonic()
+        creds_expired_at_start = self._credentials_expired_flag()
+        download_ms = 0
+        metadata_lookup_ms = 0
         try:
+            download_started = self._monotonic()
             body = blob.download_as_bytes()
+            download_ms = max(0, int((self._monotonic() - download_started) * 1000))
+            # Existing post-download reload (not added for observability). Times only.
+            meta_started = self._monotonic()
             try:
                 blob.reload()
             except Exception:
                 pass
+            metadata_lookup_ms = max(0, int((self._monotonic() - meta_started) * 1000))
         except Exception as exc:
-            logger.exception("GCS get_object failed bucket=%s key=%s", self._bucket, object_key)
+            total_ms = max(0, int((self._monotonic() - total_started) * 1000))
+            self._last_get_object_timings = {
+                "download_ms": download_ms,
+                "metadata_lookup_ms": metadata_lookup_ms,
+                "total_storage_ms": total_ms,
+                "retry_status": "unknown",
+                "credentials_expired_at_start": creds_expired_at_start,
+                "success": False,
+            }
+            logger.exception(
+                "GCS get_object failed bucket=%s key=%s total_storage_ms=%s",
+                self._bucket,
+                object_key,
+                total_ms,
+            )
             raise RuntimeError(
                 f"GCS download failed for key={object_key!r} bucket={self._bucket!r}"
             ) from exc
+        total_ms = max(0, int((self._monotonic() - total_started) * 1000))
+        self._last_get_object_timings = {
+            "download_ms": download_ms,
+            "metadata_lookup_ms": metadata_lookup_ms,
+            "total_storage_ms": total_ms,
+            # google-cloud-storage may retry under the hood; SDK does not expose a
+            # public per-call retry counter → leave unknown rather than inventing.
+            "retry_status": "unknown",
+            "credentials_expired_at_start": creds_expired_at_start,
+            "success": True,
+        }
+        logger.info(
+            "gcs.get_object bucket=%s object_key=%s byte_length=%s download_ms=%s "
+            "metadata_lookup_ms=%s total_storage_ms=%s credentials_expired_at_start=%s "
+            "retry_status=unknown",
+            self._bucket,
+            object_key,
+            len(body),
+            download_ms,
+            metadata_lookup_ms,
+            total_ms,
+            creds_expired_at_start,
+        )
         content_type = blob.content_type or "application/octet-stream"
         file_size = int(blob.size or len(body))
         etag = (blob.etag or "").strip() or None

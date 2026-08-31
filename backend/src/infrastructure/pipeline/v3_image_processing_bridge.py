@@ -272,7 +272,7 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
             "(no transient-retry loop is implemented).",
             max_technical_attempts,
         )
-    # I — prefer the honest "variants budget" name; fall back to the legacy timeout setting.
+    # I — variants/decode budget AFTER source load (not asset-wide / not storage I/O).
     variants_budget = int(
         getattr(settings, "code_scan_variants_budget_seconds", None)
         or getattr(settings, "code_scan_timeout_seconds", 15)
@@ -308,7 +308,10 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
 
     return CodeScanProcessingStrategy(
         scanner=_LazyPyzbarCodeScanner(),
-        content_reader=ArtifactStoreSourceAssetContentReader(artifact_store),
+        content_reader=ArtifactStoreSourceAssetContentReader(
+            artifact_store,
+            slow_warning_ms=int(getattr(settings, "slow_storage_fetch_warning_ms", 10_000)),
+        ),
         parser=parser,
         consolidator=CodeDetectionConsolidator(),
         config=config,
@@ -532,7 +535,10 @@ def build_default_external_fallback_orchestrator(
                 model_name=resolved_model,
             )
 
-    reader = ArtifactStoreSourceAssetContentReader(artifact_store)
+    reader = ArtifactStoreSourceAssetContentReader(
+        artifact_store,
+        slow_warning_ms=int(getattr(settings, "slow_storage_fetch_warning_ms", 10_000)),
+    )
     resolved_request_repo = request_repo
     if resolved_request_repo is None:
         resolved_request_repo = MemoryExternalImageAnalysisRequestRepository()
@@ -717,7 +723,10 @@ def build_default_internal_ocr_strategy(
             logger.warning("internal_ocr.event_publisher_unavailable err=%s", exc)
     return InternalOcrProcessingStrategy(
         reader=TesseractInternalLabelReader(default_language=config.language),
-        content_reader=ArtifactStoreSourceAssetContentReader(artifact_store),
+        content_reader=ArtifactStoreSourceAssetContentReader(
+            artifact_store,
+            slow_warning_ms=int(getattr(settings, "slow_storage_fetch_warning_ms", 10_000)),
+        ),
         preprocessor=OcrImagePreprocessor(preprocess),
         extractor=OcrFieldExtractor(),
         normalizer=OcrResultNormalizer(quantity_max=quantity_max, client_rules=rules),

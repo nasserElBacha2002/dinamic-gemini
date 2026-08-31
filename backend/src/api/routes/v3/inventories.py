@@ -23,6 +23,7 @@ from src.api.dependencies import (
     get_list_inventory_list_items_use_case,
     get_soft_delete_inventories_use_case,
     get_update_inventory_name_use_case,
+    require_inventory_client_scope,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.inventory_schemas import (
@@ -50,6 +51,7 @@ from src.application.use_cases.inventories.get_inventory_recognition_config impo
     GetInventoryRecognitionConfigCommand,
     GetInventoryRecognitionConfigUseCase,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import ClientNotFoundError, InventoryNotFoundError
 from src.application.services.aisle_identification_configuration_query import (
     AisleIdentificationConfigurationQuery,
@@ -318,6 +320,7 @@ def export_inventory_package_zip(
 )
 def get_inventory_recognition_config(
     inventory_id: str,
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
     use_case: GetInventoryRecognitionConfigUseCase = Depends(
         get_inventory_recognition_config_use_case
     ),

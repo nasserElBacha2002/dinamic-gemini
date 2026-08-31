@@ -223,6 +223,27 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
             row = cur.fetchone()
         return _row_to_supplier_extraction_profile(row) if row else None
 
+    def get_by_client_supplier_kind_version(
+        self,
+        client_id: str,
+        supplier_id: str,
+        label_kind: LabelKind,
+        version: int,
+    ) -> SupplierExtractionProfile | None:
+        kind_value = _label_kind_scope_value(label_kind)
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_SELECT_PROFILE_COLUMNS}
+                FROM supplier_extraction_profiles
+                WHERE client_id = ? AND supplier_id = ? AND version = ?
+                  AND ISNULL(label_kind, 'ITEM') = ?
+                """,
+                (client_id, supplier_id, int(version), kind_value),
+            )
+            row = cur.fetchone()
+        return _row_to_supplier_extraction_profile(row) if row else None
+
     def get_active(
         self, client_id: str, supplier_id: str
     ) -> SupplierExtractionProfile | None:

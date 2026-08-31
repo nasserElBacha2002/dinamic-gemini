@@ -4,11 +4,12 @@ import type { AuthoritativeLocalCodeScanRequest } from './authoritativeLocalResu
 export function mapConfirmedToAuthoritativeRequest(
   row: ConfirmedLocalResultRow,
 ): AuthoritativeLocalCodeScanRequest {
+  const confirmedCode = (row.confirmed_internal_code || '').trim() || null;
   const base: AuthoritativeLocalCodeScanRequest = {
     schema_version: '1',
     result_id: row.id,
     client_file_id: row.client_file_id!,
-    internal_code: row.confirmed_internal_code,
+    internal_code: confirmedCode,
     quantity: row.confirmed_quantity,
     quantity_status: row.quantity_status,
     source: row.source,
@@ -36,12 +37,19 @@ export function mapConfirmedToAuthoritativeRequest(
       client_supplier_id?: string;
     };
     const item = snap.item ?? {};
+    const profileSource =
+      item.profile_source === 'SUPPLIER' || item.profile_source === 'DINAMIC'
+        ? item.profile_source
+        : null;
+    // Identity-only: never invent internal_code from label_id.
+    const internalCode =
+      profileSource === 'SUPPLIER' && !confirmedCode && row.label_id
+        ? null
+        : confirmedCode;
     return {
       ...base,
-      profile_source:
-        item.profile_source === 'SUPPLIER' || item.profile_source === 'DINAMIC'
-          ? item.profile_source
-          : null,
+      internal_code: internalCode,
+      profile_source: profileSource,
       profile_id: item.profile_id ?? null,
       profile_version: item.profile_version ?? null,
       configuration_schema_version: item.configuration_schema_version ?? null,

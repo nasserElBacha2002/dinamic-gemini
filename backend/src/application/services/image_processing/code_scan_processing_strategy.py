@@ -27,6 +27,7 @@ import logging
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -124,7 +125,21 @@ def _float_if_present(value: Any) -> float | None:
 
 
 class CodeScanTimeoutError(RuntimeError):
-    """Raised when scanning one asset exceeds the configured wall-clock budget."""
+    """Raised when prepare + decode variants exceed the decode/variants budget.
+
+    The budget is cooperative: CHECK → PREPARE → CHECK → DECODE → CHECK per variant.
+    It does **not** preemptively interrupt a blocked native decoder call (e.g. pyzbar);
+    after the call returns, the budget is re-checked before success / more variants.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.diagnostics: dict[str, Any] = dict(diagnostics or {})
 
 
 class CodeScannerUnavailableError(RuntimeError):
@@ -144,6 +159,8 @@ class CodeScanConfig:
     quantity_max: int
     allow_decimal_quantity: bool = False
     max_image_side: int = 2048
+    # Wall-clock budget for image preparation + barcode decode variants AFTER source
+    # bytes are loaded (CODE_SCAN_VARIANTS_BUDGET_SECONDS). Does not cover storage I/O.
     timeout_seconds: int = 15
     enable_rotations: bool = True
     enable_preprocessing: bool = False
@@ -250,6 +267,7 @@ class CodeScanProcessingStrategy:
         issued_label_resolver: IssuedProductLabelResolver | None = None,
         label_validation_service: LabelValidationService | None = None,
         position_label_detection_repo=None,
+        monotonic_fn: Callable[[], float] | None = None,
     ) -> None:
         self._scanner = scanner
         self._reader = content_reader
@@ -263,6 +281,7 @@ class CodeScanProcessingStrategy:
         self._label_validation = label_validation_service or LabelValidationService()
         self._classifier = CodeScanLabelClassifier(self._label_validation)
         self._position_detection_repo = position_label_detection_repo
+        self._monotonic = monotonic_fn or time.monotonic
 
     def _publish_asset_event(
         self,
@@ -273,6 +292,7 @@ class CodeScanProcessingStrategy:
         error_code: str | None = None,
         metadata: dict | None = None,
         severity: str = "INFO",
+        duration_ms: int | None = None,
     ) -> None:
         if self._events is None:
             return
@@ -285,6 +305,7 @@ class CodeScanProcessingStrategy:
                 severity=severity,
                 message=message,
                 error_code=error_code,
+                duration_ms=duration_ms,
                 metadata=metadata,
             )
         except Exception:
@@ -296,6 +317,33 @@ class CodeScanProcessingStrategy:
                 event_type,
                 exc_info=True,
             )
+
+    def _storage_fetch_event_metadata(self, *, source_load_ms: int) -> dict:
+        """Merge reader diagnostics into event metadata (no extra storage I/O)."""
+        diag = getattr(self._reader, "last_fetch_diagnostics", None)
+        if not isinstance(diag, dict):
+            return {"storage_fetch_ms": source_load_ms}
+        out: dict = {}
+        for key in (
+            "storage_backend",
+            "bucket",
+            "object_key",
+            "byte_length",
+            "storage_fetch_ms",
+            "attempt",
+            "success",
+            "retry_status",
+            "slow",
+            "download_ms",
+            "metadata_lookup_ms",
+            "total_storage_ms",
+            "credentials_expired_at_start",
+            "error_type",
+        ):
+            if key in diag and diag[key] is not None:
+                out[key] = diag[key]
+        out.setdefault("storage_fetch_ms", source_load_ms)
+        return out
 
     @property
     def metrics(self) -> CodeScanMetrics:
@@ -317,8 +365,9 @@ class CodeScanProcessingStrategy:
         return f"pyzbar/{version}" if version else "pyzbar"
 
     def process(self, context: ImageProcessingContext, asset: SourceAsset) -> ImageProcessingResult:
-        started = time.monotonic()
+        asset_started_at = self._monotonic()
         mode = getattr(context.identification_mode, "value", str(context.identification_mode))
+        budget_ms = int(float(self._config.timeout_seconds) * 1000)
         self._metrics.increment("code_scan.assets_processed")
         self._publish_asset_event(
             context,
@@ -327,49 +376,170 @@ class CodeScanProcessingStrategy:
             metadata={"asset_id": context.asset_id},
         )
 
+        self._publish_asset_event(
+            context,
+            "code_scan.source_load_started",
+            message="source asset byte load started",
+        )
+        source_load_started_at = self._monotonic()
         try:
             content = self._reader.read_image_bytes(asset)
         except FileNotFoundError as exc:
-            result = self._technical(context, mode, "SOURCE_ASSET_NOT_FOUND", str(exc), started)
+            source_load_ms = max(0, int((self._monotonic() - source_load_started_at) * 1000))
+            storage_meta = self._storage_fetch_event_metadata(source_load_ms=source_load_ms)
+            self._publish_asset_event(
+                context,
+                "asset.source_load_failed",
+                message="source asset byte load failed",
+                error_code="SOURCE_ASSET_NOT_FOUND",
+                severity="ERROR",
+                metadata={
+                    "source_load_ms": source_load_ms,
+                    "error_type": type(exc).__name__,
+                    **storage_meta,
+                },
+                duration_ms=source_load_ms,
+            )
+            result = self._technical(
+                context, mode, "SOURCE_ASSET_NOT_FOUND", str(exc), asset_started_at
+            )
             self._finalize_asset_event(context, result)
             return result
         except (OSError, ValueError) as exc:
             # ValueError: missing storage_key / empty object from content reader.
-            result = self._technical(context, mode, "SOURCE_ASSET_READ_FAILED", str(exc), started)
-            self._finalize_asset_event(context, result)
-            return result
-
-        if not content:
+            source_load_ms = max(0, int((self._monotonic() - source_load_started_at) * 1000))
+            storage_meta = self._storage_fetch_event_metadata(source_load_ms=source_load_ms)
+            self._publish_asset_event(
+                context,
+                "asset.source_load_failed",
+                message="source asset byte load failed",
+                error_code="SOURCE_ASSET_READ_FAILED",
+                severity="ERROR",
+                metadata={
+                    "source_load_ms": source_load_ms,
+                    "error_type": type(exc).__name__,
+                    **storage_meta,
+                },
+                duration_ms=source_load_ms,
+            )
             result = self._technical(
-                context, mode, "SOURCE_ASSET_EMPTY", "empty source asset content", started
+                context, mode, "SOURCE_ASSET_READ_FAILED", str(exc), asset_started_at
             )
             self._finalize_asset_event(context, result)
             return result
 
+        source_load_ms = max(0, int((self._monotonic() - source_load_started_at) * 1000))
+
+        if not content:
+            self._publish_asset_event(
+                context,
+                "asset.source_load_failed",
+                message="source asset bytes empty",
+                error_code="SOURCE_ASSET_EMPTY",
+                severity="ERROR",
+                metadata={
+                    "source_load_ms": source_load_ms,
+                    "error_type": "EmptyContent",
+                },
+                duration_ms=source_load_ms,
+            )
+            result = self._technical(
+                context,
+                mode,
+                "SOURCE_ASSET_EMPTY",
+                "empty source asset content",
+                asset_started_at,
+            )
+            self._finalize_asset_event(context, result)
+            return result
+
+        storage_meta = self._storage_fetch_event_metadata(source_load_ms=source_load_ms)
         self._publish_asset_event(
             context,
             "asset.source_loaded",
             message="source asset bytes loaded",
-            metadata={"byte_length": len(content)},
+            metadata={
+                "byte_length": len(content),
+                "source_load_ms": source_load_ms,
+                "observability_generation": "phase-timed",
+                "decode_budget_started_after_source_load": True,
+                **storage_meta,
+            },
+            duration_ms=source_load_ms,
         )
+        if storage_meta.get("slow"):
+            self._publish_asset_event(
+                context,
+                "asset.storage_fetch_slow",
+                message="storage fetch exceeded slow warning threshold",
+                severity="WARNING",
+                metadata={
+                    "duration_ms": storage_meta.get("storage_fetch_ms", source_load_ms),
+                    "byte_length": len(content),
+                    "bucket": storage_meta.get("bucket"),
+                    "storage_backend": storage_meta.get("storage_backend"),
+                    "asset_id": context.asset_id,
+                },
+                duration_ms=source_load_ms,
+            )
+
+        # Decode/variants budget starts AFTER source bytes are available.
+        decode_budget_started_at = self._monotonic()
         self._publish_asset_event(
             context,
             "code_scan.decode_started",
-            message="barcode/QR decode started",
+            message="CODE_SCAN prepare+decode budget started",
+            metadata={
+                "timeout_scope": "decode",
+                "configured_budget_ms": budget_ms,
+                "source_load_ms": source_load_ms,
+                "decode_budget_started_after_source_load": True,
+                "observability_generation": "phase-timed",
+            },
         )
 
         try:
-            scan_session = self._scan_with_variants(asset, content, started)
+            scan_session = self._scan_with_variants(
+                asset,
+                content,
+                decode_budget_started_at,
+                context=context,
+            )
         except CodeScanTimeoutError as exc:
             self._metrics.increment("code_scan.timeout")
+            diagnostics = dict(exc.diagnostics)
+            diagnostics.setdefault("timeout_phase", "decode")
+            diagnostics.setdefault("configured_budget_ms", budget_ms)
+            diagnostics["source_load_ms"] = source_load_ms
+            diagnostics.setdefault(
+                "elapsed_budget_ms",
+                max(0, int((self._monotonic() - decode_budget_started_at) * 1000)),
+            )
+            diagnostics.setdefault("remaining_budget_ms", 0)
             self._publish_asset_event(
                 context,
                 "code_scan.decode_failed",
                 message="CODE_SCAN timeout",
                 error_code="CODE_SCAN_TIMEOUT",
                 severity="ERROR",
+                metadata=diagnostics,
             )
-            result = self._technical(context, mode, "CODE_SCAN_TIMEOUT", str(exc), started)
+            result = self._technical(
+                context,
+                mode,
+                "CODE_SCAN_TIMEOUT",
+                str(exc),
+                asset_started_at,
+                evidence={
+                    "timeout_phase": diagnostics.get("timeout_phase", "decode"),
+                    "configured_budget_ms": diagnostics.get("configured_budget_ms", budget_ms),
+                    "elapsed_budget_ms": diagnostics.get("elapsed_budget_ms"),
+                    "remaining_budget_ms": diagnostics.get("remaining_budget_ms", 0),
+                    "source_load_ms": source_load_ms,
+                    "prepare_ms": diagnostics.get("prepare_ms"),
+                    "decode_ms": diagnostics.get("decode_ms"),
+                },
+            )
             self._finalize_asset_event(context, result)
             return result
         except (PyzbarUnavailableError, CodeScannerUnavailableError) as exc:
@@ -382,7 +552,9 @@ class CodeScanProcessingStrategy:
                 severity="ERROR",
                 metadata={"error_type": type(exc).__name__},
             )
-            result = self._technical(context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), started)
+            result = self._technical(
+                context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), asset_started_at
+            )
             self._finalize_asset_event(context, result)
             return result
         except (
@@ -399,7 +571,9 @@ class CodeScanProcessingStrategy:
                 severity="ERROR",
                 metadata={"error_type": type(exc).__name__},
             )
-            result = self._technical(context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), started)
+            result = self._technical(
+                context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), asset_started_at
+            )
             self._finalize_asset_event(context, result)
             return result
         except (CodeScannerDecodeError, ValueError) as exc:
@@ -413,7 +587,9 @@ class CodeScanProcessingStrategy:
                 severity="ERROR",
                 metadata={"error_type": type(exc).__name__},
             )
-            result = self._technical(context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), started)
+            result = self._technical(
+                context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), asset_started_at
+            )
             self._finalize_asset_event(context, result)
             return result
 
@@ -424,6 +600,9 @@ class CodeScanProcessingStrategy:
             self._metrics.increment("code_scan.scan_incomplete_total")
         if scan_session.partial_timeout:
             self._metrics.increment("code_scan.timeout_partial_total")
+        decode_elapsed_ms = max(
+            0, int((self._monotonic() - decode_budget_started_at) * 1000)
+        )
         self._publish_asset_event(
             context,
             "code_scan.decode_completed",
@@ -433,8 +612,14 @@ class CodeScanProcessingStrategy:
                 "scan_complete": scan_session.scan_complete,
                 "scan_stop_reason": scan_session.stop_reason.value,
                 "variants_attempted": scan_session.variants_attempted,
+                "source_load_ms": source_load_ms,
+                "prepare_ms": scan_session.prepare_ms,
+                "decode_ms": scan_session.decode_ms,
+                "decode_elapsed_ms": decode_elapsed_ms,
+                "configured_budget_ms": budget_ms,
             },
             error_code="NO_CODE_SYMBOL_FOUND" if symbol_count == 0 else None,
+            duration_ms=decode_elapsed_ms,
         )
         if symbol_count > 0:
             self._publish_asset_event(
@@ -456,7 +641,7 @@ class CodeScanProcessingStrategy:
         item_candidates = candidates
         position_meta: dict | None = None
         classification: CodeScanClassificationResult | None = None
-        duration_ms = int((time.monotonic() - started) * 1000)
+        duration_ms = int((self._monotonic() - asset_started_at) * 1000)
 
         if use_unified:
             classification = self._classifier.classify(
@@ -560,13 +745,13 @@ class CodeScanProcessingStrategy:
                 context=context,
                 validation_ctx=validation_ctx,
                 classification=classification,
-                duration_ms=int((time.monotonic() - started) * 1000),
+                duration_ms=int((self._monotonic() - asset_started_at) * 1000),
             )
             if supplier_fail is not None:
                 self._finalize_asset_event(context, supplier_fail)
                 return supplier_fail
             consolidated = self._consolidator.consolidate([])
-            duration_ms = int((time.monotonic() - started) * 1000)
+            duration_ms = int((self._monotonic() - asset_started_at) * 1000)
             evidence = evidence or self._build_evidence(
                 consolidated, detections, scan_session=scan_session
             )
@@ -593,14 +778,14 @@ class CodeScanProcessingStrategy:
                 item_candidates=item_candidates,
                 scan_session=scan_session,
                 position_meta=position_meta,
-                duration_ms=int((time.monotonic() - started) * 1000),
+                duration_ms=int((self._monotonic() - asset_started_at) * 1000),
                 mode=mode,
             )
             if supplier_fail is not None:
                 self._finalize_asset_event(context, supplier_fail)
                 return supplier_fail
             consolidated = self._consolidator.consolidate([])
-            duration_ms = int((time.monotonic() - started) * 1000)
+            duration_ms = int((self._monotonic() - asset_started_at) * 1000)
             evidence = evidence or self._build_evidence(
                 consolidated, detections, scan_session=scan_session
             )
@@ -609,7 +794,7 @@ class CodeScanProcessingStrategy:
         else:
             consolidated = self._consolidator.consolidate(detections)
 
-            duration_ms = int((time.monotonic() - started) * 1000)
+            duration_ms = int((self._monotonic() - asset_started_at) * 1000)
             evidence = self._build_evidence(consolidated, detections, scan_session=scan_session)
             if position_meta:
                 evidence = {**(evidence or {}), "position_label_detection": position_meta}
@@ -894,11 +1079,31 @@ class CodeScanProcessingStrategy:
     # Scanning
     # ------------------------------------------------------------------
 
-    def _check_timeout(self, started: float) -> None:
+    def _check_timeout(
+        self,
+        decode_budget_started_at: float,
+        *,
+        prepare_ms: int | None = None,
+        decode_ms: int | None = None,
+    ) -> None:
         if self._config.timeout_seconds <= 0:
             return
-        if (time.monotonic() - started) > self._config.timeout_seconds:
-            raise CodeScanTimeoutError(f"code scan exceeded {self._config.timeout_seconds}s budget")
+        elapsed = self._monotonic() - decode_budget_started_at
+        budget = float(self._config.timeout_seconds)
+        if elapsed > budget:
+            elapsed_ms = max(0, int(elapsed * 1000))
+            configured_ms = int(budget * 1000)
+            raise CodeScanTimeoutError(
+                f"code scan decode exceeded {self._config.timeout_seconds}s budget",
+                diagnostics={
+                    "timeout_phase": "decode",
+                    "configured_budget_ms": configured_ms,
+                    "elapsed_budget_ms": elapsed_ms,
+                    "remaining_budget_ms": 0,
+                    "prepare_ms": prepare_ms,
+                    "decode_ms": decode_ms,
+                },
+            )
 
     def _validation_context(self, context: ImageProcessingContext) -> LabelValidationContext:
         existing = context.label_validation_context
@@ -1411,13 +1616,27 @@ class CodeScanProcessingStrategy:
         return products, evidence, None
 
     def _scan_with_variants(
-        self, asset: SourceAsset, content: bytes, started: float
+        self,
+        asset: SourceAsset,
+        content: bytes,
+        decode_budget_started_at: float,
+        *,
+        context: ImageProcessingContext | None = None,
     ) -> CodeScanSessionResult:
         """Scan base image and optional rotations; merge candidates across variants.
 
         Dedupes by ``(code_type, code_value)`` preserving first-seen order so a code only
         visible after rotation is not dropped when another code appeared at 0°.
 
+        ``decode_budget_started_at`` must be taken **after** source bytes are loaded.
+        The budget covers image preparation + decoder variants (not storage I/O).
+
+        Enforcement is cooperative per variant::
+
+            CHECK → PREPARE → CHECK → DECODE → CHECK
+
+        A blocked native decoder call is not preemptively interrupted; once it returns,
+        the budget is re-checked before declaring the scan complete or starting more work.
         Timeout with candidates → ``scan_complete=False`` / ``TIMEOUT`` (partial), not a
         silent full success. Timeout with zero candidates still raises.
         """
@@ -1427,12 +1646,25 @@ class CodeScanProcessingStrategy:
         variants_attempted = 0
         stop_reason = CodeScanStopReason.COMPLETE
         scan_complete = True
-        dims = self._image_dimensions(content)
+        prepare_ms = 0
+        decode_ms = 0
+        dims: dict[str, Any] = {
+            "original_width": None,
+            "original_height": None,
+            "processed_width": None,
+            "processed_height": None,
+            "scale_ratio": None,
+        }
 
         def _timeout_remaining_ms() -> int:
             budget = float(self._config.timeout_seconds)
-            elapsed = time.monotonic() - started
+            elapsed = self._monotonic() - decode_budget_started_at
             return max(0, int((budget - elapsed) * 1000))
+
+        def _guard() -> None:
+            self._check_timeout(
+                decode_budget_started_at, prepare_ms=prepare_ms, decode_ms=decode_ms
+            )
 
         def _absorb(batch: list[CodeScanDetectionCandidate]) -> int:
             added = 0
@@ -1450,13 +1682,28 @@ class CodeScanProcessingStrategy:
             return added
 
         def _run_variant(angle: int, payload: bytes, variant_type: str) -> None:
-            nonlocal variants_attempted, stop_reason, scan_complete
-            variant_started = time.monotonic()
-            batch = list(self._scanner.scan_asset(asset, payload))
-            self._metrics.increment("code_scan.variant_symbols_total", amount=len(batch))
-            _absorb(batch)
-            variants_attempted += 1
-            duration_ms = int((time.monotonic() - variant_started) * 1000)
+            nonlocal variants_attempted, stop_reason, scan_complete, decode_ms
+            if context is not None:
+                self._publish_asset_event(
+                    context,
+                    "code_scan.decoder_variant_started",
+                    message="barcode decoder variant started",
+                    metadata={
+                        "variant_type": variant_type,
+                        "rotation_angle": angle,
+                        "timeout_remaining_ms": _timeout_remaining_ms(),
+                    },
+                )
+            variant_started = self._monotonic()
+            batch: list[CodeScanDetectionCandidate] = []
+            try:
+                batch = list(self._scanner.scan_asset(asset, payload))
+                self._metrics.increment("code_scan.variant_symbols_total", amount=len(batch))
+                _absorb(batch)
+                variants_attempted += 1
+            finally:
+                duration_ms = max(0, int((self._monotonic() - variant_started) * 1000))
+                decode_ms += duration_ms
             obs = CodeScanVariantObservation(
                 variant_type=variant_type,
                 rotation_angle=angle,
@@ -1488,25 +1735,54 @@ class CodeScanProcessingStrategy:
                 obs.scale_ratio,
             )
 
+        def _session_kwargs(**extra: Any) -> dict[str, Any]:
+            return {
+                "candidates": tuple(merged),
+                "variants_attempted": variants_attempted,
+                "variant_observations": tuple(observations),
+                "prepare_ms": prepare_ms,
+                "decode_ms": decode_ms,
+                **dims,
+                **extra,
+            }
+
         try:
-            self._check_timeout(started)
+            # CHECK → PREPARE (base) → CHECK → DECODE → CHECK
+            _guard()
+            if context is not None:
+                self._publish_asset_event(
+                    context,
+                    "code_scan.prepare_started",
+                    message="CODE_SCAN image preparation started",
+                )
+            prepare_started_at = self._monotonic()
+            dims = self._image_dimensions(content)
             # Align 0° with configured max_image_side (rotations already downscaled).
             base_payload = self._prepared_scan_bytes(content, angle=0) or content
+            prepare_ms = max(0, int((self._monotonic() - prepare_started_at) * 1000))
+            if context is not None:
+                self._publish_asset_event(
+                    context,
+                    "code_scan.prepare_completed",
+                    message="CODE_SCAN image preparation completed",
+                    metadata={"prepare_ms": prepare_ms},
+                    duration_ms=prepare_ms,
+                )
+            _guard()
             _run_variant(0, base_payload, "base")
+            _guard()
 
             if not self._config.enable_rotations:
                 return CodeScanSessionResult(
-                    candidates=tuple(merged),
                     scan_complete=True,
                     stop_reason=CodeScanStopReason.ROTATIONS_DISABLED,
-                    variants_attempted=variants_attempted,
-                    variant_observations=tuple(observations),
-                    **dims,
+                    **_session_kwargs(),
                 )
 
             rotation_angles = [90, 180, 270][: max(0, self._config.max_variants - 1)]
             for angle in rotation_angles:
-                self._check_timeout(started)
+                # CHECK → PREPARE (rotation) → CHECK → DECODE → CHECK
+                _guard()
                 if len(merged) >= int(self._config.max_candidates_per_asset):
                     self._metrics.increment("code_scan.max_candidates_reached_total")
                     self._metrics.increment("code_scan.max_candidates_per_asset_reached")
@@ -1521,7 +1797,10 @@ class CodeScanProcessingStrategy:
                         stop_reason.value,
                     )
                     break
+                rot_prep_started = self._monotonic()
                 rotated = self._prepared_scan_bytes(content, angle=angle)
+                prepare_ms += max(0, int((self._monotonic() - rot_prep_started) * 1000))
+                _guard()
                 if rotated is None:
                     # One failed variant must not abort remaining angles.
                     logger.info(
@@ -1532,6 +1811,7 @@ class CodeScanProcessingStrategy:
                     continue
                 self._metrics.increment("code_scan.rotation_variant")
                 _run_variant(angle, rotated, "rotation")
+                _guard()
         except CodeScanTimeoutError:
             if merged:
                 self._metrics.increment("code_scan.timeout_partial")
@@ -1546,22 +1826,16 @@ class CodeScanProcessingStrategy:
                     getattr(asset, "original_filename", None),
                 )
                 return CodeScanSessionResult(
-                    candidates=tuple(merged),
                     scan_complete=False,
                     stop_reason=CodeScanStopReason.TIMEOUT,
-                    variants_attempted=variants_attempted,
-                    variant_observations=tuple(observations),
-                    **dims,
+                    **_session_kwargs(),
                 )
             raise
 
         return CodeScanSessionResult(
-            candidates=tuple(merged),
             scan_complete=scan_complete,
             stop_reason=stop_reason,
-            variants_attempted=variants_attempted,
-            variant_observations=tuple(observations),
-            **dims,
+            **_session_kwargs(),
         )
 
     def _log_symbol_safe(self, asset: SourceAsset, cand: CodeScanDetectionCandidate) -> None:
@@ -1739,7 +2013,9 @@ class CodeScanProcessingStrategy:
         mode: str,
         code: str,
         message: str,
-        started: float,
+        asset_started_at: float,
+        *,
+        evidence: dict[str, Any] | None = None,
     ) -> ImageProcessingResult:
         self._metrics.increment("code_scan.failed_technical")
         logger.warning(
@@ -1756,9 +2032,10 @@ class CodeScanProcessingStrategy:
             resolved_by=STRATEGY_KEY,
             error_code=code,
             error_message=message[:2048],
+            evidence=evidence,
             execution_scope=ExecutionScope.SINGLE_ASSET,
             logical_asset_attempt=False,
-            processing_duration_ms=int((time.monotonic() - started) * 1000),
+            processing_duration_ms=int((self._monotonic() - asset_started_at) * 1000),
         )
 
 

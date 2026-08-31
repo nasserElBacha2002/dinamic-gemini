@@ -74,4 +74,37 @@ describe('ProcessingJobHeader', () => {
     renderHeader(job);
     expect(screen.getByTestId('processing-job-fallback-executed').textContent).toMatch(/not executed|no ejecutado/i);
   });
+
+  it('renders unambiguous Job / Pasillo / Inventario / Execution labels', () => {
+    const job = {
+      id: '939ecf64-8598-4694-a552-d15535ab0a45',
+      status: 'COMPLETED',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      execution_id: 'dbd9efbf-1111-2222-3333-444444444444',
+      identification_mode: 'CODE_SCAN_ONLY',
+      execution_strategy: 'CODE_SCAN',
+    } as unknown as JobSummary;
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ProcessingJobHeader
+          job={job}
+          inventoryId="ec321684-aaaa-bbbb-cccc-ddddeeeeffff"
+          aisleId="83934f6e-28dc-4bfc-a262-228d710bb37d"
+        />
+      </I18nextProvider>,
+    );
+
+    const identity = screen.getByTestId('processing-job-identity-ids');
+    expect(identity.textContent).toMatch(/Job/i);
+    expect(identity.textContent).toMatch(/Pasillo|Aisle/i);
+    expect(identity.textContent).toMatch(/Inventario|Inventory/i);
+    expect(identity.textContent).toMatch(/Execution/i);
+    expect(identity.textContent).toContain('939ecf64-8598-4694-a552-d15535ab0a45');
+    expect(identity.textContent).toContain('83934f6e-28dc-4bfc-a262-228d710bb37d');
+    expect(identity.textContent).toContain('ec321684-aaaa-bbbb-cccc-ddddeeeeffff');
+    expect(identity.textContent).toContain('dbd9efbf-1111-2222-3333-444444444444');
+    expect(identity.textContent).not.toMatch(/Ejec\.\s/);
+  });
 });

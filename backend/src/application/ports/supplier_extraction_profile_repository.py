@@ -25,6 +25,15 @@ class SupplierExtractionProfileRepository(ABC):
     ) -> SupplierExtractionProfile | None: ...
 
     @abstractmethod
+    def get_by_client_supplier_kind_version(
+        self,
+        client_id: str,
+        supplier_id: str,
+        label_kind: LabelKind,
+        version: int,
+    ) -> SupplierExtractionProfile | None: ...
+
+    @abstractmethod
     def get_active(
         self, client_id: str, supplier_id: str
     ) -> SupplierExtractionProfile | None: ...

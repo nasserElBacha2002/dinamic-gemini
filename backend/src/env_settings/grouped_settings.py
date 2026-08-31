@@ -814,6 +814,16 @@ class ArtifactStorageSettings(BaseModel):
             "Env: ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED."
         ),
     )
+    slow_storage_fetch_warning_ms: int = Field(
+        default_factory=lambda: int(os.getenv("SLOW_STORAGE_FETCH_WARNING_MS", "10000")),
+        ge=1,
+        le=600_000,
+        description=(
+            "Observability-only threshold (ms). When a storage get_object exceeds this, "
+            "emit asset.storage_fetch_slow warning + metric. Does NOT cancel jobs or "
+            "affect CODE_SCAN budgets. Env: SLOW_STORAGE_FETCH_WARNING_MS."
+        ),
+    )
     artifact_store_max_in_memory_get_bytes: int = Field(
         default_factory=lambda: int(
             os.getenv("ARTIFACT_STORE_MAX_IN_MEMORY_GET_BYTES", str(8 * 1024 * 1024))
@@ -1365,9 +1375,11 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=1,
         le=300,
         description=(
-            "Phase 3: wall-clock budget (seconds) checked BETWEEN scan variants for one image. "
-            "This does NOT interrupt a blocked native pyzbar decode already in progress. Prefer "
-            "this over the deprecated CODE_SCAN_TIMEOUT_SECONDS. "
+            "Budget (seconds) for image preparation and barcode decode variants AFTER "
+            "source bytes are loaded. Checked cooperatively between prepare/variant steps; "
+            "does NOT interrupt a blocked native pyzbar decode already in progress. Does NOT "
+            "cover storage/source load time. Prefer this over deprecated "
+            "CODE_SCAN_TIMEOUT_SECONDS. "
             "Env: CODE_SCAN_VARIANTS_BUDGET_SECONDS (alias: CODE_SCAN_TIMEOUT_SECONDS)."
         ),
     )

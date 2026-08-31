@@ -92,9 +92,17 @@ class ExactExtractionProfileVersionService:
 
         profile = self._extraction_profile_repo.get_by_id(attestation.profile_id)
         if profile is None:
-            # Fall back to version lookup (id may differ across environments).
-            profile = self._extraction_profile_repo.get_by_client_supplier_version(
-                inventory.client_id, supplier_id, int(attestation.profile_version)
+            # Fall back to kind-scoped version lookup (id may differ across environments).
+            # Require label_kind so ITEM/POSITION with the same version are not ambiguous.
+            if attestation.label_kind is None:
+                raise ProfileVersionNotFoundError(
+                    "profile version fallback requires label_kind"
+                )
+            profile = self._extraction_profile_repo.get_by_client_supplier_kind_version(
+                inventory.client_id,
+                supplier_id,
+                attestation.label_kind,
+                int(attestation.profile_version),
             )
         if profile is None:
             raise ProfileVersionNotFoundError(

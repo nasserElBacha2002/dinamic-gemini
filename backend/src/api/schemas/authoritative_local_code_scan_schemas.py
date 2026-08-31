@@ -14,7 +14,8 @@ class AuthoritativeLocalCodeScanRequest(BaseModel):
     schema_version: str = Field(default="1", max_length=8)
     result_id: str = Field(..., min_length=1, max_length=36)
     client_file_id: str = Field(..., min_length=1, max_length=36)
-    internal_code: str = Field(..., min_length=1, max_length=64)
+    #: Required for Dinamic/trade-item; optional for SUPPLIER identity-only (label_id present).
+    internal_code: str | None = Field(default=None, max_length=64)
     quantity: int | None = Field(default=None, ge=1, le=99_999_999)
     quantity_status: Literal["PRESENT", "MISSING"] = "PRESENT"
     source: Literal["LOCAL_CODE_SCAN", "LOCAL_MANUAL_CORRECTION"] = "LOCAL_CODE_SCAN"

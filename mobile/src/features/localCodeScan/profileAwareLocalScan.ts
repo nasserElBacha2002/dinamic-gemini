@@ -15,7 +15,10 @@ export interface ProfileAwareScanOutcome {
   readonly supplierItem: LocalRecognitionResult | null;
   readonly supplierPosition: LocalRecognitionResult | null;
   readonly ambiguous: boolean;
+  /** @deprecated Prefer itemProfileMissing / positionProfileMissing. */
   readonly profileMissing: boolean;
+  readonly itemProfileMissing: boolean;
+  readonly positionProfileMissing: boolean;
   readonly recognitionSnapshot: Record<string, unknown> | null;
 }
 
@@ -34,32 +37,27 @@ export async function runProfileAwareLocalScan(input: {
       supplierPosition: null,
       ambiguous: false,
       profileMissing: false,
+      itemProfileMissing: false,
+      positionProfileMissing: false,
       recognitionSnapshot: null,
     };
   }
 
   const profiles = await input.resolver.resolveForAisle(input.inventoryId, input.aisleId);
-  if (profiles.item.missingSupplierProfile || profiles.position.missingSupplierProfile) {
-    return {
-      consolidation,
-      supplierItem: null,
-      supplierPosition: null,
-      ambiguous: false,
-      profileMissing: true,
-      recognitionSnapshot: {
-        error_code: 'SUPPLIER_LABEL_PROFILE_NOT_AVAILABLE_OFFLINE',
-        item_missing: profiles.item.missingSupplierProfile,
-        position_missing: profiles.position.missingSupplierProfile,
-        offline: input.offline,
-      },
-    };
-  }
+  const itemProfileMissing = profiles.item.missingSupplierProfile;
+  const positionProfileMissing = profiles.position.missingSupplierProfile;
 
   // Fail-closed Dinamic: keep consolidator outcome for D1 / Dinamic position.
   let supplierItem: LocalRecognitionResult | null = null;
   let supplierPosition: LocalRecognitionResult | null = null;
 
-  if (!consolidation.d1Mode && profiles.item.source === 'SUPPLIER' && profiles.item.profile && profiles.item.configuration) {
+  if (
+    !consolidation.d1Mode &&
+    !itemProfileMissing &&
+    profiles.item.source === 'SUPPLIER' &&
+    profiles.item.profile &&
+    profiles.item.configuration
+  ) {
     for (const c of input.candidates) {
       const d1 = parseProductLabelPayload(c.rawValue);
       if (d1.status !== 'NOT_OUR_FORMAT' && d1.status !== 'UNKNOWN_VERSION') {
@@ -85,7 +83,12 @@ export async function runProfileAwareLocalScan(input: {
     }
   }
 
-  if (profiles.position.source === 'SUPPLIER' && profiles.position.profile && profiles.position.configuration) {
+  if (
+    !positionProfileMissing &&
+    profiles.position.source === 'SUPPLIER' &&
+    profiles.position.profile &&
+    profiles.position.configuration
+  ) {
     for (const c of input.candidates) {
       const result = validateSupplierPayloadOffline({
         rawPayload: c.rawValue,
@@ -110,6 +113,8 @@ export async function runProfileAwareLocalScan(input: {
     offline: input.offline,
     client_supplier_id:
       profiles.item.clientSupplierId ?? profiles.position.clientSupplierId ?? null,
+    item_profile_missing: itemProfileMissing,
+    position_profile_missing: positionProfileMissing,
     item: supplierItem
       ? {
           status: supplierItem.status,
@@ -127,6 +132,7 @@ export async function runProfileAwareLocalScan(input: {
           profile_id: profiles.item.profile?.profile_id ?? null,
           profile_version: profiles.item.profile?.profile_version ?? null,
           configuration_schema_version: profiles.item.profile?.configuration_schema_version ?? null,
+          missing: itemProfileMissing,
         },
     position: supplierPosition
       ? {
@@ -141,6 +147,7 @@ export async function runProfileAwareLocalScan(input: {
           profile_source: profiles.position.source,
           profile_id: profiles.position.profile?.profile_id ?? null,
           profile_version: profiles.position.profile?.profile_version ?? null,
+          missing: positionProfileMissing,
         },
     ambiguous,
   };
@@ -150,7 +157,9 @@ export async function runProfileAwareLocalScan(input: {
     supplierItem,
     supplierPosition,
     ambiguous,
-    profileMissing: false,
+    profileMissing: itemProfileMissing || positionProfileMissing,
+    itemProfileMissing,
+    positionProfileMissing,
     recognitionSnapshot,
   };
 }

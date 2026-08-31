@@ -173,3 +173,59 @@ def test_server_source_not_allowed():
     uc, _ = _uc()
     result = uc.execute(_cmd(source="SERVER_CODE_SCAN"))
     assert result.status == "REJECTED"
+
+
+def test_identity_only_supplier_allows_null_internal_code_and_quantity():
+    uc, repo = _uc()
+    result = uc.execute(
+        _cmd(
+            internal_code=None,
+            quantity=None,
+            quantity_status="MISSING",
+            detected_internal_code=None,
+            detected_quantity=None,
+            label_id="LPNA000184",
+            profile_source="SUPPLIER",
+            profile_id="prof-1",
+            profile_version=3,
+            label_kind="ITEM",
+            client_supplier_id="sup-a",
+        )
+    )
+    # Without exact profile service wired, attestation is skipped after kind parse —
+    # identity-only validation still accepts null internal_code.
+    assert result.status == "OK", (result.error_code, result.validation_errors)
+    saved = repo.get_by_id("result-1")
+    assert saved is not None
+    assert saved.internal_code is None
+    assert saved.quantity is None
+    assert saved.quantity_status == "MISSING"
+    assert saved.label_id == "LPNA000184"
+
+
+def test_invalid_label_kind_rejected_for_supplier_attestation():
+    uc, _ = _uc()
+    result = uc.execute(
+        _cmd(
+            profile_source="SUPPLIER",
+            profile_id="prof-1",
+            profile_version=3,
+            label_kind="NOT_A_KIND",
+            client_supplier_id="sup-a",
+            label_id="LPNA000184",
+            internal_code=None,
+            quantity=None,
+            quantity_status="MISSING",
+        )
+    )
+    assert result.status == "REJECTED"
+    assert result.error_code == AUTH_VALIDATION_FAILED
+    assert "label_kind_invalid" in result.validation_errors
+
+
+def test_legacy_still_requires_internal_code_without_supplier_identity():
+    uc, _ = _uc()
+    result = uc.execute(_cmd(internal_code=None, quantity=None, quantity_status="MISSING"))
+    assert result.status == "REJECTED"
+    assert result.error_code == AUTH_VALIDATION_FAILED
+    assert "internal_code_required" in result.validation_errors

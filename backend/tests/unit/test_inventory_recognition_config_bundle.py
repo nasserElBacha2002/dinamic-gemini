@@ -178,3 +178,161 @@ def test_bundle_includes_aisles_and_active_profiles_only() -> None:
     assert ("ITEM", 3) in versions
     assert ("POSITION", 2) in versions
     assert ("ITEM", 1) not in versions
+    assert len(bundle.bundle_revision) == 64
+    assert all(c in "0123456789abcdef" for c in bundle.bundle_revision)
+
+
+def test_bundle_revision_stable_for_identical_content() -> None:
+    from src.application.use_cases.inventories.get_inventory_recognition_config import (
+        OfflineAisleConfig,
+        OfflineProfileConfig,
+        compute_offline_bundle_revision,
+    )
+
+    aisles = [
+        OfflineAisleConfig(
+            aisle_id="a1",
+            aisle_code="A01",
+            client_supplier_id="sup-a",
+            item_profile_source_override=None,
+            position_profile_source_override=None,
+            effective_item_source="SUPPLIER",
+            effective_position_source="SUPPLIER",
+        )
+    ]
+    profiles = [
+        OfflineProfileConfig(
+            client_supplier_id="sup-a",
+            label_kind="ITEM",
+            source="SUPPLIER",
+            profile_id="p1",
+            profile_version=3,
+            configuration_schema_version=2,
+            recognition_mode="MINIMAL",
+            semantic_type="LPN",
+            configuration={
+                "deterministic": {"expected_prefix": "LPNA", "exact_length": 10},
+            },
+        )
+    ]
+    r1 = compute_offline_bundle_revision(
+        bundle_schema_version=1,
+        inventory_id="inv-1",
+        aisles=aisles,
+        profiles=profiles,
+    )
+    r2 = compute_offline_bundle_revision(
+        bundle_schema_version=1,
+        inventory_id="inv-1",
+        aisles=list(reversed(aisles)),
+        profiles=list(reversed(profiles)),
+    )
+    assert r1 == r2
+
+
+def test_bundle_revision_changes_on_mapping_and_config() -> None:
+    from src.application.use_cases.inventories.get_inventory_recognition_config import (
+        OfflineAisleConfig,
+        OfflineProfileConfig,
+        compute_offline_bundle_revision,
+    )
+
+    base_aisle = OfflineAisleConfig(
+        aisle_id="a1",
+        aisle_code="A01",
+        client_supplier_id="sup-a",
+        item_profile_source_override=None,
+        position_profile_source_override=None,
+        effective_item_source="SUPPLIER",
+        effective_position_source="SUPPLIER",
+    )
+    base_profile = OfflineProfileConfig(
+        client_supplier_id="sup-a",
+        label_kind="ITEM",
+        source="SUPPLIER",
+        profile_id="p1",
+        profile_version=3,
+        configuration_schema_version=2,
+        recognition_mode="MINIMAL",
+        semantic_type="LPN",
+        configuration={"deterministic": {"expected_prefix": "LPNA", "exact_length": 10}},
+    )
+    base = compute_offline_bundle_revision(
+        bundle_schema_version=1,
+        inventory_id="inv-1",
+        aisles=[base_aisle],
+        profiles=[base_profile],
+    )
+    supplier_changed = compute_offline_bundle_revision(
+        bundle_schema_version=1,
+        inventory_id="inv-1",
+        aisles=[
+            OfflineAisleConfig(
+                **{
+                    **base_aisle.__dict__,
+                    "client_supplier_id": "sup-b",
+                }
+            )
+        ],
+        profiles=[base_profile],
+    )
+    assert supplier_changed != base
+
+    override_changed = compute_offline_bundle_revision(
+        bundle_schema_version=1,
+        inventory_id="inv-1",
+        aisles=[
+            OfflineAisleConfig(
+                **{
+                    **base_aisle.__dict__,
+                    "item_profile_source_override": "DINAMIC",
+                }
+            )
+        ],
+        profiles=[base_profile],
+    )
+    assert override_changed != base
+
+    effective_changed = compute_offline_bundle_revision(
+        bundle_schema_version=1,
+        inventory_id="inv-1",
+        aisles=[
+            OfflineAisleConfig(
+                **{
+                    **base_aisle.__dict__,
+                    "effective_item_source": "DINAMIC",
+                }
+            )
+        ],
+        profiles=[base_profile],
+    )
+    assert effective_changed != base
+
+    version_changed = compute_offline_bundle_revision(
+        bundle_schema_version=1,
+        inventory_id="inv-1",
+        aisles=[base_aisle],
+        profiles=[
+            OfflineProfileConfig(
+                **{**base_profile.__dict__, "profile_version": 4},
+            )
+        ],
+    )
+    assert version_changed != base
+
+    config_changed = compute_offline_bundle_revision(
+        bundle_schema_version=1,
+        inventory_id="inv-1",
+        aisles=[base_aisle],
+        profiles=[
+            OfflineProfileConfig(
+                **{
+                    **base_profile.__dict__,
+                    "configuration": {
+                        "deterministic": {"expected_prefix": "XXXX", "exact_length": 10}
+                    },
+                },
+            )
+        ],
+    )
+    assert config_changed != base

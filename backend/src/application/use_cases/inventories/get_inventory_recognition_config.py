@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -59,6 +61,54 @@ def configuration_for_offline(profile: SupplierExtractionProfile) -> dict[str, A
     slim.pop("valid_examples", None)
     slim.pop("invalid_examples", None)
     return slim
+
+
+def _canonical_json(value: Any) -> str:
+    """Stable JSON for hashing: sorted keys, no whitespace, nulls preserved."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def compute_offline_bundle_revision(
+    *,
+    bundle_schema_version: int,
+    inventory_id: str,
+    aisles: list[OfflineAisleConfig] | tuple[OfflineAisleConfig, ...],
+    profiles: list[OfflineProfileConfig] | tuple[OfflineProfileConfig, ...],
+) -> str:
+    """Deterministic SHA-256 over canonical relevant bundle content (excludes generated_at)."""
+    aisle_payload = [
+        {
+            "aisle_id": a.aisle_id,
+            "client_supplier_id": a.client_supplier_id,
+            "item_profile_source_override": a.item_profile_source_override,
+            "position_profile_source_override": a.position_profile_source_override,
+            "effective_item_source": a.effective_item_source,
+            "effective_position_source": a.effective_position_source,
+        }
+        for a in sorted(aisles, key=lambda row: row.aisle_id)
+    ]
+    profile_payload = [
+        {
+            "client_supplier_id": p.client_supplier_id,
+            "label_kind": p.label_kind,
+            "profile_id": p.profile_id,
+            "profile_version": p.profile_version,
+            "configuration_schema_version": p.configuration_schema_version,
+            "deterministic": (p.configuration or {}).get("deterministic"),
+        }
+        for p in sorted(
+            profiles,
+            key=lambda row: (row.client_supplier_id, row.label_kind, row.profile_id),
+        )
+    ]
+    payload = {
+        "bundle_schema_version": bundle_schema_version,
+        "inventory_id": inventory_id,
+        "aisles": aisle_payload,
+        "profiles": profile_payload,
+    }
+    digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+    return digest
 
 
 @dataclass(frozen=True)
@@ -195,17 +245,21 @@ class GetInventoryRecognitionConfigUseCase:
                 )
 
         now = datetime.now(timezone.utc)
-        revision = (
-            f"{inventory.id}:{len(aisle_dtos)}:{len(profiles)}:"
-            f"{'-'.join(f'{p.profile_id}@{p.profile_version}' for p in profiles)}"
+        aisle_tuple = tuple(aisle_dtos)
+        profile_tuple = tuple(profiles)
+        revision = compute_offline_bundle_revision(
+            bundle_schema_version=OFFLINE_BUNDLE_SCHEMA_VERSION,
+            inventory_id=inventory.id,
+            aisles=aisle_tuple,
+            profiles=profile_tuple,
         )
         return OfflineRecognitionBundle(
             bundle_schema_version=OFFLINE_BUNDLE_SCHEMA_VERSION,
             inventory_id=inventory.id,
             client_id=inventory.client_id,
             generated_at=now,
-            aisles=tuple(aisle_dtos),
-            profiles=tuple(profiles),
+            aisles=aisle_tuple,
+            profiles=profile_tuple,
             bundle_revision=revision,
         )
 

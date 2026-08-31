@@ -116,7 +116,7 @@ function positionDetectedOnDraft(draft: LocalDetectionDraftRow | undefined): boo
 
 type EmitProduct = {
   readonly labelId: string;
-  readonly internalCode: string;
+  readonly internalCode: string | null;
   readonly quantity: number | null;
 };
 
@@ -345,7 +345,7 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
     for (const product of products) {
       rows.push({
         ...base,
-        internal_code: product.internalCode,
+        internal_code: product.internalCode ?? '',
         label_id: cell(product.labelId),
         quantity: cell(product.quantity),
         quantity_status:

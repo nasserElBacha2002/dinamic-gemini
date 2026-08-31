@@ -27,7 +27,7 @@ class AuthoritativeLocalCodeScanResult:
     result_version: int
     supersedes_result_id: str | None
     is_current: bool
-    internal_code: str
+    internal_code: str | None
     quantity: int | None
     quantity_status: str
     source: str

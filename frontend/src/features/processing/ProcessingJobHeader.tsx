@@ -11,6 +11,8 @@ export interface ProcessingJobHeaderProps {
   job: JobSummary | null;
   summary?: ProcessingJobProgressSummary | null;
   isLoading?: boolean;
+  inventoryId?: string | null;
+  aisleId?: string | null;
 }
 
 function formatOptional(value: string | null | undefined, dash: string): string {
@@ -27,7 +29,13 @@ function formatIdentity(
   return [provider, model, promptKey].filter(Boolean).join(' · ') || dash;
 }
 
-export default function ProcessingJobHeader({ job, summary, isLoading }: ProcessingJobHeaderProps) {
+export default function ProcessingJobHeader({
+  job,
+  summary,
+  isLoading,
+  inventoryId,
+  aisleId,
+}: ProcessingJobHeaderProps) {
   const { t } = useTranslation();
   const dash = t('common.em_dash');
 
@@ -68,7 +76,38 @@ export default function ProcessingJobHeader({ job, summary, isLoading }: Process
     <Paper variant="outlined" sx={{ p: 1.5 }} data-testid="processing-job-header">
       <Box sx={{ display: 'grid', gap: 0.75 }}>
         <Typography variant="subtitle2">{t('processing.header.title')}</Typography>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '140px 1fr' }, gap: 0.5 }}>
+        <Box
+          sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '140px 1fr' }, gap: 0.5 }}
+          data-testid="processing-job-identity-ids"
+        >
+          <Typography variant="caption" color="text.secondary">
+            {t('common.job_id', { defaultValue: 'Job' })}
+          </Typography>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+            {job.id}
+          </Typography>
+
+          <Typography variant="caption" color="text.secondary">
+            {t('common.aisle')}
+          </Typography>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+            {formatOptional(aisleId, dash)}
+          </Typography>
+
+          <Typography variant="caption" color="text.secondary">
+            {t('common.inventory')}
+          </Typography>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+            {formatOptional(inventoryId, dash)}
+          </Typography>
+
+          <Typography variant="caption" color="text.secondary">
+            {t('common.execution', { defaultValue: 'Execution' })}
+          </Typography>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+            {formatOptional(job.execution_id, dash)}
+          </Typography>
+
           <Typography variant="caption" color="text.secondary">
             {t('processing.header.mode')}
           </Typography>

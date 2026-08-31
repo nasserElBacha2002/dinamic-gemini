@@ -20,10 +20,13 @@ function hasControlChars(value: string): boolean {
   return false;
 }
 
-export function validateConfirmedInternalCode(code: string): ConfirmValidationErrorCode | null {
+export function validateConfirmedInternalCode(
+  code: string,
+  options?: { readonly allowEmpty?: boolean },
+): ConfirmValidationErrorCode | null {
   const trimmed = code.trim();
   if (!trimmed) {
-    return 'CODE_REQUIRED';
+    return options?.allowEmpty ? null : 'CODE_REQUIRED';
   }
   if (trimmed.length < 1 || trimmed.length > CODE_MAX_LENGTH) {
     return 'CODE_LENGTH_OUT_OF_RANGE';
