@@ -24,6 +24,11 @@ import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
+import { OfflineRecognitionConfigRepository } from '../../database/repositories/offlineRecognitionConfigRepository';
+import {
+  LocalLabelProfileResolver,
+  OfflineRecognitionSyncService,
+} from '../../features/offlineRecognition';
 import { LocalCsvExportService } from '../../features/localCsv/localCsvExportService';
 import { getOrCreateInstallationId } from '../../shared/installationId';
 import { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
@@ -137,6 +142,12 @@ export interface AppServices {
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
   readonly backgroundUpload: BackgroundUploadScheduler;
+  /** Offline supplier recognition config sync + resolver. */
+  readonly offlineRecognition: {
+    readonly sync: OfflineRecognitionSyncService;
+    readonly resolver: LocalLabelProfileResolver;
+    readonly repo: OfflineRecognitionConfigRepository;
+  };
   /** Phase 9: null when `mobileOfflineOperations` is off. */
   readonly offlineOperations: OfflineOperationFacade | null;
   readonly offlineScheduler: OfflineOperationScheduler | null;
@@ -175,6 +186,13 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
   const localCsvExportRepo = new LocalCsvExportRepository(db);
+  const offlineRecognitionRepo = new OfflineRecognitionConfigRepository(db);
+  const offlineRecognitionResolver = new LocalLabelProfileResolver(offlineRecognitionRepo);
+  const offlineRecognitionSync = new OfflineRecognitionSyncService(
+    api,
+    offlineRecognitionRepo,
+    offlineRecognitionResolver,
+  );
   const installationId = await getOrCreateInstallationId();
   const aisleFinalizationIntents = new AisleFinalizationIntentRepository(db);
   const serverReprocessIntents = new ServerReprocessIntentRepository(db);
@@ -200,6 +218,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const localCodeScan = new LocalCodeScanStrategy({
     drafts: localDetectionDrafts,
     reporter: obsWire?.reporter ?? null,
+    profileResolver: offlineRecognitionResolver,
     onActivePositionChanged: async (sessionId, state) => {
       await captureRepo.updateActivePositionJson(sessionId, JSON.stringify(state));
     },
@@ -624,6 +643,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     authoritativeLocalSync,
     authoritativeAisleFinalization,
     serverReprocess,
+    offlineRecognition: {
+      sync: offlineRecognitionSync,
+      resolver: offlineRecognitionResolver,
+      repo: offlineRecognitionRepo,
+    },
     aisleRevision,
     reconciliation,
     connectivity,

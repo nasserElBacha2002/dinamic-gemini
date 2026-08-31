@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "description": "Shared offline recognition parity vectors (backend Python + mobile TypeScript).",
+  "vectors": [
+    {
+      "id": "minimal_item_lpna_valid",
+      "label_kind": "ITEM",
+      "raw_payload": "LPNA000184",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "MINIMAL",
+        "semantic_type": "LPN",
+        "required_fields": ["label_id"],
+        "deterministic": {
+          "expected_prefix": "LPNA",
+          "exact_length": 10,
+          "character_set": "UPPERCASE_ALPHANUMERIC",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "UPPER",
+            "remove_internal_spaces": true,
+            "remove_hyphens": false
+          },
+          "payload_structure": "SIMPLE",
+          "field_mappings": [{ "target": "label_id", "source": "WHOLE" }]
+        }
+      },
+      "expected": {
+        "status": "VALID",
+        "label_id": "LPNA000184",
+        "sku": null,
+        "quantity": null,
+        "error_code": null
+      }
+    },
+    {
+      "id": "minimal_item_prefix_fail",
+      "label_kind": "ITEM",
+      "raw_payload": "XXXX000184",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "MINIMAL",
+        "required_fields": ["label_id"],
+        "deterministic": {
+          "expected_prefix": "LPNA",
+          "exact_length": 10,
+          "character_set": "UPPERCASE_ALPHANUMERIC",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "UPPER",
+            "remove_internal_spaces": true,
+            "remove_hyphens": false
+          },
+          "payload_structure": "SIMPLE",
+          "field_mappings": [{ "target": "label_id", "source": "WHOLE" }]
+        }
+      },
+      "expected": {
+        "status": "NOT_APPLICABLE",
+        "error_code": "LABEL_PREFIX_MISMATCH"
+      }
+    },
+    {
+      "id": "minimal_item_length_fail",
+      "label_kind": "ITEM",
+      "raw_payload": "LPNA00018",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "MINIMAL",
+        "required_fields": ["label_id"],
+        "deterministic": {
+          "expected_prefix": "LPNA",
+          "exact_length": 10,
+          "character_set": "UPPERCASE_ALPHANUMERIC",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "UPPER",
+            "remove_internal_spaces": true,
+            "remove_hyphens": false
+          },
+          "payload_structure": "SIMPLE",
+          "field_mappings": [{ "target": "label_id", "source": "WHOLE" }]
+        }
+      },
+      "expected": {
+        "status": "NOT_APPLICABLE",
+        "error_code": "LABEL_LENGTH_MISMATCH"
+      }
+    },
+    {
+      "id": "minimal_position_a04_valid",
+      "label_kind": "POSITION",
+      "raw_payload": "A04-R-02",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "MINIMAL",
+        "required_fields": ["position_id"],
+        "deterministic": {
+          "expected_prefix": "A",
+          "exact_length": 8,
+          "character_set": "ALPHANUMERIC_WITH_HYPHEN",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "UPPER",
+            "remove_internal_spaces": true,
+            "remove_hyphens": false
+          },
+          "payload_structure": "SIMPLE",
+          "field_mappings": [{ "target": "position_id", "source": "WHOLE" }]
+        }
+      },
+      "expected": {
+        "status": "VALID",
+        "position_id": "A04-R-02",
+        "error_code": null
+      }
+    },
+    {
+      "id": "segmented_item_valid",
+      "label_kind": "ITEM",
+      "raw_payload": "ABC001|SKU123|20",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "FULL",
+        "required_fields": ["label_id", "sku", "quantity"],
+        "deterministic": {
+          "payload_structure": "SEGMENTED",
+          "delimiter": "|",
+          "expected_segment_count": 3,
+          "character_set": "ANY",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "NONE",
+            "remove_internal_spaces": false,
+            "remove_hyphens": false
+          },
+          "field_mappings": [
+            { "target": "label_id", "source": "SEGMENT", "segment_index": 0 },
+            { "target": "sku", "source": "SEGMENT", "segment_index": 1 },
+            { "target": "quantity", "source": "SEGMENT", "segment_index": 2 }
+          ]
+        }
+      },
+      "expected": {
+        "status": "VALID",
+        "label_id": "ABC001",
+        "sku": "SKU123",
+        "quantity": 20,
+        "error_code": null
+      }
+    }
+  ]
+}

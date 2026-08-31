@@ -49,6 +49,8 @@ AUTH_IDEMPOTENCY_CONFLICT = "AUTHORITATIVE_IDEMPOTENCY_CONFLICT"
 AUTH_ASSET_MISMATCH = "AUTHORITATIVE_ASSET_MISMATCH"
 AUTH_CLIENT_FILE_MISMATCH = "AUTHORITATIVE_CLIENT_FILE_MISMATCH"
 AUTH_FORBIDDEN = "AUTHORITATIVE_FORBIDDEN"
+AUTH_PROFILE_VERSION_NOT_FOUND = "PROFILE_VERSION_NOT_FOUND"
+AUTH_PROFILE_VERSION_SCOPE_MISMATCH = "PROFILE_VERSION_SCOPE_MISMATCH"
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,16 @@ class PersistAuthoritativeLocalCodeScanCommand:
     confirmed_by_user_id: str | None = None
     #: Optional D1 physical sticker id (never inferred from SKU).
     label_id: str | None = None
+    profile_source: str | None = None
+    profile_id: str | None = None
+    profile_version: int | None = None
+    configuration_schema_version: int | None = None
+    label_kind: str | None = None
+    client_supplier_id: str | None = None
+    raw_payload: str | None = None
+    recognition_status: str | None = None
+    captured_offline: bool | None = None
+    captured_with_older_profile: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -149,6 +161,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         clock: Clock,
         enabled: bool,
         authenticated_user_id: str,
+        exact_profile_service: object | None = None,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
@@ -156,6 +169,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         self._clock = clock
         self._enabled = enabled
         self._user_id = (authenticated_user_id or "").strip()
+        self._exact_profile_service = exact_profile_service
 
     def execute(
         self, command: PersistAuthoritativeLocalCodeScanCommand
@@ -177,6 +191,10 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         errors = self._validate(command)
         if errors:
             return self._rejected(command, AUTH_VALIDATION_FAILED, tuple(errors))
+
+        profile_error = self._attest_historical_profile(command)
+        if profile_error is not None:
+            return profile_error
 
         asset = self._asset_repo.get_by_id(command.asset_id.strip())
         if asset is None or asset.aisle_id != command.aisle_id.strip():
@@ -423,8 +441,78 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             errors.append("detected_symbology_invalid")
         label_id = _normalize_optional_label_id(command.label_id)
         if label_id is not None:
-            if len(label_id) != LABEL_ID_LENGTH or any(
+            profile_source = (command.profile_source or "").strip().upper()
+            if profile_source == "SUPPLIER":
+                # Supplier identity labels are not D1 Crockford-10; allow configured charset range.
+                if len(label_id) < 1 or len(label_id) > 128 or not _CODE_CHARSET.match(label_id):
+                    errors.append("label_id_invalid")
+            elif len(label_id) != LABEL_ID_LENGTH or any(
                 ch not in LABEL_ID_ALPHABET for ch in label_id
             ):
                 errors.append("label_id_invalid")
         return errors
+
+    def _attest_historical_profile(
+        self, command: PersistAuthoritativeLocalCodeScanCommand
+    ) -> PersistAuthoritativeLocalCodeScanResult | None:
+        """When mobile attests SUPPLIER profile id+version, load exact version (not active)."""
+        source = (command.profile_source or "").strip().upper()
+        if source != "SUPPLIER":
+            return None
+        profile_id = (command.profile_id or "").strip()
+        if not profile_id or command.profile_version is None:
+            return self._rejected(
+                command,
+                AUTH_VALIDATION_FAILED,
+                ("supplier_profile_attestation_required",),
+            )
+        if self._exact_profile_service is None:
+            return None
+        from src.application.services.exact_extraction_profile_version import (
+            ExactExtractionProfileVersionService,
+            HistoricalProfileAttestation,
+            ProfileVersionNotFoundError,
+            ProfileVersionScopeMismatchError,
+        )
+        from src.domain.label_profiles.kinds import LabelKind, parse_label_kind
+
+        service = self._exact_profile_service
+        if not isinstance(service, ExactExtractionProfileVersionService):
+            return None
+        kind = None
+        if command.label_kind:
+            try:
+                kind = parse_label_kind(command.label_kind)
+            except Exception:
+                kind = None
+        supplier_id = (command.client_supplier_id or "").strip()
+        if not supplier_id:
+            return self._rejected(
+                command,
+                AUTH_VALIDATION_FAILED,
+                ("client_supplier_id_required_for_supplier_profile",),
+            )
+        try:
+            service.load_for_aisle_capture(
+                inventory_id=command.inventory_id,
+                aisle_id=command.aisle_id,
+                attestation=HistoricalProfileAttestation(
+                    profile_id=profile_id,
+                    profile_version=int(command.profile_version),
+                    client_supplier_id=supplier_id,
+                    label_kind=kind,
+                ),
+            )
+        except ProfileVersionNotFoundError:
+            return self._rejected(
+                command,
+                AUTH_PROFILE_VERSION_NOT_FOUND,
+                ("profile_version_not_found",),
+            )
+        except ProfileVersionScopeMismatchError:
+            return self._rejected(
+                command,
+                AUTH_PROFILE_VERSION_SCOPE_MISMATCH,
+                ("profile_version_scope_mismatch",),
+            )
+        return None

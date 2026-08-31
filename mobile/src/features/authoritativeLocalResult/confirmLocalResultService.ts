@@ -111,6 +111,7 @@ export class ConfirmLocalResultService {
       preparedAssetSha256: prepared,
       confirmedByUserId: input.confirmedByUserId,
       confirmedAt: input.confirmedAt ?? new Date().toISOString(),
+      recognitionProfileSnapshotJson: draft?.recognition_profile_snapshot_json ?? null,
     });
   }
 

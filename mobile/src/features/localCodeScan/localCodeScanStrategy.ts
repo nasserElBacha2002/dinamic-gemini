@@ -20,6 +20,8 @@ import {
 import { applyPositionScan, getActivePosition, hydratePositionSessionFromDrafts } from './activePositionStore';
 import type { ActivePositionState } from '../../core/positionLabelPayload';
 import { parseDinamicPositionPayload } from '../../core/positionLabelPayload';
+import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
+import { runProfileAwareLocalScan } from './profileAwareLocalScan';
 
 /** Must cover native multipass (full + tiles + zoom crops). */
 export const LOCAL_CODE_SCAN_TIMEOUT_MS = 22_000;
@@ -36,11 +38,11 @@ export interface LocalCodeScanStrategyDeps {
   readonly evaluateCapability?: typeof evaluateLocalCodeScanCapability;
   readonly nowMs?: () => number;
   readonly timeoutMs?: number;
-  /** Persist session active position when a position label scan succeeds. */
   readonly onActivePositionChanged?: (
     captureSessionId: string,
     state: ActivePositionState,
   ) => Promise<void>;
+  readonly profileResolver?: LocalLabelProfileResolver | null;
 }
 
 function freezePositionSnapshotJson(captureSessionId: string): string | null {
@@ -57,6 +59,9 @@ export interface LocalCodeScanInput {
   readonly processingMode: PreparationProcessingMode;
   readonly flagEnabled: boolean;
   readonly cancelRequested?: boolean;
+  readonly inventoryId?: string | null;
+  readonly aisleId?: string | null;
+  readonly recognitionContext?: 'ONLINE' | 'OFFLINE';
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -231,10 +236,101 @@ export class LocalCodeScanStrategy {
       });
 
       const candidates = await withTimeout(this.detect(input.preparedUri), this.timeoutMs);
-      const consolidated = consolidateCodeDetections(candidates);
+      const offline = input.recognitionContext === 'OFFLINE';
+      const profileAware = await runProfileAwareLocalScan({
+        candidates,
+        inventoryId: input.inventoryId ?? null,
+        aisleId: input.aisleId ?? null,
+        resolver: this.deps.profileResolver ?? null,
+        offline,
+      });
+      let consolidated = profileAware.consolidation;
+      if (profileAware.profileMissing && offline) {
+        await this.deps.drafts.upsertDraft({
+          capturePhotoId: input.capturePhotoId,
+          captureSessionId: input.captureSessionId,
+          clientFileId: input.clientFileId,
+          status: 'FAILED',
+          parserVersion: LABEL_PAYLOAD_PARSER_VERSION,
+          detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
+          preparedAssetFingerprint: input.preparedAssetFingerprint,
+          errorCode: 'SUPPLIER_LABEL_PROFILE_NOT_AVAILABLE_OFFLINE',
+          candidateCount: candidates.length,
+          scanOwner: LOCAL_SCAN_OWNER,
+          scanGeneration,
+          comparisonStatus: 'PENDING',
+          recognitionProfileSnapshotJson: JSON.stringify(profileAware.recognitionSnapshot),
+          recognitionContext: input.recognitionContext ?? null,
+        });
+        return 'FAILED';
+      }
+      if (profileAware.ambiguous) {
+        await this.deps.drafts.upsertDraft({
+          capturePhotoId: input.capturePhotoId,
+          captureSessionId: input.captureSessionId,
+          clientFileId: input.clientFileId,
+          status: 'AMBIGUOUS',
+          parserVersion: LABEL_PAYLOAD_PARSER_VERSION,
+          detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
+          preparedAssetFingerprint: input.preparedAssetFingerprint,
+          errorCode: 'AMBIGUOUS_LABEL_KIND',
+          candidateCount: candidates.length,
+          scanOwner: LOCAL_SCAN_OWNER,
+          scanGeneration,
+          comparisonStatus: 'PENDING',
+          recognitionProfileSnapshotJson: JSON.stringify(profileAware.recognitionSnapshot),
+          recognitionContext: input.recognitionContext ?? null,
+        });
+        return 'AMBIGUOUS';
+      }
+      // Supplier ITEM identity can resolve when Dinamic consolidator has no D1.
+      if (
+        !consolidated.d1Mode &&
+        profileAware.supplierItem?.status === 'VALID' &&
+        consolidated.productResults.length === 0
+      ) {
+        const sid = profileAware.supplierItem.labelId || profileAware.supplierItem.sku || '';
+        const qty = profileAware.supplierItem.quantity;
+        consolidated = {
+          ...consolidated,
+          status: qty == null ? 'MISSING_QUANTITY' : 'RESOLVED',
+          internalCode: profileAware.supplierItem.sku || sid || null,
+          quantity: qty,
+          productResults: [
+            {
+              labelId: profileAware.supplierItem.labelId || sid,
+              internalCode: profileAware.supplierItem.sku || sid,
+              // ProductLabelResult.quantity is required; 0 means missing for SUPPLIER format.
+              quantity: qty ?? 0,
+              formatVersion: 'SUPPLIER',
+              checksum: '',
+              validationStatus: 'VALID',
+              selectedIndex: 0,
+              duplicateDetectionCount: 1,
+              rawPayload: profileAware.supplierItem.rawPayload,
+              normalizedPayload: profileAware.supplierItem.normalizedPayload,
+            },
+          ],
+        };
+      }
       const parsedError =
         consolidated.parsed?.status === 'INVALID' ? consolidated.parsed.errorCode : null;
-      const status = draftStatusFromConsolidation(consolidated.status, parsedError);
+      let status = draftStatusFromConsolidation(consolidated.status, parsedError);
+      if (
+        status === 'UNRESOLVED' ||
+        status === 'INVALID' ||
+        status === 'DETECTED_UNVERIFIED'
+      ) {
+        if (profileAware.supplierItem?.status === 'VALID') {
+          status = 'RESOLVED';
+        } else if (
+          profileAware.supplierItem == null &&
+          profileAware.supplierPosition == null &&
+          candidates.length > 0
+        ) {
+          status = 'UNRESOLVED';
+        }
+      }
       const processingMs = Math.max(0, Math.round(this.nowMs() - started));
       const selectedRaw =
         consolidated.selectedIndex != null
@@ -248,18 +344,53 @@ export class LocalCodeScanStrategy {
       const activeBefore = getActivePosition(input.captureSessionId);
       let appliedPosition: ActivePositionState | null = null;
       let duplicatePosition = false;
-      const positionRaw =
+      let positionRaw =
         consolidated.positionRawPayload ??
         candidates.find((c) => parseDinamicPositionPayload(c.rawValue) != null)?.rawValue ??
         null;
-      if (positionRaw) {
+      if (!positionRaw && profileAware.supplierPosition?.status === 'VALID') {
+        const posId =
+          profileAware.supplierPosition.positionId ||
+          profileAware.supplierPosition.normalizedPayload ||
+          '';
+        const sideRaw = (profileAware.supplierPosition.side || '').toUpperCase();
+        const side =
+          sideRaw === 'LEFT' || sideRaw === 'RIGHT' ? (sideRaw as 'LEFT' | 'RIGHT') : null;
+        const levelRaw = profileAware.supplierPosition.level;
+        const levelNum =
+          levelRaw != null && levelRaw !== ''
+            ? Number.parseInt(String(levelRaw), 10)
+            : null;
+        positionRaw = profileAware.supplierPosition.rawPayload;
+        appliedPosition = {
+          labelId: posId,
+          positionLabelId: posId,
+          displayName: posId,
+          canonicalKey: posId,
+          pallet: profileAware.supplierPosition.pallet,
+          side,
+          level: Number.isFinite(levelNum as number) ? (levelNum as number) : null,
+          markerIndex: null,
+          markerTotal: null,
+          formattedMarker: null,
+          rawPayload: profileAware.supplierPosition.rawPayload,
+          sourcePayload: profileAware.supplierPosition.rawPayload,
+          validationStatus: 'STRUCTURALLY_VALID_UNVERIFIED',
+          signature: null,
+          keyVersion: null,
+        };
+        if (this.deps.onActivePositionChanged && appliedPosition.labelId) {
+          await this.deps.onActivePositionChanged(input.captureSessionId, appliedPosition);
+        }
+      }
+      if (positionRaw && !appliedPosition) {
         const positionResult = applyPositionScan(input.captureSessionId, positionRaw);
         if (positionResult.kind === 'applied' || positionResult.kind === 'duplicate') {
           appliedPosition = positionResult.state;
           duplicatePosition = positionResult.kind === 'duplicate';
         }
       }
-      if (appliedPosition && !duplicatePosition && this.deps.onActivePositionChanged) {
+      if (appliedPosition && !duplicatePosition && this.deps.onActivePositionChanged && positionRaw) {
         await this.deps.onActivePositionChanged(input.captureSessionId, appliedPosition);
       }
 
@@ -320,9 +451,14 @@ export class LocalCodeScanStrategy {
       const persistInternalCode = d1Mode
         ? primary?.internalCode ?? null
         : primary?.internalCode ?? consolidated.internalCode;
-      const persistQuantity = d1Mode
-        ? primary?.quantity ?? null
-        : primary?.quantity ?? consolidated.quantity;
+      const supplierMissingQty =
+        primary?.formatVersion === 'SUPPLIER' &&
+        profileAware.supplierItem?.quantity == null;
+      const persistQuantity = supplierMissingQty
+        ? null
+        : d1Mode
+          ? primary?.quantity ?? null
+          : primary?.quantity ?? consolidated.quantity;
       const isPositionOnly =
         positionDetected && products.length === 0 && (d1Mode || consolidated.status === 'NO_VALID_CODE');
 
@@ -339,7 +475,7 @@ export class LocalCodeScanStrategy {
         rejectionsJson,
         positionDetected,
         quantityStatus:
-          consolidated.status === 'MISSING_QUANTITY'
+          consolidated.status === 'MISSING_QUANTITY' || supplierMissingQty
             ? 'MISSING'
             : persistQuantity != null
               ? 'PRESENT'
@@ -349,7 +485,9 @@ export class LocalCodeScanStrategy {
         detectedFormat:
           consolidated.parsed?.status === 'VALID' || consolidated.parsed?.status === 'INVALID'
             ? consolidated.parsed.format
-            : null,
+            : primary?.formatVersion === 'SUPPLIER'
+              ? 'SUPPLIER'
+              : null,
         detectedSymbology:
           consolidated.selectedIndex != null
             ? candidates[consolidated.selectedIndex]?.symbology ?? null
@@ -379,6 +517,10 @@ export class LocalCodeScanStrategy {
         scanGeneration,
         comparisonStatus: 'PENDING',
         positionSnapshotJson,
+        recognitionProfileSnapshotJson: profileAware.recognitionSnapshot
+          ? JSON.stringify(profileAware.recognitionSnapshot)
+          : null,
+        recognitionContext: input.recognitionContext ?? null,
       });
 
       const validLabelIds = products.map((p) => p.labelId);

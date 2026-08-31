@@ -1192,6 +1192,8 @@ export class UploadQueue {
       });
     }
     try {
+      const session = await this.repo.getSession(input.sessionId);
+      const online = this.connectivity.getState() === 'online';
       await strategy.execute({
         capturePhotoId: input.photo.id,
         captureSessionId: input.sessionId,
@@ -1201,6 +1203,9 @@ export class UploadQueue {
         processingMode,
         flagEnabled,
         cancelRequested: input.photo.upload_cancel_requested === 1,
+        inventoryId: session?.inventory_id ?? null,
+        aisleId: session?.aisle_id ?? null,
+        recognitionContext: online ? 'ONLINE' : 'OFFLINE',
       });
     } catch (e) {
       this.logger.warn('error', {
@@ -1225,10 +1230,9 @@ export class UploadQueue {
       return;
     }
     const preparedUri = photo.local_transform_uri || photo.uri;
+    const session = await this.repo.getSession(photo.capture_session_id);
     const mode = resolveLocalScanProcessingMode(
-      normalizePreparationProcessingMode(
-        (await this.repo.getSession(photo.capture_session_id))?.preparation_processing_mode,
-      ),
+      normalizePreparationProcessingMode(session?.preparation_processing_mode),
       true,
     );
     let fingerprint: string;
@@ -1242,6 +1246,7 @@ export class UploadQueue {
         height: photo.height ?? 0,
       });
     }
+    const online = this.connectivity.getState() === 'online';
     await strategy.execute({
       capturePhotoId: photo.id,
       captureSessionId: photo.capture_session_id,
@@ -1251,6 +1256,9 @@ export class UploadQueue {
       processingMode: mode,
       flagEnabled: true,
       cancelRequested: photo.upload_cancel_requested === 1,
+      inventoryId: session?.inventory_id ?? null,
+      aisleId: session?.aisle_id ?? null,
+      recognitionContext: online ? 'ONLINE' : 'OFFLINE',
     });
   }
 

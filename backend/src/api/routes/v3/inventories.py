@@ -19,6 +19,7 @@ from src.api.dependencies import (
     get_export_inventory_summary_csv_use_case,
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
+    get_inventory_recognition_config_use_case,
     get_list_inventory_list_items_use_case,
     get_soft_delete_inventories_use_case,
     get_update_inventory_name_use_case,
@@ -40,7 +41,15 @@ from src.api.schemas.processing_schemas import (
     ProcessingProviderOptionsResponse,
 )
 from src.api.services.identification_mode_response import api_fields_from_configuration
-from src.application.dto.access_principal import AccessPrincipal
+from src.api.schemas.offline_recognition_bundle_schemas import (
+    OfflineAisleRecognitionConfigDto,
+    OfflineRecognitionBundleResponse,
+    OfflineRecognitionProfileDto,
+)
+from src.application.use_cases.inventories.get_inventory_recognition_config import (
+    GetInventoryRecognitionConfigCommand,
+    GetInventoryRecognitionConfigUseCase,
+)
 from src.application.errors import ClientNotFoundError, InventoryNotFoundError
 from src.application.services.aisle_identification_configuration_query import (
     AisleIdentificationConfigurationQuery,
@@ -299,6 +308,60 @@ def export_inventory_package_zip(
         content=zip_bytes,
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/{inventory_id}/recognition-config",
+    response_model=OfflineRecognitionBundleResponse,
+    summary="Offline recognition config bundle for mobile sync",
+)
+def get_inventory_recognition_config(
+    inventory_id: str,
+    use_case: GetInventoryRecognitionConfigUseCase = Depends(
+        get_inventory_recognition_config_use_case
+    ),
+) -> OfflineRecognitionBundleResponse:
+    """Return aisle→supplier mappings + active SUPPLIER ITEM/POSITION profiles (deterministic only)."""
+    try:
+        bundle = use_case.execute(
+            GetInventoryRecognitionConfigCommand(inventory_id=inventory_id)
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return OfflineRecognitionBundleResponse(
+        bundle_schema_version=bundle.bundle_schema_version,
+        inventory_id=bundle.inventory_id,
+        client_id=bundle.client_id,
+        generated_at=bundle.generated_at,
+        aisles=[
+            OfflineAisleRecognitionConfigDto(
+                aisle_id=a.aisle_id,
+                aisle_code=a.aisle_code,
+                client_supplier_id=a.client_supplier_id,
+                item_profile_source_override=a.item_profile_source_override,  # type: ignore[arg-type]
+                position_profile_source_override=a.position_profile_source_override,  # type: ignore[arg-type]
+                effective_item_source=a.effective_item_source,  # type: ignore[arg-type]
+                effective_position_source=a.effective_position_source,  # type: ignore[arg-type]
+            )
+            for a in bundle.aisles
+        ],
+        profiles=[
+            OfflineRecognitionProfileDto(
+                client_supplier_id=p.client_supplier_id,
+                label_kind=p.label_kind,  # type: ignore[arg-type]
+                source="SUPPLIER",
+                profile_id=p.profile_id,
+                profile_version=p.profile_version,
+                configuration_schema_version=p.configuration_schema_version,
+                recognition_mode=p.recognition_mode,
+                semantic_type=p.semantic_type,
+                configuration=p.configuration,
+            )
+            for p in bundle.profiles
+        ],
+        bundle_revision=bundle.bundle_revision,
     )
 
 

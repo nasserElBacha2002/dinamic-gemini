@@ -17,6 +17,16 @@ export interface AuthoritativeLocalCodeScanRequest {
   readonly detector_version: string;
   readonly prepared_asset_sha256: string;
   readonly confirmed_at: string;
+  readonly profile_source?: 'DINAMIC' | 'SUPPLIER' | null;
+  readonly profile_id?: string | null;
+  readonly profile_version?: number | null;
+  readonly configuration_schema_version?: number | null;
+  readonly label_kind?: 'ITEM' | 'POSITION' | null;
+  readonly client_supplier_id?: string | null;
+  readonly raw_payload?: string | null;
+  readonly recognition_status?: string | null;
+  readonly captured_offline?: boolean | null;
+  readonly captured_with_older_profile?: boolean | null;
 }
 
 export interface AuthoritativeLocalCodeScanResponse {

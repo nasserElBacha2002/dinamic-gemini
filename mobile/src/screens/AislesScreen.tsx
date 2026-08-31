@@ -12,6 +12,28 @@ import type { UploadSessionProgress } from '../features/upload/uploadQueue';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import { Button, Card, ErrorText, Input, SmallButton, messageOf, styles } from '../ui';
+import { checkOfflineRecognitionReadiness } from '../features/offlineRecognition';
+
+function offlineReadinessMessage(status: string, missingKinds: readonly string[]): string {
+  if (status === 'MISSING_SUPPLIER_PROFILE') {
+    const kinds = missingKinds.length ? missingKinds.join('/') : 'ITEM/POSITION';
+    return (
+      `Falta el perfil de proveedor (${kinds}) para este pasillo.\n` +
+      'Sincronizá la configuración offline con conexión antes de capturar. ' +
+      'No se usa el perfil Dinamic como respaldo.'
+    );
+  }
+  if (status === 'INCOMPATIBLE') {
+    return 'La configuración offline no es compatible con esta versión de la app. Actualizá y sincronizá de nuevo.';
+  }
+  if (status === 'STALE') {
+    return 'La configuración offline tiene más de 14 días. Conviene sincronizar con conexión.';
+  }
+  if (status === 'MISSING_BUNDLE') {
+    return 'No hay configuración offline descargada. Con Dinamic podés continuar; para perfiles de proveedor sincronizá primero.';
+  }
+  return '';
+}
 
 export interface AislesScreenProps {
   services: AppServices;
@@ -46,15 +68,27 @@ export function AislesScreen({
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [expandedAisleId, setExpandedAisleId] = useState<string | null>(null);
+  const [offlineSyncAt, setOfflineSyncAt] = useState<string | null>(null);
   const loadedRef = useRef(false);
   const load = useCallback(() => {
     setBusy(true);
     void services.aisles
       .list({ inventoryId: inventory.id, search })
-      .then((res) => setItems(res.items))
+      .then(async (res) => {
+        setItems(res.items);
+        if (connectivity === 'online') {
+          const sync = await services.offlineRecognition.sync.syncInventory(inventory.id);
+          if (sync.ok && sync.syncedAt) {
+            setOfflineSyncAt(sync.syncedAt);
+          }
+        } else {
+          const meta = await services.offlineRecognition.repo.getSyncMeta(inventory.id);
+          setOfflineSyncAt(meta?.synced_at ?? null);
+        }
+      })
       .catch((e) => setError(messageOf(e)))
       .finally(() => setBusy(false));
-  }, [inventory.id, search, services]);
+  }, [inventory.id, search, services, connectivity]);
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
@@ -70,6 +104,39 @@ export function AislesScreen({
       return;
     }
     setShowCreate(true);
+  };
+
+  const selectAisleWithOfflineGate = (aisle: AisleDto) => {
+    if (connectivity !== 'offline') {
+      onSelectNew(aisle);
+      return;
+    }
+    void checkOfflineRecognitionReadiness({
+      inventoryId: inventory.id,
+      aisleId: aisle.id,
+      repo: services.offlineRecognition.repo,
+      resolver: services.offlineRecognition.resolver,
+    }).then((ready) => {
+      if (ready.status === 'MISSING_SUPPLIER_PROFILE' || ready.status === 'INCOMPATIBLE') {
+        Alert.alert(
+          'Configuración offline incompleta',
+          offlineReadinessMessage(ready.status, ready.missingKinds),
+        );
+        return;
+      }
+      if (ready.status === 'STALE' || ready.status === 'MISSING_BUNDLE') {
+        Alert.alert(
+          'Aviso configuración offline',
+          offlineReadinessMessage(ready.status, ready.missingKinds),
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Continuar', onPress: () => onSelectNew(aisle) },
+          ],
+        );
+        return;
+      }
+      onSelectNew(aisle);
+    });
   };
 
   return (
@@ -88,6 +155,32 @@ export function AislesScreen({
               <Button label="Buscar" onPress={load} />
               <SmallButton label="+ Crear pasillo" onPress={openCreate} />
             </View>
+            {connectivity === 'offline' ? (
+              <Text style={styles.notif}>Modo sin conexión</Text>
+            ) : null}
+            <Text style={styles.row}>
+              {offlineSyncAt
+                ? `Configuración offline: ${offlineSyncAt.slice(0, 16).replace('T', ' ')}`
+                : 'Configuración offline: sin sincronizar'}
+            </Text>
+            {connectivity === 'online' ? (
+              <SmallButton
+                label="Actualizar configuración offline"
+                onPress={() => {
+                  void services.offlineRecognition.sync
+                    .syncInventory(inventory.id)
+                    .then((r) => {
+                      if (r.ok && r.syncedAt) setOfflineSyncAt(r.syncedAt);
+                      else if (!r.ok) {
+                        Alert.alert(
+                          'Sync offline',
+                          r.errorCode ?? 'No se pudo actualizar la configuración',
+                        );
+                      }
+                    });
+                }}
+              />
+            ) : null}
             {onOpenPositionLabels && inventory.client_id ? (
               <SmallButton
                 label="Etiquetas de posicionamiento"
@@ -154,7 +247,7 @@ export function AislesScreen({
               {exclusiveHere ? <Button label="Cancelar captura" onPress={onCancelCapture} /> : null}
               <Button
                 label={work && work.kind !== 'none' ? 'Comenzar nueva captura' : 'Seleccionar pasillo'}
-                onPress={() => onSelectNew(aisle)}
+                onPress={() => selectAisleWithOfflineGate(aisle)}
               />
             </Card>
           );

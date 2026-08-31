@@ -689,6 +689,57 @@ ALTER TABLE local_detection_drafts ADD COLUMN rejections_json TEXT;
 ALTER TABLE confirmed_local_results ADD COLUMN label_id TEXT;
 `,
   },
+  {
+    version: 28,
+    name: 'offline_recognition_profiles',
+    sql: `
+CREATE TABLE IF NOT EXISTS offline_recognition_profiles (
+  inventory_id TEXT NOT NULL,
+  client_supplier_id TEXT NOT NULL,
+  label_kind TEXT NOT NULL,
+  source TEXT NOT NULL,
+  profile_id TEXT NOT NULL,
+  profile_version INTEGER NOT NULL,
+  configuration_schema_version INTEGER NOT NULL,
+  recognition_mode TEXT,
+  semantic_type TEXT,
+  configuration_json TEXT NOT NULL,
+  synced_at TEXT NOT NULL,
+  PRIMARY KEY (inventory_id, client_supplier_id, label_kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_recognition_profiles_lookup
+  ON offline_recognition_profiles(inventory_id, client_supplier_id, label_kind);
+
+CREATE TABLE IF NOT EXISTS offline_aisle_recognition_config (
+  inventory_id TEXT NOT NULL,
+  aisle_id TEXT NOT NULL,
+  client_supplier_id TEXT,
+  item_profile_source_override TEXT,
+  position_profile_source_override TEXT,
+  effective_item_source TEXT NOT NULL,
+  effective_position_source TEXT NOT NULL,
+  synced_at TEXT NOT NULL,
+  PRIMARY KEY (inventory_id, aisle_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_aisle_recognition_config_aisle
+  ON offline_aisle_recognition_config(aisle_id);
+
+CREATE TABLE IF NOT EXISTS offline_recognition_sync_meta (
+  inventory_id TEXT PRIMARY KEY NOT NULL,
+  client_id TEXT NOT NULL,
+  bundle_schema_version INTEGER NOT NULL,
+  bundle_revision TEXT,
+  synced_at TEXT NOT NULL,
+  generated_at TEXT
+);
+
+ALTER TABLE local_detection_drafts ADD COLUMN recognition_profile_snapshot_json TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN recognition_context TEXT;
+ALTER TABLE confirmed_local_results ADD COLUMN recognition_profile_snapshot_json TEXT;
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

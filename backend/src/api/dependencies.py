@@ -486,6 +486,26 @@ def get_result_context_resolver(
     return ResultContextResolver(job_repo=job_repo, position_repo=position_repo)
 
 
+def get_inventory_recognition_config_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    extraction_profile_repo: SupplierExtractionProfileRepository = Depends(
+        get_supplier_extraction_profile_repo
+    ),
+    label_profile_repo=Depends(get_client_supplier_label_profile_repo),
+):
+    from src.application.use_cases.inventories.get_inventory_recognition_config import (
+        GetInventoryRecognitionConfigUseCase,
+    )
+
+    return GetInventoryRecognitionConfigUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        extraction_profile_repo=extraction_profile_repo,
+        label_profile_repo=label_profile_repo,
+    )
+
+
 def get_get_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> GetInventoryUseCase:
@@ -931,6 +951,9 @@ def get_persist_authoritative_local_code_scan_use_case(
     clock: Clock = Depends(get_clock),
     user: AuthUser = Depends(get_current_admin),
 ):
+    from src.application.services.exact_extraction_profile_version import (
+        ExactExtractionProfileVersionService,
+    )
     from src.application.use_cases.aisles.persist_authoritative_local_code_scan import (
         PersistAuthoritativeLocalCodeScanResultUseCase,
     )
@@ -947,6 +970,12 @@ def get_persist_authoritative_local_code_scan_use_case(
             getattr(settings, "server_authoritative_local_code_scan_ingest_enabled", False)
         ),
         authenticated_user_id=str(getattr(user, "id", "") or ""),
+        exact_profile_service=ExactExtractionProfileVersionService(
+            inventory_repo=c.get_inventory_repo(),
+            aisle_repo=aisle_repo,
+            client_supplier_repo=c.get_client_supplier_repo(),
+            extraction_profile_repo=c.get_supplier_extraction_profile_repo(),
+        ),
     )
 
 

@@ -69,6 +69,8 @@ export interface LocalDetectionDraftRow {
   readonly rejections_json: string | null;
   /** 1 when a DINAMIC_POSITION was applied from this photo. */
   readonly position_detected: number;
+  readonly recognition_profile_snapshot_json?: string | null;
+  readonly recognition_context?: string | null;
   readonly detected_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
@@ -103,6 +105,8 @@ export class LocalDetectionDraftRepository {
     readonly productResultsJson?: string | null;
     readonly rejectionsJson?: string | null;
     readonly positionDetected?: boolean | null;
+    readonly recognitionProfileSnapshotJson?: string | null;
+    readonly recognitionContext?: string | null;
   }): Promise<LocalDetectionDraftRow> {
     const now = new Date().toISOString();
     const id = createId();
@@ -117,6 +121,8 @@ export class LocalDetectionDraftRepository {
     const productResultsJson = input.productResultsJson ?? null;
     const rejectionsJson = input.rejectionsJson ?? null;
     const positionDetected = input.positionDetected ? 1 : 0;
+    const recognitionProfileSnapshotJson = input.recognitionProfileSnapshotJson ?? null;
+    const recognitionContext = input.recognitionContext ?? null;
     await withSqliteBusyRetry(() =>
       this.db.runAsync(
       `INSERT INTO local_detection_drafts (
@@ -126,8 +132,9 @@ export class LocalDetectionDraftRepository {
         candidate_count, error_code, processing_ms, comparison_status, compare_result, compared_at,
         prepared_asset_fingerprint, scan_owner, scan_generation, position_snapshot_json,
         label_id, product_results_json, rejections_json, position_detected,
+        recognition_profile_snapshot_json, recognition_context,
         detected_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)
       DO UPDATE SET
         status = excluded.status,
@@ -153,6 +160,14 @@ export class LocalDetectionDraftRepository {
         product_results_json = excluded.product_results_json,
         rejections_json = excluded.rejections_json,
         position_detected = excluded.position_detected,
+        recognition_profile_snapshot_json = COALESCE(
+          excluded.recognition_profile_snapshot_json,
+          local_detection_drafts.recognition_profile_snapshot_json
+        ),
+        recognition_context = COALESCE(
+          excluded.recognition_context,
+          local_detection_drafts.recognition_context
+        ),
         detected_at = COALESCE(local_detection_drafts.detected_at, excluded.detected_at),
         updated_at = excluded.updated_at
       WHERE excluded.scan_generation >= local_detection_drafts.scan_generation;`,
@@ -181,6 +196,8 @@ export class LocalDetectionDraftRepository {
       productResultsJson,
       rejectionsJson,
       positionDetected,
+      recognitionProfileSnapshotJson,
+      recognitionContext,
       detectedAt,
       now,
       now,

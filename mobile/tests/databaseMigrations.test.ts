@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -160,6 +160,16 @@ describe('SQLite migrations', () => {
     const v27 = MIGRATIONS.find((m) => m.version === 27);
     expect(v27?.name).toBe('confirmed_local_results_label_id');
     expect(v27?.sql).toContain('ALTER TABLE confirmed_local_results ADD COLUMN label_id');
+  });
+
+  it('adds v28 offline recognition profile tables', () => {
+    const v28 = MIGRATIONS.find((m) => m.version === 28);
+    expect(v28?.name).toBe('offline_recognition_profiles');
+    expect(v28?.sql).toContain('CREATE TABLE IF NOT EXISTS offline_recognition_profiles');
+    expect(v28?.sql).toContain('CREATE TABLE IF NOT EXISTS offline_aisle_recognition_config');
+    expect(v28?.sql).toContain('CREATE TABLE IF NOT EXISTS offline_recognition_sync_meta');
+    expect(v28?.sql).toContain('PRIMARY KEY (inventory_id, client_supplier_id, label_kind)');
+    expect(v28?.sql).toContain('recognition_profile_snapshot_json');
   });
 });
 

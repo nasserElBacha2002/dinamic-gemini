@@ -4,7 +4,7 @@ import type { AuthoritativeLocalCodeScanRequest } from './authoritativeLocalResu
 export function mapConfirmedToAuthoritativeRequest(
   row: ConfirmedLocalResultRow,
 ): AuthoritativeLocalCodeScanRequest {
-  return {
+  const base: AuthoritativeLocalCodeScanRequest = {
     schema_version: '1',
     result_id: row.id,
     client_file_id: row.client_file_id!,
@@ -21,4 +21,36 @@ export function mapConfirmedToAuthoritativeRequest(
     prepared_asset_sha256: row.prepared_asset_sha256,
     confirmed_at: row.confirmed_at,
   };
+  const snapshotRaw = row.recognition_profile_snapshot_json;
+  if (!snapshotRaw) return base;
+  try {
+    const snap = JSON.parse(snapshotRaw) as {
+      offline?: boolean;
+      item?: {
+        profile_source?: string;
+        profile_id?: string;
+        profile_version?: number;
+        configuration_schema_version?: number;
+        status?: string;
+      };
+      client_supplier_id?: string;
+    };
+    const item = snap.item ?? {};
+    return {
+      ...base,
+      profile_source:
+        item.profile_source === 'SUPPLIER' || item.profile_source === 'DINAMIC'
+          ? item.profile_source
+          : null,
+      profile_id: item.profile_id ?? null,
+      profile_version: item.profile_version ?? null,
+      configuration_schema_version: item.configuration_schema_version ?? null,
+      label_kind: 'ITEM',
+      client_supplier_id: snap.client_supplier_id ?? null,
+      recognition_status: item.status ?? null,
+      captured_offline: snap.offline === true,
+    };
+  } catch {
+    return base;
+  }
 }
