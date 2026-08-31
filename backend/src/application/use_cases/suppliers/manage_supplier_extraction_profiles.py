@@ -38,6 +38,7 @@ from src.domain.client_supplier.extraction_profile import (
     SupplierExtractionProfile,
     default_extraction_configuration,
 )
+from src.domain.label_profiles.kinds import LabelKind
 
 DEFAULT_PROFILE_KEY = "default"
 
@@ -70,6 +71,7 @@ class CreateSupplierExtractionProfileVersionCommand:
     profile_key: str | None = None
     activate: bool = False
     created_by: str | None = None
+    label_kind: LabelKind | None = None
 
 
 @dataclass
@@ -325,6 +327,7 @@ class CreateSupplierExtractionProfileVersionUseCase:
                 visual_notes=_normalize_visual_notes(command.visual_notes),
                 created_by=(command.created_by or "").strip() or None,
                 created_at=now,
+                label_kind=command.label_kind,
             )
         except SupplierExtractionProfileVersionConflictError:
             raise
@@ -434,6 +437,7 @@ class CloneSupplierExtractionProfileUseCase:
                 visual_notes=source.visual_notes,
                 created_by=(command.created_by or "").strip() or None,
                 created_at=now,
+                label_kind=source.label_kind,
             )
         except SupplierExtractionProfileVersionConflictError:
             raise

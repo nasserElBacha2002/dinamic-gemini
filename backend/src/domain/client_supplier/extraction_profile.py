@@ -7,6 +7,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from src.domain.label_profiles.kinds import LabelKind
+
 
 class ExtractionProfileStatus(str, Enum):
     DRAFT = "DRAFT"
@@ -500,6 +502,8 @@ class SupplierExtractionProfile:
     superseded_at: datetime | None = None
     updated_at: datetime | None = None
     row_version: int = 1
+    #: Phase 1 — ITEM or POSITION; NULL legacy rows treated as ITEM after migration.
+    label_kind: LabelKind | None = None
 
     @property
     def is_active(self) -> bool:

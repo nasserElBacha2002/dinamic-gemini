@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from src.domain.label_profiles.kinds import LabelKind
+
 
 @dataclass
 class SupplierPromptConfig:
@@ -19,6 +21,8 @@ class SupplierPromptConfig:
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    #: Phase 1 — ITEM or POSITION scope for future recognition profiles.
+    label_kind: LabelKind | None = None
 
     def __post_init__(self) -> None:
         if not self.id or not self.id.strip():

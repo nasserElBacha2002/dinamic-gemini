@@ -31,6 +31,7 @@ from src.application.utils.supplier_reference_image_paths import (
     supplier_reference_image_storage_path,
 )
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
+from src.domain.label_profiles.kinds import LabelKind
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class UploadedSupplierReferenceImageFile:
     size: int
     label: str | None = None
     description: str | None = None
+    label_kind: LabelKind | None = None
 
 
 class UploadSupplierReferenceImagesUseCase:
@@ -132,6 +134,7 @@ class UploadSupplierReferenceImagesUseCase:
                         etag=etag,
                         label=(f.label or "").strip() or None,
                         description=(f.description or "").strip() or None,
+                        label_kind=f.label_kind,
                     )
                 )
             self._reference_repo.create_many(created)

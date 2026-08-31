@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+LabelKindLiteral = Literal["ITEM", "POSITION"]
 
 
 class CreateSupplierExtractionProfileRequest(BaseModel):
@@ -11,6 +13,7 @@ class CreateSupplierExtractionProfileRequest(BaseModel):
     visual_notes: str | None = None
     profile_key: str | None = None
     activate: bool = False
+    label_kind: LabelKindLiteral | None = None
 
 
 class ActivateSupplierExtractionProfileRequest(BaseModel):
@@ -63,6 +66,7 @@ class SupplierExtractionProfileResponse(BaseModel):
     superseded_at: datetime | None = None
     updated_at: datetime | None = None
     row_version: int
+    label_kind: str | None = None
 
 
 class SupplierExtractionProfilesListResponse(BaseModel):

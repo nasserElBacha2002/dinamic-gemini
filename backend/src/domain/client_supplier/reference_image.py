@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from src.domain.label_profiles.kinds import LabelKind
+
 
 @dataclass
 class SupplierReferenceImage:
@@ -26,6 +28,8 @@ class SupplierReferenceImage:
     etag: str | None = None
     label: str | None = None
     description: str | None = None
+    #: Phase 1 — ITEM or POSITION association; legacy NULL rows treated as ITEM on read.
+    label_kind: LabelKind | None = None
 
     def __post_init__(self) -> None:
         if not self.id or not self.id.strip():

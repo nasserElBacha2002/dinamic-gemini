@@ -14,6 +14,10 @@ from src.application.services.legacy_processing_guard import (
 from src.application.services.optional_unset import UNSET, OptionalModeUpdate, UnsetType
 from src.domain.aisle.entities import Aisle
 from src.domain.aisle_identification.modes import AisleIdentificationMode, parse_identification_mode
+from src.domain.label_profiles.kinds import (
+    LabelProfileSource,
+    optional_label_profile_source_override,
+)
 
 _MAX_AISLE_CODE_LEN = 64
 
@@ -24,6 +28,8 @@ class UpdateAisleCommand:
     aisle_id: str
     code: str | None = None
     identification_mode: OptionalModeUpdate = UNSET
+    item_profile_source_override: LabelProfileSource | None | UnsetType = UNSET
+    position_profile_source_override: LabelProfileSource | None | UnsetType = UNSET
 
 
 UpdateAisleCodeCommand = UpdateAisleCommand
@@ -39,7 +45,12 @@ class UpdateAisleUseCase:
         self._clock = clock
 
     def execute(self, command: UpdateAisleCommand) -> Aisle:
-        if command.code is None and isinstance(command.identification_mode, UnsetType):
+        if (
+            command.code is None
+            and isinstance(command.identification_mode, UnsetType)
+            and isinstance(command.item_profile_source_override, UnsetType)
+            and isinstance(command.position_profile_source_override, UnsetType)
+        ):
             raise ValueError("At least one field must be provided")
 
         aisle = require_aisle_scoped_to_inventory(
@@ -76,6 +87,22 @@ class UpdateAisleUseCase:
             reject_legacy_mode_for_new_configuration(mode, context="aisle")
             if aisle.identification_mode != mode:
                 aisle.identification_mode = mode
+                changed = True
+
+        if not isinstance(command.item_profile_source_override, UnsetType):
+            override = command.item_profile_source_override
+            if override is not None and not isinstance(override, LabelProfileSource):
+                override = optional_label_profile_source_override(override)
+            if aisle.item_profile_source_override != override:
+                aisle.item_profile_source_override = override
+                changed = True
+
+        if not isinstance(command.position_profile_source_override, UnsetType):
+            override = command.position_profile_source_override
+            if override is not None and not isinstance(override, LabelProfileSource):
+                override = optional_label_profile_source_override(override)
+            if aisle.position_profile_source_override != override:
+                aisle.position_profile_source_override = override
                 changed = True
 
         if not changed:

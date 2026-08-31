@@ -31,6 +31,7 @@ from src.api.dependencies import (
     get_get_supplier_extraction_profile_by_version_use_case,
     get_get_supplier_prompt_config_use_case,
     get_get_supplier_reference_image_use_case,
+    get_list_client_supplier_label_profiles_use_case,
     get_list_client_suppliers_use_case,
     get_list_clients_use_case,
     get_list_supplier_extraction_profiles_use_case,
@@ -40,6 +41,7 @@ from src.api.dependencies import (
     get_replace_supplier_reference_annotations_use_case,
     get_update_client_use_case,
     get_upload_supplier_reference_images_use_case,
+    get_upsert_client_supplier_label_profile_use_case,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
@@ -57,6 +59,10 @@ from src.api.schemas.client_supplier_schemas import (
 from src.api.schemas.identification_mode_literals import (
     IdentificationModeLiteral,
     IdentificationModeSourceLiteral,
+)
+from src.api.schemas.label_profile_schemas import (
+    ClientSupplierLabelProfileResponse,
+    UpsertClientSupplierLabelProfileRequest,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.schemas.supplier_extraction_profile_schemas import (
@@ -108,6 +114,11 @@ from src.application.use_cases.suppliers.create_client_supplier import (
 )
 from src.application.use_cases.suppliers.get_client_supplier import GetClientSupplierUseCase
 from src.application.use_cases.suppliers.list_client_suppliers import ListClientSuppliersUseCase
+from src.application.use_cases.suppliers.manage_client_supplier_label_profiles import (
+    ListClientSupplierLabelProfilesCommand,
+    UpsertClientSupplierLabelProfileCommand,
+    parse_upsert_source,
+)
 from src.application.use_cases.suppliers.manage_supplier_extraction_profiles import (
     ActivateSupplierExtractionProfileVersionCommand,
     ActivateSupplierExtractionProfileVersionUseCase,
@@ -160,6 +171,7 @@ from src.domain.client_supplier.extraction_profile import (
 )
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
+from src.domain.label_profiles.kinds import parse_label_kind
 
 from . import client_position_labels, client_product_labels
 
@@ -257,6 +269,7 @@ def _supplier_extraction_profile_to_response(
         superseded_at=profile.superseded_at,
         updated_at=profile.updated_at,
         row_version=profile.row_version,
+        label_kind=profile.label_kind.value if profile.label_kind else None,
     )
 
 
@@ -815,6 +828,9 @@ def create_supplier_extraction_profile(
                 visual_notes=payload.visual_notes,
                 profile_key=payload.profile_key,
                 activate=payload.activate,
+                label_kind=(
+                    parse_label_kind(payload.label_kind) if payload.label_kind else None
+                ),
             )
         )
         return _supplier_extraction_profile_to_response(created)
@@ -1028,6 +1044,66 @@ def replace_supplier_reference_annotations(
         )
         return SupplierReferenceAnnotationsListResponse(
             items=[_reference_annotation_to_response(row) for row in rows]
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get(
+    "/{client_id}/suppliers/{supplier_id}/label-profiles",
+    response_model=list[ClientSupplierLabelProfileResponse],
+)
+def list_client_supplier_label_profiles(
+    client_id: str,
+    supplier_id: str,
+    use_case=Depends(get_list_client_supplier_label_profiles_use_case),
+) -> list[ClientSupplierLabelProfileResponse]:
+    try:
+        rows = use_case.execute(
+            ListClientSupplierLabelProfilesCommand(
+                client_id=client_id, supplier_id=supplier_id
+            )
+        )
+        return [
+            ClientSupplierLabelProfileResponse(
+                label_kind=row.label_kind.value,
+                source=row.source.value,
+                profile_config_id=row.id or None,
+                updated_at=row.updated_at,
+            )
+            for row in rows
+        ]
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.put(
+    "/{client_id}/suppliers/{supplier_id}/label-profiles/{label_kind}",
+    response_model=ClientSupplierLabelProfileResponse,
+)
+def upsert_client_supplier_label_profile(
+    client_id: str,
+    supplier_id: str,
+    label_kind: str,
+    payload: UpsertClientSupplierLabelProfileRequest,
+    use_case=Depends(get_upsert_client_supplier_label_profile_use_case),
+) -> ClientSupplierLabelProfileResponse:
+    try:
+        row = use_case.execute(
+            UpsertClientSupplierLabelProfileCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                label_kind=parse_label_kind(label_kind),
+                source=parse_upsert_source(payload.source),
+            )
+        )
+        return ClientSupplierLabelProfileResponse(
+            label_kind=row.label_kind.value,
+            source=row.source.value,
+            profile_config_id=row.id or None,
+            updated_at=row.updated_at,
         )
     except Exception as e:
         reraise_if_mapped(e)

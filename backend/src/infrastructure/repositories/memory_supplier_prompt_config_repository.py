@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from src.application.ports.repositories import SupplierPromptConfigRepository
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
+from src.domain.label_profiles.kinds import LabelKind, effective_label_kind
 
 DEFAULT_PROVIDER_SCOPE_KEY = "#ALL_PROVIDERS#"
 PROVIDER_SCOPE_PREFIX = "P:"
@@ -51,7 +52,14 @@ def _normalize_config(config: SupplierPromptConfig) -> SupplierPromptConfig:
         is_active=config.is_active,
         created_at=config.created_at,
         updated_at=config.updated_at,
+        label_kind=config.label_kind,
     )
+
+
+def _matches_label_kind(row: SupplierPromptConfig, label_kind: LabelKind | None) -> bool:
+    if label_kind is None:
+        return True
+    return effective_label_kind(row.label_kind) == effective_label_kind(label_kind)
 
 
 class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
@@ -70,12 +78,14 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
         if any(
             _scope_key(row.client_supplier_id, row.provider_name, row.model_name) == sk
             and row.version == normalized.version
+            and effective_label_kind(row.label_kind) == effective_label_kind(normalized.label_kind)
             for row in self._store.values()
         ):
             raise ValueError("SupplierPromptConfig version already exists in scope")
         if normalized.is_active and any(
             _scope_key(row.client_supplier_id, row.provider_name, row.model_name) == sk
             and row.is_active
+            and effective_label_kind(row.label_kind) == effective_label_kind(normalized.label_kind)
             for row in self._store.values()
         ):
             raise ValueError("Only one active SupplierPromptConfig is allowed per scope")
@@ -104,12 +114,14 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
         client_supplier_id: str,
         provider_name: str | None,
         model_name: str | None,
+        label_kind: LabelKind | None = None,
     ) -> Sequence[SupplierPromptConfig]:
         sk = _scope_key(client_supplier_id, provider_name, model_name)
         rows = [
             row
             for row in self._store.values()
             if _scope_key(row.client_supplier_id, row.provider_name, row.model_name) == sk
+            and _matches_label_kind(row, label_kind)
         ]
         rows.sort(
             key=lambda row: (-int(row.version), -_ensure_utc(row.created_at).timestamp(), row.id)
@@ -124,6 +136,7 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
         client_supplier_id: str,
         provider_name: str | None,
         model_name: str | None,
+        label_kind: LabelKind | None = None,
     ) -> SupplierPromptConfig | None:
         sk = _scope_key(client_supplier_id, provider_name, model_name)
         rows = [
@@ -131,6 +144,7 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
             for row in self._store.values()
             if _scope_key(row.client_supplier_id, row.provider_name, row.model_name) == sk
             and row.is_active
+            and _matches_label_kind(row, label_kind)
         ]
         rows.sort(
             key=lambda row: (-int(row.version), -_ensure_utc(row.created_at).timestamp(), row.id)
@@ -142,12 +156,14 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
         client_supplier_id: str,
         provider_name: str | None,
         model_name: str | None,
+        label_kind: LabelKind | None = None,
     ) -> int | None:
         sk = _scope_key(client_supplier_id, provider_name, model_name)
         versions = [
             int(row.version)
             for row in self._store.values()
             if _scope_key(row.client_supplier_id, row.provider_name, row.model_name) == sk
+            and _matches_label_kind(row, label_kind)
         ]
         return max(versions) if versions else None
 
@@ -156,11 +172,16 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
         client_supplier_id: str,
         provider_name: str | None,
         model_name: str | None,
+        label_kind: LabelKind | None = None,
     ) -> None:
         sk = _scope_key(client_supplier_id, provider_name, model_name)
         now = datetime.now(timezone.utc)
         for row in list(self._store.values()):
-            if _scope_key(row.client_supplier_id, row.provider_name, row.model_name) == sk and row.is_active:
+            if (
+                _scope_key(row.client_supplier_id, row.provider_name, row.model_name) == sk
+                and row.is_active
+                and _matches_label_kind(row, label_kind)
+            ):
                 self._store[row.id] = SupplierPromptConfig(
                     id=row.id,
                     client_supplier_id=row.client_supplier_id,
@@ -171,6 +192,7 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
                     is_active=False,
                     created_at=row.created_at,
                     updated_at=now,
+                    label_kind=row.label_kind,
                 )
 
     def activate_version(self, config_id: str) -> SupplierPromptConfig | None:
@@ -178,9 +200,15 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
         if row is None:
             return None
         sk = _scope_key(row.client_supplier_id, row.provider_name, row.model_name)
+        target_kind = effective_label_kind(row.label_kind)
         now = datetime.now(timezone.utc)
         for existing in list(self._store.values()):
-            if _scope_key(existing.client_supplier_id, existing.provider_name, existing.model_name) == sk:
+            same_scope = (
+                _scope_key(existing.client_supplier_id, existing.provider_name, existing.model_name)
+                == sk
+            )
+            same_kind = effective_label_kind(existing.label_kind) == target_kind
+            if same_scope and same_kind:
                 self._store[existing.id] = SupplierPromptConfig(
                     id=existing.id,
                     client_supplier_id=existing.client_supplier_id,
@@ -191,5 +219,6 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
                     is_active=(existing.id == config_id),
                     created_at=existing.created_at,
                     updated_at=now if existing.id == config_id or existing.is_active else existing.updated_at,
+                    label_kind=existing.label_kind,
                 )
         return self._store[config_id]

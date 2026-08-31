@@ -111,6 +111,7 @@ def identification_execution_snapshot_dict(
     external_fallback: dict | None = None,
     supplier_extraction_profile: dict | None = None,
     supplier_prompt: dict | None = None,
+    label_profiles: dict | None = None,
     client_extraction_profiles_enabled: bool = False,
     profile_aware_validation_enabled: bool = False,
     reference_template_annotations_enabled: bool = False,
@@ -151,4 +152,5 @@ def identification_execution_snapshot_dict(
         "external_fallback": external_fallback,
         "supplier_extraction_profile": supplier_extraction_profile,
         "supplier_prompt": supplier_prompt,
+        "label_profiles": label_profiles,
     }

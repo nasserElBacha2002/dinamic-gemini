@@ -7,6 +7,8 @@ Requires v3 schema (inventories and aisles tables). Creates a temporary inventor
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.database.sqlserver import now_utc
@@ -19,10 +21,49 @@ from tests.support.sqlserver_test_connection import resolved_sqlserver_connectio
 
 pytestmark = pytest.mark.integration
 
+_MIGRATION_0100 = (
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "database"
+    / "migrations"
+    / "versions"
+    / "0100_label_recognition_profiles_phase1.sql"
+)
+
+
+def _apply_migration_0100_if_needed(sql_client) -> None:
+    with sql_client.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COL_LENGTH('aisles', 'item_profile_source_override') AS col_len
+            """
+        )
+        row = cur.fetchone()
+        if row and row.col_len is not None:
+            return
+    sql = _MIGRATION_0100.read_text(encoding="utf-8")
+    batches: list[str] = []
+    buf: list[str] = []
+    for line in sql.splitlines():
+        if line.strip().upper() == "GO":
+            if buf:
+                batches.append("\n".join(buf))
+                buf = []
+        else:
+            buf.append(line)
+    if buf:
+        batches.append("\n".join(buf))
+    with sql_client.cursor() as cur:
+        for batch in batches:
+            if batch.strip():
+                cur.execute(batch)
+
 
 @pytest.fixture(scope="module")
 def sql_client():
-    return sql_server_client_or_skip(resolved_sqlserver_connection_string_for_tests())
+    client = sql_server_client_or_skip(resolved_sqlserver_connection_string_for_tests())
+    _apply_migration_0100_if_needed(client)
+    return client
 
 
 @pytest.fixture
@@ -136,6 +177,41 @@ def test_sql_aisle_repository_get_by_id_missing_returns_none(
     aisle_repo: SqlAisleRepository,
 ) -> None:
     assert aisle_repo.get_by_id("nonexistent-aisle-id") is None
+
+
+def test_sql_aisle_repository_profile_overrides_round_trip(
+    aisle_repo: SqlAisleRepository,
+) -> None:
+    from src.domain.label_profiles.kinds import LabelProfileSource
+
+    now = now_utc()
+    aisle_id = "test-epica3-aisle-overrides"
+    aisle = Aisle(
+        id=aisle_id,
+        inventory_id="test-epica3-inv-001",
+        code="A-OVR",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+        item_profile_source_override=LabelProfileSource.DINAMIC,
+        position_profile_source_override=LabelProfileSource.SUPPLIER,
+    )
+    aisle_repo.save(aisle)
+    loaded = aisle_repo.get_by_id(aisle_id)
+    assert loaded is not None
+    assert loaded.item_profile_source_override is LabelProfileSource.DINAMIC
+    assert loaded.position_profile_source_override is LabelProfileSource.SUPPLIER
+
+    loaded.item_profile_source_override = None
+    loaded.position_profile_source_override = None
+    aisle_repo.save(loaded)
+    cleared = aisle_repo.get_by_id(aisle_id)
+    assert cleared is not None
+    assert cleared.item_profile_source_override is None
+    assert cleared.position_profile_source_override is None
+
+    listed = aisle_repo.list_by_inventory("test-epica3-inv-001")
+    assert any(a.id == aisle_id for a in listed)
 
 
 def test_sql_aisle_repository_round_trip_with_client_supplier_id(

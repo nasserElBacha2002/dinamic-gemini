@@ -27,6 +27,9 @@ from src.application.errors import (
     NoSourceAssetsForAisleProcessingError,
     ProcessingRejectedUnsealedSessionError,
 )
+from src.application.ports.client_supplier_label_profile_repository import (
+    ClientSupplierLabelProfileRepository,
+)
 from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.ordered_capture_session_repository import (
     OrderedCaptureSessionRepository,
@@ -56,6 +59,10 @@ from src.application.services.image_processing.ocr_client_field_rules import (
 )
 from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.job_stale_reconciler import JobStaleReconciler
+from src.application.services.label_profile_resolver import (
+    LabelProfileResolutionContext,
+    LabelProfileResolver,
+)
 from src.application.services.legacy_processing_guard import (
     reject_legacy_effective_mode_for_new_job,
 )
@@ -69,6 +76,7 @@ from src.config import load_settings
 from src.domain.aisle_identification.modes import CONFIGURATION_SNAPSHOT_VERSION
 from src.domain.aisle_identification.resolver import resolve_aisle_identification_mode
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.label_profiles.errors import SupplierLabelProfileNotConfiguredError
 from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
 from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
@@ -194,6 +202,7 @@ class StartAisleProcessingUseCase:
         extraction_profile_repo=None,
         client_supplier_repo: ClientSupplierRepository | None = None,
         supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
+        label_profile_repo: ClientSupplierLabelProfileRepository | None = None,
         ordered_session_repo: OrderedCaptureSessionRepository | None = None,
         ordered_processing_reservation: OrderedCaptureProcessingReservationService | None = None,
     ) -> None:
@@ -208,6 +217,7 @@ class StartAisleProcessingUseCase:
         self._extraction_profile_repo = extraction_profile_repo
         self._client_supplier_repo = client_supplier_repo
         self._supplier_prompt_config_repo = supplier_prompt_config_repo
+        self._label_profile_repo = label_profile_repo
         self._ordered_session_repo = ordered_session_repo
         self._ordered_processing_reservation = ordered_processing_reservation
 
@@ -764,6 +774,25 @@ class StartAisleProcessingUseCase:
             except SupplierPromptConfigError as exc:
                 raise ValueError(f"{exc.code}: {exc.message}") from exc
             supplier_prompt_snapshot = resolved_prompt.public_snapshot(include_content=True)
+        label_profiles_snapshot = None
+        if self._label_profile_repo is not None and self._client_supplier_repo is not None:
+            profile_resolver = LabelProfileResolver(
+                label_profile_repo=self._label_profile_repo,
+                client_supplier_repo=self._client_supplier_repo,
+                extraction_profile_repo=self._extraction_profile_repo,
+                supplier_prompt_config_repo=self._supplier_prompt_config_repo,
+            )
+            try:
+                resolved_profiles = profile_resolver.resolve(
+                    LabelProfileResolutionContext(
+                        client_id=client_id,
+                        client_supplier_id=str(supplier_id).strip() if supplier_id else None,
+                        aisle=aisle,
+                    )
+                )
+            except SupplierLabelProfileNotConfiguredError:
+                raise
+            label_profiles_snapshot = resolved_profiles.to_snapshot_dict()
         engine_params_json = {
             "identification_execution": identification_execution_snapshot_dict(
                 decision,
@@ -773,6 +802,7 @@ class StartAisleProcessingUseCase:
                 external_fallback=external_fallback,
                 supplier_extraction_profile=supplier_extraction_profile,
                 supplier_prompt=supplier_prompt_snapshot,
+                label_profiles=label_profiles_snapshot,
                 client_extraction_profiles_enabled=profiles_enabled,
                 profile_aware_validation_enabled=profile_aware,
                 reference_template_annotations_enabled=annotations_enabled,

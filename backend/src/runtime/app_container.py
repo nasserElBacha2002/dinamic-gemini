@@ -23,6 +23,9 @@ from src.application.ports.capture_repositories import (
     CaptureSessionItemRepository,
     CaptureSessionRepository,
 )
+from src.application.ports.client_supplier_label_profile_repository import (
+    ClientSupplierLabelProfileRepository,
+)
 from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.finalization_stage_store import FinalizationStageStore
@@ -182,6 +185,7 @@ from src.runtime.container.repository_builders import (
     build_authoritative_local_code_scan_repository,
     build_client_position_label_repository,
     build_client_repository,
+    build_client_supplier_label_profile_repository,
     build_client_supplier_repository,
     build_code_scan_repository,
     build_evidence_repository,
@@ -266,6 +270,9 @@ class AppContainer:
         self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
         self._supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None
         self._supplier_extraction_profile_repo: SupplierExtractionProfileRepository | None = None
+        self._client_supplier_label_profile_repo: ClientSupplierLabelProfileRepository | None = (
+            None
+        )
         self._supplier_reference_annotation_repo: SupplierReferenceAnnotationRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
@@ -398,6 +405,7 @@ class AppContainer:
         self._supplier_reference_image_repo = None
         self._supplier_prompt_config_repo = None
         self._supplier_extraction_profile_repo = None
+        self._client_supplier_label_profile_repo = None
         self._supplier_reference_annotation_repo = None
         self._position_repo = None
         self._product_record_repo = None
@@ -1004,6 +1012,16 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._supplier_extraction_profile_repo
+
+    def get_client_supplier_label_profile_repo(self) -> ClientSupplierLabelProfileRepository:
+        if self._client_supplier_label_profile_repo is not None:
+            return self._client_supplier_label_profile_repo
+        self._client_supplier_label_profile_repo = (
+            build_client_supplier_label_profile_repository(
+                self._build_sql_repository_or_memory
+            )
+        )
+        return self._client_supplier_label_profile_repo
 
     def get_supplier_reference_annotation_repo(self) -> SupplierReferenceAnnotationRepository:
         if self._supplier_reference_annotation_repo is not None:

@@ -267,6 +267,11 @@ def get_supplier_extraction_profile_repo() -> SupplierExtractionProfileRepositor
     return get_app_container().get_supplier_extraction_profile_repo()
 
 
+def get_client_supplier_label_profile_repo():
+
+    return get_app_container().get_client_supplier_label_profile_repo()
+
+
 def get_result_evidence_repo():
     return _get_result_evidence_repo()
 
@@ -761,6 +766,7 @@ def get_start_aisle_processing_use_case(
     supplier_prompt_config_repo: SupplierPromptConfigRepository = Depends(
         get_supplier_prompt_config_repo
     ),
+    label_profile_repo=Depends(get_client_supplier_label_profile_repo),
     ordered_session_repo=Depends(get_ordered_capture_session_repo),
     ordered_processing_reservation=Depends(get_ordered_capture_processing_reservation),
 ) -> StartAisleProcessingUseCase:
@@ -776,6 +782,7 @@ def get_start_aisle_processing_use_case(
         extraction_profile_repo=extraction_profile_repo,
         client_supplier_repo=client_supplier_repo,
         supplier_prompt_config_repo=supplier_prompt_config_repo,
+        label_profile_repo=label_profile_repo,
         ordered_session_repo=ordered_session_repo,
         ordered_processing_reservation=ordered_processing_reservation,
     )
@@ -1748,6 +1755,31 @@ def get_list_supplier_reference_annotations_use_case():
 
 def get_replace_supplier_reference_annotations_use_case():
     return get_app_container().get_replace_supplier_reference_annotations_use_case()
+
+
+def get_list_client_supplier_label_profiles_use_case():
+    from src.application.use_cases.suppliers.manage_client_supplier_label_profiles import (
+        ListClientSupplierLabelProfilesUseCase,
+    )
+
+    container = get_app_container()
+    return ListClientSupplierLabelProfilesUseCase(
+        client_supplier_repo=container.get_client_supplier_repo(),
+        label_profile_repo=container.get_client_supplier_label_profile_repo(),
+    )
+
+
+def get_upsert_client_supplier_label_profile_use_case():
+    from src.application.use_cases.suppliers.manage_client_supplier_label_profiles import (
+        UpsertClientSupplierLabelProfileUseCase,
+    )
+
+    container = get_app_container()
+    return UpsertClientSupplierLabelProfileUseCase(
+        client_supplier_repo=container.get_client_supplier_repo(),
+        label_profile_repo=container.get_client_supplier_label_profile_repo(),
+        clock=container.get_clock(),
+    )
 
 
 def get_list_aisle_positions_use_case(

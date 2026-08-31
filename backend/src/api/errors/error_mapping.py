@@ -472,6 +472,7 @@ from src.application.services.upload_request_limits import (
     UploadFileTooLargeError,
     UploadRequestTooLargeError,
 )
+from src.domain.label_profiles.errors import SupplierLabelProfileNotConfiguredError
 
 logger = logging.getLogger(__name__)
 
@@ -1063,6 +1064,11 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         422,
         error_code="STRATEGY_DISABLED",
         detail=lambda e: str(e) or "Requested strategy or feature flag is disabled.",
+    ),
+    SupplierLabelProfileNotConfiguredError: _structured_detail(
+        422,
+        error_code=SupplierLabelProfileNotConfiguredError.code,
+        detail=lambda e: str(e) or "Supplier label profile is not configured.",
     ),
     ProcessingObservabilityDisabledError: _structured_detail(
         422,

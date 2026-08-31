@@ -25,6 +25,7 @@ from src.application.ports.repositories import (
 )
 from src.application.services.processing_experiment_catalog import normalize_requested_model
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
+from src.domain.label_profiles.kinds import LabelKind
 from src.pipeline.providers.definitions import (
     deprecated_processing_provider_message,
     is_pipeline_provider_active,
@@ -41,6 +42,7 @@ class CreateSupplierPromptConfigVersionCommand:
     model_name: str | None
     instructions_text: str
     activate: bool = True
+    label_kind: LabelKind | None = None
 
 
 @dataclass
@@ -234,6 +236,7 @@ class CreateSupplierPromptConfigVersionUseCase:
             command.supplier_id,
             provider_name,
             model_name,
+            command.label_kind,
         )
         next_version = 1 if latest_version is None else int(latest_version) + 1
 
@@ -249,6 +252,7 @@ class CreateSupplierPromptConfigVersionUseCase:
                 is_active=False,
                 created_at=now,
                 updated_at=now,
+                label_kind=command.label_kind,
             )
         )
         # Note: create + activate is not wrapped in a broader application transaction.

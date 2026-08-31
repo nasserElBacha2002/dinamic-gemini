@@ -21,6 +21,7 @@ from src.domain.client_supplier.extraction_profile import (
     SpatialRelation,
     SupplierExtractionProfile,
 )
+from src.domain.label_profiles.kinds import LabelKind, effective_label_kind, parse_label_kind
 
 
 def _to_utc(dt: datetime | None) -> datetime | None:
@@ -96,6 +97,8 @@ def _row_to_supplier_extraction_profile(row: object) -> SupplierExtractionProfil
     configuration = parse_extraction_configuration(
         _parse_configuration_json(getattr(row, "configuration_json", None))
     )
+    label_kind_raw = getattr(row, "label_kind", None)
+    label_kind = parse_label_kind(str(label_kind_raw)) if label_kind_raw else None
     return SupplierExtractionProfile(
         id=_require_str(row, "id"),
         client_id=_require_str(row, "client_id"),
@@ -112,6 +115,7 @@ def _row_to_supplier_extraction_profile(row: object) -> SupplierExtractionProfil
         superseded_at=_to_utc(getattr(row, "superseded_at", None)),
         updated_at=updated_at,
         row_version=int(getattr(row, "row_version", 1) or 1),
+        label_kind=label_kind,
     )
 
 
@@ -145,8 +149,12 @@ def _row_to_reference_annotation(row: object) -> ReferenceAnnotation:
 _SELECT_PROFILE_COLUMNS = """
     id, client_id, supplier_id, profile_key, version, status, configuration_json,
     visual_notes, created_by, created_at, activated_by, activated_at,
-    superseded_at, updated_at, row_version
+    superseded_at, updated_at, row_version, label_kind
 """
+
+
+def _label_kind_scope_value(kind: LabelKind | None) -> str:
+    return effective_label_kind(kind).value
 
 
 class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository):
@@ -166,9 +174,10 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
                 INSERT INTO supplier_extraction_profiles (
                     id, client_id, supplier_id, profile_key, version, status,
                     configuration_json, visual_notes, created_by, created_at,
-                    activated_by, activated_at, superseded_at, updated_at, row_version
+                    activated_by, activated_at, superseded_at, updated_at, row_version,
+                    label_kind
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     profile.id,
@@ -186,6 +195,7 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
                     _to_utc(profile.superseded_at),
                     updated,
                     int(profile.row_version),
+                    _label_kind_scope_value(profile.label_kind),
                 ),
             )
 
@@ -244,15 +254,19 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
             rows = cur.fetchall()
         return [_row_to_supplier_extraction_profile(row) for row in rows]
 
-    def next_version(self, client_id: str, supplier_id: str) -> int:
+    def next_version(
+        self, client_id: str, supplier_id: str, label_kind: LabelKind | None = None
+    ) -> int:
+        kind_value = _label_kind_scope_value(label_kind)
         with self._client.cursor() as cur:
             cur.execute(
                 """
                 SELECT MAX(version) AS max_version
                 FROM supplier_extraction_profiles
                 WHERE client_id = ? AND supplier_id = ?
+                  AND ISNULL(label_kind, 'ITEM') = ?
                 """,
-                (client_id, supplier_id),
+                (client_id, supplier_id, kind_value),
             )
             row = cur.fetchone()
         if not row or getattr(row, "max_version", None) is None:
@@ -270,6 +284,7 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
         created_by: str | None,
         created_at: object,
         profile_id: str | None = None,
+        label_kind: LabelKind | None = None,
     ) -> SupplierExtractionProfile:
         from uuid import uuid4
 
@@ -282,6 +297,8 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
         if created_at_utc is None:
             created_at_utc = datetime.now(timezone.utc)
 
+        kind_value = _label_kind_scope_value(label_kind)
+
         last_exc: Exception | None = None
         for _ in range(5):
             try:
@@ -291,8 +308,9 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
                         SELECT ISNULL(MAX(version), 0) AS max_version
                         FROM supplier_extraction_profiles WITH (UPDLOCK, HOLDLOCK)
                         WHERE client_id = ? AND supplier_id = ?
+                          AND ISNULL(label_kind, 'ITEM') = ?
                         """,
-                        (client_id, supplier_id),
+                        (client_id, supplier_id, kind_value),
                     )
                     row = cur.fetchone()
                     next_ver = int(getattr(row, "max_version", 0) or 0) + 1
@@ -301,9 +319,10 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
                         INSERT INTO supplier_extraction_profiles (
                             id, client_id, supplier_id, profile_key, version, status,
                             configuration_json, visual_notes, created_by, created_at,
-                            activated_by, activated_at, superseded_at, updated_at, row_version
+                            activated_by, activated_at, superseded_at, updated_at, row_version,
+                            label_kind
                         )
-                        VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, NULL, NULL, NULL, ?, 1)
+                        VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, NULL, NULL, NULL, ?, 1, ?)
                         """,
                         (
                             new_id,
@@ -316,6 +335,7 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
                             created_by,
                             created_at_utc,
                             created_at_utc,
+                            kind_value,
                         ),
                     )
                 created = self.get_by_id(new_id)
@@ -364,6 +384,12 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
             if expected_row_version is not None and current_row_version != expected_row_version:
                 raise ValueError("row_version_conflict")
 
+            kind_value = _label_kind_scope_value(
+                parse_label_kind(str(row.label_kind))
+                if getattr(row, "label_kind", None)
+                else None
+            )
+
             cur.execute(
                 """
                 UPDATE supplier_extraction_profiles
@@ -374,9 +400,10 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
                 WHERE client_id = ?
                   AND supplier_id = ?
                   AND status = 'ACTIVE'
+                  AND ISNULL(label_kind, 'ITEM') = ?
                   AND id <> ?
                 """,
-                (client_id, supplier_id, profile_id),
+                (client_id, supplier_id, kind_value, profile_id),
             )
 
             if expected_row_version is not None:
