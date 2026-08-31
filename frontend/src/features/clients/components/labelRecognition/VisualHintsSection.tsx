@@ -1,4 +1,4 @@
-import { Alert, Checkbox, FormControlLabel, MenuItem, Stack, TextField } from '@mui/material';
+import { Alert, Box, Checkbox, FormControlLabel, MenuItem, Stack, TextField } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import type { ExtractionProfileConfiguration } from '../../../../api/types';
 import { SectionCard } from '../../../../components/ui';
@@ -31,9 +31,9 @@ export default function VisualHintsSection({
       .filter(Boolean);
 
   return (
-    <SectionCard title={t('clients.extraction_profile.section_visual_recognition')} variant="outlined">
+    <SectionCard title={t('clients.extraction_profile.section_visual_ai_help')} variant="outlined">
       <Stack spacing={1.5}>
-        <Alert severity="info">{t('clients.extraction_profile.visual_recognition_disclaimer')}</Alert>
+        <Alert severity="info">{t('clients.extraction_profile.visual_hints_not_validation')}</Alert>
         <TextField
           select
           size="small"
@@ -70,13 +70,45 @@ export default function VisualHintsSection({
           <MenuItem value="VERTICAL">{t('clients.extraction_profile.orient_vertical')}</MenuItem>
           <MenuItem value="SQUARE_OR_VERTICAL">{t('clients.extraction_profile.orient_square')}</MenuItem>
         </TextField>
+        <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' } }}>
+          <TextField
+            size="small"
+            type="number"
+            label={t('clients.extraction_profile.approx_width_mm')}
+            value={hints.approx_width_mm ?? ''}
+            onChange={(e) =>
+              updateHints({ approx_width_mm: e.target.value ? Number(e.target.value) : null })
+            }
+            helperText={t('clients.extraction_profile.size_hint_help')}
+          />
+          <TextField
+            size="small"
+            type="number"
+            label={t('clients.extraction_profile.approx_height_mm')}
+            value={hints.approx_height_mm ?? ''}
+            onChange={(e) =>
+              updateHints({ approx_height_mm: e.target.value ? Number(e.target.value) : null })
+            }
+          />
+          <TextField
+            size="small"
+            type="number"
+            label={t('clients.extraction_profile.size_tolerance_percent')}
+            value={hints.size_tolerance_percent ?? ''}
+            onChange={(e) =>
+              updateHints({
+                size_tolerance_percent: e.target.value ? Number(e.target.value) : null,
+              })
+            }
+          />
+        </Box>
         <TextField
           size="small"
           fullWidth
           label={t('clients.extraction_profile.label_primary_anchors')}
           value={asCsv(hints.primary_anchors)}
           onChange={(e) => updateHints({ primary_anchors: parseCsv(e.target.value) })}
-          helperText={t('clients.extraction_profile.comma_separated_hint')}
+          helperText={t('clients.extraction_profile.visual_anchors_hint')}
         />
         <TextField
           size="small"

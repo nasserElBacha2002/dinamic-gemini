@@ -1,5 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, MenuItem, Stack, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  Alert,
+  Box,
+  Button,
+  MenuItem,
+  Stack,
+  Tab,
+  Tabs,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+} from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useTranslation } from 'react-i18next';
 import type { ExtractionProfileConfiguration, LabelKind, SupplierExtractionProfile } from '../../../../api/types';
 import { ErrorAlert, LoadingBlock, SectionCard, useAppSnackbar } from '../../../../components/ui';
@@ -11,6 +27,7 @@ import {
   LABEL_RECOGNITION_TEMPLATES,
 } from '../../utils/defaultExtractionProfileConfiguration';
 import BarcodeRulesSection from './BarcodeRulesSection';
+import BasicIdentitySection from './BasicIdentitySection';
 import ExamplesEditor from './ExamplesEditor';
 import LabelRecognitionTester from './LabelRecognitionTester';
 import PayloadStructureSection from './PayloadStructureSection';
@@ -38,19 +55,21 @@ function cloneConfiguration(configuration: ExtractionProfileConfiguration): Extr
 }
 
 function emptyDraft(kind: LabelKind): Draft {
-  const configuration = defaultExtractionProfileConfiguration();
-  if (kind === 'POSITION' && configuration.deterministic) {
-    configuration.semantic_type = 'LOCATION';
-    configuration.deterministic.field_mappings = [{ target: 'position_id', source: 'WHOLE' }];
-  }
-  return { configuration, visualNotes: '', source: 'SUPPLIER', dirty: false, initialized: false };
+  return {
+    configuration: defaultExtractionProfileConfiguration(kind),
+    visualNotes: '',
+    source: 'SUPPLIER',
+    dirty: false,
+    initialized: false,
+  };
 }
 
 function draftFromProfile(profile: SupplierExtractionProfile | undefined, kind: LabelKind): Draft {
   if (!profile) return { ...emptyDraft(kind), initialized: true };
   const configuration = cloneConfiguration(profile.configuration);
-  const fallback = defaultExtractionProfileConfiguration().deterministic!;
-  configuration.configuration_schema_version = 2;
+  const fallback = defaultExtractionProfileConfiguration(kind).deterministic!;
+  configuration.configuration_schema_version = configuration.configuration_schema_version ?? 2;
+  configuration.recognition_mode = configuration.recognition_mode ?? 'FULL';
   configuration.deterministic = { ...fallback, ...(configuration.deterministic ?? {}) };
   configuration.valid_examples ??= [];
   configuration.invalid_examples ??= [];
@@ -191,9 +210,61 @@ export default function LabelRecognitionProfileModule({ clientId, supplierId, su
                 </Typography>
               </SectionCard>
             ) : null}
-            <BarcodeRulesSection configuration={draft.configuration} onChange={(configuration) => updateDraft({ configuration })} />
-            <PayloadStructureSection configuration={draft.configuration} labelKind={labelKind} onChange={(configuration) => updateDraft({ configuration })} />
-            <QuantityRulesSection configuration={draft.configuration} onChange={(configuration) => updateDraft({ configuration })} />
+            <BasicIdentitySection
+              configuration={draft.configuration}
+              labelKind={labelKind}
+              onChange={(configuration) => updateDraft({ configuration })}
+            />
+            <Accordion
+              disableGutters
+              elevation={0}
+              data-testid="label-recognition-advanced"
+              sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}
+            >
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle1">{t('clients.extraction_profile.section_advanced_options')}</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Stack spacing={2}>
+                  <Alert severity="info">{t('clients.extraction_profile.advanced_options_help')}</Alert>
+                  <BarcodeRulesSection
+                    configuration={draft.configuration}
+                    advancedOnly
+                    onChange={(configuration) => updateDraft({ configuration })}
+                  />
+                  <PayloadStructureSection
+                    configuration={draft.configuration}
+                    labelKind={labelKind}
+                    onChange={(configuration) =>
+                      updateDraft({
+                        configuration: { ...configuration, recognition_mode: 'FULL' },
+                      })
+                    }
+                  />
+                  <QuantityRulesSection
+                    configuration={draft.configuration}
+                    onChange={(configuration) =>
+                      updateDraft({
+                        configuration: { ...configuration, recognition_mode: 'FULL' },
+                      })
+                    }
+                  />
+                  <ExamplesEditor
+                    validExamples={draft.configuration.valid_examples ?? []}
+                    invalidExamples={draft.configuration.invalid_examples ?? []}
+                    onChange={(valid_examples, invalid_examples) =>
+                      updateDraft({
+                        configuration: {
+                          ...draft.configuration,
+                          valid_examples,
+                          invalid_examples,
+                        },
+                      })
+                    }
+                  />
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
             <VisualHintsSection
               configuration={draft.configuration}
               visualNotes={draft.visualNotes}
@@ -205,13 +276,6 @@ export default function LabelRecognitionProfileModule({ clientId, supplierId, su
               supplierId={supplierId}
               supplierName={supplierName}
               labelKind={labelKind}
-            />
-            <ExamplesEditor
-              validExamples={draft.configuration.valid_examples ?? []}
-              invalidExamples={draft.configuration.invalid_examples ?? []}
-              onChange={(valid_examples, invalid_examples) =>
-                updateDraft({ configuration: { ...draft.configuration, valid_examples, invalid_examples } })
-              }
             />
             <LabelRecognitionTester
               clientId={clientId}

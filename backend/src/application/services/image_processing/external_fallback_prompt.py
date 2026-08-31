@@ -278,6 +278,43 @@ def _supplier_profile_section(supplier_extraction_profile: dict[str, Any] | None
     if not isinstance(cfg, dict):
         cfg = {}
 
+    recognition_mode = str(cfg.get("recognition_mode") or "FULL").strip().upper()
+    det = cfg.get("deterministic") if isinstance(cfg.get("deterministic"), dict) else {}
+    prefix = str(det.get("expected_prefix") or "").strip()
+    exact_length = det.get("exact_length")
+    charset = str(det.get("character_set") or "").strip()
+    mappings = det.get("field_mappings") if isinstance(det.get("field_mappings"), list) else []
+    identity_target = None
+    if mappings and isinstance(mappings[0], dict):
+        identity_target = str(mappings[0].get("target") or "").strip().lower() or None
+
+    if recognition_mode == "MINIMAL":
+        lines.append("- recognition_mode: MINIMAL (identity first; enrichment optional)")
+        if identity_target:
+            lines.append(f"- primary identifier field: {identity_target}")
+        if prefix:
+            lines.append(
+                f"- Find the label whose primary identifier starts with {prefix!r} "
+                "and extract the complete identifier."
+            )
+        if exact_length is not None:
+            lines.append(f"- expected exact length: {exact_length}")
+        if charset:
+            lines.append(f"- allowed characters: {charset}")
+        lines.append(
+            "- Optional enrichment fields (sku, quantity, pallet, side, level) may be "
+            "returned when clearly visible but must not block identity recognition."
+        )
+        visual_notes = supplier_extraction_profile.get("visual_notes")
+        if isinstance(visual_notes, str) and visual_notes.strip():
+            lines.append("- visual_notes (hints only):\n" + visual_notes.strip())
+        label_rules = cfg.get("label_detection_rules")
+        if isinstance(label_rules, dict):
+            for size_key in ("approx_width_mm", "approx_height_mm", "size_tolerance_percent"):
+                if label_rules.get(size_key) is not None:
+                    lines.append(f"- visual hint {size_key}: {label_rules.get(size_key)}")
+        return "\n".join(lines) if len(lines) > 1 else None
+
     code_rules = None
     validation_rules = cfg.get("validation_rules")
     if isinstance(validation_rules, dict) and isinstance(validation_rules.get("code"), dict):
@@ -295,6 +332,13 @@ def _supplier_profile_section(supplier_extraction_profile: dict[str, Any] | None
         ):
             if code_rules.get(rk) is not None:
                 lines.append(f"- code.{rk}: {code_rules.get(rk)}")
+
+    if prefix:
+        lines.append(f"- deterministic.expected_prefix: {prefix}")
+    if exact_length is not None:
+        lines.append(f"- deterministic.exact_length: {exact_length}")
+    if charset:
+        lines.append(f"- deterministic.character_set: {charset}")
 
     qty_rules = cfg.get("quantity_rules")
     if not isinstance(qty_rules, dict):

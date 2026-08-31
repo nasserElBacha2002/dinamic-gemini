@@ -425,12 +425,35 @@ class LabelValidationService:
         label_kind: LabelKind,
     ) -> LabelValidationResult | None:
         prefix = (rules.expected_prefix or "").strip()
+        diagnostics: dict = {
+            "found": normalized,
+            "prefix": {
+                "expected": prefix or None,
+                "pass": (not prefix) or normalized.startswith(prefix),
+            },
+            "length": {
+                "found": len(normalized),
+                "exact_expected": rules.exact_length,
+                "min": rules.min_length,
+                "max": rules.max_length,
+                "pass": True,
+            },
+            "charset": {
+                "expected": rules.character_set.value,
+                "pass": True,
+            },
+        }
         if prefix and not normalized.startswith(prefix):
+            diagnostics["prefix"]["pass"] = False
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_PREFIX_MISMATCH.value,
-                detail=f"payload must start with {prefix!r}",
+                detail=(
+                    f"PREFIX_MISMATCH: expected prefix {prefix!r}, "
+                    f"found {normalized[: max(len(prefix) + 4, 24)]!r}"
+                ),
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
+                diagnostics=diagnostics,
             )
         suffix = (rules.expected_suffix or "").strip()
         if suffix and not normalized.endswith(suffix):
@@ -439,34 +462,50 @@ class LabelValidationService:
                 detail=f"payload must end with {suffix!r}",
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
+                diagnostics=diagnostics,
             )
 
         length = len(normalized)
         if rules.exact_length is not None and length != int(rules.exact_length):
+            diagnostics["length"]["pass"] = False
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
-                detail=f"payload length must be exactly {rules.exact_length}",
+                detail=(
+                    f"LENGTH_MISMATCH: expected {rules.exact_length}, found {length}"
+                ),
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
+                diagnostics=diagnostics,
             )
         if rules.min_length is not None and length < int(rules.min_length):
+            diagnostics["length"]["pass"] = False
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
-                detail=f"payload shorter than min_length {rules.min_length}",
+                detail=f"LENGTH_MISMATCH: shorter than min_length {rules.min_length} (found {length})",
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
+                diagnostics=diagnostics,
             )
         if rules.max_length is not None and length > int(rules.max_length):
+            diagnostics["length"]["pass"] = False
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
-                detail=f"payload longer than max_length {rules.max_length}",
+                detail=f"LENGTH_MISMATCH: longer than max_length {rules.max_length} (found {length})",
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
+                diagnostics=diagnostics,
             )
 
         charset_err = self._validate_charset(normalized, rules.character_set, label_kind)
         if charset_err is not None:
-            return charset_err
+            diagnostics["charset"]["pass"] = False
+            return LabelValidationResult.invalid(
+                error_code=charset_err.error_code or LabelValidationErrorCode.LABEL_CHARSET_MISMATCH.value,
+                detail=charset_err.detail or "CHARSET_MISMATCH",
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=label_kind,
+                diagnostics=diagnostics,
+            )
 
         try:
             pattern_text = None
@@ -545,13 +584,15 @@ class LabelValidationService:
             ok = normalized.isalnum() and normalized.upper() == normalized
         elif charset is CharacterSetPolicy.ALPHANUMERIC:
             ok = normalized.isalnum()
+        elif charset is CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN:
+            ok = all(ch.isalnum() or ch == "-" for ch in normalized) and bool(normalized)
         else:
             ok = True
         if ok:
             return None
         return LabelValidationResult.invalid(
             error_code=LabelValidationErrorCode.LABEL_CHARSET_MISMATCH.value,
-            detail=f"payload does not match character_set {charset.value}",
+            detail=f"CHARSET_MISMATCH: payload does not match character_set {charset.value}",
             profile_source=LabelProfileSource.SUPPLIER,
             label_kind=label_kind,
         )
@@ -589,6 +630,16 @@ class LabelValidationService:
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=LabelKind.ITEM,
             )
+        # Do not treat quantity_rules.required as hard fail for MINIMAL identity mode.
+        if (
+            not config.is_minimal()
+            and config.quantity_rules.required
+            and "quantity" not in required
+            and quantity is None
+        ):
+            # FULL profiles that still mark quantity_rules.required without listing it:
+            # keep prior behavior of requiring quantity via required_fields only.
+            pass
         qty_out: int | None = None
         if quantity is not None:
             try:
@@ -607,6 +658,7 @@ class LabelValidationService:
                     profile_source=LabelProfileSource.SUPPLIER,
                     label_kind=LabelKind.ITEM,
                 )
+        sku_required = "internal_code" in required or "sku" in required
         if not sku:
             semantic = (config.semantic_type or "").strip().upper()
             logistic = semantic in {
@@ -617,9 +669,21 @@ class LabelValidationService:
                 "LPN",
                 "CONTAINER",
             }
-            # Do not invent sku=SSCC for logistic units; label_id is the identity.
-            if not (logistic and label_id):
+            # MINIMAL / identity-only: never invent sku=label_id.
+            # Logistic FULL profiles: keep label_id without inventing sku.
+            # Other FULL profiles: preserve legacy invent when sku is required or
+            # when neither field is explicitly required (legacy WHOLE→sku path).
+            if config.is_minimal() or (logistic and label_id):
+                pass
+            elif sku_required or ("label_id" not in required):
                 sku = (label_id or "").strip()
+        if sku_required and not sku:
+            return LabelValidationResult.invalid(
+                error_code=LabelValidationErrorCode.LABEL_REQUIRED_FIELD_MISSING.value,
+                detail="sku/internal_code required",
+                profile_source=LabelProfileSource.SUPPLIER,
+                label_kind=LabelKind.ITEM,
+            )
         if not sku and not label_id:
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_REQUIRED_FIELD_MISSING.value,
@@ -627,6 +691,11 @@ class LabelValidationService:
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=LabelKind.ITEM,
             )
+        identity_diags = {
+            "identity_valid": True,
+            "enrichment_complete": bool(sku) and qty_out is not None,
+            "recognition_mode": config.recognition_mode.value,
+        }
         return LabelValidationResult.valid(
             NormalizedItemLabel(
                 label_id=label_id,
@@ -639,6 +708,7 @@ class LabelValidationService:
             ),
             profile_source=LabelProfileSource.SUPPLIER,
             label_kind=LabelKind.ITEM,
+            diagnostics=identity_diags,
         )
 
     def _normalize_supplier_position(

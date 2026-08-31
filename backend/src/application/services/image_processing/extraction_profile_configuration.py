@@ -33,6 +33,8 @@ from src.domain.client_supplier.extraction_profile import (
     PayloadStructure,
     QuantityExtractionRules,
     QuantityPresence,
+    QrPayloadFormat,
+    RecognitionMode,
     UnanchoredCodeCandidatePolicy,
     default_extraction_configuration,
 )
@@ -202,6 +204,17 @@ def parse_extraction_configuration(
                 "UNKNOWN_CODE_SOURCE", f"unknown forbidden source {f!r}"
             )
 
+    recognition_mode = RecognitionMode.FULL
+    mode_raw = raw.get("recognition_mode")
+    if mode_raw is not None and str(mode_raw).strip():
+        try:
+            recognition_mode = RecognitionMode(str(mode_raw).strip().upper())
+        except ValueError as exc:
+            raise ExtractionProfileConfigurationError(
+                "PROFILE_INVALID",
+                f"recognition_mode unsupported: {mode_raw!r}",
+            ) from exc
+
     qty_raw: dict[str, Any] = (
         raw["quantity_rules"] if isinstance(raw.get("quantity_rules"), dict) else {}
     )
@@ -211,10 +224,15 @@ def parse_extraction_configuration(
             "QUANTITY_DEFAULT_FORBIDDEN",
             "quantity default_value is forbidden for automatic resolution (must be null)",
         )
+    qty_required_default = recognition_mode is RecognitionMode.FULL
     qty = QuantityExtractionRules(
         aliases=_as_str_tuple(qty_raw.get("aliases"), field="quantity_rules.aliases")
-        or QuantityExtractionRules().aliases,
-        required=bool(qty_raw.get("required", True)),
+        or (
+            ()
+            if recognition_mode is RecognitionMode.MINIMAL
+            else QuantityExtractionRules().aliases
+        ),
+        required=bool(qty_raw.get("required", qty_required_default)),
         data_type=_parse_data_type(qty_raw.get("data_type"), field="quantity_rules.data_type"),
         minimum=int(qty_raw["minimum"] if qty_raw.get("minimum") is not None else 1),
         maximum=int(
@@ -226,16 +244,32 @@ def parse_extraction_configuration(
         accepted_units=_as_str_tuple(
             qty_raw.get("accepted_units"), field="quantity_rules.accepted_units"
         ),
-        expected_presence=_parse_quantity_presence(qty_raw.get("expected_presence")),
+        expected_presence=_parse_quantity_presence(
+            qty_raw.get("expected_presence")
+            or (
+                QuantityPresence.OPTIONAL.value
+                if recognition_mode is RecognitionMode.MINIMAL
+                else None
+            )
+        ),
         missing_quantity_action=_parse_missing_quantity_action(
             qty_raw.get("missing_quantity_action")
         ),
-        allow_external_fallback=bool(qty_raw.get("allow_external_fallback", True)),
+        allow_external_fallback=bool(
+            qty_raw.get(
+                "allow_external_fallback",
+                recognition_mode is RecognitionMode.FULL,
+            )
+        ),
         allowed_spatial_relations=tuple(
             str(x).strip().upper()
             for x in (
                 qty_raw.get("allowed_spatial_relations")
-                or QuantityExtractionRules().allowed_spatial_relations
+                or (
+                    ()
+                    if recognition_mode is RecognitionMode.MINIMAL
+                    else QuantityExtractionRules().allowed_spatial_relations
+                )
             )
             if str(x).strip()
         ),
@@ -403,11 +437,24 @@ def parse_extraction_configuration(
     for k, v in aliases_raw.items():
         aliases[str(k).strip().lower()] = _as_str_tuple(v, field=f"aliases.{k}")
 
-    required = tuple(
-        str(x).strip().lower()
-        for x in (raw.get("required_fields") or ["internal_code", "quantity"])
-        if str(x).strip()
-    )
+    required_raw = raw.get("required_fields")
+    if required_raw is None:
+        if recognition_mode is RecognitionMode.MINIMAL:
+            # Infer identity target from first WHOLE mapping when present.
+            identity_target = "label_id"
+            if isinstance(raw.get("deterministic"), dict):
+                maps = raw["deterministic"].get("field_mappings") or []
+                if maps and isinstance(maps[0], dict) and maps[0].get("target"):
+                    identity_target = str(maps[0]["target"]).strip().lower() or "label_id"
+            required = (identity_target,)
+        else:
+            required = ("internal_code", "quantity")
+    else:
+        required = tuple(
+            str(x).strip().lower()
+            for x in required_raw
+            if str(x).strip()
+        )
 
     schema_version = int(
         raw.get("configuration_schema_version") or CONFIGURATION_SCHEMA_VERSION_V1
@@ -449,8 +496,12 @@ def parse_extraction_configuration(
         return default_extraction_configuration()
 
     # Allow deterministic-only / pattern-only supplier CODE_SCAN profiles.
-    if not sources_sorted:
+    # MINIMAL profiles intentionally omit OCR internal_code_sources.
+    if not sources_sorted and recognition_mode is not RecognitionMode.MINIMAL:
         sources_sorted = default_extraction_configuration().internal_code_sources
+
+    if recognition_mode is RecognitionMode.MINIMAL and not required:
+        required = ("label_id",)
 
     return ExtractionProfileConfiguration(
         internal_code_sources=sources_sorted,
@@ -467,6 +518,7 @@ def parse_extraction_configuration(
         allow_unconfigured_code_source_fallback=allow_fallback,
         configuration_schema_version=schema_version,
         semantic_type=semantic_type,
+        recognition_mode=recognition_mode,
         deterministic=deterministic,
         valid_examples=_parse_examples(raw.get("valid_examples"), field="valid_examples"),
         invalid_examples=_parse_examples(
@@ -775,6 +827,21 @@ def _parse_label_detection_rules(raw: dict[str, Any]) -> LabelDetectionRules:
             raw.get("allow_full_image_fallback", defaults.allow_full_image_fallback)
         ),
         maximum_candidate_regions=max_regions,
+        approx_width_mm=(
+            float(raw["approx_width_mm"])
+            if raw.get("approx_width_mm") is not None
+            else None
+        ),
+        approx_height_mm=(
+            float(raw["approx_height_mm"])
+            if raw.get("approx_height_mm") is not None
+            else None
+        ),
+        size_tolerance_percent=(
+            float(raw["size_tolerance_percent"])
+            if raw.get("size_tolerance_percent") is not None
+            else None
+        ),
     )
 
 

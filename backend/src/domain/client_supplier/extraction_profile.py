@@ -135,6 +135,10 @@ class LabelDetectionRules:
     allow_perspective_correction: bool = True
     allow_full_image_fallback: bool = True
     maximum_candidate_regions: int = 8
+    # Vision localization hints only — never used as hard deterministic rejection.
+    approx_width_mm: float | None = None
+    approx_height_mm: float | None = None
+    size_tolerance_percent: float | None = None
 
 
 @dataclass(frozen=True)
@@ -240,10 +244,22 @@ class PayloadStructure(str, Enum):
     GS1 = "GS1"
 
 
+class RecognitionMode(str, Enum):
+    """How strictly required enrichment fields are enforced.
+
+    ``MINIMAL`` — identity only (prefix/length/charset + primary target).
+    ``FULL`` — current advanced behavior (quantity/sku/enrichment as configured).
+    """
+
+    MINIMAL = "MINIMAL"
+    FULL = "FULL"
+
+
 class CharacterSetPolicy(str, Enum):
     NUMERIC = "NUMERIC"
     ALPHANUMERIC = "ALPHANUMERIC"
     UPPERCASE_ALPHANUMERIC = "UPPERCASE_ALPHANUMERIC"
+    ALPHANUMERIC_WITH_HYPHEN = "ALPHANUMERIC_WITH_HYPHEN"
     HEX = "HEX"
     ANY = "ANY"
 
@@ -413,9 +429,13 @@ class ExtractionProfileConfiguration:
     allow_unconfigured_code_source_fallback: bool = False
     configuration_schema_version: int = CONFIGURATION_SCHEMA_VERSION_V1
     semantic_type: str | None = None
+    recognition_mode: RecognitionMode = RecognitionMode.FULL
     deterministic: DeterministicBarcodeRules | None = None
     valid_examples: tuple[PayloadExample, ...] = ()
     invalid_examples: tuple[PayloadExample, ...] = ()
+
+    def is_minimal(self) -> bool:
+        return self.recognition_mode is RecognitionMode.MINIMAL
 
     def effective_deterministic(self) -> DeterministicBarcodeRules:
         """Return explicit v2 rules or a legacy-compatible derived representation."""
@@ -433,6 +453,7 @@ class ExtractionProfileConfiguration:
         out: dict[str, Any] = {
             "configuration_schema_version": int(self.configuration_schema_version),
             "semantic_type": self.semantic_type,
+            "recognition_mode": self.recognition_mode.value,
             "internal_code_sources": [
                 {
                     "field_key": s.field_key,
@@ -502,6 +523,11 @@ class ExtractionProfileConfiguration:
                     "primary_anchors": list(self.label_detection_rules.primary_anchors),
                     "secondary_anchors": list(self.label_detection_rules.secondary_anchors),
                     "allow_rotation": self.label_detection_rules.allow_rotation,
+                    "approx_width_mm": self.label_detection_rules.approx_width_mm,
+                    "approx_height_mm": self.label_detection_rules.approx_height_mm,
+                    "size_tolerance_percent": (
+                        self.label_detection_rules.size_tolerance_percent
+                    ),
                 }
             },
             "additional_fields": [
@@ -687,6 +713,147 @@ def default_extraction_configuration() -> ExtractionProfileConfiguration:
         },
         required_fields=("internal_code", "quantity"),
         allow_unconfigured_code_source_fallback=True,
+    )
+
+
+def minimal_supplier_item_configuration(
+    *,
+    expected_prefix: str | None = None,
+    exact_length: int | None = None,
+    character_set: CharacterSetPolicy = CharacterSetPolicy.UPPERCASE_ALPHANUMERIC,
+    semantic_type: str = ItemLabelSemanticType.LPN.value,
+) -> ExtractionProfileConfiguration:
+    """v2 MINIMAL ITEM — identity via label_id only (no sku/quantity required)."""
+    return ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        recognition_mode=RecognitionMode.MINIMAL,
+        semantic_type=semantic_type,
+        internal_code_sources=(),
+        forbidden_internal_code_sources=(),
+        quantity_rules=QuantityExtractionRules(
+            aliases=(),
+            required=False,
+            data_type=FieldDataType.INTEGER,
+            allow_decimals=False,
+            minimum=1,
+            default_value=None,
+            expected_presence=QuantityPresence.OPTIONAL,
+            missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
+            allow_external_fallback=False,
+            allowed_spatial_relations=(),
+        ),
+        validation_rules=ExtractionValidationRules(
+            code=CodeValidationRules(
+                min_length=1,
+                max_length=128,
+                exact_length=None,
+                allow_letters=True,
+                allow_digits=True,
+                allow_hyphen=True,
+                allow_slash=False,
+                allow_spaces=False,
+                preserve_leading_zeros=True,
+                reject_measurement_patterns=False,
+            )
+        ),
+        label_detection_rules=LabelDetectionRules(
+            enabled=True,
+            primary_anchors=(),
+            secondary_anchors=(),
+            minimum_anchor_matches=0,
+        ),
+        accepted_barcode_formats=("QR", "CODE128"),
+        qr_payload_formats=(QrPayloadFormat.PLAIN_CODE.value,),
+        custom_payload_pattern=None,
+        required_fields=("label_id",),
+        aliases={},
+        allow_unconfigured_code_source_fallback=False,
+        deterministic=DeterministicBarcodeRules(
+            expected_prefix=(expected_prefix or "").strip() or None,
+            exact_length=exact_length,
+            min_length=None,
+            max_length=None,
+            character_set=character_set,
+            normalization=PayloadNormalizationRules(
+                trim_outer_whitespace=True,
+                case_normalization=CaseNormalization.UPPER,
+                remove_internal_spaces=True,
+                remove_hyphens=False,
+            ),
+            payload_structure=PayloadStructure.SIMPLE,
+            field_mappings=(
+                FieldMappingRule("label_id", FieldMappingSource.WHOLE, None),
+            ),
+            checksum_policy=ChecksumPolicy.NONE,
+            use_advanced_pattern=False,
+        ),
+    )
+
+
+def minimal_supplier_position_configuration(
+    *,
+    expected_prefix: str | None = None,
+    exact_length: int | None = None,
+    character_set: CharacterSetPolicy = CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+    semantic_type: str = PositionLabelSemanticType.LOCATION.value,
+) -> ExtractionProfileConfiguration:
+    """v2 MINIMAL POSITION — identity via position_id only."""
+    return ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        recognition_mode=RecognitionMode.MINIMAL,
+        semantic_type=semantic_type,
+        internal_code_sources=(),
+        forbidden_internal_code_sources=(),
+        quantity_rules=QuantityExtractionRules(
+            aliases=(),
+            required=False,
+            expected_presence=QuantityPresence.OPTIONAL,
+            missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
+            allow_external_fallback=False,
+            allowed_spatial_relations=(),
+        ),
+        validation_rules=ExtractionValidationRules(
+            code=CodeValidationRules(
+                min_length=1,
+                max_length=128,
+                allow_letters=True,
+                allow_digits=True,
+                allow_hyphen=True,
+                allow_slash=False,
+                allow_spaces=False,
+                reject_measurement_patterns=False,
+            )
+        ),
+        label_detection_rules=LabelDetectionRules(
+            enabled=True,
+            primary_anchors=(),
+            secondary_anchors=(),
+            minimum_anchor_matches=0,
+        ),
+        accepted_barcode_formats=("QR", "CODE128"),
+        qr_payload_formats=(QrPayloadFormat.PLAIN_CODE.value,),
+        required_fields=("position_id",),
+        aliases={},
+        allow_unconfigured_code_source_fallback=False,
+        deterministic=DeterministicBarcodeRules(
+            expected_prefix=(expected_prefix or "").strip() or None,
+            exact_length=exact_length,
+            min_length=None,
+            max_length=None,
+            character_set=character_set,
+            normalization=PayloadNormalizationRules(
+                trim_outer_whitespace=True,
+                case_normalization=CaseNormalization.UPPER,
+                remove_internal_spaces=True,
+                remove_hyphens=False,
+            ),
+            payload_structure=PayloadStructure.SIMPLE,
+            field_mappings=(
+                FieldMappingRule("position_id", FieldMappingSource.WHOLE, None),
+            ),
+            checksum_policy=ChecksumPolicy.NONE,
+            use_advanced_pattern=False,
+        ),
     )
 
 
@@ -959,6 +1126,7 @@ __all__ = [
     "QrPayloadFormat",
     "QuantityExtractionRules",
     "QuantityPresence",
+    "RecognitionMode",
     "ReferenceAnnotation",
     "SUPPORTED_BARCODE_FORMATS",
     "SpatialRelation",
@@ -969,4 +1137,6 @@ __all__ = [
     "gs1_gtin_template",
     "gs1_sscc_template",
     "inventory_seven_digit_internal_code_template",
+    "minimal_supplier_item_configuration",
+    "minimal_supplier_position_configuration",
 ]

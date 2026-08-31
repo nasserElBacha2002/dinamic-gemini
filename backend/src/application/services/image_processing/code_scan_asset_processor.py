@@ -238,18 +238,30 @@ class SingleAssetStrategyProcessor:
         )
 
         error: str | None = None
+        processing_mode = self._job_processing_mode(job)
+        code_scan_invoked = processing_mode.value != "VISION_ONLY"
         logger.info(
             "image_processing.strategy_started job_id=%s asset_id=%s strategy=%s "
-            "worker_token=%s provider=%s model=%s",
+            "worker_token=%s provider=%s model=%s processing_mode=%s code_scan_invoked=%s",
             job.id,
             asset.id,
             strategy_key,
             worker_token,
             context.provider_name,
             context.model_name,
+            processing_mode.value,
+            code_scan_invoked,
         )
         try:
-            result = self._strategy.process(context, asset)
+            if not code_scan_invoked:
+                # Explicit VISION_ONLY branch — never invoke CodeScanProcessingStrategy.
+                result = self._vision_only_seed_result(
+                    job=job,
+                    asset=asset,
+                    strategy_key=strategy_key,
+                )
+            else:
+                result = self._strategy.process(context, asset)
         except Exception as exc:
             logger.exception(
                 "image_processing.strategy_failed job_id=%s asset_id=%s strategy=%s",
@@ -356,6 +368,16 @@ class SingleAssetStrategyProcessor:
                         result = outcome.result
                         finalize_strategy = "EXTERNAL_PROVIDER"
                         finalize_attempt = outcome.attempt
+                        logger.info(
+                            "image_processing.vision_resolved job_id=%s asset_id=%s "
+                            "processing_mode=%s vision_invoked=true code_scan_invoked=%s "
+                            "resolved_by=%s",
+                            job.id,
+                            asset.id,
+                            processing_mode.value,
+                            code_scan_invoked,
+                            result.resolved_by,
+                        )
                         if result.status is ImageResultStatus.RESOLVED_EXTERNAL:
                             result, persist_error = self._apply_persist(
                                 job=job,
@@ -580,6 +602,49 @@ class SingleAssetStrategyProcessor:
         params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
         ident = params.get("identification_execution")
         return ident if isinstance(ident, dict) else {}
+
+    def _job_processing_mode(self, job: Job):
+        from src.domain.aisle_identification.processing_mode import (
+            processing_mode_from_identification_execution,
+        )
+
+        return processing_mode_from_identification_execution(self._identification_execution(job))
+
+    def _vision_only_seed_result(
+        self,
+        *,
+        job: Job,
+        asset: SourceAsset,
+        strategy_key: str,
+    ) -> ImageProcessingResult:
+        """Seed an UNRECOGNIZED result without running CODE_SCAN (VISION_ONLY).
+
+        Eligible for Vision; error code is not a simulated scanner miss.
+        """
+        from src.domain.aisle_identification.processing_mode import (
+            VISION_ONLY_DIRECT_ERROR_CODE,
+        )
+
+        return ImageProcessingResult(
+            job_id=job.id,
+            asset_id=asset.id,
+            status=ImageResultStatus.UNRECOGNIZED,
+            processing_mode=strategy_key,
+            resolved_by=None,
+            error_code=VISION_ONLY_DIRECT_ERROR_CODE,
+            error_message="VISION_ONLY: CODE_SCAN intentionally skipped",
+            execution_scope=ExecutionScope.SINGLE_ASSET,
+            logical_asset_attempt=False,
+            evidence={
+                "processing_mode": "VISION_ONLY",
+                "code_scan_invoked": False,
+                "vision_direct": True,
+            },
+            additional_fields={
+                "processing_mode": "VISION_ONLY",
+                "code_scan_invoked": False,
+            },
+        )
 
     def _supplier_extraction_profile(self, job: Job) -> dict | None:
         snap = self._identification_execution(job).get("supplier_extraction_profile")

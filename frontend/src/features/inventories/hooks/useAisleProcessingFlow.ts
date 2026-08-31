@@ -4,7 +4,11 @@ import {
   getAisleProcessingState,
   recoverAisleProcessing,
 } from '../../../api/aislesApi';
-import { ApiError, type AisleIdentificationMode } from '../../../api/types';
+import {
+  ApiError,
+  type AisleIdentificationMode,
+  type AisleProcessingMode,
+} from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { useAppSnackbar } from '../../../components/ui';
 import { useProcessingProviderOptions, useStartAisleProcessing } from '../../../hooks';
@@ -13,9 +17,7 @@ import {
   modelKeyForProviderChange,
   type ProcessingProviderOptionsMode,
 } from '../utils/processingProviderSelection';
-
-/** Select value meaning "use inherited config" — maps to omitting identification_mode. */
-export const INHERITED_IDENTIFICATION_MODE = '__INHERITED__';
+import { processingModeUsesVision } from '../../processing/mappers/processingExecutionPresentation';
 
 export interface UseAisleProcessingFlowOptions {
   inventoryId: string;
@@ -55,10 +57,7 @@ export function useAisleProcessingFlow({
   const [dialogTarget, setDialogTarget] = useState<AisleProcessingDialogTarget | null>(null);
   const [providerKey, setProviderKey] = useState('');
   const [modelKey, setModelKey] = useState('');
-  /** null = use inherited hierarchy; non-null = explicit REQUEST override. */
-  const [requestedIdentificationModeOverride, setRequestedIdentificationModeOverride] = useState<
-    AisleIdentificationMode | null
-  >(null);
+  const [processingMode, setProcessingMode] = useState<AisleProcessingMode>('AUTO');
   const [selectionInitialized, setSelectionInitialized] = useState(false);
 
   const optionsMode: ProcessingProviderOptionsMode = isProductionInventory
@@ -120,17 +119,6 @@ export function useAisleProcessingFlow({
     [providerOptsQuery.data?.providers, effectiveProvider]
   );
 
-  const identificationModeSelectValue =
-    requestedIdentificationModeOverride ?? INHERITED_IDENTIFICATION_MODE;
-
-  const setIdentificationMode = useCallback((value: string) => {
-    if (value === INHERITED_IDENTIFICATION_MODE || value === '') {
-      setRequestedIdentificationModeOverride(null);
-      return;
-    }
-    setRequestedIdentificationModeOverride(String(value).trim().toUpperCase() as AisleIdentificationMode);
-  }, []);
-
   const openDialogForAisle = useCallback(
     (
       aisleId: string,
@@ -146,11 +134,11 @@ export function useAisleProcessingFlow({
       setProviderKey('');
       setModelKey('');
       setSelectionInitialized(false);
-      setRequestedIdentificationModeOverride(null);
+      setProcessingMode('AUTO');
       const effective =
         identification?.effectiveMode ||
         identification?.configured ||
-        'LEGACY_LLM';
+        'CODE_SCAN';
       setDialogTarget({
         aisleId,
         aisleCode,
@@ -166,7 +154,7 @@ export function useAisleProcessingFlow({
   const closeDialog = useCallback(() => {
     setDialogTarget(null);
     setSelectionInitialized(false);
-    setRequestedIdentificationModeOverride(null);
+    setProcessingMode('AUTO');
   }, []);
 
   const handleProviderKeyChange = useCallback(
@@ -195,9 +183,16 @@ export function useAisleProcessingFlow({
 
   const confirmDialog = useCallback(async () => {
     if (!dialogTarget) return;
-    if (productionProvidersUnavailable) {
+    if (productionProvidersUnavailable && processingModeUsesVision(processingMode)) {
       setProcessError(t('aisle.process_no_production_providers'));
       return;
+    }
+    if (processingMode === 'VISION_ONLY') {
+      const providers = providerOptsQuery.data?.providers ?? [];
+      if (providerOptsQuery.isError || providers.length === 0) {
+        setProcessError(t('aisle.processing_mode_vision_provider_missing'));
+        return;
+      }
     }
     if (productionOptionsLoading) {
       return;
@@ -228,14 +223,12 @@ export function useAisleProcessingFlow({
         providerName: providerKey.trim() === '' ? null : providerKey.trim().toLowerCase(),
         modelName: modelKey.trim() === '' ? null : modelKey.trim(),
         promptKey: null,
-        ...(requestedIdentificationModeOverride !== null
-          ? { identificationMode: requestedIdentificationModeOverride }
-          : {}),
+        processingMode,
       });
       showSnackbar(t('aisle.processing_started_snackbar'), 'success');
       setDialogTarget(null);
       setSelectionInitialized(false);
-      setRequestedIdentificationModeOverride(null);
+      setProcessingMode('AUTO');
       onAfterSuccess?.();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
@@ -250,10 +243,12 @@ export function useAisleProcessingFlow({
     onAfterSuccess,
     onBeforeProcessMutation,
     processMutation,
+    processingMode,
     productionOptionsLoading,
     productionProvidersUnavailable,
     providerKey,
-    requestedIdentificationModeOverride,
+    providerOptsQuery.data?.providers,
+    providerOptsQuery.isError,
     setProcessError,
     showSnackbar,
     t,
@@ -271,9 +266,8 @@ export function useAisleProcessingFlow({
     setProviderKey: handleProviderKeyChange,
     modelKey,
     setModelKey,
-    identificationMode: identificationModeSelectValue,
-    setIdentificationMode,
-    requestedIdentificationModeOverride,
+    processingMode,
+    setProcessingMode,
     providerOptsQuery,
     providerConfig,
     processMutation,

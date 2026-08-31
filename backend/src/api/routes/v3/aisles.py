@@ -616,6 +616,7 @@ def start_aisle_processing(
             prompt_key=None,
             idempotency_key=None,
             identification_mode=None,
+            processing_mode=None,
         )
         result = use_case.execute(
             StartAisleProcessingCommand(
@@ -626,6 +627,7 @@ def start_aisle_processing(
                 requested_model_name=body.model_name,
                 requested_prompt_key=body.prompt_key,
                 requested_identification_mode=body.identification_mode,
+                requested_processing_mode=body.processing_mode,
                 idempotency_key=body.idempotency_key,
                 principal=principal,
             )
@@ -638,6 +640,7 @@ def start_aisle_processing(
             ),
             execution_strategy=cast(ExecutionStrategyLiteral, result.execution_strategy),
             configuration_snapshot_version=result.configuration_snapshot_version,
+            processing_mode=result.processing_mode,
         )
     except Exception as e:
         reraise_if_mapped(e)

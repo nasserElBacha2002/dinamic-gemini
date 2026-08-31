@@ -90,6 +90,20 @@ _START_BLOCKING_JOB_STATUSES = (
 )
 
 
+def _processing_mode_from_job(job: Job) -> str:
+    from src.domain.aisle_identification.processing_mode import (
+        DEFAULT_AISLE_PROCESSING_MODE,
+        processing_mode_from_identification_execution,
+    )
+
+    params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
+    ident = params.get("identification_execution")
+    mode = processing_mode_from_identification_execution(
+        ident if isinstance(ident, dict) else None
+    )
+    return mode.value if mode else DEFAULT_AISLE_PROCESSING_MODE.value
+
+
 def _require_no_active_process_job_for_aisle(
     *,
     stale_reconciler: JobStaleReconciler,
@@ -115,6 +129,8 @@ class StartAisleProcessingCommand:
     requested_prompt_key: str | None = None
     #: Optional request override for aisle identification mode (job-only; does not mutate aisle).
     requested_identification_mode: str | None = None
+    #: AUTO | CODE_SCAN_ONLY | VISION_ONLY — omit for default AUTO (backward compatible).
+    requested_processing_mode: str | None = None
     #: Used only when ``resolve_execution_keys`` is false (e.g. unit tests with pre-resolved keys).
     pipeline_provider_key: str = "gemini"
     model_name: str | None = None
@@ -134,6 +150,7 @@ class StartAisleProcessingResult:
     identification_mode_source: str
     execution_strategy: str
     configuration_snapshot_version: int
+    processing_mode: str = "AUTO"
 
 
 def _find_job_by_idempotency_key(
@@ -350,6 +367,7 @@ class StartAisleProcessingUseCase:
             identification_mode_source=job.identification_mode_source.value,
             execution_strategy=job.execution_strategy.value,
             configuration_snapshot_version=job.configuration_snapshot_version,
+            processing_mode=_processing_mode_from_job(job),
         )
 
     def execute(self, command: StartAisleProcessingCommand) -> StartAisleProcessingResult:
@@ -553,6 +571,7 @@ class StartAisleProcessingUseCase:
                 identification_mode_source=existing_idempotent.identification_mode_source.value,
                 execution_strategy=existing_idempotent.execution_strategy.value,
                 configuration_snapshot_version=existing_idempotent.configuration_snapshot_version,
+                processing_mode=_processing_mode_from_job(existing_idempotent),
             )
 
         _require_no_active_process_job_for_aisle(
@@ -572,6 +591,12 @@ class StartAisleProcessingUseCase:
                 client_mode = client.default_identification_mode
 
         settings = load_settings()
+        from src.domain.aisle_identification.processing_mode import (
+            AisleProcessingMode,
+            parse_aisle_processing_mode,
+        )
+
+        processing_mode = parse_aisle_processing_mode(command.requested_processing_mode)
         resolution = resolve_aisle_identification_mode(
             request_mode=command.requested_identification_mode,
             aisle_mode=aisle.identification_mode,
@@ -594,6 +619,16 @@ class StartAisleProcessingUseCase:
             ),
         )
         execution_strategy = decision.strategy
+        # VISION_ONLY still runs on the CODE_SCAN worker path with an explicit
+        # skip-scanner branch; identification strategy remains CODE_SCAN.
+        if (
+            processing_mode is AisleProcessingMode.VISION_ONLY
+            and execution_strategy.value != "CODE_SCAN"
+        ):
+            raise ValueError(
+                "VISION_ONLY requires CODE_SCAN execution strategy; "
+                f"got {execution_strategy.value}"
+            )
 
         client_id = inventory.client_id
         client_rules = resolve_ocr_client_field_rules(
@@ -716,24 +751,41 @@ class StartAisleProcessingUseCase:
                     command.aisle_id,
                     PER_ASSET_DEPRECATION_NOTE,
                 )
-            provider_key = str(
+            settings_provider = str(
                 getattr(settings, "external_fallback_provider", "") or ""
             ).strip().lower()
-            fallback_model = (
+            settings_model = (
                 str(getattr(settings, "external_fallback_model", "") or "").strip() or None
             )
-            # Productive CODE_SCAN → Vision when provider+model are configured.
-            # Kill switch: CODE_SCAN_VISION_FALLBACK_ENABLED=false.
-            code_scan_vision = bool(
-                getattr(settings, "code_scan_vision_fallback_enabled", True)
-            )
-            if (
-                execution_strategy.value == "CODE_SCAN"
-                and code_scan_vision
-                and provider_key
-                and fallback_model
-            ):
+            # Prefer process-request provider/model when present (UI Vision selection).
+            req_provider = str(pipeline_key or "").strip().lower()
+            req_model = str(model_name or "").strip() or None
+            provider_key = req_provider or settings_provider
+            fallback_model = req_model or settings_model
+
+            # Explicit processing_mode dispatch (do not infer from flags alone).
+            if processing_mode is AisleProcessingMode.CODE_SCAN_ONLY:
+                fallback_enabled = False
+            elif processing_mode is AisleProcessingMode.VISION_ONLY:
                 fallback_enabled = True
+                if not provider_key or not fallback_model:
+                    raise ValueError(
+                        "VISION_PROVIDER_NOT_CONFIGURED: "
+                        "No hay un proveedor de Vision AI configurado."
+                    )
+            else:
+                # AUTO: productive CODE_SCAN → Vision when provider+model are configured.
+                # Kill switch: CODE_SCAN_VISION_FALLBACK_ENABLED=false.
+                code_scan_vision = bool(
+                    getattr(settings, "code_scan_vision_fallback_enabled", True)
+                )
+                if (
+                    execution_strategy.value == "CODE_SCAN"
+                    and code_scan_vision
+                    and provider_key
+                    and fallback_model
+                ):
+                    fallback_enabled = True
             if fallback_enabled:
                 if not provider_key:
                     raise ValueError(
@@ -904,6 +956,7 @@ class StartAisleProcessingUseCase:
                 reference_template_annotations_enabled=annotations_enabled,
                 profile_snapshotted=bool(supplier_extraction_profile),
                 profile_validation_executed=False,
+                processing_mode=processing_mode.value,
             ),
             "client_id": client_id,
             "supplier_id": str(supplier_id).strip() if supplier_id else None,
@@ -914,7 +967,8 @@ class StartAisleProcessingUseCase:
             "requested_identification_mode=%s configured_aisle=%s configured_inventory=%s "
             "configured_client=%s effective_identification_mode=%s identification_mode_source=%s "
             "configuration_snapshot_version=%s aisle_identification_pipeline_enabled=%s "
-            "actual_execution_strategy=%s execution_reason=%s",
+            "actual_execution_strategy=%s execution_reason=%s processing_mode=%s "
+            "vision_fallback_enabled=%s",
             command.inventory_id,
             command.aisle_id,
             command.requested_identification_mode,
@@ -927,6 +981,11 @@ class StartAisleProcessingUseCase:
             settings.aisle_identification_pipeline_enabled,
             execution_strategy.value,
             decision.reason,
+            processing_mode.value,
+            bool(
+                isinstance(external_fallback, dict)
+                and external_fallback.get("fallback_enabled")
+            ),
         )
 
         payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
@@ -994,6 +1053,7 @@ class StartAisleProcessingUseCase:
                 identification_mode_source=job.identification_mode_source.value,
                 execution_strategy=job.execution_strategy.value,
                 configuration_snapshot_version=job.configuration_snapshot_version,
+                processing_mode=processing_mode.value,
             )
 
         # Legacy (non-ordered) path: create and launch unchanged.
@@ -1018,4 +1078,5 @@ class StartAisleProcessingUseCase:
             identification_mode_source=job.identification_mode_source.value,
             execution_strategy=job.execution_strategy.value,
             configuration_snapshot_version=job.configuration_snapshot_version,
+            processing_mode=processing_mode.value,
         )

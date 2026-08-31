@@ -53,7 +53,11 @@ def _processed_from_normalized_item(
     semantic_type: str | None,
 ) -> ProcessedProductLabel:
     semantic = (semantic_type or "").strip().upper() or None
-    is_logistic = semantic in _LOGISTIC_SEMANTIC_TYPES and not (label.sku or "").strip()
+    has_sku = bool((label.sku or "").strip())
+    has_label_id = bool((label.label_id or "").strip())
+    is_logistic = (semantic in _LOGISTIC_SEMANTIC_TYPES and not has_sku) or (
+        has_label_id and not has_sku
+    )
     logistic_id = (label.label_id or "").strip() or None if is_logistic else None
     return ProcessedProductLabel(
         label_id=label.label_id,
@@ -250,10 +254,18 @@ def normalize_vision_via_label_validation(
             else ImageResultStatus.UNRECOGNIZED,
             processing_mode=EXTERNAL_PROVIDER_STRATEGY,
             resolved_by=EXTERNAL_PROVIDER_STRATEGY,
-            additional_fields={**base_fields, "vision_unified_validation": True},
+            additional_fields={
+                **base_fields,
+                "vision_unified_validation": True,
+                "identity_diagnostics": result.diagnostics,
+            },
             normalized_result=analysis.normalized_result,
             validation_errors=[c for c in (result.error_code,) if c],
-            evidence=evidence_out,
+            evidence={
+                **evidence_out,
+                "identity_diagnostics": result.diagnostics,
+                "rejection_reason": result.error_code,
+            },
             provider_name=analysis.provider_name,
             model_name=analysis.model_name,
             processing_duration_ms=analysis.duration_ms,
@@ -278,7 +290,13 @@ def normalize_vision_via_label_validation(
             label, detection_index=0, semantic_type=semantic
         )
         product_results.append(processed)
-        primary_code = processed.internal_code
+        # Identity-only MINIMAL: persist/display via label_id without inventing sku.
+        primary_code = (
+            (processed.internal_code or "").strip()
+            or (processed.label_id or "").strip()
+            or (processed.logistic_unit_id or "").strip()
+            or None
+        )
         primary_qty = float(processed.quantity) if processed.quantity is not None else None
         evidence_out["profile_source"] = label.profile_source.value
     elif isinstance(label, NormalizedPositionLabel):
@@ -297,7 +315,9 @@ def normalize_vision_via_label_validation(
     logistic_only = bool(product_results) and all(
         getattr(p, "format_version", None) == "SUPPLIER_LOGISTIC_UNIT" for p in product_results
     )
-    if logistic_only:
+    cfg = validation_context.item_extraction_configuration
+    minimal = bool(cfg is not None and getattr(cfg, "is_minimal", lambda: False)())
+    if logistic_only and not minimal:
         status = ImageResultStatus.PENDING_MANUAL_REVIEW
         evidence_out["logistic_unit_review"] = True
         evidence_out["limitation"] = (
@@ -306,8 +326,15 @@ def normalize_vision_via_label_validation(
         )
     elif product_results or position_meta:
         status = ImageResultStatus.RESOLVED_EXTERNAL
+        if logistic_only and minimal:
+            evidence_out["identity_valid"] = True
+            evidence_out["enrichment_complete"] = False
+            evidence_out["logistic_unit_identity_only"] = True
     else:
         status = ImageResultStatus.UNRECOGNIZED
+
+    if result.diagnostics:
+        evidence_out["identity_diagnostics"] = result.diagnostics
 
     _metrics_increment(
         _VISION_RESOLVED_TOTAL,

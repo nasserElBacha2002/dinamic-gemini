@@ -685,9 +685,15 @@ class CodeScanProcessingStrategy:
                     (position_meta or {}).get("position_candidate_count"),
                     duration_ms,
                 )
+                first = product_results[0] if product_results else None
                 primary_code = (
-                    product_results[0].internal_code
-                    if product_results
+                    (
+                        (getattr(first, "internal_code", None) or "").strip()
+                        or (getattr(first, "label_id", None) or "").strip()
+                        or (getattr(first, "logistic_unit_id", None) or "").strip()
+                        or None
+                    )
+                    if first is not None
                     else consolidated.internal_code
                 )
                 primary_qty = (
@@ -697,16 +703,25 @@ class CodeScanProcessingStrategy:
                 )
                 # Logistic units (SSCC/LPN) are recognized without inventing SKU/qty —
                 # inventory ProductRecord auto-resolve still requires trade-item fields.
+                # MINIMAL identity mode resolves without inventing enrichment.
                 logistic_only = bool(product_results) and all(
                     getattr(p, "format_version", None) == "SUPPLIER_LOGISTIC_UNIT"
                     for p in product_results
                 )
+                item_cfg = (
+                    validation_ctx.item_extraction_configuration
+                    if validation_ctx is not None
+                    else None
+                )
+                minimal = bool(
+                    item_cfg is not None and getattr(item_cfg, "is_minimal", lambda: False)()
+                )
                 status = (
                     ImageResultStatus.PENDING_MANUAL_REVIEW
-                    if logistic_only
+                    if logistic_only and not minimal
                     else ImageResultStatus.RESOLVED_INTERNAL
                 )
-                if logistic_only:
+                if logistic_only and not minimal:
                     evidence = {
                         **(evidence or {}),
                         "logistic_unit_review": True,
@@ -714,6 +729,13 @@ class CodeScanProcessingStrategy:
                             "LOGISTIC_UNIT_NO_PRODUCT_RECORD: "
                             "SSCC/LPN recognized; inventory SKU rows not auto-created"
                         ),
+                    }
+                elif logistic_only and minimal:
+                    evidence = {
+                        **(evidence or {}),
+                        "identity_valid": True,
+                        "enrichment_complete": False,
+                        "logistic_unit_identity_only": True,
                     }
                 result = ImageProcessingResult(
                     job_id=context.job_id,

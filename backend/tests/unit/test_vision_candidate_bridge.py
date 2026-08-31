@@ -21,6 +21,7 @@ from src.domain.client_supplier.extraction_profile import (
     FieldMappingSource,
     ItemLabelSemanticType,
     PayloadStructure,
+    PositionLabelSemanticType,
     QuantityExtractionRules,
 )
 from src.domain.image_processing.contracts import ImageProcessingResult, ImageResultStatus
@@ -89,7 +90,7 @@ def test_vision_segmented_via_label_validation() -> None:
         status=ExternalAnalysisStatus.VALID,
         provider_name="gemini",
         model_name="x",
-        normalized_result={"raw_payload": "L1|SKU99|3"},
+        normalized_result={"raw_payload": "LPNA000184|SKU773421|24"},
         duration_ms=12,
     )
     out = normalize_vision_via_label_validation(
@@ -102,9 +103,77 @@ def test_vision_segmented_via_label_validation() -> None:
     )
     assert out.status is ImageResultStatus.RESOLVED_EXTERNAL
     assert out.product_results
-    assert out.product_results[0].internal_code == "SKU99"
-    assert out.product_results[0].quantity == 3
+    assert out.product_results[0].label_id == "LPNA000184"
+    assert out.product_results[0].internal_code == "SKU773421"
+    assert out.product_results[0].quantity == 24
+    assert out.resolved_by == "EXTERNAL_PROVIDER"
     assert out.evidence.get("vision_unified_validation") is True
+
+
+def test_vision_position_segmented_via_label_validation() -> None:
+    cfg = ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        semantic_type=PositionLabelSemanticType.AISLE_POSITION.value,
+        required_fields=("position_id", "pallet", "side", "level"),
+        accepted_barcode_formats=("CODE128",),
+        quantity_rules=QuantityExtractionRules(required=False),
+        deterministic=DeterministicBarcodeRules(
+            payload_structure=PayloadStructure.SEGMENTED,
+            delimiter="|",
+            expected_segment_count=4,
+            field_mappings=(
+                FieldMappingRule("position_id", FieldMappingSource.SEGMENT, segment_index=0),
+                FieldMappingRule("pallet", FieldMappingSource.SEGMENT, segment_index=1),
+                FieldMappingRule("side", FieldMappingSource.SEGMENT, segment_index=2),
+                FieldMappingRule("level", FieldMappingSource.SEGMENT, segment_index=3),
+            ),
+        ),
+    )
+    profiles = ResolvedLabelProfiles(
+        item=ResolvedLabelProfile(
+            label_kind=LabelKind.ITEM,
+            source=LabelProfileSource.DINAMIC,
+            client_supplier_id=None,
+            resolution_source="DINAMIC",
+        ),
+        position=ResolvedLabelProfile(
+            label_kind=LabelKind.POSITION,
+            source=LabelProfileSource.SUPPLIER,
+            client_supplier_id="sup-1",
+            resolution_source="CLIENT_SUPPLIER",
+        ),
+    )
+    ctx = LabelValidationContext(
+        resolved_profiles=profiles,
+        position_extraction_configuration=cfg,
+        job_id="job-1",
+    )
+    analysis = ExternalAnalysisResult(
+        status=ExternalAnalysisStatus.VALID,
+        provider_name="gemini",
+        model_name="x",
+        # Hint POSITION so bridge does not default to ITEM; fields still come from raw.
+        normalized_result={
+            "raw_payload": "A04-R-02|04|RIGHT|02",
+            "position_id": "A04-R-02",
+        },
+        duration_ms=8,
+    )
+    out = normalize_vision_via_label_validation(
+        job_id="job-1",
+        asset_id="a1",
+        analysis=analysis,
+        validation_context=ctx,
+        base_fields={},
+        evidence={},
+    )
+    assert out.status is ImageResultStatus.RESOLVED_EXTERNAL
+    assert out.resolved_by == "EXTERNAL_PROVIDER"
+    pos = (out.evidence or {}).get("position_label_detection") or {}
+    assert pos.get("position_id") == "A04-R-02"
+    assert str(pos.get("pallet")) in ("04", "4")
+    assert str(pos.get("side")).upper() == "RIGHT"
+    assert str(pos.get("level")) in ("02", "2")
 
 
 def test_d1_invalid_not_eligible_for_vision() -> None:

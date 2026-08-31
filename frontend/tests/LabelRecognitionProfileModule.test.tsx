@@ -101,21 +101,35 @@ describe('LabelRecognitionProfileModule', () => {
     expect(screen.getByRole('button', { name: 'PROVEEDOR' })).toBeInTheDocument();
   });
 
-  it('offers SIMPLE/SEGMENTED/GS1, validations, visual hints, examples and tester', () => {
+  it('shows basic identity form and collapses advanced options', () => {
     renderModule();
+    expect(screen.getByText('Configuración básica')).toBeInTheDocument();
+    expect(screen.getByLabelText('Campo principal')).toBeInTheDocument();
+    expect(screen.getByLabelText('Prefijo esperado')).toBeInTheDocument();
+    expect(screen.getByLabelText('Longitud exacta')).toBeInTheDocument();
+    expect(screen.getByLabelText('Caracteres permitidos')).toBeInTheDocument();
+    expect(screen.getByText('Opciones avanzadas')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Código simple' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Opciones avanzadas'));
     expect(screen.getByRole('button', { name: 'Código simple' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Código segmentado' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'GS1' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Prefijo esperado')).toBeInTheDocument();
     expect(screen.getByLabelText('Sufijo esperado')).toBeInTheDocument();
-    expect(screen.getByLabelText('Longitud exacta')).toBeInTheDocument();
-    expect(screen.getByLabelText('Caracteres permitidos')).toBeInTheDocument();
-    expect(screen.getByText('Quitar espacios exteriores')).toBeInTheDocument();
-    expect(screen.getByText('Estas características ayudan a localizar e interpretar la etiqueta en imágenes. Las validaciones del código se configuran arriba.')).toBeInTheDocument();
     expect(screen.getByText('Ejemplos válidos')).toBeInTheDocument();
-    expect(screen.getByText('Ejemplos inválidos')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Estas opciones ayudan a Vision a encontrar la etiqueta, pero no forman parte de la validación estricta del identificador.'
+      )
+    ).toBeInTheDocument();
     expect(screen.getByText('Esta prueba no modifica inventarios.')).toBeInTheDocument();
     expect(screen.getByText(/Imágenes de referencia — ITEM/)).toBeInTheDocument();
+  });
+
+  it('defaults ITEM to Label ID and POSITION to Position ID', () => {
+    renderModule();
+    expect(screen.getByLabelText('Campo principal')).toHaveTextContent(/Label ID/);
+    fireEvent.click(screen.getByRole('tab', { name: 'Etiquetas de posición' }));
+    expect(screen.getByLabelText('Campo principal')).toHaveTextContent(/Position ID/);
   });
 
   it('keeps dirty drafts when switching kind after confirm', () => {

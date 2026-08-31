@@ -10,8 +10,11 @@ export type CharacterSetPolicy =
   | 'NUMERIC'
   | 'ALPHANUMERIC'
   | 'UPPERCASE_ALPHANUMERIC'
+  | 'ALPHANUMERIC_WITH_HYPHEN'
   | 'HEX'
   | 'ANY';
+
+export type RecognitionMode = 'MINIMAL' | 'FULL';
 export type ChecksumPolicy = 'NONE' | 'EAN_GTIN';
 
 export interface PayloadNormalizationRules {
@@ -119,6 +122,10 @@ export interface LabelDetectionRules {
   allow_perspective_correction?: boolean;
   allow_full_image_fallback?: boolean;
   maximum_candidate_regions?: number;
+  /** Vision localization hints only — never hard validation. */
+  approx_width_mm?: number | null;
+  approx_height_mm?: number | null;
+  size_tolerance_percent?: number | null;
 }
 
 export interface AdditionalFieldRule {
@@ -167,6 +174,8 @@ export interface ExtractionValidationRules {
 
 export interface ExtractionProfileConfiguration {
   configuration_schema_version?: number;
+  /** MINIMAL = identity (prefix/length/charset + target); FULL = advanced enrichment rules. */
+  recognition_mode?: RecognitionMode | string | null;
   semantic_type?: string | null;
   deterministic?: DeterministicBarcodeRules | null;
   valid_examples?: PayloadExample[];

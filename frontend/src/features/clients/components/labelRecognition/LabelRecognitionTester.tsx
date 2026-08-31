@@ -12,6 +12,32 @@ interface Props {
   configuration: ExtractionProfileConfiguration;
 }
 
+function formatIdentityDiagnostics(diagnostics: Record<string, unknown> | null | undefined): string | null {
+  if (!diagnostics || typeof diagnostics !== 'object') return null;
+  const found = diagnostics.found;
+  const prefix = diagnostics.prefix as Record<string, unknown> | undefined;
+  const length = diagnostics.length as Record<string, unknown> | undefined;
+  const charset = diagnostics.charset as Record<string, unknown> | undefined;
+  if (!prefix && !length && !charset) {
+    return JSON.stringify(diagnostics, null, 2);
+  }
+  const lines = [
+    found != null ? `Found: ${String(found)}` : null,
+    prefix
+      ? `Prefix: ${prefix.pass ? 'PASS' : 'FAIL'}${prefix.expected != null ? ` (expected ${String(prefix.expected)})` : ''}`
+      : null,
+    length
+      ? `Length: ${length.pass ? 'PASS' : 'FAIL'} (found ${String(length.found)}${
+          length.exact_expected != null ? `, expected ${String(length.exact_expected)}` : ''
+        })`
+      : null,
+    charset
+      ? `Charset: ${charset.pass ? 'PASS' : 'FAIL'}${charset.expected != null ? ` (${String(charset.expected)})` : ''}`
+      : null,
+  ].filter(Boolean);
+  return lines.join('\n');
+}
+
 export default function LabelRecognitionTester({ clientId, supplierId, labelKind, configuration }: Props) {
   const { t } = useTranslation();
   const [payload, setPayload] = useState('');
@@ -38,6 +64,8 @@ export default function LabelRecognitionTester({ clientId, supplierId, labelKind
     }
   };
 
+  const identityText = result ? formatIdentityDiagnostics(result.diagnostics) : null;
+
   return (
     <SectionCard title={t('clients.extraction_profile.section_tester')} variant="outlined">
       <Stack spacing={1.5}>
@@ -52,6 +80,16 @@ export default function LabelRecognitionTester({ clientId, supplierId, labelKind
         {result ? (
           <Alert severity={result.validation_status === 'VALID' ? 'success' : 'warning'}>
             <Typography variant="body2">{t('clients.extraction_profile.test_status', { status: result.validation_status })}</Typography>
+            {result.error_code ? (
+              <Typography variant="body2" data-testid="tester-error-code">
+                {t('clients.extraction_profile.test_error_code', { code: result.error_code })}
+              </Typography>
+            ) : null}
+            {identityText ? (
+              <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap' }} data-testid="tester-identity-diagnostics">
+                {identityText}
+              </Typography>
+            ) : null}
             <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(result.extracted_fields, null, 2)}</Typography>
           </Alert>
         ) : null}

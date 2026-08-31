@@ -22,6 +22,7 @@ import {
   processingStatusToSemantic,
   shortAssetId,
 } from './utils/processingStatus';
+import { formatResolvedByLabel } from './mappers/processingExecutionPresentation';
 
 export interface ProcessingAssetDrawerProps {
   open: boolean;
@@ -135,7 +136,7 @@ export default function ProcessingAssetDrawer({
               <Stack spacing={0.75}>
                 <MetadataRow
                   label={t('processing.drawer.resolvedBy')}
-                  value={asset.resolved_by || t('common.em_dash')}
+                  value={formatResolvedByLabel(asset.resolved_by, t)}
                 />
                 <MetadataRow
                   label={t('processing.drawer.strategy')}
