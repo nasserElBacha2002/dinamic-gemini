@@ -48,6 +48,7 @@ export interface UploadSupplierReferenceImagesRequest {
   files: File[];
   label?: string;
   description?: string;
+  label_kind?: 'ITEM' | 'POSITION';
 }
 
 export interface CreateSupplierPromptConfigRequest {
@@ -62,6 +63,7 @@ export interface CreateSupplierExtractionProfileRequest {
   visual_notes?: string | null;
   profile_key?: string | null;
   activate?: boolean;
+  label_kind?: 'ITEM' | 'POSITION';
 }
 
 export interface CloneSupplierExtractionProfileRequest {

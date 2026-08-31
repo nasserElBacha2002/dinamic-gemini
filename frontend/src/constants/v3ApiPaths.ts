@@ -91,6 +91,11 @@ export function supplierExtractionProfilesClonePath(clientId: string, supplierId
   return `${supplierExtractionProfilesPath(clientId, supplierId)}/clone`;
 }
 
+/** POST .../extraction-profiles/test-code */
+export function supplierLabelRecognitionTestCodePath(clientId: string, supplierId: string): string {
+  return `${supplierExtractionProfilesPath(clientId, supplierId)}/test-code`;
+}
+
 /** POST .../extraction-profiles/{profileId}/activate */
 export function supplierExtractionProfileActivatePath(
   clientId: string,

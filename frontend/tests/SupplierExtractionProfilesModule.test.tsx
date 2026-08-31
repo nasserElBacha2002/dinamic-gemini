@@ -178,7 +178,7 @@ describe('SupplierExtractionProfilesModule feature flags', () => {
       isLoading: false,
     });
     renderModule();
-    expect(screen.getByText(/aplicado en procesamiento/i)).toBeInTheDocument();
+    expect(screen.getByText(/validación con perfil habilitada/i)).toBeInTheDocument();
     expect(
       screen.queryByText(/validación con perfil está deshabilitada/i)
     ).not.toBeInTheDocument();

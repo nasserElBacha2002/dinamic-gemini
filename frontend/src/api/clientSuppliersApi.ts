@@ -5,6 +5,7 @@ import {
   supplierExtractionProfilesActivePath,
   supplierExtractionProfilesClonePath,
   supplierExtractionProfilesPath,
+  supplierLabelRecognitionTestCodePath,
   supplierPromptConfigActivatePath,
   supplierPromptConfigByIdPath,
   supplierPromptConfigsActivePath,
@@ -31,6 +32,8 @@ import type {
   SupplierExtractionProfilesListResponse,
   SupplierReferenceAnnotationsListResponse,
   SupplierReferenceImagesListResponse,
+  TestLabelRecognitionCodeRequest,
+  TestLabelRecognitionCodeResponse,
   UploadSupplierReferenceImagesRequest,
   UploadSupplierReferenceImagesResponse,
 } from './types';
@@ -107,6 +110,7 @@ export async function uploadSupplierReferenceImages(
   const description = (payload.description ?? '').trim();
   if (label) form.append('label', label);
   if (description) form.append('description', description);
+  if (payload.label_kind) form.append('label_kind', payload.label_kind);
   return apiRequestJson<UploadSupplierReferenceImagesResponse>(
     `${API_BASE}${supplierReferenceImagesPath(clientId, supplierId)}`,
     { method: 'POST', body: form }
@@ -282,6 +286,17 @@ export async function createSupplierExtractionProfileVersion(
 ): Promise<SupplierExtractionProfile> {
   return apiRequestJson<SupplierExtractionProfile>(
     `${API_BASE}${supplierExtractionProfilesPath(clientId, supplierId)}`,
+    { method: 'POST', body }
+  );
+}
+
+export async function testSupplierLabelRecognitionCode(
+  clientId: string,
+  supplierId: string,
+  body: TestLabelRecognitionCodeRequest
+): Promise<TestLabelRecognitionCodeResponse> {
+  return apiRequestJson<TestLabelRecognitionCodeResponse>(
+    `${API_BASE}${supplierLabelRecognitionTestCodePath(clientId, supplierId)}`,
     { method: 'POST', body }
   );
 }

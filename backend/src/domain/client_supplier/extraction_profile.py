@@ -421,6 +421,12 @@ class ExtractionProfileConfiguration:
         """Return explicit v2 rules or a legacy-compatible derived representation."""
         if self.deterministic is not None:
             return self.deterministic
+        if int(self.configuration_schema_version) >= CONFIGURATION_SCHEMA_VERSION_V2:
+            # v2 without an explicit deterministic block must not invent WHOLE→sku+label_id.
+            return DeterministicBarcodeRules(
+                payload_structure=PayloadStructure.SIMPLE,
+                field_mappings=(),
+            )
         return derive_legacy_deterministic_rules(self)
 
     def to_public_dict(self) -> dict[str, Any]:

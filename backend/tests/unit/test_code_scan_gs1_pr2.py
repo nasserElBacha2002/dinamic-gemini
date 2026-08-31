@@ -36,7 +36,7 @@ from src.domain.client_supplier.extraction_profile import (
     QuantityExtractionRules,
 )
 from src.domain.code_scans.entities import CodeType
-from src.domain.image_processing.contracts import ImageProcessingContext
+from src.domain.image_processing.contracts import ImageProcessingContext, ImageResultStatus
 from src.domain.label_profiles.entities import ResolvedLabelProfile, ResolvedLabelProfiles
 from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
 
@@ -176,6 +176,93 @@ def test_code_scan_gs1_sscc_label_id_no_sku_no_quantity() -> None:
     assert product.label_id == _VALID_SSCC
     assert product.internal_code is None
     assert product.quantity is None
+    assert product.logistic_unit_id == _VALID_SSCC
+    assert product.format_version == "SUPPLIER_LOGISTIC_UNIT"
+    assert product.semantic_type == "SSCC"
+    # Inventory still requires SKU+qty for RESOLVED_INTERNAL — logistic units stay reviewable.
+    assert result.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+
+
+def test_code_scan_lpn_simple_label_id_no_sku() -> None:
+    item_cfg = ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        semantic_type=ItemLabelSemanticType.LPN.value,
+        required_fields=("label_id",),
+        accepted_barcode_formats=("CODE128",),
+        quantity_rules=QuantityExtractionRules(required=False, minimum=1),
+        deterministic=DeterministicBarcodeRules(
+            payload_structure=PayloadStructure.SIMPLE,
+            field_mappings=(FieldMappingRule("label_id", FieldMappingSource.WHOLE),),
+        ),
+    )
+    pos_cfg = ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        required_fields=("position_id",),
+        accepted_barcode_formats=("CODE128",),
+        deterministic=DeterministicBarcodeRules(
+            expected_prefix="NEVER",
+            field_mappings=(FieldMappingRule("position_id", FieldMappingSource.WHOLE),),
+        ),
+    )
+    ctx = LabelValidationContext(
+        resolved_profiles=_profiles(),
+        item_extraction_configuration=item_cfg,
+        position_extraction_configuration=pos_cfg,
+        job_id="job-1",
+    )
+    result = _strategy("LPN-42-ALPHA").process(_ctx(ctx), _asset())
+    assert result.product_results
+    product = result.product_results[0]
+    assert product.label_id == "LPN-42-ALPHA"
+    assert product.internal_code is None
+    assert product.quantity is None
+    assert product.logistic_unit_id == "LPN-42-ALPHA"
+    assert product.semantic_type == "LPN"
+    assert result.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+
+
+def test_sscc_e2e_materialization_limitation_documented() -> None:
+    """
+    ClientSupplier SSCC profile → CODE_SCAN → GS1 → extractor → validation →
+    ProcessedProductLabel(logistic_unit). ProductRecord/SKU inventory rows are NOT
+    auto-created until a logistic-unit persistence model exists.
+    """
+    item_cfg = ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        semantic_type=ItemLabelSemanticType.SSCC.value,
+        required_fields=("label_id",),
+        accepted_barcode_formats=("CODE128",),
+        quantity_rules=QuantityExtractionRules(required=False, minimum=1),
+        deterministic=DeterministicBarcodeRules(
+            payload_structure=PayloadStructure.GS1,
+            required_application_identifiers=("00",),
+            field_mappings=(
+                FieldMappingRule(
+                    "label_id",
+                    FieldMappingSource.APPLICATION_IDENTIFIER,
+                    application_identifier="00",
+                ),
+            ),
+        ),
+    )
+    ctx = LabelValidationContext(
+        resolved_profiles=_profiles(),
+        item_extraction_configuration=item_cfg,
+        position_extraction_configuration=None,
+        job_id="job-sscc-e2e",
+    )
+    result = _strategy(f"(00){_VALID_SSCC}").process(_ctx(ctx), _asset())
+    assert result.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert result.product_results
+    product = result.product_results[0]
+    assert product.label_id == _VALID_SSCC
+    assert product.internal_code is None
+    assert product.quantity is None
+    assert (result.evidence or {}).get("logistic_unit_review") is True
+    assert "LOGISTIC_UNIT_NO_PRODUCT_RECORD" in str(
+        (result.evidence or {}).get("limitation", "")
+    )
+    # Explicit product limitation: no invent of SKU for SSCC; SQL ProductRecord path not used.
 
 
 def test_code_scan_gs1_gtin_with_lot_maps_sku() -> None:

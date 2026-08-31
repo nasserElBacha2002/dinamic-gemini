@@ -3,6 +3,54 @@
  */
 
 export type ExtractionProfileStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'SUPERSEDED';
+export type LabelKind = 'ITEM' | 'POSITION';
+export type PayloadStructure = 'SIMPLE' | 'SEGMENTED' | 'GS1';
+export type FieldMappingSource = 'WHOLE' | 'SEGMENT' | 'APPLICATION_IDENTIFIER';
+export type CharacterSetPolicy =
+  | 'NUMERIC'
+  | 'ALPHANUMERIC'
+  | 'UPPERCASE_ALPHANUMERIC'
+  | 'HEX'
+  | 'ANY';
+export type ChecksumPolicy = 'NONE' | 'EAN_GTIN';
+
+export interface PayloadNormalizationRules {
+  trim_outer_whitespace: boolean;
+  case_normalization: 'NONE' | 'UPPER' | 'LOWER';
+  remove_internal_spaces: boolean;
+  remove_hyphens: boolean;
+}
+
+export interface DeterministicFieldMapping {
+  target: string;
+  source: FieldMappingSource;
+  segment_index?: number | null;
+  application_identifier?: string | null;
+}
+
+export interface DeterministicBarcodeRules {
+  expected_prefix?: string | null;
+  expected_suffix?: string | null;
+  exact_length?: number | null;
+  min_length?: number | null;
+  max_length?: number | null;
+  character_set: CharacterSetPolicy;
+  normalization: PayloadNormalizationRules;
+  payload_structure: PayloadStructure;
+  delimiter?: string | null;
+  expected_segment_count?: number | null;
+  field_mappings: DeterministicFieldMapping[];
+  checksum_policy: ChecksumPolicy;
+  required_application_identifiers: string[];
+  optional_application_identifiers: string[];
+  use_advanced_pattern: boolean;
+}
+
+export interface PayloadExample {
+  raw_payload: string;
+  symbology?: string | null;
+  description?: string | null;
+}
 
 export type FieldDataType = 'TEXT' | 'INTEGER' | 'DECIMAL' | 'DATE' | 'CODE' | 'BOOLEAN';
 
@@ -118,6 +166,11 @@ export interface ExtractionValidationRules {
 }
 
 export interface ExtractionProfileConfiguration {
+  configuration_schema_version?: number;
+  semantic_type?: string | null;
+  deterministic?: DeterministicBarcodeRules | null;
+  valid_examples?: PayloadExample[];
+  invalid_examples?: PayloadExample[];
   internal_code_sources: InternalCodeSourceRule[];
   forbidden_internal_code_sources?: string[];
   quantity_rules: QuantityExtractionRules;
@@ -148,6 +201,29 @@ export interface SupplierExtractionProfile {
   superseded_at: string | null;
   updated_at: string | null;
   row_version: number;
+  label_kind?: LabelKind | null;
+}
+
+export interface TestLabelRecognitionCodeRequest {
+  label_kind: LabelKind;
+  raw_payload: string;
+  symbology?: string | null;
+  profile_id?: string | null;
+  configuration?: ExtractionProfileConfiguration | null;
+}
+
+export interface TestLabelRecognitionCodeResponse {
+  label_kind: LabelKind | string;
+  profile_source: string;
+  structure: PayloadStructure | string;
+  raw_payload: string;
+  normalized_payload: string;
+  extracted_fields: Record<string, unknown>;
+  validation_status: string;
+  error_code?: string | null;
+  diagnostics: Record<string, unknown>;
+  application_identifiers?: string[] | null;
+  persists_inventory: boolean;
 }
 
 export interface SupplierExtractionProfilesListResponse {

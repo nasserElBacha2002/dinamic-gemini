@@ -24,6 +24,7 @@ class SupplierReferenceImageResponse(BaseModel):
     description: str | None = None
     created_at: datetime
     updated_at: datetime
+    label_kind: str | None = None
 
 
 class SupplierReferenceImagesListResponse(BaseModel):
@@ -35,6 +36,7 @@ class UploadSupplierReferenceImagesResponse(BaseModel):
 
     Upload semantics: each multipart request may include several ``files`` parts; optional ``label``
     and ``description`` form fields are copied onto **every** created row in ``items`` for that batch.
+    Optional ``label_kind`` (ITEM|POSITION) scopes reference images when provided.
     """
 
     items: list[SupplierReferenceImageResponse]

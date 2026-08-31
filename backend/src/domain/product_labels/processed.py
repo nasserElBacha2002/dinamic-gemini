@@ -25,7 +25,14 @@ class ProductLabelOutcomeStatus(str, Enum):
 
 @dataclass(frozen=True)
 class ProcessedProductLabel:
-    """One physical product label candidate or counted result (0..N per image)."""
+    """One physical product / logistic-unit label candidate (0..N per image).
+
+    For trade items, ``internal_code`` carries the SKU/GTIN.
+    For logistic units (SSCC/LPN), set ``logistic_unit_id`` (and usually ``label_id``)
+    without inventing an ``internal_code``. Inventory ProductRecord materialization of
+    logistic units without SKU+quantity remains review-oriented until a dedicated
+    logistic-unit persistence path exists.
+    """
 
     label_id: str | None
     internal_code: str | None
@@ -39,6 +46,8 @@ class ProcessedProductLabel:
     raw_payload: str | None = None
     normalized_payload: str | None = None
     detail: str | None = None
+    semantic_type: str | None = None
+    logistic_unit_id: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -54,6 +63,8 @@ class ProcessedProductLabel:
             "raw_payload": self.raw_payload,
             "normalized_payload": self.normalized_payload,
             "detail": self.detail,
+            "semantic_type": self.semantic_type,
+            "logistic_unit_id": self.logistic_unit_id,
         }
 
     @classmethod
@@ -83,6 +94,10 @@ class ProcessedProductLabel:
                 str(data["normalized_payload"]) if data.get("normalized_payload") else None
             ),
             detail=(str(data["detail"]) if data.get("detail") else None),
+            semantic_type=(str(data["semantic_type"]) if data.get("semantic_type") else None),
+            logistic_unit_id=(
+                str(data["logistic_unit_id"]).strip() if data.get("logistic_unit_id") else None
+            ),
         )
 
 

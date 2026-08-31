@@ -97,6 +97,57 @@ def _v2_item(
     )
 
 
+def test_v2_simple_without_mappings_rejected() -> None:
+    cfg = ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        required_fields=("sku",),
+        accepted_barcode_formats=("CODE128",),
+        deterministic=DeterministicBarcodeRules(
+            payload_structure=PayloadStructure.SIMPLE,
+            field_mappings=(),
+        ),
+    )
+    with pytest.raises(ExtractionProfileConfigurationError):
+        validate_deterministic_barcode_rules(cfg)
+    out = StructuredPayloadExtractor().extract(
+        raw_payload="ABC001",
+        configuration=cfg,
+        label_kind=LabelKind.ITEM,
+    )
+    assert not out.ok
+    assert out.error_code == LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value
+
+
+def test_v2_whole_to_label_id_leaves_sku_none() -> None:
+    cfg = _v2_item(
+        mappings=(FieldMappingRule("label_id", FieldMappingSource.WHOLE),),
+        required=("label_id",),
+    )
+    out = StructuredPayloadExtractor().extract(
+        raw_payload="LPN999",
+        configuration=cfg,
+        label_kind=LabelKind.ITEM,
+    )
+    assert out.ok and out.candidate is not None
+    assert out.candidate.label_id == "LPN999"
+    assert out.candidate.sku is None
+
+
+def test_v2_whole_to_sku_leaves_label_id_none() -> None:
+    cfg = _v2_item(
+        mappings=(FieldMappingRule("sku", FieldMappingSource.WHOLE),),
+        required=("sku",),
+    )
+    out = StructuredPayloadExtractor().extract(
+        raw_payload="SKU-ONLY",
+        configuration=cfg,
+        label_kind=LabelKind.ITEM,
+    )
+    assert out.ok and out.candidate is not None
+    assert out.candidate.sku == "SKU-ONLY"
+    assert out.candidate.label_id is None
+
+
 def test_simple_whole_to_label_id_and_sku() -> None:
     cfg = _v2_item(
         mappings=(

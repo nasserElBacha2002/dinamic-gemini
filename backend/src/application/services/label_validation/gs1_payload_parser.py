@@ -166,12 +166,28 @@ class Gs1PayloadParser:
                 error_code=LabelValidationErrorCode.LABEL_GS1_INVALID.value,
                 detail="parenthesized GS1 payload has no Application Identifiers",
             )
+        leading = text[: matches[0].start()]
+        if leading and not leading.isspace():
+            return Gs1ParseResult(
+                raw_payload=raw,
+                encoded_payload=text,
+                error_code=LabelValidationErrorCode.LABEL_GS1_INVALID.value,
+                detail="parenthesized GS1 payload has non-whitespace content before first AI",
+            )
         fields: list[Gs1ParsedField] = []
         for idx, match in enumerate(matches):
             ai = match.group(1)
             start = match.end()
             end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
             value = text[start:end]
+            # Values must not contain an unparsed '(' (malformed HRI gap).
+            if "(" in value:
+                return Gs1ParseResult(
+                    raw_payload=raw,
+                    encoded_payload=text,
+                    error_code=LabelValidationErrorCode.LABEL_GS1_INVALID.value,
+                    detail=f"malformed HRI content inside AI {ai} value",
+                )
             parsed = self._validate_ai_value(ai, value, require_separator_consumed=True)
             if isinstance(parsed, Gs1ParseResult):
                 return Gs1ParseResult(

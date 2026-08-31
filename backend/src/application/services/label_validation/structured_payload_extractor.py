@@ -86,6 +86,7 @@ class StructuredPayloadExtractor:
                 normalized=normalized,
                 rules=rules,
                 label_kind=label_kind,
+                schema_version=int(configuration.configuration_schema_version),
             )
         except StructuredExtractionError as exc:
             return StructuredExtractionResult(
@@ -294,6 +295,7 @@ class StructuredPayloadExtractor:
         normalized: str,
         rules: DeterministicBarcodeRules,
         label_kind: LabelKind,
+        schema_version: int,
     ) -> dict[str, str | None]:
         allowed = (
             ITEM_FIELD_TARGETS
@@ -307,7 +309,12 @@ class StructuredPayloadExtractor:
             if m.target.strip().lower() in allowed
         ]
         if not mappings:
-            # Safe default: whole payload is identity for the kind.
+            # Schema v2: never invent label_id=sku=raw. Legacy v1 may adapt.
+            if schema_version >= 2:
+                raise StructuredExtractionError(
+                    LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,
+                    "configuration_schema_version=2 requires explicit field_mappings",
+                )
             if label_kind is LabelKind.ITEM:
                 return {"label_id": normalized, "sku": normalized}
             return {"position_id": normalized}

@@ -33,6 +33,14 @@ def validate_deterministic_barcode_rules(
     """Fail closed on contradictory / unsupported deterministic config."""
     rules = configuration.effective_deterministic()
     _validate_length_invariants(rules)
+    if (
+        int(configuration.configuration_schema_version) >= 2
+        and not rules.field_mappings
+    ):
+        raise ExtractionProfileConfigurationError(
+            LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,
+            "configuration_schema_version=2 requires explicit field_mappings",
+        )
     if rules.payload_structure is PayloadStructure.GS1:
         _validate_gs1_rules(rules)
     if rules.payload_structure is PayloadStructure.SEGMENTED:

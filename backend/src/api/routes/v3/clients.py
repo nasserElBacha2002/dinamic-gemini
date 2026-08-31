@@ -238,6 +238,7 @@ def _supplier_reference_image_to_response(ref: SupplierReferenceImage) -> Suppli
         description=ref.description,
         created_at=ref.created_at,
         updated_at=ref.updated_at,
+        label_kind=ref.label_kind.value if ref.label_kind else None,
     )
 
 
@@ -307,12 +308,19 @@ async def _to_uploaded_supplier_reference_image_files(
     *,
     label: str | None,
     description: str | None,
+    label_kind: str | None = None,
 ) -> list[UploadedSupplierReferenceImageFile]:
     """Convert multipart parts to use-case DTOs (mirrors inventory visual-reference upload rules)."""
     if not files:
         raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
     lbl = (label or "").strip() or None
     desc = (description or "").strip() or None
+    kind = None
+    if (label_kind or "").strip():
+        try:
+            kind = parse_label_kind(label_kind)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     result: list[UploadedSupplierReferenceImageFile] = []
     for i, u in enumerate(files):
         has_name = bool(u.filename and u.filename.strip())
@@ -336,6 +344,7 @@ async def _to_uploaded_supplier_reference_image_files(
                 size=size,
                 label=lbl,
                 description=desc,
+                label_kind=kind,
             )
         )
     if not result:
@@ -526,12 +535,16 @@ async def upload_supplier_reference_images(
             "Optional description applied to every uploaded file in this request (same value for each `files` part)."
         ),
     ),
+    label_kind: str | None = Form(
+        None,
+        description="Optional ITEM|POSITION scope for uploaded reference images.",
+    ),
     use_case: UploadSupplierReferenceImagesUseCase = Depends(
         get_upload_supplier_reference_images_use_case
     ),
 ) -> UploadSupplierReferenceImagesResponse:
     uploaded = await _to_uploaded_supplier_reference_image_files(
-        files, label=label, description=description
+        files, label=label, description=description, label_kind=label_kind
     )
     try:
         created = use_case.execute(client_id, supplier_id, uploaded)

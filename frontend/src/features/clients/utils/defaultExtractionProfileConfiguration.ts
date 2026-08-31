@@ -3,6 +3,32 @@ import type { ExtractionProfileConfiguration } from '../../../api/types/extracti
 /** Conservative default — not specialized for any supplier (mirrors backend). */
 export function defaultExtractionProfileConfiguration(): ExtractionProfileConfiguration {
   return {
+    configuration_schema_version: 2,
+    semantic_type: 'CUSTOM',
+    deterministic: {
+      expected_prefix: null,
+      expected_suffix: null,
+      exact_length: null,
+      min_length: 1,
+      max_length: 128,
+      character_set: 'ANY',
+      normalization: {
+        trim_outer_whitespace: true,
+        case_normalization: 'NONE',
+        remove_internal_spaces: false,
+        remove_hyphens: false,
+      },
+      payload_structure: 'SIMPLE',
+      delimiter: null,
+      expected_segment_count: null,
+      field_mappings: [{ target: 'sku', source: 'WHOLE' }],
+      checksum_policy: 'NONE',
+      required_application_identifiers: [],
+      optional_application_identifiers: [],
+      use_advanced_pattern: false,
+    },
+    valid_examples: [],
+    invalid_examples: [],
     internal_code_sources: [
       { field_key: 'INTERNAL_CODE', priority: 1, enabled: true },
       { field_key: 'EAN', priority: 2, enabled: true },
@@ -75,6 +101,70 @@ export function defaultExtractionProfileConfiguration(): ExtractionProfileConfig
     },
   };
 }
+
+export function gs1SsccTemplate(): ExtractionProfileConfiguration {
+  const base = defaultExtractionProfileConfiguration();
+  return {
+    ...base,
+    semantic_type: 'SSCC',
+    deterministic: {
+      ...base.deterministic!,
+      payload_structure: 'GS1',
+      character_set: 'NUMERIC',
+      exact_length: 20,
+      min_length: 20,
+      max_length: 20,
+      field_mappings: [
+        { target: 'label_id', source: 'APPLICATION_IDENTIFIER', application_identifier: '00' },
+      ],
+      required_application_identifiers: ['00'],
+      checksum_policy: 'EAN_GTIN',
+    },
+  };
+}
+
+export function gs1GtinTemplate(): ExtractionProfileConfiguration {
+  const base = defaultExtractionProfileConfiguration();
+  return {
+    ...base,
+    semantic_type: 'PRODUCT_SKU',
+    deterministic: {
+      ...base.deterministic!,
+      payload_structure: 'GS1',
+      character_set: 'NUMERIC',
+      field_mappings: [
+        { target: 'sku', source: 'APPLICATION_IDENTIFIER', application_identifier: '01' },
+      ],
+      required_application_identifiers: ['01'],
+      optional_application_identifiers: ['10', '17', '21', '37'],
+      checksum_policy: 'EAN_GTIN',
+    },
+  };
+}
+
+export function lpnSimpleTemplate(): ExtractionProfileConfiguration {
+  const base = defaultExtractionProfileConfiguration();
+  return {
+    ...base,
+    semantic_type: 'LPN',
+    deterministic: {
+      ...base.deterministic!,
+      payload_structure: 'SIMPLE',
+      character_set: 'UPPERCASE_ALPHANUMERIC',
+      normalization: {
+        ...base.deterministic!.normalization,
+        case_normalization: 'UPPER',
+      },
+      field_mappings: [{ target: 'label_id', source: 'WHOLE' }],
+    },
+  };
+}
+
+export const LABEL_RECOGNITION_TEMPLATES = [
+  { id: 'gs1_sscc', labelKey: 'clients.extraction_profile.template_gs1_sscc', build: gs1SsccTemplate },
+  { id: 'gs1_gtin', labelKey: 'clients.extraction_profile.template_gs1_gtin', build: gs1GtinTemplate },
+  { id: 'lpn_simple', labelKey: 'clients.extraction_profile.template_lpn_simple', build: lpnSimpleTemplate },
+] as const;
 
 /** Opt-in template — never auto-applied. */
 export function inventorySevenDigitInternalCodeTemplate(): ExtractionProfileConfiguration {

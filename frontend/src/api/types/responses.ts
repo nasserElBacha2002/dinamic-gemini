@@ -70,6 +70,7 @@ export interface SupplierReferenceImage {
   file_size_bytes?: number | null;
   label?: string | null;
   description?: string | null;
+  label_kind?: 'ITEM' | 'POSITION' | null;
   created_at: string;
   updated_at: string;
 }

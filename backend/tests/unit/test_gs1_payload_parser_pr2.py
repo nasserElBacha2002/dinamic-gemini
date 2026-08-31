@@ -150,6 +150,12 @@ def test_malformed_ai() -> None:
     assert result.error_code == LabelValidationErrorCode.LABEL_GS1_INVALID.value
 
 
+def test_hri_leading_garbage_rejected() -> None:
+    result = Gs1PayloadParser().parse(f"ABC(00){_VALID_SSCC}")
+    assert not result.ok
+    assert result.error_code == LabelValidationErrorCode.LABEL_GS1_INVALID.value
+
+
 def test_unknown_predefined_ai_preserved() -> None:
     result = Gs1PayloadParser().parse(f"(01){_VALID_GTIN14}(11)250101")
     assert result.ok

@@ -180,6 +180,45 @@ def _sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()
 
 
+_LOGISTIC_SEMANTIC_TYPES = frozenset(
+    {
+        "SSCC",
+        "LOGISTIC_UNIT",
+        "PALLET",
+        "BOX",
+        "LPN",
+        "CONTAINER",
+    }
+)
+
+
+def _processed_from_normalized_item(
+    label: NormalizedItemLabel,
+    *,
+    detection_index: int,
+    semantic_type: str | None,
+) -> ProcessedProductLabel:
+    """Map validated ITEM → ProcessedProductLabel without inventing SKU for logistic units."""
+    semantic = (semantic_type or "").strip().upper() or None
+    is_logistic = semantic in _LOGISTIC_SEMANTIC_TYPES and not (label.sku or "").strip()
+    logistic_id = (label.label_id or "").strip() or None if is_logistic else None
+    return ProcessedProductLabel(
+        label_id=label.label_id,
+        internal_code=label.sku,
+        quantity=label.quantity,
+        format_version="SUPPLIER_LOGISTIC_UNIT" if is_logistic else "SUPPLIER",
+        checksum=None,
+        validation_status=ProductLabelOutcomeStatus.VALID,
+        selected_detection_index=detection_index,
+        duplicate_detection_count=1,
+        symbology=label.symbology,
+        raw_payload=label.raw_payload,
+        normalized_payload=label.raw_payload,
+        semantic_type=semantic,
+        logistic_unit_id=logistic_id,
+    )
+
+
 def _evidence_list_len(evidence: dict[str, Any] | None, key: str) -> int:
     if not evidence:
         return 0
@@ -656,10 +695,30 @@ class CodeScanProcessingStrategy:
                     if product_results
                     else consolidated.quantity
                 )
+                # Logistic units (SSCC/LPN) are recognized without inventing SKU/qty —
+                # inventory ProductRecord auto-resolve still requires trade-item fields.
+                logistic_only = bool(product_results) and all(
+                    getattr(p, "format_version", None) == "SUPPLIER_LOGISTIC_UNIT"
+                    for p in product_results
+                )
+                status = (
+                    ImageResultStatus.PENDING_MANUAL_REVIEW
+                    if logistic_only
+                    else ImageResultStatus.RESOLVED_INTERNAL
+                )
+                if logistic_only:
+                    evidence = {
+                        **(evidence or {}),
+                        "logistic_unit_review": True,
+                        "limitation": (
+                            "LOGISTIC_UNIT_NO_PRODUCT_RECORD: "
+                            "SSCC/LPN recognized; inventory SKU rows not auto-created"
+                        ),
+                    }
                 result = ImageProcessingResult(
                     job_id=context.job_id,
                     asset_id=context.asset_id,
-                    status=ImageResultStatus.RESOLVED_INTERNAL,
+                    status=status,
                     processing_mode=mode,
                     resolved_by=STRATEGY_KEY,
                     internal_code=primary_code,
@@ -676,7 +735,7 @@ class CodeScanProcessingStrategy:
                     "code_scan.validation_completed",
                     message="consolidator validation completed",
                     metadata={
-                        "status": ImageResultStatus.RESOLVED_INTERNAL.value,
+                        "status": status.value,
                         "product_count": counted,
                     },
                 )
@@ -1111,19 +1170,14 @@ class CodeScanProcessingStrategy:
         for classified in classification.items:
             label = classified.label
             self._metrics.increment("code_scan_valid_total")
+            semantic = None
+            if validation_ctx.item_extraction_configuration is not None:
+                semantic = validation_ctx.item_extraction_configuration.semantic_type
             products.append(
-                ProcessedProductLabel(
-                    label_id=label.label_id,
-                    internal_code=label.sku,
-                    quantity=label.quantity,
-                    format_version="SUPPLIER",
-                    checksum=None,
-                    validation_status=ProductLabelOutcomeStatus.VALID,
-                    selected_detection_index=classified.detection_index,
-                    duplicate_detection_count=1,
-                    symbology=label.symbology,
-                    raw_payload=label.raw_payload,
-                    normalized_payload=label.raw_payload,
+                _processed_from_normalized_item(
+                    label,
+                    detection_index=classified.detection_index,
+                    semantic_type=semantic,
                 )
             )
         profile = (
@@ -1204,19 +1258,14 @@ class CodeScanProcessingStrategy:
                     )
                     continue
                 seen_ids.add(identity)
+                semantic = None
+                if validation_ctx.item_extraction_configuration is not None:
+                    semantic = validation_ctx.item_extraction_configuration.semantic_type
                 products.append(
-                    ProcessedProductLabel(
-                        label_id=result.label.label_id,
-                        internal_code=result.label.sku,
-                        quantity=result.label.quantity,
-                        format_version="SUPPLIER",
-                        checksum=None,
-                        validation_status=ProductLabelOutcomeStatus.VALID,
-                        selected_detection_index=idx,
-                        duplicate_detection_count=1,
-                        symbology=result.label.symbology,
-                        raw_payload=result.label.raw_payload,
-                        normalized_payload=result.label.raw_payload,
+                    _processed_from_normalized_item(
+                        result.label,
+                        detection_index=idx,
+                        semantic_type=semantic,
                     )
                 )
             elif result.status is LabelValidationStatus.NOT_APPLICABLE:
