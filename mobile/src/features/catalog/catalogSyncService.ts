@@ -15,7 +15,7 @@ import type {
 import type { ConnectivityService } from '../../services/connectivity/connectivity';
 import type { OfflineRecognitionSyncService } from '../offlineRecognition/offlineRecognitionSyncService';
 import { normalizeAisleDto } from '../aisles/aisleService';
-import { computeCatalogRevision } from './catalogRevision';
+import { CATALOG_PROJECTION_VERSION, computeCatalogRevision } from './catalogRevision';
 import type { CatalogSyncStatus, CatalogSyncTrigger } from './catalogSyncPolicy';
 
 export interface RecognitionSyncFailure {
@@ -157,8 +157,11 @@ export class CatalogSyncService {
       });
 
       const existing = await this.catalog.getSyncMeta();
-      const catalogChanged =
+      const revisionChanged =
         !existing?.catalog_revision || existing.catalog_revision !== remote.revision;
+      const projectionUpgradeRequired =
+        (existing?.catalog_projection_version ?? 0) < CATALOG_PROJECTION_VERSION;
+      const catalogChanged = revisionChanged || projectionUpgradeRequired;
 
       let catalogSnapshotSyncedAt = existing?.last_synced_at ?? null;
       if (catalogChanged) {
@@ -171,6 +174,8 @@ export class CatalogSyncService {
             inventory_count: remote.inventories.length,
             supplier_count: remote.suppliers.length,
             aisle_count: remote.aisles.length,
+            projection_upgrade: projectionUpgradeRequired,
+            catalog_projection_version: CATALOG_PROJECTION_VERSION,
           },
         });
       } else {
@@ -411,6 +416,7 @@ export class CatalogSyncService {
         status: aisle.status,
         updated_at: aisle.updated_at,
         is_active: aisle.is_active ?? true,
+        client_supplier_id: aisle.client_supplier_id ?? null,
       })),
       suppliers: suppliers.map((supplier) => ({
         id: supplier.id,

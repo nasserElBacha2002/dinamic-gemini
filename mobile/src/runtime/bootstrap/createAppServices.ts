@@ -285,6 +285,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
           // Export service only exists when CSV/ZIP handoff is enabled — always scan before export.
           localCodeScanEnabled: true,
           logger,
+          profileResolver: offlineRecognitionResolver,
         })
       : null;
   const captureServiceRef: { current: CaptureService | null } = { current: null };

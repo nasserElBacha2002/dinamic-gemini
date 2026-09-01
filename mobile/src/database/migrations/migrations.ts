@@ -847,6 +847,13 @@ CREATE INDEX IF NOT EXISTS idx_offline_supplier_recognition_config_lookup
   ON offline_supplier_recognition_config(inventory_id, client_supplier_id);
 `,
   },
+  {
+    version: 33,
+    name: 'catalog_projection_version',
+    sql: `
+ALTER TABLE catalog_sync_meta ADD COLUMN catalog_projection_version INTEGER NOT NULL DEFAULT 0;
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {
@@ -866,4 +873,3 @@ export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS
     previous = migration.version;
   }
 }
-

@@ -1,9 +1,11 @@
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
 import type { CapturePhotoRow } from '../../database/schema/captureSchema';
 import { isDraftExportReady } from './supplierExportSemantics';
+import type { ResolvedLocalProfileSource } from '../offlineRecognition/localLabelProfileResolver';
 
 export type LocalCsvExportBlockCode =
   | 'PACKAGE_EXPORT_OFFLINE_CONFIG_REQUIRED'
+  | 'OFFLINE_SUPPLIER_RECOGNITION_NOT_READY'
   | 'PACKAGE_EXPORT_SCAN_UNSUPPORTED'
   | 'PACKAGE_EXPORT_PHOTOS_UNSTABLE';
 
@@ -20,18 +22,47 @@ function snapshotMissingSupplierProfile(raw: string | null | undefined): boolean
   }
 }
 
+export interface ExpectedRecognitionResolution {
+  readonly clientSupplierId: string | null;
+  readonly itemSource: ResolvedLocalProfileSource;
+  readonly positionSource: ResolvedLocalProfileSource;
+}
+
+function snapshotHasUnexpectedSource(
+  raw: string | null | undefined,
+  expected: ExpectedRecognitionResolution | null | undefined,
+): boolean {
+  if (!raw?.trim() || !expected) return false;
+  try {
+    const snap = JSON.parse(raw) as {
+      client_supplier_id?: string | null;
+      item?: { profile_source?: string };
+      position?: { profile_source?: string };
+    };
+    return (
+      snap.client_supplier_id !== expected.clientSupplierId ||
+      snap.item?.profile_source !== expected.itemSource ||
+      snap.position?.profile_source !== expected.positionSource
+    );
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Detect a more specific export failure before generic LOCAL_PENDING messaging.
  */
 export function diagnoseExportBlockers(
   photos: readonly CapturePhotoRow[],
   drafts: readonly LocalDetectionDraftRow[],
+  expectedRecognition?: ExpectedRecognitionResolution | null,
 ): { code: LocalCsvExportBlockCode; detail: string } | null {
   const draftByPhoto = new Map(drafts.map((d) => [d.capture_photo_id, d]));
   let pending = 0;
   let unstableOnly = 0;
   let offlineProfileMissing = false;
   let scanUnsupported = false;
+  let supplierRecognitionNotReady = false;
 
   for (const photo of photos) {
     if (photo.status === 'excluded' || photo.status === 'rejected') {
@@ -47,6 +78,14 @@ export function diagnoseExportBlockers(
     }
     if (snapshotMissingSupplierProfile(draft?.recognition_profile_snapshot_json)) {
       offlineProfileMissing = true;
+    }
+    if (
+      snapshotHasUnexpectedSource(
+        draft?.recognition_profile_snapshot_json,
+        expectedRecognition,
+      )
+    ) {
+      supplierRecognitionNotReady = true;
     }
     const errorCode = (draft?.error_code ?? '').trim().toUpperCase();
     if (
@@ -65,6 +104,12 @@ export function diagnoseExportBlockers(
     return {
       code: 'PACKAGE_EXPORT_OFFLINE_CONFIG_REQUIRED',
       detail: `${pending} foto(s) sin perfil Supplier offline sincronizado`,
+    };
+  }
+  if (supplierRecognitionNotReady) {
+    return {
+      code: 'OFFLINE_SUPPLIER_RECOGNITION_NOT_READY',
+      detail: `${pending} foto(s) sin resolución Supplier lista para exportar`,
     };
   }
   if (scanUnsupported) {

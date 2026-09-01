@@ -458,6 +458,14 @@ export class LocalCodeScanStrategy {
           : primary?.quantity ?? consolidated.quantity;
       const isPositionOnly =
         positionDetected && products.length === 0 && (d1Mode || consolidated.status === 'NO_VALID_CODE');
+      if (
+        status === 'RESOLVED' &&
+        products.length === 0 &&
+        !positionDetected &&
+        !persistInternalCode
+      ) {
+        status = 'UNRESOLVED';
+      }
 
       await this.deps.drafts.upsertDraft({
         capturePhotoId: input.capturePhotoId,
@@ -507,7 +515,9 @@ export class LocalCodeScanStrategy {
                       ? 'D1_CANDIDATES_FAILED'
                       : 'NO_VALID_CODE')
                 : status === 'UNRESOLVED'
-                  ? 'NO_DETECTIONS'
+                  ? candidates.length > 0
+                    ? 'NO_VALID_CODE'
+                    : 'NO_DETECTIONS'
                   : null,
         processingMs,
         scanOwner: null,

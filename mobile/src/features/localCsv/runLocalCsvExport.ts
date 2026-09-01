@@ -51,6 +51,9 @@ export function mapLocalCsvExportError(error: unknown): LocalCsvExportUserError 
   if (raw.startsWith('PACKAGE_EXPORT_OFFLINE_CONFIG_REQUIRED:')) {
     return { kind: 'offline_config' };
   }
+  if (raw.startsWith('OFFLINE_SUPPLIER_RECOGNITION_NOT_READY:')) {
+    return { kind: 'offline_config' };
+  }
   if (raw.startsWith('PACKAGE_EXPORT_SCAN_UNSUPPORTED:')) {
     return { kind: 'scan_unsupported' };
   }

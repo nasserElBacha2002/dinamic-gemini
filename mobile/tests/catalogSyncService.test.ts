@@ -49,6 +49,7 @@ function buildRemoteFixture(
     assets_count: 0,
     positions_count: 0,
     pending_review_positions_count: 0,
+    client_supplier_id: 'sup-b' as string | null,
   }));
   const suppliers = [
     {
@@ -77,6 +78,7 @@ function buildRemoteFixture(
       status: aisle.status,
       updated_at: aisle.updated_at,
       is_active: aisle.is_active,
+      client_supplier_id: aisle.client_supplier_id,
     })),
     suppliers: suppliers.map((supplier) => ({
       id: supplier.id,
@@ -162,6 +164,7 @@ function createCatalogMock(revision: string, replaceCatalogSnapshot = jest.fn())
       last_sync_attempt_at: null,
       last_successful_sync_at: '2026-01-01T00:00:00Z',
       last_sync_status: 'SUCCESS',
+      catalog_projection_version: 1,
     })),
     replaceCatalogSnapshot,
     recordSyncAttempt: jest.fn(async () => undefined),
@@ -203,6 +206,71 @@ describe('CatalogSyncService', () => {
     expect(result.catalogChanged).toBe(false);
     expect(replaceCatalogSnapshot).not.toHaveBeenCalled();
     expect(recognitionSync.syncInventory).toHaveBeenCalledWith('inv-1');
+  });
+
+  it('heals a pre-fix same-revision projection once and preserves LOCAL_ONLY aisles', async () => {
+    const fixture = buildRemoteFixture(['inv-1']);
+    let projectionVersion = 0;
+    const rows = new Map([
+      [
+        'aisle-inv-1',
+        { id: 'aisle-inv-1', client_supplier_id: null, origin: 'REMOTE', sync_status: 'REMOTE_SYNCED', active: 1 },
+      ],
+      [
+        'local-1',
+        { id: 'local-1', client_supplier_id: 'sup-local', origin: 'LOCAL', sync_status: 'LOCAL_ONLY', active: 1 },
+      ],
+    ]);
+    const replaceCatalogSnapshot = jest.fn(async (snapshot: typeof fixture) => {
+      for (const aisle of snapshot.aisles) {
+        const existing = rows.get(aisle.id);
+        rows.set(aisle.id, {
+          id: aisle.id,
+          client_supplier_id: aisle.client_supplier_id ?? null,
+          origin: 'REMOTE',
+          sync_status: 'REMOTE_SYNCED',
+          active: existing?.active ?? 1,
+        });
+      }
+      projectionVersion = 1;
+    });
+    const catalog = {
+      ...createCatalogMock(fixture.revision, replaceCatalogSnapshot),
+      getSyncMeta: jest.fn(async () => ({
+        id: 1,
+        catalog_revision: fixture.revision,
+        catalog_projection_version: projectionVersion,
+        last_synced_at: '2026-01-01T00:00:00Z',
+        inventory_count: 1,
+        supplier_count: 1,
+        aisle_count: 1,
+        last_sync_attempt_at: null,
+        last_successful_sync_at: '2026-01-01T00:00:00Z',
+        last_sync_status: 'SUCCESS',
+      })),
+    } as unknown as LocalCatalogRepository;
+    const sync = new CatalogSyncService(
+      createApiMock(fixture) as never,
+      catalog,
+      connectivity,
+      logger,
+      createNoOpRecognitionSync(),
+    );
+
+    const healed = await sync.syncCatalog();
+    expect(healed.catalogChanged).toBe(true);
+    expect(replaceCatalogSnapshot).toHaveBeenCalledTimes(1);
+    expect(rows.get('aisle-inv-1')?.client_supplier_id).toBe('sup-b');
+    expect(rows.get('local-1')).toMatchObject({
+      active: 1,
+      client_supplier_id: 'sup-local',
+      origin: 'LOCAL',
+      sync_status: 'LOCAL_ONLY',
+    });
+
+    const unchanged = await sync.syncCatalog();
+    expect(unchanged.catalogSkippedSameRevision).toBe(true);
+    expect(replaceCatalogSnapshot).toHaveBeenCalledTimes(1);
   });
 
   it('invokes recognition service even when bundle revision is unchanged (service no-op)', async () => {
@@ -332,6 +400,7 @@ describe('CatalogSyncService', () => {
           last_sync_attempt_at: null,
           last_successful_sync_at: '2026-01-03T00:00:00Z',
           last_sync_status: 'PARTIAL',
+          catalog_projection_version: 1,
         })),
         replaceCatalogSnapshot,
         recordSyncAttempt: jest.fn(async () => undefined),

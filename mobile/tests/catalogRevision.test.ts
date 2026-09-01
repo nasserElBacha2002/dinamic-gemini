@@ -29,6 +29,7 @@ describe('catalog revision', () => {
           status: 'created',
           updated_at: '2026-01-01T01:00:00Z',
           is_active: true,
+          client_supplier_id: null,
         },
         {
           id: 'aisle-1',
@@ -37,6 +38,7 @@ describe('catalog revision', () => {
           status: 'created',
           updated_at: '2026-01-01T00:30:00Z',
           is_active: true,
+          client_supplier_id: 'sup-1',
         },
       ],
       suppliers: [
@@ -92,6 +94,28 @@ describe('catalog revision', () => {
           updated_at: '2026-01-01T01:30:00Z',
         },
       ],
+    });
+    expect(before).not.toBe(after);
+  });
+
+  it('changes when an aisle ClientSupplier association changes', () => {
+    const aisle = {
+      id: 'aisle-1',
+      inventory_id: 'inv-1',
+      code: 'A01',
+      status: 'created',
+      updated_at: '2026-01-01T00:00:00Z',
+      is_active: true,
+    };
+    const before = computeCatalogRevision({
+      inventories: [],
+      suppliers: [],
+      aisles: [{ ...aisle, client_supplier_id: null }],
+    });
+    const after = computeCatalogRevision({
+      inventories: [],
+      suppliers: [],
+      aisles: [{ ...aisle, client_supplier_id: 'sup-b' }],
     });
     expect(before).not.toBe(after);
   });

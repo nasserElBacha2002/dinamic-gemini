@@ -12,7 +12,10 @@ import type {
   LocalAisleSyncStatus,
 } from '../../features/aisles/localAisleTypes';
 import type { CatalogRevisionInput } from '../../features/catalog/catalogRevision';
-import { computeCatalogRevision } from '../../features/catalog/catalogRevision';
+import {
+  CATALOG_PROJECTION_VERSION,
+  computeCatalogRevision,
+} from '../../features/catalog/catalogRevision';
 
 export interface LocalInventoryRow {
   id: string;
@@ -79,6 +82,7 @@ export interface CatalogSyncMetaRow {
   last_sync_attempt_at: string | null;
   last_successful_sync_at: string | null;
   last_sync_status: string | null;
+  catalog_projection_version: number;
 }
 
 export interface CatalogSnapshot {
@@ -117,7 +121,8 @@ export class LocalCatalogRepository {
   async getSyncMeta(): Promise<CatalogSyncMetaRow | null> {
     const row = await this.db.getFirstAsync<CatalogSyncMetaRow>(
       `SELECT id, catalog_revision, last_synced_at, inventory_count, supplier_count, aisle_count,
-              last_sync_attempt_at, last_successful_sync_at, last_sync_status
+              last_sync_attempt_at, last_successful_sync_at, last_sync_status,
+              catalog_projection_version
        FROM catalog_sync_meta WHERE id = 1`,
     );
     return row ?? null;
@@ -334,6 +339,7 @@ export class LocalCatalogRepository {
         status: aisle.status,
         updated_at: aisle.updated_at,
         is_active: aisle.is_active ?? true,
+        client_supplier_id: aisle.client_supplier_id ?? null,
       })),
       suppliers: snapshot.suppliers.map((supplier) => ({
         id: supplier.id,
@@ -394,7 +400,7 @@ export class LocalCatalogRepository {
              assets_count, positions_count, pending_review_positions_count,
              client_supplier_id, origin, sync_status, created_offline_at,
              created_at, updated_at, server_updated_at, synced_at
-           ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, NULL, 'REMOTE', 'REMOTE_SYNCED', NULL, ?, ?, ?, ?)
+           ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, 'REMOTE', 'REMOTE_SYNCED', NULL, ?, ?, ?, ?)
            ON CONFLICT(inventory_id, id) DO UPDATE SET
              code = excluded.code,
              status = excluded.status,
@@ -402,6 +408,7 @@ export class LocalCatalogRepository {
              assets_count = excluded.assets_count,
              positions_count = excluded.positions_count,
              pending_review_positions_count = excluded.pending_review_positions_count,
+             client_supplier_id = excluded.client_supplier_id,
              origin = 'REMOTE',
              sync_status = 'REMOTE_SYNCED',
              created_at = excluded.created_at,
@@ -416,6 +423,7 @@ export class LocalCatalogRepository {
             aisle.assets_count,
             aisle.positions_count,
             aisle.pending_review_positions_count,
+            aisle.client_supplier_id ?? null,
             aisle.created_at,
             aisle.updated_at,
             aisle.updated_at,
@@ -455,8 +463,9 @@ export class LocalCatalogRepository {
       await this.db.runAsync(
         `INSERT INTO catalog_sync_meta
           (id, catalog_revision, last_synced_at, inventory_count, supplier_count, aisle_count,
-           last_sync_attempt_at, last_successful_sync_at, last_sync_status)
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS')
+           last_sync_attempt_at, last_successful_sync_at, last_sync_status,
+           catalog_projection_version)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?)
          ON CONFLICT(id) DO UPDATE SET
            catalog_revision = excluded.catalog_revision,
            last_synced_at = excluded.last_synced_at,
@@ -464,7 +473,8 @@ export class LocalCatalogRepository {
            supplier_count = excluded.supplier_count,
            aisle_count = excluded.aisle_count,
            last_successful_sync_at = excluded.last_successful_sync_at,
-           last_sync_status = excluded.last_sync_status`,
+           last_sync_status = excluded.last_sync_status,
+           catalog_projection_version = excluded.catalog_projection_version`,
         [
           revision,
           syncedAtIso,
@@ -473,6 +483,7 @@ export class LocalCatalogRepository {
           snapshot.aisles.length,
           syncedAtIso,
           syncedAtIso,
+          CATALOG_PROJECTION_VERSION,
         ],
       );
     });

@@ -433,10 +433,12 @@ describe('Phase 3 LOCAL_ONLY aisles', () => {
 
   it('replaceCatalogSnapshot preserves LOCAL_ONLY aisles', async () => {
     const runs: string[] = [];
+    const calls: Array<{ sql: string; params: unknown[] | undefined }> = [];
     const db = {
       withTransactionAsync: jest.fn(async (fn: () => Promise<void>) => fn()),
-      runAsync: jest.fn(async (sql: string) => {
+      runAsync: jest.fn(async (sql: string, params?: unknown[]) => {
         runs.push(sql);
+        calls.push({ sql, params });
       }),
     };
     const repo = new LocalCatalogRepository(db as never);
@@ -468,12 +470,16 @@ describe('Phase 3 LOCAL_ONLY aisles', () => {
           assets_count: 0,
           positions_count: 0,
           pending_review_positions_count: 0,
+          client_supplier_id: 'sup-b',
         },
       ],
     };
     await repo.replaceCatalogSnapshot(snapshot, '2026-02-01T00:00:00Z');
     expect(runs.some((s) => s.includes("origin IS NULL OR origin = 'REMOTE'"))).toBe(true);
     expect(runs.some((s) => s.includes("'REMOTE', 'REMOTE_SYNCED'"))).toBe(true);
+    const remoteUpsert = calls.find((call) => call.sql.includes('INSERT INTO local_aisles'));
+    expect(remoteUpsert?.sql).toContain('client_supplier_id = excluded.client_supplier_id');
+    expect(remoteUpsert?.params).toContain('sup-b');
   });
 
   describe('LOCAL aisle ClientSupplier base source resolution', () => {
@@ -485,6 +491,7 @@ describe('Phase 3 LOCAL_ONLY aisles', () => {
         effective_item_source: 'DINAMIC' | 'SUPPLIER';
         effective_position_source?: 'DINAMIC' | 'SUPPLIER';
         item_profile_source_override?: 'DINAMIC' | 'SUPPLIER' | null;
+        position_profile_source_override?: 'DINAMIC' | 'SUPPLIER' | null;
       }>;
       profiles?: Partial<Record<'ITEM' | 'POSITION', boolean>>;
     }) {
@@ -498,7 +505,7 @@ describe('Phase 3 LOCAL_ONLY aisles', () => {
             aisle_id: row.aisle_id,
             client_supplier_id: 'sup-b',
             item_profile_source_override: row.item_profile_source_override ?? null,
-            position_profile_source_override: null,
+            position_profile_source_override: row.position_profile_source_override ?? null,
             effective_item_source: row.effective_item_source,
             effective_position_source: row.effective_position_source ?? 'DINAMIC',
             synced_at: '2026-01-01T00:00:00Z',
@@ -658,6 +665,39 @@ describe('Phase 3 LOCAL_ONLY aisles', () => {
       const resolved = await resolver.resolveForAisle('inv-1', 'remote-a');
       expect(resolved.item.source).toBe('DINAMIC');
       expect(resolved.item.resolutionSource).toBe('AISLE_OVERRIDE');
+    });
+
+    it('remote POSITION override wins over a DINAMIC ClientSupplier base', async () => {
+      const { resolver } = buildResolver({
+        itemSource: 'DINAMIC',
+        positionSource: 'DINAMIC',
+        remoteAisles: [
+          {
+            aisle_id: 'remote-position',
+            effective_item_source: 'DINAMIC',
+            effective_position_source: 'SUPPLIER',
+            position_profile_source_override: 'SUPPLIER',
+          },
+        ],
+      });
+      const resolved = await resolver.resolveForAisle('inv-1', 'remote-position');
+      expect(resolved.position.source).toBe('SUPPLIER');
+      expect(resolved.position.resolutionSource).toBe('AISLE_OVERRIDE');
+      expect(resolved.position.profile?.profile_version).toBe(3);
+    });
+
+    it('uses explicit remote catalog supplier base while a new aisle is absent from the bundle', async () => {
+      const { resolver, recognitionRepo } = buildResolver({
+        itemSource: 'SUPPLIER',
+        positionSource: 'SUPPLIER',
+      });
+      const resolved = await resolver.resolveForAisle('inv-1', 'fresh-remote-aisle');
+      expect(recognitionRepo.getAisleConfig).toHaveBeenCalledWith('inv-1', 'fresh-remote-aisle');
+      expect(recognitionRepo.getSupplierBaseSources).toHaveBeenCalledWith('inv-1', 'sup-b');
+      expect(resolved.item.source).toBe('SUPPLIER');
+      expect(resolved.item.profile?.profile_version).toBe(10);
+      expect(resolved.position.source).toBe('SUPPLIER');
+      expect(resolved.position.profile?.profile_version).toBe(3);
     });
   });
 });

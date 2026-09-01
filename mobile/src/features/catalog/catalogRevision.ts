@@ -1,5 +1,8 @@
 import { sha256Hex } from '../../core/payloadFingerprint';
 
+/** Increment when persisted catalog projection semantics require rematerialization. */
+export const CATALOG_PROJECTION_VERSION = 1;
+
 export interface CatalogRevisionInventoryInput {
   readonly id: string;
   readonly client_id: string | null;
@@ -16,6 +19,7 @@ export interface CatalogRevisionAisleInput {
   readonly status: string;
   readonly updated_at: string | null;
   readonly is_active: boolean;
+  readonly client_supplier_id: string | null;
 }
 
 export interface CatalogRevisionSupplierInput {
@@ -60,6 +64,7 @@ export function computeCatalogRevision(input: CatalogRevisionInput): string {
         aisle.updated_at ?? '',
         aisle.code,
         aisle.is_active ? '1' : '0',
+        aisle.client_supplier_id ?? '',
       ].join(':'),
     );
   }

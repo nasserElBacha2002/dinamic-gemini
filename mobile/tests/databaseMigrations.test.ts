@@ -32,11 +32,19 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
     expect(v2?.sql).toContain('last_stability_attempt_at');
+  });
+
+  it('adds v33 catalog projection version without rewriting catalog data', () => {
+    const v33 = MIGRATIONS.find((m) => m.version === 33);
+    expect(v33?.sql).toContain('catalog_projection_version');
+    expect(v33?.sql).toContain('DEFAULT 0');
+    expect(v33?.sql).not.toContain('DELETE');
+    expect(v33?.sql).not.toContain('UPDATE local_aisles');
   });
 
   it('adds v3/v4 upload and processing fields without rewriting v1', () => {
@@ -208,4 +216,3 @@ describe('SQLite migrations', () => {
     expect(v32?.sql).toContain('PRIMARY KEY (inventory_id, client_supplier_id)');
   });
 });
-

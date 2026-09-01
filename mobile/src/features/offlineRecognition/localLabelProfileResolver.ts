@@ -101,19 +101,12 @@ export class LocalLabelProfileResolver {
     }
 
     const localAisle = await this.catalog?.getAisleById(inventoryId, aisleId);
-    if (localAisle?.origin === 'LOCAL') {
+    // A freshly-created remote aisle can predate the next recognition bundle.
+    // Its explicit catalog association is authoritative enough to apply the
+    // ClientSupplier base sources until an aisle mapping (and its overrides)
+    // arrives. Existing aisle mappings still win above.
+    if (localAisle?.client_supplier_id) {
       const supplierId = localAisle.client_supplier_id;
-      if (!supplierId) {
-        return {
-          inventoryId,
-          aisleId,
-          clientSupplierId: null,
-          itemProfileSourceOverride: null,
-          positionProfileSourceOverride: null,
-          effectiveItemSource: 'DINAMIC',
-          effectivePositionSource: 'DINAMIC',
-        };
-      }
       const baseSources = await this.repo.getSupplierBaseSources(inventoryId, supplierId);
       if (!baseSources) {
         return {

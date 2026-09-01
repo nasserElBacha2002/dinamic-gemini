@@ -17,6 +17,7 @@ import type { CaptureRepository } from '../../database/repositories/captureRepos
 import type { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import type { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
 import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
+import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import type { Logger } from '../../core/logging';
@@ -66,6 +67,7 @@ export interface LocalCsvExportServiceDeps {
   readonly localCodeScan?: LocalCodeScanStrategy | null;
   readonly localCodeScanEnabled?: boolean;
   readonly logger?: Logger | null;
+  readonly profileResolver?: LocalLabelProfileResolver | null;
 }
 
 export interface ExportedLocalCsv {
@@ -181,7 +183,21 @@ export class LocalCsvExportService {
     drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => drafts);
     const confirmed = await this.deps.confirmedRepo.listForSession(sessionId).catch(() => []);
 
-    const blocker = diagnoseExportBlockers(eligible, drafts);
+    const resolved = await this.deps.profileResolver
+      ?.resolveForAisle(session.inventory_id, session.aisle_id)
+      .catch(() => null);
+    const blocker = diagnoseExportBlockers(
+      eligible,
+      drafts,
+      resolved
+        ? {
+            clientSupplierId:
+              resolved.item.clientSupplierId ?? resolved.position.clientSupplierId ?? null,
+            itemSource: resolved.item.source,
+            positionSource: resolved.position.source,
+          }
+        : null,
+    );
     if (blocker) {
       throw new Error(`${blocker.code}: ${blocker.detail}`);
     }
@@ -344,7 +360,7 @@ export class LocalCsvExportService {
       photos = await this.deps.captureRepo.listFreezePhotos(session.active_freeze_id);
     }
     const eligible = photos.filter((p) => p.status !== 'excluded' && p.status !== 'rejected');
-    let drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => []);
+    const drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => []);
     await this.ensureLocalCodeScans(session, eligible, drafts);
   }
 

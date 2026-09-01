@@ -51,6 +51,7 @@ function buildRemoteFixture(inventoryIds: string[]) {
     assets_count: 0,
     positions_count: 0,
     pending_review_positions_count: 0,
+    client_supplier_id: null as string | null,
   }));
   const suppliers = [
     {
@@ -78,6 +79,7 @@ function buildRemoteFixture(inventoryIds: string[]) {
       status: aisle.status,
       updated_at: aisle.updated_at,
       is_active: aisle.is_active,
+      client_supplier_id: aisle.client_supplier_id ?? null,
     })),
     suppliers: suppliers.map((supplier) => ({
       id: supplier.id,
