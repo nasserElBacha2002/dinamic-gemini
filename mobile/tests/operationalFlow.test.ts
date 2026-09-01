@@ -73,6 +73,7 @@ describe('operationalServices.mocked', () => {
             assets_count: 0,
             positions_count: 0,
             pending_review_positions_count: 0,
+            client_supplier_id: 'sup-1',
           },
           latest_job: null,
           recent_jobs: [],
@@ -94,7 +95,19 @@ describe('operationalServices.mocked', () => {
     });
 
     const inventories = new InventoryService(api as never);
-    const aisles = new AisleService(api as never);
+    const catalog = {
+      getAisleById: jest.fn().mockResolvedValue(null),
+      upsertRemoteAisle: jest.fn(async (created: Record<string, unknown>) => ({
+        ...created,
+        active: 1,
+        origin: 'REMOTE',
+        sync_status: 'REMOTE_SYNCED',
+        created_offline_at: null,
+        server_updated_at: created.updated_at,
+        synced_at: created.updated_at,
+      })),
+    };
+    const aisles = new AisleService(api as never, undefined, catalog as never);
     const inventory = await inventories.create({ name: 'Jornada', clientId: 'client-1' });
     const aisle = await aisles.create({
       inventoryId: inventory.id,

@@ -211,6 +211,18 @@ export class LocalCatalogRepository {
     return row;
   }
 
+  /** Materialize one backend-authoritative aisle before it can enter capture. */
+  async upsertRemoteAisle(aisle: AisleDto, syncedAtIso: string): Promise<LocalAisleRow> {
+    await this.db.withTransactionAsync(async () => {
+      await this.upsertRemoteAisleRow(aisle, syncedAtIso);
+    });
+    const row = await this.getAisleById(aisle.inventory_id, aisle.id);
+    if (!row) {
+      throw new Error('REMOTE_AISLE_MATERIALIZATION_FAILED');
+    }
+    return row;
+  }
+
   async countActiveInventories(): Promise<number> {
     const row = await this.db.getFirstAsync<{ count: number }>(
       `SELECT COUNT(*) AS count FROM local_inventories WHERE active = 1`,
@@ -394,42 +406,7 @@ export class LocalCatalogRepository {
         `UPDATE local_aisles SET active = 0 WHERE active = 1 AND (origin IS NULL OR origin = 'REMOTE')`,
       );
       for (const aisle of snapshot.aisles) {
-        await this.db.runAsync(
-          `INSERT INTO local_aisles (
-             id, inventory_id, code, status, active,
-             assets_count, positions_count, pending_review_positions_count,
-             client_supplier_id, origin, sync_status, created_offline_at,
-             created_at, updated_at, server_updated_at, synced_at
-           ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, 'REMOTE', 'REMOTE_SYNCED', NULL, ?, ?, ?, ?)
-           ON CONFLICT(inventory_id, id) DO UPDATE SET
-             code = excluded.code,
-             status = excluded.status,
-             active = 1,
-             assets_count = excluded.assets_count,
-             positions_count = excluded.positions_count,
-             pending_review_positions_count = excluded.pending_review_positions_count,
-             client_supplier_id = excluded.client_supplier_id,
-             origin = 'REMOTE',
-             sync_status = 'REMOTE_SYNCED',
-             created_at = excluded.created_at,
-             updated_at = excluded.updated_at,
-             server_updated_at = excluded.server_updated_at,
-             synced_at = excluded.synced_at`,
-          [
-            aisle.id,
-            aisle.inventory_id,
-            aisle.code,
-            aisle.status,
-            aisle.assets_count,
-            aisle.positions_count,
-            aisle.pending_review_positions_count,
-            aisle.client_supplier_id ?? null,
-            aisle.created_at,
-            aisle.updated_at,
-            aisle.updated_at,
-            syncedAtIso,
-          ],
-        );
+        await this.upsertRemoteAisleRow(aisle, syncedAtIso);
       }
 
       await this.db.runAsync(`UPDATE local_client_suppliers SET active = 0 WHERE active = 1`);
@@ -487,6 +464,45 @@ export class LocalCatalogRepository {
         ],
       );
     });
+  }
+
+  private async upsertRemoteAisleRow(aisle: AisleDto, syncedAtIso: string): Promise<void> {
+    await this.db.runAsync(
+      `INSERT INTO local_aisles (
+         id, inventory_id, code, status, active,
+         assets_count, positions_count, pending_review_positions_count,
+         client_supplier_id, origin, sync_status, created_offline_at,
+         created_at, updated_at, server_updated_at, synced_at
+       ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, 'REMOTE', 'REMOTE_SYNCED', NULL, ?, ?, ?, ?)
+       ON CONFLICT(inventory_id, id) DO UPDATE SET
+         code = excluded.code,
+         status = excluded.status,
+         active = 1,
+         assets_count = excluded.assets_count,
+         positions_count = excluded.positions_count,
+         pending_review_positions_count = excluded.pending_review_positions_count,
+         client_supplier_id = excluded.client_supplier_id,
+         origin = 'REMOTE',
+         sync_status = 'REMOTE_SYNCED',
+         created_at = excluded.created_at,
+         updated_at = excluded.updated_at,
+         server_updated_at = excluded.server_updated_at,
+         synced_at = excluded.synced_at`,
+      [
+        aisle.id,
+        aisle.inventory_id,
+        aisle.code,
+        aisle.status,
+        aisle.assets_count,
+        aisle.positions_count,
+        aisle.pending_review_positions_count,
+        aisle.client_supplier_id ?? null,
+        aisle.created_at,
+        aisle.updated_at,
+        aisle.updated_at,
+        syncedAtIso,
+      ],
+    );
   }
 }
 

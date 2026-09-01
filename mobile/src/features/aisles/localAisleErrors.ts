@@ -6,6 +6,7 @@ export type LocalAisleErrorCode =
   | 'SUPPLIER_INACTIVE'
   | 'SUPPLIER_CLIENT_MISMATCH'
   | 'RECOGNITION_CONFIG_NOT_READY'
+  | 'REMOTE_AISLE_MATERIALIZATION_FAILED'
   | 'LOCAL_AISLE_CREATE_FAILED'
   | 'AISLE_CODE_INVALID';
 
@@ -19,6 +20,8 @@ const MESSAGES: Record<LocalAisleErrorCode, string> = {
   SUPPLIER_CLIENT_MISMATCH: 'El proveedor no pertenece al cliente de este inventario.',
   RECOGNITION_CONFIG_NOT_READY:
     'Proveedor no está listo para trabajar offline. Sincronizá perfiles de reconocimiento.',
+  REMOTE_AISLE_MATERIALIZATION_FAILED:
+    'El pasillo se creó online, pero no quedó listo localmente. Reintentá antes de capturar.',
   LOCAL_AISLE_CREATE_FAILED: 'No se pudo guardar el pasillo localmente.',
   AISLE_CODE_INVALID: 'El código del pasillo no es válido.',
 };

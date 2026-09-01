@@ -712,6 +712,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       connectivity,
       offlineRecognitionRepo,
       obsWire?.reporter,
+      offlineRecognitionResolver,
     ),
     capture,
     uploadQueue,

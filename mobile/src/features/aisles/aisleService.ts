@@ -20,6 +20,7 @@ import { validateAisleCode } from './validateAisleCode';
 import { createId } from '../../shared/createId';
 import type { ObservabilityReporter } from '../../observability/types';
 import { emitObservability } from '../../observability/emitHelpers';
+import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
 
 export interface AisleQuery {
   readonly inventoryId: string;
@@ -36,6 +37,7 @@ export interface CreateAisleInput {
 
 export class AisleService {
   private localCreateInFlight = false;
+  private readonly pendingRemoteMaterialization = new Map<string, AisleDto>();
 
   constructor(
     private readonly api: ApiClient,
@@ -45,6 +47,7 @@ export class AisleService {
     private readonly connectivity?: ConnectivityService,
     private readonly recognitionRepo?: OfflineRecognitionConfigRepository,
     private readonly observability?: ObservabilityReporter | null,
+    private readonly recognitionResolver?: LocalLabelProfileResolver,
   ) {}
 
   async listLocal(query: AisleQuery): Promise<PageDto<AisleDto>> {
@@ -86,6 +89,13 @@ export class AisleService {
   async create(input: CreateAisleInput): Promise<AisleDto> {
     const code = validateAisleCode(input.code);
     const supplierId = input.clientSupplierId?.trim();
+    const pendingKey = `${input.inventoryId}:${code}`;
+    const pending = this.pendingRemoteMaterialization.get(pendingKey);
+    if (pending) {
+      const materialized = await this.materializeCreatedRemoteAisle(input.inventoryId, pending);
+      this.pendingRemoteMaterialization.delete(pendingKey);
+      return materialized;
+    }
     const body: CreateAisleRequestDto = supplierId
       ? { code, client_supplier_id: supplierId }
       : { code };
@@ -95,10 +105,29 @@ export class AisleService {
         body,
       );
       const created = normalizeAisleDto(raw);
+      let authoritative = created;
       try {
-        return await this.getById(input.inventoryId, created.id);
+        authoritative = await this.getById(input.inventoryId, created.id);
       } catch {
-        return created;
+        // The POST representation is authoritative enough when status refresh is unavailable.
+      }
+      if (supplierId && authoritative.client_supplier_id !== supplierId) {
+        this.reportRemoteMaterializationFailure(
+          input.inventoryId,
+          authoritative,
+          'REMOTE_AISLE_SUPPLIER_ASSOCIATION_MISSING',
+        );
+        throw new LocalAisleError('REMOTE_AISLE_MATERIALIZATION_FAILED');
+      }
+      try {
+        const materialized = await this.materializeCreatedRemoteAisle(input.inventoryId, authoritative);
+        this.pendingRemoteMaterialization.delete(pendingKey);
+        return materialized;
+      } catch (e) {
+        // The backend creation already succeeded. Keep its response in memory so a UI retry
+        // retries only the local projection/readiness gate, never a blind duplicate POST.
+        this.pendingRemoteMaterialization.set(pendingKey, authoritative);
+        throw e;
       }
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
@@ -109,6 +138,81 @@ export class AisleService {
       }
       throw e;
     }
+  }
+
+  private async materializeCreatedRemoteAisle(
+    inventoryId: string,
+    aisle: AisleDto,
+  ): Promise<AisleDto> {
+    if (!this.catalog || !aisle.id || !aisle.inventory_id || aisle.inventory_id !== inventoryId) {
+      this.reportRemoteMaterializationFailure(inventoryId, aisle, 'INVALID_REMOTE_AISLE');
+      throw new LocalAisleError('REMOTE_AISLE_MATERIALIZATION_FAILED');
+    }
+
+    try {
+      const row = await this.catalog.upsertRemoteAisle(aisle, new Date().toISOString());
+      this.recognitionResolver?.invalidate();
+      if (this.recognitionResolver) {
+        const resolved = await this.recognitionResolver.resolveForAisle(inventoryId, aisle.id);
+        const notReady = [resolved.item, resolved.position].some(
+          (profile) => profile.missingSupplierProfile || profile.recognitionConfigNotReady,
+        );
+        if (notReady) {
+          throw new LocalAisleError('RECOGNITION_CONFIG_NOT_READY');
+        }
+      }
+      emitObservability(this.observability, {
+        name: 'mobile.aisle.remote_materialized',
+        attributes: {
+          aisle_id: aisle.id,
+          inventory_id: inventoryId,
+          supplier_id: row.client_supplier_id,
+          client_supplier_id: row.client_supplier_id,
+          origin: 'REMOTE',
+          offline: false,
+        },
+      });
+      this.logger?.info('recovery', {
+        obs_name: 'remote_aisle_materialized',
+        aisleId: aisle.id,
+        inventoryId,
+        supplierId: row.client_supplier_id,
+      });
+      return normalizeAisleDto(row);
+    } catch (e) {
+      this.reportRemoteMaterializationFailure(
+        inventoryId,
+        aisle,
+        e instanceof LocalAisleError ? e.code : 'REMOTE_AISLE_MATERIALIZATION_FAILED',
+      );
+      if (e instanceof LocalAisleError) throw e;
+      throw new LocalAisleError('REMOTE_AISLE_MATERIALIZATION_FAILED');
+    }
+  }
+
+  private reportRemoteMaterializationFailure(
+    inventoryId: string,
+    aisle: AisleDto,
+    errorCode: string,
+  ): void {
+    emitObservability(this.observability, {
+      name: 'mobile.aisle.remote_materialization_failed',
+      attributes: {
+        aisle_id: aisle.id || null,
+        inventory_id: inventoryId,
+        supplier_id: aisle.client_supplier_id ?? null,
+        client_supplier_id: aisle.client_supplier_id ?? null,
+        origin: 'REMOTE',
+        offline: false,
+        error_code: errorCode,
+      },
+    });
+    this.logger?.warn('recovery', {
+      obs_name: 'remote_aisle_materialization_failed',
+      aisleId: aisle.id || null,
+      inventoryId,
+      errorCode,
+    });
   }
 
   /**

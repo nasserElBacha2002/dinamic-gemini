@@ -24,6 +24,7 @@ import type {
 import { LocalCatalogRepository } from '../src/database/repositories/localCatalogRepository';
 import { OfflineRecognitionConfigRepository } from '../src/database/repositories/offlineRecognitionConfigRepository';
 import { LocalLabelProfileResolver } from '../src/features/offlineRecognition/localLabelProfileResolver';
+import { AisleService } from '../src/features/aisles/aisleService';
 
 function checksumVectors(): {
   vectors: Array<{ name: string; tampered_payload?: string }>;
@@ -590,30 +591,50 @@ describe('strict multilabel CSV + strategy', () => {
       },
     };
     const catalogRepo = new LocalCatalogRepository(sqlite as never);
-    await catalogRepo.replaceCatalogSnapshot(
-      {
-        revision: 'same-revision',
-        inventories: [],
-        suppliers: [],
-        aisles: [
-          {
-            id: 'aisle-1',
-            inventory_id: 'inv-1',
-            code: 'A1',
-            status: 'created',
-            created_at: '2026-01-01T00:00:00Z',
-            updated_at: '2026-01-01T00:00:00Z',
-            assets_count: 0,
-            positions_count: 0,
-            pending_review_positions_count: 0,
-            client_supplier_id: 'sup-b',
-          },
-        ],
-      },
-      '2026-01-01T00:00:00Z',
-    );
     const recognitionRepo = new OfflineRecognitionConfigRepository(sqlite as never);
     const profileResolver = new LocalLabelProfileResolver(recognitionRepo, catalogRepo);
+    const createdDto = {
+      id: 'aisle-1',
+      inventory_id: 'inv-1',
+      code: 'A1',
+      status: 'created',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      is_active: true,
+      assets_count: 0,
+      positions_count: 0,
+      pending_review_positions_count: 0,
+      client_supplier_id: 'sup-b',
+    };
+    const aisleService = new AisleService(
+      {
+        post: async () => createdDto,
+        get: async () => ({ aisle: createdDto }),
+      } as never,
+      undefined,
+      catalogRepo,
+      undefined,
+      undefined,
+      recognitionRepo,
+      undefined,
+      profileResolver,
+    );
+    const created = await aisleService.create({
+      inventoryId: 'inv-1',
+      code: 'A1',
+      clientSupplierId: 'sup-b',
+    });
+    expect(created).toMatchObject({
+      id: 'aisle-1',
+      client_supplier_id: 'sup-b',
+      origin: 'REMOTE',
+      sync_status: 'REMOTE_SYNCED',
+    });
+    await expect(catalogRepo.getAisleById('inv-1', 'aisle-1')).resolves.toMatchObject({
+      client_supplier_id: 'sup-b',
+      origin: 'REMOTE',
+      sync_status: 'REMOTE_SYNCED',
+    });
     const strategy = new LocalCodeScanStrategy({
       drafts,
       detect: async (uri) => candidatesByUri[uri] ?? [],
