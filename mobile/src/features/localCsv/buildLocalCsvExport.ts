@@ -189,8 +189,10 @@ export function assertLocalCsvRowsExportReady(rows: readonly LocalCsvRow[]): voi
   }
   const pending = rows.filter((r) => String(r.source).toUpperCase() === 'LOCAL_PENDING');
   if (pending.length > 0) {
+    const photoIds = pending.map((r) => r.capture_photo_id).filter(Boolean).join(',');
     throw new Error(
-      `PACKAGE_EXPORT_UNRESOLVED: ${pending.length} foto(s) sin detectar/confirmar (LOCAL_PENDING). Completá el escaneo local o la revisión antes de exportar el ZIP.`,
+      `PACKAGE_EXPORT_UNRESOLVED: ${pending.length} foto(s) sin detectar/confirmar (LOCAL_PENDING). Completá el escaneo local o la revisión antes de exportar el ZIP.` +
+        (photoIds ? ` capture_photo_ids=${photoIds}` : ''),
     );
   }
   const products = rows.filter((r) => {

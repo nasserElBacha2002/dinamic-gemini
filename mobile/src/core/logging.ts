@@ -39,7 +39,8 @@ export type LogEvent =
   | 'work_scheduled'
   | 'health_check'
   | 'mobile_api_base_url'
-  | 'aisle_blocked';
+  | 'aisle_blocked'
+  | 'local_export_scan_failed';
 
 export interface LogRecord {
   readonly ts: string;

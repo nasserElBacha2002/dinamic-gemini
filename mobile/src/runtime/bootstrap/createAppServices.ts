@@ -33,6 +33,7 @@ import {
   OfflineRecognitionSyncService,
 } from '../../features/offlineRecognition';
 import { LocalCsvExportService } from '../../features/localCsv/localCsvExportService';
+import { OfflineAisleExportService } from '../../features/offlineAisleExport';
 import { getOrCreateInstallationId } from '../../shared/installationId';
 import { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
 import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
@@ -131,6 +132,7 @@ export interface AppServices {
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly confirmedLocalResults: ConfirmedLocalResultRepository;
   readonly localCsvExport: LocalCsvExportService | null;
+  readonly offlineAisleExport: OfflineAisleExportService | null;
   readonly confirmLocalResult: Pick<
     ConfirmLocalResultService,
     | 'isEnabled'
@@ -262,7 +264,23 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
           clientId: null,
           enabled: true,
           localCodeScan,
-          localCodeScanEnabled: config.flags.mobileLocalCodeScan === true,
+          // Export service only exists when CSV/ZIP handoff is enabled — always scan before export.
+          localCodeScanEnabled: true,
+          logger,
+        })
+      : null;
+  const captureServiceRef: { current: CaptureService | null } = { current: null };
+  const offlineAisleExport =
+    config.flags.mobileCsvExport !== false
+      ? new OfflineAisleExportService({
+          catalogRepo,
+          captureRepo,
+          draftRepo: localDetectionDrafts,
+          listSessionsForAisle: (aisleId) =>
+            captureServiceRef.current!.listSessionsForAisle(aisleId),
+          sessionCsvExport: localCsvExport,
+          appVersion: config.versionName,
+          enabled: true,
         })
       : null;
   const preliminaryApi = new PreliminaryDetectionApi(api);
@@ -456,7 +474,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
             status === 'upload_review';
           if (allowOfflineUpload) {
             await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
-          } else if (config.flags.mobileLocalCodeScan === true) {
+          } else if (
+            config.flags.mobileLocalCodeScan === true ||
+            config.flags.mobileCsvExport !== false ||
+            config.flags.localCompletion === true
+          ) {
             await uploadQueue.rescanPhotoForLocalReview(photoId).catch(() => undefined);
           }
         })
@@ -472,6 +494,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     finishSafeMediaCheck: config.flags.captureFinishSafeMediaCheck,
     sessionFreeze: config.flags.captureSessionFreeze,
   });
+  captureServiceRef.current = capture;
 
   const processing = new ProcessingService(
     api,
@@ -672,6 +695,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     localDetectionDrafts,
     confirmedLocalResults,
     localCsvExport,
+    offlineAisleExport,
     confirmLocalResult,
     preliminarySync,
     authoritativeLocalSync,

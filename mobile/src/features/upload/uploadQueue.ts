@@ -225,6 +225,14 @@ export class UploadQueue {
     };
   }
 
+  private localCodeScanEnabledForExport(): boolean {
+    return (
+      this.flags?.mobileLocalCodeScan === true ||
+      this.flags?.mobileCsvExport !== false ||
+      this.flags?.localCompletion === true
+    );
+  }
+
   /** Persist preparation profile mode for a capture session (from UI preference). */
   async setSessionPreparationMode(sessionId: string, mode: string | null): Promise<void> {
     const normalized = normalizePreparationProcessingMode(mode);
@@ -481,7 +489,7 @@ export class UploadQueue {
       }
     }
     // Also re-run local CODE_SCAN for failed / empty drafts (uploads may already be done).
-    if (this.flags?.mobileLocalCodeScan === true && this.options.localCodeScan) {
+    if (this.localCodeScanEnabledForExport() && this.options.localCodeScan) {
       for (const photo of photos) {
         if (photo.status !== 'stable') {
           continue;
@@ -1253,7 +1261,7 @@ export class UploadQueue {
    */
   async rescanPhotoForLocalReview(photoId: string): Promise<void> {
     const strategy = this.options.localCodeScan;
-    if (!strategy || this.flags?.mobileLocalCodeScan !== true) {
+    if (!strategy || !this.localCodeScanEnabledForExport()) {
       return;
     }
     const photo = await this.repo.getPhotoById(photoId);

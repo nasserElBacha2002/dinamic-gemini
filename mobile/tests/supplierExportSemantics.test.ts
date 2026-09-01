@@ -1,5 +1,6 @@
 import {
   buildSupplierImportNotes,
+  isDraftExportReady,
   isLikelyRawSegmentedPayload,
   positionFromRecognitionSnapshot,
   productsFromRecognitionSnapshot,
@@ -246,5 +247,20 @@ describe('supplier export semantics', () => {
     expect(notes).toContain('supplier_import');
     expect(notes).toContain('prof-item');
     expect(notes).toContain('"profile_version":10');
+  });
+
+  it('isDraftExportReady detects product_results and blocks unnecessary rescan', () => {
+    expect(
+      isDraftExportReady({
+        status: 'RESOLVED',
+        product_results_json: JSON.stringify([{ labelId: 'L1', internalCode: 'SKU', quantity: 1 }]),
+      }),
+    ).toBe(true);
+    expect(
+      isDraftExportReady({
+        status: 'UNRESOLVED',
+        internal_code: 'LPNA000184|SKU773421|24',
+      }),
+    ).toBe(false);
   });
 });

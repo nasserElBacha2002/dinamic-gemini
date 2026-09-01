@@ -1,4 +1,0 @@
-?? audit/dast-gemini-config/
-?? security-audit-mutating.example.yaml
-?? security-audit-output/
-?? security-audit.yaml

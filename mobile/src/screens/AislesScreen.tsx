@@ -12,6 +12,7 @@ import type { UploadSessionProgress } from '../features/upload/uploadQueue';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import { Button, Card, ErrorText, Input, SmallButton, messageOf, styles } from '../ui';
+import { OfflineAisleExportError } from '../features/offlineAisleExport/errors';
 import { checkOfflineRecognitionReadiness } from '../features/offlineRecognition';
 
 function offlineReadinessMessage(status: string, missingKinds: readonly string[]): string {
@@ -62,6 +63,8 @@ export function AislesScreen({
   onCancelCapture,
   onOpenPositionLabels,
 }: AislesScreenProps) {
+  const [exportBusyAisleId, setExportBusyAisleId] = useState<string | null>(null);
+  const csvExport = services.config.flags.mobileCsvExport !== false;
   const serverUploadEnabled = services.config.flags.mobileServerUpload !== false;
   const workOptions = { serverUploadEnabled };
   const [items, setItems] = useState<AisleDto[]>([]);
@@ -132,6 +135,40 @@ export function AislesScreen({
       }
       onSelectNew(aisle);
     });
+  };
+
+  const exportLocalAisle = (aisle: AisleDto) => {
+    if (!services.offlineAisleExport) {
+      Alert.alert('Exportar pasillo', 'La exportación offline no está habilitada.');
+      return;
+    }
+    if (exportBusyAisleId != null) {
+      return;
+    }
+    setExportBusyAisleId(aisle.id);
+    void services.offlineAisleExport
+      .exportAisle({
+        inventoryId: inventory.id,
+        aisleId: aisle.id,
+        includeAssets: true,
+      })
+      .then(async (exported) => {
+        await services.offlineAisleExport!.shareExport(exported.fileUri, exported.fileName);
+        Alert.alert(
+          'Exportación lista',
+          `${exported.captureCount} captura(s) · ${exported.fileName}`,
+        );
+      })
+      .catch((e) => {
+        const msg =
+          e instanceof OfflineAisleExportError
+            ? e.message.replace(/^[^:]+:\s*/, '')
+            : e instanceof Error
+              ? e.message
+              : String(e);
+        Alert.alert('No se pudo exportar el pasillo', msg);
+      })
+      .finally(() => setExportBusyAisleId(null));
   };
 
   return (
@@ -247,6 +284,16 @@ export function AislesScreen({
                     </View>
                   ))
                 : null}
+              {aisle.sync_status === 'LOCAL_ONLY' && csvExport && history.length > 0 ? (
+                <Button
+                  label={
+                    exportBusyAisleId === aisle.id
+                      ? 'Exportando pasillo…'
+                      : 'Exportar pasillo (.dinamic)'
+                  }
+                  onPress={() => exportLocalAisle(aisle)}
+                />
+              ) : null}
               {exclusiveHere ? <Button label="Cancelar captura" onPress={onCancelCapture} /> : null}
               <Button
                 label={work && work.kind !== 'none' ? 'Comenzar nueva captura' : 'Seleccionar pasillo'}

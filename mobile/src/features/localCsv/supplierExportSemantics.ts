@@ -105,7 +105,6 @@ export function positionFromRecognitionSnapshot(
   };
 }
 
-/** Compact JSON for backend revalidation (stored in CSV `notes`, max ~512 chars target). */
 export function buildSupplierImportNotes(input: {
   readonly snapshotJson: string | null | undefined;
   readonly rawPayload?: string | null;
@@ -133,4 +132,51 @@ export function buildSupplierImportNotes(input: {
   } catch {
     return null;
   }
+}
+
+/** True when a draft already has enough semantic data to export without rescanning. */
+export function isDraftExportReady(
+  draft: {
+    readonly status?: string | null;
+    readonly internal_code?: string | null;
+    readonly product_results_json?: string | null;
+    readonly recognition_profile_snapshot_json?: string | null;
+    readonly position_detected?: number | null;
+    readonly error_code?: string | null;
+  } | null | undefined,
+): boolean {
+  if (!draft) {
+    return false;
+  }
+  if (draft.product_results_json?.trim()) {
+    try {
+      const parsed = JSON.parse(draft.product_results_json) as unknown[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return true;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  if (productsFromRecognitionSnapshot(draft.recognition_profile_snapshot_json).length > 0) {
+    return true;
+  }
+  if (positionFromRecognitionSnapshot(draft.recognition_profile_snapshot_json)) {
+    return true;
+  }
+  if (
+    Number(draft.position_detected) === 1 ||
+    draft.error_code === 'POSITION_LABEL_DETECTED'
+  ) {
+    return true;
+  }
+  const code = (draft.internal_code ?? '').trim();
+  if (
+    code &&
+    !isLikelyRawSegmentedPayload(code) &&
+    (draft.status === 'RESOLVED' || draft.status === 'DETECTED_UNVERIFIED')
+  ) {
+    return true;
+  }
+  return false;
 }

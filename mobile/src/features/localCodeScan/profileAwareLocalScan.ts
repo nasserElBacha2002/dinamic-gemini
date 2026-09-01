@@ -142,6 +142,9 @@ export async function runProfileAwareLocalScan(input: {
           profile_version: supplierPosition.profileVersion,
           profile_source: supplierPosition.profileSource,
           position_id: supplierPosition.positionId,
+          pallet: supplierPosition.pallet,
+          side: supplierPosition.side,
+          level: supplierPosition.level,
         }
       : {
           profile_source: profiles.position.source,
