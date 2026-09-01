@@ -190,6 +190,11 @@ class GetInventoryRecognitionConfigUseCase:
         inventory = self._inventory_repo.get_by_id(command.inventory_id)
         if inventory is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
+        client_id = (inventory.client_id or "").strip()
+        if not client_id:
+            raise ValueError(
+                f"Inventory has no client association: {command.inventory_id}"
+            )
 
         aisles = list(self._aisle_repo.list_by_inventory(command.inventory_id))
         supplier_ids = sorted(
@@ -257,7 +262,7 @@ class GetInventoryRecognitionConfigUseCase:
         for supplier_id in supplier_ids:
             listed = list(
                 self._extraction_profile_repo.list_by_supplier(
-                    inventory.client_id, supplier_id
+                    client_id, supplier_id
                 )
             )
             for kind in (LabelKind.ITEM, LabelKind.POSITION):
@@ -295,7 +300,7 @@ class GetInventoryRecognitionConfigUseCase:
         return OfflineRecognitionBundle(
             bundle_schema_version=OFFLINE_BUNDLE_SCHEMA_VERSION,
             inventory_id=inventory.id,
-            client_id=inventory.client_id,
+            client_id=client_id,
             generated_at=now,
             aisles=aisle_tuple,
             suppliers=supplier_tuple,

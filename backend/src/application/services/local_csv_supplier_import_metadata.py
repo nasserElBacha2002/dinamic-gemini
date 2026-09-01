@@ -108,8 +108,11 @@ def _require_int(value: object, field: str, errors: list[str]) -> int | None:
     if value is None or (isinstance(value, str) and not value.strip()):
         errors.append(f"supplier_import:missing_{field}")
         return None
+    if not isinstance(value, (str, int, float, bytes, bytearray)):
+        errors.append(f"supplier_import:invalid_{field}")
+        return None
     try:
-        parsed = int(value)
+        parsed: int = int(value)
     except (TypeError, ValueError):
         errors.append(f"supplier_import:invalid_{field}")
         return None

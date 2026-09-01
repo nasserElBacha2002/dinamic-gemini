@@ -127,7 +127,7 @@ def identification_execution_snapshot_dict(
     )
 
     resolved_processing_mode = parse_aisle_processing_mode(processing_mode).value
-    feature_flags: dict[str, bool | str] = {
+    feature_flags: dict[str, bool | str | list[str]] = {
         "code_scan_processing_enabled": decision.code_scan_processing_enabled,
         "internal_ocr_processing_enabled": decision.internal_ocr_processing_enabled,
         "aisle_identification_pipeline_enabled": decision.pipeline_enabled,

@@ -317,9 +317,10 @@ async def _to_uploaded_supplier_reference_image_files(
     lbl = (label or "").strip() or None
     desc = (description or "").strip() or None
     kind = None
-    if (label_kind or "").strip():
+    normalized_label_kind = (label_kind or "").strip()
+    if normalized_label_kind:
         try:
-            kind = parse_label_kind(label_kind)
+            kind = parse_label_kind(normalized_label_kind)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     result: list[UploadedSupplierReferenceImageFile] = []
@@ -1184,4 +1185,3 @@ def upsert_client_supplier_label_profile(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-

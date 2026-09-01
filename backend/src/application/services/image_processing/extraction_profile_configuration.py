@@ -437,6 +437,7 @@ def parse_extraction_configuration(
         aliases[str(k).strip().lower()] = _as_str_tuple(v, field=f"aliases.{k}")
 
     required_raw = raw.get("required_fields")
+    required: tuple[str, ...]
     if required_raw is None:
         if recognition_mode is RecognitionMode.MINIMAL:
             # Infer identity target from first WHOLE mapping when present.

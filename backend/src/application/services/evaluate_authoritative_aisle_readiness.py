@@ -190,7 +190,8 @@ class EvaluateAuthoritativeAisleReadiness:
                     continue
                 applied_pairs.append((asset.id, pos_id))
             applied += 1
-            codes.append(row.internal_code)
+            if row.internal_code is not None:
+                codes.append(row.internal_code)
             if row.quantity is not None:
                 qty_sum += int(row.quantity)
 

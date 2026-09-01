@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
@@ -640,7 +640,10 @@ def start_aisle_processing(
             ),
             execution_strategy=cast(ExecutionStrategyLiteral, result.execution_strategy),
             configuration_snapshot_version=result.configuration_snapshot_version,
-            processing_mode=result.processing_mode,
+            processing_mode=cast(
+                Literal["AUTO", "CODE_SCAN_ONLY", "VISION_ONLY"] | None,
+                result.processing_mode,
+            ),
         )
     except Exception as e:
         reraise_if_mapped(e)

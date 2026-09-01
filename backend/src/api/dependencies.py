@@ -36,6 +36,7 @@ from src.application.ports.capture_repositories import (
     CaptureSessionRepository,
 )
 from src.application.ports.clock import Clock
+from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -983,7 +984,7 @@ def _build_preview_local_csv_import(
     *,
     inventory_repo: InventoryRepository,
     aisle_repo: AisleRepository,
-    import_repo: object,
+    import_repo: LocalCsvImportRepository,
     clock: Clock,
     enabled: bool,
 ):

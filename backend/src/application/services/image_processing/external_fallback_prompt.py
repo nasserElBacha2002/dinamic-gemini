@@ -279,7 +279,8 @@ def _supplier_profile_section(supplier_extraction_profile: dict[str, Any] | None
         cfg = {}
 
     recognition_mode = str(cfg.get("recognition_mode") or "FULL").strip().upper()
-    det = cfg.get("deterministic") if isinstance(cfg.get("deterministic"), dict) else {}
+    deterministic = cfg.get("deterministic")
+    det: dict[str, Any] = deterministic if isinstance(deterministic, dict) else {}
     prefix = str(det.get("expected_prefix") or "").strip()
     exact_length = det.get("exact_length")
     charset = str(det.get("character_set") or "").strip()
