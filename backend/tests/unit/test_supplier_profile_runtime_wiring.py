@@ -53,18 +53,18 @@ from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import ImageProcessingContext, ImageResultStatus
 from src.domain.label_profiles.entities import ResolvedLabelProfile, ResolvedLabelProfiles
 from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
+from src.domain.product_labels.format import (
+    build_product_label_payload,
+    generate_product_label_id,
+)
 from src.infrastructure.repositories.memory_client_supplier_label_profile_repository import (
     MemoryClientSupplierLabelProfileRepository,
-)
-from src.infrastructure.repositories.memory_supplier_extraction_profile_repository import (
-    MemorySupplierExtractionProfileRepository,
 )
 from src.infrastructure.repositories.memory_image_position_label_detection_repository import (
     MemoryImagePositionLabelDetectionRepository,
 )
-from src.domain.product_labels.format import (
-    build_product_label_payload,
-    generate_product_label_id,
+from src.infrastructure.repositories.memory_supplier_extraction_profile_repository import (
+    MemorySupplierExtractionProfileRepository,
 )
 
 _NOW = datetime(2026, 8, 31, 12, 0, 0, tzinfo=timezone.utc)

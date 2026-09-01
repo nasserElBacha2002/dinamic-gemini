@@ -10,9 +10,9 @@ from src.application.services.aisle_identification_execution import (
 )
 from src.domain.aisle_identification.modes import AisleIdentificationMode
 from src.domain.aisle_identification.processing_mode import (
-    AisleProcessingMode,
     DEFAULT_AISLE_PROCESSING_MODE,
     VISION_ONLY_DIRECT_ERROR_CODE,
+    AisleProcessingMode,
     parse_aisle_processing_mode,
     processing_mode_from_identification_execution,
 )

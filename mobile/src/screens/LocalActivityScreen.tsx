@@ -28,7 +28,6 @@ export function LocalActivityScreen({
   onError,
 }: LocalActivityScreenProps) {
   const serverUploadEnabled = services.config.flags.mobileServerUpload !== false;
-  const workOptions = { serverUploadEnabled };
   const [items, setItems] = useState<LocalAisleWork[]>([]);
   const [busy, setBusy] = useState(false);
   const [exportingId, setExportingId] = useState<string | null>(null);
@@ -45,7 +44,7 @@ export function LocalActivityScreen({
             classifyLocalSession(
               s,
               uploadSnap.sessions.find((u) => u.sessionId === s.id) ?? null,
-              workOptions,
+              { serverUploadEnabled },
             ),
           )
           .filter((w) => w.kind !== 'none');
@@ -53,7 +52,7 @@ export function LocalActivityScreen({
       })
       .catch((e) => onError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false));
-  }, [onError, services]);
+  }, [onError, serverUploadEnabled, services]);
 
   useEffect(() => {
     refresh();

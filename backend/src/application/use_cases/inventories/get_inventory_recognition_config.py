@@ -22,7 +22,6 @@ from src.domain.client_supplier.extraction_profile import (
 )
 from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource, effective_label_kind
 
-
 OFFLINE_BUNDLE_SCHEMA_VERSION = 1
 
 

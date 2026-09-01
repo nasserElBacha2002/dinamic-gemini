@@ -44,7 +44,6 @@ export function InventoriesScreen({
   onOpenWork,
 }: InventoriesScreenProps) {
   const serverUploadEnabled = services.config.flags.mobileServerUpload !== false;
-  const workOptions = { serverUploadEnabled };
   const [items, setItems] = useState<InventoryListItemDto[]>([]);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -150,14 +149,19 @@ export function InventoriesScreen({
     const map = new Map<string, LocalAisleWork[]>();
     for (const session of localSessions) {
       const upload = uploadProgress.find((u) => u.sessionId === session.id) ?? null;
-      const work = workForAisle([session], session.aisle_id, upload ? [upload] : [], workOptions);
+      const work = workForAisle(
+        [session],
+        session.aisle_id,
+        upload ? [upload] : [],
+        { serverUploadEnabled },
+      );
       if (!work || work.kind === 'none' || work.kind === 'completed') continue;
       const list = map.get(session.inventory_id) ?? [];
       list.push(work);
       map.set(session.inventory_id, list);
     }
     return map;
-  }, [localSessions, uploadProgress, workOptions]);
+  }, [localSessions, serverUploadEnabled, uploadProgress]);
 
   const emptyMessage =
     connectivity === 'offline' && items.length === 0

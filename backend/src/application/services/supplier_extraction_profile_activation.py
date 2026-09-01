@@ -24,10 +24,10 @@ from src.infrastructure.repositories.sql_supplier_extraction_profile_repository 
 )
 
 if TYPE_CHECKING:
-    from src.application.ports.clock import Clock
     from src.application.ports.client_supplier_label_profile_repository import (
         ClientSupplierLabelProfileRepository,
     )
+    from src.application.ports.clock import Clock
     from src.application.ports.supplier_extraction_profile_repository import (
         SupplierExtractionProfileRepository,
     )

@@ -25,6 +25,9 @@ from src.application.errors import (
     ProductLabelClaimRepositoryUnavailableError,
 )
 from src.application.ports.clock import Clock
+from src.application.ports.image_position_label_detection_repository import (
+    ImagePositionLabelDetectionRepository,
+)
 from src.application.ports.inventory_counted_product_label_repository import (
     InventoryCountedProductLabel,
 )
@@ -32,9 +35,6 @@ from src.application.ports.job_source_asset_repository import JobSourceAssetRepo
 from src.application.ports.manual_image_coverage_repository import ManualImageCoverageLink
 from src.application.ports.manual_image_result_unit_of_work import (
     ManualImageResultUnitOfWork,
-)
-from src.application.ports.image_position_label_detection_repository import (
-    ImagePositionLabelDetectionRepository,
 )
 from src.application.ports.repositories import SourceAssetRepository
 from src.application.services.image_processing.processing_result_kind import (
@@ -45,9 +45,9 @@ from src.application.services.image_processing.processing_result_kind import (
 from src.application.services.job_image_result_resolution import (
     unique_photo_coverage_images,
 )
-from src.domain.position_label_detection.entities import PositionLabelDetectionStatus
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.image_processing.contracts import ImageProcessingResult, ImageResultStatus
+from src.domain.position_label_detection.entities import PositionLabelDetectionStatus
 from src.domain.positions.entities import (
     Position,
     PositionCreationSource,

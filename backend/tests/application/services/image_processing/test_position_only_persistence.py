@@ -462,7 +462,6 @@ def test_processor_position_only_finalizes_resolved() -> None:
 
 def test_reconciler_finds_position_only_complete() -> None:
     position_repo = MemoryImagePositionLabelDetectionRepository()
-    result_evidence_repo = MemoryResultEvidenceRepository()
     det = _position_detection()
     position_repo.replace_asset_detections_atomically(
         job_id=JOB_ID,

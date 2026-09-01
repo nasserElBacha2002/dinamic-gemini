@@ -35,6 +35,12 @@ from src.api.schemas.inventory_schemas import (
     UpdateInventoryRequest,
 )
 from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
+from src.api.schemas.offline_recognition_bundle_schemas import (
+    OfflineAisleRecognitionConfigDto,
+    OfflineRecognitionBundleResponse,
+    OfflineRecognitionProfileDto,
+    OfflineSupplierRecognitionConfigDto,
+)
 from src.api.schemas.processing_schemas import (
     ProcessingModelOption,
     ProcessingPromptOptionItem,
@@ -42,16 +48,6 @@ from src.api.schemas.processing_schemas import (
     ProcessingProviderOptionsResponse,
 )
 from src.api.services.identification_mode_response import api_fields_from_configuration
-from src.api.schemas.offline_recognition_bundle_schemas import (
-    OfflineAisleRecognitionConfigDto,
-    OfflineRecognitionBundleResponse,
-    OfflineRecognitionProfileDto,
-    OfflineSupplierRecognitionConfigDto,
-)
-from src.application.use_cases.inventories.get_inventory_recognition_config import (
-    GetInventoryRecognitionConfigCommand,
-    GetInventoryRecognitionConfigUseCase,
-)
 from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import ClientNotFoundError, InventoryNotFoundError
 from src.application.services.aisle_identification_configuration_query import (
@@ -78,6 +74,10 @@ from src.application.use_cases.inventories.export_inventory_results import (
 )
 from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
 from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
+from src.application.use_cases.inventories.get_inventory_recognition_config import (
+    GetInventoryRecognitionConfigCommand,
+    GetInventoryRecognitionConfigUseCase,
+)
 from src.application.use_cases.inventories.list_inventory_list_items import (
     ListInventoryListItemsUseCase,
 )

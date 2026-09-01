@@ -362,7 +362,7 @@ export function validateSupplierPayloadOffline(input: {
   if (input.labelKind === 'ITEM') {
     const labelId = (fields.label_id as string | null) ?? null;
     const sku = (fields.sku as string | null) || (fields.internal_code as string | null) || null;
-    let quantity: number | null =
+    const quantity: number | null =
       typeof fields.quantity === 'number' ? fields.quantity : null;
     if (required.has('label_id') && !labelId) {
       return emptyResult(raw, {

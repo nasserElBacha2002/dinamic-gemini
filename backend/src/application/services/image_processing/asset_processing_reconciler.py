@@ -20,11 +20,11 @@ from enum import Enum
 
 from src.application.errors import AssetProcessingStateConcurrencyError
 from src.application.ports.clock import Clock
-from src.application.ports.image_processing_repositories import (
-    JobAssetProcessingStateRepository,
-)
 from src.application.ports.image_position_label_detection_repository import (
     ImagePositionLabelDetectionRepository,
+)
+from src.application.ports.image_processing_repositories import (
+    JobAssetProcessingStateRepository,
 )
 from src.application.ports.manual_image_coverage_repository import (
     ManualImageCoverageRepository,

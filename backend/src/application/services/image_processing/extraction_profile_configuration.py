@@ -33,7 +33,6 @@ from src.domain.client_supplier.extraction_profile import (
     PayloadStructure,
     QuantityExtractionRules,
     QuantityPresence,
-    QrPayloadFormat,
     RecognitionMode,
     UnanchoredCodeCandidatePolicy,
     default_extraction_configuration,
