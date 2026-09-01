@@ -67,6 +67,7 @@ from src.api.schemas.label_profile_schemas import (
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.schemas.supplier_extraction_profile_schemas import (
+    ActivateSupplierExtractionProfileRequest,
     CloneSupplierExtractionProfileRequest,
     CreateSupplierExtractionProfileRequest,
     ReferenceAnnotationResponse,
@@ -178,7 +179,7 @@ from src.domain.client_supplier.extraction_profile import (
 )
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
-from src.domain.label_profiles.kinds import parse_label_kind
+from src.domain.label_profiles.kinds import LabelProfileSource, parse_label_kind
 
 from . import client_position_labels, client_product_labels
 
@@ -851,6 +852,11 @@ def create_supplier_extraction_profile(
                 label_kind=(
                     parse_label_kind(payload.label_kind) if payload.label_kind else None
                 ),
+                effective_source=(
+                    LabelProfileSource(payload.effective_source)
+                    if payload.effective_source
+                    else None
+                ),
             )
         )
         return _supplier_extraction_profile_to_response(created)
@@ -1034,18 +1040,25 @@ def activate_supplier_extraction_profile(
     client_id: str,
     supplier_id: str,
     profile_id: str,
+    payload: ActivateSupplierExtractionProfileRequest | None = None,
     expected_row_version: int | None = Query(None),
     use_case: ActivateSupplierExtractionProfileVersionUseCase = Depends(
         get_activate_supplier_extraction_profile_version_use_case
     ),
 ) -> SupplierExtractionProfileResponse:
+    body = payload or ActivateSupplierExtractionProfileRequest()
+    row_version = body.expected_row_version if body.expected_row_version is not None else expected_row_version
+    effective_source = (
+        LabelProfileSource(body.effective_source) if body.effective_source else None
+    )
     try:
         activated = use_case.execute(
             ActivateSupplierExtractionProfileVersionCommand(
                 client_id=client_id,
                 supplier_id=supplier_id,
                 profile_id=profile_id,
-                expected_row_version=expected_row_version,
+                expected_row_version=row_version,
+                effective_source=effective_source,
             )
         )
         return _supplier_extraction_profile_to_response(activated)

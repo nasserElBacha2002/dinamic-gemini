@@ -32,6 +32,7 @@ import {
 } from '../../core/uploadLease';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
+import type { LocalCatalogRepository } from '../../database/repositories/localCatalogRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import type { LocalCodeScanStrategy } from '../localCodeScan/localCodeScanStrategy';
 import {
@@ -103,6 +104,7 @@ export interface UploadQueueOptions {
       reason?: string;
     }): Promise<void>;
   } | null;
+  readonly catalog?: LocalCatalogRepository | null;
 }
 
 export interface UploadQueueSnapshot {
@@ -244,6 +246,35 @@ export class UploadQueue {
     return status === 'uploading' || status === 'upload_review';
   }
 
+  private async aisleAllowsRemoteUpload(
+    session: CaptureSessionRow | null | undefined,
+  ): Promise<boolean> {
+    if (!this.sessionAllowsAutoServerUpload(session)) {
+      return false;
+    }
+    if (!session?.inventory_id || !session.aisle_id) {
+      return true;
+    }
+    if (!this.options.catalog) {
+      this.logger.info('upload_enqueue_session_skipped_policy', {
+        sessionId: session.id,
+        aisleId: session.aisle_id,
+        reason: 'catalog_unavailable',
+      });
+      return false;
+    }
+    const aisle = await this.options.catalog.getAisleById(session.inventory_id, session.aisle_id);
+    if (aisle?.sync_status === 'LOCAL_ONLY') {
+      this.logger.info('upload_enqueue_session_skipped_policy', {
+        sessionId: session.id,
+        aisleId: session.aisle_id,
+        reason: 'local_only_aisle',
+      });
+      return false;
+    }
+    return true;
+  }
+
   async restoreAndStart(): Promise<void> {
     this.connectivityUnsub = this.connectivity.subscribe((state) => {
       if (state === 'offline') {
@@ -285,7 +316,7 @@ export class UploadQueue {
 
   async enqueueSession(sessionId: string): Promise<void> {
     const session = await this.repo.getSession(sessionId);
-    if (!this.sessionAllowsAutoServerUpload(session)) {
+    if (!(await this.aisleAllowsRemoteUpload(session))) {
       this.logger.info('upload_enqueue_session_skipped_policy', {
         sessionId,
         uploadPolicy: session?.upload_policy ?? null,
@@ -324,7 +355,7 @@ export class UploadQueue {
       return;
     }
     const session = await this.repo.getSession(sessionId);
-    if (!this.sessionAllowsAutoServerUpload(session)) {
+    if (!(await this.aisleAllowsRemoteUpload(session))) {
       this.logger.info('upload_enqueue_skipped_policy', {
         sessionId,
         photoId,

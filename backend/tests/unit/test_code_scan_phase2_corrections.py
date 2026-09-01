@@ -189,7 +189,8 @@ def test_supplier_item_valid_invalid_duplicate_symbology_pattern_quantity() -> N
     assert ok.status is ImageResultStatus.RESOLVED_INTERNAL
 
     bad = _strategy("NOPE", repo=repo).process(_ctx(ctx), _asset())
-    assert bad.status is ImageResultStatus.UNRECOGNIZED
+    assert bad.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert bad.error_code == "LABEL_PATTERN_MISMATCH"
 
     dup = _strategy("SUP12345678", "SUP12345678", repo=repo).process(_ctx(ctx), _asset())
     assert dup.status is ImageResultStatus.RESOLVED_INTERNAL
@@ -217,8 +218,9 @@ def test_supplier_position_materialized_and_only_position_not_unrecognized() -> 
         client_id="client-1",
     )
     result = _strategy("POS-RACK01", repo=repo).process(_ctx(ctx), _asset())
-    assert result.status is ImageResultStatus.PENDING_MANUAL_REVIEW
-    assert result.error_code == "POSITION_LABEL_ONLY"
+    assert result.status is ImageResultStatus.RESOLVED_INTERNAL
+    assert result.error_code is None
+    assert "POSITION_LABEL_ONLY" in (result.warnings or [])
     assert result.status is not ImageResultStatus.UNRECOGNIZED
     stored = list(repo.list_by_asset("job-1", "asset-1"))
     assert len(stored) == 1
@@ -329,9 +331,10 @@ def test_snapshot_job_a_v1_job_b_v2_position_observable() -> None:
         ),
         _asset(),
     )
-    assert a.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert a.status is ImageResultStatus.RESOLVED_INTERNAL
     assert len(list(repo_a.list_by_asset("job-a", "asset-1"))) == 1
-    assert b.status is ImageResultStatus.UNRECOGNIZED
+    assert b.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert b.error_code == "LABEL_PATTERN_MISMATCH"
     assert list(repo_b.list_by_asset("job-b", "asset-1")) == []
 
 

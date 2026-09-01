@@ -411,7 +411,7 @@ def _build_position_detection_use_case(settings):
     )
 
 def build_default_code_scan_persister(
-    *, job_source_asset_repo, source_asset_repo, clock, unit_of_work_factory
+    *, job_source_asset_repo, source_asset_repo, clock, unit_of_work_factory, position_detection_repo=None
 ):
     from src.application.services.image_processing.processing_result_persister import (
         ProcessingResultPersister,
@@ -422,6 +422,7 @@ def build_default_code_scan_persister(
         source_asset_repo=source_asset_repo,
         clock=clock,
         unit_of_work_factory=unit_of_work_factory,
+        position_detection_repo=position_detection_repo,
     )
 
 
@@ -444,6 +445,7 @@ def build_default_code_scan_orchestrator(
     manual_coverage_repo=None,
     external_fallback=None,
     apply_authoritative_local=None,
+    position_detection_repo=None,
 ) -> AisleProcessingOrchestrator:
     """Build the Phase 3 orchestrator wired for CODE_SCAN SINGLE_ASSET processing.
 
@@ -463,6 +465,7 @@ def build_default_code_scan_orchestrator(
             clock=clock,
             manual_coverage_repo=manual_coverage_repo,
             result_evidence_repo=result_evidence_repo,
+            position_detection_repo=position_detection_repo,
         )
     return build_default_aisle_processing_orchestrator(
         clock,

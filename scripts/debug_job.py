@@ -240,7 +240,104 @@ def _print_wrong_entity_as_job(cur, resolved: dict[str, Any], job_id: str) -> in
     return 1
 
 
-def dump_job(cur, job_id: str) -> int:
+def _print_recognition_trace(
+    *,
+    ident: dict[str, Any],
+    events: list[dict[str, Any]],
+    states: list[dict[str, Any]],
+) -> None:
+    """Print CODE_SCAN profile / payload / validation trace from job snapshot + events."""
+    profiles = ident.get("label_profiles") or {}
+    if not isinstance(profiles, dict):
+        profiles = {}
+
+    def _profile_block(kind: str) -> None:
+        block = profiles.get(kind.lower()) or profiles.get(kind) or {}
+        if not isinstance(block, dict):
+            block = {}
+        print(f"\n{kind} PROFILE")
+        print(f"  source: {block.get('source') or '-'}")
+        print(f"  profile_id: {block.get('profile_id') or block.get('extraction_profile_id') or '-'}")
+        print(f"  profile_version: {block.get('profile_version') or block.get('extraction_profile_version') or '-'}")
+        cfg = block.get("configuration")
+        if isinstance(cfg, dict) and cfg:
+            det = cfg.get("deterministic") or {}
+            print(f"  payload_structure: {(det.get('payload_structure') if isinstance(det, dict) else None) or '-'}")
+            print(f"  required_fields: {cfg.get('required_fields') or '-'}")
+
+    _profile_block("ITEM")
+    _profile_block("POSITION")
+
+    wiring_warnings = ident.get("supplier_wiring_warnings")
+    if wiring_warnings:
+        print("\nWIRING WARNINGS")
+        for w in wiring_warnings if isinstance(wiring_warnings, list) else [wiring_warnings]:
+            print(f"  - {w}")
+
+    recognition_events = (
+        "code_scan.profile_resolved",
+        "code_scan.payload_decoded",
+        "code_scan.payload_extracted",
+        "code_scan.validation_completed",
+        "code_scan.symbols_detected",
+        "code_scan.decode_completed",
+    )
+    rec_events = [
+        e
+        for e in events
+        if str(e.get("event_type") or "") in recognition_events
+    ]
+
+    by_asset: dict[str, list[dict[str, Any]]] = {}
+    for ev in rec_events:
+        aid = str(ev.get("asset_id") or "_job")
+        by_asset.setdefault(aid, []).append(ev)
+
+    asset_ids = sorted(set(str(s.get("asset_id")) for s in states) | set(by_asset.keys()))
+    if not asset_ids:
+        asset_ids = ["_job"]
+
+    for aid in asset_ids:
+        print(f"\nASSET {aid}")
+        asset_events = by_asset.get(aid, [])
+        decoded = [e for e in asset_events if e.get("event_type") == "code_scan.payload_decoded"]
+        if decoded:
+            print("  DECODED")
+            for ev in decoded:
+                meta = _parse_meta(ev.get("metadata_json"))
+                print(f"    symbology={meta.get('symbology') or '-'}")
+                raw_hash = meta.get("raw_payload_sha256") or meta.get("raw_payload")
+                print(f"    payload={raw_hash or '-'}")
+        resolved = [e for e in asset_events if e.get("event_type") == "code_scan.profile_resolved"]
+        if resolved:
+            print("  PROFILE RESOLVED (runtime)")
+            for ev in resolved:
+                meta = _parse_meta(ev.get("metadata_json"))
+                print(
+                    f"    kind={meta.get('label_kind') or '-'} "
+                    f"source={meta.get('source') or '-'} "
+                    f"id={meta.get('profile_id') or '-'} "
+                    f"v={meta.get('profile_version') or '-'}"
+                )
+        extracted = [e for e in asset_events if e.get("event_type") == "code_scan.payload_extracted"]
+        if extracted:
+            print("  EXTRACTION")
+            for ev in extracted:
+                meta = _parse_meta(ev.get("metadata_json"))
+                print(f"    structure={meta.get('structure') or '-'} fields={meta.get('fields') or meta}")
+        validated = [e for e in asset_events if e.get("event_type") == "code_scan.validation_completed"]
+        if validated:
+            print("  VALIDATION")
+            for ev in validated:
+                meta = _parse_meta(ev.get("metadata_json"))
+                print(f"    {meta}")
+        st = next((s for s in states if str(s.get("asset_id")) == aid), None)
+        if st:
+            print("  FINAL")
+            print(f"    status={st.get('status')} error={st.get('error_code') or '-'}")
+
+
+def dump_job(cur, job_id: str, *, show_recognition: bool = False) -> int:
     cur.execute(
         """
         SELECT id, status, identification_mode, execution_strategy, execution_id,
@@ -328,6 +425,10 @@ def dump_job(cur, job_id: str) -> int:
         print("  note: CODE_SCAN_TIMEOUT may reflect ASSET_WIDE_LEGACY budget (pre source_load fix)")
     else:
         print("  decode_budget_started_after_source_load: true (inferred from phase events)")
+
+    if show_recognition and isinstance(ident, dict):
+        print("\nRECOGNITION TRACE")
+        _print_recognition_trace(ident=ident, events=events, states=states)
 
     # Per-asset phase timings from events
     by_asset: dict[str, dict[str, Any]] = {}
@@ -447,6 +548,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--job-id", type=_validate_uuid, default=None)
     parser.add_argument("--aisle-id", type=_validate_uuid, default=None)
+    parser.add_argument(
+        "--show-recognition",
+        action="store_true",
+        help="Print label profile snapshot + CODE_SCAN recognition events per asset",
+    )
     args = parser.parse_args(argv)
 
     if not args.job_id and not args.aisle_id:
@@ -463,7 +569,7 @@ def main(argv: list[str] | None = None) -> int:
             return print_aisle_summary(cur, args.aisle_id)
 
         assert args.job_id is not None
-        rc = dump_job(cur, args.job_id)
+        rc = dump_job(cur, args.job_id, show_recognition=args.show_recognition)
         if rc == 0:
             return 0
         resolved = resolve_uuid_entity(cur, args.job_id)

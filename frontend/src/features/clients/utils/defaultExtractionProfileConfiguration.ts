@@ -5,6 +5,12 @@ export function defaultExtractionProfileConfiguration(
   labelKind: LabelKind = 'ITEM'
 ): ExtractionProfileConfiguration {
   const isPosition = labelKind === 'POSITION';
+  const positionSegmentedMappings = [
+    { target: 'position_id', source: 'SEGMENT' as const, segment_index: 0 },
+    { target: 'pallet', source: 'SEGMENT' as const, segment_index: 1 },
+    { target: 'side', source: 'SEGMENT' as const, segment_index: 2 },
+    { target: 'level', source: 'SEGMENT' as const, segment_index: 3 },
+  ];
   return {
     configuration_schema_version: 2,
     recognition_mode: 'MINIMAL',
@@ -22,12 +28,12 @@ export function defaultExtractionProfileConfiguration(
         remove_internal_spaces: true,
         remove_hyphens: false,
       },
-      payload_structure: 'SIMPLE',
-      delimiter: null,
-      expected_segment_count: null,
-      field_mappings: [
-        { target: isPosition ? 'position_id' : 'label_id', source: 'WHOLE' },
-      ],
+      payload_structure: isPosition ? 'SEGMENTED' : 'SIMPLE',
+      delimiter: isPosition ? '|' : null,
+      expected_segment_count: isPosition ? 4 : null,
+      field_mappings: isPosition
+        ? positionSegmentedMappings
+        : [{ target: 'label_id', source: 'WHOLE' }],
       checksum_policy: 'NONE',
       required_application_identifiers: [],
       optional_application_identifiers: [],

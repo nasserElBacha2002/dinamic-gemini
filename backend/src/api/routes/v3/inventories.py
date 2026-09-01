@@ -46,6 +46,7 @@ from src.api.schemas.offline_recognition_bundle_schemas import (
     OfflineAisleRecognitionConfigDto,
     OfflineRecognitionBundleResponse,
     OfflineRecognitionProfileDto,
+    OfflineSupplierRecognitionConfigDto,
 )
 from src.application.use_cases.inventories.get_inventory_recognition_config import (
     GetInventoryRecognitionConfigCommand,
@@ -349,6 +350,14 @@ def get_inventory_recognition_config(
                 effective_position_source=a.effective_position_source,  # type: ignore[arg-type]
             )
             for a in bundle.aisles
+        ],
+        suppliers=[
+            OfflineSupplierRecognitionConfigDto(
+                client_supplier_id=s.client_supplier_id,
+                item_source=s.item_source,  # type: ignore[arg-type]
+                position_source=s.position_source,  # type: ignore[arg-type]
+            )
+            for s in bundle.suppliers
         ],
         profiles=[
             OfflineRecognitionProfileDto(

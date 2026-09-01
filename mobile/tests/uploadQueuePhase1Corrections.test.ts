@@ -314,6 +314,7 @@ describe('UploadQueue phase1 corrections', () => {
       {
         flags: {
           ...DEFAULT_FEATURE_FLAGS,
+          mobileServerUpload: true,
           allowMobileDataUploads: true,
           heicConvertToJpeg: true,
           workManagerScheduling: false,
@@ -329,6 +330,12 @@ describe('UploadQueue phase1 corrections', () => {
           backgroundUploadForegroundService: false,
           backgroundUploadRebootResume: false,
         },
+        catalog: {
+          getAisleById: jest.fn(async () => ({
+            sync_status: 'REMOTE_SYNCED',
+            origin: 'REMOTE',
+          })),
+        } as never,
       },
     );
 
@@ -687,6 +694,125 @@ describe('UploadQueue phase1 corrections', () => {
     );
     await queue.enqueuePhoto('s1', 'p1');
     expect(photos.get('p1')?.upload_status).toBe('queued');
+    await queue.dispose();
+  });
+
+  it('skips enqueue for LOCAL_ONLY aisle captures', async () => {
+    const s1 = session('s1', {
+      status: 'uploading',
+      aisle_id: 'local-aisle-1',
+      inventory_id: 'inv-1',
+    });
+    const catalog = {
+      getAisleById: jest.fn(async () => ({
+        sync_status: 'LOCAL_ONLY',
+        origin: 'LOCAL',
+      })),
+    };
+    const { queue, photos, repo } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [photo('p1', 's1', { upload_status: 'not_queued' })],
+      },
+    });
+    (queue as unknown as { options: { catalog: unknown; flags: unknown } }).options.catalog = catalog;
+    (queue as unknown as { options: { catalog: unknown; flags: unknown } }).options.flags = {
+      ...DEFAULT_FEATURE_FLAGS,
+      mobileServerUpload: true,
+      localCompletion: true,
+      mobileCsvExport: true,
+    };
+    (repo.listStableNotQueued as jest.Mock).mockImplementation(async (sessionId: string) =>
+      [...photos.values()].filter(
+        (p) => p.capture_session_id === sessionId && p.upload_status === 'not_queued',
+      ),
+    );
+    await queue.enqueueSession('s1');
+    expect(photos.get('p1')?.upload_status).toBe('not_queued');
+    await queue.dispose();
+  });
+
+  it('enqueues REMOTE_SYNCED aisle when upload_policy is NOW', async () => {
+    const s1 = session('s1', {
+      status: 'uploading',
+      aisle_id: 'remote-aisle-1',
+      inventory_id: 'inv-1',
+      upload_policy: 'NOW',
+    });
+    const catalog = {
+      getAisleById: jest.fn(async () => ({
+        sync_status: 'REMOTE_SYNCED',
+        origin: 'REMOTE',
+      })),
+    };
+    const { queue, photos, repo } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [photo('p1', 's1', { upload_status: 'not_queued' })],
+      },
+    });
+    (queue as unknown as { options: { catalog: unknown } }).options.catalog = catalog;
+    (repo.listStableNotQueued as jest.Mock).mockImplementation(async (sessionId: string) =>
+      [...photos.values()].filter(
+        (p) => p.capture_session_id === sessionId && p.upload_status === 'not_queued',
+      ),
+    );
+    await queue.enqueueSession('s1');
+    expect(photos.get('p1')?.upload_status).toBe('queued');
+    await queue.dispose();
+  });
+
+  it('enqueues REMOTE_SYNCED aisle when upload_policy is WHEN_CONNECTED', async () => {
+    const s1 = session('s1', {
+      status: 'upload_review',
+      aisle_id: 'remote-aisle-1',
+      inventory_id: 'inv-1',
+      upload_policy: 'WHEN_CONNECTED',
+    });
+    const catalog = {
+      getAisleById: jest.fn(async () => ({
+        sync_status: 'REMOTE_SYNCED',
+        origin: 'REMOTE',
+      })),
+    };
+    const { queue, photos, repo } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [photo('p1', 's1', { upload_status: 'not_queued' })],
+      },
+    });
+    (queue as unknown as { options: { catalog: unknown } }).options.catalog = catalog;
+    (repo.listStableNotQueued as jest.Mock).mockImplementation(async (sessionId: string) =>
+      [...photos.values()].filter(
+        (p) => p.capture_session_id === sessionId && p.upload_status === 'not_queued',
+      ),
+    );
+    await queue.enqueueSession('s1');
+    expect(photos.get('p1')?.upload_status).toBe('queued');
+    await queue.dispose();
+  });
+
+  it('blocks enqueue when catalog is unavailable (fail closed)', async () => {
+    const s1 = session('s1', {
+      status: 'uploading',
+      aisle_id: 'remote-aisle-1',
+      inventory_id: 'inv-1',
+      upload_policy: 'NOW',
+    });
+    const { queue, photos, repo } = buildHarness({
+      sessions: [s1],
+      photosBySession: {
+        s1: [photo('p1', 's1', { upload_status: 'not_queued' })],
+      },
+    });
+    (queue as unknown as { options: { catalog: unknown | null } }).options.catalog = null;
+    (repo.listStableNotQueued as jest.Mock).mockImplementation(async (sessionId: string) =>
+      [...photos.values()].filter(
+        (p) => p.capture_session_id === sessionId && p.upload_status === 'not_queued',
+      ),
+    );
+    await queue.enqueueSession('s1');
+    expect(photos.get('p1')?.upload_status).toBe('not_queued');
     await queue.dispose();
   });
 });

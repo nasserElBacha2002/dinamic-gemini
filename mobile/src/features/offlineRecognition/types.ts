@@ -12,6 +12,12 @@ export interface OfflineAisleRecognitionConfigDto {
   effective_position_source: 'DINAMIC' | 'SUPPLIER';
 }
 
+export interface OfflineSupplierRecognitionConfigDto {
+  client_supplier_id: string;
+  item_source: 'DINAMIC' | 'SUPPLIER';
+  position_source: 'DINAMIC' | 'SUPPLIER';
+}
+
 export interface OfflineRecognitionProfileDto {
   client_supplier_id: string;
   label_kind: 'ITEM' | 'POSITION';
@@ -30,6 +36,7 @@ export interface OfflineRecognitionBundleDto {
   client_id: string;
   generated_at: string;
   aisles: OfflineAisleRecognitionConfigDto[];
+  suppliers?: OfflineSupplierRecognitionConfigDto[];
   profiles: OfflineRecognitionProfileDto[];
   bundle_revision?: string | null;
 }

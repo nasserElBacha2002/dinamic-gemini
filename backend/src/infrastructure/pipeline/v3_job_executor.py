@@ -552,6 +552,7 @@ class V3JobExecutor:
             source_asset_repo=self._source_asset_repo,
             clock=self._clock,
             unit_of_work_factory=container.get_manual_image_result_uow_factory(),
+            position_detection_repo=container.get_image_position_label_detection_repo(),
         )
         try:
             batch_journal = container.get_global_fallback_batch_request_repo()
@@ -894,6 +895,7 @@ class V3JobExecutor:
                 source_asset_repo=self._source_asset_repo,
                 clock=self._clock,
                 unit_of_work_factory=container.get_manual_image_result_uow_factory(),
+                position_detection_repo=container.get_image_position_label_detection_repo(),
             )
 
             def _is_cancelled() -> bool:
@@ -985,6 +987,7 @@ class V3JobExecutor:
                 manual_coverage_repo=container.get_manual_image_coverage_repo(),
                 external_fallback=external_fallback,
                 apply_authoritative_local=apply_authoritative,
+                position_detection_repo=container.get_image_position_label_detection_repo(),
             )
         except ImageProcessingRepositoryUnavailableError as unavailable:
             logger.error("code_scan.repos_unavailable job_id=%s err=%s", job_id, unavailable)
@@ -1394,6 +1397,7 @@ class V3JobExecutor:
                 source_asset_repo=self._source_asset_repo,
                 clock=self._clock,
                 unit_of_work_factory=container.get_manual_image_result_uow_factory(),
+                position_detection_repo=container.get_image_position_label_detection_repo(),
             )
 
             def _is_cancelled() -> bool:

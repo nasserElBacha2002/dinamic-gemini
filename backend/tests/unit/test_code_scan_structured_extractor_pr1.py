@@ -202,7 +202,8 @@ def test_code_scan_simple_position_whole_to_position_id() -> None:
         job_id="job-1",
     )
     result = _strategy("LOC-42", repo=repo).process(_ctx(ctx), _asset())
-    assert result.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert result.status is ImageResultStatus.RESOLVED_INTERNAL
+    assert "POSITION_LABEL_ONLY" in (result.warnings or [])
     stored = list(repo.list_by_asset("job-1", "asset-1"))
     assert len(stored) == 1
     assert stored[0].public_identifier == "LOC-42"
@@ -283,7 +284,8 @@ def test_code_scan_segmented_position_materializes() -> None:
         job_id="job-1",
     )
     result = _strategy("POS001|04|RIGHT", repo=repo).process(_ctx(ctx), _asset())
-    assert result.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert result.status is ImageResultStatus.RESOLVED_INTERNAL
+    assert "POSITION_LABEL_ONLY" in (result.warnings or [])
     stored = list(repo.list_by_asset("job-1", "asset-1"))
     assert len(stored) == 1
     assert stored[0].public_identifier == "POS001"

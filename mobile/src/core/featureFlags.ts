@@ -26,6 +26,11 @@ export interface FeatureFlags {
   readonly localCompletion: boolean;
   /** Phase 4: offline local CSV export (default on). */
   readonly mobileCsvExport: boolean;
+  /**
+   * When false (default), server photo/result upload and processing flows are disabled.
+   * Capture → review → local save → ZIP export only.
+   */
+  readonly mobileServerUpload: boolean;
   /** Phase 5: client may call server CSV import APIs (default false until server flag on). */
   readonly serverCsvImport: boolean;
   /** Phase 6: classify local vs server result conflicts (default on). */
@@ -106,6 +111,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   uploadPrepareParallelism: true,
   localCompletion: true,
   mobileCsvExport: true,
+  mobileServerUpload: true,
   serverCsvImport: false,
   localRemoteReconciliation: true,
   uploadDimensionCap: true,
@@ -195,6 +201,7 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     ),
     localCompletion: bool('localCompletion', DEFAULT_FEATURE_FLAGS.localCompletion),
     mobileCsvExport: bool('mobileCsvExport', DEFAULT_FEATURE_FLAGS.mobileCsvExport),
+    mobileServerUpload: bool('mobileServerUpload', DEFAULT_FEATURE_FLAGS.mobileServerUpload),
     serverCsvImport: bool('serverCsvImport', DEFAULT_FEATURE_FLAGS.serverCsvImport),
     localRemoteReconciliation: bool(
       'localRemoteReconciliation',

@@ -71,6 +71,27 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
                 return deepcopy(row)
         return None
 
+    def get_active_by_kind(
+        self,
+        client_id: str,
+        supplier_id: str,
+        label_kind: LabelKind,
+    ) -> SupplierExtractionProfile | None:
+        want = effective_label_kind(label_kind)
+        best: SupplierExtractionProfile | None = None
+        best_version = -1
+        for row in self._rows.values():
+            if (
+                row.client_id == client_id
+                and row.supplier_id == supplier_id
+                and row.status is ExtractionProfileStatus.ACTIVE
+                and effective_label_kind(row.label_kind) is want
+                and row.version >= best_version
+            ):
+                best = row
+                best_version = row.version
+        return deepcopy(best) if best else None
+
     def list_by_supplier(
         self, client_id: str, supplier_id: str
     ) -> Sequence[SupplierExtractionProfile]:

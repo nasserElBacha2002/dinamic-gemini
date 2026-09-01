@@ -1,0 +1,41 @@
+SUPPLIER RECOGNITION ROOT CAUSE AUDIT — STATUS
+Job: a7db1968-81f1-46ae-9b6f-8d5b546281e5
+Date: 2026-09-01
+
+STATUS: COMPLETE — ROOT CAUSE CONFIRMED
+
+RECOMMENDATION: READY_TO_IMPLEMENT (fix plan documented; no code/data changes applied in this audit)
+
+ROOT CAUSE (primary):
+  client_supplier_label_profiles has zero rows for ClientSupplier c314c8c3-b6fd-490c-98dc-7b1ac40dca47.
+  LabelProfileResolver → DEFAULT/DINAMIC → job snapshot frozen DINAMIC → legacy consolidator → MISSING_QUANTITY
+  for POSITION QR payload A04-R-02|04|RIGHT|02.
+
+ROOT CAUSE (secondary — blocks success after wiring alone):
+  ACTIVE extraction profiles use SIMPLE deterministic config incompatible with segmented pipe payloads.
+
+FIRST DIVERGENCE:
+  Expected SUPPLIER wiring rows → Actual: none
+
+EVIDENCE ARTIFACTS:
+  audit/supplier-recognition-root-cause-audit.md
+  audit/supplier-recognition-state-dump.txt
+  audit/job-a7db1968-recognition-trace.txt
+  audit/supplier-recognition-db-evidence.txt
+  audit/supplier-recognition-root-cause-status.txt
+
+VALIDATION PERFORMED:
+  - SQL Server read-only queries (aisle, supplier, wiring, profiles, job, attempts, counters)
+  - LabelProfileResolver live resolve (DINAMIC/DEFAULT)
+  - GCS asset re-decode pyzbar (payload confirmed)
+  - Legacy consolidator simulation (MISSING_QUANTITY reproduced)
+  - debug_job.py --show-recognition (timeline/events)
+
+NOT PERFORMED / UNVERIFIED:
+  - Worker container git SHA / image tag (no metadata on job)
+  - Browser network capture (reconstructed from frontend/backend code)
+
+NEXT STEPS (operator, not audit):
+  1. Re-activate ITEM + POSITION with effective_source=SUPPLIER
+  2. Fix profile configs to SEGMENTED + correct mappings
+  3. Create new aisle job and verify source=SUPPLIER in events

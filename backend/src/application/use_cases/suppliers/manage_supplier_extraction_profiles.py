@@ -42,7 +42,7 @@ from src.domain.client_supplier.extraction_profile import (
     SupplierExtractionProfile,
     default_extraction_configuration,
 )
-from src.domain.label_profiles.kinds import LabelKind
+from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
 
 DEFAULT_PROFILE_KEY = "default"
 
@@ -76,6 +76,7 @@ class CreateSupplierExtractionProfileVersionCommand:
     activate: bool = False
     created_by: str | None = None
     label_kind: LabelKind | None = None
+    effective_source: LabelProfileSource | None = None
 
 
 @dataclass
@@ -85,6 +86,7 @@ class ActivateSupplierExtractionProfileVersionCommand:
     profile_id: str
     activated_by: str | None = None
     expected_row_version: int | None = None
+    effective_source: LabelProfileSource | None = None
 
 
 @dataclass
@@ -305,11 +307,15 @@ class CreateSupplierExtractionProfileVersionUseCase:
         client_supplier_repo: ClientSupplierRepository,
         profile_repo: SupplierExtractionProfileRepository,
         clock: Clock,
+        label_profile_repo=None,
+        sql_client=None,
     ) -> None:
         self._client_repo = client_repo
         self._client_supplier_repo = client_supplier_repo
         self._profile_repo = profile_repo
         self._clock = clock
+        self._label_profile_repo = label_profile_repo
+        self._sql_client = sql_client
 
     def execute(
         self, command: CreateSupplierExtractionProfileVersionCommand
@@ -357,8 +363,25 @@ class CreateSupplierExtractionProfileVersionUseCase:
             )
         except ExtractionProfileConfigurationError as exc:
             raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
+        if command.effective_source is not None:
+            from src.application.services.supplier_extraction_profile_activation import (
+                activate_profile_with_effective_source,
+            )
+
+            return activate_profile_with_effective_source(
+                profile_repo=self._profile_repo,
+                label_profile_repo=self._label_profile_repo,
+                clock=self._clock,
+                sql_client=self._sql_client,
+                client_id=command.client_id,
+                supplier_id=command.supplier_id,
+                profile_id=created.id,
+                activated_by=command.created_by,
+                expected_row_version=created.row_version,
+                effective_source=command.effective_source,
+            )
         try:
-            return self._profile_repo.activate_version(
+            activated = self._profile_repo.activate_version(
                 client_id=command.client_id,
                 supplier_id=command.supplier_id,
                 profile_id=created.id,
@@ -372,6 +395,7 @@ class CreateSupplierExtractionProfileVersionUseCase:
             raise SupplierExtractionProfileActivationFailedError(
                 f"Failed to activate created supplier extraction profile: {created.id}"
             ) from exc
+        return activated
 
 
 class ActivateSupplierExtractionProfileVersionUseCase:
@@ -380,10 +404,16 @@ class ActivateSupplierExtractionProfileVersionUseCase:
         client_repo: ClientRepository,
         client_supplier_repo: ClientSupplierRepository,
         profile_repo: SupplierExtractionProfileRepository,
+        clock: Clock | None = None,
+        label_profile_repo=None,
+        sql_client=None,
     ) -> None:
         self._client_repo = client_repo
         self._client_supplier_repo = client_supplier_repo
         self._profile_repo = profile_repo
+        self._clock = clock
+        self._label_profile_repo = label_profile_repo
+        self._sql_client = sql_client
 
     def execute(
         self, command: ActivateSupplierExtractionProfileVersionCommand
@@ -415,8 +445,29 @@ class ActivateSupplierExtractionProfileVersionUseCase:
             raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
         except ExtractionProfileConfigurationError as exc:
             raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
+        if command.effective_source is not None:
+            if self._clock is None:
+                raise SupplierExtractionProfileActivationFailedError(
+                    "effective_source wiring requires clock"
+                )
+            from src.application.services.supplier_extraction_profile_activation import (
+                activate_profile_with_effective_source,
+            )
+
+            return activate_profile_with_effective_source(
+                profile_repo=self._profile_repo,
+                label_profile_repo=self._label_profile_repo,
+                clock=self._clock,
+                sql_client=self._sql_client,
+                client_id=command.client_id,
+                supplier_id=command.supplier_id,
+                profile_id=command.profile_id,
+                activated_by=command.activated_by,
+                expected_row_version=command.expected_row_version,
+                effective_source=command.effective_source,
+            )
         try:
-            return self._profile_repo.activate_version(
+            activated = self._profile_repo.activate_version(
                 client_id=command.client_id,
                 supplier_id=command.supplier_id,
                 profile_id=command.profile_id,
@@ -431,6 +482,7 @@ class ActivateSupplierExtractionProfileVersionUseCase:
             raise SupplierExtractionProfileNotFoundError(
                 f"Supplier extraction profile not found: {command.profile_id}"
             ) from exc
+        return activated
 
 
 class CloneSupplierExtractionProfileUseCase:

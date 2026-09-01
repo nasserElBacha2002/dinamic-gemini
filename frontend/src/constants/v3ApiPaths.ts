@@ -105,6 +105,20 @@ export function supplierExtractionProfileActivatePath(
   return `${supplierExtractionProfilesPath(clientId, supplierId)}/${encodeURIComponent(profileId)}/activate`;
 }
 
+/** GET|PUT .../clients/{clientId}/suppliers/{supplierId}/label-profiles */
+export function supplierLabelProfilesPath(clientId: string, supplierId: string): string {
+  return `${pathToClientSuppliersBase(clientId)}/${encodeURIComponent(supplierId)}/label-profiles`;
+}
+
+/** PUT .../label-profiles/{labelKind} */
+export function supplierLabelProfileKindPath(
+  clientId: string,
+  supplierId: string,
+  labelKind: string
+): string {
+  return `${supplierLabelProfilesPath(clientId, supplierId)}/${encodeURIComponent(labelKind)}`;
+}
+
 /** GET|PUT .../reference-images/{imageId}/annotations */
 export function supplierReferenceImageAnnotationsPath(
   clientId: string,

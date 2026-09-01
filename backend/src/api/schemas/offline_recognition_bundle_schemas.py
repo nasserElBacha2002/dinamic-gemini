@@ -24,6 +24,16 @@ class OfflineAisleRecognitionConfigDto(BaseModel):
     effective_position_source: Literal["DINAMIC", "SUPPLIER"] = "DINAMIC"
 
 
+class OfflineSupplierRecognitionConfigDto(BaseModel):
+    """ClientSupplier base label profile sources (no aisle overrides)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    client_supplier_id: str
+    item_source: Literal["DINAMIC", "SUPPLIER"] = "DINAMIC"
+    position_source: Literal["DINAMIC", "SUPPLIER"] = "DINAMIC"
+
+
 class OfflineRecognitionProfileDto(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -49,6 +59,7 @@ class OfflineRecognitionBundleResponse(BaseModel):
     client_id: str
     generated_at: datetime
     aisles: list[OfflineAisleRecognitionConfigDto]
+    suppliers: list[OfflineSupplierRecognitionConfigDto] = Field(default_factory=list)
     profiles: list[OfflineRecognitionProfileDto]
     #: Optional weak etag for skip-download (ISO generated_at + profile count).
     bundle_revision: str | None = None

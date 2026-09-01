@@ -1,0 +1,139 @@
+MOBILE SUPPLIER RECOGNITION — STATE DUMP (read-only)
+Generated: 2026-09-01
+Golden backend job: f898e6f7-aab1-4eee-bb47-61e71df7cebe
+Inventory: eb6f750e-ed12-4c71-b9b2-56a1301e08a8
+Aisle: 709fe503-2f5c-43ae-b680-25bbc3bbf51f
+
+================================================================================
+BACKEND GOLDEN REFERENCE (live SQL via debug_job.py)
+================================================================================
+
+JOB f898e6f7-aab1-4eee-bb47-61e71df7cebe
+  status: succeeded
+  processing_mode: CODE_SCAN_ONLY
+  asset_progress: total=2 resolved=2 manual_review=0 unrecognized=0
+
+ITEM PROFILE (job snapshot)
+  source: SUPPLIER
+  profile_id: 99563751-dfb4-438e-a666-f0b539a5c6a5
+  profile_version: 10
+  payload_structure: SEGMENTED
+  required_fields: [label_id, sku, quantity]
+
+POSITION PROFILE (job snapshot)
+  source: SUPPLIER
+  profile_id: 602caad9-ab2d-4e89-8f00-57951b83c05f
+  profile_version: 3
+  payload_structure: SEGMENTED
+  required_fields: [position_id]
+
+ASSET 4e87733b (ITEM image — dual symbol)
+  symbols_detected: yes
+  payload_decoded: x2 (QR + CODE128 same payload per user)
+  profile_resolved: SUPPLIER v10 + SUPPLIER v3
+  validation_completed: RESOLVED_INTERNAL
+  final: RESOLVED
+
+ASSET 9778676e (POSITION image)
+  symbols_detected: yes
+  profile_resolved: SUPPLIER v10 + SUPPLIER v3
+  final: RESOLVED
+
+================================================================================
+BACKEND RECOGNITION-CONFIG BUNDLE (live use case)
+GET /api/v3/inventories/eb6f750e-ed12-4c71-b9b2-56a1301e08a8/recognition-config
+================================================================================
+
+bundle_revision: 77757467f6da35393781879425bcd48a55f523780ec7848a022caadb58cb1a7f
+
+AISLE 709fe503-2f5c-43ae-b680-25bbc3bbf51f
+  client_supplier_id: c314c8c3-b6fd-490c-98dc-7b1ac40dca47
+  effective_item_source: SUPPLIER
+  effective_position_source: SUPPLIER
+
+PROFILE ITEM v10
+  profile_id: 99563751-dfb4-438e-a666-f0b539a5c6a5
+  client_supplier_id: c314c8c3-b6fd-490c-98dc-7b1ac40dca47
+  payload_structure: SEGMENTED
+  delimiter: |
+  expected_segment_count: 3
+  expected_prefix: LPNA
+  required_fields: [label_id, sku, quantity]
+  field_mappings:
+    0 -> label_id
+    1 -> sku
+    2 -> quantity
+
+PROFILE POSITION v3
+  profile_id: 602caad9-ab2d-4e89-8f00-57951b83c05f
+  client_supplier_id: c314c8c3-b6fd-490c-98dc-7b1ac40dca47
+  payload_structure: SEGMENTED
+  delimiter: |
+  expected_segment_count: 4
+  expected_prefix: A04
+  required_fields: [position_id]
+  field_mappings:
+    0 -> position_id
+    1 -> pallet
+    2 -> side
+    3 -> level
+
+================================================================================
+MOBILE SQLITE (schema — device dump UNVERIFIED)
+================================================================================
+
+Migration v28 tables (mobile/src/database/migrations/migrations.ts):
+  offline_recognition_profiles
+  offline_aisle_recognition_config
+  offline_recognition_sync_meta
+
+Expected rows after sync of inventory eb6f750e...:
+  sync_meta.bundle_revision = 77757467f6da35393781879425bcd48a55f523780ec7848a022caadb58cb1a7f
+  aisle_config(709fe503...) client_supplier_id = c314c8c3...
+  profiles(c314..., ITEM) version=10 id=99563751...
+  profiles(c314..., POSITION) version=3 id=602caad9...
+
+NOTE: No on-device SQLite dump captured in this audit session.
+
+================================================================================
+MOBILE RESOLVER (code inspection — aisle 709fe503...)
+================================================================================
+
+LocalLabelProfileResolver precedence (localLabelProfileResolver.ts):
+  1. aisle override (item/position_profile_source_override)
+  2. effective_item_source / effective_position_source from bundle
+  3. DINAMIC default
+
+Expected output when bundle synced:
+  ITEM: source=SUPPLIER, profile_version=10, profile_id=99563751...
+  POSITION: source=SUPPLIER, profile_version=3, profile_id=602caad9...
+
+================================================================================
+MOBILE SCANNER
+================================================================================
+
+Library: ML Kit via CaptureForegroundService (Android native)
+Formats enabled: QR_CODE, CODE_128, CODE_39, EAN_13, EAN_8, UPC_A, UPC_E
+Multipass: full frame + 3x3 tiles + zoom crops
+Native dedupe: merge by trimmed rawValue (first wins)
+
+================================================================================
+SHARED FIXTURE COVERAGE GAP
+================================================================================
+
+contracts/offline-recognition/v1/minimal-vectors.json contains:
+  - MINIMAL LPNA000184 (SIMPLE, not production SEGMENTED)
+  - SEGMENTED ABC001|SKU123|20 (generic, not LPNA000184|SKU773421|24)
+  - MINIMAL POSITION A04-R-02 (SIMPLE, not A04-R-02|04|RIGHT|02)
+
+Production golden payloads NOT in shared fixture file.
+
+================================================================================
+TESTS EXECUTED (audit session)
+================================================================================
+
+Mobile: npm test (recognition-related) — 216 passed + 19 migration tests passed
+Backend: test_offline_recognition_shared_vectors + test_supplier_profile_runtime_wiring (filtered) — 4 passed
+Backend: test_inventory_recognition_config_bundle — bundle_revision tests pass
+
+Device/E2E with real ITEM+QR+Code128 image: NOT RUN

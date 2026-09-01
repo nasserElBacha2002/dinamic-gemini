@@ -97,4 +97,16 @@ describe('localAisleWork multi-session', () => {
     expect(work?.updatedAt).toBe('2026-01-15T12:00:00.000Z');
     expect(work?.label).toMatch(/localmente/i);
   });
+
+  it('maps legacy upload sessions to local_completed when server upload is off', () => {
+    const work = workForAisle(
+      [session({ status: 'uploading' })],
+      'aisle-1',
+      [{ sessionId: 's1', pending: 3, uploaded: 0, totalStable: 5, inventoryName: 'Inv', aisleName: 'A1', uploading: 0, retryable: 0, permanent: 0, excluded: 0 }],
+      { serverUploadEnabled: false },
+    );
+    expect(work?.kind).toBe('local_completed');
+    expect(work?.pendingUploads).toBe(0);
+    expect(work?.label).toMatch(/exportable offline/i);
+  });
 });

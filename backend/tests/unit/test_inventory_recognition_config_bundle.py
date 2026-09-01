@@ -180,6 +180,79 @@ def test_bundle_includes_aisles_and_active_profiles_only() -> None:
     assert ("ITEM", 1) not in versions
     assert len(bundle.bundle_revision) == 64
     assert all(c in "0123456789abcdef" for c in bundle.bundle_revision)
+    assert len(bundle.suppliers) == 1
+    assert bundle.suppliers[0].client_supplier_id == "sup-a"
+    assert bundle.suppliers[0].item_source == "SUPPLIER"
+    assert bundle.suppliers[0].position_source == "SUPPLIER"
+
+
+def test_bundle_supplier_base_source_independent_of_aisle_override() -> None:
+    """ClientSupplier base sources must not inherit aisle overrides."""
+    now = datetime.now(timezone.utc)
+    inv = Inventory(
+        id="inv-1",
+        name="Test",
+        status=InventoryStatus.DRAFT,
+        created_at=now,
+        updated_at=now,
+        client_id="client-1",
+    )
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+        client_supplier_id="sup-a",
+        item_profile_source_override=LabelProfileSource.DINAMIC,
+    )
+    item_cfg = minimal_supplier_item_configuration(expected_prefix="LPNA", exact_length=10)
+    profiles = [
+        SupplierExtractionProfile(
+            id="pi",
+            client_id="client-1",
+            supplier_id="sup-a",
+            profile_key="ITEM",
+            version=3,
+            status=ExtractionProfileStatus.ACTIVE,
+            configuration=item_cfg,
+            visual_notes=None,
+            created_by=None,
+            created_at=now,
+            label_kind=LabelKind.ITEM,
+        ),
+    ]
+    label_rows = [
+        ClientSupplierLabelProfile(
+            id="lp-i",
+            client_supplier_id="sup-a",
+            label_kind=LabelKind.ITEM,
+            source=LabelProfileSource.SUPPLIER,
+            created_at=now,
+            updated_at=now,
+        ),
+        ClientSupplierLabelProfile(
+            id="lp-p",
+            client_supplier_id="sup-a",
+            label_kind=LabelKind.POSITION,
+            source=LabelProfileSource.DINAMIC,
+            created_at=now,
+            updated_at=now,
+        ),
+    ]
+    uc = GetInventoryRecognitionConfigUseCase(
+        inventory_repo=_InvRepo(inv),
+        aisle_repo=_AisleRepo([aisle]),
+        extraction_profile_repo=_ExtractionRepo(profiles),
+        label_profile_repo=_LabelProfileRepo(label_rows),
+    )
+    bundle = uc.execute(GetInventoryRecognitionConfigCommand(inventory_id="inv-1"))
+    assert bundle.aisles[0].item_profile_source_override == "DINAMIC"
+    assert bundle.aisles[0].effective_item_source == "DINAMIC"
+    assert len(bundle.suppliers) == 1
+    assert bundle.suppliers[0].item_source == "SUPPLIER"
+    assert bundle.suppliers[0].position_source == "DINAMIC"
 
 
 def test_bundle_revision_stable_for_identical_content() -> None:

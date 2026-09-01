@@ -69,12 +69,16 @@ def build_create_supplier_extraction_profile_version_use_case(
     client_supplier_repo: ClientSupplierRepository,
     profile_repo: SupplierExtractionProfileRepository,
     clock: Clock,
+    label_profile_repo=None,
+    sql_client=None,
 ) -> CreateSupplierExtractionProfileVersionUseCase:
     return CreateSupplierExtractionProfileVersionUseCase(
         client_repo=client_repo,
         client_supplier_repo=client_supplier_repo,
         profile_repo=profile_repo,
         clock=clock,
+        label_profile_repo=label_profile_repo,
+        sql_client=sql_client,
     )
 
 
@@ -83,11 +87,17 @@ def build_activate_supplier_extraction_profile_version_use_case(
     client_repo: ClientRepository,
     client_supplier_repo: ClientSupplierRepository,
     profile_repo: SupplierExtractionProfileRepository,
+    clock: Clock | None = None,
+    label_profile_repo=None,
+    sql_client=None,
 ) -> ActivateSupplierExtractionProfileVersionUseCase:
     return ActivateSupplierExtractionProfileVersionUseCase(
         client_repo=client_repo,
         client_supplier_repo=client_supplier_repo,
         profile_repo=profile_repo,
+        clock=clock,
+        label_profile_repo=label_profile_repo,
+        sql_client=sql_client,
     )
 
 

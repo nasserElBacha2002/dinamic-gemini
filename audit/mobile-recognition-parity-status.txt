@@ -1,0 +1,34 @@
+MOBILE SUPPLIER RECOGNITION PARITY AUDIT — STATUS
+Generated: 2026-09-01
+
+OVERALL: PARIDAD_PARCIAL
+READY_FOR_DEVICE_E2E: NO
+CODE_CHANGES: NONE (read-only audit)
+
+EVIDENCE_SOURCES:
+  - debug_job.py --show-recognition job f898e6f7-aab1-4eee-bb47-61e71df7cebe [OK]
+  - GetInventoryRecognitionConfigUseCase inventory eb6f750e-... [OK]
+  - Mobile codebase inspection [OK]
+  - Mobile tests npm test 216+19 PASS [OK]
+  - Backend shared vectors + supplier wiring tests PASS [OK]
+  - Device SQLite dump [UNVERIFIED]
+  - Device E2E real images [UNVERIFIED]
+
+GOLDEN BACKEND CONFIRMED:
+  ITEM SUPPLIER v10 SEGMENTED LPNA000184|SKU773421|24 -> RESOLVED_INTERNAL
+  POSITION SUPPLIER v3 SEGMENTED A04-R-02|04|RIGHT|02 -> RESOLVED_INTERNAL
+  Dual payload ITEM asset -> RESOLVED (2 decode events)
+
+MOBILE BUNDLE API MATCHES BACKEND: YES
+
+P0 FINDINGS: 0 demonstrated
+P1 FINDINGS: 6 (test gaps, labelId fallback, authoritative POSITION kind, E2E unverified)
+P2 FINDINGS: 2 (observability, preliminary metadata)
+
+DELIVERABLES:
+  audit/mobile-supplier-recognition-parity-audit.md
+  audit/mobile-supplier-recognition-state-dump.txt
+  audit/mobile-backend-recognition-parity-matrix.md
+  audit/mobile-recognition-parity-status.txt
+
+FIX ARTIFACTS: none (no code changes)

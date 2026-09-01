@@ -917,6 +917,7 @@ class StartAisleProcessingUseCase:
                 raise ValueError(f"{exc.code}: {exc.message}") from exc
             supplier_prompt_snapshot = resolved_prompt.public_snapshot(include_content=True)
         label_profiles_snapshot = None
+        supplier_wiring_warnings: list[str] = []
         if self._label_profile_repo is not None and self._client_supplier_repo is not None:
             profile_resolver = LabelProfileResolver(
                 label_profile_repo=self._label_profile_repo,
@@ -941,6 +942,44 @@ class StartAisleProcessingUseCase:
                 resolved_profiles=resolved_profiles,
                 client_id=client_id,
             )
+            if (
+                (profiles_enabled or profile_aware)
+                and supplier_id
+                and self._extraction_profile_repo is not None
+            ):
+                from src.application.services.supplier_label_profile_wiring import (
+                    detect_supplier_wiring_mismatch,
+                )
+                from src.domain.client_supplier.extraction_profile import ExtractionProfileStatus
+                from src.domain.label_profiles.kinds import effective_label_kind
+
+                active_kinds = {
+                    effective_label_kind(row.label_kind)
+                    for row in self._extraction_profile_repo.list_by_supplier(
+                        client_id, str(supplier_id).strip()
+                    )
+                    if row.status is ExtractionProfileStatus.ACTIVE
+                }
+                explicit_wiring_kinds = {
+                    row.label_kind
+                    for row in self._label_profile_repo.list_by_supplier(
+                        str(supplier_id).strip()
+                    )
+                }
+                supplier_wiring_warnings = detect_supplier_wiring_mismatch(
+                    client_supplier_id=str(supplier_id).strip(),
+                    item_source=resolved_profiles.item.source,
+                    position_source=resolved_profiles.position.source,
+                    active_extraction_kinds=active_kinds,
+                    explicit_wiring_kinds=explicit_wiring_kinds,
+                )
+                if supplier_wiring_warnings:
+                    logger.warning(
+                        "label_profiles.wiring_mismatch client_id=%s supplier_id=%s warnings=%s",
+                        client_id,
+                        supplier_id,
+                        supplier_wiring_warnings,
+                    )
         engine_params_json = {
             "identification_execution": identification_execution_snapshot_dict(
                 decision,
@@ -957,6 +996,7 @@ class StartAisleProcessingUseCase:
                 profile_snapshotted=bool(supplier_extraction_profile),
                 profile_validation_executed=False,
                 processing_mode=processing_mode.value,
+                supplier_wiring_warnings=supplier_wiring_warnings or None,
             ),
             "client_id": client_id,
             "supplier_id": str(supplier_id).strip() if supplier_id else None,

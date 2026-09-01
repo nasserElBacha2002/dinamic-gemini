@@ -118,6 +118,7 @@ def identification_execution_snapshot_dict(
     profile_snapshotted: bool = False,
     profile_validation_executed: bool = False,
     processing_mode: str | None = None,
+    supplier_wiring_warnings: list[str] | None = None,
 ) -> dict:
     """Build the immutable identification-execution block stored on the job."""
     from src.domain.aisle_identification.processing_mode import (
@@ -136,7 +137,6 @@ def identification_execution_snapshot_dict(
             reference_template_annotations_enabled
         ),
         "profile_snapshotted": bool(profile_snapshotted),
-        "profile_validation_executed": bool(profile_validation_executed),
         "supplier_prompt_snapshotted": bool(supplier_prompt),
         "processing_mode": resolved_processing_mode
         or DEFAULT_AISLE_PROCESSING_MODE.value,
@@ -149,6 +149,8 @@ def identification_execution_snapshot_dict(
             feature_flags["external_fallback_mode"] = str(
                 external_fallback.get("fallback_mode")
             )
+    if supplier_wiring_warnings:
+        feature_flags["supplier_wiring_warnings"] = list(supplier_wiring_warnings)
     return {
         "requested_mode": decision.requested_mode.value,
         "executed_strategy": decision.strategy.value,
@@ -163,4 +165,5 @@ def identification_execution_snapshot_dict(
         "supplier_extraction_profile": supplier_extraction_profile,
         "supplier_prompt": supplier_prompt,
         "label_profiles": label_profiles,
+        "profile_validation_executed": bool(profile_validation_executed),
     }

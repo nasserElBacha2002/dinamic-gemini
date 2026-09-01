@@ -25,6 +25,9 @@ import { LocalDetectionDraftRepository } from '../../database/repositories/local
 import { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
 import { OfflineRecognitionConfigRepository } from '../../database/repositories/offlineRecognitionConfigRepository';
+import { LocalCatalogRepository } from '../../database/repositories/localCatalogRepository';
+import { CatalogSyncService } from '../../features/catalog/catalogSyncService';
+import { CatalogSyncCoordinator } from '../../features/catalog/catalogSyncCoordinator';
 import {
   LocalLabelProfileResolver,
   OfflineRecognitionSyncService,
@@ -78,6 +81,9 @@ import { probeStability } from '../../native/stabilityProber';
 import { ApiClient } from '../../services/api/apiClient';
 import { createConnectivityService, type ConnectivityService } from '../../services/connectivity/connectivity';
 import { secureTokenStorage, type TokenStorage } from '../../services/secureStorage/tokenStorage';
+import {
+  secureSessionUserStorage,
+} from '../../services/secureStorage/sessionUserStorage';
 
 function createMirroredTokenStorage(base: TokenStorage, config: AppConfig): TokenStorage {
   const sync = async () => {
@@ -148,6 +154,9 @@ export interface AppServices {
     readonly resolver: LocalLabelProfileResolver;
     readonly repo: OfflineRecognitionConfigRepository;
   };
+  /** Local-first catalog hydration + background sync coordination. */
+  readonly catalog: CatalogSyncCoordinator;
+  readonly catalogRepo: LocalCatalogRepository;
   /** Phase 9: null when `mobileOfflineOperations` is off. */
   readonly offlineOperations: OfflineOperationFacade | null;
   readonly offlineScheduler: OfflineOperationScheduler | null;
@@ -187,7 +196,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
   const localCsvExportRepo = new LocalCsvExportRepository(db);
   const offlineRecognitionRepo = new OfflineRecognitionConfigRepository(db);
-  const offlineRecognitionResolver = new LocalLabelProfileResolver(offlineRecognitionRepo);
+  const catalogRepo = new LocalCatalogRepository(db);
+  const offlineRecognitionResolver = new LocalLabelProfileResolver(offlineRecognitionRepo, catalogRepo);
   const offlineRecognitionSync = new OfflineRecognitionSyncService(
     api,
     offlineRecognitionRepo,
@@ -215,6 +225,20 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     config.flags.uploadObservabilityEnabled
       ? { reporter: observability.reporter, marks: observability.marks }
       : null;
+  const catalogSyncService = new CatalogSyncService(
+    api,
+    catalogRepo,
+    connectivity,
+    logger,
+    offlineRecognitionSync,
+    obsWire?.reporter ?? null,
+  );
+  const catalogCoordinator = new CatalogSyncCoordinator(
+    catalogSyncService,
+    connectivity,
+    catalogRepo,
+  );
+  await catalogCoordinator.initialize();
   const localCodeScan = new LocalCodeScanStrategy({
     drafts: localDetectionDrafts,
     reporter: obsWire?.reporter ?? null,
@@ -395,6 +419,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       authoritativeExclusion: config.flags.mobileAuthoritativeAisleFinalization
         ? authoritativeAisleFinalization
         : null,
+      catalog: catalogRepo,
     },
   );
 
@@ -609,6 +634,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       api,
       tokenStorage,
       logger,
+      secureSessionUserStorage,
       async () => {
         await backgroundWork.cancelAllTracked();
         await clearNativeUploadAuth();
@@ -627,9 +653,17 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
         await offlineScheduler?.onAuthRestored();
       },
     ),
-    inventories: new InventoryService(api),
-    clients: new ClientService(api),
-    aisles: new AisleService(api, logger),
+    inventories: new InventoryService(api, catalogRepo, catalogCoordinator, connectivity),
+    clients: new ClientService(api, catalogRepo, catalogCoordinator, connectivity),
+    aisles: new AisleService(
+      api,
+      logger,
+      catalogRepo,
+      catalogCoordinator,
+      connectivity,
+      offlineRecognitionRepo,
+      obsWire?.reporter,
+    ),
     capture,
     uploadQueue,
     uploadLimits,
@@ -648,6 +682,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       resolver: offlineRecognitionResolver,
       repo: offlineRecognitionRepo,
     },
+    catalog: catalogCoordinator,
+    catalogRepo,
     aisleRevision,
     reconciliation,
     connectivity,

@@ -135,19 +135,23 @@ class SupplierExtractionProfileResolver:
                     source="LEGACY_COMPAT",
                 )
 
-        # New job build path (engine_params is None): ACTIVE or DEFAULT.
+        # New job build path (engine_params is None): ACTIVE by kind or DEFAULT.
         if (
             self._enabled
             and self._repo is not None
             and client_id
             and supplier_id
         ):
+            from src.domain.label_profiles.kinds import LabelKind
+
             try:
-                active = self._repo.get_active(client_id, supplier_id)
-            except (OSError, RuntimeError, ValueError) as exc:
+                active = self._repo.get_active_by_kind(
+                    client_id, supplier_id, LabelKind.ITEM
+                )
+            except (OSError, RuntimeError, ValueError, AttributeError) as exc:
                 logger.warning(
                     "extraction_profile.active_lookup_failed client_id=%s "
-                    "supplier_id=%s error=%s",
+                    "supplier_id=%s label_kind=ITEM error=%s",
                     client_id,
                     supplier_id,
                     exc,

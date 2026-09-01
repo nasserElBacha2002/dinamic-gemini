@@ -461,13 +461,20 @@ class SingleAssetStrategyProcessor:
             result.additional_fields["persistence_status"] = (
                 "persisted" if outcome.persisted else "reconciled"
             )
+            result_kind = None
+            if isinstance(result.evidence, dict):
+                result_kind = result.evidence.get("result_kind")
             logger.info(
-                "image_processing.persistence_completed job_id=%s asset_id=%s strategy=%s "
-                "persistence_outcome=%s position_id=%s",
+                "code_scan.persistence_completed job_id=%s asset_id=%s strategy=%s "
+                "persistence_outcome=%s result_kind=%s product_count=%s position_count=%s "
+                "position_id=%s",
                 job.id,
                 asset.id,
                 strategy_key,
                 "persisted" if outcome.persisted else "reconciled",
+                result_kind,
+                outcome.products_persisted,
+                outcome.positions_persisted,
                 outcome.position_id,
             )
             return result, None
@@ -514,6 +521,17 @@ class SingleAssetStrategyProcessor:
                     job, asset, strategy_key, "PROCESSING_INCOMPLETE_RESULT", result
                 ),
                 None,
+            )
+        if reason is PersistSkipReason.POSITION_MATERIALIZATION_FAILED:
+            return (
+                self._failed_technical(
+                    job,
+                    asset,
+                    strategy_key,
+                    "POSITION_MATERIALIZATION_FAILED",
+                    "POSITION_ONLY result could not be materialized durably.",
+                ),
+                f"position_materialization_failed:{asset.id}",
             )
         return (
             self._failed_technical(

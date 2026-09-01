@@ -1,91 +1,44 @@
-# Implementation corrections validation — Phase 3 contract cleanup + Phase 4 docs
+# Supplier offline import/export — implementation corrections validation
 
-**Date:** 2026-08-11
+Date: 2026-09-01  
+Scope: Mobile CSV export + backend local CSV materialization (supplier segmented profiles)
 
-## Scope
+## Status matrix
 
-Final contractual corrections after Phase 3 functional fixes and Phase 4
-`NO_ACTION_REQUIRED`. No Stored Procedures, triggers, or migrations.
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| SUPPLIER_IMPORT_PROFILE_RESOLUTION | **PARTIAL** | Mobile exports semantic fields from `recognition_profile_snapshot_json`; CSV `notes` carries `supplier_import` metadata for backend revalidation. Full backend re-extraction against historical profile version **not yet wired**. |
+| ITEM_SEMANTIC_EXTRACTION | **PASS** | Export maps label_id / sku / quantity from snapshot; raw segmented string blocked as SKU. |
+| POSITION_SEMANTIC_EXTRACTION | **PASS** | Export emits `LOCAL_POSITION_LABEL` with position hierarchy; no product row. |
+| RAW_PAYLOAD_NOT_SKU | **PASS** | `isLikelyRawSegmentedPayload` guard in export + scan persist; golden tests. |
+| NO_ZERO_SENTINEL | **PASS** | Backend `_quantity_for` returns `None` (not 0); summary `final_quantity` null-safe. |
+| POSITION_ONLY_PERSISTENCE | **PASS** | `LOCAL_POSITION_LABEL` skipped by materializer; no ProductRecord for position markers. |
+| HISTORICAL_PROFILE_REVALIDATION | **FAIL** | Follow-up: parse `notes.supplier_import` and run `StructuredPayloadExtractor` against exact profile_id/version on import. |
+| DINAMIC_REGRESSION | **PASS** | No changes to DINAMIC/TXT ingestion paths; existing materializer tests pass. |
+| TESTS | **PASS** | Mobile: typecheck, test:core (327), test:services (273). Backend: `test_local_csv_position_materializer.py` (11). |
 
-## Fixes
+## Fixes applied
 
-1. `InventoryRepository.compare_and_set_status` is `@abstractmethod` (no non-atomic default).
-2. SQL/Memory CAS retained; test stubs use `ExplicitInventoryCompareAndSet` or delegate.
-3. Terminal outcomes: `CONSISTENT | REPAIRED | NOT_FOUND | RETRY_EXHAUSTED`; conflicts via
-   `last_conflict_reason` (`CAS_MISS` / `SOURCE_CHANGED`).
-4. Backfill no longer branches on non-terminal outcomes.
-5. Removed production `before_cas_hook`; SQL races use `BarrierInventoryRepository` in tests.
-6. Verify-after-write docs match optimistic semantics.
-7. SQL metadata-only `completed_at` repair cases A/B.
-8. `reconcile()` callers audited; wrapper logs exhaustion (`False` ≠ consistent).
-9. Phase 4 report: File / Class-Method / Persistence primitive per candidate.
+1. **Mobile `supplierExportSemantics.ts`** — snapshot → semantic ITEM/POSITION fields; raw segmented detection; `supplier_import` notes JSON.
+2. **Mobile `buildLocalCsvExport.ts`** — export from snapshot; block raw fallback; POSITION-only rows; supplier position columns; import notes.
+3. **Mobile `localCodeScanStrategy.ts`** — do not persist legacy raw segmented string as `internal_code` when supplier item valid.
+4. **Backend `local_csv_position_materializer.py`** — quantity null handling; plain-text supplier position evidence; business position in summary; review only when product line missing qty.
 
-## Pytest (Phase 3 suite)
+## First divergence
 
-```bash
-cd backend
-.venv/bin/python -m pytest \
-  tests/domain/test_derive_inventory_status.py \
-  tests/unit/inventory_status/ \
-  tests/application/use_cases/test_inventory_status_lifecycle_and_backfill.py \
-  tests/integration/inventory_status/ \
-  tests/integration/local_inventory_package/ \
-  tests/integration/local_csv_batch/ \
-  tests/unit/local_inventory_package/ \
-  tests/unit/test_local_csv_import_confirm_materialize.py \
-  --tb=line --no-cov -q
-```
+See `audit/supplier-offline-import-first-divergence.md`. First broken stage was mobile export fallback + backend quantity sentinel.
 
-```text
-exit code: 0
-passed: 67
-failed: 0
-skipped: 0
-```
+## Follow-up recommendations
 
-## Pytest (Phase 4 DB regression)
+1. Backend import enricher: read `notes.supplier_import`, load profile by id+version, revalidate raw_payload (fail closed if profile missing).
+2. Issued-label path: when supplier ITEM has label_id but registry unresolved, consider `requires_review` only when CSV `requires_review=true` and validation metadata present.
+3. Device E2E: re-import golden ZIP for `pruebas b` and verify UI rows.
 
-```text
-exit code: 0
-passed: 47
-failed: 0
-skipped: 0
-```
-
-## Ruff
-
-```text
-exit code: 0
-All checks passed!
-```
-
-(import order auto-fixed on stub mixin files)
-
-## Mypy
+## Validation commands
 
 ```bash
-.venv/bin/mypy \
-  src/application/ports/repositories.py \
-  src/application/services/inventory_status_reconciler.py \
-  src/application/use_cases/inventories/backfill_inventory_statuses.py \
-  tests/support/inventory_repository_cas.py
+cd mobile && npm run typecheck && npm run test:core && npm run test:services
+cd backend && .venv/bin/pytest tests/unit/test_local_csv_position_materializer.py -q --no-cov
 ```
 
-```text
-exit code: 0
-Success: no issues found in 4 source files
-```
-
-## Status
-
-```text
-PHASE_0: COMPLETE
-PHASE_1: COMPLETE
-PHASE_2: COMPLETE
-PHASE_3: COMPLETE
-PHASE_4: NO_ACTION_REQUIRED
-
-Stored Procedures total: 0
-Triggers total: 0
-New migrations: 0
-```
+Results (2026-09-01): all commands PASS.

@@ -102,17 +102,22 @@ def _sku_for(result: LocalCsvProductiveResult) -> str:
     return code if code else "UNKNOWN"
 
 
-def _quantity_for(result: LocalCsvProductiveResult) -> int:
+def _quantity_for(result: LocalCsvProductiveResult) -> int | None:
     if result.quantity is None:
-        return 0
+        return None
     try:
-        return max(0, int(result.quantity))
+        qty = int(result.quantity)
     except (TypeError, ValueError):
-        return 0
+        return None
+    if qty < 0:
+        return None
+    return qty
 
 
-def _qty_parse_status(qty: int, raw_quantity: int | None) -> str:
+def _qty_parse_status(qty: int | None, raw_quantity: int | None) -> str:
     if raw_quantity is None:
+        return "missing"
+    if qty is None:
         return "missing"
     if qty <= 0:
         return "zero"
@@ -126,6 +131,8 @@ def _detected_summary(
     label_authority: str | None = None,
 ) -> dict:
     position_code = (result.position_code or "").strip() or None
+    position_label = (result.position_label_id or "").strip() or None
+    business_position = position_label or position_code
     internal = (result.internal_code or "").strip() or None
     qty = _quantity_for(result)
     summary: dict = {
@@ -145,11 +152,11 @@ def _detected_summary(
     if internal:
         summary["internal_code"] = internal
         summary["review_display_label"] = internal
-    if position_code:
-        summary["position_barcode"] = position_code
-        summary["pallet_id"] = position_code
+    if business_position:
+        summary["position_barcode"] = business_position
+        summary["pallet_id"] = business_position
         if not internal:
-            summary["review_display_label"] = position_code
+            summary["review_display_label"] = business_position
     if result.source_asset_id:
         summary["source_image_id"] = result.source_asset_id
         summary["source_asset_id"] = result.source_asset_id
@@ -285,6 +292,13 @@ class LocalCsvPositionMaterializer:
         try:
             payload = json.loads(raw)
         except (TypeError, ValueError, json.JSONDecodeError):
+            has_hierarchy = bool(
+                (result.position_label_id or "").strip()
+                or (result.position_code or "").strip()
+            )
+            if has_hierarchy and not is_txt:
+                # Supplier segmented position evidence from mobile CSV (plain text, not JSON).
+                return True
             logger.warning(
                 "local_csv_position_payload_invalid productive_id=%s reason=json",
                 result.id,
@@ -412,7 +426,7 @@ class LocalCsvPositionMaterializer:
             return None
         sku = _sku_for(result)
         qty = _quantity_for(result)
-        if sku == "UNKNOWN" or qty < 1:
+        if sku == "UNKNOWN" or qty is None or qty < 1:
             logger.warning(
                 "local_csv_label_fields_invalid productive_id=%s label_id=%s",
                 result.id,
@@ -473,13 +487,16 @@ class LocalCsvPositionMaterializer:
 
         position_id = position_id_for_productive(result.id)
         product_id = product_id_for_productive(result.id)
-        position_code = (result.position_code or "").strip() or None
+        position_code = (result.position_label_id or result.position_code or "").strip() or None
         # TXT without catalog-consistent hierarchy must not keep adulterated position_code.
         if is_txt and not position_payload_ok:
             position_code = None
         sku = _sku_for(result)
         qty = _quantity_for(result)
-        needs_review = bool(result.requires_review) or sku == "UNKNOWN" or result.quantity is None
+        has_product_line = bool((result.internal_code or "").strip())
+        needs_review = bool(result.requires_review) or sku == "UNKNOWN"
+        if has_product_line and qty is None:
+            needs_review = True
         if is_txt and not position_payload_ok:
             needs_review = True
         label_id = (result.label_id or "").strip().upper() or None
@@ -573,7 +590,7 @@ class LocalCsvPositionMaterializer:
                 position_id=position_id,
                 sku=sku,
                 description=None,
-                detected_quantity=qty,
+                detected_quantity=qty if qty is not None else 0,
                 corrected_quantity=None,
                 confidence=1.0,
                 created_at=created_at,

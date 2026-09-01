@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, type AppStateStatus, View } from 'react-native';
 
 import type { AppServices } from './src/runtime/bootstrap/createAppServices';
 import { createAppServices } from './src/runtime/bootstrap/createAppServices';
+import { shouldTriggerReconnectCatalogSync } from './src/features/catalog/catalogSyncPolicy';
 import type { CaptureSnapshot } from './src/features/capture/captureService';
 import type { AuthSession } from './src/features/auth/authService';
 import type { AisleDto, InventoryListItemDto } from './src/services/api/types';
@@ -32,6 +33,27 @@ import type { AisleIdentificationMode } from './src/features/processing/processi
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
 import { processingRunStore } from './src/features/processing/processingRun';
 import { ErrorText, Shell, SmallButton, messageOf, styles } from './src/ui';
+
+async function finishReviewForExport(
+  services: AppServices,
+  sessionId: string,
+  auth: AuthSession | null,
+  capture: CaptureSnapshot | null,
+): Promise<void> {
+  if (services.config.flags.mobileAuthoritativeLocalCodeScan && auth?.user?.id) {
+    const snap =
+      capture?.session?.id === sessionId
+        ? capture
+        : await services.capture.loadSession(sessionId, false);
+    await services.confirmLocalResult.confirmResolvedDraftsForSession({
+      sessionId,
+      confirmedByUserId: auth.user.id,
+      photos: snap.photos,
+    });
+  }
+  await services.capture.completeLocalSession({ uploadPolicy: 'MANUAL' });
+  await services.capture.loadSession(sessionId, false);
+}
 
 type Screen =
   | 'login'
@@ -75,7 +97,6 @@ export default function App(): JSX.Element {
   useEffect(() => {
     let mounted = true;
     let unsubscribeCapture: (() => void) | undefined;
-    let unsubscribeConnectivity: (() => void) | undefined;
     let unsubscribeUpload: (() => void) | undefined;
     let createdServices: AppServices | undefined;
     void createAppServices(() => {
@@ -97,15 +118,19 @@ export default function App(): JSX.Element {
           );
         }
         setIdentificationModePreference(null);
-        unsubscribeConnectivity = created.connectivity.subscribe((state) => {
-          if (mounted) setConnectivity(state);
-        });
         unsubscribeUpload = created.uploadQueue.subscribe((snap) => {
           if (mounted) setUploadProgress(snap.sessions);
         });
-        const restored = created.configError ? null : await created.auth.restore();
+        const startupConnectivity = created.connectivity.getState();
+        if (mounted) setConnectivity(startupConnectivity);
+        const restored = created.configError
+          ? null
+          : await created.auth.restore(startupConnectivity);
         if (!mounted) return;
         setAuth(restored);
+        if (restored) {
+          void created.catalog.bootstrap(startupConnectivity).catch(() => undefined);
+        }
         const open = await created.capture.restoreLatestOpen();
         const activity = await created.capture.listActivitySessions();
         if (mounted) setLocalSessions(activity);
@@ -124,7 +149,6 @@ export default function App(): JSX.Element {
     return () => {
       mounted = false;
       unsubscribeCapture?.();
-      unsubscribeConnectivity?.();
       unsubscribeUpload?.();
       void createdServices?.dispose();
     };
@@ -168,11 +192,38 @@ export default function App(): JSX.Element {
   );
 
   useEffect(() => {
+    if (!services) return;
+    let mounted = true;
+    let previous = services.connectivity.getState();
+    const unsub = services.connectivity.subscribe((state) => {
+      if (mounted) setConnectivity(state);
+      if (shouldTriggerReconnectCatalogSync(Boolean(auth), previous, state)) {
+        void services.catalog.requestSync('reconnect').catch(() => undefined);
+      }
+      previous = state;
+    });
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, [services, auth]);
+
+  useEffect(() => {
     if (!services || !auth) return;
     refreshLocalWork();
     const t = setInterval(refreshLocalWork, 4000);
     return () => clearInterval(t);
   }, [services, auth, refreshLocalWork, screen]);
+
+  useEffect(() => {
+    if (!services || !auth) return;
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active' && connectivity !== 'offline') {
+        void services.catalog.requestSync('foreground').catch(() => undefined);
+      }
+    });
+    return () => sub.remove();
+  }, [services, auth, connectivity]);
 
   if (loading || !services) {
     return (
@@ -197,11 +248,17 @@ export default function App(): JSX.Element {
         onLoggedIn={(session) => {
           setAuth(session);
           setScreen('inventories');
-          void services.uploadQueue.resume();
+          if (services.config.flags.mobileServerUpload) {
+            void services.uploadQueue.resume();
+          }
+          void services.catalog.bootstrap('online').catch(() => undefined);
+          void services.catalog.requestSync('login').catch(() => undefined);
         }}
       />
     );
   }
+
+  const serverUploadEnabled = services.config.flags.mobileServerUpload === true;
 
   const openAisleWork = (work: LocalAisleWork, inventory: InventoryListItemDto | null) => {
     setWorkSessionId(work.sessionId);
@@ -235,7 +292,7 @@ export default function App(): JSX.Element {
     });
     hydrateSelection(work.inventoryId, work.aisleId, work.aisleName);
     if (
-      services &&
+      serverUploadEnabled &&
       (services.config.flags.mobileLocalCodeScan ||
         services.config.flags.mobileAuthoritativeLocalCodeScan)
     ) {
@@ -246,6 +303,10 @@ export default function App(): JSX.Element {
       void services.capture.loadSession(work.sessionId, work.kind === 'capture_active');
       setScreen('capture');
     } else if (work.kind === 'capture_review' || work.kind === 'local_completed') {
+      setForceNewCapture(false);
+      void services.capture.loadSession(work.sessionId, false);
+      setScreen('review');
+    } else if (!serverUploadEnabled) {
       setForceNewCapture(false);
       void services.capture.loadSession(work.sessionId, false);
       setScreen('review');
@@ -386,6 +447,7 @@ export default function App(): JSX.Element {
           onConfirm={(sessionId) => {
             setWorkSessionId(sessionId);
             const useLocalReview =
+              serverUploadEnabled &&
               services.config.flags.mobileAuthoritativeLocalCodeScan &&
               services.config.flags.mobileLocalResultReview;
             if (useLocalReview) {
@@ -394,38 +456,38 @@ export default function App(): JSX.Element {
             }
             void (async () => {
               try {
-                if (
-                  services.config.flags.mobileAuthoritativeLocalCodeScan &&
-                  auth?.user?.id
-                ) {
-                  const snap =
-                    capture?.session?.id === sessionId
-                      ? capture
-                      : await services.capture.loadSession(sessionId, false);
-                  await services.confirmLocalResult.confirmResolvedDraftsForSession({
-                    sessionId,
-                    confirmedByUserId: auth.user.id,
-                    photos: snap.photos,
-                  });
+                if (serverUploadEnabled) {
+                  if (
+                    services.config.flags.mobileAuthoritativeLocalCodeScan &&
+                    auth?.user?.id
+                  ) {
+                    const snap =
+                      capture?.session?.id === sessionId
+                        ? capture
+                        : await services.capture.loadSession(sessionId, false);
+                    await services.confirmLocalResult.confirmResolvedDraftsForSession({
+                      sessionId,
+                      confirmedByUserId: auth.user.id,
+                      photos: snap.photos,
+                    });
+                  }
+                  const sid = await services.capture.completeReview();
+                  setWorkSessionId(sid);
+                  await services.uploadQueue.setSessionPreparationMode(sid, 'CODE_SCAN');
+                  await services.uploadQueue.enqueueSession(sid);
+                  setScreen('uploads');
+                  return;
                 }
-                const sid = await services.capture.completeReview();
-                setWorkSessionId(sid);
-                await services.uploadQueue.setSessionPreparationMode(sid, 'CODE_SCAN');
-                await services.uploadQueue.enqueueSession(sid);
-                setScreen('uploads');
+                await finishReviewForExport(services, sessionId, auth, capture);
               } catch (e) {
                 setError(messageOf(e));
               }
             })();
           }}
-          onOpenUploads={(sessionId) => {
-            setWorkSessionId(sessionId);
-            setScreen('uploads');
-          }}
           onError={setError}
         />
       ) : null}
-      {screen === 'local-result-review' && workSessionId && auth ? (
+      {serverUploadEnabled && screen === 'local-result-review' && workSessionId && auth ? (
         <LocalResultReviewScreen
           services={services}
           sessionId={workSessionId}
@@ -450,7 +512,7 @@ export default function App(): JSX.Element {
           onError={setError}
         />
       ) : null}
-      {screen === 'uploads' && workSessionId ? (
+      {serverUploadEnabled && screen === 'uploads' && workSessionId ? (
         <UploadsScreen
           services={services}
           sessionId={workSessionId}
@@ -471,7 +533,7 @@ export default function App(): JSX.Element {
           onExcludedPhotos={() => setScreen('excluded-photos')}
         />
       ) : null}
-      {screen === 'authoritative-finalize' &&
+      {serverUploadEnabled && screen === 'authoritative-finalize' &&
       workSessionId &&
       selectedInventory &&
       selectedAisle ? (
@@ -487,7 +549,7 @@ export default function App(): JSX.Element {
           onError={setError}
         />
       ) : null}
-      {screen === 'processing' && workSessionId ? (
+      {serverUploadEnabled && screen === 'processing' && workSessionId ? (
         <ProcessingScreen
           services={services}
           sessionId={workSessionId}
@@ -509,7 +571,7 @@ export default function App(): JSX.Element {
           onError={setError}
         />
       ) : null}
-      {screen === 'aisle-results-list' && workSessionId ? (
+      {serverUploadEnabled && screen === 'aisle-results-list' && workSessionId ? (
         <AisleResultsListScreen
           services={services}
           sessionId={workSessionId}
@@ -521,7 +583,7 @@ export default function App(): JSX.Element {
           onError={setError}
         />
       ) : null}
-      {screen === 'excluded-photos' && workSessionId ? (
+      {serverUploadEnabled && screen === 'excluded-photos' && workSessionId ? (
         <ExcludedPhotosScreen
           services={services}
           sessionId={workSessionId}
@@ -531,7 +593,7 @@ export default function App(): JSX.Element {
           onError={setError}
         />
       ) : null}
-      {screen === 'results' && workSessionId ? (
+      {serverUploadEnabled && screen === 'results' && workSessionId ? (
         <ResultsScreen
           services={services}
           sessionId={workSessionId}
@@ -545,7 +607,7 @@ export default function App(): JSX.Element {
           onError={setError}
         />
       ) : null}
-      {screen === 'server-reprocess' && selectedInventory && selectedAisle ? (
+      {serverUploadEnabled && screen === 'server-reprocess' && selectedInventory && selectedAisle ? (
         <ServerReprocessScreen
           services={services}
           inventory={selectedInventory}
@@ -554,7 +616,7 @@ export default function App(): JSX.Element {
           onError={setError}
         />
       ) : null}
-      {screen === 'aisle-revision' && selectedInventory && selectedAisle && auth ? (
+      {serverUploadEnabled && screen === 'aisle-revision' && selectedInventory && selectedAisle && auth ? (
         <AisleRevisionScreen
           services={services}
           inventory={selectedInventory}
@@ -567,7 +629,7 @@ export default function App(): JSX.Element {
           onError={setError}
         />
       ) : null}
-      {screen === 'aisle-history' && selectedInventory && selectedAisle && auth ? (
+      {serverUploadEnabled && screen === 'aisle-history' && selectedInventory && selectedAisle && auth ? (
         <AisleHistoryScreen
           services={services}
           inventory={selectedInventory}
@@ -594,6 +656,12 @@ export default function App(): JSX.Element {
               return;
             }
             if (work.kind === 'capture_review' || work.kind === 'local_completed') {
+              void services.capture.loadSession(work.sessionId, false).then(() => {
+                setScreen('review');
+              });
+              return;
+            }
+            if (!serverUploadEnabled) {
               void services.capture.loadSession(work.sessionId, false).then(() => {
                 setScreen('review');
               });
@@ -651,12 +719,33 @@ function routeAfterRestore(
     .catch(() => undefined);
   if (open.status === 'review') {
     setScreen('review');
-  } else if (['uploading', 'upload_review', 'ready_to_process'].includes(open.status)) {
+  } else if (
+    services.config.flags.mobileServerUpload &&
+    ['uploading', 'upload_review', 'ready_to_process'].includes(open.status)
+  ) {
     setScreen('uploads');
-  } else if (['processing', 'failed_processing'].includes(open.status)) {
+  } else if (
+    services.config.flags.mobileServerUpload &&
+    ['processing', 'failed_processing'].includes(open.status)
+  ) {
     setScreen('processing');
-  } else if (open.status === 'completed') {
+  } else if (services.config.flags.mobileServerUpload && open.status === 'completed') {
     setScreen('results');
+  } else if (
+    !services.config.flags.mobileServerUpload &&
+    [
+      'local_completed',
+      'uploading',
+      'upload_review',
+      'ready_to_process',
+      'processing',
+      'failed_processing',
+      'failed',
+      'completed',
+    ].includes(open.status)
+  ) {
+    void services.capture.loadSession(open.id, false);
+    setScreen('review');
   } else {
     setScreen('capture');
   }

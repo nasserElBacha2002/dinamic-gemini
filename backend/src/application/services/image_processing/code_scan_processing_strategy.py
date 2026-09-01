@@ -632,11 +632,31 @@ class CodeScanProcessingStrategy:
                     "scan_stop_reason": scan_session.stop_reason.value,
                 },
             )
+            for idx, cand in enumerate(candidates):
+                raw_payload = (cand.code_value or "").strip()
+                symbology = symbology_for_candidate(cand)
+                self._publish_asset_event(
+                    context,
+                    "code_scan.payload_decoded",
+                    message="payload decoded",
+                    metadata={
+                        "detection_index": idx,
+                        "symbology": symbology,
+                        "raw_payload_sha256": _sha256_hex(raw_payload),
+                        "raw_payload_length": len(raw_payload),
+                    },
+                )
 
         validation_ctx = self._validation_context(context)
         item_source = item_profile_source(validation_ctx)
         position_source = position_profile_source(validation_ctx)
         use_unified = validation_ctx.resolved_profiles is not None
+        self._publish_profile_resolved_events(
+            context,
+            validation_ctx=validation_ctx,
+            item_source=item_source,
+            position_source=position_source,
+        )
 
         item_candidates = candidates
         position_meta: dict | None = None
@@ -698,15 +718,16 @@ class CodeScanProcessingStrategy:
                         or r.error_code == "DUPLICATE"
                     )
                 }
-                item_candidates = [
-                    c
-                    for idx, c in enumerate(candidates)
-                    if idx not in claimed
-                    and idx not in {i.detection_index for i in classification.items}
-                ]
-                # Prefer classified ITEM candidates for SUPPLIER ITEM path.
                 if item_source is LabelProfileSource.SUPPLIER:
                     item_candidates = list(classification.item_candidates)
+                elif classification.items:
+                    item_candidates = list(classification.item_candidates)
+                else:
+                    item_candidates = [
+                        c
+                        for idx, c in enumerate(candidates)
+                        if idx not in claimed
+                    ]
             elif self._position_detection is not None:
                 # DINAMIC POSITION: existing HMAC/catalog path, but only on non-ITEM indexes.
                 item_indexes = {i.detection_index for i in classification.items}
@@ -792,6 +813,23 @@ class CodeScanProcessingStrategy:
             if position_meta:
                 evidence = {**(evidence or {}), "position_label_detection": position_meta}
         else:
+            supplier_configured = use_unified and (
+                item_source is LabelProfileSource.SUPPLIER
+                or position_source is LabelProfileSource.SUPPLIER
+            )
+            if supplier_configured:
+                blocked = self._supplier_kind_aware_legacy_blocked_result(
+                    context=context,
+                    classification=classification,
+                    mode=mode,
+                    asset_started_at=asset_started_at,
+                    scan_session=scan_session,
+                    item_source=item_source,
+                    position_source=position_source,
+                )
+                if blocked is not None:
+                    self._finalize_asset_event(context, blocked)
+                    return blocked
             consolidated = self._consolidator.consolidate(detections)
 
             duration_ms = int((self._monotonic() - asset_started_at) * 1000)
@@ -972,19 +1010,25 @@ class CodeScanProcessingStrategy:
                     and position_ok
                 )
                 if supplier_position_only:
-                    # SUPPLIER POSITION materialized; absence of ITEM is not unrecognized.
+                    # SUPPLIER POSITION materialized; absence of ITEM is a successful position-only asset.
                     self._metrics.increment("code_scan.position_only")
+                    position_evidence = {
+                        **(evidence or {}),
+                        "result_kind": "POSITION_ONLY",
+                        "position_label_detection": position_meta,
+                        "profile_validation_executed": True,
+                    }
                     result = ImageProcessingResult(
                         job_id=context.job_id,
                         asset_id=context.asset_id,
-                        status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+                        status=ImageResultStatus.RESOLVED_INTERNAL,
                         processing_mode=mode,
                         resolved_by=STRATEGY_KEY,
-                        evidence=evidence,
+                        evidence=position_evidence,
                         warnings=list(consolidated.warnings)
                         + scan_warnings
                         + ["POSITION_LABEL_ONLY"],
-                        error_code="POSITION_LABEL_ONLY",
+                        error_code=None,
                         execution_scope=ExecutionScope.SINGLE_ASSET,
                         logical_asset_attempt=False,
                         processing_duration_ms=duration_ms,
@@ -992,19 +1036,29 @@ class CodeScanProcessingStrategy:
                     self._finalize_asset_event(context, result)
                     return result
                 error_code = (
-                    "POSITION_LABEL_ONLY"
-                    if position_ok
-                    else "POSITION_LABEL_UNRESOLVED"
+                    "POSITION_LABEL_UNRESOLVED"
+                    if not position_ok
+                    else None
                 )
                 self._metrics.increment("code_scan.position_only")
                 result = ImageProcessingResult(
                     job_id=context.job_id,
                     asset_id=context.asset_id,
-                    status=ImageResultStatus.UNRECOGNIZED,
+                    status=(
+                        ImageResultStatus.RESOLVED_INTERNAL
+                        if position_ok
+                        else ImageResultStatus.UNRECOGNIZED
+                    ),
                     processing_mode=mode,
                     resolved_by=STRATEGY_KEY,
-                    evidence=evidence,
-                    warnings=list(consolidated.warnings) + scan_warnings,
+                    evidence={
+                        **(evidence or {}),
+                        **({"result_kind": "POSITION_ONLY"} if position_ok else {}),
+                        **({"position_label_detection": position_meta} if position_meta else {}),
+                    },
+                    warnings=(
+                        list(consolidated.warnings) + scan_warnings + (["POSITION_LABEL_ONLY"] if position_ok else [])
+                    ),
                     error_code=error_code,
                     execution_scope=ExecutionScope.SINGLE_ASSET,
                     logical_asset_attempt=False,
@@ -1012,6 +1066,21 @@ class CodeScanProcessingStrategy:
                 )
                 self._finalize_asset_event(context, result)
                 return result
+
+            supplier_expected = use_unified and symbol_count > 0
+            if supplier_expected:
+                blocked = self._supplier_kind_aware_legacy_blocked_result(
+                    context=context,
+                    classification=classification,
+                    mode=mode,
+                    asset_started_at=asset_started_at,
+                    scan_session=scan_session,
+                    item_source=item_source,
+                    position_source=position_source,
+                )
+                if blocked is not None:
+                    self._finalize_asset_event(context, blocked)
+                    return blocked
 
             self._metrics.increment("code_scan.unrecognized")
             # Known Dinamic D1 symbols that failed checksum/registry must not become
@@ -1061,6 +1130,150 @@ class CodeScanProcessingStrategy:
         )
         self._finalize_asset_event(context, result)
         return result
+
+    def _publish_profile_resolved_events(
+        self,
+        context: ImageProcessingContext,
+        *,
+        validation_ctx,
+        item_source: LabelProfileSource,
+        position_source: LabelProfileSource,
+    ) -> None:
+        resolved = validation_ctx.resolved_profiles
+        if resolved is None:
+            return
+        for kind, profile, source in (
+            (LabelKind.ITEM, resolved.item, item_source),
+            (LabelKind.POSITION, resolved.position, position_source),
+        ):
+            config = (
+                validation_ctx.item_extraction_configuration
+                if kind is LabelKind.ITEM
+                else validation_ctx.position_extraction_configuration
+            )
+            meta: dict[str, Any] = {
+                "label_kind": kind.value,
+                "source": source.value,
+                "profile_id": profile.extraction_profile_id,
+                "profile_version": profile.extraction_profile_version,
+                "resolution_source": profile.resolution_source,
+            }
+            if config is not None:
+                meta["recognition_mode"] = getattr(
+                    getattr(config, "recognition_mode", None), "value", None
+                )
+                meta["semantic_type"] = getattr(config, "semantic_type", None)
+            self._publish_asset_event(
+                context,
+                "code_scan.profile_resolved",
+                message=f"{kind.value} profile resolved",
+                metadata=meta,
+            )
+
+    def _supplier_kind_aware_legacy_blocked_result(
+        self,
+        *,
+        context: ImageProcessingContext,
+        classification,
+        mode: str,
+        asset_started_at: float,
+        scan_session,
+        item_source: LabelProfileSource,
+        position_source: LabelProfileSource,
+    ) -> ImageProcessingResult | None:
+        """Block legacy consolidator only when SUPPLIER-kind evaluation failed with no DINAMIC escape."""
+        if classification is None:
+            return None
+        if classification.items or classification.positions:
+            return None
+        if classification.leftover and (
+            item_source is LabelProfileSource.DINAMIC
+            or position_source is LabelProfileSource.DINAMIC
+        ):
+            return None
+
+        supplier_rejections = [
+            r
+            for r in classification.rejections
+            if (
+                r.label_kind is LabelKind.ITEM
+                and item_source is LabelProfileSource.SUPPLIER
+            )
+            or (
+                r.label_kind is LabelKind.POSITION
+                and position_source is LabelProfileSource.SUPPLIER
+            )
+            or (
+                r.label_kind is None
+                and (
+                    item_source is LabelProfileSource.SUPPLIER
+                    or position_source is LabelProfileSource.SUPPLIER
+                )
+            )
+        ]
+        if not supplier_rejections and not (
+            classification.leftover
+            and not (
+                item_source is LabelProfileSource.DINAMIC
+                or position_source is LabelProfileSource.DINAMIC
+            )
+        ):
+            return None
+
+        duration_ms = int((self._monotonic() - asset_started_at) * 1000)
+        scan_warnings = self._scan_session_warnings(scan_session)
+        if supplier_rejections:
+            first = supplier_rejections[0]
+            error_code = first.error_code or "SUPPLIER_LABEL_REJECTED"
+            self._publish_asset_event(
+                context,
+                "code_scan.validation_completed",
+                message="supplier validation rejected payload",
+                metadata={
+                    "label_kind": (
+                        first.label_kind.value if first.label_kind else None
+                    ),
+                    "error_code": error_code,
+                    "profile_validation_executed": True,
+                },
+            )
+            return ImageProcessingResult(
+                job_id=context.job_id,
+                asset_id=context.asset_id,
+                status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+                processing_mode=mode,
+                resolved_by=STRATEGY_KEY,
+                evidence={"profile_validation_executed": True},
+                warnings=["SUPPLIER_LABEL_REJECTED"] + scan_warnings,
+                error_code=error_code,
+                execution_scope=ExecutionScope.SINGLE_ASSET,
+                logical_asset_attempt=False,
+                processing_duration_ms=duration_ms,
+            )
+        if classification.leftover:
+            self._publish_asset_event(
+                context,
+                "code_scan.validation_completed",
+                message="supplier profile did not recognize payload",
+                metadata={
+                    "error_code": "SUPPLIER_PAYLOAD_NOT_RECOGNIZED",
+                    "profile_validation_executed": True,
+                },
+            )
+            return ImageProcessingResult(
+                job_id=context.job_id,
+                asset_id=context.asset_id,
+                status=ImageResultStatus.UNRECOGNIZED,
+                processing_mode=mode,
+                resolved_by=STRATEGY_KEY,
+                evidence={"profile_validation_executed": True},
+                warnings=["SUPPLIER_PAYLOAD_NOT_RECOGNIZED"] + scan_warnings,
+                error_code="SUPPLIER_PAYLOAD_NOT_RECOGNIZED",
+                execution_scope=ExecutionScope.SINGLE_ASSET,
+                logical_asset_attempt=False,
+                processing_duration_ms=duration_ms,
+            )
+        return None
 
     def _finalize_asset_event(
         self, context: ImageProcessingContext, result: ImageProcessingResult

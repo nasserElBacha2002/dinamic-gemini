@@ -740,6 +740,113 @@ ALTER TABLE local_detection_drafts ADD COLUMN recognition_context TEXT;
 ALTER TABLE confirmed_local_results ADD COLUMN recognition_profile_snapshot_json TEXT;
 `,
   },
+  {
+    version: 29,
+    name: 'local_catalog',
+    sql: `
+CREATE TABLE IF NOT EXISTS local_inventories (
+  id TEXT PRIMARY KEY NOT NULL,
+  client_id TEXT,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  processing_mode TEXT NOT NULL DEFAULT 'production',
+  aisles_count INTEGER NOT NULL DEFAULT 0,
+  pending_review_count INTEGER NOT NULL DEFAULT 0,
+  last_activity_at TEXT,
+  created_at TEXT,
+  updated_at TEXT,
+  server_updated_at TEXT,
+  synced_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_inventories_active
+  ON local_inventories(active, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS local_aisles (
+  id TEXT NOT NULL,
+  inventory_id TEXT NOT NULL,
+  code TEXT NOT NULL,
+  status TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  assets_count INTEGER NOT NULL DEFAULT 0,
+  positions_count INTEGER NOT NULL DEFAULT 0,
+  pending_review_positions_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT,
+  updated_at TEXT,
+  server_updated_at TEXT,
+  synced_at TEXT NOT NULL,
+  PRIMARY KEY (inventory_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_aisles_inventory
+  ON local_aisles(inventory_id, active, code);
+
+CREATE TABLE IF NOT EXISTS local_client_suppliers (
+  id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT,
+  updated_at TEXT,
+  server_updated_at TEXT,
+  synced_at TEXT NOT NULL,
+  PRIMARY KEY (client_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_client_suppliers_client
+  ON local_client_suppliers(client_id, active, name);
+
+CREATE TABLE IF NOT EXISTS catalog_sync_meta (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  catalog_revision TEXT,
+  last_synced_at TEXT NOT NULL,
+  inventory_count INTEGER NOT NULL DEFAULT 0,
+  supplier_count INTEGER NOT NULL DEFAULT 0,
+  aisle_count INTEGER NOT NULL DEFAULT 0
+);
+`,
+  },
+  {
+    version: 30,
+    name: 'catalog_sync_meta_status',
+    sql: `
+ALTER TABLE catalog_sync_meta ADD COLUMN last_sync_attempt_at TEXT;
+ALTER TABLE catalog_sync_meta ADD COLUMN last_successful_sync_at TEXT;
+ALTER TABLE catalog_sync_meta ADD COLUMN last_sync_status TEXT;
+`,
+  },
+  {
+    version: 31,
+    name: 'local_aisle_offline_origin',
+    sql: `
+ALTER TABLE local_aisles ADD COLUMN client_supplier_id TEXT;
+ALTER TABLE local_aisles ADD COLUMN origin TEXT NOT NULL DEFAULT 'REMOTE';
+ALTER TABLE local_aisles ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'REMOTE_SYNCED';
+ALTER TABLE local_aisles ADD COLUMN created_offline_at TEXT;
+
+UPDATE local_aisles SET origin = 'REMOTE' WHERE origin IS NULL OR origin = '';
+UPDATE local_aisles SET sync_status = 'REMOTE_SYNCED' WHERE sync_status IS NULL OR sync_status = '';
+`,
+  },
+  {
+    version: 32,
+    name: 'offline_supplier_recognition_config',
+    sql: `
+CREATE TABLE IF NOT EXISTS offline_supplier_recognition_config (
+  inventory_id TEXT NOT NULL,
+  client_supplier_id TEXT NOT NULL,
+  item_source TEXT NOT NULL,
+  position_source TEXT NOT NULL,
+  synced_at TEXT NOT NULL,
+  PRIMARY KEY (inventory_id, client_supplier_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_supplier_recognition_config_lookup
+  ON offline_supplier_recognition_config(inventory_id, client_supplier_id);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

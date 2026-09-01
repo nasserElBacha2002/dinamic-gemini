@@ -22,6 +22,7 @@ import type { ActivePositionState } from '../../core/positionLabelPayload';
 import { parseDinamicPositionPayload } from '../../core/positionLabelPayload';
 import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
 import { runProfileAwareLocalScan } from './profileAwareLocalScan';
+import { isLikelyRawSegmentedPayload } from '../localCsv/supplierExportSemantics';
 
 /** Must cover native multipass (full + tiles + zoom crops). */
 export const LOCAL_CODE_SCAN_TIMEOUT_MS = 22_000;
@@ -431,10 +432,21 @@ export class LocalCodeScanStrategy {
 
       const primary = products[0] ?? null;
       const d1Mode = consolidated.d1Mode;
+      const legacyInternal = consolidated.internalCode;
+      const legacyIsRawSegmented =
+        legacyInternal != null && isLikelyRawSegmentedPayload(legacyInternal);
+      const supplierItemValid = profileAware.supplierItem?.status === 'VALID';
       // In D1 MODE never persist legacy scalar codes (blocks CSV revival).
-      const persistInternalCode = d1Mode
+      let persistInternalCode = d1Mode
         ? primary?.internalCode ?? null
-        : primary?.internalCode ?? consolidated.internalCode;
+        : supplierItemValid
+          ? profileAware.supplierItem?.sku?.trim() || primary?.internalCode || null
+          : primary?.internalCode ?? null;
+      if (!d1Mode && !supplierItemValid && legacyIsRawSegmented) {
+        persistInternalCode = primary?.internalCode ?? null;
+      } else if (!d1Mode && !supplierItemValid && legacyInternal && !legacyIsRawSegmented) {
+        persistInternalCode = persistInternalCode ?? legacyInternal;
+      }
       const supplierMissingQty =
         primary?.formatVersion === 'SUPPLIER' &&
         profileAware.supplierItem?.quantity == null;

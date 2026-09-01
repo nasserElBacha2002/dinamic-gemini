@@ -64,6 +64,7 @@ export interface CreateSupplierExtractionProfileRequest {
   profile_key?: string | null;
   activate?: boolean;
   label_kind?: 'ITEM' | 'POSITION';
+  effective_source?: 'DINAMIC' | 'SUPPLIER';
 }
 
 export interface CloneSupplierExtractionProfileRequest {

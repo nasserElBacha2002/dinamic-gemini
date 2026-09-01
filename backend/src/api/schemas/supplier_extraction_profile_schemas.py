@@ -14,10 +14,12 @@ class CreateSupplierExtractionProfileRequest(BaseModel):
     profile_key: str | None = None
     activate: bool = False
     label_kind: LabelKindLiteral | None = None
+    effective_source: Literal["DINAMIC", "SUPPLIER"] | None = None
 
 
 class ActivateSupplierExtractionProfileRequest(BaseModel):
     expected_row_version: int | None = None
+    effective_source: Literal["DINAMIC", "SUPPLIER"] | None = None
 
 
 class CloneSupplierExtractionProfileRequest(BaseModel):

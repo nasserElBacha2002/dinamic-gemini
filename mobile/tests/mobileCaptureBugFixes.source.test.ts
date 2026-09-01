@@ -12,11 +12,11 @@ function read(rel: string): string {
 }
 
 describe('mobile capture bug-fix source contracts', () => {
-  it('App auto-confirms drafts then uploads; local_completed opens in review', () => {
+  it('App saves locally for ZIP export; local_completed opens in review', () => {
     const app = read('App.tsx');
-    expect(app).toMatch(/confirmResolvedDraftsForSession/);
-    expect(app).toMatch(/completeReview\(\)/);
-    expect(app).toMatch(/setSessionPreparationMode\(sid, 'CODE_SCAN'\)/);
+    expect(app).toMatch(/finishReviewForExport/);
+    expect(app).toMatch(/completeLocalSession/);
+    expect(app).toMatch(/mobileServerUpload/);
     expect(app).not.toMatch(
       /work\.kind === 'local_completed' \? 'uploads' : 'review'/,
     );
@@ -33,8 +33,9 @@ describe('mobile capture bug-fix source contracts', () => {
     expect(review).toMatch(/runLocalCsvExport/);
     expect(review).toMatch(/isLocalCompleted/);
     expect(review).toMatch(/Exportar ZIP/);
-    expect(review).toMatch(/Subir fotos y resultados/);
-    expect(review).not.toMatch(/Guardar solo en el dispositivo/);
+    expect(review).toMatch(/Guardar captura/);
+    expect(review).not.toMatch(/Subir fotos y resultados/);
+    expect(review).not.toMatch(/Continuar carga al servidor/);
     expect(review).toMatch(/disabled=\{exportBusy \|\| !sessionId \|\| !services\.localCsvExport\}/);
     expect(review).not.toMatch(/disabled=\{!exportGate\.ok/);
   });

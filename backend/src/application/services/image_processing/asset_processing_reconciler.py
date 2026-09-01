@@ -23,6 +23,9 @@ from src.application.ports.clock import Clock
 from src.application.ports.image_processing_repositories import (
     JobAssetProcessingStateRepository,
 )
+from src.application.ports.image_position_label_detection_repository import (
+    ImagePositionLabelDetectionRepository,
+)
 from src.application.ports.manual_image_coverage_repository import (
     ManualImageCoverageRepository,
 )
@@ -31,6 +34,7 @@ from src.domain.image_processing.job_asset_processing_state import (
     JobAssetProcessingState,
     JobAssetProcessingStatus,
 )
+from src.domain.position_label_detection.entities import PositionLabelDetectionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +53,14 @@ class ActiveResultLookup:
     active_result_id: str | None = None
 
 
+_POSITION_ONLY_VALID_STATUSES = frozenset(
+    {
+        PositionLabelDetectionStatus.VALID,
+        PositionLabelDetectionStatus.SIGNATURE_VALIDATION_SKIPPED,
+    }
+)
+
+
 class AssetProcessingReconciler:
     def __init__(
         self,
@@ -57,11 +69,13 @@ class AssetProcessingReconciler:
         clock: Clock,
         manual_coverage_repo: ManualImageCoverageRepository | None = None,
         result_evidence_repo: ResultEvidenceRepository | None = None,
+        position_detection_repo: ImagePositionLabelDetectionRepository | None = None,
     ) -> None:
         self._state_repo = state_repo
         self._clock = clock
         self._manual_coverage_repo = manual_coverage_repo
         self._result_evidence_repo = result_evidence_repo
+        self._position_detection_repo = position_detection_repo
 
     def find_active_result(
         self, *, job_id: str, asset_id: str, aisle_id: str | None = None
@@ -100,7 +114,47 @@ class AssetProcessingReconciler:
                 )
             return ActiveResultLookup(completeness=AssetPersistCompleteness.PARTIAL_INVALID)
 
+        position_only = self._find_position_only_result(job_id, asset_id)
+        if position_only is not None:
+            return position_only
+
         return ActiveResultLookup(completeness=AssetPersistCompleteness.NOT_FOUND)
+
+    def _find_position_only_result(
+        self, job_id: str, asset_id: str
+    ) -> ActiveResultLookup | None:
+        """POSITION_ONLY assets persist detections + result evidence, not manual coverage."""
+        if self._position_detection_repo is None:
+            return None
+        try:
+            detections = self._position_detection_repo.list_by_asset(job_id, asset_id)
+        except Exception:
+            logger.warning(
+                "reconciler.position_detection_lookup_failed job_id=%s asset_id=%s",
+                job_id,
+                asset_id,
+            )
+            return None
+        valid = [
+            row
+            for row in detections
+            if row.detection_status in _POSITION_ONLY_VALID_STATUSES
+        ]
+        if not valid:
+            return None
+        evidence = self._find_result_evidence(job_id, asset_id)
+        if evidence is not None and evidence.has_valid_evidence:
+            return ActiveResultLookup(
+                completeness=AssetPersistCompleteness.COMPLETE,
+                position_id=evidence.position_id or valid[0].id,
+                active_result_id=evidence.position_id or valid[0].id,
+            )
+        # Detections without acknowledgment evidence — incomplete persist/retry path.
+        return ActiveResultLookup(
+            completeness=AssetPersistCompleteness.PARTIAL_REPAIRABLE,
+            position_id=valid[0].id,
+            active_result_id=valid[0].id,
+        )
 
     def _find_result_evidence(self, job_id: str, asset_id: str):
         if self._result_evidence_repo is None:

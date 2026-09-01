@@ -1,0 +1,27 @@
+SUPPLIER PRUEBAS B — BEFORE / AFTER
+
+BEFORE (job a7db1968)
+  client_supplier_label_profiles rows: 0
+  resolver ITEM: DINAMIC / DEFAULT
+  resolver POSITION: DINAMIC / DEFAULT
+  snapshot ITEM/POSITION: DINAMIC, profile_version=null
+  asset ad40b787 payload A04-R-02|04|RIGHT|02
+    → legacy consolidator → MISSING_QUANTITY → PENDING_MANUAL_REVIEW
+
+AFTER (2026-09-01 13:42 UTC)
+  client_supplier_label_profiles:
+    ITEM source=SUPPLIER (id 58b82966…)
+    POSITION source=SUPPLIER (id 3381b04b…)
+  ACTIVE profiles:
+    ITEM v10 99563751… SEGMENTED
+    POSITION v3 602caad9… SEGMENTED
+  resolver ITEM: SUPPLIER / CLIENT_SUPPLIER v10
+  resolver POSITION: SUPPLIER / CLIENT_SUPPLIER v3
+  payload dry-runs: both VALID
+
+NEW JOB 68aae986-4429-40d5-9da1-4646a8f7e72f
+  snapshot ITEM/POSITION: SUPPLIER + embedded config v10/v3
+  asset ad40b787:
+    profile_resolved source=SUPPLIER v10/v3
+    asset_finalized status=RESOLVED_INTERNAL (NOT MISSING_QUANTITY)
+  job_asset_processing_state: PENDING_MANUAL_REVIEW (PROCESSING_INCOMPLETE_RESULT — persist layer)

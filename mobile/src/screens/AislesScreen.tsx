@@ -62,6 +62,8 @@ export function AislesScreen({
   onCancelCapture,
   onOpenPositionLabels,
 }: AislesScreenProps) {
+  const serverUploadEnabled = services.config.flags.mobileServerUpload !== false;
+  const workOptions = { serverUploadEnabled };
   const [items, setItems] = useState<AisleDto[]>([]);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
@@ -96,13 +98,6 @@ export function AislesScreen({
   }, [load]);
 
   const openCreate = () => {
-    if (connectivity === 'offline') {
-      Alert.alert(
-        'Sin conexión',
-        'Necesitás conexión para crear un inventario o pasillo.\nLa captura existente puede continuar sin conexión.',
-      );
-      return;
-    }
     setShowCreate(true);
   };
 
@@ -190,14 +185,17 @@ export function AislesScreen({
           </View>
         }
         renderItem={({ item: aisle }) => {
-          const work = workForAisle(localSessions, aisle.id, uploadProgress);
-          const history = classifySessionsForAisle(localSessions, aisle.id, uploadProgress);
+          const work = workForAisle(localSessions, aisle.id, uploadProgress, workOptions);
+          const history = classifySessionsForAisle(localSessions, aisle.id, uploadProgress, workOptions);
           const historyExtra = history.filter((h) => h.sessionId !== work?.sessionId);
           const exclusiveHere = Boolean(exclusive) && exclusive!.aisle_id === aisle.id;
           const expanded = expandedAisleId === aisle.id;
           return (
             <Card>
               <Text style={styles.cardTitle}>{aisle.code}</Text>
+              {aisle.sync_status === 'LOCAL_ONLY' ? (
+                <Text style={styles.notif}>Solo en este dispositivo</Text>
+              ) : null}
               <Text style={styles.row}>
                 Estado: {aisle.status} · Activo: {aisle.is_active === false ? 'no' : 'sí'}
               </Text>
@@ -217,7 +215,12 @@ export function AislesScreen({
                       ? 'Continuar captura'
                       : work.kind === 'capture_review'
                         ? 'Revisar fotos'
-                        : work.kind === 'local_completed'
+                        : work.kind === 'local_completed' ||
+                            (!serverUploadEnabled &&
+                              (work.kind === 'uploading' ||
+                                work.kind === 'ready_to_process' ||
+                                work.kind === 'processing' ||
+                                work.kind === 'failed_processing'))
                           ? 'Abrir captura guardada'
                           : work.kind === 'uploading' || work.kind === 'ready_to_process'
                             ? 'Continuar cargas'
@@ -257,6 +260,7 @@ export function AislesScreen({
         visible={showCreate}
         services={services}
         inventory={inventory}
+        connectivity={connectivity}
         onClose={() => setShowCreate(false)}
         onCreated={(created) => {
           setItems((prev) => [created, ...prev.filter((a) => a.id !== created.id)]);

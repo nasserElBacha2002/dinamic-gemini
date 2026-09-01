@@ -73,6 +73,7 @@ def compute_offline_bundle_revision(
     bundle_schema_version: int,
     inventory_id: str,
     aisles: list[OfflineAisleConfig] | tuple[OfflineAisleConfig, ...],
+    suppliers: list[OfflineSupplierConfig] | tuple[OfflineSupplierConfig, ...] = (),
     profiles: list[OfflineProfileConfig] | tuple[OfflineProfileConfig, ...],
 ) -> str:
     """Deterministic SHA-256 over canonical relevant bundle content (excludes generated_at)."""
@@ -86,6 +87,14 @@ def compute_offline_bundle_revision(
             "effective_position_source": a.effective_position_source,
         }
         for a in sorted(aisles, key=lambda row: row.aisle_id)
+    ]
+    supplier_payload = [
+        {
+            "client_supplier_id": s.client_supplier_id,
+            "item_source": s.item_source,
+            "position_source": s.position_source,
+        }
+        for s in sorted(suppliers, key=lambda row: row.client_supplier_id)
     ]
     profile_payload = [
         {
@@ -105,6 +114,7 @@ def compute_offline_bundle_revision(
         "bundle_schema_version": bundle_schema_version,
         "inventory_id": inventory_id,
         "aisles": aisle_payload,
+        "suppliers": supplier_payload,
         "profiles": profile_payload,
     }
     digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
@@ -128,6 +138,13 @@ class OfflineAisleConfig:
 
 
 @dataclass(frozen=True)
+class OfflineSupplierConfig:
+    client_supplier_id: str
+    item_source: str
+    position_source: str
+
+
+@dataclass(frozen=True)
 class OfflineProfileConfig:
     client_supplier_id: str
     label_kind: str
@@ -147,6 +164,7 @@ class OfflineRecognitionBundle:
     client_id: str
     generated_at: datetime
     aisles: tuple[OfflineAisleConfig, ...]
+    suppliers: tuple[OfflineSupplierConfig, ...]
     profiles: tuple[OfflineProfileConfig, ...]
     bundle_revision: str
 
@@ -216,6 +234,26 @@ class GetInventoryRecognitionConfigUseCase:
                 )
             )
 
+        supplier_dtos: list[OfflineSupplierConfig] = []
+        for supplier_id in supplier_ids:
+            item_base = self._effective_source(
+                supplier_id=supplier_id,
+                label_kind=LabelKind.ITEM,
+                override=None,
+            )
+            pos_base = self._effective_source(
+                supplier_id=supplier_id,
+                label_kind=LabelKind.POSITION,
+                override=None,
+            )
+            supplier_dtos.append(
+                OfflineSupplierConfig(
+                    client_supplier_id=supplier_id,
+                    item_source=item_base.value,
+                    position_source=pos_base.value,
+                )
+            )
+
         profiles: list[OfflineProfileConfig] = []
         for supplier_id in supplier_ids:
             listed = list(
@@ -246,11 +284,13 @@ class GetInventoryRecognitionConfigUseCase:
 
         now = datetime.now(timezone.utc)
         aisle_tuple = tuple(aisle_dtos)
+        supplier_tuple = tuple(supplier_dtos)
         profile_tuple = tuple(profiles)
         revision = compute_offline_bundle_revision(
             bundle_schema_version=OFFLINE_BUNDLE_SCHEMA_VERSION,
             inventory_id=inventory.id,
             aisles=aisle_tuple,
+            suppliers=supplier_tuple,
             profiles=profile_tuple,
         )
         return OfflineRecognitionBundle(
@@ -259,6 +299,7 @@ class GetInventoryRecognitionConfigUseCase:
             client_id=inventory.client_id,
             generated_at=now,
             aisles=aisle_tuple,
+            suppliers=supplier_tuple,
             profiles=profile_tuple,
             bundle_revision=revision,
         )

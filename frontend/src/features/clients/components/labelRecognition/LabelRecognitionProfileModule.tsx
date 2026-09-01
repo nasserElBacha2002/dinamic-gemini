@@ -19,7 +19,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useTranslation } from 'react-i18next';
 import type { ExtractionProfileConfiguration, LabelKind, SupplierExtractionProfile } from '../../../../api/types';
 import { ErrorAlert, LoadingBlock, SectionCard, useAppSnackbar } from '../../../../components/ui';
-import { useCreateSupplierExtractionProfileVersion, useSupplierExtractionProfiles } from '../../../../hooks';
+import { useCreateSupplierExtractionProfileVersion, useSupplierExtractionProfiles, useClientSupplierLabelProfiles } from '../../../../hooks';
 import { resolveApiErrorMessage } from '../../../../utils/apiErrors';
 import { useExtractionProfileCapabilities } from '../../hooks/useExtractionProfileCapabilities';
 import {
@@ -82,6 +82,7 @@ export default function LabelRecognitionProfileModule({ clientId, supplierId, su
   const [labelKind, setLabelKind] = useState<LabelKind>('ITEM');
   const [drafts, setDrafts] = useState<Record<LabelKind, Draft>>({ ITEM: emptyDraft('ITEM'), POSITION: emptyDraft('POSITION') });
   const profilesQuery = useSupplierExtractionProfiles(clientId, supplierId, { enabled: Boolean(clientId && supplierId) });
+  const labelProfilesQuery = useClientSupplierLabelProfiles(clientId, supplierId, { enabled: Boolean(clientId && supplierId) });
   const createMutation = useCreateSupplierExtractionProfileVersion(clientId, supplierId);
   const capabilities = useExtractionProfileCapabilities({ enabled: Boolean(clientId && supplierId) });
 
@@ -94,18 +95,22 @@ export default function LabelRecognitionProfileModule({ clientId, supplierId, su
   }, [profilesQuery.data?.items]);
 
   useEffect(() => {
-    if (!profilesQuery.data) return;
+    if (!profilesQuery.data || !labelProfilesQuery.data) return;
     setDrafts((current) => {
       const next = { ...current };
       (['ITEM', 'POSITION'] as const).forEach((kind) => {
+        const wiring = labelProfilesQuery.data?.find((row) => row.label_kind === kind);
+        const wiredSource = (wiring?.source === 'SUPPLIER' ? 'SUPPLIER' : 'DINAMIC') as ProfileSource;
         if (!current[kind].initialized && !current[kind].dirty) {
           const active = profilesByKind[kind].find((profile) => profile.status === 'ACTIVE') ?? profilesByKind[kind][0];
-          next[kind] = draftFromProfile(active, kind);
+          next[kind] = { ...draftFromProfile(active, kind), source: wiredSource };
+        } else if (!current[kind].dirty && current[kind].source !== wiredSource) {
+          next[kind] = { ...current[kind], source: wiredSource };
         }
       });
       return next;
     });
-  }, [profilesByKind, profilesQuery.data]);
+  }, [profilesByKind, profilesQuery.data, labelProfilesQuery.data]);
 
   const draft = drafts[labelKind];
   const updateDraft = useCallback((patch: Partial<Draft>) => {
@@ -125,6 +130,7 @@ export default function LabelRecognitionProfileModule({ clientId, supplierId, su
         visual_notes: draft.visualNotes.trim() || null,
         activate,
         label_kind: labelKind,
+        ...(activate ? { effective_source: draft.source } : {}),
       });
       setDrafts((current) => ({ ...current, [labelKind]: { ...current[labelKind], dirty: false, initialized: false } }));
       showSnackbar(t(activate ? 'clients.extraction_profile.created_and_activated_success' : 'clients.extraction_profile.created_success'), 'success');
@@ -132,6 +138,11 @@ export default function LabelRecognitionProfileModule({ clientId, supplierId, su
       // Mutation state renders the localized error.
     }
   };
+
+  const activeProfile = profilesByKind[labelKind].find((profile) => profile.status === 'ACTIVE');
+  const activeProfileExists = Boolean(activeProfile);
+  const wiredSource = (labelProfilesQuery.data?.find((row) => row.label_kind === labelKind)?.source ?? 'DINAMIC') as ProfileSource;
+  const profileNotWired = activeProfileExists && wiredSource !== 'SUPPLIER' && draft.source === 'SUPPLIER';
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', border: 1, borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', overflow: 'hidden' }}>
@@ -163,6 +174,19 @@ export default function LabelRecognitionProfileModule({ clientId, supplierId, su
               <ToggleButton value="DINAMIC">DINAMIC</ToggleButton>
               <ToggleButton value="SUPPLIER">{t('clients.extraction_profile.source_supplier')}</ToggleButton>
             </ToggleButtonGroup>
+            <Typography variant="body2" color="text.secondary">
+              {t('clients.extraction_profile.profile_status_label', {
+                status: activeProfile?.status ?? t('clients.extraction_profile.profile_status_none'),
+              })}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {t('clients.extraction_profile.effective_source_label', {
+                source: wiredSource === 'SUPPLIER' ? t('clients.extraction_profile.source_supplier') : 'DINAMIC',
+              })}
+            </Typography>
+            {profileNotWired ? (
+              <Alert severity="warning">{t('clients.extraction_profile.active_profile_not_wired_warning')}</Alert>
+            ) : null}
             {draft.source === 'DINAMIC' ? <Alert severity="info">{t('clients.extraction_profile.dinamic_source_draft_kept')}</Alert> : null}
           </Stack>
         </SectionCard>

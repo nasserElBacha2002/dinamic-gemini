@@ -22,6 +22,7 @@ from src.domain.client_supplier.extraction_profile import (
     SupplierExtractionProfile,
 )
 from src.domain.label_profiles.kinds import LabelKind, effective_label_kind, parse_label_kind
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 
 def _to_utc(dt: datetime | None) -> datetime | None:
@@ -158,8 +159,9 @@ def _label_kind_scope_value(kind: LabelKind | None) -> str:
 
 
 class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save(self, profile: SupplierExtractionProfile) -> None:
         created = _to_utc(profile.created_at)
@@ -250,11 +252,32 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
+                SELECT TOP (1) {_SELECT_PROFILE_COLUMNS}
+                FROM supplier_extraction_profiles
+                WHERE client_id = ? AND supplier_id = ? AND status = 'ACTIVE'
+                ORDER BY version DESC, created_at DESC, id ASC
+                """,
+                (client_id, supplier_id),
+            )
+            row = cur.fetchone()
+        return _row_to_supplier_extraction_profile(row) if row else None
+
+    def get_active_by_kind(
+        self,
+        client_id: str,
+        supplier_id: str,
+        label_kind: LabelKind,
+    ) -> SupplierExtractionProfile | None:
+        kind_value = _label_kind_scope_value(label_kind)
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
                 SELECT {_SELECT_PROFILE_COLUMNS}
                 FROM supplier_extraction_profiles
                 WHERE client_id = ? AND supplier_id = ? AND status = 'ACTIVE'
+                  AND ISNULL(label_kind, 'ITEM') = ?
                 """,
-                (client_id, supplier_id),
+                (client_id, supplier_id, kind_value),
             )
             row = cur.fetchone()
         return _row_to_supplier_extraction_profile(row) if row else None
@@ -384,7 +407,7 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
         activated_by: str | None,
         expected_row_version: int | None = None,
     ) -> SupplierExtractionProfile:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"""
                 SELECT {_SELECT_PROFILE_COLUMNS}

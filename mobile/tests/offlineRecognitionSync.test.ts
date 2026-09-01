@@ -64,6 +64,13 @@ function sampleBundle(overrides?: Partial<OfflineRecognitionBundleDto>): Offline
         },
       },
     ],
+    suppliers: [
+      {
+        client_supplier_id: 'sup-a',
+        item_source: 'SUPPLIER',
+        position_source: 'SUPPLIER',
+      },
+    ],
     ...overrides,
   };
 }

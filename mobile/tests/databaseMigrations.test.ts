@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -170,6 +170,42 @@ describe('SQLite migrations', () => {
     expect(v28?.sql).toContain('CREATE TABLE IF NOT EXISTS offline_recognition_sync_meta');
     expect(v28?.sql).toContain('PRIMARY KEY (inventory_id, client_supplier_id, label_kind)');
     expect(v28?.sql).toContain('recognition_profile_snapshot_json');
+  });
+
+  it('adds v29 local catalog tables', () => {
+    const v29 = MIGRATIONS.find((m) => m.version === 29);
+    expect(v29?.name).toBe('local_catalog');
+    expect(v29?.sql).toContain('CREATE TABLE IF NOT EXISTS local_inventories');
+    expect(v29?.sql).toContain('CREATE TABLE IF NOT EXISTS local_aisles');
+    expect(v29?.sql).toContain('CREATE TABLE IF NOT EXISTS local_client_suppliers');
+    expect(v29?.sql).toContain('CREATE TABLE IF NOT EXISTS catalog_sync_meta');
+  });
+
+  it('adds v30 catalog sync meta status columns', () => {
+    const v30 = MIGRATIONS.find((m) => m.version === 30);
+    expect(v30?.name).toBe('catalog_sync_meta_status');
+    expect(v30?.sql).toContain('last_sync_attempt_at');
+    expect(v30?.sql).toContain('last_successful_sync_at');
+    expect(v30?.sql).toContain('last_sync_status');
+  });
+
+  it('adds v31 local aisle origin and sync metadata', () => {
+    const v31 = MIGRATIONS.find((m) => m.version === 31);
+    expect(v31?.name).toBe('local_aisle_offline_origin');
+    expect(v31?.sql).toContain('client_supplier_id');
+    expect(v31?.sql).toContain('origin');
+    expect(v31?.sql).toContain('sync_status');
+    expect(v31?.sql).toContain("origin = 'REMOTE'");
+    expect(v31?.sql).toContain("sync_status = 'REMOTE_SYNCED'");
+  });
+
+  it('adds v32 offline supplier recognition config table', () => {
+    const v32 = MIGRATIONS.find((m) => m.version === 32);
+    expect(v32?.name).toBe('offline_supplier_recognition_config');
+    expect(v32?.sql).toContain('CREATE TABLE IF NOT EXISTS offline_supplier_recognition_config');
+    expect(v32?.sql).toContain('item_source');
+    expect(v32?.sql).toContain('position_source');
+    expect(v32?.sql).toContain('PRIMARY KEY (inventory_id, client_supplier_id)');
   });
 });
 

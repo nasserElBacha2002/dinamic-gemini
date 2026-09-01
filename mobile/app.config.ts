@@ -176,6 +176,7 @@ const config: ExpoConfig = {
         'DINAMIC_FLAG_SERVER_OFFLINE_IDEMPOTENCY_SUPPORT',
         'serverOfflineIdempotencySupport',
       ),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_SERVER_UPLOAD', 'mobileServerUpload'),
     },
   },
 };

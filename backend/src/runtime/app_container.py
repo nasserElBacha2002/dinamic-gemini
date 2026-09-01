@@ -470,6 +470,12 @@ class AppContainer:
             raise RuntimeError("v3 SQL client not available after probe")
         return client
 
+    def _get_v3_sql_client_optional(self) -> SqlServerClient | None:
+        try:
+            return self._get_v3_sql_client()
+        except RuntimeError:
+            return None
+
     def _get_repository_backend_resolution(self) -> RepositoryBackendResolution:
         """Resolve and cache SQL vs memory backend once per container (Phase C1 foundation)."""
         if self._repository_backend_resolution is not None:
@@ -1964,6 +1970,8 @@ class AppContainer:
             client_supplier_repo=self.get_client_supplier_repo(),
             profile_repo=self.get_supplier_extraction_profile_repo(),
             clock=self.get_clock(),
+            label_profile_repo=self.get_client_supplier_label_profile_repo(),
+            sql_client=self._get_v3_sql_client_optional(),
         )
 
     def get_activate_supplier_extraction_profile_version_use_case(
@@ -1973,6 +1981,9 @@ class AppContainer:
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             profile_repo=self.get_supplier_extraction_profile_repo(),
+            clock=self.get_clock(),
+            label_profile_repo=self.get_client_supplier_label_profile_repo(),
+            sql_client=self._get_v3_sql_client_optional(),
         )
 
     def get_test_label_recognition_code_use_case(self):
