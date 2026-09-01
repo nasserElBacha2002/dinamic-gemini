@@ -45,6 +45,7 @@ module.exports = {
     '<rootDir>/tests/catalogSyncCorrections.test.ts',
     '<rootDir>/tests/localAislePhase3.test.ts',
     '<rootDir>/tests/offlineAislePackageSchema.test.ts',
+    '<rootDir>/tests/appBootstrapLifecycle.test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],

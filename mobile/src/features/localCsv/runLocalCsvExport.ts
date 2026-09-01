@@ -6,6 +6,9 @@ export type LocalCsvExportUserError =
   | { kind: 'empty' }
   | { kind: 'photo_read' }
   | { kind: 'share_unavailable' }
+  | { kind: 'offline_config' }
+  | { kind: 'scan_unsupported' }
+  | { kind: 'photos_unstable' }
   | { kind: 'generic'; message: string };
 
 export interface RunLocalCsvExportResult {
@@ -45,6 +48,15 @@ export function mapLocalCsvExportError(error: unknown): LocalCsvExportUserError 
   if (raw.startsWith('PACKAGE_EXPORT_UNRESOLVED:')) {
     return { kind: 'unresolved' };
   }
+  if (raw.startsWith('PACKAGE_EXPORT_OFFLINE_CONFIG_REQUIRED:')) {
+    return { kind: 'offline_config' };
+  }
+  if (raw.startsWith('PACKAGE_EXPORT_SCAN_UNSUPPORTED:')) {
+    return { kind: 'scan_unsupported' };
+  }
+  if (raw.startsWith('PACKAGE_EXPORT_PHOTOS_UNSTABLE:')) {
+    return { kind: 'photos_unstable' };
+  }
   if (raw.startsWith('PACKAGE_EXPORT_NO_PRODUCTS:')) {
     return { kind: 'no_products' };
   }
@@ -64,6 +76,12 @@ export function userMessageForLocalCsvExportError(error: LocalCsvExportUserError
   switch (error.kind) {
     case 'unresolved':
       return 'No se pudo exportar: faltan códigos detectados en las fotos. Esperá el escaneo local o volvé a capturar etiquetas/SKU legibles (no requiere conexión al servidor).';
+    case 'offline_config':
+      return 'No se pudo exportar: falta la configuración offline del proveedor. Conectate a internet, abrí Pasillos y tocá «Actualizar configuración offline», luego reintentá el escaneo o la exportación.';
+    case 'scan_unsupported':
+      return 'No se pudo exportar: este dispositivo no puede escanear códigos localmente. Verificá que la app tenga el módulo de captura instalado (Android).';
+    case 'photos_unstable':
+      return 'No se pudo exportar: las fotos aún se están procesando. Esperá unos segundos y volvé a intentar.';
     case 'no_products':
       return 'No se pudo exportar: no hay productos con código interno. Escaneá al menos un SKU (las fotos de posición solas no alcanzan).';
     case 'empty':

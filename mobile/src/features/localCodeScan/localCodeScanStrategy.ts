@@ -425,6 +425,7 @@ export class LocalCodeScanStrategy {
                 validationStatus: p.validationStatus,
                 formatVersion: p.formatVersion,
                 selectedIndex: p.selectedIndex,
+                ...(p.rawPayload ? { rawPayload: p.rawPayload } : {}),
               })),
             )
           : null;

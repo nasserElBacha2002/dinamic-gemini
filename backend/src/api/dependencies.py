@@ -979,18 +979,46 @@ def get_persist_authoritative_local_code_scan_use_case(
     )
 
 
+def _build_preview_local_csv_import(
+    *,
+    inventory_repo: InventoryRepository,
+    aisle_repo: AisleRepository,
+    import_repo: object,
+    clock: Clock,
+    enabled: bool,
+):
+    from src.application.services.supplier_local_csv_row_revalidator import (
+        build_supplier_local_csv_row_revalidator,
+    )
+    from src.application.use_cases.inventories.manage_local_csv_import import (
+        PreviewLocalCsvImport,
+    )
+
+    container = get_app_container()
+    return PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=import_repo,
+        clock=clock,
+        enabled=enabled,
+        supplier_revalidator=build_supplier_local_csv_row_revalidator(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            client_supplier_repo=container.get_client_supplier_repo(),
+            extraction_profile_repo=container.get_supplier_extraction_profile_repo(),
+        ),
+    )
+
+
 def get_preview_local_csv_import_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.inventories.manage_local_csv_import import (
-        PreviewLocalCsvImport,
-    )
     from src.config import load_settings
 
     settings = load_settings()
-    return PreviewLocalCsvImport(
+    return _build_preview_local_csv_import(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         import_repo=get_app_container().get_local_csv_import_repo(),
@@ -1074,9 +1102,6 @@ def get_preview_local_inventory_package_use_case(
 ):
     from pathlib import Path
 
-    from src.application.use_cases.inventories.manage_local_csv_import import (
-        PreviewLocalCsvImport,
-    )
     from src.application.use_cases.inventories.manage_local_inventory_package import (
         PreviewLocalInventoryPackage,
     )
@@ -1085,7 +1110,7 @@ def get_preview_local_inventory_package_use_case(
     settings = load_settings()
     container = get_app_container()
     csv_repo = container.get_local_csv_import_repo()
-    csv_preview = PreviewLocalCsvImport(
+    csv_preview = _build_preview_local_csv_import(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         import_repo=csv_repo,
@@ -1210,14 +1235,11 @@ def get_preview_dinamic_scanner_txt_import_use_case(
     from src.application.use_cases.inventories.manage_dinamic_scanner_txt_import import (
         PreviewDinamicScannerTxtImport,
     )
-    from src.application.use_cases.inventories.manage_local_csv_import import (
-        PreviewLocalCsvImport,
-    )
     from src.config import load_settings
 
     settings = load_settings()
     container = get_app_container()
-    csv_preview = PreviewLocalCsvImport(
+    csv_preview = _build_preview_local_csv_import(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         import_repo=container.get_local_csv_import_repo(),

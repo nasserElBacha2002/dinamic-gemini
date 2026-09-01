@@ -60,7 +60,7 @@ export class AuthService {
       return this.restoreFromCachedUser('offline');
     }
     try {
-      const user = await this.api.get<AuthUserDto>('/auth/me');
+      const user = await this.api.get<AuthUserDto>('/auth/me', { timeoutKind: 'auth' });
       await this.sessionUserStorage?.saveUser(user);
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports

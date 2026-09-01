@@ -1,8 +1,12 @@
 import * as SQLite from 'expo-sqlite';
 
 import { MIGRATIONS, validateMigrations } from './migrations/migrations';
-import { isSqliteMalformedError } from './sqliteErrors';
-import { SQLITE_BUSY_TIMEOUT_MS, __resetSqliteWriteGateForTests } from './sqliteWriteGate';
+import { isSqliteBusyError, isSqliteMalformedError } from './sqliteErrors';
+import {
+  SQLITE_BUSY_TIMEOUT_MS,
+  __resetSqliteWriteGateForTests,
+  resetSqliteWriteGate,
+} from './sqliteWriteGate';
 
 export type SQLiteDatabase = Awaited<ReturnType<typeof SQLite.openDatabaseAsync>>;
 export { isSqliteMalformedError, isSqliteBusyError } from './sqliteErrors';
@@ -15,6 +19,10 @@ export {
 } from './sqliteWriteGate';
 
 export const MOBILE_DB_NAME = 'dinamic_mobile.db';
+
+/** Shorter native busy wait while opening during bootstrap (avoid 15s UI freeze). */
+const BOOTSTRAP_BUSY_TIMEOUT_MS = 2_000;
+const BOOTSTRAP_OPEN_MAX_ATTEMPTS = 12;
 
 let dbPromise: Promise<SQLiteDatabase> | null = null;
 let recoveredFromCorruption = false;
@@ -33,10 +41,17 @@ export function __resetDatabaseSingletonForTests(): void {
   __resetSqliteWriteGateForTests();
 }
 
-async function probeDatabase(db: SQLiteDatabase): Promise<void> {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function probeDatabase(db: SQLiteDatabase, options?: { fullIntegrity?: boolean }): Promise<void> {
   const row = await db.getFirstAsync<{ ok: number }>('SELECT 1 AS ok;');
   if (row?.ok !== 1) {
     throw new Error('database disk image is malformed: probe failed');
+  }
+  if (options?.fullIntegrity !== true) {
+    return;
   }
   const integrity = await db.getFirstAsync<{ integrity_check: string }>('PRAGMA integrity_check;');
   const result = integrity?.integrity_check ?? '';
@@ -45,15 +60,69 @@ async function probeDatabase(db: SQLiteDatabase): Promise<void> {
   }
 }
 
-async function openMigratedDatabase(): Promise<SQLiteDatabase> {
-  const db = await SQLite.openDatabaseAsync(MOBILE_DB_NAME);
-  // Reduce "database is locked" under concurrent upload/scan writers.
+async function configureDatabasePragmas(db: SQLiteDatabase, busyTimeoutMs: number): Promise<void> {
   await db.execAsync('PRAGMA journal_mode = WAL;');
-  await db.execAsync(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
+  await db.execAsync(`PRAGMA busy_timeout = ${busyTimeoutMs};`);
   await db.execAsync('PRAGMA synchronous = NORMAL;');
-  await probeDatabase(db);
-  await migrate(db);
-  return db;
+}
+
+async function closeDatabaseHandle(db: SQLiteDatabase | null | undefined): Promise<void> {
+  if (!db) return;
+  try {
+    await db.closeAsync();
+  } catch {
+    // best-effort — release WAL locks when superseding a bootstrap
+  }
+}
+
+/**
+ * Close the process-wide DB handle before a relaunch bootstrap.
+ * Helps Expo reload release SQLite locks held by the previous app instance.
+ */
+export async function closeDatabaseForRelaunch(): Promise<void> {
+  if (!dbPromise) {
+    resetSqliteWriteGate();
+    return;
+  }
+  const pending = dbPromise;
+  dbPromise = null;
+  resetSqliteWriteGate();
+  try {
+    const db = await pending;
+    await closeDatabaseHandle(db);
+  } catch {
+    // open may still be in progress or already failed
+  }
+}
+
+async function openMigratedDatabase(): Promise<SQLiteDatabase> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= BOOTSTRAP_OPEN_MAX_ATTEMPTS; attempt += 1) {
+    let opened: SQLiteDatabase | null = null;
+    try {
+      resetSqliteWriteGate();
+      opened = await SQLite.openDatabaseAsync(MOBILE_DB_NAME);
+      await configureDatabasePragmas(opened, BOOTSTRAP_BUSY_TIMEOUT_MS);
+      await probeDatabase(opened, { fullIntegrity: attempt === 1 });
+      await migrate(opened);
+      await opened.execAsync(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
+      return opened;
+    } catch (error) {
+      lastError = error;
+      await closeDatabaseHandle(opened);
+      if (isSqliteMalformedError(error)) {
+        throw error;
+      }
+      if (!isSqliteBusyError(error) && attempt >= BOOTSTRAP_OPEN_MAX_ATTEMPTS) {
+        throw error;
+      }
+      if (!isSqliteBusyError(error)) {
+        throw error;
+      }
+      await sleep(Math.min(30 * attempt, 250));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function recreateDatabaseAfterCorruption(cause: unknown): Promise<SQLiteDatabase> {

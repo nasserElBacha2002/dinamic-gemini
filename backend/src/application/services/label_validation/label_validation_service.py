@@ -768,10 +768,11 @@ class LabelValidationService:
     ) -> bool:
         if not config.accepted_barcode_formats:
             return True
-        # Vision/OCR may recognize printable text without a barcode symbology.
+        # Vision/OCR/CSV may lack barcode symbology (text handoff or pre-scanned payload).
         if not symbology and recognition_source in (
             RecognitionSource.VISION,
             RecognitionSource.OCR,
+            RecognitionSource.CSV,
         ):
             return True
         if not symbology:

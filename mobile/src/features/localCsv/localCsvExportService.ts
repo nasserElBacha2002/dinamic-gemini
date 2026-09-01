@@ -32,6 +32,7 @@ import {
 import type { LocalCodeScanStrategy } from '../localCodeScan/localCodeScanStrategy';
 import { buildLocalCsvExport } from './buildLocalCsvExport';
 import { isDraftExportReady } from './supplierExportSemantics';
+import { diagnoseExportBlockers } from './localCsvExportPreflight';
 import { sha256Hex } from './csvFormat';
 import { base64ToUint8Array, uint8ArrayToBase64 } from './binaryCodec';
 import { LOCAL_PACKAGE_KIND, LOCAL_PACKAGE_VERSION } from './localPackageContract';
@@ -115,7 +116,7 @@ export class LocalCsvExportService {
     const recognitionContext: 'ONLINE' | 'OFFLINE' = 'OFFLINE';
 
     for (const photo of photos) {
-      if (photo.status !== 'stable') {
+      if (photo.status === 'excluded' || photo.status === 'rejected' || photo.status === 'undecodable') {
         continue;
       }
       const existing = draftByPhoto.get(photo.id);
@@ -179,6 +180,11 @@ export class LocalCsvExportService {
     await this.ensureLocalCodeScans(session, eligible, drafts);
     drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => drafts);
     const confirmed = await this.deps.confirmedRepo.listForSession(sessionId).catch(() => []);
+
+    const blocker = diagnoseExportBlockers(eligible, drafts);
+    if (blocker) {
+      throw new Error(`${blocker.code}: ${blocker.detail}`);
+    }
 
     const built = await buildLocalCsvExport({
       session,

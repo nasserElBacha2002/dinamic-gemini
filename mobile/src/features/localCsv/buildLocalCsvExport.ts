@@ -318,8 +318,10 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       return true;
     });
 
+    const storedProducts = parseStoredProductResults(draft?.product_results_json);
     const rawPayloadForNotes =
       supplierPosition?.positionPayloadRaw ??
+      storedProducts.find((p) => p.rawPayload?.trim())?.rawPayload ??
       (draft?.internal_code && isLikelyRawSegmentedPayload(String(draft.internal_code).trim())
         ? String(draft.internal_code).trim()
         : null);

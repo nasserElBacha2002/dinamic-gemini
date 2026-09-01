@@ -55,6 +55,8 @@ async function finishReviewForExport(
   await services.capture.loadSession(sessionId, false);
 }
 
+let appBootstrapSeq = 0;
+
 type Screen =
   | 'login'
   | 'inventories'
@@ -96,6 +98,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     let mounted = true;
+    const bootstrapSeq = ++appBootstrapSeq;
     let unsubscribeCapture: (() => void) | undefined;
     let unsubscribeUpload: (() => void) | undefined;
     let createdServices: AppServices | undefined;
@@ -106,8 +109,11 @@ export default function App(): JSX.Element {
       setScreen('login');
       void createdServices?.uploadQueue.pause('auth');
     })
-      .then(async (created) => {
-        if (!mounted) return;
+      .then((created) => {
+        if (!mounted || bootstrapSeq !== appBootstrapSeq) {
+          void created.dispose().catch(() => undefined);
+          return;
+        }
         createdServices = created;
         setServices(created);
         setConfigError(created.configError);
@@ -121,28 +127,48 @@ export default function App(): JSX.Element {
         unsubscribeUpload = created.uploadQueue.subscribe((snap) => {
           if (mounted) setUploadProgress(snap.sessions);
         });
-        const startupConnectivity = created.connectivity.getState();
-        if (mounted) setConnectivity(startupConnectivity);
-        const restored = created.configError
-          ? null
-          : await created.auth.restore(startupConnectivity);
-        if (!mounted) return;
-        setAuth(restored);
-        if (restored) {
-          void created.catalog.bootstrap(startupConnectivity).catch(() => undefined);
-        }
-        const open = await created.capture.restoreLatestOpen();
-        const activity = await created.capture.listActivitySessions();
-        if (mounted) setLocalSessions(activity);
         unsubscribeCapture = created.capture.subscribe((snapshot) => {
           if (mounted) setCapture(snapshot);
         });
-        if (restored) {
-          routeAfterRestore(open, created, setScreen, setWorkSessionId, setSelectedInventory, setSelectedAisle);
-        }
+        const startupConnectivity = created.connectivity.getState();
+        if (mounted) setConnectivity(startupConnectivity);
         setLoading(false);
+        void (async () => {
+          try {
+            const restored = created.configError
+              ? null
+              : await created.auth.restore(startupConnectivity);
+            if (!mounted || bootstrapSeq !== appBootstrapSeq) return;
+            setAuth(restored);
+            if (restored) {
+              void created.catalog.bootstrap(startupConnectivity).catch(() => undefined);
+            }
+            const open = await created.capture.restoreLatestOpen();
+            const activity = await created.capture.listActivitySessions();
+            if (!mounted || bootstrapSeq !== appBootstrapSeq) return;
+            setLocalSessions(activity);
+            if (restored) {
+              routeAfterRestore(
+                open,
+                created,
+                setScreen,
+                setWorkSessionId,
+                setSelectedInventory,
+                setSelectedAisle,
+              );
+            }
+          } catch (e) {
+            if (!mounted || bootstrapSeq !== appBootstrapSeq) return;
+            created.logger.warn('recovery', {
+              where: 'app_bootstrap_restore',
+              message: e instanceof Error ? e.message : String(e),
+            });
+            setError(messageOf(e));
+          }
+        })();
       })
       .catch((e) => {
+        if (!mounted || bootstrapSeq !== appBootstrapSeq) return;
         setError(messageOf(e));
         setLoading(false);
       });
@@ -150,7 +176,6 @@ export default function App(): JSX.Element {
       mounted = false;
       unsubscribeCapture?.();
       unsubscribeUpload?.();
-      void createdServices?.dispose();
     };
   }, []);
 
@@ -228,6 +253,7 @@ export default function App(): JSX.Element {
   if (loading || !services) {
     return (
       <Shell title="Dinamic Captura">
+        {error ? <ErrorText text={error} /> : null}
         <ActivityIndicator color="#94d2bd" />
       </Shell>
     );

@@ -6,6 +6,7 @@ export type StoredProductResult = {
   readonly labelId: string;
   readonly internalCode: string | null;
   readonly quantity: number | null;
+  readonly rawPayload?: string | null;
   readonly validationStatus?: string;
   readonly formatVersion?: string;
 };
@@ -46,10 +47,15 @@ export function parseStoredProductResults(
       }
       const validationStatus =
         typeof row.validationStatus === 'string' ? row.validationStatus : undefined;
+      const rawPayload =
+        typeof row.rawPayload === 'string' && row.rawPayload.trim()
+          ? row.rawPayload.trim()
+          : null;
       out.push({
         labelId,
         internalCode,
         quantity,
+        ...(rawPayload ? { rawPayload } : {}),
         ...(validationStatus ? { validationStatus } : {}),
         ...(formatVersion ? { formatVersion } : {}),
       });

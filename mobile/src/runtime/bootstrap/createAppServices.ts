@@ -1,6 +1,8 @@
 import { loadAppConfig, validateAppConfig, type AppConfig } from '../config/env';
 import { createLogger, type Logger } from '../../core/logging';
 import { getDatabase, consumeDatabaseRecoveryFlag } from '../../database/database';
+import { resetSqliteWriteGate } from '../../database/sqliteWriteGate';
+import { runSerializedAppBootstrap } from './appBootstrapLifecycle';
 import { CaptureRepository } from '../../database/repositories/captureRepository';
 import { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import { AuthService } from '../../features/auth/authService';
@@ -170,7 +172,13 @@ export interface AppServices {
   dispose(): Promise<void>;
 }
 
-export async function createAppServices(onAuthExpired: () => void): Promise<AppServices> {
+export function createAppServices(onAuthExpired: () => void): Promise<AppServices> {
+  return runSerializedAppBootstrap(() => buildAppServices(onAuthExpired));
+}
+
+async function buildAppServices(onAuthExpired: () => void): Promise<AppServices> {
+  const bootstrapStartedMs = Date.now();
+  resetSqliteWriteGate();
   const config = loadAppConfig();
   const configError = validateAppConfig(config);
   const logger = createLogger();
@@ -185,6 +193,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     onAuthExpired,
   });
   const db = await getDatabase();
+  logger.info('recovery', {
+    where: 'bootstrap_phase',
+    phase: 'database',
+    duration_ms: Date.now() - bootstrapStartedMs,
+  });
   const databaseRecoveredFromCorruption = consumeDatabaseRecoveryFlag();
   if (databaseRecoveredFromCorruption) {
     logger.warn('recovery', {
@@ -241,6 +254,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     catalogRepo,
   );
   await catalogCoordinator.initialize();
+  logger.info('recovery', {
+    where: 'bootstrap_phase',
+    phase: 'catalog_meta',
+    duration_ms: Date.now() - bootstrapStartedMs,
+  });
   const localCodeScan = new LocalCodeScanStrategy({
     drafts: localDetectionDrafts,
     reporter: obsWire?.reporter ?? null,
@@ -594,58 +612,65 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   }
 
   if (!configError) {
-    void uploadLimits.refresh();
-    void syncNativeUploadAuth({
-      accessToken: null,
-      refreshToken: null,
-      apiBaseUrl: config.apiBaseUrl,
-      apiKey: config.apiKey,
-      flags: config.flags,
-    }).then(async (synced) => {
-      if (!synced) {
-        logger.warn('error', { code: 'AUTH_VAULT_UNAVAILABLE' });
-        return;
-      }
-      const access = await tokenStorage.getAccessToken();
-      const refresh = await tokenStorage.getRefreshToken();
-      if (access) {
-        const ok = await syncNativeUploadAuth({
-          accessToken: access,
-          refreshToken: refresh,
-          apiBaseUrl: config.apiBaseUrl,
-          apiKey: config.apiKey,
-          flags: config.flags,
-        });
-        if (ok && config.flags.backgroundUploadWorker) {
-          void backgroundWork.scheduleUploadQueue(false);
+    queueMicrotask(() => {
+      void uploadLimits.refresh();
+      void syncNativeUploadAuth({
+        accessToken: null,
+        refreshToken: null,
+        apiBaseUrl: config.apiBaseUrl,
+        apiKey: config.apiKey,
+        flags: config.flags,
+      }).then(async (synced) => {
+        if (!synced) {
+          logger.warn('error', { code: 'AUTH_VAULT_UNAVAILABLE' });
+          return;
         }
-      }
-    });
-    void uploadQueue.restoreAndStart();
-    void jobMonitor.restorePendingJobs();
-    void processing.recoverStuckStartingSessions().catch(() => {
-      // best-effort — never block bootstrap
-    });
-    if (config.flags.mobilePreliminaryDetectionSync) {
-      void preliminarySync.syncPending().catch(() => {
+        const access = await tokenStorage.getAccessToken();
+        const refresh = await tokenStorage.getRefreshToken();
+        if (access) {
+          const ok = await syncNativeUploadAuth({
+            accessToken: access,
+            refreshToken: refresh,
+            apiBaseUrl: config.apiBaseUrl,
+            apiKey: config.apiKey,
+            flags: config.flags,
+          });
+          if (ok && config.flags.backgroundUploadWorker) {
+            void backgroundWork.scheduleUploadQueue(false);
+          }
+        }
+      });
+      void uploadQueue.restoreAndStart();
+      void jobMonitor.restorePendingJobs();
+      void processing.recoverStuckStartingSessions().catch(() => {
         // best-effort — never block bootstrap
       });
-    }
-    if (config.flags.mobileAuthoritativeLocalCodeScan && !offlineOpsEnabled) {
-      void authoritativeLocalSync.syncPending().catch(() => {
-        // best-effort — never block bootstrap
-      });
-    }
-    if (offlineOpsEnabled) {
-      void offlineScheduler?.recoverAndTick().catch(() => undefined);
-    }
-    void cleanupTransformTemps(logger);
-    void getStorageStatus().then((s) => {
-      if (s.lowSpace) {
-        logger.warn('error', { code: 'CAPTURE_STORAGE_LOW', freeBytes: s.freeBytes });
+      if (config.flags.mobilePreliminaryDetectionSync) {
+        void preliminarySync.syncPending().catch(() => {
+          // best-effort — never block bootstrap
+        });
       }
+      if (config.flags.mobileAuthoritativeLocalCodeScan && !offlineOpsEnabled) {
+        void authoritativeLocalSync.syncPending().catch(() => {
+          // best-effort — never block bootstrap
+        });
+      }
+      if (offlineOpsEnabled) {
+        void offlineScheduler?.recoverAndTick().catch(() => undefined);
+      }
+      void cleanupTransformTemps(logger);
+      void getStorageStatus().then((s) => {
+        if (s.lowSpace) {
+          logger.warn('error', { code: 'CAPTURE_STORAGE_LOW', freeBytes: s.freeBytes });
+        }
+      });
     });
   }
+
+  logger.info('recovery', {
+    where: 'app_services_ready',
+    duration_ms: Date.now() - bootstrapStartedMs,
+  });
 
   return {
     config,
@@ -772,9 +797,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       preliminarySync.stopScheduler();
       authoritativeLocalSync.stopScheduler();
       offlineScheduler?.stop();
+      jobMonitor.dispose();
       capture.dispose();
       await uploadQueue.dispose();
-      jobMonitor.dispose();
       await observability.dispose();
       await backgroundWork.cancelAllTracked();
     },

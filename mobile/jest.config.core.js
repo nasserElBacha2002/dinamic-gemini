@@ -44,6 +44,7 @@ module.exports = {
     '<rootDir>/tests/offlineOperationsPhase9.test.ts',
     '<rootDir>/tests/offlineSupplierLabelValidator.test.ts',
     '<rootDir>/tests/supplierExportSemantics.test.ts',
+    '<rootDir>/tests/localCsvExportPreflight.test.ts',
   ],
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/src/core/$1',
