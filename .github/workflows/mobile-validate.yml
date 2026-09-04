@@ -72,9 +72,30 @@ jobs:
           npx expo prebuild -p android --no-install
           test -d android
           test -x android/gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Cache wrapper + distributions so Connection reset on services.gradle.org is rarer.
+          cache-read-only: false
       - name: Assemble debug
         working-directory: mobile/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          set -euo pipefail
+          # Gradle distribution download can fail transiently (SocketException: Connection reset).
+          attempt=1
+          max_attempts=3
+          while true; do
+            if ./gradlew assembleDebug --no-daemon; then
+              exit 0
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "assembleDebug failed after ${max_attempts} attempts"
+              exit 1
+            fi
+            echo "assembleDebug attempt ${attempt} failed; retrying in 15s..."
+            attempt=$((attempt + 1))
+            sleep 15
+          done
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
