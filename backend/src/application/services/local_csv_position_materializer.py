@@ -132,7 +132,8 @@ def _detected_summary(
 ) -> dict:
     position_code = (result.position_code or "").strip() or None
     position_label = (result.position_label_id or "").strip() or None
-    business_position = position_label or position_code
+    # Prefer business position_code (pallet / A04-R-02); fall back to label id.
+    business_position = position_code or position_label
     internal = (result.internal_code or "").strip() or None
     qty = _quantity_for(result)
     summary: dict = {
@@ -487,7 +488,8 @@ class LocalCsvPositionMaterializer:
 
         position_id = position_id_for_productive(result.id)
         product_id = product_id_for_productive(result.id)
-        position_code = (result.position_label_id or result.position_code or "").strip() or None
+        # Prefer business position_code; fall back to position_label_id when code is empty.
+        position_code = (result.position_code or result.position_label_id or "").strip() or None
         # TXT without catalog-consistent hierarchy must not keep adulterated position_code.
         if is_txt and not position_payload_ok:
             position_code = None
