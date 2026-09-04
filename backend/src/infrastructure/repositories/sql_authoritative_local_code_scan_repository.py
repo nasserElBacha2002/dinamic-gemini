@@ -35,7 +35,7 @@ def _row_to_entity(row) -> AuthoritativeLocalCodeScanResult:
         result_version=int(getattr(row, "result_version", 1) or 1),
         supersedes_result_id=optional_nonempty_db_str(getattr(row, "supersedes_result_id", None)),
         is_current=bool(getattr(row, "is_current", False)),
-        internal_code=normalize_db_str(getattr(row, "internal_code", None)),
+        internal_code=optional_nonempty_db_str(getattr(row, "internal_code", None)),
         quantity=getattr(row, "quantity", None),
         quantity_status=normalize_db_str(getattr(row, "quantity_status", None)),
         source=normalize_db_str(getattr(row, "source", None)),

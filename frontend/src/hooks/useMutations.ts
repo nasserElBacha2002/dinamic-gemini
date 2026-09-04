@@ -10,6 +10,7 @@ import {
   cloneSupplierExtractionProfile,
   createSupplierPromptConfigVersion,
   createSupplierExtractionProfileVersion,
+  upsertClientSupplierLabelProfile,
   replaceSupplierReferenceAnnotations,
   createInventory,
   createAisle,
@@ -244,6 +245,27 @@ export function useCreateSupplierExtractionProfileVersion(clientId: string, supp
       createSupplierExtractionProfileVersion(clientId, supplierId, body),
     onSuccess: () => {
       invalidateSupplierExtractionProfileQueries(queryClient, clientId, supplierId);
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.labelProfiles.list(clientId, supplierId),
+      });
+    },
+  });
+}
+
+export function useUpsertClientSupplierLabelProfile(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      labelKind,
+      source,
+    }: {
+      labelKind: 'ITEM' | 'POSITION';
+      source: 'DINAMIC' | 'SUPPLIER';
+    }) => upsertClientSupplierLabelProfile(clientId, supplierId, labelKind, source),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.labelProfiles.list(clientId, supplierId),
+      });
     },
   });
 }
@@ -365,12 +387,14 @@ export function useStartAisleProcessing(inventoryId: string) {
       modelName?: string | null;
       promptKey?: string | null;
       identificationMode?: string | null;
+      processingMode?: string | null;
     }) =>
       startAisleProcessing(inventoryId, vars.aisleId, {
         providerName: vars.providerName,
         modelName: vars.modelName,
         promptKey: vars.promptKey,
         identificationMode: vars.identificationMode,
+        processingMode: vars.processingMode,
       }),
     onSuccess: (_, vars) => {
       const { aisleId } = vars;

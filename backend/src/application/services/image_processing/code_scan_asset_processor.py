@@ -50,6 +50,7 @@ from src.domain.image_processing.processing_attempt import (
     ProcessingAttemptStatus,
 )
 from src.domain.jobs.entities import Job
+from src.domain.label_validation.context import LabelValidationContext
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,9 @@ class SingleAssetStrategyProcessor:
         self._reconciler = reconciler
         self._inventory_client_id = inventory_client_id
         self._external_fallback = external_fallback
+        # Job-scoped immutable validation context (one job at a time; no global mutable cache).
+        self._cached_validation_job_id: str | None = None
+        self._cached_label_validation_context: LabelValidationContext | None = None
 
     def _attempt_provider(self) -> str:
         return str(
@@ -229,21 +233,35 @@ class SingleAssetStrategyProcessor:
             supplier_extraction_profile=self._supplier_extraction_profile(job),
             profile_aware_validation_enabled=self._profile_aware_enabled(job),
             reference_template_annotations_enabled=self._annotations_enabled(job),
+            label_profiles=self._label_profiles(job),
+            label_validation_context=self._label_validation_context(job),
         )
 
         error: str | None = None
+        processing_mode = self._job_processing_mode(job)
+        code_scan_invoked = processing_mode.value != "VISION_ONLY"
         logger.info(
             "image_processing.strategy_started job_id=%s asset_id=%s strategy=%s "
-            "worker_token=%s provider=%s model=%s",
+            "worker_token=%s provider=%s model=%s processing_mode=%s code_scan_invoked=%s",
             job.id,
             asset.id,
             strategy_key,
             worker_token,
             context.provider_name,
             context.model_name,
+            processing_mode.value,
+            code_scan_invoked,
         )
         try:
-            result = self._strategy.process(context, asset)
+            if not code_scan_invoked:
+                # Explicit VISION_ONLY branch — never invoke CodeScanProcessingStrategy.
+                result = self._vision_only_seed_result(
+                    job=job,
+                    asset=asset,
+                    strategy_key=strategy_key,
+                )
+            else:
+                result = self._strategy.process(context, asset)
         except Exception as exc:
             logger.exception(
                 "image_processing.strategy_failed job_id=%s asset_id=%s strategy=%s",
@@ -350,6 +368,16 @@ class SingleAssetStrategyProcessor:
                         result = outcome.result
                         finalize_strategy = "EXTERNAL_PROVIDER"
                         finalize_attempt = outcome.attempt
+                        logger.info(
+                            "image_processing.vision_resolved job_id=%s asset_id=%s "
+                            "processing_mode=%s vision_invoked=true code_scan_invoked=%s "
+                            "resolved_by=%s",
+                            job.id,
+                            asset.id,
+                            processing_mode.value,
+                            code_scan_invoked,
+                            result.resolved_by,
+                        )
                         if result.status is ImageResultStatus.RESOLVED_EXTERNAL:
                             result, persist_error = self._apply_persist(
                                 job=job,
@@ -433,13 +461,20 @@ class SingleAssetStrategyProcessor:
             result.additional_fields["persistence_status"] = (
                 "persisted" if outcome.persisted else "reconciled"
             )
+            result_kind = None
+            if isinstance(result.evidence, dict):
+                result_kind = result.evidence.get("result_kind")
             logger.info(
-                "image_processing.persistence_completed job_id=%s asset_id=%s strategy=%s "
-                "persistence_outcome=%s position_id=%s",
+                "code_scan.persistence_completed job_id=%s asset_id=%s strategy=%s "
+                "persistence_outcome=%s result_kind=%s product_count=%s position_count=%s "
+                "position_id=%s",
                 job.id,
                 asset.id,
                 strategy_key,
                 "persisted" if outcome.persisted else "reconciled",
+                result_kind,
+                outcome.products_persisted,
+                outcome.positions_persisted,
                 outcome.position_id,
             )
             return result, None
@@ -486,6 +521,17 @@ class SingleAssetStrategyProcessor:
                     job, asset, strategy_key, "PROCESSING_INCOMPLETE_RESULT", result
                 ),
                 None,
+            )
+        if reason is PersistSkipReason.POSITION_MATERIALIZATION_FAILED:
+            return (
+                self._failed_technical(
+                    job,
+                    asset,
+                    strategy_key,
+                    "POSITION_MATERIALIZATION_FAILED",
+                    "POSITION_ONLY result could not be materialized durably.",
+                ),
+                f"position_materialization_failed:{asset.id}",
             )
         return (
             self._failed_technical(
@@ -575,9 +621,75 @@ class SingleAssetStrategyProcessor:
         ident = params.get("identification_execution")
         return ident if isinstance(ident, dict) else {}
 
+    def _job_processing_mode(self, job: Job):
+        from src.domain.aisle_identification.processing_mode import (
+            processing_mode_from_identification_execution,
+        )
+
+        return processing_mode_from_identification_execution(self._identification_execution(job))
+
+    def _vision_only_seed_result(
+        self,
+        *,
+        job: Job,
+        asset: SourceAsset,
+        strategy_key: str,
+    ) -> ImageProcessingResult:
+        """Seed an UNRECOGNIZED result without running CODE_SCAN (VISION_ONLY).
+
+        Eligible for Vision; error code is not a simulated scanner miss.
+        """
+        from src.domain.aisle_identification.processing_mode import (
+            VISION_ONLY_DIRECT_ERROR_CODE,
+        )
+
+        return ImageProcessingResult(
+            job_id=job.id,
+            asset_id=asset.id,
+            status=ImageResultStatus.UNRECOGNIZED,
+            processing_mode=strategy_key,
+            resolved_by=None,
+            error_code=VISION_ONLY_DIRECT_ERROR_CODE,
+            error_message="VISION_ONLY: CODE_SCAN intentionally skipped",
+            execution_scope=ExecutionScope.SINGLE_ASSET,
+            logical_asset_attempt=False,
+            evidence={
+                "processing_mode": "VISION_ONLY",
+                "code_scan_invoked": False,
+                "vision_direct": True,
+            },
+            additional_fields={
+                "processing_mode": "VISION_ONLY",
+                "code_scan_invoked": False,
+            },
+        )
+
     def _supplier_extraction_profile(self, job: Job) -> dict | None:
         snap = self._identification_execution(job).get("supplier_extraction_profile")
         return snap if isinstance(snap, dict) else None
+
+    def _label_profiles(self, job: Job) -> dict | None:
+        snap = self._identification_execution(job).get("label_profiles")
+        return snap if isinstance(snap, dict) else None
+
+    def _label_validation_context(self, job: Job):
+        from src.application.services.label_validation import (
+            build_label_validation_context_from_job,
+        )
+
+        if (
+            self._cached_validation_job_id == job.id
+            and self._cached_label_validation_context is not None
+        ):
+            return self._cached_label_validation_context
+        ctx = build_label_validation_context_from_job(
+            job_id=job.id,
+            client_id=self._resolve_client_id(job),
+            job_engine_params=job.engine_params_json,
+        )
+        self._cached_validation_job_id = job.id
+        self._cached_label_validation_context = ctx
+        return ctx
 
     def _profile_aware_enabled(self, job: Job) -> bool:
         flags = self._identification_execution(job).get("feature_flag_state")

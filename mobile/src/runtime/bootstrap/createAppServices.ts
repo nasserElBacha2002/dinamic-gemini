@@ -1,6 +1,8 @@
 import { loadAppConfig, validateAppConfig, type AppConfig } from '../config/env';
 import { createLogger, type Logger } from '../../core/logging';
 import { getDatabase, consumeDatabaseRecoveryFlag } from '../../database/database';
+import { resetSqliteWriteGate } from '../../database/sqliteWriteGate';
+import { runSerializedAppBootstrap } from './appBootstrapLifecycle';
 import { CaptureRepository } from '../../database/repositories/captureRepository';
 import { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import { AuthService } from '../../features/auth/authService';
@@ -24,7 +26,16 @@ import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
+import { OfflineRecognitionConfigRepository } from '../../database/repositories/offlineRecognitionConfigRepository';
+import { LocalCatalogRepository } from '../../database/repositories/localCatalogRepository';
+import { CatalogSyncService } from '../../features/catalog/catalogSyncService';
+import { CatalogSyncCoordinator } from '../../features/catalog/catalogSyncCoordinator';
+import {
+  LocalLabelProfileResolver,
+  OfflineRecognitionSyncService,
+} from '../../features/offlineRecognition';
 import { LocalCsvExportService } from '../../features/localCsv/localCsvExportService';
+import { OfflineAisleExportService } from '../../features/offlineAisleExport';
 import { getOrCreateInstallationId } from '../../shared/installationId';
 import { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
 import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
@@ -73,6 +84,9 @@ import { probeStability } from '../../native/stabilityProber';
 import { ApiClient } from '../../services/api/apiClient';
 import { createConnectivityService, type ConnectivityService } from '../../services/connectivity/connectivity';
 import { secureTokenStorage, type TokenStorage } from '../../services/secureStorage/tokenStorage';
+import {
+  secureSessionUserStorage,
+} from '../../services/secureStorage/sessionUserStorage';
 
 function createMirroredTokenStorage(base: TokenStorage, config: AppConfig): TokenStorage {
   const sync = async () => {
@@ -120,6 +134,7 @@ export interface AppServices {
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly confirmedLocalResults: ConfirmedLocalResultRepository;
   readonly localCsvExport: LocalCsvExportService | null;
+  readonly offlineAisleExport: OfflineAisleExportService | null;
   readonly confirmLocalResult: Pick<
     ConfirmLocalResultService,
     | 'isEnabled'
@@ -137,6 +152,15 @@ export interface AppServices {
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
   readonly backgroundUpload: BackgroundUploadScheduler;
+  /** Offline supplier recognition config sync + resolver. */
+  readonly offlineRecognition: {
+    readonly sync: OfflineRecognitionSyncService;
+    readonly resolver: LocalLabelProfileResolver;
+    readonly repo: OfflineRecognitionConfigRepository;
+  };
+  /** Local-first catalog hydration + background sync coordination. */
+  readonly catalog: CatalogSyncCoordinator;
+  readonly catalogRepo: LocalCatalogRepository;
   /** Phase 9: null when `mobileOfflineOperations` is off. */
   readonly offlineOperations: OfflineOperationFacade | null;
   readonly offlineScheduler: OfflineOperationScheduler | null;
@@ -148,7 +172,13 @@ export interface AppServices {
   dispose(): Promise<void>;
 }
 
-export async function createAppServices(onAuthExpired: () => void): Promise<AppServices> {
+export function createAppServices(onAuthExpired: () => void): Promise<AppServices> {
+  return runSerializedAppBootstrap(() => buildAppServices(onAuthExpired));
+}
+
+async function buildAppServices(onAuthExpired: () => void): Promise<AppServices> {
+  const bootstrapStartedMs = Date.now();
+  resetSqliteWriteGate();
   const config = loadAppConfig();
   const configError = validateAppConfig(config);
   const logger = createLogger();
@@ -163,6 +193,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     onAuthExpired,
   });
   const db = await getDatabase();
+  logger.info('recovery', {
+    where: 'bootstrap_phase',
+    phase: 'database',
+    duration_ms: Date.now() - bootstrapStartedMs,
+  });
   const databaseRecoveredFromCorruption = consumeDatabaseRecoveryFlag();
   if (databaseRecoveredFromCorruption) {
     logger.warn('recovery', {
@@ -175,6 +210,14 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
   const localCsvExportRepo = new LocalCsvExportRepository(db);
+  const offlineRecognitionRepo = new OfflineRecognitionConfigRepository(db);
+  const catalogRepo = new LocalCatalogRepository(db);
+  const offlineRecognitionResolver = new LocalLabelProfileResolver(offlineRecognitionRepo, catalogRepo);
+  const offlineRecognitionSync = new OfflineRecognitionSyncService(
+    api,
+    offlineRecognitionRepo,
+    offlineRecognitionResolver,
+  );
   const installationId = await getOrCreateInstallationId();
   const aisleFinalizationIntents = new AisleFinalizationIntentRepository(db);
   const serverReprocessIntents = new ServerReprocessIntentRepository(db);
@@ -197,9 +240,29 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     config.flags.uploadObservabilityEnabled
       ? { reporter: observability.reporter, marks: observability.marks }
       : null;
+  const catalogSyncService = new CatalogSyncService(
+    api,
+    catalogRepo,
+    connectivity,
+    logger,
+    offlineRecognitionSync,
+    obsWire?.reporter ?? null,
+  );
+  const catalogCoordinator = new CatalogSyncCoordinator(
+    catalogSyncService,
+    connectivity,
+    catalogRepo,
+  );
+  await catalogCoordinator.initialize();
+  logger.info('recovery', {
+    where: 'bootstrap_phase',
+    phase: 'catalog_meta',
+    duration_ms: Date.now() - bootstrapStartedMs,
+  });
   const localCodeScan = new LocalCodeScanStrategy({
     drafts: localDetectionDrafts,
     reporter: obsWire?.reporter ?? null,
+    profileResolver: offlineRecognitionResolver,
     onActivePositionChanged: async (sessionId, state) => {
       await captureRepo.updateActivePositionJson(sessionId, JSON.stringify(state));
     },
@@ -219,7 +282,24 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
           clientId: null,
           enabled: true,
           localCodeScan,
-          localCodeScanEnabled: config.flags.mobileLocalCodeScan === true,
+          // Export service only exists when CSV/ZIP handoff is enabled — always scan before export.
+          localCodeScanEnabled: true,
+          logger,
+          profileResolver: offlineRecognitionResolver,
+        })
+      : null;
+  const captureServiceRef: { current: CaptureService | null } = { current: null };
+  const offlineAisleExport =
+    config.flags.mobileCsvExport !== false
+      ? new OfflineAisleExportService({
+          catalogRepo,
+          captureRepo,
+          draftRepo: localDetectionDrafts,
+          listSessionsForAisle: (aisleId) =>
+            captureServiceRef.current!.listSessionsForAisle(aisleId),
+          sessionCsvExport: localCsvExport,
+          appVersion: config.versionName,
+          enabled: true,
         })
       : null;
   const preliminaryApi = new PreliminaryDetectionApi(api);
@@ -376,6 +456,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       authoritativeExclusion: config.flags.mobileAuthoritativeAisleFinalization
         ? authoritativeAisleFinalization
         : null,
+      catalog: catalogRepo,
     },
   );
 
@@ -412,7 +493,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
             status === 'upload_review';
           if (allowOfflineUpload) {
             await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
-          } else if (config.flags.mobileLocalCodeScan === true) {
+          } else if (
+            config.flags.mobileLocalCodeScan === true ||
+            config.flags.mobileCsvExport !== false ||
+            config.flags.localCompletion === true
+          ) {
             await uploadQueue.rescanPhotoForLocalReview(photoId).catch(() => undefined);
           }
         })
@@ -428,6 +513,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     finishSafeMediaCheck: config.flags.captureFinishSafeMediaCheck,
     sessionFreeze: config.flags.captureSessionFreeze,
   });
+  captureServiceRef.current = capture;
 
   const processing = new ProcessingService(
     api,
@@ -527,58 +613,65 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   }
 
   if (!configError) {
-    void uploadLimits.refresh();
-    void syncNativeUploadAuth({
-      accessToken: null,
-      refreshToken: null,
-      apiBaseUrl: config.apiBaseUrl,
-      apiKey: config.apiKey,
-      flags: config.flags,
-    }).then(async (synced) => {
-      if (!synced) {
-        logger.warn('error', { code: 'AUTH_VAULT_UNAVAILABLE' });
-        return;
-      }
-      const access = await tokenStorage.getAccessToken();
-      const refresh = await tokenStorage.getRefreshToken();
-      if (access) {
-        const ok = await syncNativeUploadAuth({
-          accessToken: access,
-          refreshToken: refresh,
-          apiBaseUrl: config.apiBaseUrl,
-          apiKey: config.apiKey,
-          flags: config.flags,
-        });
-        if (ok && config.flags.backgroundUploadWorker) {
-          void backgroundWork.scheduleUploadQueue(false);
+    queueMicrotask(() => {
+      void uploadLimits.refresh();
+      void syncNativeUploadAuth({
+        accessToken: null,
+        refreshToken: null,
+        apiBaseUrl: config.apiBaseUrl,
+        apiKey: config.apiKey,
+        flags: config.flags,
+      }).then(async (synced) => {
+        if (!synced) {
+          logger.warn('error', { code: 'AUTH_VAULT_UNAVAILABLE' });
+          return;
         }
-      }
-    });
-    void uploadQueue.restoreAndStart();
-    void jobMonitor.restorePendingJobs();
-    void processing.recoverStuckStartingSessions().catch(() => {
-      // best-effort — never block bootstrap
-    });
-    if (config.flags.mobilePreliminaryDetectionSync) {
-      void preliminarySync.syncPending().catch(() => {
+        const access = await tokenStorage.getAccessToken();
+        const refresh = await tokenStorage.getRefreshToken();
+        if (access) {
+          const ok = await syncNativeUploadAuth({
+            accessToken: access,
+            refreshToken: refresh,
+            apiBaseUrl: config.apiBaseUrl,
+            apiKey: config.apiKey,
+            flags: config.flags,
+          });
+          if (ok && config.flags.backgroundUploadWorker) {
+            void backgroundWork.scheduleUploadQueue(false);
+          }
+        }
+      });
+      void uploadQueue.restoreAndStart();
+      void jobMonitor.restorePendingJobs();
+      void processing.recoverStuckStartingSessions().catch(() => {
         // best-effort — never block bootstrap
       });
-    }
-    if (config.flags.mobileAuthoritativeLocalCodeScan && !offlineOpsEnabled) {
-      void authoritativeLocalSync.syncPending().catch(() => {
-        // best-effort — never block bootstrap
-      });
-    }
-    if (offlineOpsEnabled) {
-      void offlineScheduler?.recoverAndTick().catch(() => undefined);
-    }
-    void cleanupTransformTemps(logger);
-    void getStorageStatus().then((s) => {
-      if (s.lowSpace) {
-        logger.warn('error', { code: 'CAPTURE_STORAGE_LOW', freeBytes: s.freeBytes });
+      if (config.flags.mobilePreliminaryDetectionSync) {
+        void preliminarySync.syncPending().catch(() => {
+          // best-effort — never block bootstrap
+        });
       }
+      if (config.flags.mobileAuthoritativeLocalCodeScan && !offlineOpsEnabled) {
+        void authoritativeLocalSync.syncPending().catch(() => {
+          // best-effort — never block bootstrap
+        });
+      }
+      if (offlineOpsEnabled) {
+        void offlineScheduler?.recoverAndTick().catch(() => undefined);
+      }
+      void cleanupTransformTemps(logger);
+      void getStorageStatus().then((s) => {
+        if (s.lowSpace) {
+          logger.warn('error', { code: 'CAPTURE_STORAGE_LOW', freeBytes: s.freeBytes });
+        }
+      });
     });
   }
+
+  logger.info('recovery', {
+    where: 'app_services_ready',
+    duration_ms: Date.now() - bootstrapStartedMs,
+  });
 
   return {
     config,
@@ -590,6 +683,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       api,
       tokenStorage,
       logger,
+      secureSessionUserStorage,
       async () => {
         await backgroundWork.cancelAllTracked();
         await clearNativeUploadAuth();
@@ -608,9 +702,18 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
         await offlineScheduler?.onAuthRestored();
       },
     ),
-    inventories: new InventoryService(api),
-    clients: new ClientService(api),
-    aisles: new AisleService(api, logger),
+    inventories: new InventoryService(api, catalogRepo, catalogCoordinator, connectivity),
+    clients: new ClientService(api, catalogRepo, catalogCoordinator, connectivity),
+    aisles: new AisleService(
+      api,
+      logger,
+      catalogRepo,
+      catalogCoordinator,
+      connectivity,
+      offlineRecognitionRepo,
+      obsWire?.reporter,
+      offlineRecognitionResolver,
+    ),
     capture,
     uploadQueue,
     uploadLimits,
@@ -619,11 +722,19 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     localDetectionDrafts,
     confirmedLocalResults,
     localCsvExport,
+    offlineAisleExport,
     confirmLocalResult,
     preliminarySync,
     authoritativeLocalSync,
     authoritativeAisleFinalization,
     serverReprocess,
+    offlineRecognition: {
+      sync: offlineRecognitionSync,
+      resolver: offlineRecognitionResolver,
+      repo: offlineRecognitionRepo,
+    },
+    catalog: catalogCoordinator,
+    catalogRepo,
     aisleRevision,
     reconciliation,
     connectivity,
@@ -688,9 +799,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       preliminarySync.stopScheduler();
       authoritativeLocalSync.stopScheduler();
       offlineScheduler?.stop();
+      jobMonitor.dispose();
       capture.dispose();
       await uploadQueue.dispose();
-      jobMonitor.dispose();
       await observability.dispose();
       await backgroundWork.cancelAllTracked();
     },

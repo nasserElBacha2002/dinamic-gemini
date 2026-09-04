@@ -41,8 +41,9 @@ def test_is_legacy_identification_mode() -> None:
 
 def test_reject_legacy_config_allows_clear_and_modern_modes() -> None:
     reject_legacy_mode_for_new_configuration(None)
-    reject_legacy_mode_for_new_configuration(AisleIdentificationMode.INTERNAL_OCR)
     reject_legacy_mode_for_new_configuration("CODE_SCAN")
+    with pytest.raises(LegacyProcessingModeNotAllowedError):
+        reject_legacy_mode_for_new_configuration(AisleIdentificationMode.INTERNAL_OCR)
 
 
 def test_reject_legacy_config_blocks_legacy_llm() -> None:
@@ -98,17 +99,30 @@ def test_effective_legacy_blocked_from_system_default_when_forced() -> None:
 
 def test_modern_override_replaces_legacy_inheritance() -> None:
     resolution = resolve_aisle_identification_mode(
-        request_mode=AisleIdentificationMode.INTERNAL_OCR,
+        request_mode=AisleIdentificationMode.CODE_SCAN,
         aisle_mode=AisleIdentificationMode.LEGACY_LLM,
         inventory_mode=AisleIdentificationMode.LEGACY_LLM,
         client_mode=AisleIdentificationMode.LEGACY_LLM,
     )
-    assert resolution.effective_mode is AisleIdentificationMode.INTERNAL_OCR
+    assert resolution.effective_mode is AisleIdentificationMode.CODE_SCAN
     reject_legacy_effective_mode_for_new_job(
         resolution,
-        requested_mode=AisleIdentificationMode.INTERNAL_OCR,
+        requested_mode=AisleIdentificationMode.CODE_SCAN,
     )
     assert metrics.local_metrics_snapshot()["legacy_mode_jobs_blocked_total"] == 0
+
+
+def test_internal_ocr_override_blocked_even_over_legacy_aisle() -> None:
+    resolution = resolve_aisle_identification_mode(
+        request_mode=AisleIdentificationMode.INTERNAL_OCR,
+        aisle_mode=AisleIdentificationMode.LEGACY_LLM,
+    )
+    assert resolution.effective_mode is AisleIdentificationMode.INTERNAL_OCR
+    with pytest.raises(LegacyProcessingModeNotAllowedError):
+        reject_legacy_effective_mode_for_new_job(
+            resolution,
+            requested_mode=AisleIdentificationMode.INTERNAL_OCR,
+        )
 
 
 def test_historical_retry_policy_allows_residual_metric() -> None:

@@ -2,12 +2,12 @@ import { Alert, Button, CircularProgress, FormControl, InputLabel, MenuItem, Sel
 import { useTranslation } from 'react-i18next';
 import BaseDialog from '../../../components/ui/BaseDialog';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
-import type { AisleIdentificationMode, ProcessingProviderOptionsResponse } from '../../../api/types';
+import type { AisleIdentificationMode, AisleProcessingMode, ProcessingProviderOptionsResponse } from '../../../api/types';
 import {
-  PROCESS_AISLE_IDENTIFICATION_OPTIONS,
+  PROCESS_AISLE_PROCESSING_MODE_OPTIONS,
   isLegacyIdentificationMode,
+  processingModeUsesVision,
 } from '../../processing/mappers/processingExecutionPresentation';
-import { INHERITED_IDENTIFICATION_MODE } from '../hooks/useAisleProcessingFlow';
 
 /** Narrow query surface for the dialog — avoids coupling to full react-query generics. */
 export interface ProcessingProviderOptionsQueryLike {
@@ -26,10 +26,10 @@ export interface AisleProcessingDialogProps {
   onProviderKeyChange: (v: string) => void;
   modelKey: string;
   onModelKeyChange: (v: string) => void;
-  /** Select value: inherited sentinel or an explicit mode. */
-  identificationMode: AisleIdentificationMode | string;
-  onIdentificationModeChange: (v: AisleIdentificationMode | string) => void;
-  /** Effective mode from backend inheritance. */
+  /** Process-aisle dispatch: AUTO | CODE_SCAN_ONLY | VISION_ONLY. */
+  processingMode: AisleProcessingMode;
+  onProcessingModeChange: (v: AisleProcessingMode) => void;
+  /** Effective identification mode from backend inheritance (informational). */
   inheritedEffectiveMode?: AisleIdentificationMode | string | null;
   identificationModeSource?: string | null;
   providerOptsQuery: ProcessingProviderOptionsQueryLike;
@@ -47,7 +47,7 @@ export interface AisleProcessingDialogProps {
   confirmBusyLabel: boolean;
 }
 
-const IDENTIFICATION_OPTIONS: AisleIdentificationMode[] = PROCESS_AISLE_IDENTIFICATION_OPTIONS;
+const PROCESSING_OPTIONS = PROCESS_AISLE_PROCESSING_MODE_OPTIONS;
 
 export default function AisleProcessingDialog({
   open,
@@ -57,8 +57,8 @@ export default function AisleProcessingDialog({
   onProviderKeyChange,
   modelKey,
   onModelKeyChange,
-  identificationMode,
-  onIdentificationModeChange,
+  processingMode,
+  onProcessingModeChange,
   inheritedEffectiveMode,
   identificationModeSource,
   providerOptsQuery,
@@ -90,13 +90,19 @@ export default function AisleProcessingDialog({
       ? '__loading__'
       : modelKey || (productionMode && productionProvidersReady ? providerConfig?.default_model ?? '' : '');
 
-  const usingInherited = identificationMode === INHERITED_IDENTIFICATION_MODE;
-  const effectiveDisplayMode = String(inheritedEffectiveMode || 'INTERNAL_OCR');
-  const selectedExplicitMode = usingInherited ? effectiveDisplayMode : String(identificationMode);
-  const showAiProviderControls = isLegacyIdentificationMode(selectedExplicitMode);
-  const showModeHelp =
-    selectedExplicitMode === 'INTERNAL_OCR' || selectedExplicitMode === 'CODE_SCAN';
-  const showLegacyRetirementWarning = isLegacyIdentificationMode(selectedExplicitMode);
+  const selectedMode = String(processingMode || 'AUTO').toUpperCase() as AisleProcessingMode;
+  const usesVision = processingModeUsesVision(selectedMode);
+  const visionOnly = selectedMode === 'VISION_ONLY';
+  const providersAvailable = (providerOptsQuery.data?.providers?.length ?? 0) > 0;
+  const visionUnavailable =
+    visionOnly &&
+    (providerOptsQuery.isError ||
+      (!providerOptsQuery.isLoading && !providersAvailable) ||
+      productionProvidersUnavailable);
+
+  const showAiProviderControls = usesVision && !deferProviderModelSelects;
+  const effectiveDisplayMode = String(inheritedEffectiveMode || 'CODE_SCAN');
+  const showLegacyRetirementWarning = isLegacyIdentificationMode(effectiveDisplayMode);
 
   const sourceLabel = identificationModeSource
     ? t(`aisle.identification_source_${String(identificationModeSource).toLowerCase()}`, {
@@ -106,10 +112,6 @@ export default function AisleProcessingDialog({
 
   const inheritedModeLabel = t(`aisle.identification_mode_${effectiveDisplayMode.toLowerCase()}`, {
     defaultValue: effectiveDisplayMode,
-  });
-  const inheritedOptionLabel = t('aisle.identification_use_default', {
-    mode: inheritedModeLabel,
-    source: sourceLabel,
   });
 
   return (
@@ -127,7 +129,12 @@ export default function AisleProcessingDialog({
       actions={
         <>
           <Button onClick={onClose}>{t('common.cancel')}</Button>
-          <Button variant="contained" onClick={onConfirm} disabled={confirmDisabled}>
+          <Button
+            variant="contained"
+            onClick={onConfirm}
+            disabled={confirmDisabled || visionUnavailable}
+            data-testid="process-aisle-confirm"
+          >
             {confirmBusyLabel ? t('common.starting') : t('aisle.process_start')}
           </Button>
         </>
@@ -151,66 +158,81 @@ export default function AisleProcessingDialog({
           </Alert>
         ) : null}
 
-        <FormControl fullWidth size="small" data-testid="process-identification-mode">
-          <InputLabel id="process-identification-label">{t('aisle.identification_mode_label')}</InputLabel>
+        <FormControl fullWidth size="small" data-testid="process-processing-mode">
+          <InputLabel id="process-processing-mode-label">{t('aisle.processing_mode_label')}</InputLabel>
           <Select
-            labelId="process-identification-label"
-            label={t('aisle.identification_mode_label')}
-            value={identificationMode || INHERITED_IDENTIFICATION_MODE}
-            onChange={(e) => onIdentificationModeChange(String(e.target.value))}
+            labelId="process-processing-mode-label"
+            label={t('aisle.processing_mode_label')}
+            value={selectedMode}
+            onChange={(e) => onProcessingModeChange(String(e.target.value).toUpperCase() as AisleProcessingMode)}
           >
-            <MenuItem value={INHERITED_IDENTIFICATION_MODE} data-testid="process-identification-inherited-option">
-              {inheritedOptionLabel}
-            </MenuItem>
-            {IDENTIFICATION_OPTIONS.map((mode) => (
-              <MenuItem key={mode} value={mode}>
-                {t(`aisle.identification_mode_${mode.toLowerCase()}`)}
-              </MenuItem>
-            ))}
+            {PROCESSING_OPTIONS.map((mode) => {
+              const disabledVision = mode === 'VISION_ONLY' && visionUnavailable && selectedMode !== 'VISION_ONLY'
+                ? !providersAvailable && !providerOptsQuery.isLoading
+                : mode === 'VISION_ONLY' && !providerOptsQuery.isLoading && !providersAvailable;
+              return (
+                <MenuItem
+                  key={mode}
+                  value={mode}
+                  disabled={mode === 'VISION_ONLY' && !providerOptsQuery.isLoading && !providersAvailable}
+                  data-testid={`process-processing-mode-${mode.toLowerCase()}`}
+                >
+                  {t(`aisle.processing_mode_${mode.toLowerCase()}`)}
+                  {mode === 'AUTO' ? ` (${t('aisle.processing_mode_recommended')})` : ''}
+                  {mode === 'VISION_ONLY' && disabledVision
+                    ? ` — ${t('aisle.processing_mode_vision_unavailable_short')}`
+                    : ''}
+                </MenuItem>
+              );
+            })}
           </Select>
         </FormControl>
-        <Typography variant="body2" color="text.secondary" data-testid="process-identification-help">
-          {usingInherited
-            ? t('aisle.identification_will_use_default', {
-                mode: inheritedModeLabel,
-                source: sourceLabel,
-              })
-            : t('aisle.identification_override_only_this_run')}
-        </Typography>
-        {!usingInherited ? (
-          <Typography variant="caption" color="text.secondary" data-testid="process-identification-source">
-            {t('aisle.identification_source_request_label')}
-          </Typography>
+
+        <Alert severity="info" variant="outlined" data-testid="process-processing-mode-help">
+          {t(`aisle.processing_mode_${selectedMode.toLowerCase()}_help`)}
+          {visionOnly ? (
+            <Typography variant="body2" sx={{ mt: 1 }} data-testid="process-vision-diagnostic-note">
+              {t('aisle.processing_mode_vision_only_diagnostic')}
+            </Typography>
+          ) : null}
+        </Alert>
+
+        {usesVision ? (
+          <Alert severity="warning" variant="outlined" data-testid="process-vision-external-send">
+            {t('aisle.processing_mode_vision_may_send_images')}
+          </Alert>
         ) : (
-          <Typography variant="caption" color="text.secondary" data-testid="process-identification-source">
-            {t('aisle.identification_default_reference', {
-              mode: inheritedModeLabel,
-              source: sourceLabel,
-            })}
-          </Typography>
+          <Alert severity="success" variant="outlined" data-testid="process-no-immediate-external">
+            {t('aisle.processing_mode_code_scan_only_no_ai')}
+          </Alert>
         )}
-        {showModeHelp ? (
-          <Alert severity="info" variant="outlined" data-testid="process-identification-mode-help">
-            {t(`aisle.identification_mode_${selectedExplicitMode.toLowerCase()}_help`)}
-            {selectedExplicitMode === 'INTERNAL_OCR' ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {t('aisle.identification_ocr_fallback_note')}
-              </Typography>
-            ) : null}
+
+        {visionUnavailable ? (
+          <Alert severity="error" variant="outlined" data-testid="process-vision-provider-missing">
+            {t('aisle.processing_mode_vision_provider_missing')}
           </Alert>
         ) : null}
+
+        <Typography variant="caption" color="text.secondary" data-testid="process-identification-source">
+          {t('aisle.identification_default_reference', {
+            mode: inheritedModeLabel,
+            source: sourceLabel,
+          })}
+        </Typography>
+
         {showLegacyRetirementWarning ? (
           <Alert severity="warning" variant="outlined" data-testid="process-legacy-retirement-warning">
             {t('aisle.identification_legacy_retirement_warning')}
           </Alert>
         ) : null}
 
-        {showAiProviderControls && !deferProviderModelSelects ? (
+        {showAiProviderControls ? (
           <>
             <FormControl
               fullWidth
               size="small"
               disabled={providerOptsQuery.isError || (productionMode && productionProvidersUnavailable)}
+              data-testid="process-provider-select"
             >
               <InputLabel id="process-provider-label">{t('aisle.process_ai_provider')}</InputLabel>
               <Select
@@ -297,12 +319,6 @@ export default function AisleProcessingDialog({
               )}
             </Alert>
           </>
-        ) : null}
-
-        {!showAiProviderControls ? (
-          <Alert severity="success" variant="outlined" data-testid="process-no-immediate-external">
-            {t('aisle.process_no_immediate_external_provider')}
-          </Alert>
         ) : null}
 
         {providerOptsQuery.isError && showAiProviderControls ? (

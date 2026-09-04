@@ -347,6 +347,77 @@ def test_materialize_qty_mismatch_falls_back_to_csv_with_review() -> None:
     assert product.detected_quantity == 9
 
 
+def test_supplier_item_materializes_semantic_sku_and_quantity() -> None:
+    """Regression: raw segmented payload must not become SKU; quantity must not default to 0."""
+    mat, position_repo, product_repo, _ = _materializer()
+    result = _result(
+        id="item-pruebas-b",
+        internal_code="SKU773421",
+        label_id=None,
+        quantity=24,
+        quantity_status="PRESENT",
+        requires_review=False,
+        position_code="A04-R-02",
+        position_label_id="A04-R-02",
+        position_payload_raw="A04-R-02|04|RIGHT|02",
+    )
+    assert mat.materialize([result], now=NOW) == 1
+    pos = position_repo.get_by_id(position_id_for_productive("item-pruebas-b"))
+    assert pos is not None
+    assert pos.needs_review is False
+    assert pos.corrected_position_code == "A04-R-02"
+    summary = pos.detected_summary_json or {}
+    assert summary.get("internal_code") == "SKU773421"
+    assert summary.get("final_quantity") == 24
+    assert summary.get("position_barcode") == "A04-R-02"
+    assert "LPNA000184|SKU773421|24" not in (summary.get("internal_code") or "")
+
+    product = product_repo.get_by_id(product_id_for_productive("item-pruebas-b"))
+    assert product is not None
+    assert product.sku == "SKU773421"
+    assert product.detected_quantity == 24
+    assert product.raw_qty == 24
+
+
+def test_supplier_position_marker_skips_product_and_uses_business_position() -> None:
+    mat, position_repo, product_repo, _ = _materializer()
+    marker = _result(
+        id="pos-pruebas-b",
+        detection_source="LOCAL_POSITION_LABEL",
+        internal_code=None,
+        label_id=None,
+        quantity=None,
+        quantity_status="NOT_APPLICABLE",
+        position_code="A04-R-02",
+        position_label_id="A04-R-02",
+        position_payload_raw="A04-R-02|04|RIGHT|02",
+        requires_review=False,
+    )
+    assert mat.materialize([marker], now=NOW) == 0
+    assert product_repo.get_by_id(product_id_for_productive("pos-pruebas-b")) is None
+    retired = position_repo.get_by_id(position_id_for_productive("pos-pruebas-b"))
+    assert retired is None or retired.status == PositionStatus.DELETED
+
+
+def test_detected_summary_uses_business_position_not_local_csv_uid() -> None:
+    mat, position_repo, _, _ = _materializer()
+    result = _result(
+        id="pos-display",
+        position_code="A04-R-02",
+        position_label_id="A04-R-02",
+        internal_code="SKU773421",
+        quantity=24,
+        label_id=None,
+    )
+    mat.materialize([result], now=NOW)
+    pos = position_repo.get_by_id(position_id_for_productive("pos-display"))
+    summary = pos.detected_summary_json or {}
+    assert summary.get("position_barcode") == "A04-R-02"
+    assert summary.get("review_display_label") == "SKU773421"
+    assert summary.get("entity_uid") == "local_csv:pos-display"
+    assert summary.get("entity_uid") != "A04-R-02"
+
+
 def test_materialize_valid_claim() -> None:
     issued = MemoryIssuedProductLabelRepository()
     _issue(issued)
@@ -360,3 +431,4 @@ def test_materialize_valid_claim() -> None:
     assert product.sku == ISSUED_SKU
     assert product.detected_quantity == ISSUED_QTY
     assert counted.get("aisle-1", LABEL_ID) is not None
+

@@ -13,6 +13,7 @@ from datetime import datetime
 from enum import Enum
 
 from src.domain.aisle_identification.modes import AisleIdentificationMode
+from src.domain.label_profiles.kinds import LabelProfileSource
 
 
 class AisleStatus(str, Enum):
@@ -44,6 +45,10 @@ class Aisle:
     is_active: bool = True
     #: Optional identification override; null inherits inventory/client/system.
     identification_mode: AisleIdentificationMode | None = None
+    #: Phase 1 — optional ITEM label profile source override (NULL inherits supplier/default).
+    item_profile_source_override: LabelProfileSource | None = None
+    #: Phase 1 — optional POSITION label profile source override (NULL inherits supplier/default).
+    position_profile_source_override: LabelProfileSource | None = None
 
     def deactivate(self, now: datetime) -> None:
         self.is_active = False

@@ -1,91 +1,56 @@
-# Implementation corrections validation — Phase 3 contract cleanup + Phase 4 docs
+# Implementation corrections validation — supplier-aware legacy CSV import
 
-**Date:** 2026-08-11
+**Date:** 2026-09-01  
+**Status:** `CORRECTIONS_VALIDATED`
 
-## Scope
+## Acceptance matrix
 
-Final contractual corrections after Phase 3 functional fixes and Phase 4
-`NO_ACTION_REQUIRED`. No Stored Procedures, triggers, or migrations.
+| Check | Status |
+|-------|--------|
+| SUPPLIER_CSV_DISCRIMINATION | PASS |
+| D1_REGRESSION | PASS |
+| HISTORICAL_PROFILE_LOOKUP | PASS |
+| STRUCTURED_EXTRACTION | PASS |
+| SUPPLIER_VALIDATION | PASS |
+| SEMANTIC_MISMATCH_DETECTION | PASS |
+| GOLDEN_ITEM | PASS |
+| GOLDEN_POSITION | PASS |
+| MIXED_PACKAGE | PASS |
+| PREVIEW_CONFIRM_PARITY | PASS |
+| TESTS | PASS |
 
-## Fixes
+## Summary
 
-1. `InventoryRepository.compare_and_set_status` is `@abstractmethod` (no non-atomic default).
-2. SQL/Memory CAS retained; test stubs use `ExplicitInventoryCompareAndSet` or delegate.
-3. Terminal outcomes: `CONSISTENT | REPAIRED | NOT_FOUND | RETRY_EXHAUSTED`; conflicts via
-   `last_conflict_reason` (`CAS_MISS` / `SOURCE_CHANGED`).
-4. Backfill no longer branches on non-terminal outcomes.
-5. Removed production `before_cas_hook`; SQL races use `BarrierInventoryRepository` in tests.
-6. Verify-after-write docs match optimistic semantics.
-7. SQL metadata-only `completed_at` repair cases A/B.
-8. `reconcile()` callers audited; wrapper logs exhaustion (`False` ≠ consistent).
-9. Phase 4 report: File / Class-Method / Persistence primitive per candidate.
+- Supplier rows identified via `notes.supplier_import` only.
+- D1 `label_id:invalid_format` no longer applied to Supplier ITEM (`LPNA000184`).
+- Historical profile v10 loaded via `ExactExtractionProfileVersionService` (no ACTIVE fallback).
+- `StructuredPayloadExtractor` + `LabelValidationService` reused; CSV transport omits symbology (allowed for `RecognitionSource.CSV`).
+- Backend authoritative `internal_code` / `quantity` / `label_id` persisted at preview; confirm uses staged rows.
 
-## Pytest (Phase 3 suite)
-
-```bash
-cd backend
-.venv/bin/python -m pytest \
-  tests/domain/test_derive_inventory_status.py \
-  tests/unit/inventory_status/ \
-  tests/application/use_cases/test_inventory_status_lifecycle_and_backfill.py \
-  tests/integration/inventory_status/ \
-  tests/integration/local_inventory_package/ \
-  tests/integration/local_csv_batch/ \
-  tests/unit/local_inventory_package/ \
-  tests/unit/test_local_csv_import_confirm_materialize.py \
-  --tb=line --no-cov -q
-```
-
-```text
-exit code: 0
-passed: 67
-failed: 0
-skipped: 0
-```
-
-## Pytest (Phase 4 DB regression)
-
-```text
-exit code: 0
-passed: 47
-failed: 0
-skipped: 0
-```
-
-## Ruff
-
-```text
-exit code: 0
-All checks passed!
-```
-
-(import order auto-fixed on stub mixin files)
-
-## Mypy
+## Tests run
 
 ```bash
-.venv/bin/mypy \
-  src/application/ports/repositories.py \
-  src/application/services/inventory_status_reconciler.py \
-  src/application/use_cases/inventories/backfill_inventory_statuses.py \
-  tests/support/inventory_repository_cas.py
+../.venv/bin/pytest tests/unit/test_supplier_local_csv_import.py -q --no-cov
+# 18 passed
+
+../.venv/bin/pytest tests/unit/test_supplier_local_csv_import.py \
+  tests/unit/test_local_csv_import.py \
+  tests/unit/test_label_validation_service.py -q --no-cov
+# 38 passed
+
+../.venv/bin/pytest tests/unit/test_local_inventory_package.py \
+  tests/unit/test_structured_payload_extractor_pr1.py \
+  tests/unit/test_exact_extraction_profile_version.py -q --no-cov
+# 34 passed
+
+../.venv/bin/ruff check <changed files>
+# pass (after F841 fix)
 ```
 
-```text
-exit code: 0
-Success: no issues found in 4 source files
-```
+## Follow-up
 
-## Status
+- **Mobile:** `buildLocalCsvRows` may omit `raw_payload` in `supplier_import` for resolved ITEM rows (when `internal_code` is SKU, not raw). Backend fails closed with `supplier_import:missing_raw_payload`. Consider exporting scan evidence raw in notes.
 
-```text
-PHASE_0: COMPLETE
-PHASE_1: COMPLETE
-PHASE_2: COMPLETE
-PHASE_3: COMPLETE
-PHASE_4: NO_ACTION_REQUIRED
+## DEVICE_E2E
 
-Stored Procedures total: 0
-Triggers total: 0
-New migrations: 0
-```
+UNVERIFIED — requires device re-import of pruebas b golden ZIP.

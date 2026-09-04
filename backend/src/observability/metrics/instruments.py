@@ -60,6 +60,11 @@ ARTIFACT_PUBLICATION_RETRY_TOTAL = "artifact_publication_retry_total"
 ARTIFACT_OUTBOX_PENDING = "artifact_outbox_pending"
 ARTIFACT_OUTBOX_FAILED = "artifact_outbox_failed"
 
+# Artifact storage fetch (low-cardinality labels only — never asset_id/object_key)
+STORAGE_FETCH_DURATION_SECONDS = "storage_fetch_duration_seconds"
+STORAGE_FETCH_SLOW_TOTAL = "storage_fetch_slow_total"
+STORAGE_FETCH_FAILED_TOTAL = "storage_fetch_failed_total"
+
 # SQL / repository
 REPOSITORY_OPERATIONS_TOTAL = "repository_operations_total"
 REPOSITORY_OPERATION_DURATION_SECONDS = "repository_operation_duration_seconds"
@@ -185,6 +190,35 @@ def record_provider_call(
         reg.inc(PROVIDER_ERRORS_TOTAL, "Provider errors", err)
         if (error_class or "").lower() == "timeout" or outcome == "timeout":
             reg.inc(PROVIDER_TIMEOUTS_TOTAL, "Provider timeouts", labels)
+
+
+def record_storage_fetch(
+    *,
+    backend: str,
+    outcome: str,
+    duration_seconds: float,
+    slow: bool = False,
+) -> None:
+    """Record storage get_object latency. Labels must stay low-cardinality."""
+    reg = get_metrics_registry()
+    labels = {
+        "storage_backend": (backend or "unknown")[:32],
+        "outcome": (outcome or "unknown")[:32],
+    }
+    reg.observe(
+        STORAGE_FETCH_DURATION_SECONDS,
+        "Artifact storage fetch duration seconds",
+        max(0.0, float(duration_seconds)),
+        labels,
+    )
+    if outcome != "ok":
+        reg.inc(STORAGE_FETCH_FAILED_TOTAL, "Artifact storage fetch failures", labels)
+    if slow:
+        reg.inc(
+            STORAGE_FETCH_SLOW_TOTAL,
+            "Artifact storage fetches exceeding slow warning threshold",
+            {"storage_backend": (backend or "unknown")[:32]},
+        )
 
 
 def record_finalization_stage(

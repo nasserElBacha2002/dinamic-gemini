@@ -1210,6 +1210,9 @@ class ExternalProviderFallbackOrchestrator:
                 client_id=client_id,
                 supplier_extraction_profile=snapshot.supplier_extraction_profile,
                 profile_aware_validation_enabled=snapshot.profile_aware_validation_enabled,
+                job_engine_params=job.engine_params_json
+                if isinstance(job.engine_params_json, dict)
+                else None,
             )
             result.additional_fields["fallback_eligible"] = True
             result.additional_fields["fallback_reason"] = eligibility_reason
@@ -1239,6 +1242,9 @@ class ExternalProviderFallbackOrchestrator:
             client_id=client_id,
             supplier_extraction_profile=snapshot.supplier_extraction_profile,
             profile_aware_validation_enabled=snapshot.profile_aware_validation_enabled,
+            job_engine_params=job.engine_params_json
+            if isinstance(job.engine_params_json, dict)
+            else None,
         )
         result.additional_fields["fallback_eligible"] = True
         result.additional_fields["fallback_reason"] = eligibility_reason

@@ -3660,7 +3660,7 @@ BEGIN
         result_version INT NOT NULL,
         supersedes_result_id VARCHAR(36) NULL,
         is_current BIT NOT NULL CONSTRAINT DF_alcsr_is_current DEFAULT (1),
-        internal_code NVARCHAR(64) NOT NULL,
+        internal_code NVARCHAR(64) NULL,
         quantity INT NULL,
         quantity_status VARCHAR(16) NOT NULL,
         source VARCHAR(32) NOT NULL,

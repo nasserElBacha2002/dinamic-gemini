@@ -22,6 +22,10 @@ export type InventoryProcessingMode = (typeof INVENTORY_PROCESSING_MODES)[number
 export const AISLE_IDENTIFICATION_MODES = ['CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM'] as const;
 export type AisleIdentificationMode = (typeof AISLE_IDENTIFICATION_MODES)[number];
 
+/** Process-aisle dispatch: CODE_SCAN vs Vision (API `processing_mode`). */
+export const AISLE_PROCESSING_MODES = ['AUTO', 'CODE_SCAN_ONLY', 'VISION_ONLY'] as const;
+export type AisleProcessingMode = (typeof AISLE_PROCESSING_MODES)[number];
+
 export const AISLE_IDENTIFICATION_MODE_SOURCES = [
   'REQUEST',
   'AISLE',

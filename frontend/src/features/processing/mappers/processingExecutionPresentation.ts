@@ -575,10 +575,38 @@ export function buildJobExecutionPresentation(
   };
 }
 
+/** Productive “process aisle” dispatch modes — INTERNAL_OCR / LEGACY_LLM are not offered. */
+export const PROCESS_AISLE_PROCESSING_MODE_OPTIONS = [
+  'AUTO',
+  'CODE_SCAN_ONLY',
+  'VISION_ONLY',
+] as const;
+
+export type ProcessAisleProcessingMode = (typeof PROCESS_AISLE_PROCESSING_MODE_OPTIONS)[number];
+
+/** @deprecated Prefer PROCESS_AISLE_PROCESSING_MODE_OPTIONS — kept for historical display helpers. */
 export const PROCESS_AISLE_IDENTIFICATION_OPTIONS: AisleIdentificationMode[] = [
   'CODE_SCAN',
-  'INTERNAL_OCR',
 ];
+
+export function processingModeUsesVision(mode: string | null | undefined): boolean {
+  const raw = String(mode || '').trim().toUpperCase();
+  return raw === 'AUTO' || raw === 'VISION_ONLY';
+}
+
+export function formatResolvedByLabel(
+  resolvedBy: string | null | undefined,
+  t: (key: string, opts?: Record<string, unknown>) => string
+): string {
+  const raw = String(resolvedBy || '').trim().toUpperCase();
+  if (!raw) return t('common.em_dash');
+  if (raw === 'CODE_SCAN') return t('processing.resolved_by_code_scan');
+  if (raw === 'EXTERNAL_PROVIDER' || raw === 'VISION' || raw === 'VISION_AI') {
+    return t('processing.resolved_by_vision');
+  }
+  if (raw === 'INTERNAL_OCR') return t('processing.resolved_by_internal_ocr');
+  return resolvedBy || t('common.em_dash');
+}
 
 export function buildObsContentTabsForJob(options: {
   processingEnabled: boolean;

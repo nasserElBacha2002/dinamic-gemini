@@ -66,6 +66,16 @@ def put_authoritative_local_code_scan(
                 prepared_asset_sha256=body.prepared_asset_sha256,
                 confirmed_at=body.confirmed_at,
                 confirmed_by_user_id=None,  # never trust client
+                profile_source=body.profile_source,
+                profile_id=body.profile_id,
+                profile_version=body.profile_version,
+                configuration_schema_version=body.configuration_schema_version,
+                label_kind=body.label_kind,
+                client_supplier_id=body.client_supplier_id,
+                raw_payload=body.raw_payload,
+                recognition_status=body.recognition_status,
+                captured_offline=body.captured_offline,
+                captured_with_older_profile=body.captured_with_older_profile,
             )
         )
     except AuthoritativeIngestDisabledError as exc:

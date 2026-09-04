@@ -272,7 +272,7 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
             "(no transient-retry loop is implemented).",
             max_technical_attempts,
         )
-    # I — prefer the honest "variants budget" name; fall back to the legacy timeout setting.
+    # I — variants/decode budget AFTER source load (not asset-wide / not storage I/O).
     variants_budget = int(
         getattr(settings, "code_scan_variants_budget_seconds", None)
         or getattr(settings, "code_scan_timeout_seconds", 15)
@@ -308,14 +308,28 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
 
     return CodeScanProcessingStrategy(
         scanner=_LazyPyzbarCodeScanner(),
-        content_reader=ArtifactStoreSourceAssetContentReader(artifact_store),
+        content_reader=ArtifactStoreSourceAssetContentReader(
+            artifact_store,
+            slow_warning_ms=int(getattr(settings, "slow_storage_fetch_warning_ms", 10_000)),
+        ),
         parser=parser,
         consolidator=CodeDetectionConsolidator(),
         config=config,
         event_publisher=event_publisher,
         position_detection=_build_position_detection_use_case(settings),
         issued_label_resolver=issued_resolver,
+        position_label_detection_repo=_optional_position_detection_repo(),
     )
+
+
+def _optional_position_detection_repo():
+    try:
+        from src.runtime.app_container import get_app_container
+
+        return get_app_container().get_image_position_label_detection_repo()
+    except Exception:
+        logger.exception("code_scan.position_detection_repo_unavailable")
+        return None
 
 
 def _build_position_detection_use_case(settings):
@@ -397,7 +411,7 @@ def _build_position_detection_use_case(settings):
     )
 
 def build_default_code_scan_persister(
-    *, job_source_asset_repo, source_asset_repo, clock, unit_of_work_factory
+    *, job_source_asset_repo, source_asset_repo, clock, unit_of_work_factory, position_detection_repo=None
 ):
     from src.application.services.image_processing.processing_result_persister import (
         ProcessingResultPersister,
@@ -408,6 +422,7 @@ def build_default_code_scan_persister(
         source_asset_repo=source_asset_repo,
         clock=clock,
         unit_of_work_factory=unit_of_work_factory,
+        position_detection_repo=position_detection_repo,
     )
 
 
@@ -430,6 +445,7 @@ def build_default_code_scan_orchestrator(
     manual_coverage_repo=None,
     external_fallback=None,
     apply_authoritative_local=None,
+    position_detection_repo=None,
 ) -> AisleProcessingOrchestrator:
     """Build the Phase 3 orchestrator wired for CODE_SCAN SINGLE_ASSET processing.
 
@@ -449,6 +465,7 @@ def build_default_code_scan_orchestrator(
             clock=clock,
             manual_coverage_repo=manual_coverage_repo,
             result_evidence_repo=result_evidence_repo,
+            position_detection_repo=position_detection_repo,
         )
     return build_default_aisle_processing_orchestrator(
         clock,
@@ -521,7 +538,10 @@ def build_default_external_fallback_orchestrator(
                 model_name=resolved_model,
             )
 
-    reader = ArtifactStoreSourceAssetContentReader(artifact_store)
+    reader = ArtifactStoreSourceAssetContentReader(
+        artifact_store,
+        slow_warning_ms=int(getattr(settings, "slow_storage_fetch_warning_ms", 10_000)),
+    )
     resolved_request_repo = request_repo
     if resolved_request_repo is None:
         resolved_request_repo = MemoryExternalImageAnalysisRequestRepository()
@@ -706,7 +726,10 @@ def build_default_internal_ocr_strategy(
             logger.warning("internal_ocr.event_publisher_unavailable err=%s", exc)
     return InternalOcrProcessingStrategy(
         reader=TesseractInternalLabelReader(default_language=config.language),
-        content_reader=ArtifactStoreSourceAssetContentReader(artifact_store),
+        content_reader=ArtifactStoreSourceAssetContentReader(
+            artifact_store,
+            slow_warning_ms=int(getattr(settings, "slow_storage_fetch_warning_ms", 10_000)),
+        ),
         preprocessor=OcrImagePreprocessor(preprocess),
         extractor=OcrFieldExtractor(),
         normalizer=OcrResultNormalizer(quantity_max=quantity_max, client_rules=rules),

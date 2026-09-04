@@ -21,6 +21,8 @@ export interface SupplierReferenceImagesModuleProps {
   open: boolean;
   onClose: () => void;
   presentation?: 'drawer' | 'inline';
+  /** When set, list/upload are scoped to this label kind. */
+  labelKind?: 'ITEM' | 'POSITION';
 }
 
 /**
@@ -33,6 +35,7 @@ export default function SupplierReferenceImagesModule({
   open,
   onClose,
   presentation = 'drawer',
+  labelKind,
 }: SupplierReferenceImagesModuleProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
@@ -70,10 +73,10 @@ export default function SupplierReferenceImagesModule({
 
   const handleUpload = useCallback(
     async (payload: Parameters<SupplierReferenceImagesDrawerProps['onUpload']>[0]) => {
-      await uploadMutation.mutateAsync(payload);
+      await uploadMutation.mutateAsync({ ...payload, label_kind: labelKind });
       showSnackbar(t('clients.suppliers.reference_images.upload_success'), 'success');
     },
-    [showSnackbar, t, uploadMutation]
+    [labelKind, showSnackbar, t, uploadMutation]
   );
 
   const handleDelete = useCallback(
@@ -96,7 +99,11 @@ export default function SupplierReferenceImagesModule({
       open={embedded ? true : open}
       embedded={embedded}
       onClose={handleClose}
-      items={imagesQuery.data?.items ?? []}
+      items={(imagesQuery.data?.items ?? []).filter((item) => {
+        if (!labelKind) return true;
+        const itemKind = item.label_kind ?? null;
+        return itemKind === labelKind || itemKind == null;
+      })}
       isLoading={imagesQuery.isLoading}
       errorMessage={errorMessage}
       onRetry={() => imagesQuery.refetch()}

@@ -14,7 +14,8 @@ class AuthoritativeLocalCodeScanRequest(BaseModel):
     schema_version: str = Field(default="1", max_length=8)
     result_id: str = Field(..., min_length=1, max_length=36)
     client_file_id: str = Field(..., min_length=1, max_length=36)
-    internal_code: str = Field(..., min_length=1, max_length=64)
+    #: Required for Dinamic/trade-item; optional for SUPPLIER identity-only (label_id present).
+    internal_code: str | None = Field(default=None, max_length=64)
     quantity: int | None = Field(default=None, ge=1, le=99_999_999)
     quantity_status: Literal["PRESENT", "MISSING"] = "PRESENT"
     source: Literal["LOCAL_CODE_SCAN", "LOCAL_MANUAL_CORRECTION"] = "LOCAL_CODE_SCAN"
@@ -32,6 +33,17 @@ class AuthoritativeLocalCodeScanRequest(BaseModel):
         description="Ignored — confirmed_by is derived from authentication.",
     )
     confirmed_at: datetime | None = None
+    #: Offline / supplier-profile attestation (additive; omit for D1-only historical clients).
+    profile_source: Literal["DINAMIC", "SUPPLIER"] | None = Field(default=None, max_length=16)
+    profile_id: str | None = Field(default=None, max_length=36)
+    profile_version: int | None = Field(default=None, ge=1)
+    configuration_schema_version: int | None = Field(default=None, ge=1)
+    label_kind: Literal["ITEM", "POSITION"] | None = None
+    client_supplier_id: str | None = Field(default=None, max_length=36)
+    raw_payload: str | None = Field(default=None, max_length=512)
+    recognition_status: str | None = Field(default=None, max_length=64)
+    captured_offline: bool | None = None
+    captured_with_older_profile: bool | None = None
 
 
 class AuthoritativeLocalCodeScanResponse(BaseModel):

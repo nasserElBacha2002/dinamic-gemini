@@ -21,6 +21,10 @@ import type {
   LocalDetectionDraftRepository,
   LocalDetectionDraftStatus,
 } from '../src/database/repositories/localDetectionDraftRepository';
+import { LocalCatalogRepository } from '../src/database/repositories/localCatalogRepository';
+import { OfflineRecognitionConfigRepository } from '../src/database/repositories/offlineRecognitionConfigRepository';
+import { LocalLabelProfileResolver } from '../src/features/offlineRecognition/localLabelProfileResolver';
+import { AisleService } from '../src/features/aisles/aisleService';
 
 function checksumVectors(): {
   vectors: Array<{ name: string; tampered_payload?: string }>;
@@ -126,6 +130,8 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
       productResultsJson?: string | null;
       rejectionsJson?: string | null;
       positionDetected?: boolean | null;
+      positionSnapshotJson?: string | null;
+      recognitionProfileSnapshotJson?: string | null;
       errorCode?: string | null;
       candidateCount?: number;
       scanGeneration?: number;
@@ -140,6 +146,9 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
         product_results_json: (input.productResultsJson as string | null) ?? null,
         rejections_json: (input.rejectionsJson as string | null) ?? null,
         position_detected: input.positionDetected ? 1 : 0,
+        position_snapshot_json: (input.positionSnapshotJson as string | null) ?? null,
+        recognition_profile_snapshot_json:
+          (input.recognitionProfileSnapshotJson as string | null) ?? null,
         error_code: (input.errorCode as string | null) ?? null,
         candidate_count: (input.candidateCount as number) ?? 0,
         scan_generation: (input.scanGeneration as number) ?? 0,
@@ -462,6 +471,227 @@ describe('strict multilabel CSV + strategy', () => {
     const rejections = JSON.parse(row.rejections_json!) as unknown[];
     expect(rejections.length).toBeGreaterThanOrEqual(1);
     expect(row.internal_code).not.toBe('LEGACY');
+  });
+
+  it('does not persist an empty RESOLVED shell for a segmented code with no semantic result', async () => {
+    const drafts = createMemoryDrafts();
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [
+        {
+          rawValue: 'LPNA000184|SKU773421|24',
+          symbology: 'QR_CODE',
+          detectionIndex: 0,
+        },
+      ],
+      evaluateCapability: async () => 'SUPPORTED',
+    });
+    const status = await strategy.execute({
+      capturePhotoId: 'empty-semantic',
+      captureSessionId: 'sess-empty',
+      clientFileId: 'cf-empty',
+      preparedUri: 'file:///tmp/x.jpg',
+      preparedAssetFingerprint: 'fp-empty',
+      processingMode: 'CODE_SCAN',
+      flagEnabled: true,
+    });
+    expect(status).toBe('UNRESOLVED');
+    expect(drafts.rows[0]).toMatchObject({
+      status: 'UNRESOLVED',
+      product_results_json: null,
+      position_detected: 0,
+      error_code: 'NO_VALID_CODE',
+    });
+  });
+
+  it('exports the golden Supplier POSITION and ITEM with zero LOCAL_PENDING rows', async () => {
+    const drafts = createMemoryDrafts();
+    const candidatesByUri: Record<string, DetectedCodeCandidate[]> = {
+      'file:///position.jpg': [
+        { rawValue: 'A04-R-02|04|RIGHT|02', symbology: 'QR_CODE', detectionIndex: 0 },
+      ],
+      'file:///item.jpg': [
+        { rawValue: 'LPNA000184|SKU773421|24', symbology: 'QR_CODE', detectionIndex: 0 },
+      ],
+    };
+    const itemConfiguration = {
+      required_fields: ['label_id', 'sku', 'quantity'],
+      deterministic: {
+        expected_prefix: 'LPNA',
+        payload_structure: 'SEGMENTED',
+        delimiter: '|',
+        expected_segment_count: 3,
+        field_mappings: [
+          { target: 'label_id', source: 'SEGMENT', segment_index: 0 },
+          { target: 'sku', source: 'SEGMENT', segment_index: 1 },
+          { target: 'quantity', source: 'SEGMENT', segment_index: 2 },
+        ],
+      },
+    };
+    const positionConfiguration = {
+      required_fields: ['position_id'],
+      deterministic: {
+        expected_prefix: 'A04',
+        payload_structure: 'SEGMENTED',
+        delimiter: '|',
+        expected_segment_count: 4,
+        field_mappings: [
+          { target: 'position_id', source: 'SEGMENT', segment_index: 0 },
+          { target: 'pallet', source: 'SEGMENT', segment_index: 1 },
+          { target: 'side', source: 'SEGMENT', segment_index: 2 },
+          { target: 'level', source: 'SEGMENT', segment_index: 3 },
+        ],
+      },
+    };
+    let catalogAisle: Record<string, unknown> | null = null;
+    const sqlite = {
+      withTransactionAsync: async (fn: () => Promise<void>) => fn(),
+      runAsync: async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('INSERT INTO local_aisles')) {
+          catalogAisle = {
+            id: params[0],
+            inventory_id: params[1],
+            code: params[2],
+            status: params[3],
+            active: 1,
+            assets_count: params[4],
+            positions_count: params[5],
+            pending_review_positions_count: params[6],
+            client_supplier_id: params[7],
+            origin: 'REMOTE',
+            sync_status: 'REMOTE_SYNCED',
+          };
+        }
+      },
+      getFirstAsync: async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('FROM offline_aisle_recognition_config')) return null;
+        if (sql.includes('FROM local_aisles')) return catalogAisle;
+        if (sql.includes('FROM offline_supplier_recognition_config')) {
+          return { item_source: 'SUPPLIER', position_source: 'SUPPLIER' };
+        }
+        if (sql.includes('FROM offline_recognition_profiles')) {
+          const kind = params[2];
+          return {
+            inventory_id: 'inv-1',
+            client_supplier_id: 'sup-b',
+            label_kind: kind,
+            source: 'SUPPLIER',
+            profile_id: kind === 'ITEM' ? 'item-v10' : 'position-v3',
+            profile_version: kind === 'ITEM' ? 10 : 3,
+            configuration_schema_version: 2,
+            recognition_mode: 'FULL',
+            semantic_type: kind === 'ITEM' ? 'PRODUCT_SKU' : 'LOCATION',
+            configuration_json: JSON.stringify(
+              kind === 'ITEM' ? itemConfiguration : positionConfiguration,
+            ),
+            synced_at: '2026-01-01T00:00:00Z',
+          };
+        }
+        return null;
+      },
+    };
+    const catalogRepo = new LocalCatalogRepository(sqlite as never);
+    const recognitionRepo = new OfflineRecognitionConfigRepository(sqlite as never);
+    const profileResolver = new LocalLabelProfileResolver(recognitionRepo, catalogRepo);
+    const createdDto = {
+      id: 'aisle-1',
+      inventory_id: 'inv-1',
+      code: 'A1',
+      status: 'created',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      is_active: true,
+      assets_count: 0,
+      positions_count: 0,
+      pending_review_positions_count: 0,
+      client_supplier_id: 'sup-b',
+    };
+    const aisleService = new AisleService(
+      {
+        post: async () => createdDto,
+        get: async () => ({ aisle: createdDto }),
+      } as never,
+      undefined,
+      catalogRepo,
+      undefined,
+      undefined,
+      recognitionRepo,
+      undefined,
+      profileResolver,
+    );
+    const created = await aisleService.create({
+      inventoryId: 'inv-1',
+      code: 'A1',
+      clientSupplierId: 'sup-b',
+    });
+    expect(created).toMatchObject({
+      id: 'aisle-1',
+      client_supplier_id: 'sup-b',
+      origin: 'REMOTE',
+      sync_status: 'REMOTE_SYNCED',
+    });
+    await expect(catalogRepo.getAisleById('inv-1', 'aisle-1')).resolves.toMatchObject({
+      client_supplier_id: 'sup-b',
+      origin: 'REMOTE',
+      sync_status: 'REMOTE_SYNCED',
+    });
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async (uri) => candidatesByUri[uri] ?? [],
+      evaluateCapability: async () => 'SUPPORTED',
+      profileResolver,
+    });
+    const base = {
+      captureSessionId: 'supplier-session',
+      processingMode: 'CODE_SCAN' as const,
+      flagEnabled: true,
+      inventoryId: 'inv-1',
+      aisleId: 'aisle-1',
+      recognitionContext: 'OFFLINE' as const,
+    };
+    await strategy.execute({
+      ...base,
+      capturePhotoId: 'supplier-position',
+      clientFileId: 'cf-position',
+      preparedUri: 'file:///position.jpg',
+      preparedAssetFingerprint: 'fp-position',
+    });
+    await strategy.execute({
+      ...base,
+      capturePhotoId: 'supplier-item',
+      clientFileId: 'cf-item',
+      preparedUri: 'file:///item.jpg',
+      preparedAssetFingerprint: 'fp-item',
+    });
+    const rows = buildLocalCsvRows({
+      session: { ...makeSession(), id: 'supplier-session' },
+      photos: [makePhoto('supplier-position', 1), makePhoto('supplier-item', 2)].map((p) => ({
+        ...p,
+        capture_session_id: 'supplier-session',
+      })),
+      drafts: drafts.rows,
+      confirmed: [],
+      deviceId: 'dev',
+      companyId: null,
+      clientId: 'client-1',
+    });
+    expect(rows.filter((row) => row.source === 'LOCAL_PENDING')).toHaveLength(0);
+    expect(rows.find((row) => row.capture_photo_id === 'supplier-position')).toMatchObject({
+      source: 'LOCAL_POSITION_LABEL',
+      position_code: 'A04-R-02',
+      internal_code: '',
+    });
+    expect(rows.find((row) => row.capture_photo_id === 'supplier-item')).toMatchObject({
+      source: 'LOCAL_CODE_SCAN',
+      label_id: 'LPNA000184',
+      internal_code: 'SKU773421',
+      quantity: '24',
+    });
+    expect(drafts.rows.find((row) => row.capture_photo_id === 'supplier-item')?.product_results_json)
+      .toContain('LPNA000184|SKU773421|24');
+    expect(drafts.rows.find((row) => row.capture_photo_id === 'supplier-position')).toMatchObject({
+      position_detected: 1,
+    });
   });
 });
 

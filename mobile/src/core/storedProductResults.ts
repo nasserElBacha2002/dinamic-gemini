@@ -4,9 +4,11 @@
 
 export type StoredProductResult = {
   readonly labelId: string;
-  readonly internalCode: string;
-  readonly quantity: number;
+  readonly internalCode: string | null;
+  readonly quantity: number | null;
+  readonly rawPayload?: string | null;
   readonly validationStatus?: string;
+  readonly formatVersion?: string;
 };
 
 export function parseStoredProductResults(
@@ -21,17 +23,42 @@ export function parseStoredProductResults(
       if (!item || typeof item !== 'object') continue;
       const row = item as Record<string, unknown>;
       const labelId = typeof row.labelId === 'string' ? row.labelId.trim() : '';
-      const internalCode =
+      if (!labelId) continue;
+      const internalCodeRaw =
         typeof row.internalCode === 'string' ? row.internalCode.trim() : '';
-      const quantity = typeof row.quantity === 'number' ? row.quantity : Number(row.quantity);
-      if (!labelId || !internalCode || !Number.isFinite(quantity)) continue;
+      const internalCode = internalCodeRaw || null;
+      let quantity: number | null = null;
+      if (row.quantity === null || row.quantity === undefined) {
+        quantity = null;
+      } else if (typeof row.quantity === 'number' && Number.isFinite(row.quantity)) {
+        quantity = row.quantity;
+      } else {
+        const n = Number(row.quantity);
+        quantity = Number.isFinite(n) ? n : null;
+      }
+      // Legacy Dinamic rows required internalCode + finite quantity; keep them.
+      // SUPPLIER identity-only allows null internalCode / null quantity with labelId.
+      const formatVersion =
+        typeof row.formatVersion === 'string' ? row.formatVersion : undefined;
+      const isSupplierIdentity =
+        formatVersion === 'SUPPLIER' || (internalCode == null && quantity == null);
+      if (!isSupplierIdentity && (internalCode == null || quantity == null)) {
+        continue;
+      }
       const validationStatus =
         typeof row.validationStatus === 'string' ? row.validationStatus : undefined;
-      out.push(
-        validationStatus
-          ? { labelId, internalCode, quantity, validationStatus }
-          : { labelId, internalCode, quantity },
-      );
+      const rawPayload =
+        typeof row.rawPayload === 'string' && row.rawPayload.trim()
+          ? row.rawPayload.trim()
+          : null;
+      out.push({
+        labelId,
+        internalCode,
+        quantity,
+        ...(rawPayload ? { rawPayload } : {}),
+        ...(validationStatus ? { validationStatus } : {}),
+        ...(formatVersion ? { formatVersion } : {}),
+      });
     }
     return out;
   } catch {

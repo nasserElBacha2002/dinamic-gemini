@@ -103,7 +103,9 @@ def diagnose_path(path: Path, *, timeout_seconds: int) -> dict:
     content = path.read_bytes()
     strategy = _strategy(content, timeout_seconds=timeout_seconds)
     asset = _asset(path)
-    session = strategy._scan_with_variants(asset, content, started=__import__("time").monotonic())
+    session = strategy._scan_with_variants(
+        asset, content, decode_budget_started_at=__import__("time").monotonic()
+    )
     result = strategy.process(_context(asset.id), asset)
 
     d1_accepted = []

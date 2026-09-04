@@ -191,6 +191,33 @@ def test_sanitize_keeps_ocr_diagnostic_counters() -> None:
     assert "raw_ocr_text" not in tech
 
 
+def test_sanitize_keeps_storage_phase_timings() -> None:
+    tech = sanitize_metadata(
+        {
+            "source_load_ms": 17842,
+            "storage_fetch_ms": 17840,
+            "storage_backend": "GCS",
+            "bucket": "dinamic-photos",
+            "object_key": "v3/a/b.jpg",
+            "decode_ms": 721,
+            "timeout_scope": "decode",
+            "decode_budget_started_after_source_load": True,
+            "observability_generation": "phase-timed",
+            "api_key": "secret",
+        },
+        level="TECHNICAL_SAFE",
+    )
+    assert tech["source_load_ms"] == 17842
+    assert tech["storage_fetch_ms"] == 17840
+    assert tech["storage_backend"] == "GCS"
+    assert tech["bucket"] == "dinamic-photos"
+    assert tech["object_key"] == "v3/a/b.jpg"
+    assert tech["decode_ms"] == 721
+    assert tech["timeout_scope"] == "decode"
+    assert tech["decode_budget_started_after_source_load"] is True
+    assert "api_key" not in tech
+
+
 def test_csv_safe_cell_guards_formulas() -> None:
     assert csv_safe_cell("=CMD()") == "'=CMD()"
     assert csv_safe_cell("ok") == "ok"

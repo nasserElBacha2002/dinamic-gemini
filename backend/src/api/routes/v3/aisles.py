@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
@@ -185,7 +185,7 @@ from src.application.services.observability_output_sanitizer import (
     sanitize_execution_log_events,
     sanitize_observability_value,
 )
-from src.application.services.optional_unset import UNSET
+from src.application.services.optional_unset import UNSET, UnsetType
 from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.services.run_auditability_service import RunAuditabilityService
 from src.application.use_cases.aisles.activate_aisle import (
@@ -260,6 +260,10 @@ from src.auth.schemas import AuthUser
 from src.config import load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job
+from src.domain.label_profiles.kinds import (
+    LabelProfileSource,
+    optional_label_profile_source_override,
+)
 from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
 from src.pipeline.secret_redaction import redact_secrets_in_text
 
@@ -444,6 +448,18 @@ def update_aisle_code(
 ) -> AisleResponse:
     """Update aisle code and/or identification mode. Returns 404 if missing, 409 if code duplicate."""
     try:
+        if "item_profile_source_override" in payload.model_fields_set:
+            item_override: LabelProfileSource | None | UnsetType = (
+                optional_label_profile_source_override(payload.item_profile_source_override)
+            )
+        else:
+            item_override = UNSET
+        if "position_profile_source_override" in payload.model_fields_set:
+            position_override: LabelProfileSource | None | UnsetType = (
+                optional_label_profile_source_override(payload.position_profile_source_override)
+            )
+        else:
+            position_override = UNSET
         aisle = use_case.execute(
             UpdateAisleCodeCommand(
                 inventory_id=inventory_id,
@@ -454,6 +470,8 @@ def update_aisle_code(
                     if "identification_mode" in payload.model_fields_set
                     else UNSET
                 ),
+                item_profile_source_override=item_override,
+                position_profile_source_override=position_override,
             )
         )
         return _aisle_response(aisle, id_query)
@@ -598,6 +616,7 @@ def start_aisle_processing(
             prompt_key=None,
             idempotency_key=None,
             identification_mode=None,
+            processing_mode=None,
         )
         result = use_case.execute(
             StartAisleProcessingCommand(
@@ -608,6 +627,7 @@ def start_aisle_processing(
                 requested_model_name=body.model_name,
                 requested_prompt_key=body.prompt_key,
                 requested_identification_mode=body.identification_mode,
+                requested_processing_mode=body.processing_mode,
                 idempotency_key=body.idempotency_key,
                 principal=principal,
             )
@@ -620,6 +640,10 @@ def start_aisle_processing(
             ),
             execution_strategy=cast(ExecutionStrategyLiteral, result.execution_strategy),
             configuration_snapshot_version=result.configuration_snapshot_version,
+            processing_mode=cast(
+                Literal["AUTO", "CODE_SCAN_ONLY", "VISION_ONLY"] | None,
+                result.processing_mode,
+            ),
         )
     except Exception as e:
         reraise_if_mapped(e)

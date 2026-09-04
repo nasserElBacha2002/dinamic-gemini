@@ -1,0 +1,3 @@
+-- Rollback 0102: restore INTERNAL_OCR only if operators intentionally re-enable OCR configs.
+-- Prefer leaving CODE_SCAN in place; this down script is a no-op by default.
+-- To reverse intentionally, restore from backup or set modes explicitly.

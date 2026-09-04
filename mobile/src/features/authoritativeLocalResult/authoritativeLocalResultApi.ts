@@ -4,7 +4,8 @@ export interface AuthoritativeLocalCodeScanRequest {
   readonly schema_version: string;
   readonly result_id: string;
   readonly client_file_id: string;
-  readonly internal_code: string;
+  /** Required for Dinamic; null for SUPPLIER identity-only (label_id present). */
+  readonly internal_code: string | null;
   readonly quantity: number | null;
   readonly quantity_status: 'PRESENT' | 'MISSING';
   readonly source: 'LOCAL_CODE_SCAN' | 'LOCAL_MANUAL_CORRECTION';
@@ -17,6 +18,16 @@ export interface AuthoritativeLocalCodeScanRequest {
   readonly detector_version: string;
   readonly prepared_asset_sha256: string;
   readonly confirmed_at: string;
+  readonly profile_source?: 'DINAMIC' | 'SUPPLIER' | null;
+  readonly profile_id?: string | null;
+  readonly profile_version?: number | null;
+  readonly configuration_schema_version?: number | null;
+  readonly label_kind?: 'ITEM' | 'POSITION' | null;
+  readonly client_supplier_id?: string | null;
+  readonly raw_payload?: string | null;
+  readonly recognition_status?: string | null;
+  readonly captured_offline?: boolean | null;
+  readonly captured_with_older_profile?: boolean | null;
 }
 
 export interface AuthoritativeLocalCodeScanResponse {

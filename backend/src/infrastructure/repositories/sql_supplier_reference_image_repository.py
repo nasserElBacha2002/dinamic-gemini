@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import SupplierReferenceImageRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
+from src.domain.label_profiles.kinds import effective_label_kind, parse_label_kind
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 
 
@@ -54,6 +55,8 @@ def _row_to_supplier_reference_image(row) -> SupplierReferenceImage:
         raise ValueError("supplier_reference_images row missing required created_at")
     if updated_at is None:
         raise ValueError("supplier_reference_images row missing required updated_at")
+    label_kind_raw = getattr(row, "label_kind", None)
+    label_kind = parse_label_kind(str(label_kind_raw)) if label_kind_raw else None
     return SupplierReferenceImage(
         id=id_value,
         client_supplier_id=supplier_id,
@@ -71,6 +74,7 @@ def _row_to_supplier_reference_image(row) -> SupplierReferenceImage:
         description=(getattr(row, "description", None) or "").strip() or None,
         created_at=created_at,
         updated_at=updated_at,
+        label_kind=label_kind,
     )
 
 
@@ -84,7 +88,8 @@ class SqlSupplierReferenceImageRepository(SupplierReferenceImageRepository):
                 """
                 SELECT id, client_supplier_id, filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                       mime_type, file_size, label, description, created_at, updated_at
+                       mime_type, file_size, label, description, created_at, updated_at,
+                       label_kind
                 FROM supplier_reference_images
                 WHERE id = ?
                 """,
@@ -106,9 +111,10 @@ class SqlSupplierReferenceImageRepository(SupplierReferenceImageRepository):
                 INSERT INTO supplier_reference_images (
                     id, client_supplier_id, filename, storage_path,
                     storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                    mime_type, file_size, label, description, created_at, updated_at
+                    mime_type, file_size, label, description, created_at, updated_at,
+                    label_kind
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     reference_image.id,
@@ -127,6 +133,7 @@ class SqlSupplierReferenceImageRepository(SupplierReferenceImageRepository):
                     reference_image.description,
                     created,
                     updated,
+                    effective_label_kind(reference_image.label_kind).value,
                 ),
             )
 
@@ -146,9 +153,10 @@ class SqlSupplierReferenceImageRepository(SupplierReferenceImageRepository):
                     INSERT INTO supplier_reference_images (
                         id, client_supplier_id, filename, storage_path,
                         storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                        mime_type, file_size, label, description, created_at, updated_at
+                        mime_type, file_size, label, description, created_at, updated_at,
+                        label_kind
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         image.id,
@@ -167,6 +175,7 @@ class SqlSupplierReferenceImageRepository(SupplierReferenceImageRepository):
                         image.description,
                         created,
                         updated,
+                        effective_label_kind(image.label_kind).value,
                     ),
                 )
 
@@ -176,7 +185,8 @@ class SqlSupplierReferenceImageRepository(SupplierReferenceImageRepository):
                 """
                 SELECT id, client_supplier_id, filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                       mime_type, file_size, label, description, created_at, updated_at
+                       mime_type, file_size, label, description, created_at, updated_at,
+                       label_kind
                 FROM supplier_reference_images
                 WHERE client_supplier_id = ?
                 ORDER BY created_at ASC, id ASC

@@ -24,6 +24,7 @@ from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.claim import JobClaimResult, StaleReclaimResult
 from src.domain.jobs.entities import Job
 from src.domain.jobs.lease import JobLease, LeaseRenewalResult, LeaseWriteResult
+from src.domain.label_profiles.kinds import LabelKind
 from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLabel
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
@@ -723,6 +724,7 @@ class SupplierPromptConfigRepository(ABC):
         client_supplier_id: str,
         provider_name: str | None,
         model_name: str | None,
+        label_kind: LabelKind | None = None,
     ) -> Sequence[SupplierPromptConfig]:
         """Return versions for one supplier/provider/model scope (newest first)."""
         ...
@@ -738,6 +740,7 @@ class SupplierPromptConfigRepository(ABC):
         client_supplier_id: str,
         provider_name: str | None,
         model_name: str | None,
+        label_kind: LabelKind | None = None,
     ) -> SupplierPromptConfig | None:
         """Return active config for exact scope, or None."""
         ...
@@ -748,6 +751,7 @@ class SupplierPromptConfigRepository(ABC):
         client_supplier_id: str,
         provider_name: str | None,
         model_name: str | None,
+        label_kind: LabelKind | None = None,
     ) -> int | None:
         """Return max version for exact scope, or None when no rows exist."""
         ...
@@ -758,6 +762,7 @@ class SupplierPromptConfigRepository(ABC):
         client_supplier_id: str,
         provider_name: str | None,
         model_name: str | None,
+        label_kind: LabelKind | None = None,
     ) -> None:
         """Set is_active=0 for all rows in exact scope."""
         ...

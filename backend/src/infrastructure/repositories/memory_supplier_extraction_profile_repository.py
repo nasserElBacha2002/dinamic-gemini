@@ -15,6 +15,7 @@ from src.domain.client_supplier.extraction_profile import (
     ReferenceAnnotation,
     SupplierExtractionProfile,
 )
+from src.domain.label_profiles.kinds import LabelKind, effective_label_kind
 
 
 class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileRepository):
@@ -40,6 +41,24 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
                 return deepcopy(row)
         return None
 
+    def get_by_client_supplier_kind_version(
+        self,
+        client_id: str,
+        supplier_id: str,
+        label_kind: LabelKind,
+        version: int,
+    ) -> SupplierExtractionProfile | None:
+        want = effective_label_kind(label_kind)
+        for row in self._rows.values():
+            if (
+                row.client_id == client_id
+                and row.supplier_id == supplier_id
+                and row.version == version
+                and effective_label_kind(row.label_kind) is want
+            ):
+                return deepcopy(row)
+        return None
+
     def get_active(
         self, client_id: str, supplier_id: str
     ) -> SupplierExtractionProfile | None:
@@ -52,6 +71,27 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
                 return deepcopy(row)
         return None
 
+    def get_active_by_kind(
+        self,
+        client_id: str,
+        supplier_id: str,
+        label_kind: LabelKind,
+    ) -> SupplierExtractionProfile | None:
+        want = effective_label_kind(label_kind)
+        best: SupplierExtractionProfile | None = None
+        best_version = -1
+        for row in self._rows.values():
+            if (
+                row.client_id == client_id
+                and row.supplier_id == supplier_id
+                and row.status is ExtractionProfileStatus.ACTIVE
+                and effective_label_kind(row.label_kind) is want
+                and row.version >= best_version
+            ):
+                best = row
+                best_version = row.version
+        return deepcopy(best) if best else None
+
     def list_by_supplier(
         self, client_id: str, supplier_id: str
     ) -> Sequence[SupplierExtractionProfile]:
@@ -62,11 +102,18 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
         ]
         return sorted(rows, key=lambda r: r.version, reverse=True)
 
-    def next_version(self, client_id: str, supplier_id: str) -> int:
+    def next_version(
+        self, client_id: str, supplier_id: str, label_kind: LabelKind | None = None
+    ) -> int:
+        from src.domain.label_profiles.kinds import effective_label_kind
+
+        kind = effective_label_kind(label_kind)
         versions = [
             r.version
             for r in self._rows.values()
-            if r.client_id == client_id and r.supplier_id == supplier_id
+            if r.client_id == client_id
+            and r.supplier_id == supplier_id
+            and effective_label_kind(r.label_kind) == kind
         ]
         return (max(versions) if versions else 0) + 1
 
@@ -81,18 +128,21 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
         created_by: str | None,
         created_at: object,
         profile_id: str | None = None,
+        label_kind: LabelKind | None = None,
     ) -> SupplierExtractionProfile:
         from uuid import uuid4
 
         from src.application.errors import SupplierExtractionProfileVersionConflictError
 
-        version = self.next_version(client_id, supplier_id)
+        kind = effective_label_kind(label_kind)
+        version = self.next_version(client_id, supplier_id, kind)
         # Detect race: another insert claimed same version between next_version and save.
         for row in self._rows.values():
             if (
                 row.client_id == client_id
                 and row.supplier_id == supplier_id
                 and row.version == version
+                and effective_label_kind(row.label_kind) == kind
             ):
                 raise SupplierExtractionProfileVersionConflictError(
                     "version_conflict"
@@ -111,6 +161,7 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
             created_at=now,
             updated_at=now,
             row_version=1,
+            label_kind=kind,
         )
         self.save(created)
         return deepcopy(created)
@@ -129,6 +180,9 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
             raise KeyError("profile_not_found")
         if expected_row_version is not None and target.row_version != expected_row_version:
             raise ValueError("row_version_conflict")
+        from src.domain.label_profiles.kinds import effective_label_kind
+
+        target_kind = effective_label_kind(target.label_kind)
         now = datetime.now(timezone.utc)
         for row in self._rows.values():
             if (
@@ -136,6 +190,7 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
                 and row.supplier_id == supplier_id
                 and row.status is ExtractionProfileStatus.ACTIVE
                 and row.id != profile_id
+                and effective_label_kind(row.label_kind) == target_kind
             ):
                 row.status = ExtractionProfileStatus.SUPERSEDED
                 row.superseded_at = now

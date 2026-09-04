@@ -32,6 +32,7 @@ import {
 } from '../../core/uploadLease';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
+import type { LocalCatalogRepository } from '../../database/repositories/localCatalogRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import type { LocalCodeScanStrategy } from '../localCodeScan/localCodeScanStrategy';
 import {
@@ -103,6 +104,7 @@ export interface UploadQueueOptions {
       reason?: string;
     }): Promise<void>;
   } | null;
+  readonly catalog?: LocalCatalogRepository | null;
 }
 
 export interface UploadQueueSnapshot {
@@ -223,6 +225,14 @@ export class UploadQueue {
     };
   }
 
+  private localCodeScanEnabledForExport(): boolean {
+    return (
+      this.flags?.mobileLocalCodeScan === true ||
+      this.flags?.mobileCsvExport !== false ||
+      this.flags?.localCompletion === true
+    );
+  }
+
   /** Persist preparation profile mode for a capture session (from UI preference). */
   async setSessionPreparationMode(sessionId: string, mode: string | null): Promise<void> {
     const normalized = normalizePreparationProcessingMode(mode);
@@ -242,6 +252,35 @@ export class UploadQueue {
     // Explicit "Subir imágenes ahora" / upload worker path after completeReview.
     const status = session?.status;
     return status === 'uploading' || status === 'upload_review';
+  }
+
+  private async aisleAllowsRemoteUpload(
+    session: CaptureSessionRow | null | undefined,
+  ): Promise<boolean> {
+    if (!this.sessionAllowsAutoServerUpload(session)) {
+      return false;
+    }
+    if (!session?.inventory_id || !session.aisle_id) {
+      return true;
+    }
+    if (!this.options.catalog) {
+      this.logger.info('upload_enqueue_session_skipped_policy', {
+        sessionId: session.id,
+        aisleId: session.aisle_id,
+        reason: 'catalog_unavailable',
+      });
+      return false;
+    }
+    const aisle = await this.options.catalog.getAisleById(session.inventory_id, session.aisle_id);
+    if (aisle?.sync_status === 'LOCAL_ONLY') {
+      this.logger.info('upload_enqueue_session_skipped_policy', {
+        sessionId: session.id,
+        aisleId: session.aisle_id,
+        reason: 'local_only_aisle',
+      });
+      return false;
+    }
+    return true;
   }
 
   async restoreAndStart(): Promise<void> {
@@ -285,7 +324,7 @@ export class UploadQueue {
 
   async enqueueSession(sessionId: string): Promise<void> {
     const session = await this.repo.getSession(sessionId);
-    if (!this.sessionAllowsAutoServerUpload(session)) {
+    if (!(await this.aisleAllowsRemoteUpload(session))) {
       this.logger.info('upload_enqueue_session_skipped_policy', {
         sessionId,
         uploadPolicy: session?.upload_policy ?? null,
@@ -324,7 +363,7 @@ export class UploadQueue {
       return;
     }
     const session = await this.repo.getSession(sessionId);
-    if (!this.sessionAllowsAutoServerUpload(session)) {
+    if (!(await this.aisleAllowsRemoteUpload(session))) {
       this.logger.info('upload_enqueue_skipped_policy', {
         sessionId,
         photoId,
@@ -450,7 +489,7 @@ export class UploadQueue {
       }
     }
     // Also re-run local CODE_SCAN for failed / empty drafts (uploads may already be done).
-    if (this.flags?.mobileLocalCodeScan === true && this.options.localCodeScan) {
+    if (this.localCodeScanEnabledForExport() && this.options.localCodeScan) {
       for (const photo of photos) {
         if (photo.status !== 'stable') {
           continue;
@@ -1192,6 +1231,8 @@ export class UploadQueue {
       });
     }
     try {
+      const session = await this.repo.getSession(input.sessionId);
+      const online = this.connectivity.getState() === 'online';
       await strategy.execute({
         capturePhotoId: input.photo.id,
         captureSessionId: input.sessionId,
@@ -1201,6 +1242,9 @@ export class UploadQueue {
         processingMode,
         flagEnabled,
         cancelRequested: input.photo.upload_cancel_requested === 1,
+        inventoryId: session?.inventory_id ?? null,
+        aisleId: session?.aisle_id ?? null,
+        recognitionContext: online ? 'ONLINE' : 'OFFLINE',
       });
     } catch (e) {
       this.logger.warn('error', {
@@ -1217,7 +1261,7 @@ export class UploadQueue {
    */
   async rescanPhotoForLocalReview(photoId: string): Promise<void> {
     const strategy = this.options.localCodeScan;
-    if (!strategy || this.flags?.mobileLocalCodeScan !== true) {
+    if (!strategy || !this.localCodeScanEnabledForExport()) {
       return;
     }
     const photo = await this.repo.getPhotoById(photoId);
@@ -1225,10 +1269,9 @@ export class UploadQueue {
       return;
     }
     const preparedUri = photo.local_transform_uri || photo.uri;
+    const session = await this.repo.getSession(photo.capture_session_id);
     const mode = resolveLocalScanProcessingMode(
-      normalizePreparationProcessingMode(
-        (await this.repo.getSession(photo.capture_session_id))?.preparation_processing_mode,
-      ),
+      normalizePreparationProcessingMode(session?.preparation_processing_mode),
       true,
     );
     let fingerprint: string;
@@ -1242,6 +1285,7 @@ export class UploadQueue {
         height: photo.height ?? 0,
       });
     }
+    const online = this.connectivity.getState() === 'online';
     await strategy.execute({
       capturePhotoId: photo.id,
       captureSessionId: photo.capture_session_id,
@@ -1251,6 +1295,9 @@ export class UploadQueue {
       processingMode: mode,
       flagEnabled: true,
       cancelRequested: photo.upload_cancel_requested === 1,
+      inventoryId: session?.inventory_id ?? null,
+      aisleId: session?.aisle_id ?? null,
+      recognitionContext: online ? 'ONLINE' : 'OFFLINE',
     });
   }
 

@@ -131,7 +131,9 @@ def test_real_two_d1_qr_on_one_canvas_returns_two_products() -> None:
 
     strategy = _strategy(content)
     asset = _asset()
-    session = strategy._scan_with_variants(asset, content, started=__import__("time").monotonic())
+    session = strategy._scan_with_variants(
+        asset, content, decode_budget_started_at=__import__("time").monotonic()
+    )
     raw_values = {c.code_value for c in session.candidates}
     assert a in raw_values
     assert b in raw_values

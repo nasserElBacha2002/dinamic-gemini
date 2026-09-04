@@ -15,6 +15,7 @@ from src.application.ports.repositories import AisleRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.aisle_identification.modes import optional_config_identification_mode
+from src.domain.label_profiles.kinds import optional_label_profile_source_override
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,12 @@ def _row_to_aisle(row) -> Aisle:
         identification_mode=optional_config_identification_mode(
             getattr(row, "identification_mode", None)
         ),
+        item_profile_source_override=optional_label_profile_source_override(
+            getattr(row, "item_profile_source_override", None)
+        ),
+        position_profile_source_override=optional_label_profile_source_override(
+            getattr(row, "position_profile_source_override", None)
+        ),
     )
 
 
@@ -82,6 +89,16 @@ class SqlAisleRepository(AisleRepository):
         updated = _ensure_utc(aisle.updated_at)
         is_active_bit = 1 if aisle.is_active else 0
         mode_val = aisle.identification_mode.value if aisle.identification_mode else None
+        item_override = (
+            aisle.item_profile_source_override.value
+            if aisle.item_profile_source_override
+            else None
+        )
+        position_override = (
+            aisle.position_profile_source_override.value
+            if aisle.position_profile_source_override
+            else None
+        )
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
@@ -90,7 +107,9 @@ class SqlAisleRepository(AisleRepository):
                     operational_job_id = ?,
                     client_supplier_id = ?,
                     error_code = ?, error_message = ?, retryable = ?,
-                    is_active = ?, identification_mode = ?
+                    is_active = ?, identification_mode = ?,
+                    item_profile_source_override = ?,
+                    position_profile_source_override = ?
                 WHERE id = ?
                 """,
                 (
@@ -105,6 +124,8 @@ class SqlAisleRepository(AisleRepository):
                     aisle.retryable,
                     is_active_bit,
                     mode_val,
+                    item_override,
+                    position_override,
                     aisle.id,
                 ),
             )
@@ -114,9 +135,10 @@ class SqlAisleRepository(AisleRepository):
                     INSERT INTO aisles (
                         id, inventory_id, code, status, created_at, updated_at,
                         operational_job_id, client_supplier_id, error_code, error_message, retryable,
-                        is_active, identification_mode
+                        is_active, identification_mode,
+                        item_profile_source_override, position_profile_source_override
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         aisle.id,
@@ -132,6 +154,8 @@ class SqlAisleRepository(AisleRepository):
                         aisle.retryable,
                         is_active_bit,
                         mode_val,
+                        item_override,
+                        position_override,
                     ),
                 )
 
@@ -141,7 +165,8 @@ class SqlAisleRepository(AisleRepository):
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
                        operational_job_id, client_supplier_id, error_code, error_message, retryable,
-                       is_active, identification_mode
+                       is_active, identification_mode,
+                       item_profile_source_override, position_profile_source_override
                 FROM aisles WHERE id = ?
                 """,
                 (aisle_id,),
@@ -157,7 +182,8 @@ class SqlAisleRepository(AisleRepository):
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
                        operational_job_id, client_supplier_id, error_code, error_message, retryable,
-                       is_active, identification_mode
+                       is_active, identification_mode,
+                       item_profile_source_override, position_profile_source_override
                 FROM aisles WHERE inventory_id = ? ORDER BY created_at DESC
                 """,
                 (inventory_id,),
@@ -175,7 +201,8 @@ class SqlAisleRepository(AisleRepository):
                 f"""
                 SELECT id, inventory_id, code, status, created_at, updated_at,
                        operational_job_id, client_supplier_id, error_code, error_message, retryable,
-                       is_active, identification_mode
+                       is_active, identification_mode,
+                       item_profile_source_override, position_profile_source_override
                 FROM aisles
                 WHERE inventory_id IN ({placeholders})
                 ORDER BY inventory_id, created_at DESC
@@ -191,7 +218,8 @@ class SqlAisleRepository(AisleRepository):
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
                        operational_job_id, client_supplier_id, error_code, error_message, retryable,
-                       is_active, identification_mode
+                       is_active, identification_mode,
+                       item_profile_source_override, position_profile_source_override
                 FROM aisles WHERE inventory_id = ? AND code = ?
                 """,
                 (inventory_id, code.strip()),

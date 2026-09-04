@@ -98,6 +98,11 @@ export interface AisleDto {
   readonly positions_count: number;
   readonly pending_review_positions_count: number;
   readonly last_activity_at?: string | null;
+  /** Present when mapped from SQLite local_aisles. */
+  readonly origin?: 'REMOTE' | 'LOCAL';
+  readonly sync_status?: 'REMOTE_SYNCED' | 'LOCAL_ONLY';
+  readonly client_supplier_id?: string | null;
+  readonly created_offline_at?: string | null;
 }
 
 /** GET /api/v3/config/upload-limits */

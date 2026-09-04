@@ -269,6 +269,12 @@ export const queryKeys = {
             imageId,
           ] as const,
       },
+      labelProfiles: {
+        all: (clientId: string, supplierId: string) =>
+          [...queryKeys.clients.suppliers.all(clientId), 'label-profiles', supplierId] as const,
+        list: (clientId: string, supplierId: string) =>
+          [...queryKeys.clients.suppliers.labelProfiles.all(clientId, supplierId), 'list'] as const,
+      },
     },
   },
 

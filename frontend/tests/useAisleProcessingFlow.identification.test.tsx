@@ -1,8 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * requestedIdentificationModeOverride: null omits `identificationMode` from the mutation call
- * (inherited hierarchy applies); a non-null override is sent as-is for that run only.
+ * processingMode is always sent on confirm (default AUTO).
  */
 import { useEffect } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -11,10 +10,7 @@ import { I18nextProvider } from 'react-i18next';
 import i18n from '../src/i18n';
 import { AppSnackbarProvider } from '../src/components/ui';
 import AisleProcessingDialog from '../src/features/inventories/components/AisleProcessingDialog';
-import {
-  INHERITED_IDENTIFICATION_MODE,
-  useAisleProcessingFlow,
-} from '../src/features/inventories/hooks/useAisleProcessingFlow';
+import { useAisleProcessingFlow } from '../src/features/inventories/hooks/useAisleProcessingFlow';
 
 const mutateAsyncMock = vi.fn().mockResolvedValue({ job_id: 'job-1' });
 
@@ -87,8 +83,8 @@ function ProcessingHarness({ identification }: { identification?: Identification
       onProviderKeyChange={processFlow.setProviderKey}
       modelKey={processFlow.modelKey}
       onModelKeyChange={processFlow.setModelKey}
-      identificationMode={processFlow.identificationMode}
-      onIdentificationModeChange={processFlow.setIdentificationMode}
+      processingMode={processFlow.processingMode}
+      onProcessingModeChange={processFlow.setProcessingMode}
       inheritedEffectiveMode={processFlow.dialogTarget?.effectiveIdentificationMode}
       identificationModeSource={processFlow.dialogTarget?.identificationModeSource}
       providerOptsQuery={processFlow.providerOptsQuery}
@@ -101,137 +97,68 @@ function ProcessingHarness({ identification }: { identification?: Identification
   );
 }
 
-describe('useAisleProcessingFlow — identification mode override wiring', () => {
+describe('useAisleProcessingFlow processing_mode', () => {
   beforeEach(() => {
     mutateAsyncMock.mockClear();
   });
 
-  it('walks CLIENT-inherited CODE_SCAN through override → back to inherited', async () => {
+  it('defaults to AUTO and sends processingMode on confirm', async () => {
     const { result } = renderHook(
       () => useAisleProcessingFlow({ inventoryId: 'inv-1', isProductionInventory: false }),
       { wrapper }
     );
-
-    // Open with CLIENT inheritance resolving to CODE_SCAN; default selection stays inherited.
-    act(() => {
-      void result.current.requestProcess('aisle-1', 'A01', null, {
+    await act(async () => {
+      result.current.requestProcess('aisle-1', 'A01', null, {
         effectiveMode: 'CODE_SCAN',
         source: 'CLIENT',
-        configured: null,
       });
     });
-    expect(result.current.identificationMode).toBe(INHERITED_IDENTIFICATION_MODE);
-    expect(result.current.requestedIdentificationModeOverride).toBeNull();
-
-    // Confirm without changing anything — no identificationMode key in the mutation call.
+    expect(result.current.processingMode).toBe('AUTO');
     await act(async () => {
       await result.current.confirmDialog();
     });
-    expect(mutateAsyncMock).toHaveBeenCalledTimes(1);
-    let call = mutateAsyncMock.mock.calls[0][0] as Record<string, unknown>;
-    expect(call.aisleId).toBe('aisle-1');
-    expect(call).not.toHaveProperty('identificationMode');
-
-    // Reopen and override to CODE_SCAN explicitly — sent this time.
-    act(() => {
-      void result.current.requestProcess('aisle-1', 'A01', null, {
-        effectiveMode: 'CODE_SCAN',
-        source: 'CLIENT',
-        configured: null,
-      });
-    });
-    act(() => {
-      result.current.setIdentificationMode('CODE_SCAN');
-    });
-    expect(result.current.identificationMode).toBe('CODE_SCAN');
-    await act(async () => {
-      await result.current.confirmDialog();
-    });
-    expect(mutateAsyncMock).toHaveBeenCalledTimes(2);
-    call = mutateAsyncMock.mock.calls[1][0] as Record<string, unknown>;
-    expect(call.identificationMode).toBe('CODE_SCAN');
-
-    // Reopen and override to INTERNAL_OCR.
-    act(() => {
-      void result.current.requestProcess('aisle-1', 'A01', null, {
-        effectiveMode: 'CODE_SCAN',
-        source: 'CLIENT',
-        configured: null,
-      });
-    });
-    act(() => {
-      result.current.setIdentificationMode('INTERNAL_OCR');
-    });
-    await act(async () => {
-      await result.current.confirmDialog();
-    });
-    expect(mutateAsyncMock).toHaveBeenCalledTimes(3);
-    call = mutateAsyncMock.mock.calls[2][0] as Record<string, unknown>;
-    expect(call.identificationMode).toBe('INTERNAL_OCR');
-
-    // Reopen and override to LEGACY_LLM.
-    act(() => {
-      void result.current.requestProcess('aisle-1', 'A01', null, {
-        effectiveMode: 'CODE_SCAN',
-        source: 'CLIENT',
-        configured: null,
-      });
-    });
-    act(() => {
-      result.current.setIdentificationMode('LEGACY_LLM');
-    });
-    await act(async () => {
-      await result.current.confirmDialog();
-    });
-    expect(mutateAsyncMock).toHaveBeenCalledTimes(4);
-    call = mutateAsyncMock.mock.calls[3][0] as Record<string, unknown>;
-    expect(call.identificationMode).toBe('LEGACY_LLM');
-
-    // Reopen, pick an override, then switch back to inherited before confirming — omitted again.
-    act(() => {
-      void result.current.requestProcess('aisle-1', 'A01', null, {
-        effectiveMode: 'CODE_SCAN',
-        source: 'CLIENT',
-        configured: null,
-      });
-    });
-    act(() => {
-      result.current.setIdentificationMode('CODE_SCAN');
-    });
-    act(() => {
-      result.current.setIdentificationMode(INHERITED_IDENTIFICATION_MODE);
-    });
-    expect(result.current.identificationMode).toBe(INHERITED_IDENTIFICATION_MODE);
-    expect(result.current.requestedIdentificationModeOverride).toBeNull();
-    await act(async () => {
-      await result.current.confirmDialog();
-    });
-    expect(mutateAsyncMock).toHaveBeenCalledTimes(5);
-    call = mutateAsyncMock.mock.calls[4][0] as Record<string, unknown>;
-    expect(call).not.toHaveProperty('identificationMode');
+    expect(mutateAsyncMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aisleId: 'aisle-1',
+        processingMode: 'AUTO',
+      })
+    );
+    expect(mutateAsyncMock.mock.calls[0][0].identificationMode).toBeUndefined();
   });
 
-  it.each([
-    ['INVENTORY', 'Inventario'],
-    ['AISLE', 'Pasillo'],
-    ['SYSTEM_DEFAULT', 'Configuración general'],
-  ] as const)(
-    'renders the inherited source label for %s through the dialog',
-    async (source, expectedLabelFragment) => {
-      render(<ProcessingHarness identification={{ effectiveMode: 'LEGACY_LLM', source }} />, {
-        wrapper,
-      });
+  it('sends CODE_SCAN_ONLY when selected', async () => {
+    const { result } = renderHook(
+      () => useAisleProcessingFlow({ inventoryId: 'inv-1', isProductionInventory: false }),
+      { wrapper }
+    );
+    await act(async () => {
+      result.current.requestProcess('aisle-1', 'A01', null);
+    });
+    await act(async () => {
+      result.current.setProcessingMode('CODE_SCAN_ONLY');
+    });
+    await act(async () => {
+      await result.current.confirmDialog();
+    });
+    expect(mutateAsyncMock).toHaveBeenCalledWith(
+      expect.objectContaining({ processingMode: 'CODE_SCAN_ONLY' })
+    );
+  });
 
-      const sourceNode = await screen.findByTestId('process-identification-source');
-      expect(sourceNode).toHaveTextContent(expectedLabelFragment);
-
-      // The Select's inherited option also carries the resolved source label.
-      fireEvent.mouseDown(
-        within(screen.getByTestId('process-identification-mode')).getByRole('combobox')
-      );
-      expect(screen.getByTestId('process-identification-inherited-option')).toHaveTextContent(
-        expectedLabelFragment
-      );
-    }
-  );
+  it('dialog shows three modes and confirms VISION_ONLY payload', async () => {
+    render(
+      <ProcessingHarness
+        identification={{ effectiveMode: 'CODE_SCAN', source: 'CLIENT' }}
+      />,
+      { wrapper }
+    );
+    fireEvent.mouseDown(within(screen.getByTestId('process-processing-mode')).getByRole('combobox'));
+    fireEvent.click(screen.getByTestId('process-processing-mode-vision_only'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('process-aisle-confirm'));
+    });
+    expect(mutateAsyncMock).toHaveBeenCalledWith(
+      expect.objectContaining({ processingMode: 'VISION_ONLY' })
+    );
+  });
 });

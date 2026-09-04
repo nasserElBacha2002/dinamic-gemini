@@ -23,6 +23,16 @@ export interface ConfirmLocalResultEdits {
   readonly quantityStatus: ConfirmedQuantityStatus;
 }
 
+function isSupplierIdentityOnlyDraft(
+  draft: LocalDetectionDraftRow | null,
+  confirmedCode: string,
+): boolean {
+  if (!draft?.label_id?.trim() || confirmedCode) return false;
+  if (draft.detected_format === 'SUPPLIER') return true;
+  const snap = draft.recognition_profile_snapshot_json ?? '';
+  return snap.includes('"profile_source":"SUPPLIER"');
+}
+
 export class ConfirmLocalResultService {
   constructor(
     private readonly flags: FeatureFlags,
@@ -47,6 +57,16 @@ export class ConfirmLocalResultService {
     const detectedCode = draft?.internal_code?.trim() ?? null;
     const detectedQty = draft?.quantity ?? null;
     const confirmedQty = edits.quantityStatus === 'PRESENT' ? edits.quantity : null;
+    if (isSupplierIdentityOnlyDraft(draft, confirmedCode)) {
+      // Identity-only: detected internal is also null — treat as local scan when qty matches.
+      if (detectedQty !== confirmedQty) {
+        return 'LOCAL_MANUAL_CORRECTION';
+      }
+      if (edits.quantityStatus === 'MISSING' && draft?.quantity_status !== 'MISSING') {
+        return 'LOCAL_MANUAL_CORRECTION';
+      }
+      return 'LOCAL_CODE_SCAN';
+    }
     if (!detectedCode || detectedCode !== confirmedCode) {
       return 'LOCAL_MANUAL_CORRECTION';
     }
@@ -72,7 +92,12 @@ export class ConfirmLocalResultService {
       throw new Error('La confirmación local autoritativa no está habilitada.');
     }
 
-    const codeError = validateConfirmedInternalCode(input.edits.internalCode);
+    const draft = input.draft ?? (await this.getLatestDraftForPhoto(input.capturePhotoId));
+    const confirmedCode = input.edits.internalCode.trim();
+    const identityOnly = isSupplierIdentityOnlyDraft(draft, confirmedCode);
+    const codeError = validateConfirmedInternalCode(input.edits.internalCode, {
+      allowEmpty: identityOnly,
+    });
     if (codeError) {
       throw new Error(userMessageForConfirmValidation(codeError));
     }
@@ -84,8 +109,6 @@ export class ConfirmLocalResultService {
       throw new Error(userMessageForConfirmValidation(qtyError));
     }
 
-    const draft = input.draft ?? (await this.getLatestDraftForPhoto(input.capturePhotoId));
-    const confirmedCode = input.edits.internalCode.trim();
     const confirmedQuantity =
       input.edits.quantityStatus === 'PRESENT' ? input.edits.quantity : null;
     const source = this.resolveSource(draft, input.edits);
@@ -99,6 +122,7 @@ export class ConfirmLocalResultService {
       clientFileId: input.clientFileId,
       detectedInternalCode: draft?.internal_code ?? null,
       detectedQuantity: draft?.quantity ?? null,
+      // SQLite column remains NOT NULL; empty string = identity-only (mapped to null on wire).
       confirmedInternalCode: confirmedCode,
       confirmedQuantity,
       quantityStatus: input.edits.quantityStatus,
@@ -111,12 +135,13 @@ export class ConfirmLocalResultService {
       preparedAssetSha256: prepared,
       confirmedByUserId: input.confirmedByUserId,
       confirmedAt: input.confirmedAt ?? new Date().toISOString(),
+      recognitionProfileSnapshotJson: draft?.recognition_profile_snapshot_json ?? null,
     });
   }
 
   /**
    * Auto-confirm stable photos that already have a usable local CODE_SCAN draft.
-   * Skips photos without an internal code (operator can still export ZIP).
+   * Skips photos without an internal code unless supplier identity-only (label_id).
    */
   async confirmResolvedDraftsForSession(input: {
     readonly sessionId: string;
@@ -145,7 +170,8 @@ export class ConfirmLocalResultService {
       }
       const draft = await this.getLatestDraftForPhoto(photo.id);
       const code = draft?.internal_code?.trim() ?? '';
-      if (!code) {
+      const labelId = draft?.label_id?.trim() ?? '';
+      if (!code && !labelId) {
         skipped += 1;
         continue;
       }

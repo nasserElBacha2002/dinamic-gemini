@@ -6,7 +6,6 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../src/i18n';
 import AisleProcessingDialog from '../src/features/inventories/components/AisleProcessingDialog';
-import { INHERITED_IDENTIFICATION_MODE } from '../src/features/inventories/hooks/useAisleProcessingFlow';
 
 vi.mock('../src/components/ui/BaseDialog', () => ({
   default: ({
@@ -29,18 +28,18 @@ vi.mock('../src/components/ui/BaseDialog', () => ({
     ) : null,
 }));
 
-describe('AisleProcessingDialog identification mode (Phase 8)', () => {
+describe('AisleProcessingDialog processing modes', () => {
   const baseProps = {
     open: true,
     aisleCode: 'A01',
     clientSupplierId: null as string | null,
-    providerKey: '',
+    providerKey: 'gemini',
     onProviderKeyChange: vi.fn(),
-    modelKey: '',
+    modelKey: 'gemini-x',
     onModelKeyChange: vi.fn(),
-    identificationMode: INHERITED_IDENTIFICATION_MODE,
-    onIdentificationModeChange: vi.fn(),
-    inheritedEffectiveMode: 'INTERNAL_OCR',
+    processingMode: 'AUTO' as const,
+    onProcessingModeChange: vi.fn(),
+    inheritedEffectiveMode: 'CODE_SCAN',
     identificationModeSource: 'CLIENT',
     providerOptsQuery: {
       data: {
@@ -76,58 +75,80 @@ describe('AisleProcessingDialog identification mode (Phase 8)', () => {
     confirmBusyLabel: false,
   };
 
-  it('does not offer LEGACY_LLM in the selector', () => {
+  it('offers AUTO, CODE_SCAN_ONLY, VISION_ONLY and not OCR/LEGACY', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <AisleProcessingDialog {...baseProps} />
       </I18nextProvider>
     );
-    fireEvent.mouseDown(within(screen.getByTestId('process-identification-mode')).getByRole('combobox'));
+    fireEvent.mouseDown(within(screen.getByTestId('process-processing-mode')).getByRole('combobox'));
     const listbox = screen.getByRole('listbox');
-    expect(within(listbox).queryByText(/Procesamiento tradicional|Traditional processing|LEGACY_LLM/i)).not.toBeInTheDocument();
-    expect(within(listbox).getByRole('option', { name: /Escanear QR|Scan QR/i })).toBeInTheDocument();
-    expect(within(listbox).getByRole('option', { name: /^Leer etiqueta|^Read label/i })).toBeInTheDocument();
-    expect(within(listbox).queryByRole('option', { name: /LEGACY_LLM|tradicional|Traditional processing/i })).not.toBeInTheDocument();
+    expect(within(listbox).getByTestId('process-processing-mode-auto')).toBeInTheDocument();
+    expect(within(listbox).getByTestId('process-processing-mode-code_scan_only')).toBeInTheDocument();
+    expect(within(listbox).getByTestId('process-processing-mode-vision_only')).toBeInTheDocument();
+    expect(within(listbox).queryByText(/OCR|Tesseract|INTERNAL_OCR|LEGACY_LLM/i)).not.toBeInTheDocument();
   });
 
-  it('defaults to the default-config sentinel with business wording', () => {
+  it('shows AUTO help and external-send warning by default', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <AisleProcessingDialog {...baseProps} />
       </I18nextProvider>
     );
-    fireEvent.mouseDown(within(screen.getByTestId('process-identification-mode')).getByRole('combobox'));
-    const inheritedOption = screen.getByTestId('process-identification-inherited-option');
-    expect(inheritedOption).toHaveTextContent(
-      i18n.t('aisle.identification_use_default', {
-        mode: i18n.t('aisle.identification_mode_internal_ocr'),
-        source: i18n.t('aisle.identification_source_client'),
-      })
+    expect(screen.getByTestId('process-processing-mode-help')).toHaveTextContent(
+      /Primero intenta resolver|First tries to resolve/i
     );
+    expect(screen.getByTestId('process-vision-external-send')).toBeInTheDocument();
+    expect(screen.getByTestId('process-provider-select')).toBeInTheDocument();
   });
 
-  it('hides AI provider controls for INTERNAL_OCR', () => {
+  it('shows code-only copy and no AI send for CODE_SCAN_ONLY', () => {
     render(
       <I18nextProvider i18n={i18n}>
-        <AisleProcessingDialog {...baseProps} identificationMode="INTERNAL_OCR" />
+        <AisleProcessingDialog {...baseProps} processingMode="CODE_SCAN_ONLY" />
       </I18nextProvider>
     );
-    expect(screen.queryByTestId('process-provider-select')).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-processing-mode-help')).toHaveTextContent(
+      /únicamente códigos|only QR or barcodes/i
+    );
     expect(screen.getByTestId('process-no-immediate-external')).toBeInTheDocument();
-    expect(screen.getByTestId('process-identification-mode-help')).toBeInTheDocument();
+    expect(screen.queryByTestId('process-provider-select')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('process-vision-external-send')).not.toBeInTheDocument();
   });
 
-  it('hides AI provider controls for CODE_SCAN', () => {
+  it('shows Vision diagnostic note and provider controls for VISION_ONLY', () => {
     render(
       <I18nextProvider i18n={i18n}>
-        <AisleProcessingDialog {...baseProps} identificationMode="CODE_SCAN" />
+        <AisleProcessingDialog {...baseProps} processingMode="VISION_ONLY" />
       </I18nextProvider>
     );
-    expect(screen.queryByTestId('process-provider-select')).not.toBeInTheDocument();
-    expect(screen.getByTestId('process-no-immediate-external')).toBeInTheDocument();
+    expect(screen.getByTestId('process-vision-diagnostic-note')).toBeInTheDocument();
+    expect(screen.getByTestId('process-vision-external-send')).toBeInTheDocument();
+    expect(screen.getByTestId('process-provider-select')).toBeInTheDocument();
   });
 
-  it('warns when inherited effective mode is still legacy', () => {
+  it('disables VISION_ONLY when no providers are available', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AisleProcessingDialog
+          {...baseProps}
+          processingMode="VISION_ONLY"
+          providerOptsQuery={{
+            ...baseProps.providerOptsQuery,
+            data: {
+              ...baseProps.providerOptsQuery.data!,
+              providers: [],
+            },
+          }}
+          providerConfig={undefined}
+        />
+      </I18nextProvider>
+    );
+    expect(screen.getByTestId('process-vision-provider-missing')).toBeInTheDocument();
+    expect(screen.getByTestId('process-aisle-confirm')).toBeDisabled();
+  });
+
+  it('warns when inherited effective identification mode is still legacy', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <AisleProcessingDialog {...baseProps} inheritedEffectiveMode="LEGACY_LLM" />
@@ -143,7 +164,7 @@ describe('AisleProcessingDialog identification mode (Phase 8)', () => {
         <AisleProcessingDialog {...baseProps} onConfirm={onConfirm} />
       </I18nextProvider>
     );
-    const btn = screen.getByRole('button', { name: /Procesar|Process start/i });
+    const btn = screen.getByTestId('process-aisle-confirm');
     fireEvent.click(btn);
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });

@@ -31,6 +31,10 @@ from src.application.services.image_processing.extraction_profile_configuration 
     ExtractionProfileConfigurationError,
     parse_extraction_configuration,
 )
+from src.application.services.label_validation import (
+    LabelProfileConfigurationError,
+    validate_extraction_configuration_for_code_scan,
+)
 from src.domain.client_supplier.extraction_profile import (
     ExtractionProfileStatus,
     ReferenceAnnotation,
@@ -38,6 +42,7 @@ from src.domain.client_supplier.extraction_profile import (
     SupplierExtractionProfile,
     default_extraction_configuration,
 )
+from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
 
 DEFAULT_PROFILE_KEY = "default"
 
@@ -70,6 +75,8 @@ class CreateSupplierExtractionProfileVersionCommand:
     profile_key: str | None = None
     activate: bool = False
     created_by: str | None = None
+    label_kind: LabelKind | None = None
+    effective_source: LabelProfileSource | None = None
 
 
 @dataclass
@@ -79,6 +86,7 @@ class ActivateSupplierExtractionProfileVersionCommand:
     profile_id: str
     activated_by: str | None = None
     expected_row_version: int | None = None
+    effective_source: LabelProfileSource | None = None
 
 
 @dataclass
@@ -126,9 +134,14 @@ def _validate_supplier_in_client_scope(
 
 def _parse_configuration(raw: dict[str, Any] | None):
     try:
-        return parse_extraction_configuration(raw)
+        config = parse_extraction_configuration(raw)
     except ExtractionProfileConfigurationError as exc:
         raise SupplierExtractionProfileInvalidConfigurationError(str(exc)) from exc
+    try:
+        validate_extraction_configuration_for_code_scan(config)
+    except LabelProfileConfigurationError as exc:
+        raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
+    return config
 
 
 def _normalize_profile_key(profile_key: str | None) -> str:
@@ -294,11 +307,15 @@ class CreateSupplierExtractionProfileVersionUseCase:
         client_supplier_repo: ClientSupplierRepository,
         profile_repo: SupplierExtractionProfileRepository,
         clock: Clock,
+        label_profile_repo=None,
+        sql_client=None,
     ) -> None:
         self._client_repo = client_repo
         self._client_supplier_repo = client_supplier_repo
         self._profile_repo = profile_repo
         self._clock = clock
+        self._label_profile_repo = label_profile_repo
+        self._sql_client = sql_client
 
     def execute(
         self, command: CreateSupplierExtractionProfileVersionCommand
@@ -325,6 +342,7 @@ class CreateSupplierExtractionProfileVersionUseCase:
                 visual_notes=_normalize_visual_notes(command.visual_notes),
                 created_by=(command.created_by or "").strip() or None,
                 created_at=now,
+                label_kind=command.label_kind,
             )
         except SupplierExtractionProfileVersionConflictError:
             raise
@@ -335,7 +353,35 @@ class CreateSupplierExtractionProfileVersionUseCase:
         if not command.activate:
             return created
         try:
-            return self._profile_repo.activate_version(
+            from src.application.services.label_validation.profile_example_validation import (
+                validate_profile_examples_for_activation,
+            )
+
+            validate_profile_examples_for_activation(
+                created.configuration,
+                label_kind=created.label_kind or LabelKind.ITEM,
+            )
+        except ExtractionProfileConfigurationError as exc:
+            raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
+        if command.effective_source is not None:
+            from src.application.services.supplier_extraction_profile_activation import (
+                activate_profile_with_effective_source,
+            )
+
+            return activate_profile_with_effective_source(
+                profile_repo=self._profile_repo,
+                label_profile_repo=self._label_profile_repo,
+                clock=self._clock,
+                sql_client=self._sql_client,
+                client_id=command.client_id,
+                supplier_id=command.supplier_id,
+                profile_id=created.id,
+                activated_by=command.created_by,
+                expected_row_version=created.row_version,
+                effective_source=command.effective_source,
+            )
+        try:
+            activated = self._profile_repo.activate_version(
                 client_id=command.client_id,
                 supplier_id=command.supplier_id,
                 profile_id=created.id,
@@ -349,6 +395,7 @@ class CreateSupplierExtractionProfileVersionUseCase:
             raise SupplierExtractionProfileActivationFailedError(
                 f"Failed to activate created supplier extraction profile: {created.id}"
             ) from exc
+        return activated
 
 
 class ActivateSupplierExtractionProfileVersionUseCase:
@@ -357,10 +404,16 @@ class ActivateSupplierExtractionProfileVersionUseCase:
         client_repo: ClientRepository,
         client_supplier_repo: ClientSupplierRepository,
         profile_repo: SupplierExtractionProfileRepository,
+        clock: Clock | None = None,
+        label_profile_repo=None,
+        sql_client=None,
     ) -> None:
         self._client_repo = client_repo
         self._client_supplier_repo = client_supplier_repo
         self._profile_repo = profile_repo
+        self._clock = clock
+        self._label_profile_repo = label_profile_repo
+        self._sql_client = sql_client
 
     def execute(
         self, command: ActivateSupplierExtractionProfileVersionCommand
@@ -371,14 +424,50 @@ class ActivateSupplierExtractionProfileVersionUseCase:
             client_id=command.client_id,
             supplier_id=command.supplier_id,
         )
-        _ensure_profile_in_scope(
+        profile = _ensure_profile_in_scope(
             self._profile_repo.get_by_id(command.profile_id),
             client_id=command.client_id,
             supplier_id=command.supplier_id,
             profile_id=command.profile_id,
         )
         try:
-            return self._profile_repo.activate_version(
+            validate_extraction_configuration_for_code_scan(profile.configuration)
+            from src.application.services.label_validation.profile_example_validation import (
+                validate_profile_examples_for_activation,
+            )
+            from src.domain.label_profiles.kinds import LabelKind as _LabelKind
+
+            kind = profile.label_kind or _LabelKind.ITEM
+            validate_profile_examples_for_activation(
+                profile.configuration, label_kind=kind
+            )
+        except LabelProfileConfigurationError as exc:
+            raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
+        except ExtractionProfileConfigurationError as exc:
+            raise SupplierExtractionProfileInvalidConfigurationError(exc.message) from exc
+        if command.effective_source is not None:
+            if self._clock is None:
+                raise SupplierExtractionProfileActivationFailedError(
+                    "effective_source wiring requires clock"
+                )
+            from src.application.services.supplier_extraction_profile_activation import (
+                activate_profile_with_effective_source,
+            )
+
+            return activate_profile_with_effective_source(
+                profile_repo=self._profile_repo,
+                label_profile_repo=self._label_profile_repo,
+                clock=self._clock,
+                sql_client=self._sql_client,
+                client_id=command.client_id,
+                supplier_id=command.supplier_id,
+                profile_id=command.profile_id,
+                activated_by=command.activated_by,
+                expected_row_version=command.expected_row_version,
+                effective_source=command.effective_source,
+            )
+        try:
+            activated = self._profile_repo.activate_version(
                 client_id=command.client_id,
                 supplier_id=command.supplier_id,
                 profile_id=command.profile_id,
@@ -393,6 +482,7 @@ class ActivateSupplierExtractionProfileVersionUseCase:
             raise SupplierExtractionProfileNotFoundError(
                 f"Supplier extraction profile not found: {command.profile_id}"
             ) from exc
+        return activated
 
 
 class CloneSupplierExtractionProfileUseCase:
@@ -434,6 +524,7 @@ class CloneSupplierExtractionProfileUseCase:
                 visual_notes=source.visual_notes,
                 created_by=(command.created_by or "").strip() or None,
                 created_at=now,
+                label_kind=source.label_kind,
             )
         except SupplierExtractionProfileVersionConflictError:
             raise

@@ -138,22 +138,18 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
     } as CapturePhotoRow;
   }
 
-  it('runs local CODE_SCAN before building export rows', async () => {
+  it('runs local CODE_SCAN with session context before building export rows', async () => {
     const execute = jest.fn(async () => 'RESOLVED' as const);
     const drafts: unknown[] = [];
+    const sess = session();
     const svc = new LocalCsvExportService({
       captureRepo: {
-        getSession: jest.fn(async () => session()),
+        getSession: jest.fn(async () => sess),
         listPhotos: jest.fn(async () => [photo()]),
         listFreezePhotos: jest.fn(async () => []),
       } as never,
       draftRepo: {
-        listForSession: jest.fn(async () => {
-          if (drafts.length === 0) {
-            return [];
-          }
-          return drafts;
-        }),
+        listForSession: jest.fn(async () => drafts as never),
       } as never,
       confirmedRepo: {
         listForSession: jest.fn(async () => []),
@@ -209,8 +205,54 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
     });
 
     const result = await svc.exportSession('session-1');
-    expect(execute).toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inventoryId: 'inv-1',
+        aisleId: 'aisle-1',
+        recognitionContext: 'OFFLINE',
+        processingMode: 'CODE_SCAN',
+      }),
+    );
     expect(result.rowCount).toBe(1);
     expect(result.zipUri).toContain('.zip');
+  });
+
+  it('skips rescan when draft is already export-ready', async () => {
+    const execute = jest.fn(async () => 'RESOLVED' as const);
+    const readyDraft = {
+      id: 'd-ready',
+      capture_photo_id: 'session-1:1',
+      capture_session_id: 'session-1',
+      client_file_id: 'cf-1',
+      status: 'RESOLVED',
+      internal_code: 'SKU-READY',
+      product_results_json: JSON.stringify([
+        { labelId: 'L1', internalCode: 'SKU-READY', quantity: 3 },
+      ]),
+      recognition_profile_snapshot_json: null,
+      position_detected: 0,
+      error_code: null,
+    };
+    const svc = new LocalCsvExportService({
+      captureRepo: {
+        getSession: jest.fn(async () => session()),
+        listPhotos: jest.fn(async () => [photo()]),
+        listFreezePhotos: jest.fn(async () => []),
+      } as never,
+      draftRepo: {
+        listForSession: jest.fn(async () => [readyDraft]),
+      } as never,
+      confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
+      exportRepo: {
+        findByFingerprint: jest.fn(async () => null),
+        insert: jest.fn(async () => undefined),
+      } as never,
+      deviceId: 'dev-1',
+      localCodeScan: { execute } as never,
+      localCodeScanEnabled: true,
+    });
+
+    await svc.exportSession('session-1');
+    expect(execute).not.toHaveBeenCalled();
   });
 });

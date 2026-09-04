@@ -11,6 +11,7 @@ import {
   Button,
   Divider,
   FormControl,
+  IconButton,
   InputLabel,
   MenuItem,
   Paper,
@@ -18,8 +19,10 @@ import {
   Stack,
   Tab,
   Tabs,
+  Tooltip,
   Typography,
 } from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import type { ExecutionLogEvent, JobSummary } from '../api/types';
 import { ApiError } from '../api/types';
 import i18n from '../i18n';
@@ -134,8 +137,9 @@ function jobOptionLabel(job: JobSummary): string {
 
 function jobMetadataRows(
   job: JobSummary | null | undefined,
-  executionLogEvents?: ExecutionLogEvent[] | null
-): Array<{ label: string; value: string }> {
+  executionLogEvents: ExecutionLogEvent[] | null | undefined,
+  ids: { inventoryId: string; aisleId: string },
+): Array<{ label: string; value: string; copyKey?: 'job' | 'aisle' | 'inventory' | 'execution' }> {
   if (!job) return [];
   const displayFinished = resolveDisplayFinishedAt(job, executionLogEvents);
   const dash = i18n.t('common.em_dash');
@@ -158,6 +162,26 @@ function jobMetadataRows(
       Boolean(job.global_fallback?.persistence_status),
   });
   return [
+    {
+      label: i18n.t('common.job_id', { defaultValue: 'Job' }),
+      value: job.id,
+      copyKey: 'job',
+    },
+    {
+      label: i18n.t('common.aisle'),
+      value: ids.aisleId || dash,
+      copyKey: ids.aisleId ? 'aisle' : undefined,
+    },
+    {
+      label: i18n.t('common.inventory'),
+      value: ids.inventoryId || dash,
+      copyKey: ids.inventoryId ? 'inventory' : undefined,
+    },
+    {
+      label: i18n.t('common.execution', { defaultValue: 'Execution' }),
+      value: job.execution_id || dash,
+      copyKey: job.execution_id ? 'execution' : undefined,
+    },
     { label: i18n.t('jobs.obs_started'), value: formatOptionalDate(job.started_at) },
     { label: i18n.t('jobs.obs_finished'), value: formatOptionalDate(displayFinished) },
     { label: i18n.t('jobs.obs_last_heartbeat'), value: formatOptionalDate(job.last_heartbeat_at) },
@@ -307,7 +331,6 @@ function jobMetadataRows(
       : []),
     { label: i18n.t('jobs.obs_current_step'), value: job.current_substep || dash },
     { label: i18n.t('jobs.obs_step_started'), value: formatOptionalDate(job.current_step_started_at) },
-    { label: i18n.t('common.execution_id'), value: job.execution_id || dash },
     ...(presentation.showFallbackConfiguredRows
       ? [
           {
@@ -683,6 +706,17 @@ export default function AisleObservabilityWorkspace({
     }
   };
 
+  const copyIdentityId = async (text: string) => {
+    const value = String(text || '').trim();
+    if (!value || value === t('common.em_dash')) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      showSnackbar(t('admin_ai_config.copied', { defaultValue: 'Copied' }), 'success');
+    } catch {
+      showSnackbar(t('admin_ai_config.copy_failed', { defaultValue: 'Copy failed' }), 'error');
+    }
+  };
+
   const downloadPromptTxt = () => {
     const text = lastProviderRequest?.request.prompt_text;
     if (!text) return;
@@ -902,18 +936,55 @@ export default function AisleObservabilityWorkspace({
                   />
                 ) : null}
                 <Divider />
-                <Box sx={{ display: 'grid', gap: 0.75 }}>
-                  {jobMetadataRows(selectedJob, executionEventsForFinished).map((item) => (
+                <Box sx={{ display: 'grid', gap: 0.75 }} data-testid="obs-job-identity-ids">
+                  {jobMetadataRows(selectedJob, executionEventsForFinished, {
+                    inventoryId,
+                    aisleId,
+                  }).map((item) => (
                     <Box
                       key={item.label}
-                      sx={{ display: 'grid', gridTemplateColumns: 'minmax(100px, 120px) 1fr', gap: 0.5 }}
+                      sx={{ display: 'grid', gridTemplateColumns: 'minmax(100px, 120px) 1fr auto', gap: 0.5, alignItems: 'center' }}
                     >
                       <Typography variant="caption" color="text.secondary">
                         {item.label}
                       </Typography>
-                      <Typography variant="caption" sx={{ wordBreak: 'break-word' }}>
+                      <Typography
+                        variant="caption"
+                        sx={{ wordBreak: 'break-word', fontFamily: item.copyKey ? 'monospace' : undefined }}
+                      >
                         {item.value}
                       </Typography>
+                      {item.copyKey ? (
+                        <Tooltip
+                          title={
+                            item.copyKey === 'job'
+                              ? t('common.copy_job_id')
+                              : item.copyKey === 'aisle'
+                                ? t('common.copy_aisle_id')
+                                : item.copyKey === 'inventory'
+                                  ? t('common.copy_inventory_id')
+                                  : t('common.copy_execution_id')
+                          }
+                        >
+                          <IconButton
+                            size="small"
+                            aria-label={
+                              item.copyKey === 'job'
+                                ? t('common.copy_job_id')
+                                : item.copyKey === 'aisle'
+                                  ? t('common.copy_aisle_id')
+                                  : item.copyKey === 'inventory'
+                                    ? t('common.copy_inventory_id')
+                                    : t('common.copy_execution_id')
+                            }
+                            onClick={() => void copyIdentityId(item.value)}
+                          >
+                            <ContentCopyIcon sx={{ fontSize: 14 }} />
+                          </IconButton>
+                        </Tooltip>
+                      ) : (
+                        <span />
+                      )}
                     </Box>
                   ))}
                 </Box>

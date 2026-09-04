@@ -1,0 +1,198 @@
+# pruebas b — pre-implementation forensic diagnosis
+
+Date: 2026-09-01
+
+## ARCHITECTURE_RECONSTRUCTION
+
+The mobile path is `LocalCodeScanStrategy` → `runProfileAwareLocalScan` →
+`LocalLabelProfileResolver` → `OfflineRecognitionConfigRepository` →
+`validateSupplierPayloadOffline` → semantic consolidation →
+`LocalDetectionDraftRepository` → `buildLocalCsvRows` →
+`LocalCsvExportService`/`assertLocalCsvRowsExportReady`.
+
+Recognition bundles are produced by backend
+`GET /api/v3/inventories/{inventory_id}/recognition-config`, backed by
+`GetInventoryRecognitionConfigUseCase` and the backend label-profile resolver.
+Mobile `OfflineRecognitionSyncService` validates and atomically replaces the
+aisle mappings, supplier base wiring, profiles, and independent recognition
+sync metadata.
+
+Backend Supplier validation uses the active/exact extraction-profile
+repositories, `StructuredPayloadExtractor`, and `LabelValidationService`.
+Historical legacy CSV import revalidation is handled by
+`ExactExtractionProfileVersionService` and
+`SupplierLocalCsvRowRevalidator`; it is downstream of this failure.
+
+## CURRENT_CODE_PATH
+
+`LocalLabelProfileResolver.buildContext` first reads
+`offline_aisle_recognition_config`. If no row exists, it only consults the
+catalog aisle association when `local_aisles.origin = LOCAL`. A newly created
+online/REMOTE aisle that was not present in the preceding recognition bundle
+therefore defaults to DINAMIC, even when the aisle was created with a Supplier.
+`LocalCatalogRepository.replaceCatalogSnapshot` also writes remote aisle rows
+with `client_supplier_id = NULL` and does not update that column on conflict.
+
+The resulting segmented raw code is passed to the legacy Dinamic consolidator,
+which returns `MISSING_QUANTITY`. `draftStatusFromConsolidation` currently maps
+that enum to `RESOLVED` without checking for any product or position semantic
+result.
+
+## DEVICE_AISLE
+
+Read-only ADB copy: `/private/tmp/dinamic_mobile_device.db` plus WAL/SHM.
+`PRAGMA quick_check` returned `ok`; schema migrations are applied through v32.
+No device file was modified.
+
+Current literal row for aisle `b02b75b0-f153-4072-95fb-c78f0f94be43`:
+
+| field | value |
+|---|---|
+| inventory_id | `eb6f750e-ed12-4c71-b9b2-56a1301e08a8` |
+| client_supplier_id | `NULL` |
+| origin | `REMOTE` |
+| sync_status | `REMOTE_SYNCED` |
+| code | `P6` |
+
+This disproves the reproduction assumption that the persisted aisle is
+`LOCAL/LOCAL_ONLY`. The device truth is a remote aisle whose local catalog
+supplier association is missing.
+
+## DEVICE_SUPPLIER_WIRING
+
+The later-synced base row is present for inventory `eb6f750e-…` and Supplier
+`c314c8c3-…`: ITEM=`SUPPLIER`, POSITION=`SUPPLIER`, synced at
+`2026-09-01T17:56:18.965Z`.
+
+The later aisle recognition row also correctly associates this aisle with
+`c314c8c3-…` and resolves both effective sources to `SUPPLIER`. It postdates
+the failed scans and demonstrates that backend recognition configuration is
+correct once the new aisle enters a later bundle.
+
+## DEVICE_PROFILES
+
+Literal SQLite rows:
+
+| kind | profile_id | version | structure | delimiter | segments | source |
+|---|---|---:|---|---|---:|---|
+| ITEM | `99563751-dfb4-438e-a666-f0b539a5c6a5` | 10 | SEGMENTED | `|` | 3 | SUPPLIER |
+| POSITION | `602caad9-ab2d-4e89-8f00-57951b83c05f` | 3 | SEGMENTED | `|` | 4 | SUPPLIER |
+
+Their mappings and prefixes are the expected `label_id/sku/quantity`, prefix
+`LPNA`, and `position_id/pallet/side/level`, prefix `A04`.
+
+## DEVICE_SYNC_META
+
+Current bundle revision:
+`411a4d7a85c76bbfbeb386ecf3e0c1153b8af98628c4ca159ba1b5721479bfb4`,
+generated `2026-09-01T17:56:18.771896Z`, synced
+`2026-09-01T17:56:18.965Z`.
+
+The failed drafts were detected at `15:48:55Z` and `15:48:56Z`, after an
+earlier recognition sync at `15:48:23Z` but after the aisle was created at
+`15:48:36Z`. Thus that bundle could not contain the newly created remote aisle
+mapping. This is the concrete race exposed by the reproduction.
+
+## BACKEND_RECOGNITION_CONFIG
+
+Read-only live SQL verification passed:
+
+- ClientSupplier ITEM wiring: SUPPLIER; active profile v10.
+- ClientSupplier POSITION wiring: SUPPLIER; active profile v3.
+- backend golden ITEM validation: VALID, `LPNA000184 / SKU773421 / 24`.
+- backend golden POSITION validation: VALID, `A04-R-02 / 04 / RIGHT / 02`,
+  quantity null.
+
+The device's later bundle contains the same profile IDs, versions,
+configurations, and base wiring.
+
+## BACKEND_VS_DEVICE_MATRIX
+
+| Field | Backend | Device current | Match |
+|---|---|---|---|
+| client_supplier | `c314c8c3-…` | base/aisle recognition row `c314c8c3-…`; catalog aisle `NULL` | **FAIL (catalog association)** |
+| item_source | SUPPLIER | SUPPLIER | YES |
+| position_source | SUPPLIER | SUPPLIER | YES |
+| item_profile_id | `99563751-…` | `99563751-…` | YES |
+| item_version | 10 | 10 | YES |
+| position_profile_id | `602caad9-…` | `602caad9-…` | YES |
+| position_version | 3 | 3 | YES |
+| bundle_revision | generated by backend | `411a4d7a…` | YES |
+
+## RESOLVER_RESULT
+
+The literal capture snapshots are the production resolver result at failure
+time. For both photos:
+
+- `client_supplier_id = null`
+- ITEM `profile_source = DINAMIC`, profile/version null, missing=false
+- POSITION `profile_source = DINAMIC`, profile/version null, missing=false
+
+The current later aisle-config row resolves SUPPLIER v10/v3, proving profiles
+and validator configuration are not the first bad stage.
+
+## VALIDATOR_RESULT
+
+Mobile tests already exercise the same profile-driven validator. Direct live
+backend validation with the exact active configurations returned VALID for
+both golden payloads. At failure time mobile Supplier validation was skipped,
+not rejected, because the resolver selected DINAMIC.
+
+## DRAFTS
+
+Literal device rows:
+
+| photo suffix | status | internal_code | quantity_status | position_detected | product_results_json | snapshot |
+|---|---|---|---|---:|---|---|
+| `1000329819` | RESOLVED | raw POSITION payload | MISSING | 0 | NULL | supplier null; both DINAMIC |
+| `1000329820` | RESOLVED | raw ITEM payload | MISSING | 0 | NULL | supplier null; both DINAMIC |
+
+Both have `error_code = NULL`, no `label_id`, no position snapshot, and no
+exportable semantic data. These are misleading RESOLVED shells and project to
+two `LOCAL_PENDING` CSV rows.
+
+## FIRST_BAD_STAGE
+
+The first bad stage is the aisle-to-Supplier context supplied to
+`LocalLabelProfileResolver`: the fresh remote aisle is absent from the older
+recognition bundle and its catalog row does not retain the Supplier association.
+The resolver therefore selects DINAMIC before Supplier validation.
+
+## ROOT_CAUSE
+
+`CATALOG_AISLE_CLIENT_SUPPLIER_DROPPED`
+
+This precisely names the demonstrated materialization failure: the remote
+catalog aisle's `client_supplier_id` was discarded while writing SQLite. It is not a
+backend wiring, profile, validator, decoder, persistence, or export-mapper
+failure. The fix must preserve the association in the local catalog and allow
+the resolver to use Supplier base wiring while the aisle-specific bundle row
+is not yet available.
+
+## FILES_TO_CHANGE
+
+- `mobile/src/database/repositories/localCatalogRepository.ts`
+- `mobile/src/features/offlineRecognition/localLabelProfileResolver.ts`
+- `mobile/src/features/localCodeScan/localCodeScanStrategy.ts`
+- `mobile/src/features/localCsv/localCsvExportPreflight.ts`
+- focused mobile tests for catalog persistence, resolver race, status semantics,
+  and two-photo export
+- required validation/audit artifacts
+
+## TESTS_TO_ADD
+
+- remote catalog snapshot preserves `client_supplier_id`.
+- newly created remote aisle absent from recognition aisle mappings resolves
+  from explicit catalog Supplier + supplier base sources.
+- LOCAL_ONLY precedence/mixed/missing-profile cases remain unchanged.
+- `MISSING_QUANTITY` with no products and no position is not RESOLVED.
+- golden ITEM/POSITION drafts produce `LOCAL_CODE_SCAN` and
+  `LOCAL_POSITION_LABEL`, with zero `LOCAL_PENDING` rows.
+- preflight reports Supplier-recognition-not-ready from explicit aisle context.
+
+## MIGRATION_REQUIRED
+
+YES. The data columns already exist in v31/v32, but v33 adds a catalog
+projection version initialized to 0 so databases materialized by the defective
+code rematerialize once from the authoritative remote catalog even when the
+catalog revision is unchanged.

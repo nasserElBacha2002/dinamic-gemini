@@ -76,13 +76,13 @@ class AisleJobLaunchService:
         provider_name: str,
         model_name: str | None,
         prompt_key: str,
-        identification_mode: AisleIdentificationMode = AisleIdentificationMode.INTERNAL_OCR,
+        identification_mode: AisleIdentificationMode = AisleIdentificationMode.CODE_SCAN,
         identification_mode_source: AisleIdentificationModeSource = (
             AisleIdentificationModeSource.SYSTEM_DEFAULT
         ),
         configuration_snapshot_version: int = CONFIGURATION_SNAPSHOT_VERSION,
         execution_strategy: AisleIdentificationExecutionStrategy = (
-            AisleIdentificationExecutionStrategy.INTERNAL_OCR
+            AisleIdentificationExecutionStrategy.CODE_SCAN
         ),
         engine_params_json: dict | None = None,
     ) -> Job:
@@ -151,13 +151,13 @@ class AisleJobLaunchService:
         provider_name: str,
         model_name: str | None,
         prompt_key: str,
-        identification_mode: AisleIdentificationMode = AisleIdentificationMode.INTERNAL_OCR,
+        identification_mode: AisleIdentificationMode = AisleIdentificationMode.CODE_SCAN,
         identification_mode_source: AisleIdentificationModeSource = (
             AisleIdentificationModeSource.SYSTEM_DEFAULT
         ),
         configuration_snapshot_version: int = CONFIGURATION_SNAPSHOT_VERSION,
         execution_strategy: AisleIdentificationExecutionStrategy = (
-            AisleIdentificationExecutionStrategy.INTERNAL_OCR
+            AisleIdentificationExecutionStrategy.CODE_SCAN
         ),
         engine_params_json: dict | None = None,
     ) -> tuple[Job, bool]:
@@ -333,13 +333,13 @@ class AisleJobLaunchService:
         provider_name: str,
         model_name: str | None,
         prompt_key: str,
-        identification_mode: AisleIdentificationMode = AisleIdentificationMode.INTERNAL_OCR,
+        identification_mode: AisleIdentificationMode = AisleIdentificationMode.CODE_SCAN,
         identification_mode_source: AisleIdentificationModeSource = (
             AisleIdentificationModeSource.SYSTEM_DEFAULT
         ),
         configuration_snapshot_version: int = CONFIGURATION_SNAPSHOT_VERSION,
         execution_strategy: AisleIdentificationExecutionStrategy = (
-            AisleIdentificationExecutionStrategy.INTERNAL_OCR
+            AisleIdentificationExecutionStrategy.CODE_SCAN
         ),
         engine_params_json: dict | None = None,
     ) -> Job:

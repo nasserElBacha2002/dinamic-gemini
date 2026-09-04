@@ -814,6 +814,16 @@ class ArtifactStorageSettings(BaseModel):
             "Env: ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED."
         ),
     )
+    slow_storage_fetch_warning_ms: int = Field(
+        default_factory=lambda: int(os.getenv("SLOW_STORAGE_FETCH_WARNING_MS", "10000")),
+        ge=1,
+        le=600_000,
+        description=(
+            "Observability-only threshold (ms). When a storage get_object exceeds this, "
+            "emit asset.storage_fetch_slow warning + metric. Does NOT cancel jobs or "
+            "affect CODE_SCAN budgets. Env: SLOW_STORAGE_FETCH_WARNING_MS."
+        ),
+    )
     artifact_store_max_in_memory_get_bytes: int = Field(
         default_factory=lambda: int(
             os.getenv("ARTIFACT_STORE_MAX_IN_MEMORY_GET_BYTES", str(8 * 1024 * 1024))
@@ -1365,9 +1375,11 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=1,
         le=300,
         description=(
-            "Phase 3: wall-clock budget (seconds) checked BETWEEN scan variants for one image. "
-            "This does NOT interrupt a blocked native pyzbar decode already in progress. Prefer "
-            "this over the deprecated CODE_SCAN_TIMEOUT_SECONDS. "
+            "Budget (seconds) for image preparation and barcode decode variants AFTER "
+            "source bytes are loaded. Checked cooperatively between prepare/variant steps; "
+            "does NOT interrupt a blocked native pyzbar decode already in progress. Does NOT "
+            "cover storage/source load time. Prefer this over deprecated "
+            "CODE_SCAN_TIMEOUT_SECONDS. "
             "Env: CODE_SCAN_VARIANTS_BUDGET_SECONDS (alias: CODE_SCAN_TIMEOUT_SECONDS)."
         ),
     )
@@ -1611,9 +1623,22 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5: when true, CODE_SCAN/INTERNAL_OCR jobs may run external fallback "
-            "after the internal pass (mode controlled by EXTERNAL_FALLBACK_MODE). "
-            "Default false. Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
+            "When true, CODE_SCAN jobs may run Vision (EXTERNAL_PROVIDER) after an "
+            "unresolved internal pass (mode: EXTERNAL_FALLBACK_MODE). "
+            "For CODE_SCAN, Vision also enables when CODE_SCAN_VISION_FALLBACK_ENABLED "
+            "is true (default) and provider+model are set. Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
+        ),
+    )
+    code_scan_vision_fallback_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_VISION_FALLBACK_ENABLED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true (default), CODE_SCAN jobs auto-enable Vision fallback if "
+            "EXTERNAL_FALLBACK_PROVIDER and EXTERNAL_FALLBACK_MODEL are configured. "
+            "Set false to force CODE_SCAN-only (no Vision) unless "
+            "EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true. Env: CODE_SCAN_VISION_FALLBACK_ENABLED."
         ),
     )
     external_fallback_mode: str = Field(

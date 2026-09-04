@@ -15,6 +15,12 @@ import {
 } from '../../core/positionLabelPayload';
 import { parseStoredProductResults } from '../../core/storedProductResults';
 import { parseStoredProductRejections } from '../../core/productLabelRejection';
+import {
+  buildSupplierImportNotes,
+  isLikelyRawSegmentedPayload,
+  positionFromRecognitionSnapshot,
+  productsFromRecognitionSnapshot,
+} from './supplierExportSemantics';
 
 export interface LocalCsvExportInput {
   readonly session: CaptureSessionRow;
@@ -116,7 +122,7 @@ function positionDetectedOnDraft(draft: LocalDetectionDraftRow | undefined): boo
 
 type EmitProduct = {
   readonly labelId: string;
-  readonly internalCode: string;
+  readonly internalCode: string | null;
   readonly quantity: number | null;
 };
 
@@ -133,6 +139,13 @@ function productsForPhoto(
     }));
   }
 
+  const fromSnapshot = productsFromRecognitionSnapshot(
+    draft?.recognition_profile_snapshot_json ?? confirmed?.recognition_profile_snapshot_json,
+  );
+  if (fromSnapshot.length > 0) {
+    return fromSnapshot;
+  }
+
   const errorCode = (draft?.error_code || '').toUpperCase();
   const rejections = parseStoredProductRejections(draft?.rejections_json);
   // D1 MODE fail-closed: never revive scalar/legacy product rows.
@@ -147,6 +160,10 @@ function productsForPhoto(
   // Confirmed override (operator) or authentic legacy single draft without product_results_json.
   const code = confirmed?.confirmed_internal_code ?? draft?.internal_code;
   if (code && String(code).trim() && draft?.error_code !== 'POSITION_LABEL_DETECTED') {
+    const trimmed = String(code).trim();
+    if (isLikelyRawSegmentedPayload(trimmed)) {
+      return [];
+    }
     const labelId =
       (confirmed as { label_id?: string | null } | undefined)?.label_id ??
       draft?.label_id ??
@@ -172,8 +189,10 @@ export function assertLocalCsvRowsExportReady(rows: readonly LocalCsvRow[]): voi
   }
   const pending = rows.filter((r) => String(r.source).toUpperCase() === 'LOCAL_PENDING');
   if (pending.length > 0) {
+    const photoIds = pending.map((r) => r.capture_photo_id).filter(Boolean).join(',');
     throw new Error(
-      `PACKAGE_EXPORT_UNRESOLVED: ${pending.length} foto(s) sin detectar/confirmar (LOCAL_PENDING). Completá el escaneo local o la revisión antes de exportar el ZIP.`,
+      `PACKAGE_EXPORT_UNRESOLVED: ${pending.length} foto(s) sin detectar/confirmar (LOCAL_PENDING). Completá el escaneo local o la revisión antes de exportar el ZIP.` +
+        (photoIds ? ` capture_photo_ids=${photoIds}` : ''),
     );
   }
   const products = rows.filter((r) => {
@@ -224,6 +243,9 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
     const snapshot = parsePositionSnapshotJson(
       snapshotJsonFromDraftOrConfirmed(draft, confirmed),
     );
+    const supplierPosition = positionFromRecognitionSnapshot(
+      draft?.recognition_profile_snapshot_json ?? confirmed?.recognition_profile_snapshot_json,
+    );
 
     let position: PositionFields;
     if (snapshot) {
@@ -231,6 +253,18 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
         snapshot,
         detectedHere ? 'LABEL_DETECTED' : 'FROM_SNAPSHOT',
       );
+    } else if (supplierPosition) {
+      position = {
+        positionCode: supplierPosition.positionCode,
+        positionStatus: detectedHere ? 'LABEL_DETECTED' : 'FROM_SUPPLIER_SNAPSHOT',
+        pallet: supplierPosition.pallet,
+        side: supplierPosition.side,
+        level: supplierPosition.level,
+        markerIndex: '',
+        markerTotal: '',
+        positionLabelId: supplierPosition.positionLabelId,
+        positionPayloadRaw: supplierPosition.positionPayloadRaw,
+      };
     } else {
       const labelPositionCode =
         detectedHere && draft?.internal_code ? String(draft.internal_code).trim() : '';
@@ -275,6 +309,35 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
         draft.status === 'FAILED' ||
         draft.status === 'INVALID');
 
+    let products = productsForPhoto(draft, confirmed);
+    products = products.filter((p) => {
+      const lid = (p.labelId || '').trim();
+      if (!lid) return true;
+      if (emittedLabelIds.has(lid)) return false;
+      emittedLabelIds.add(lid);
+      return true;
+    });
+
+    const storedProducts = parseStoredProductResults(draft?.product_results_json);
+    const rawPayloadForNotes =
+      supplierPosition?.positionPayloadRaw ??
+      storedProducts.find((p) => p.rawPayload?.trim())?.rawPayload ??
+      (draft?.internal_code && isLikelyRawSegmentedPayload(String(draft.internal_code).trim())
+        ? String(draft.internal_code).trim()
+        : null);
+
+    const labelKind: 'ITEM' | 'POSITION' | null =
+      products.length > 0 ? 'ITEM' : supplierPosition ? 'POSITION' : null;
+
+    const importNotes =
+      labelKind != null
+        ? buildSupplierImportNotes({
+            snapshotJson: draft?.recognition_profile_snapshot_json,
+            rawPayload: rawPayloadForNotes,
+            labelKind,
+          })
+        : null;
+
     const base = {
       schema_version: LOCAL_CSV_SCHEMA_VERSION,
       export_id: exportId,
@@ -310,29 +373,19 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
       requires_review: requiresReview ? 'true' : 'false',
       confirmed_manually: confirmed ? 'true' : 'false',
       error_code: cell(draft?.error_code ?? photo.stability_error),
-      notes: '',
+      notes: cell(importNotes ?? ''),
       freeze_id: cell(input.freezeId ?? input.session.active_freeze_id),
       freeze_generation: cell(input.freezeGeneration ?? input.session.capture_freeze_generation),
     };
 
-    let products = productsForPhoto(draft, confirmed);
-    // Cross-photo label_id dedupe at export (session count-once).
-    products = products.filter((p) => {
-      const lid = (p.labelId || '').trim();
-      if (!lid) return true;
-      if (emittedLabelIds.has(lid)) return false;
-      emittedLabelIds.add(lid);
-      return true;
-    });
-
     if (products.length === 0) {
-      const isPositionOnly = detectedHere;
+      const isPositionOnly = detectedHere || supplierPosition != null;
       rows.push({
         ...base,
         internal_code: '',
         label_id: '',
         quantity: '',
-        quantity_status: isPositionOnly ? 'MISSING' : base.quantity_status,
+        quantity_status: isPositionOnly ? 'NOT_APPLICABLE' : base.quantity_status,
         source: confirmed
           ? confirmed.source
           : isPositionOnly
@@ -345,7 +398,7 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
     for (const product of products) {
       rows.push({
         ...base,
-        internal_code: product.internalCode,
+        internal_code: product.internalCode ?? '',
         label_id: cell(product.labelId),
         quantity: cell(product.quantity),
         quantity_status:

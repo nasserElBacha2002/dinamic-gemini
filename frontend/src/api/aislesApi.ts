@@ -92,6 +92,7 @@ export async function startAisleProcessing(
     modelName?: string | null;
     promptKey?: string | null;
     identificationMode?: string | null;
+    processingMode?: string | null;
   }
 ): Promise<ProcessAisleResponse> {
   const body: Record<string, string> = {};
@@ -110,6 +111,10 @@ export async function startAisleProcessing(
   const idMode = options?.identificationMode;
   if (idMode != null && String(idMode).trim() !== '') {
     body.identification_mode = String(idMode).trim().toUpperCase();
+  }
+  const procMode = options?.processingMode;
+  if (procMode != null && String(procMode).trim() !== '') {
+    body.processing_mode = String(procMode).trim().toUpperCase();
   }
   return apiRequestJson<ProcessAisleResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/process`,

@@ -11,6 +11,7 @@ import type {
   AisleIdentificationMode,
   AisleIdentificationModeSource,
   AisleIdentificationExecutionStrategy,
+  AisleProcessingMode,
   AisleStatus,
   JobStatus,
   FinalizationStatus,
@@ -70,6 +71,7 @@ export interface SupplierReferenceImage {
   file_size_bytes?: number | null;
   label?: string | null;
   description?: string | null;
+  label_kind?: 'ITEM' | 'POSITION' | null;
   created_at: string;
   updated_at: string;
 }
@@ -259,6 +261,7 @@ export interface ProcessAisleResponse {
   identification_mode_source?: AisleIdentificationModeSource | string | null;
   execution_strategy?: AisleIdentificationExecutionStrategy | string | null;
   configuration_snapshot_version?: number | null;
+  processing_mode?: AisleProcessingMode | string | null;
 }
 
 /** GET /api/v3/inventories/processing-provider-options (Phase 5). */

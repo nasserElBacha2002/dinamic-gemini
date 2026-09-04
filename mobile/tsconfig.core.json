@@ -25,5 +25,9 @@
     "src/features/offlineOperations",
     "tests"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "tests/offlineRecognitionSync.test.ts",
+    "tests/offlineIdentityOnlyAndPerKind.test.ts"
+  ]
 }

@@ -111,14 +111,23 @@ def identification_execution_snapshot_dict(
     external_fallback: dict | None = None,
     supplier_extraction_profile: dict | None = None,
     supplier_prompt: dict | None = None,
+    label_profiles: dict | None = None,
     client_extraction_profiles_enabled: bool = False,
     profile_aware_validation_enabled: bool = False,
     reference_template_annotations_enabled: bool = False,
     profile_snapshotted: bool = False,
     profile_validation_executed: bool = False,
+    processing_mode: str | None = None,
+    supplier_wiring_warnings: list[str] | None = None,
 ) -> dict:
     """Build the immutable identification-execution block stored on the job."""
-    feature_flags: dict[str, bool | str] = {
+    from src.domain.aisle_identification.processing_mode import (
+        DEFAULT_AISLE_PROCESSING_MODE,
+        parse_aisle_processing_mode,
+    )
+
+    resolved_processing_mode = parse_aisle_processing_mode(processing_mode).value
+    feature_flags: dict[str, bool | str | list[str]] = {
         "code_scan_processing_enabled": decision.code_scan_processing_enabled,
         "internal_ocr_processing_enabled": decision.internal_ocr_processing_enabled,
         "aisle_identification_pipeline_enabled": decision.pipeline_enabled,
@@ -128,8 +137,9 @@ def identification_execution_snapshot_dict(
             reference_template_annotations_enabled
         ),
         "profile_snapshotted": bool(profile_snapshotted),
-        "profile_validation_executed": bool(profile_validation_executed),
         "supplier_prompt_snapshotted": bool(supplier_prompt),
+        "processing_mode": resolved_processing_mode
+        or DEFAULT_AISLE_PROCESSING_MODE.value,
     }
     if isinstance(external_fallback, dict):
         feature_flags["external_fallback_per_image_enabled"] = bool(
@@ -139,9 +149,12 @@ def identification_execution_snapshot_dict(
             feature_flags["external_fallback_mode"] = str(
                 external_fallback.get("fallback_mode")
             )
+    if supplier_wiring_warnings:
+        feature_flags["supplier_wiring_warnings"] = list(supplier_wiring_warnings)
     return {
         "requested_mode": decision.requested_mode.value,
         "executed_strategy": decision.strategy.value,
+        "processing_mode": resolved_processing_mode,
         "reason": decision.reason,
         "configuration_source": decision.requested_mode.value,
         "feature_flag_state": feature_flags,
@@ -151,4 +164,6 @@ def identification_execution_snapshot_dict(
         "external_fallback": external_fallback,
         "supplier_extraction_profile": supplier_extraction_profile,
         "supplier_prompt": supplier_prompt,
+        "label_profiles": label_profiles,
+        "profile_validation_executed": bool(profile_validation_executed),
     }

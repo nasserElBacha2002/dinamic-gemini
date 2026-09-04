@@ -124,6 +124,14 @@ describe('featureFlags', () => {
     expect(on.mobileLocalResultReview).toBe(true);
   });
 
+  it('defaults mobile server upload on unless explicitly disabled', () => {
+    for (const env of ['development', 'staging', 'production'] as const) {
+      expect(resolveFeatureFlags({}, env).mobileServerUpload).toBe(true);
+    }
+    const off = resolveFeatureFlags({ mobileServerUpload: '0' }, 'production');
+    expect(off.mobileServerUpload).toBe(false);
+  });
+
   it('defaults phase9 offline operations flags off in every environment', () => {
     for (const env of ['development', 'staging', 'production'] as const) {
       const flags = resolveFeatureFlags({}, env);

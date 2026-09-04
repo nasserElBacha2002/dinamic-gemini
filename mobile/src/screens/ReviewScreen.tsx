@@ -15,20 +15,9 @@ export interface ReviewScreenProps {
   services: AppServices;
   snapshot: CaptureSnapshot | null;
   onBack: () => void;
-  /**
-   * Upload photos + local results to the server (no AI reprocess).
-   * Parent runs confirm drafts (if needed) + completeReview + enqueue.
-   */
+  /** Confirms drafts (if needed) and closes the session locally for ZIP export. */
   onConfirm: (sessionId: string) => void;
-  /** @deprecated Prefer onConfirm / ZIP export — kept for tests / legacy wiring */
-  onSaveLocalOnly?: (sessionId: string) => void;
-  /** @deprecated Prefer onConfirm / ZIP export */
-  onSaveLocalWhenConnected?: (sessionId: string) => void;
-  /** @deprecated Prefer onSaveLocalOnly / onSaveLocalWhenConnected */
-  onSaveLocal?: (sessionId: string) => void;
   onError: (message: string | null) => void;
-  /** Optional: open uploads for a locally completed session. */
-  onOpenUploads?: (sessionId: string) => void;
 }
 
 export function ReviewScreen({
@@ -37,15 +26,12 @@ export function ReviewScreen({
   onBack,
   onConfirm,
   onError,
-  onOpenUploads,
 }: ReviewScreenProps) {
   const photos = snapshot?.photos ?? [];
   const counts = countPhotos(photos);
   const canConfirm = counts.waiting === 0 && counts.errors === 0;
   const context = snapshot?.context;
-  const flags = services.config.flags;
-  const localCompletion = flags.localCompletion !== false;
-  const csvExport = flags.mobileCsvExport !== false;
+  const csvExport = services.config.flags.mobileCsvExport !== false;
   const [exportBusy, setExportBusy] = useState(false);
   const [exportHint, setExportHint] = useState<string | null>(null);
 
@@ -59,8 +45,6 @@ export function ReviewScreen({
     csvExportEnabled: csvExport,
     exportInProgress: exportBusy,
   });
-
-  const twoWayHandoff = localCompletion;
 
   return (
     <PhotoWorkList
@@ -78,15 +62,16 @@ export function ReviewScreen({
             {isLocalCompleted ? 'Captura guardada' : 'Revisión'} ·{' '}
             {context?.inventoryName ?? 'Inventario'} / {context?.aisleName ?? 'Pasillo'}
           </Text>
-          {twoWayHandoff && !isLocalCompleted ? (
+          {!isLocalCompleted ? (
             <Text style={styles.notif}>
-              Elegí una opción: subir fotos y resultados locales al servidor (sin reprocesar con
-              IA), o exportar un ZIP para importar después.
+              Revisá las fotos, guardá la captura en el dispositivo y exportá un ZIP (CSV + fotos)
+              para importar después.
             </Text>
           ) : null}
           {isLocalCompleted ? (
             <Text style={styles.notif}>
-              Guardada en el dispositivo. Podés exportar el ZIP o continuar la carga al servidor.
+              Guardada en el dispositivo. Exportá el ZIP cuando quieras compartir o importar los
+              resultados.
             </Text>
           ) : null}
           <Text style={styles.row}>
@@ -106,9 +91,7 @@ export function ReviewScreen({
           ) : null}
           {!isLocalCompleted ? (
             <Button
-              label={
-                twoWayHandoff ? 'Subir fotos y resultados' : 'Confirmar y continuar'
-              }
+              label="Guardar captura"
               disabled={!canConfirm}
               onPress={() => {
                 if (!sessionId) {
@@ -118,8 +101,6 @@ export function ReviewScreen({
                 onConfirm(sessionId);
               }}
             />
-          ) : onOpenUploads && sessionId ? (
-            <Button label="Continuar carga al servidor" onPress={() => onOpenUploads(sessionId)} />
           ) : null}
           {csvExport ? (
             <Button

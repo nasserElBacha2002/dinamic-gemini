@@ -20,6 +20,9 @@ import {
 import { applyPositionScan, getActivePosition, hydratePositionSessionFromDrafts } from './activePositionStore';
 import type { ActivePositionState } from '../../core/positionLabelPayload';
 import { parseDinamicPositionPayload } from '../../core/positionLabelPayload';
+import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
+import { runProfileAwareLocalScan } from './profileAwareLocalScan';
+import { isLikelyRawSegmentedPayload } from '../localCsv/supplierExportSemantics';
 
 /** Must cover native multipass (full + tiles + zoom crops). */
 export const LOCAL_CODE_SCAN_TIMEOUT_MS = 22_000;
@@ -36,11 +39,11 @@ export interface LocalCodeScanStrategyDeps {
   readonly evaluateCapability?: typeof evaluateLocalCodeScanCapability;
   readonly nowMs?: () => number;
   readonly timeoutMs?: number;
-  /** Persist session active position when a position label scan succeeds. */
   readonly onActivePositionChanged?: (
     captureSessionId: string,
     state: ActivePositionState,
   ) => Promise<void>;
+  readonly profileResolver?: LocalLabelProfileResolver | null;
 }
 
 function freezePositionSnapshotJson(captureSessionId: string): string | null {
@@ -57,6 +60,9 @@ export interface LocalCodeScanInput {
   readonly processingMode: PreparationProcessingMode;
   readonly flagEnabled: boolean;
   readonly cancelRequested?: boolean;
+  readonly inventoryId?: string | null;
+  readonly aisleId?: string | null;
+  readonly recognitionContext?: 'ONLINE' | 'OFFLINE';
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -231,10 +237,85 @@ export class LocalCodeScanStrategy {
       });
 
       const candidates = await withTimeout(this.detect(input.preparedUri), this.timeoutMs);
-      const consolidated = consolidateCodeDetections(candidates);
+      const offline = input.recognitionContext === 'OFFLINE';
+      const profileAware = await runProfileAwareLocalScan({
+        candidates,
+        inventoryId: input.inventoryId ?? null,
+        aisleId: input.aisleId ?? null,
+        resolver: this.deps.profileResolver ?? null,
+        offline,
+      });
+      let consolidated = profileAware.consolidation;
+      // Per-kind missing profiles: do not fail the whole scan when only POSITION (or ITEM) is missing.
+      if (profileAware.ambiguous) {
+        await this.deps.drafts.upsertDraft({
+          capturePhotoId: input.capturePhotoId,
+          captureSessionId: input.captureSessionId,
+          clientFileId: input.clientFileId,
+          status: 'AMBIGUOUS',
+          parserVersion: LABEL_PAYLOAD_PARSER_VERSION,
+          detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
+          preparedAssetFingerprint: input.preparedAssetFingerprint,
+          errorCode: 'AMBIGUOUS_LABEL_KIND',
+          candidateCount: candidates.length,
+          scanOwner: LOCAL_SCAN_OWNER,
+          scanGeneration,
+          comparisonStatus: 'PENDING',
+          recognitionProfileSnapshotJson: JSON.stringify(profileAware.recognitionSnapshot),
+          recognitionContext: input.recognitionContext ?? null,
+        });
+        return 'AMBIGUOUS';
+      }
+      // Supplier ITEM identity can resolve when Dinamic consolidator has no D1.
+      if (
+        !consolidated.d1Mode &&
+        profileAware.supplierItem?.status === 'VALID' &&
+        consolidated.productResults.length === 0
+      ) {
+        const labelId = profileAware.supplierItem.labelId || '';
+        const sku = profileAware.supplierItem.sku;
+        const qty = profileAware.supplierItem.quantity;
+        // Never invent internal_code from label_id; identity-only keeps sku/internal_code null.
+        const internalCode = sku && sku.trim() ? sku.trim() : null;
+        consolidated = {
+          ...consolidated,
+          status: qty == null ? 'MISSING_QUANTITY' : 'RESOLVED',
+          internalCode,
+          quantity: qty,
+          productResults: [
+            {
+              labelId: labelId || (internalCode ?? ''),
+              internalCode,
+              quantity: qty,
+              formatVersion: 'SUPPLIER',
+              checksum: '',
+              validationStatus: 'VALID',
+              selectedIndex: 0,
+              duplicateDetectionCount: 1,
+              rawPayload: profileAware.supplierItem.rawPayload,
+              normalizedPayload: profileAware.supplierItem.normalizedPayload,
+            },
+          ],
+        };
+      }
       const parsedError =
         consolidated.parsed?.status === 'INVALID' ? consolidated.parsed.errorCode : null;
-      const status = draftStatusFromConsolidation(consolidated.status, parsedError);
+      let status = draftStatusFromConsolidation(consolidated.status, parsedError);
+      if (
+        status === 'UNRESOLVED' ||
+        status === 'INVALID' ||
+        status === 'DETECTED_UNVERIFIED'
+      ) {
+        if (profileAware.supplierItem?.status === 'VALID') {
+          status = 'RESOLVED';
+        } else if (
+          profileAware.supplierItem == null &&
+          profileAware.supplierPosition == null &&
+          candidates.length > 0
+        ) {
+          status = 'UNRESOLVED';
+        }
+      }
       const processingMs = Math.max(0, Math.round(this.nowMs() - started));
       const selectedRaw =
         consolidated.selectedIndex != null
@@ -248,18 +329,53 @@ export class LocalCodeScanStrategy {
       const activeBefore = getActivePosition(input.captureSessionId);
       let appliedPosition: ActivePositionState | null = null;
       let duplicatePosition = false;
-      const positionRaw =
+      let positionRaw =
         consolidated.positionRawPayload ??
         candidates.find((c) => parseDinamicPositionPayload(c.rawValue) != null)?.rawValue ??
         null;
-      if (positionRaw) {
+      if (!positionRaw && profileAware.supplierPosition?.status === 'VALID') {
+        const posId =
+          profileAware.supplierPosition.positionId ||
+          profileAware.supplierPosition.normalizedPayload ||
+          '';
+        const sideRaw = (profileAware.supplierPosition.side || '').toUpperCase();
+        const side =
+          sideRaw === 'LEFT' || sideRaw === 'RIGHT' ? (sideRaw as 'LEFT' | 'RIGHT') : null;
+        const levelRaw = profileAware.supplierPosition.level;
+        const levelNum =
+          levelRaw != null && levelRaw !== ''
+            ? Number.parseInt(String(levelRaw), 10)
+            : null;
+        positionRaw = profileAware.supplierPosition.rawPayload;
+        appliedPosition = {
+          labelId: posId,
+          positionLabelId: posId,
+          displayName: posId,
+          canonicalKey: posId,
+          pallet: profileAware.supplierPosition.pallet,
+          side,
+          level: Number.isFinite(levelNum as number) ? (levelNum as number) : null,
+          markerIndex: null,
+          markerTotal: null,
+          formattedMarker: null,
+          rawPayload: profileAware.supplierPosition.rawPayload,
+          sourcePayload: profileAware.supplierPosition.rawPayload,
+          validationStatus: 'STRUCTURALLY_VALID_UNVERIFIED',
+          signature: null,
+          keyVersion: null,
+        };
+        if (this.deps.onActivePositionChanged && appliedPosition.labelId) {
+          await this.deps.onActivePositionChanged(input.captureSessionId, appliedPosition);
+        }
+      }
+      if (positionRaw && !appliedPosition) {
         const positionResult = applyPositionScan(input.captureSessionId, positionRaw);
         if (positionResult.kind === 'applied' || positionResult.kind === 'duplicate') {
           appliedPosition = positionResult.state;
           duplicatePosition = positionResult.kind === 'duplicate';
         }
       }
-      if (appliedPosition && !duplicatePosition && this.deps.onActivePositionChanged) {
+      if (appliedPosition && !duplicatePosition && this.deps.onActivePositionChanged && positionRaw) {
         await this.deps.onActivePositionChanged(input.captureSessionId, appliedPosition);
       }
 
@@ -309,6 +425,7 @@ export class LocalCodeScanStrategy {
                 validationStatus: p.validationStatus,
                 formatVersion: p.formatVersion,
                 selectedIndex: p.selectedIndex,
+                ...(p.rawPayload ? { rawPayload: p.rawPayload } : {}),
               })),
             )
           : null;
@@ -316,15 +433,39 @@ export class LocalCodeScanStrategy {
 
       const primary = products[0] ?? null;
       const d1Mode = consolidated.d1Mode;
+      const legacyInternal = consolidated.internalCode;
+      const legacyIsRawSegmented =
+        legacyInternal != null && isLikelyRawSegmentedPayload(legacyInternal);
+      const supplierItemValid = profileAware.supplierItem?.status === 'VALID';
       // In D1 MODE never persist legacy scalar codes (blocks CSV revival).
-      const persistInternalCode = d1Mode
+      let persistInternalCode = d1Mode
         ? primary?.internalCode ?? null
-        : primary?.internalCode ?? consolidated.internalCode;
-      const persistQuantity = d1Mode
-        ? primary?.quantity ?? null
-        : primary?.quantity ?? consolidated.quantity;
+        : supplierItemValid
+          ? profileAware.supplierItem?.sku?.trim() || primary?.internalCode || null
+          : primary?.internalCode ?? null;
+      if (!d1Mode && !supplierItemValid && legacyIsRawSegmented) {
+        persistInternalCode = primary?.internalCode ?? null;
+      } else if (!d1Mode && !supplierItemValid && legacyInternal && !legacyIsRawSegmented) {
+        persistInternalCode = persistInternalCode ?? legacyInternal;
+      }
+      const supplierMissingQty =
+        primary?.formatVersion === 'SUPPLIER' &&
+        profileAware.supplierItem?.quantity == null;
+      const persistQuantity = supplierMissingQty
+        ? null
+        : d1Mode
+          ? primary?.quantity ?? null
+          : primary?.quantity ?? consolidated.quantity;
       const isPositionOnly =
         positionDetected && products.length === 0 && (d1Mode || consolidated.status === 'NO_VALID_CODE');
+      if (
+        status === 'RESOLVED' &&
+        products.length === 0 &&
+        !positionDetected &&
+        !persistInternalCode
+      ) {
+        status = 'UNRESOLVED';
+      }
 
       await this.deps.drafts.upsertDraft({
         capturePhotoId: input.capturePhotoId,
@@ -339,7 +480,7 @@ export class LocalCodeScanStrategy {
         rejectionsJson,
         positionDetected,
         quantityStatus:
-          consolidated.status === 'MISSING_QUANTITY'
+          consolidated.status === 'MISSING_QUANTITY' || supplierMissingQty
             ? 'MISSING'
             : persistQuantity != null
               ? 'PRESENT'
@@ -349,7 +490,9 @@ export class LocalCodeScanStrategy {
         detectedFormat:
           consolidated.parsed?.status === 'VALID' || consolidated.parsed?.status === 'INVALID'
             ? consolidated.parsed.format
-            : null,
+            : primary?.formatVersion === 'SUPPLIER'
+              ? 'SUPPLIER'
+              : null,
         detectedSymbology:
           consolidated.selectedIndex != null
             ? candidates[consolidated.selectedIndex]?.symbology ?? null
@@ -372,13 +515,19 @@ export class LocalCodeScanStrategy {
                       ? 'D1_CANDIDATES_FAILED'
                       : 'NO_VALID_CODE')
                 : status === 'UNRESOLVED'
-                  ? 'NO_DETECTIONS'
+                  ? candidates.length > 0
+                    ? 'NO_VALID_CODE'
+                    : 'NO_DETECTIONS'
                   : null,
         processingMs,
         scanOwner: null,
         scanGeneration,
         comparisonStatus: 'PENDING',
         positionSnapshotJson,
+        recognitionProfileSnapshotJson: profileAware.recognitionSnapshot
+          ? JSON.stringify(profileAware.recognitionSnapshot)
+          : null,
+        recognitionContext: input.recognitionContext ?? null,
       });
 
       const validLabelIds = products.map((p) => p.labelId);

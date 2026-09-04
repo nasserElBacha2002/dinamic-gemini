@@ -12,13 +12,20 @@ import {
   isLegacyIdentificationMode,
   parseLooseBoolean,
   PROCESS_AISLE_IDENTIFICATION_OPTIONS,
+  PROCESS_AISLE_PROCESSING_MODE_OPTIONS,
   strategyUsesExternalLlm,
 } from '../../../src/features/processing/mappers/processingExecutionPresentation';
 
 describe('processingExecutionPresentation', () => {
-  it('excludes legacy modes from new process options', () => {
-    expect(PROCESS_AISLE_IDENTIFICATION_OPTIONS).toEqual(['CODE_SCAN', 'INTERNAL_OCR']);
+  it('excludes legacy and INTERNAL_OCR from new process options', () => {
+    expect(PROCESS_AISLE_IDENTIFICATION_OPTIONS).toEqual(['CODE_SCAN']);
     expect(PROCESS_AISLE_IDENTIFICATION_OPTIONS).not.toContain('LEGACY_LLM');
+    expect(PROCESS_AISLE_IDENTIFICATION_OPTIONS).not.toContain('INTERNAL_OCR');
+    expect(PROCESS_AISLE_PROCESSING_MODE_OPTIONS).toEqual([
+      'AUTO',
+      'CODE_SCAN_ONLY',
+      'VISION_ONLY',
+    ]);
   });
 
   it('detects legacy modes', () => {

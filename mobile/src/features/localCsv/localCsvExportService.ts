@@ -17,7 +17,14 @@ import type { CaptureRepository } from '../../database/repositories/captureRepos
 import type { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import type { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
 import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
-import type { CapturePhotoRow } from '../../database/schema/captureSchema';
+import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
+import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
+import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
+import type { Logger } from '../../core/logging';
+import {
+  normalizePreparationProcessingMode,
+  resolveLocalScanProcessingMode,
+} from '../../core/imagePreparationPolicy';
 import { createId } from '../../shared/createId';
 import {
   hashPreparedFileSha256,
@@ -25,6 +32,8 @@ import {
 } from '../localCodeScan/preparedAssetHash';
 import type { LocalCodeScanStrategy } from '../localCodeScan/localCodeScanStrategy';
 import { buildLocalCsvExport } from './buildLocalCsvExport';
+import { isDraftExportReady } from './supplierExportSemantics';
+import { diagnoseExportBlockers } from './localCsvExportPreflight';
 import { sha256Hex } from './csvFormat';
 import { base64ToUint8Array, uint8ArrayToBase64 } from './binaryCodec';
 import { LOCAL_PACKAGE_KIND, LOCAL_PACKAGE_VERSION } from './localPackageContract';
@@ -57,6 +66,8 @@ export interface LocalCsvExportServiceDeps {
   /** When set, ZIP export runs local CODE_SCAN before building rows (offline path). */
   readonly localCodeScan?: LocalCodeScanStrategy | null;
   readonly localCodeScanEnabled?: boolean;
+  readonly logger?: Logger | null;
+  readonly profileResolver?: LocalLabelProfileResolver | null;
 }
 
 export interface ExportedLocalCsv {
@@ -92,15 +103,26 @@ export class LocalCsvExportService {
    * (or on photo-stable) before asserting export readiness.
    */
   private async ensureLocalCodeScans(
-    sessionId: string,
+    session: CaptureSessionRow,
     photos: readonly CapturePhotoRow[],
+    existingDrafts: readonly LocalDetectionDraftRow[],
   ): Promise<void> {
     const strategy = this.deps.localCodeScan;
     if (!strategy || this.deps.localCodeScanEnabled !== true) {
       return;
     }
+    const draftByPhoto = new Map(existingDrafts.map((d) => [d.capture_photo_id, d]));
+    const sessionMode = normalizePreparationProcessingMode(session.preparation_processing_mode);
+    const processingMode = resolveLocalScanProcessingMode(sessionMode, true);
+    // Export uses persisted local recognition; always OFFLINE resolver semantics.
+    const recognitionContext: 'ONLINE' | 'OFFLINE' = 'OFFLINE';
+
     for (const photo of photos) {
-      if (photo.status !== 'stable') {
+      if (photo.status === 'excluded' || photo.status === 'rejected' || photo.status === 'undecodable') {
+        continue;
+      }
+      const existing = draftByPhoto.get(photo.id);
+      if (isDraftExportReady(existing)) {
         continue;
       }
       const preparedUri = photo.local_transform_uri || photo.uri;
@@ -118,16 +140,27 @@ export class LocalCsvExportService {
       try {
         await strategy.execute({
           capturePhotoId: photo.id,
-          captureSessionId: sessionId,
+          captureSessionId: session.id,
           clientFileId: photo.client_file_id,
           preparedUri,
           preparedAssetFingerprint: fingerprint,
-          processingMode: 'CODE_SCAN',
+          processingMode,
           flagEnabled: true,
           cancelRequested: photo.upload_cancel_requested === 1,
+          inventoryId: session.inventory_id,
+          aisleId: session.aisle_id,
+          recognitionContext,
         });
-      } catch {
-        // Per-photo scan failure must not abort the whole export; readiness assert decides.
+      } catch (error) {
+        this.deps.logger?.warn('local_export_scan_failed', {
+          code: 'LOCAL_EXPORT_SCAN_FAILED',
+          capture_photo_id: photo.id,
+          error_code:
+            error && typeof error === 'object' && 'code' in error
+              ? String((error as { code: unknown }).code)
+              : undefined,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
@@ -145,9 +178,29 @@ export class LocalCsvExportService {
       photos = await this.deps.captureRepo.listFreezePhotos(session.active_freeze_id);
     }
     const eligible = photos.filter((p) => p.status !== 'excluded' && p.status !== 'rejected');
-    await this.ensureLocalCodeScans(sessionId, eligible);
-    const drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => []);
+    let drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => []);
+    await this.ensureLocalCodeScans(session, eligible, drafts);
+    drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => drafts);
     const confirmed = await this.deps.confirmedRepo.listForSession(sessionId).catch(() => []);
+
+    const resolved = await this.deps.profileResolver
+      ?.resolveForAisle(session.inventory_id, session.aisle_id)
+      .catch(() => null);
+    const blocker = diagnoseExportBlockers(
+      eligible,
+      drafts,
+      resolved
+        ? {
+            clientSupplierId:
+              resolved.item.clientSupplierId ?? resolved.position.clientSupplierId ?? null,
+            itemSource: resolved.item.source,
+            positionSource: resolved.position.source,
+          }
+        : null,
+    );
+    if (blocker) {
+      throw new Error(`${blocker.code}: ${blocker.detail}`);
+    }
 
     const built = await buildLocalCsvExport({
       session,
@@ -294,6 +347,21 @@ export class LocalCsvExportService {
       packageChecksumSha256,
       reused: false,
     };
+  }
+
+  /** Run local CODE_SCAN on session photos before aisle/session export (no CSV/ZIP). */
+  async prepareSessionForExport(sessionId: string): Promise<void> {
+    const session = await this.deps.captureRepo.getSession(sessionId);
+    if (!session) {
+      return;
+    }
+    let photos = await this.deps.captureRepo.listPhotos(sessionId);
+    if (session.active_freeze_id) {
+      photos = await this.deps.captureRepo.listFreezePhotos(session.active_freeze_id);
+    }
+    const eligible = photos.filter((p) => p.status !== 'excluded' && p.status !== 'rejected');
+    const drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => []);
+    await this.ensureLocalCodeScans(session, eligible, drafts);
   }
 
   /**

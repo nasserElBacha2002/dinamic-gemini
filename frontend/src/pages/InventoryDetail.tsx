@@ -186,8 +186,8 @@ export default function InventoryDetail() {
         onProviderKeyChange={processFlow.setProviderKey}
         modelKey={processFlow.modelKey}
         onModelKeyChange={processFlow.setModelKey}
-        identificationMode={processFlow.identificationMode}
-        onIdentificationModeChange={processFlow.setIdentificationMode}
+        processingMode={processFlow.processingMode}
+        onProcessingModeChange={processFlow.setProcessingMode}
         inheritedEffectiveMode={processFlow.dialogTarget?.effectiveIdentificationMode}
         identificationModeSource={processFlow.dialogTarget?.identificationModeSource}
         providerOptsQuery={processFlow.providerOptsQuery}

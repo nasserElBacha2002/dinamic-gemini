@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+LabelKindLiteral = Literal["ITEM", "POSITION"]
 
 
 class CreateSupplierExtractionProfileRequest(BaseModel):
@@ -11,10 +13,13 @@ class CreateSupplierExtractionProfileRequest(BaseModel):
     visual_notes: str | None = None
     profile_key: str | None = None
     activate: bool = False
+    label_kind: LabelKindLiteral | None = None
+    effective_source: Literal["DINAMIC", "SUPPLIER"] | None = None
 
 
 class ActivateSupplierExtractionProfileRequest(BaseModel):
     expected_row_version: int | None = None
+    effective_source: Literal["DINAMIC", "SUPPLIER"] | None = None
 
 
 class CloneSupplierExtractionProfileRequest(BaseModel):
@@ -47,6 +52,30 @@ class TestExtractionProfileResponse(BaseModel):
     persists_inventory: bool = False
 
 
+class TestLabelRecognitionCodeRequest(BaseModel):
+    """Non-persistent CODE_SCAN / structured payload dry-run (PR2)."""
+
+    label_kind: LabelKindLiteral = "ITEM"
+    raw_payload: str = Field(..., min_length=1, max_length=512)
+    symbology: str | None = Field(default=None, max_length=64)
+    profile_id: str | None = None
+    configuration: dict[str, Any] | None = None
+
+
+class TestLabelRecognitionCodeResponse(BaseModel):
+    label_kind: str
+    profile_source: str
+    structure: str
+    raw_payload: str
+    normalized_payload: str
+    extracted_fields: dict[str, Any] = Field(default_factory=dict)
+    validation_status: str
+    error_code: str | None = None
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    application_identifiers: list[str] | None = None
+    persists_inventory: bool = False
+
+
 class SupplierExtractionProfileResponse(BaseModel):
     id: str
     client_id: str
@@ -63,6 +92,7 @@ class SupplierExtractionProfileResponse(BaseModel):
     superseded_at: datetime | None = None
     updated_at: datetime | None = None
     row_version: int
+    label_kind: str | None = None
 
 
 class SupplierExtractionProfilesListResponse(BaseModel):

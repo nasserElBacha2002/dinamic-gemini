@@ -31,8 +31,10 @@ export interface LocalAisleWork {
 export function classifyLocalSession(
   session: CaptureSessionRow,
   upload?: UploadSessionProgress | null,
+  options?: { readonly serverUploadEnabled?: boolean },
 ): LocalAisleWork {
-  const pending = upload?.pending ?? 0;
+  const serverUpload = options?.serverUploadEnabled !== false;
+  const pending = serverUpload ? (upload?.pending ?? 0) : 0;
   let kind: LocalAisleWorkKind = 'none';
   let label = '';
   if (session.status === 'active' || session.status === 'preparing' || session.status === 'finishing') {
@@ -47,9 +49,23 @@ export function classifyLocalSession(
   } else if (session.status === 'local_completed') {
     kind = 'local_completed';
     label =
-      pending > 0
+      serverUpload && pending > 0
         ? `Guardada localmente · ${pending} fotos pendientes de carga`
         : 'Guardada localmente · exportable offline';
+  } else if (
+    !serverUpload &&
+    [
+      'uploading',
+      'upload_review',
+      'ready_to_process',
+      'processing',
+      'failed_processing',
+      'failed',
+      'completed',
+    ].includes(session.status)
+  ) {
+    kind = 'local_completed';
+    label = 'Guardada localmente · exportable offline';
   } else if (session.status === 'uploading' || session.status === 'upload_review') {
     kind = 'uploading';
     label =
@@ -104,6 +120,7 @@ export function workForAisle(
   sessions: readonly CaptureSessionRow[],
   aisleId: string,
   uploads: readonly UploadSessionProgress[],
+  options?: { readonly serverUploadEnabled?: boolean },
 ): LocalAisleWork | null {
   const forAisle = listSessionsForAisle(sessions, aisleId);
   if (forAisle.length === 0) {
@@ -112,17 +129,22 @@ export function workForAisle(
   const exclusive = forAisle.find((s) => isCaptureExclusiveSession(s.status as never));
   const session = exclusive ?? forAisle[0]!;
   const upload = uploads.find((u) => u.sessionId === session.id) ?? null;
-  return classifyLocalSession(session, upload);
+  return classifyLocalSession(session, upload, options);
 }
 
 export function classifySessionsForAisle(
   sessions: readonly CaptureSessionRow[],
   aisleId: string,
   uploads: readonly UploadSessionProgress[],
+  options?: { readonly serverUploadEnabled?: boolean },
 ): LocalAisleWork[] {
   return listSessionsForAisle(sessions, aisleId)
     .map((s) =>
-      classifyLocalSession(s, uploads.find((u) => u.sessionId === s.id) ?? null),
+      classifyLocalSession(
+        s,
+        uploads.find((u) => u.sessionId === s.id) ?? null,
+        options,
+      ),
     )
     .filter((w) => w.kind !== 'none');
 }

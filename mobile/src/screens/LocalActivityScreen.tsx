@@ -27,6 +27,7 @@ export function LocalActivityScreen({
   onBack,
   onError,
 }: LocalActivityScreenProps) {
+  const serverUploadEnabled = services.config.flags.mobileServerUpload !== false;
   const [items, setItems] = useState<LocalAisleWork[]>([]);
   const [busy, setBusy] = useState(false);
   const [exportingId, setExportingId] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export function LocalActivityScreen({
             classifyLocalSession(
               s,
               uploadSnap.sessions.find((u) => u.sessionId === s.id) ?? null,
+              { serverUploadEnabled },
             ),
           )
           .filter((w) => w.kind !== 'none');
@@ -50,7 +52,7 @@ export function LocalActivityScreen({
       })
       .catch((e) => onError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false));
-  }, [onError, services]);
+  }, [onError, serverUploadEnabled, services]);
 
   useEffect(() => {
     refresh();
@@ -67,8 +69,7 @@ export function LocalActivityScreen({
           <SmallButton label="← Inventarios" onPress={onBack} />
           <Text style={styles.h2}>Actividad local</Text>
           <Text style={styles.row}>
-            Consultá sesiones pendientes, resultados locales y progreso de subida sin depender de
-            Internet.
+            Consultá sesiones guardadas en el dispositivo y exportá ZIP sin depender de Internet.
           </Text>
           <Button label="Actualizar" disabled={busy} onPress={refresh} />
           {items.length === 0 && !busy ? (
@@ -88,7 +89,9 @@ export function LocalActivityScreen({
               Actualizada: {item.updatedAt} · id {item.shortId}
               {item.frozenPhotoCount != null ? ` · fotos freeze: ${item.frozenPhotoCount}` : ''}
             </Text>
-            <Text style={styles.row}>Pendientes de subir: {item.pendingUploads}</Text>
+            {serverUploadEnabled ? (
+              <Text style={styles.row}>Pendientes de subir: {item.pendingUploads}</Text>
+            ) : null}
             {exportHints[item.sessionId] ? (
               <Text style={styles.notif}>{exportHints[item.sessionId]}</Text>
             ) : null}

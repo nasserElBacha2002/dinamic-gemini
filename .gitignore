@@ -78,6 +78,7 @@ output/
 !backend/tests/fixtures/v2_1/global_analysis_unlocalized.json
 !contracts/code-scan/**/*.json
 !contracts/product-labels/**/*.json
+!contracts/offline-recognition/**/*.json
 
 # Data files (videos de prueba, etc.)
 data/

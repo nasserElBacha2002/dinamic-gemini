@@ -1273,6 +1273,7 @@ describe('InventoryDetail', () => {
         providerName: 'openai',
         modelName: 'gpt-4o-mini',
         promptKey: null,
+        processingMode: 'AUTO',
       });
     });
   });
@@ -1323,6 +1324,7 @@ describe('InventoryDetail', () => {
         providerName: 'openai',
         modelName: 'gpt-4o',
         promptKey: null,
+        processingMode: 'AUTO',
       });
     });
   });

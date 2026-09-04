@@ -12,12 +12,18 @@ import io
 from dataclasses import dataclass
 from datetime import datetime
 
+from src.application.services.local_csv_supplier_import_metadata import (
+    SupplierImportMetadata,
+    parse_supplier_import_notes,
+)
 from src.domain.local_csv_import.sources import (
     ALLOWED_DETECTION_SOURCES,
     INGESTION_SOURCE_LOCAL_CSV_IMPORT,
     LEGACY_SOURCE_AS_DETECTION,
 )
 from src.domain.product_labels.format import LABEL_ID_ALPHABET, LABEL_ID_LENGTH
+
+_SUPPLIER_LABEL_ID_MAX_LEN = 128
 
 SCHEMA_VERSION = "1"
 SCHEMA_VERSION_WITH_LABEL_ID = "1.1"
@@ -85,6 +91,28 @@ def _normalize_optional_label_id(raw: str, errors: list[str]) -> str:
     return normalized
 
 
+def _normalize_supplier_transport_label_id(raw: str, errors: list[str]) -> str:
+    """Structural transport normalization for supplier rows (no Dinamic D1 alphabet)."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    normalized = text.upper()
+    if len(normalized) > _SUPPLIER_LABEL_ID_MAX_LEN:
+        errors.append("label_id:too_long")
+    return normalized
+
+
+def _normalize_row_label_id(
+    raw: str,
+    errors: list[str],
+    *,
+    supplier_import: SupplierImportMetadata | None,
+) -> str:
+    if supplier_import is not None:
+        return _normalize_supplier_transport_label_id(raw, errors)
+    return _normalize_optional_label_id(raw, errors)
+
+
 class LocalCsvDocumentError(ValueError):
     def __init__(self, code: str, detail: str) -> None:
         super().__init__(detail)
@@ -104,6 +132,8 @@ class ParsedLocalCsvRow:
     ingestion_source: str
     errors: tuple[str, ...]
     warnings: tuple[str, ...]
+    supplier_import: SupplierImportMetadata | None = None
+    supplier_import_errors: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -218,6 +248,12 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
                 errors.append("schema_version:unsupported")
             if schema_version == SCHEMA_VERSION_WITH_LABEL_ID and not has_label_id_header:
                 errors.append("label_id:header_required")
+
+            notes_parse = parse_supplier_import_notes(values.get("notes", ""))
+            if notes_parse.errors:
+                errors.extend(notes_parse.errors)
+            supplier_import = notes_parse.metadata
+
             # Copy optional label_id when the column is present; never invent IDs.
             if has_label_id_header:
                 raw_label = raw.get("label_id")
@@ -226,7 +262,11 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
                     label_value, neutralized = _neutralize_formula(label_value)
                     if neutralized:
                         warnings.append("label_id:csv_formula_neutralized")
-                values["label_id"] = _normalize_optional_label_id(label_value, errors)
+                values["label_id"] = _normalize_row_label_id(
+                    label_value,
+                    errors,
+                    supplier_import=supplier_import,
+                )
 
             for optional_name in ("position_label_id", "position_payload_raw"):
                 if optional_name not in headers:
@@ -279,6 +319,8 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
                     ingestion_source=INGESTION_SOURCE_LOCAL_CSV_IMPORT,
                     errors=tuple(errors),
                     warnings=tuple(warnings),
+                    supplier_import=supplier_import,
+                    supplier_import_errors=notes_parse.errors,
                 )
             )
     except csv.Error as exc:

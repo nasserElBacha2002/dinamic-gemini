@@ -27,6 +27,9 @@ from src.application.errors import (
     NoSourceAssetsForAisleProcessingError,
     ProcessingRejectedUnsealedSessionError,
 )
+from src.application.ports.client_supplier_label_profile_repository import (
+    ClientSupplierLabelProfileRepository,
+)
 from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.ordered_capture_session_repository import (
     OrderedCaptureSessionRepository,
@@ -56,6 +59,10 @@ from src.application.services.image_processing.ocr_client_field_rules import (
 )
 from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.job_stale_reconciler import JobStaleReconciler
+from src.application.services.label_profile_resolver import (
+    LabelProfileResolutionContext,
+    LabelProfileResolver,
+)
 from src.application.services.legacy_processing_guard import (
     reject_legacy_effective_mode_for_new_job,
 )
@@ -69,6 +76,7 @@ from src.config import load_settings
 from src.domain.aisle_identification.modes import CONFIGURATION_SNAPSHOT_VERSION
 from src.domain.aisle_identification.resolver import resolve_aisle_identification_mode
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.label_profiles.errors import SupplierLabelProfileNotConfiguredError
 from src.domain.ordered_capture.entities import OrderedCaptureSessionStatus
 from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
@@ -80,6 +88,20 @@ _START_BLOCKING_JOB_STATUSES = (
     JobStatus.RUNNING,
     JobStatus.CANCEL_REQUESTED,
 )
+
+
+def _processing_mode_from_job(job: Job) -> str:
+    from src.domain.aisle_identification.processing_mode import (
+        DEFAULT_AISLE_PROCESSING_MODE,
+        processing_mode_from_identification_execution,
+    )
+
+    params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
+    ident = params.get("identification_execution")
+    mode = processing_mode_from_identification_execution(
+        ident if isinstance(ident, dict) else None
+    )
+    return mode.value if mode else DEFAULT_AISLE_PROCESSING_MODE.value
 
 
 def _require_no_active_process_job_for_aisle(
@@ -107,6 +129,8 @@ class StartAisleProcessingCommand:
     requested_prompt_key: str | None = None
     #: Optional request override for aisle identification mode (job-only; does not mutate aisle).
     requested_identification_mode: str | None = None
+    #: AUTO | CODE_SCAN_ONLY | VISION_ONLY — omit for default AUTO (backward compatible).
+    requested_processing_mode: str | None = None
     #: Used only when ``resolve_execution_keys`` is false (e.g. unit tests with pre-resolved keys).
     pipeline_provider_key: str = "gemini"
     model_name: str | None = None
@@ -126,6 +150,7 @@ class StartAisleProcessingResult:
     identification_mode_source: str
     execution_strategy: str
     configuration_snapshot_version: int
+    processing_mode: str = "AUTO"
 
 
 def _find_job_by_idempotency_key(
@@ -194,6 +219,7 @@ class StartAisleProcessingUseCase:
         extraction_profile_repo=None,
         client_supplier_repo: ClientSupplierRepository | None = None,
         supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
+        label_profile_repo: ClientSupplierLabelProfileRepository | None = None,
         ordered_session_repo: OrderedCaptureSessionRepository | None = None,
         ordered_processing_reservation: OrderedCaptureProcessingReservationService | None = None,
     ) -> None:
@@ -208,6 +234,7 @@ class StartAisleProcessingUseCase:
         self._extraction_profile_repo = extraction_profile_repo
         self._client_supplier_repo = client_supplier_repo
         self._supplier_prompt_config_repo = supplier_prompt_config_repo
+        self._label_profile_repo = label_profile_repo
         self._ordered_session_repo = ordered_session_repo
         self._ordered_processing_reservation = ordered_processing_reservation
 
@@ -236,6 +263,84 @@ class StartAisleProcessingUseCase:
             current.sequence_version,
         )
 
+    def _embed_exact_label_profile_configurations(
+        self,
+        *,
+        label_profiles_snapshot: dict,
+        resolved_profiles,
+        client_id: str | None,
+    ) -> dict:
+        """Load SUPPLIER extraction configs by exact snapshot id/version; fail closed."""
+        from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
+
+        out = dict(label_profiles_snapshot)
+        for kind, resolved in (
+            (LabelKind.ITEM, resolved_profiles.item),
+            (LabelKind.POSITION, resolved_profiles.position),
+        ):
+            if resolved.source is not LabelProfileSource.SUPPLIER:
+                continue
+            if not (client_id or "").strip():
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    "client_id required to embed SUPPLIER extraction configuration"
+                )
+            key = "item" if kind is LabelKind.ITEM else "position"
+            block = out.get(key)
+            if not isinstance(block, dict):
+                continue
+            profile_id = (resolved.extraction_profile_id or "").strip()
+            if not profile_id:
+                raise ValueError(
+                    "SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED: "
+                    f"SUPPLIER {kind.value} requires extraction_profile_id in snapshot"
+                )
+            if self._extraction_profile_repo is None:
+                raise ValueError(
+                    "SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED: "
+                    "extraction profile repository unavailable for exact snapshot load"
+                )
+            entity = self._extraction_profile_repo.get_by_id(profile_id)
+            if entity is None:
+                raise ValueError(
+                    "SUPPLIER_LABEL_PROFILE_NOT_CONFIGURED: "
+                    f"extraction profile {profile_id} not found for {kind.value}"
+                )
+            if str(entity.client_id).strip() != str(client_id).strip():
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    f"extraction profile {profile_id} client_id mismatch"
+                )
+            expected_supplier = (resolved.client_supplier_id or "").strip()
+            if expected_supplier and str(entity.supplier_id).strip() != expected_supplier:
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    f"extraction profile {profile_id} supplier_id mismatch"
+                )
+            entity_kind = entity.label_kind or LabelKind.ITEM
+            if entity_kind is not kind:
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    f"extraction profile {profile_id} label_kind={entity_kind.value} "
+                    f"expected {kind.value}"
+                )
+            if (
+                resolved.extraction_profile_version is not None
+                and int(entity.version) != int(resolved.extraction_profile_version)
+            ):
+                raise ValueError(
+                    "LABEL_PROFILE_SNAPSHOT_SCOPE_MISMATCH: "
+                    f"extraction profile {profile_id} version={entity.version} "
+                    f"expected {resolved.extraction_profile_version}"
+                )
+            out[key] = {
+                **block,
+                "extraction_profile_id": entity.id,
+                "extraction_profile_version": int(entity.version),
+                "configuration": entity.configuration.to_public_dict(),
+            }
+        return out
+
     def _return_existing_ordered_job(
         self,
         *,
@@ -262,6 +367,7 @@ class StartAisleProcessingUseCase:
             identification_mode_source=job.identification_mode_source.value,
             execution_strategy=job.execution_strategy.value,
             configuration_snapshot_version=job.configuration_snapshot_version,
+            processing_mode=_processing_mode_from_job(job),
         )
 
     def execute(self, command: StartAisleProcessingCommand) -> StartAisleProcessingResult:
@@ -465,6 +571,7 @@ class StartAisleProcessingUseCase:
                 identification_mode_source=existing_idempotent.identification_mode_source.value,
                 execution_strategy=existing_idempotent.execution_strategy.value,
                 configuration_snapshot_version=existing_idempotent.configuration_snapshot_version,
+                processing_mode=_processing_mode_from_job(existing_idempotent),
             )
 
         _require_no_active_process_job_for_aisle(
@@ -484,6 +591,12 @@ class StartAisleProcessingUseCase:
                 client_mode = client.default_identification_mode
 
         settings = load_settings()
+        from src.domain.aisle_identification.processing_mode import (
+            AisleProcessingMode,
+            parse_aisle_processing_mode,
+        )
+
+        processing_mode = parse_aisle_processing_mode(command.requested_processing_mode)
         resolution = resolve_aisle_identification_mode(
             request_mode=command.requested_identification_mode,
             aisle_mode=aisle.identification_mode,
@@ -506,6 +619,16 @@ class StartAisleProcessingUseCase:
             ),
         )
         execution_strategy = decision.strategy
+        # VISION_ONLY still runs on the CODE_SCAN worker path with an explicit
+        # skip-scanner branch; identification strategy remains CODE_SCAN.
+        if (
+            processing_mode is AisleProcessingMode.VISION_ONLY
+            and execution_strategy.value != "CODE_SCAN"
+        ):
+            raise ValueError(
+                "VISION_ONLY requires CODE_SCAN execution strategy; "
+                f"got {execution_strategy.value}"
+            )
 
         client_id = inventory.client_id
         client_rules = resolve_ocr_client_field_rules(
@@ -628,12 +751,41 @@ class StartAisleProcessingUseCase:
                     command.aisle_id,
                     PER_ASSET_DEPRECATION_NOTE,
                 )
-            provider_key = str(
+            settings_provider = str(
                 getattr(settings, "external_fallback_provider", "") or ""
             ).strip().lower()
-            fallback_model = (
+            settings_model = (
                 str(getattr(settings, "external_fallback_model", "") or "").strip() or None
             )
+            # Prefer process-request provider/model when present (UI Vision selection).
+            req_provider = str(pipeline_key or "").strip().lower()
+            req_model = str(model_name or "").strip() or None
+            provider_key = req_provider or settings_provider
+            fallback_model = req_model or settings_model
+
+            # Explicit processing_mode dispatch (do not infer from flags alone).
+            if processing_mode is AisleProcessingMode.CODE_SCAN_ONLY:
+                fallback_enabled = False
+            elif processing_mode is AisleProcessingMode.VISION_ONLY:
+                fallback_enabled = True
+                if not provider_key or not fallback_model:
+                    raise ValueError(
+                        "VISION_PROVIDER_NOT_CONFIGURED: "
+                        "No hay un proveedor de Vision AI configurado."
+                    )
+            else:
+                # AUTO: productive CODE_SCAN → Vision when provider+model are configured.
+                # Kill switch: CODE_SCAN_VISION_FALLBACK_ENABLED=false.
+                code_scan_vision = bool(
+                    getattr(settings, "code_scan_vision_fallback_enabled", True)
+                )
+                if (
+                    execution_strategy.value == "CODE_SCAN"
+                    and code_scan_vision
+                    and provider_key
+                    and fallback_model
+                ):
+                    fallback_enabled = True
             if fallback_enabled:
                 if not provider_key:
                     raise ValueError(
@@ -764,6 +916,70 @@ class StartAisleProcessingUseCase:
             except SupplierPromptConfigError as exc:
                 raise ValueError(f"{exc.code}: {exc.message}") from exc
             supplier_prompt_snapshot = resolved_prompt.public_snapshot(include_content=True)
+        label_profiles_snapshot = None
+        supplier_wiring_warnings: list[str] = []
+        if self._label_profile_repo is not None and self._client_supplier_repo is not None:
+            profile_resolver = LabelProfileResolver(
+                label_profile_repo=self._label_profile_repo,
+                client_supplier_repo=self._client_supplier_repo,
+                extraction_profile_repo=self._extraction_profile_repo,
+                supplier_prompt_config_repo=self._supplier_prompt_config_repo,
+            )
+            try:
+                resolved_profiles = profile_resolver.resolve(
+                    LabelProfileResolutionContext(
+                        client_id=client_id,
+                        client_supplier_id=str(supplier_id).strip() if supplier_id else None,
+                        aisle=aisle,
+                    )
+                )
+            except SupplierLabelProfileNotConfiguredError:
+                raise
+            label_profiles_snapshot = resolved_profiles.to_snapshot_dict()
+            # Exact profile id/version → embed immutable configuration (not legacy blob).
+            label_profiles_snapshot = self._embed_exact_label_profile_configurations(
+                label_profiles_snapshot=label_profiles_snapshot,
+                resolved_profiles=resolved_profiles,
+                client_id=client_id,
+            )
+            if (
+                (profiles_enabled or profile_aware)
+                and supplier_id
+                and self._extraction_profile_repo is not None
+            ):
+                from src.application.services.supplier_label_profile_wiring import (
+                    detect_supplier_wiring_mismatch,
+                )
+                from src.domain.client_supplier.extraction_profile import ExtractionProfileStatus
+                from src.domain.label_profiles.kinds import effective_label_kind
+
+                active_kinds = {
+                    effective_label_kind(row.label_kind)
+                    for row in self._extraction_profile_repo.list_by_supplier(
+                        client_id, str(supplier_id).strip()
+                    )
+                    if row.status is ExtractionProfileStatus.ACTIVE
+                }
+                explicit_wiring_kinds = {
+                    row.label_kind
+                    for row in self._label_profile_repo.list_by_supplier(
+                        str(supplier_id).strip()
+                    )
+                }
+                supplier_wiring_warnings = detect_supplier_wiring_mismatch(
+                    client_supplier_id=str(supplier_id).strip(),
+                    item_source=resolved_profiles.item.source,
+                    position_source=resolved_profiles.position.source,
+                    active_extraction_kinds=active_kinds,
+                    explicit_wiring_kinds=explicit_wiring_kinds,
+                )
+                if supplier_wiring_warnings:
+                    logger.warning(
+                        "label_profiles.wiring_mismatch client_id=%s supplier_id=%s warnings=%s",
+                        client_id,
+                        supplier_id,
+                        supplier_wiring_warnings,
+                    )
         engine_params_json = {
             "identification_execution": identification_execution_snapshot_dict(
                 decision,
@@ -773,11 +989,14 @@ class StartAisleProcessingUseCase:
                 external_fallback=external_fallback,
                 supplier_extraction_profile=supplier_extraction_profile,
                 supplier_prompt=supplier_prompt_snapshot,
+                label_profiles=label_profiles_snapshot,
                 client_extraction_profiles_enabled=profiles_enabled,
                 profile_aware_validation_enabled=profile_aware,
                 reference_template_annotations_enabled=annotations_enabled,
                 profile_snapshotted=bool(supplier_extraction_profile),
                 profile_validation_executed=False,
+                processing_mode=processing_mode.value,
+                supplier_wiring_warnings=supplier_wiring_warnings or None,
             ),
             "client_id": client_id,
             "supplier_id": str(supplier_id).strip() if supplier_id else None,
@@ -788,7 +1007,8 @@ class StartAisleProcessingUseCase:
             "requested_identification_mode=%s configured_aisle=%s configured_inventory=%s "
             "configured_client=%s effective_identification_mode=%s identification_mode_source=%s "
             "configuration_snapshot_version=%s aisle_identification_pipeline_enabled=%s "
-            "actual_execution_strategy=%s execution_reason=%s",
+            "actual_execution_strategy=%s execution_reason=%s processing_mode=%s "
+            "vision_fallback_enabled=%s",
             command.inventory_id,
             command.aisle_id,
             command.requested_identification_mode,
@@ -801,6 +1021,11 @@ class StartAisleProcessingUseCase:
             settings.aisle_identification_pipeline_enabled,
             execution_strategy.value,
             decision.reason,
+            processing_mode.value,
+            bool(
+                isinstance(external_fallback, dict)
+                and external_fallback.get("fallback_enabled")
+            ),
         )
 
         payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
@@ -868,6 +1093,7 @@ class StartAisleProcessingUseCase:
                 identification_mode_source=job.identification_mode_source.value,
                 execution_strategy=job.execution_strategy.value,
                 configuration_snapshot_version=job.configuration_snapshot_version,
+                processing_mode=processing_mode.value,
             )
 
         # Legacy (non-ordered) path: create and launch unchanged.
@@ -892,4 +1118,5 @@ class StartAisleProcessingUseCase:
             identification_mode_source=job.identification_mode_source.value,
             execution_strategy=job.execution_strategy.value,
             configuration_snapshot_version=job.configuration_snapshot_version,
+            processing_mode=processing_mode.value,
         )

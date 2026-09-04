@@ -49,7 +49,15 @@ class ProcessAisleRequest(BaseModel):
         None,
         description=(
             "Optional job-only override for aisle identification mode. Does not permanently change "
-            "aisle/inventory/client config. Omit to resolve Request→Aisle→Inventory→Client→LEGACY_LLM."
+            "aisle/inventory/client config. Omit to resolve Request→Aisle→Inventory→Client→SYSTEM_DEFAULT."
+        ),
+    )
+    processing_mode: Literal["AUTO", "CODE_SCAN_ONLY", "VISION_ONLY"] | None = Field(
+        None,
+        description=(
+            "Optional job-only dispatch policy: AUTO (CODE_SCAN then Vision when eligible), "
+            "CODE_SCAN_ONLY (never Vision), VISION_ONLY (Vision only, skip CODE_SCAN). "
+            "Omit for AUTO (backward compatible)."
         ),
     )
 
@@ -119,6 +127,7 @@ class ProcessAisleResponse(BaseModel):
     identification_mode_source: IdentificationModeSourceLiteral
     execution_strategy: ExecutionStrategyLiteral
     configuration_snapshot_version: int
+    processing_mode: Literal["AUTO", "CODE_SCAN_ONLY", "VISION_ONLY"] | None = None
 
 
 class AssetProgressResponse(BaseModel):

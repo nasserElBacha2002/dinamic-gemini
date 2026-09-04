@@ -37,8 +37,8 @@ export interface DetectedCodeCandidate {
 
 export interface ProductLabelResult {
   readonly labelId: string;
-  readonly internalCode: string;
-  readonly quantity: number;
+  readonly internalCode: string | null;
+  readonly quantity: number | null;
   readonly formatVersion: string;
   readonly checksum: string;
   readonly validationStatus: string;
@@ -202,7 +202,9 @@ export function consolidateCodeDetections(
       internalCode: primary.internalCode,
       quantity: primary.quantity,
       selectedIndex: primary.selectedIndex,
-      distinctCodes: products.map((p) => p.internalCode),
+      distinctCodes: products
+        .map((p) => p.internalCode)
+        .filter((c): c is string => Boolean(c)),
       warnings,
       parsed: null,
       productResults: products,

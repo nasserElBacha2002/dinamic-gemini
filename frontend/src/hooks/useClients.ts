@@ -11,6 +11,7 @@ import {
   getClientSupplier,
   listClients,
   listClientSuppliers,
+  listClientSupplierLabelProfiles,
   listSupplierExtractionProfiles,
   listSupplierPromptConfigs,
   listSupplierReferenceAnnotations,
@@ -156,6 +157,18 @@ export function useSupplierExtractionProfiles(
   return useQuery({
     queryKey: queryKeys.clients.suppliers.extractionProfiles.list(clientId ?? '', supplierId ?? ''),
     queryFn: () => listSupplierExtractionProfiles(clientId!, supplierId!),
+    enabled: Boolean(clientId && supplierId) && (options?.enabled !== false),
+  });
+}
+
+export function useClientSupplierLabelProfiles(
+  clientId: string | undefined,
+  supplierId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.clients.suppliers.labelProfiles.list(clientId ?? '', supplierId ?? ''),
+    queryFn: () => listClientSupplierLabelProfiles(clientId!, supplierId!),
     enabled: Boolean(clientId && supplierId) && (options?.enabled !== false),
   });
 }

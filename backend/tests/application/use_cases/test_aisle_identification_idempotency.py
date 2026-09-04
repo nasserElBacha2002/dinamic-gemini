@@ -68,7 +68,7 @@ def test_idempotent_replay_returns_original_job_snapshot() -> None:
         AisleStatus.CREATED,
         now,
         now,
-        identification_mode=AisleIdentificationMode.INTERNAL_OCR,
+        identification_mode=AisleIdentificationMode.CODE_SCAN,
     )
     use_case, job_repo, _ = _build_use_case(inventory=inv, aisle=aisle)
 
@@ -84,7 +84,7 @@ def test_idempotent_replay_returns_original_job_snapshot() -> None:
     )
 
     assert replay.job_id == first.job_id
-    assert replay.identification_mode == first.identification_mode == "INTERNAL_OCR"
+    assert replay.identification_mode == first.identification_mode == "CODE_SCAN"
     assert replay.identification_mode_source == first.identification_mode_source == "AISLE"
     assert replay.execution_strategy == first.execution_strategy
     assert replay.configuration_snapshot_version == first.configuration_snapshot_version
@@ -103,7 +103,7 @@ def test_idempotent_replay_unaffected_by_later_aisle_mutation() -> None:
         AisleStatus.CREATED,
         now,
         now,
-        identification_mode=AisleIdentificationMode.INTERNAL_OCR,
+        identification_mode=AisleIdentificationMode.CODE_SCAN,
     )
     use_case, job_repo, aisle_repo = _build_use_case(inventory=inv, aisle=aisle)
 
@@ -115,7 +115,7 @@ def test_idempotent_replay_unaffected_by_later_aisle_mutation() -> None:
 
     mutated_aisle = aisle_repo.get_by_id("a1")
     assert mutated_aisle is not None
-    mutated_aisle.identification_mode = AisleIdentificationMode.CODE_SCAN
+    mutated_aisle.identification_mode = AisleIdentificationMode.LEGACY_LLM
     aisle_repo.save(mutated_aisle)
 
     replay = use_case.execute(
@@ -125,11 +125,11 @@ def test_idempotent_replay_unaffected_by_later_aisle_mutation() -> None:
     )
 
     assert replay.job_id == first.job_id
-    assert replay.identification_mode == "INTERNAL_OCR"
+    assert replay.identification_mode == "CODE_SCAN"
     assert replay.identification_mode_source == "AISLE"
     saved_job = job_repo.get_by_id(first.job_id)
     assert saved_job is not None
-    assert saved_job.identification_mode == AisleIdentificationMode.INTERNAL_OCR
+    assert saved_job.identification_mode == AisleIdentificationMode.CODE_SCAN
 
 
 def test_distinct_idempotency_keys_create_distinct_jobs() -> None:

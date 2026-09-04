@@ -9,6 +9,7 @@ from src.domain.client_supplier.extraction_profile import (
     ReferenceAnnotation,
     SupplierExtractionProfile,
 )
+from src.domain.label_profiles.kinds import LabelKind
 
 
 class SupplierExtractionProfileRepository(ABC):
@@ -24,8 +25,25 @@ class SupplierExtractionProfileRepository(ABC):
     ) -> SupplierExtractionProfile | None: ...
 
     @abstractmethod
+    def get_by_client_supplier_kind_version(
+        self,
+        client_id: str,
+        supplier_id: str,
+        label_kind: LabelKind,
+        version: int,
+    ) -> SupplierExtractionProfile | None: ...
+
+    @abstractmethod
     def get_active(
         self, client_id: str, supplier_id: str
+    ) -> SupplierExtractionProfile | None: ...
+
+    @abstractmethod
+    def get_active_by_kind(
+        self,
+        client_id: str,
+        supplier_id: str,
+        label_kind: LabelKind,
     ) -> SupplierExtractionProfile | None: ...
 
     @abstractmethod
@@ -34,7 +52,9 @@ class SupplierExtractionProfileRepository(ABC):
     ) -> Sequence[SupplierExtractionProfile]: ...
 
     @abstractmethod
-    def next_version(self, client_id: str, supplier_id: str) -> int: ...
+    def next_version(
+        self, client_id: str, supplier_id: str, label_kind: LabelKind | None = None
+    ) -> int: ...
 
     @abstractmethod
     def create_next_version(
@@ -48,6 +68,7 @@ class SupplierExtractionProfileRepository(ABC):
         created_by: str | None,
         created_at: object,
         profile_id: str | None = None,
+        label_kind: LabelKind | None = None,
     ) -> SupplierExtractionProfile:
         """Atomically allocate next version and insert DRAFT (safe under concurrency)."""
         ...

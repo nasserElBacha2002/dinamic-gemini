@@ -36,6 +36,7 @@ from src.application.ports.capture_repositories import (
     CaptureSessionRepository,
 )
 from src.application.ports.clock import Clock
+from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -267,6 +268,11 @@ def get_supplier_extraction_profile_repo() -> SupplierExtractionProfileRepositor
     return get_app_container().get_supplier_extraction_profile_repo()
 
 
+def get_client_supplier_label_profile_repo():
+
+    return get_app_container().get_client_supplier_label_profile_repo()
+
+
 def get_result_evidence_repo():
     return _get_result_evidence_repo()
 
@@ -479,6 +485,26 @@ def get_result_context_resolver(
     position_repo: PositionRepository = Depends(get_position_repo),
 ) -> ResultContextResolver:
     return ResultContextResolver(job_repo=job_repo, position_repo=position_repo)
+
+
+def get_inventory_recognition_config_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    extraction_profile_repo: SupplierExtractionProfileRepository = Depends(
+        get_supplier_extraction_profile_repo
+    ),
+    label_profile_repo=Depends(get_client_supplier_label_profile_repo),
+):
+    from src.application.use_cases.inventories.get_inventory_recognition_config import (
+        GetInventoryRecognitionConfigUseCase,
+    )
+
+    return GetInventoryRecognitionConfigUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        extraction_profile_repo=extraction_profile_repo,
+        label_profile_repo=label_profile_repo,
+    )
 
 
 def get_get_inventory_use_case(
@@ -761,6 +787,7 @@ def get_start_aisle_processing_use_case(
     supplier_prompt_config_repo: SupplierPromptConfigRepository = Depends(
         get_supplier_prompt_config_repo
     ),
+    label_profile_repo=Depends(get_client_supplier_label_profile_repo),
     ordered_session_repo=Depends(get_ordered_capture_session_repo),
     ordered_processing_reservation=Depends(get_ordered_capture_processing_reservation),
 ) -> StartAisleProcessingUseCase:
@@ -776,6 +803,7 @@ def get_start_aisle_processing_use_case(
         extraction_profile_repo=extraction_profile_repo,
         client_supplier_repo=client_supplier_repo,
         supplier_prompt_config_repo=supplier_prompt_config_repo,
+        label_profile_repo=label_profile_repo,
         ordered_session_repo=ordered_session_repo,
         ordered_processing_reservation=ordered_processing_reservation,
     )
@@ -924,6 +952,9 @@ def get_persist_authoritative_local_code_scan_use_case(
     clock: Clock = Depends(get_clock),
     user: AuthUser = Depends(get_current_admin),
 ):
+    from src.application.services.exact_extraction_profile_version import (
+        ExactExtractionProfileVersionService,
+    )
     from src.application.use_cases.aisles.persist_authoritative_local_code_scan import (
         PersistAuthoritativeLocalCodeScanResultUseCase,
     )
@@ -940,6 +971,43 @@ def get_persist_authoritative_local_code_scan_use_case(
             getattr(settings, "server_authoritative_local_code_scan_ingest_enabled", False)
         ),
         authenticated_user_id=str(getattr(user, "id", "") or ""),
+        exact_profile_service=ExactExtractionProfileVersionService(
+            inventory_repo=c.get_inventory_repo(),
+            aisle_repo=aisle_repo,
+            client_supplier_repo=c.get_client_supplier_repo(),
+            extraction_profile_repo=c.get_supplier_extraction_profile_repo(),
+        ),
+    )
+
+
+def _build_preview_local_csv_import(
+    *,
+    inventory_repo: InventoryRepository,
+    aisle_repo: AisleRepository,
+    import_repo: LocalCsvImportRepository,
+    clock: Clock,
+    enabled: bool,
+):
+    from src.application.services.supplier_local_csv_row_revalidator import (
+        build_supplier_local_csv_row_revalidator,
+    )
+    from src.application.use_cases.inventories.manage_local_csv_import import (
+        PreviewLocalCsvImport,
+    )
+
+    container = get_app_container()
+    return PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=import_repo,
+        clock=clock,
+        enabled=enabled,
+        supplier_revalidator=build_supplier_local_csv_row_revalidator(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            client_supplier_repo=container.get_client_supplier_repo(),
+            extraction_profile_repo=container.get_supplier_extraction_profile_repo(),
+        ),
     )
 
 
@@ -948,13 +1016,10 @@ def get_preview_local_csv_import_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.inventories.manage_local_csv_import import (
-        PreviewLocalCsvImport,
-    )
     from src.config import load_settings
 
     settings = load_settings()
-    return PreviewLocalCsvImport(
+    return _build_preview_local_csv_import(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         import_repo=get_app_container().get_local_csv_import_repo(),
@@ -1038,9 +1103,6 @@ def get_preview_local_inventory_package_use_case(
 ):
     from pathlib import Path
 
-    from src.application.use_cases.inventories.manage_local_csv_import import (
-        PreviewLocalCsvImport,
-    )
     from src.application.use_cases.inventories.manage_local_inventory_package import (
         PreviewLocalInventoryPackage,
     )
@@ -1049,7 +1111,7 @@ def get_preview_local_inventory_package_use_case(
     settings = load_settings()
     container = get_app_container()
     csv_repo = container.get_local_csv_import_repo()
-    csv_preview = PreviewLocalCsvImport(
+    csv_preview = _build_preview_local_csv_import(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         import_repo=csv_repo,
@@ -1174,14 +1236,11 @@ def get_preview_dinamic_scanner_txt_import_use_case(
     from src.application.use_cases.inventories.manage_dinamic_scanner_txt_import import (
         PreviewDinamicScannerTxtImport,
     )
-    from src.application.use_cases.inventories.manage_local_csv_import import (
-        PreviewLocalCsvImport,
-    )
     from src.config import load_settings
 
     settings = load_settings()
     container = get_app_container()
-    csv_preview = PreviewLocalCsvImport(
+    csv_preview = _build_preview_local_csv_import(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         import_repo=container.get_local_csv_import_repo(),
@@ -1738,6 +1797,10 @@ def get_activate_supplier_extraction_profile_version_use_case():
     return get_app_container().get_activate_supplier_extraction_profile_version_use_case()
 
 
+def get_test_label_recognition_code_use_case():
+    return get_app_container().get_test_label_recognition_code_use_case()
+
+
 def get_clone_supplier_extraction_profile_use_case():
     return get_app_container().get_clone_supplier_extraction_profile_use_case()
 
@@ -1748,6 +1811,31 @@ def get_list_supplier_reference_annotations_use_case():
 
 def get_replace_supplier_reference_annotations_use_case():
     return get_app_container().get_replace_supplier_reference_annotations_use_case()
+
+
+def get_list_client_supplier_label_profiles_use_case():
+    from src.application.use_cases.suppliers.manage_client_supplier_label_profiles import (
+        ListClientSupplierLabelProfilesUseCase,
+    )
+
+    container = get_app_container()
+    return ListClientSupplierLabelProfilesUseCase(
+        client_supplier_repo=container.get_client_supplier_repo(),
+        label_profile_repo=container.get_client_supplier_label_profile_repo(),
+    )
+
+
+def get_upsert_client_supplier_label_profile_use_case():
+    from src.application.use_cases.suppliers.manage_client_supplier_label_profiles import (
+        UpsertClientSupplierLabelProfileUseCase,
+    )
+
+    container = get_app_container()
+    return UpsertClientSupplierLabelProfileUseCase(
+        client_supplier_repo=container.get_client_supplier_repo(),
+        label_profile_repo=container.get_client_supplier_label_profile_repo(),
+        clock=container.get_clock(),
+    )
 
 
 def get_list_aisle_positions_use_case(

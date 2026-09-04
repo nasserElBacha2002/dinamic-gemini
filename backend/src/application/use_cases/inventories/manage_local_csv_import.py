@@ -15,6 +15,10 @@ from src.application.services.local_csv_parser import (
     parse_local_csv,
 )
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
+from src.application.services.supplier_local_csv_row_revalidator import (
+    SupplierCsvAuthoritativeFields,
+    SupplierLocalCsvRowRevalidator,
+)
 from src.domain.local_csv_import.entities import (
     LocalCsvImport,
     LocalCsvImportRow,
@@ -59,12 +63,14 @@ class PreviewLocalCsvImport:
         import_repo: LocalCsvImportRepository,
         clock: Clock,
         enabled: bool,
+        supplier_revalidator: SupplierLocalCsvRowRevalidator | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._import_repo = import_repo
         self._clock = clock
         self._enabled = enabled
+        self._supplier_revalidator = supplier_revalidator
 
     def execute(self, *, inventory_id: str, content: bytes) -> LocalCsvImport:
         if not self._enabled:
@@ -151,6 +157,19 @@ class PreviewLocalCsvImport:
         rows: list[LocalCsvImportRow] = []
         for parsed_row in parsed.rows:
             errors = list(parsed_row.errors)
+            authoritative: SupplierCsvAuthoritativeFields | None = None
+            if parsed_row.supplier_import is not None:
+                if self._supplier_revalidator is None:
+                    errors.append("supplier_import:revalidation_unavailable")
+                else:
+                    outcome = self._supplier_revalidator.revalidate(
+                        inventory_id=inventory_id,
+                        parsed_row=parsed_row,
+                    )
+                    if outcome.errors:
+                        errors.extend(outcome.errors)
+                    else:
+                        authoritative = outcome.authoritative
             values = parsed_row.values
             for field, expected in (
                 ("export_id", parsed.export_id),
@@ -185,6 +204,7 @@ class PreviewLocalCsvImport:
                     parsed_row,
                     tuple(dict.fromkeys(errors)),
                     row_id=prior.id if prior is not None else None,
+                    authoritative=authoritative,
                 )
             )
 
@@ -218,6 +238,7 @@ class PreviewLocalCsvImport:
         errors: tuple[str, ...],
         *,
         row_id: str | None = None,
+        authoritative: SupplierCsvAuthoritativeFields | None = None,
     ) -> LocalCsvImportRow:
         values = parsed.values
         requires_review = bool(parsed.requires_review)
@@ -227,6 +248,22 @@ class PreviewLocalCsvImport:
         label_id = raw_label.upper() if raw_label else None
         position_label_id = (values.get("position_label_id") or "").strip() or None
         position_payload_raw = (values.get("position_payload_raw") or "").strip() or None
+        position_code = values["position_code"]
+        internal_code = values["internal_code"] or None
+        quantity = parsed.quantity
+        if authoritative is not None:
+            if authoritative.label_id is not None:
+                label_id = authoritative.label_id
+            if authoritative.internal_code is not None:
+                internal_code = authoritative.internal_code
+            if authoritative.quantity is not None:
+                quantity = authoritative.quantity
+            if authoritative.position_code is not None:
+                position_code = authoritative.position_code
+            if authoritative.position_label_id is not None:
+                position_label_id = authoritative.position_label_id
+            if authoritative.position_payload_raw is not None:
+                position_payload_raw = authoritative.position_payload_raw
         return LocalCsvImportRow(
             id=row_id or str(uuid.uuid4()),
             import_id=import_id,
@@ -238,9 +275,9 @@ class PreviewLocalCsvImport:
             client_file_id=values["client_file_id"],
             capture_order=parsed.capture_order,
             captured_at=parsed.captured_at,
-            position_code=values["position_code"],
-            internal_code=values["internal_code"] or None,
-            quantity=parsed.quantity,
+            position_code=position_code,
+            internal_code=internal_code,
+            quantity=quantity,
             quantity_status=values["quantity_status"],
             detection_status=values["detection_status"],
             detection_source=parsed.detection_source,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -43,6 +44,14 @@ class UpdateAisleRequest(BaseModel):
     identification_mode: IdentificationModeLiteral | None = Field(
         None,
         description="Optional aisle identification override; send null to clear and inherit.",
+    )
+    item_profile_source_override: Literal["DINAMIC", "SUPPLIER"] | None = Field(
+        None,
+        description="Optional ITEM label profile source override; send null to clear.",
+    )
+    position_profile_source_override: Literal["DINAMIC", "SUPPLIER"] | None = Field(
+        None,
+        description="Optional POSITION label profile source override; send null to clear.",
     )
 
     @field_validator("code")
@@ -124,6 +133,8 @@ class AisleResponse(BaseModel):
     identification_mode: IdentificationModeLiteral | None = None
     effective_identification_mode: IdentificationModeLiteral
     identification_mode_source: IdentificationModeSourceLiteral
+    item_profile_source_override: Literal["DINAMIC", "SUPPLIER"] | None = None
+    position_profile_source_override: Literal["DINAMIC", "SUPPLIER"] | None = None
     has_dinamic_scanner_txt_import: bool = Field(
         False,
         description=(

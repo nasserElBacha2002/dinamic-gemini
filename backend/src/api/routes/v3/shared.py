@@ -583,6 +583,16 @@ def aisle_to_response(
         identification_mode_source=cast(
             IdentificationModeSourceLiteral, id_fields.identification_mode_source
         ),
+        item_profile_source_override=(
+            a.item_profile_source_override.value
+            if a.item_profile_source_override is not None
+            else None
+        ),
+        position_profile_source_override=(
+            a.position_profile_source_override.value
+            if a.position_profile_source_override is not None
+            else None
+        ),
         has_dinamic_scanner_txt_import=has_dinamic_scanner_txt_import,
     )
 

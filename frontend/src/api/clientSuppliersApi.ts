@@ -5,6 +5,9 @@ import {
   supplierExtractionProfilesActivePath,
   supplierExtractionProfilesClonePath,
   supplierExtractionProfilesPath,
+  supplierLabelRecognitionTestCodePath,
+  supplierLabelProfileKindPath,
+  supplierLabelProfilesPath,
   supplierPromptConfigActivatePath,
   supplierPromptConfigByIdPath,
   supplierPromptConfigsActivePath,
@@ -31,6 +34,8 @@ import type {
   SupplierExtractionProfilesListResponse,
   SupplierReferenceAnnotationsListResponse,
   SupplierReferenceImagesListResponse,
+  TestLabelRecognitionCodeRequest,
+  TestLabelRecognitionCodeResponse,
   UploadSupplierReferenceImagesRequest,
   UploadSupplierReferenceImagesResponse,
 } from './types';
@@ -107,6 +112,7 @@ export async function uploadSupplierReferenceImages(
   const description = (payload.description ?? '').trim();
   if (label) form.append('label', label);
   if (description) form.append('description', description);
+  if (payload.label_kind) form.append('label_kind', payload.label_kind);
   return apiRequestJson<UploadSupplierReferenceImagesResponse>(
     `${API_BASE}${supplierReferenceImagesPath(clientId, supplierId)}`,
     { method: 'POST', body: form }
@@ -286,6 +292,17 @@ export async function createSupplierExtractionProfileVersion(
   );
 }
 
+export async function testSupplierLabelRecognitionCode(
+  clientId: string,
+  supplierId: string,
+  body: TestLabelRecognitionCodeRequest
+): Promise<TestLabelRecognitionCodeResponse> {
+  return apiRequestJson<TestLabelRecognitionCodeResponse>(
+    `${API_BASE}${supplierLabelRecognitionTestCodePath(clientId, supplierId)}`,
+    { method: 'POST', body }
+  );
+}
+
 export async function cloneSupplierExtractionProfile(
   clientId: string,
   supplierId: string,
@@ -307,6 +324,34 @@ export async function activateSupplierExtractionProfileVersion(
   return apiRequestJson<SupplierExtractionProfile>(
     `${API_BASE}${supplierExtractionProfileActivatePath(clientId, supplierId, profileId)}${qs}`,
     { method: 'POST' }
+  );
+}
+
+export interface ClientSupplierLabelProfileRow {
+  label_kind: 'ITEM' | 'POSITION';
+  source: 'DINAMIC' | 'SUPPLIER';
+  profile_config_id?: string | null;
+  updated_at?: string | null;
+}
+
+export async function listClientSupplierLabelProfiles(
+  clientId: string,
+  supplierId: string
+): Promise<ClientSupplierLabelProfileRow[]> {
+  return apiRequestJson<ClientSupplierLabelProfileRow[]>(
+    `${API_BASE}${supplierLabelProfilesPath(clientId, supplierId)}`
+  );
+}
+
+export async function upsertClientSupplierLabelProfile(
+  clientId: string,
+  supplierId: string,
+  labelKind: 'ITEM' | 'POSITION',
+  source: 'DINAMIC' | 'SUPPLIER'
+): Promise<ClientSupplierLabelProfileRow> {
+  return apiRequestJson<ClientSupplierLabelProfileRow>(
+    `${API_BASE}${supplierLabelProfileKindPath(clientId, supplierId, labelKind)}`,
+    { method: 'PUT', body: { source } }
   );
 }
 

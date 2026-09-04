@@ -5,23 +5,35 @@ from __future__ import annotations
 from typing import Any
 
 from src.domain.client_supplier.extraction_profile import (
+    CONFIGURATION_SCHEMA_VERSION_V1,
+    CONFIGURATION_SCHEMA_VERSION_V2,
     INTERNAL_CODE_SOURCE_KEYS,
     SUPPORTED_BARCODE_FORMATS,
     AdditionalFieldRule,
     AnchorMatchPolicy,
+    CaseNormalization,
+    CharacterSetPolicy,
+    ChecksumPolicy,
     CodeValidationRules,
+    DeterministicBarcodeRules,
     EanValidationRules,
     ExtractionProfileConfiguration,
     ExtractionValidationRules,
     FieldDataType,
+    FieldMappingRule,
+    FieldMappingSource,
     InternalCodeSourceRule,
     LabelBackgroundHint,
     LabelDetectionRules,
     LabelOrientationHint,
     LabelShapeHint,
     MissingQuantityAction,
+    PayloadExample,
+    PayloadNormalizationRules,
+    PayloadStructure,
     QuantityExtractionRules,
     QuantityPresence,
+    RecognitionMode,
     UnanchoredCodeCandidatePolicy,
     default_extraction_configuration,
 )
@@ -191,6 +203,17 @@ def parse_extraction_configuration(
                 "UNKNOWN_CODE_SOURCE", f"unknown forbidden source {f!r}"
             )
 
+    recognition_mode = RecognitionMode.FULL
+    mode_raw = raw.get("recognition_mode")
+    if mode_raw is not None and str(mode_raw).strip():
+        try:
+            recognition_mode = RecognitionMode(str(mode_raw).strip().upper())
+        except ValueError as exc:
+            raise ExtractionProfileConfigurationError(
+                "PROFILE_INVALID",
+                f"recognition_mode unsupported: {mode_raw!r}",
+            ) from exc
+
     qty_raw: dict[str, Any] = (
         raw["quantity_rules"] if isinstance(raw.get("quantity_rules"), dict) else {}
     )
@@ -200,10 +223,15 @@ def parse_extraction_configuration(
             "QUANTITY_DEFAULT_FORBIDDEN",
             "quantity default_value is forbidden for automatic resolution (must be null)",
         )
+    qty_required_default = recognition_mode is RecognitionMode.FULL
     qty = QuantityExtractionRules(
         aliases=_as_str_tuple(qty_raw.get("aliases"), field="quantity_rules.aliases")
-        or QuantityExtractionRules().aliases,
-        required=bool(qty_raw.get("required", True)),
+        or (
+            ()
+            if recognition_mode is RecognitionMode.MINIMAL
+            else QuantityExtractionRules().aliases
+        ),
+        required=bool(qty_raw.get("required", qty_required_default)),
         data_type=_parse_data_type(qty_raw.get("data_type"), field="quantity_rules.data_type"),
         minimum=int(qty_raw["minimum"] if qty_raw.get("minimum") is not None else 1),
         maximum=int(
@@ -215,16 +243,32 @@ def parse_extraction_configuration(
         accepted_units=_as_str_tuple(
             qty_raw.get("accepted_units"), field="quantity_rules.accepted_units"
         ),
-        expected_presence=_parse_quantity_presence(qty_raw.get("expected_presence")),
+        expected_presence=_parse_quantity_presence(
+            qty_raw.get("expected_presence")
+            or (
+                QuantityPresence.OPTIONAL.value
+                if recognition_mode is RecognitionMode.MINIMAL
+                else None
+            )
+        ),
         missing_quantity_action=_parse_missing_quantity_action(
             qty_raw.get("missing_quantity_action")
         ),
-        allow_external_fallback=bool(qty_raw.get("allow_external_fallback", True)),
+        allow_external_fallback=bool(
+            qty_raw.get(
+                "allow_external_fallback",
+                recognition_mode is RecognitionMode.FULL,
+            )
+        ),
         allowed_spatial_relations=tuple(
             str(x).strip().upper()
             for x in (
                 qty_raw.get("allowed_spatial_relations")
-                or QuantityExtractionRules().allowed_spatial_relations
+                or (
+                    ()
+                    if recognition_mode is RecognitionMode.MINIMAL
+                    else QuantityExtractionRules().allowed_spatial_relations
+                )
             )
             if str(x).strip()
         ),
@@ -392,23 +436,72 @@ def parse_extraction_configuration(
     for k, v in aliases_raw.items():
         aliases[str(k).strip().lower()] = _as_str_tuple(v, field=f"aliases.{k}")
 
-    required = tuple(
-        str(x).strip().lower()
-        for x in (raw.get("required_fields") or ["internal_code", "quantity"])
-        if str(x).strip()
+    required_raw = raw.get("required_fields")
+    required: tuple[str, ...]
+    if required_raw is None:
+        if recognition_mode is RecognitionMode.MINIMAL:
+            # Infer identity target from first WHOLE mapping when present.
+            identity_target = "label_id"
+            if isinstance(raw.get("deterministic"), dict):
+                maps = raw["deterministic"].get("field_mappings") or []
+                if maps and isinstance(maps[0], dict) and maps[0].get("target"):
+                    identity_target = str(maps[0]["target"]).strip().lower() or "label_id"
+            required = (identity_target,)
+        else:
+            required = ("internal_code", "quantity")
+    else:
+        required = tuple(
+            str(x).strip().lower()
+            for x in required_raw
+            if str(x).strip()
+        )
+
+    schema_version = int(
+        raw.get("configuration_schema_version") or CONFIGURATION_SCHEMA_VERSION_V1
     )
+    if schema_version not in (
+        CONFIGURATION_SCHEMA_VERSION_V1,
+        CONFIGURATION_SCHEMA_VERSION_V2,
+    ):
+        raise ExtractionProfileConfigurationError(
+            "PROFILE_INVALID",
+            f"unsupported configuration_schema_version {schema_version}",
+        )
 
     custom_pattern = None
     if raw.get("custom_payload_pattern"):
-        _reject_custom_regex(
-            str(raw.get("custom_payload_pattern")),
-            field="custom_payload_pattern",
+        from src.application.services.label_validation.payload_pattern import (
+            PayloadPatternError,
+            compile_payload_pattern,
         )
+
+        try:
+            compile_payload_pattern(str(raw.get("custom_payload_pattern")))
+        except PayloadPatternError as exc:
+            raise ExtractionProfileConfigurationError(exc.code, exc.message) from exc
+        custom_pattern = str(raw.get("custom_payload_pattern")).strip() or None
+
+    deterministic = None
+    if isinstance(raw.get("deterministic"), dict):
+        deterministic = _parse_deterministic_rules(raw["deterministic"])
+        schema_version = max(schema_version, CONFIGURATION_SCHEMA_VERSION_V2)
+
+    semantic_type = None
+    if raw.get("semantic_type"):
+        semantic_type = str(raw.get("semantic_type")).strip().upper() or None
 
     allow_fallback = bool(raw.get("allow_unconfigured_code_source_fallback", False))
 
-    if not sources_sorted:
+    if not sources_sorted and deterministic is None and custom_pattern is None:
         return default_extraction_configuration()
+
+    # Allow deterministic-only / pattern-only supplier CODE_SCAN profiles.
+    # MINIMAL profiles intentionally omit OCR internal_code_sources.
+    if not sources_sorted and recognition_mode is not RecognitionMode.MINIMAL:
+        sources_sorted = default_extraction_configuration().internal_code_sources
+
+    if recognition_mode is RecognitionMode.MINIMAL and not required:
+        required = ("label_id",)
 
     return ExtractionProfileConfiguration(
         internal_code_sources=sources_sorted,
@@ -423,7 +516,183 @@ def parse_extraction_configuration(
         required_fields=required or ("internal_code", "quantity"),
         aliases=aliases,
         allow_unconfigured_code_source_fallback=allow_fallback,
+        configuration_schema_version=schema_version,
+        semantic_type=semantic_type,
+        recognition_mode=recognition_mode,
+        deterministic=deterministic,
+        valid_examples=_parse_examples(raw.get("valid_examples"), field="valid_examples"),
+        invalid_examples=_parse_examples(
+            raw.get("invalid_examples"), field="invalid_examples"
+        ),
     )
+
+
+def _parse_deterministic_rules(raw: dict[str, Any]) -> DeterministicBarcodeRules:
+    structure_key = str(raw.get("payload_structure") or PayloadStructure.SIMPLE.value).strip().upper()
+    try:
+        structure = PayloadStructure(structure_key)
+    except ValueError as exc:
+        raise ExtractionProfileConfigurationError(
+            "PROFILE_INVALID",
+            f"deterministic.payload_structure unsupported: {structure_key!r}",
+        ) from exc
+
+    charset_key = str(
+        raw.get("character_set") or CharacterSetPolicy.ANY.value
+    ).strip().upper()
+    try:
+        charset = CharacterSetPolicy(charset_key)
+    except ValueError as exc:
+        raise ExtractionProfileConfigurationError(
+            "PROFILE_INVALID",
+            f"deterministic.character_set unsupported: {charset_key!r}",
+        ) from exc
+
+    checksum_key = str(
+        raw.get("checksum_policy") or ChecksumPolicy.NONE.value
+    ).strip().upper()
+    try:
+        checksum = ChecksumPolicy(checksum_key)
+    except ValueError as exc:
+        raise ExtractionProfileConfigurationError(
+            "PROFILE_INVALID",
+            f"deterministic.checksum_policy unsupported: {checksum_key!r}",
+        ) from exc
+
+    norm_raw_obj = raw.get("normalization")
+    norm_raw: dict[str, Any] = (
+        norm_raw_obj if isinstance(norm_raw_obj, dict) else {}
+    )
+    case_key = str(
+        norm_raw.get("case_normalization") or CaseNormalization.NONE.value
+    ).strip().upper()
+    try:
+        case_norm = CaseNormalization(case_key)
+    except ValueError as exc:
+        raise ExtractionProfileConfigurationError(
+            "PROFILE_INVALID",
+            f"deterministic.normalization.case_normalization unsupported: {case_key!r}",
+        ) from exc
+    normalization = PayloadNormalizationRules(
+        trim_outer_whitespace=bool(norm_raw.get("trim_outer_whitespace", True)),
+        case_normalization=case_norm,
+        remove_internal_spaces=bool(norm_raw.get("remove_internal_spaces", False)),
+        remove_hyphens=bool(norm_raw.get("remove_hyphens", False)),
+    )
+
+    mappings: list[FieldMappingRule] = []
+    seen_targets: set[str] = set()
+    for idx, item in enumerate(raw.get("field_mappings") or []):
+        if not isinstance(item, dict):
+            raise ExtractionProfileConfigurationError(
+                "LABEL_FIELD_MAPPING_INVALID",
+                f"deterministic.field_mappings[{idx}] must be an object",
+            )
+        target = str(item.get("target") or "").strip().lower()
+        source_key = str(item.get("source") or FieldMappingSource.WHOLE.value).strip().upper()
+        try:
+            source = FieldMappingSource(source_key)
+        except ValueError as exc:
+            raise ExtractionProfileConfigurationError(
+                "LABEL_FIELD_MAPPING_INVALID",
+                f"unsupported mapping source {source_key!r}",
+            ) from exc
+        if not target:
+            raise ExtractionProfileConfigurationError(
+                "LABEL_FIELD_MAPPING_INVALID",
+                f"deterministic.field_mappings[{idx}].target is required",
+            )
+        if target in seen_targets:
+            raise ExtractionProfileConfigurationError(
+                "LABEL_FIELD_MAPPING_INVALID",
+                f"duplicate mapping target {target!r}",
+            )
+        seen_targets.add(target)
+        segment_index = item.get("segment_index")
+        ai_raw = item.get("application_identifier")
+        application_identifier = (
+            str(ai_raw).strip() if ai_raw is not None and str(ai_raw).strip() else None
+        )
+        mappings.append(
+            FieldMappingRule(
+                target=target,
+                source=source,
+                segment_index=int(segment_index) if segment_index is not None else None,
+                application_identifier=application_identifier,
+            )
+        )
+
+    prefix = str(raw["expected_prefix"]).strip() if raw.get("expected_prefix") else None
+    suffix = str(raw["expected_suffix"]).strip() if raw.get("expected_suffix") else None
+    delimiter = str(raw["delimiter"]) if raw.get("delimiter") is not None else None
+    if delimiter is not None:
+        delimiter = delimiter  # keep as provided (may be multi-char)
+
+    required_ais = tuple(
+        str(x).strip()
+        for x in (raw.get("required_application_identifiers") or ())
+        if str(x).strip()
+    )
+    optional_ais = tuple(
+        str(x).strip()
+        for x in (raw.get("optional_application_identifiers") or ())
+        if str(x).strip()
+    )
+
+    return DeterministicBarcodeRules(
+        expected_prefix=prefix or None,
+        expected_suffix=suffix or None,
+        exact_length=int(raw["exact_length"]) if raw.get("exact_length") is not None else None,
+        min_length=int(raw["min_length"]) if raw.get("min_length") is not None else None,
+        max_length=int(raw["max_length"]) if raw.get("max_length") is not None else None,
+        character_set=charset,
+        normalization=normalization,
+        payload_structure=structure,
+        delimiter=delimiter,
+        expected_segment_count=(
+            int(raw["expected_segment_count"])
+            if raw.get("expected_segment_count") is not None
+            else None
+        ),
+        field_mappings=tuple(mappings),
+        checksum_policy=checksum,
+        use_advanced_pattern=bool(raw.get("use_advanced_pattern", False)),
+        required_application_identifiers=required_ais,
+        optional_application_identifiers=optional_ais,
+    )
+
+
+def _parse_examples(raw: object, *, field: str) -> tuple[PayloadExample, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ExtractionProfileConfigurationError(
+            "PROFILE_INVALID",
+            f"{field} must be a list",
+        )
+    out: list[PayloadExample] = []
+    for idx, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ExtractionProfileConfigurationError(
+                "PROFILE_INVALID",
+                f"{field}[{idx}] must be an object",
+            )
+        payload = str(item.get("raw_payload") or "")
+        if not payload.strip():
+            raise ExtractionProfileConfigurationError(
+                "PROFILE_INVALID",
+                f"{field}[{idx}].raw_payload is required",
+            )
+        symbology = item.get("symbology")
+        description = item.get("description")
+        out.append(
+            PayloadExample(
+                raw_payload=payload,
+                symbology=str(symbology).strip() if symbology else None,
+                description=str(description).strip() if description else None,
+            )
+        )
+    return tuple(out)
 
 
 def _parse_quantity_presence(raw: object) -> QuantityPresence:
@@ -558,6 +827,21 @@ def _parse_label_detection_rules(raw: dict[str, Any]) -> LabelDetectionRules:
             raw.get("allow_full_image_fallback", defaults.allow_full_image_fallback)
         ),
         maximum_candidate_regions=max_regions,
+        approx_width_mm=(
+            float(raw["approx_width_mm"])
+            if raw.get("approx_width_mm") is not None
+            else None
+        ),
+        approx_height_mm=(
+            float(raw["approx_height_mm"])
+            if raw.get("approx_height_mm") is not None
+            else None
+        ),
+        size_tolerance_percent=(
+            float(raw["size_tolerance_percent"])
+            if raw.get("size_tolerance_percent") is not None
+            else None
+        ),
     )
 
 

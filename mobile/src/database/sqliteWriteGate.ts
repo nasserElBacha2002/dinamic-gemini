@@ -18,6 +18,14 @@ let writeTail: Promise<void> = Promise.resolve();
 
 /** @internal test helper */
 export function __resetSqliteWriteGateForTests(): void {
+  resetSqliteWriteGate();
+}
+
+/**
+ * Clear a stuck writer chain after JS reload while native SQLite work was in flight.
+ * Safe on cold boot (no-op). Do not call mid-write in a live session.
+ */
+export function resetSqliteWriteGate(): void {
   writeTail = Promise.resolve();
 }
 

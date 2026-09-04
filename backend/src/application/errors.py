@@ -220,7 +220,7 @@ class StrategyDisabledError(Exception):
 
 
 class LegacyProcessingModeNotAllowedError(ValueError):
-    """Raised when LEGACY_LLM is set on new configs or process overrides (Phase 8)."""
+    """Raised when LEGACY_LLM or INTERNAL_OCR is set on new configs or process overrides."""
 
     def __init__(self, mode: str, *, context: str = "configuration") -> None:
         self.code = "LEGACY_PROCESSING_MODE_NOT_ALLOWED_FOR_NEW_CONFIGURATION"
@@ -228,7 +228,7 @@ class LegacyProcessingModeNotAllowedError(ValueError):
         self.context = context
         super().__init__(
             f"{self.code}: {mode} is not allowed for new {context}; "
-            f"use CODE_SCAN, INTERNAL_OCR, or inherit (null)"
+            f"use CODE_SCAN or inherit (null). INTERNAL_OCR is retired for new work."
         )
 
 

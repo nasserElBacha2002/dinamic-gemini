@@ -128,7 +128,7 @@ def test_create_job_with_request_code_scan(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_create_job_inherits_aisle_then_snapshot_immutable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "true")
-    monkeypatch.setenv("INTERNAL_OCR_PROCESSING_ENABLED", "true")
+    monkeypatch.setenv("CODE_SCAN_PROCESSING_ENABLED", "true")
     from src.config import reload_settings
 
     reload_settings()
@@ -141,22 +141,45 @@ def test_create_job_inherits_aisle_then_snapshot_immutable(monkeypatch: pytest.M
         AisleStatus.CREATED,
         now,
         now,
-        identification_mode=AisleIdentificationMode.INTERNAL_OCR,
+        identification_mode=AisleIdentificationMode.CODE_SCAN,
     )
     uc, job_repo, aisle_repo = _build_use_case(inventory=inv, aisle=aisle)
     result = uc.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1", principal=platform_principal()))
-    assert result.identification_mode == "INTERNAL_OCR"
+    assert result.identification_mode == "CODE_SCAN"
     assert result.identification_mode_source == "AISLE"
     job = job_repo.get_by_id(result.job_id)
     assert job is not None
     aisle2 = aisle_repo.get_by_id("a1")
     assert aisle2 is not None
-    aisle2.identification_mode = AisleIdentificationMode.CODE_SCAN
+    aisle2.identification_mode = AisleIdentificationMode.LEGACY_LLM
     aisle_repo.save(aisle2)
     reloaded = job_repo.get_by_id(result.job_id)
     assert reloaded is not None
-    assert reloaded.identification_mode == AisleIdentificationMode.INTERNAL_OCR
+    assert reloaded.identification_mode == AisleIdentificationMode.CODE_SCAN
     assert reloaded.identification_mode_source == AisleIdentificationModeSource.AISLE
+
+
+def test_new_job_rejects_internal_ocr_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("INTERNAL_OCR_PROCESSING_ENABLED", "true")
+    monkeypatch.setenv("CODE_SCAN_PROCESSING_ENABLED", "true")
+    from src.application.errors import LegacyProcessingModeNotAllowedError
+    from src.config import reload_settings
+
+    reload_settings()
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+    uc, _, _ = _build_use_case(inventory=inv, aisle=aisle)
+    with pytest.raises(LegacyProcessingModeNotAllowedError):
+        uc.execute(
+            StartAisleProcessingCommand(
+                inventory_id="inv1",
+                aisle_id="a1",
+                requested_identification_mode="INTERNAL_OCR",
+                principal=platform_principal(),
+            )
+        )
 
 
 def test_create_job_inherits_client(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -226,7 +249,7 @@ def test_blocks_effective_legacy_from_aisle(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_modern_override_allows_despite_legacy_aisle(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "true")
-    monkeypatch.setenv("INTERNAL_OCR_PROCESSING_ENABLED", "true")
+    monkeypatch.setenv("CODE_SCAN_PROCESSING_ENABLED", "true")
     from src.config import reload_settings
 
     reload_settings()
@@ -246,12 +269,12 @@ def test_modern_override_allows_despite_legacy_aisle(monkeypatch: pytest.MonkeyP
         StartAisleProcessingCommand(
             inventory_id="inv1",
             aisle_id="a1",
-            requested_identification_mode="INTERNAL_OCR",
+            requested_identification_mode="CODE_SCAN",
             principal=platform_principal(),
         )
     )
-    assert result.identification_mode == "INTERNAL_OCR"
+    assert result.identification_mode == "CODE_SCAN"
     assert result.identification_mode_source == "REQUEST"
     job = job_repo.get_by_id(result.job_id)
     assert job is not None
-    assert job.identification_mode == AisleIdentificationMode.INTERNAL_OCR
+    assert job.identification_mode == AisleIdentificationMode.CODE_SCAN

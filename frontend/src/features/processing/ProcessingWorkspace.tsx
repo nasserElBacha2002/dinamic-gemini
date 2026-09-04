@@ -100,7 +100,12 @@ export default function ProcessingWorkspace({
 
   return (
     <Stack spacing={2} data-testid="processing-workspace">
-      <ProcessingJobHeader job={selectedJob} summary={assetsQuery.data?.summary ?? null} />
+      <ProcessingJobHeader
+        job={selectedJob}
+        summary={assetsQuery.data?.summary ?? null}
+        inventoryId={inventoryId}
+        aisleId={aisleId}
+      />
       <ProcessingProgressSummary summary={assetsQuery.data?.summary ?? null} />
       <ProcessingAssetFilters filters={filters} onChange={(patch) => updateFilters(patch, { resetPage: true })} />
       <ProcessingAssetList

@@ -48,6 +48,9 @@ class CodeScanSessionResult:
     processed_height: int | None = None
     scale_ratio: float | None = None
 
+    prepare_ms: int | None = None
+    decode_ms: int | None = None
+
     @property
     def partial_timeout(self) -> bool:
         return (

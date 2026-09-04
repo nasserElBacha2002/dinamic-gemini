@@ -38,9 +38,13 @@ module.exports = {
     '<rootDir>/tests/positionLabelPayload.test.ts',
     '<rootDir>/tests/databaseCorruption.test.ts',
     '<rootDir>/tests/databaseMigrations.test.ts',
+    '<rootDir>/tests/catalogRevision.test.ts',
     '<rootDir>/tests/localCsvAndReconcilePhase346.test.ts',
     '<rootDir>/tests/processingService.test.ts',
     '<rootDir>/tests/offlineOperationsPhase9.test.ts',
+    '<rootDir>/tests/offlineSupplierLabelValidator.test.ts',
+    '<rootDir>/tests/supplierExportSemantics.test.ts',
+    '<rootDir>/tests/localCsvExportPreflight.test.ts',
   ],
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/src/core/$1',

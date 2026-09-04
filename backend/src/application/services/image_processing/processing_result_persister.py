@@ -25,6 +25,9 @@ from src.application.errors import (
     ProductLabelClaimRepositoryUnavailableError,
 )
 from src.application.ports.clock import Clock
+from src.application.ports.image_position_label_detection_repository import (
+    ImagePositionLabelDetectionRepository,
+)
 from src.application.ports.inventory_counted_product_label_repository import (
     InventoryCountedProductLabel,
 )
@@ -34,11 +37,17 @@ from src.application.ports.manual_image_result_unit_of_work import (
     ManualImageResultUnitOfWork,
 )
 from src.application.ports.repositories import SourceAssetRepository
+from src.application.services.image_processing.processing_result_kind import (
+    get_result_kind,
+    requires_product_persistence,
+    validate_position_only_evidence,
+)
 from src.application.services.job_image_result_resolution import (
     unique_photo_coverage_images,
 )
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.image_processing.contracts import ImageProcessingResult, ImageResultStatus
+from src.domain.position_label_detection.entities import PositionLabelDetectionStatus
 from src.domain.positions.entities import (
     Position,
     PositionCreationSource,
@@ -76,6 +85,15 @@ class PersistSkipReason(str, Enum):
     NOT_RESOLVED_INTERNAL = "NOT_RESOLVED_INTERNAL"
     NON_POSITIVE_QUANTITY = "NON_POSITIVE_QUANTITY"
     ALL_LABELS_DUPLICATE = "ALL_LABELS_DUPLICATE"
+    POSITION_MATERIALIZATION_FAILED = "POSITION_MATERIALIZATION_FAILED"
+
+
+_POSITION_ONLY_VALID_STATUSES = frozenset(
+    {
+        PositionLabelDetectionStatus.VALID,
+        PositionLabelDetectionStatus.SIGNATURE_VALIDATION_SKIPPED,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -87,6 +105,7 @@ class PersistOutcome:
     skipped_reason: PersistSkipReason | None = None
     products_persisted: int = 0
     products_skipped_duplicate: int = 0
+    positions_persisted: int = 0
 
 
 def _coerce_positive_int_quantity(quantity: object) -> int | None:
@@ -155,11 +174,13 @@ class ProcessingResultPersister:
         source_asset_repo: SourceAssetRepository,
         clock: Clock,
         unit_of_work_factory: Callable[[], ManualImageResultUnitOfWork],
+        position_detection_repo: ImagePositionLabelDetectionRepository | None = None,
     ) -> None:
         self._job_source_asset_repo = job_source_asset_repo
         self._source_asset_repo = source_asset_repo
         self._clock = clock
         self._uow_factory = unit_of_work_factory
+        self._position_detection_repo = position_detection_repo
 
     def persist(
         self,
@@ -176,14 +197,21 @@ class ProcessingResultPersister:
                 persisted=False, skipped_reason=PersistSkipReason.NOT_RESOLVED_INTERNAL
             )
 
+        job_id = result.job_id
+        asset_id = result.asset_id
+
+        if not requires_product_persistence(result):
+            return self._persist_position_only(
+                result=result,
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+            )
+
         specs = _product_specs_from_result(result)
         if not specs:
             return PersistOutcome(
                 persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
             )
-
-        job_id = result.job_id
-        asset_id = result.asset_id
 
         links = self._job_source_asset_repo.list_for_job(job_id)
         photo_by_asset = {
@@ -484,6 +512,198 @@ class ProcessingResultPersister:
             products_persisted=products_persisted,
             products_skipped_duplicate=products_skipped_duplicate,
         )
+
+    def _persist_position_only(
+        self,
+        *,
+        result: ImageProcessingResult,
+        inventory_id: str,
+        aisle_id: str,
+    ) -> PersistOutcome:
+        """Acknowledge POSITION_ONLY: detections are materialized by CODE_SCAN strategy."""
+        job_id = result.job_id
+        asset_id = result.asset_id
+        result_kind = get_result_kind(result)
+
+        ok, detail = validate_position_only_evidence(result)
+        if not ok:
+            logger.warning(
+                "code_scan.position_only_validation_failed job_id=%s asset_id=%s "
+                "result_kind=%s detail=%s",
+                job_id,
+                asset_id,
+                result_kind,
+                detail,
+            )
+            return PersistOutcome(
+                persisted=False,
+                skipped_reason=PersistSkipReason.POSITION_MATERIALIZATION_FAILED,
+            )
+
+        links = self._job_source_asset_repo.list_for_job(job_id)
+        photo_by_asset = {
+            img.source_asset_id: img for img in unique_photo_coverage_images(links)
+        }
+        snap = photo_by_asset.get(asset_id)
+        if snap is None or not (snap.job_source_asset_id or "").strip():
+            logger.warning(
+                "code_scan.position_only_skip_no_snapshot job_id=%s asset_id=%s",
+                job_id,
+                asset_id,
+            )
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.ASSET_NOT_IN_SNAPSHOT
+            )
+
+        valid_detections = self._list_valid_position_detections(job_id, asset_id)
+        if self._position_detection_repo is not None and not valid_detections:
+            logger.warning(
+                "code_scan.position_only_no_durable_detections job_id=%s asset_id=%s",
+                job_id,
+                asset_id,
+            )
+            return PersistOutcome(
+                persisted=False,
+                skipped_reason=PersistSkipReason.POSITION_MATERIALIZATION_FAILED,
+            )
+
+        positions_count = len(valid_detections) if valid_detections else 1
+        anchor_id = valid_detections[0].id if valid_detections else None
+        now = self._clock.now()
+        result_evidence_id = str(uuid.uuid4())
+        entity_uid = f"{job_id}_position_only_{asset_id}"
+
+        try:
+            with self._uow_factory() as uow:
+                if hasattr(uow, "bind_lifecycle_scope"):
+                    uow.bind_lifecycle_scope(inventory_id=inventory_id, aisle_id=aisle_id)
+                repos = uow.repositories
+                uow.acquire_image_result_lock(job_id=job_id, source_asset_id=asset_id)
+
+                existing = repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
+                if existing is not None:
+                    if (existing.created_by_user_id or "").strip():
+                        return PersistOutcome(
+                            persisted=False,
+                            reconciled=False,
+                            position_id=existing.position_id,
+                            skipped_reason=PersistSkipReason.MANUAL_RESULT_EXISTS,
+                        )
+                    return PersistOutcome(
+                        persisted=False,
+                        reconciled=True,
+                        position_id=existing.position_id,
+                        active_result_id=existing.position_id,
+                        skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                        positions_persisted=positions_count,
+                    )
+
+                existing_evidence = self._find_result_evidence_for_asset(
+                    repos.result_evidence_repo, job_id, asset_id
+                )
+                if existing_evidence is not None and existing_evidence.has_valid_evidence:
+                    return PersistOutcome(
+                        persisted=False,
+                        reconciled=True,
+                        position_id=existing_evidence.position_id or anchor_id,
+                        active_result_id=existing_evidence.position_id or anchor_id,
+                        skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                        positions_persisted=positions_count,
+                    )
+
+                result_evidence = ResultEvidenceRecord(
+                    id=result_evidence_id,
+                    job_id=job_id,
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                    position_id=anchor_id,
+                    entity_uid=entity_uid,
+                    model_entity_id=None,
+                    raw_manifest_entry_id=None,
+                    manifest_entry_id=None,
+                    raw_source_image_id=asset_id,
+                    resolved_manifest_entry_id=None,
+                    source_image_id=asset_id,
+                    source_asset_id=asset_id,
+                    traceability_status=TraceabilityStatus.VALID.value,
+                    traceability_warning=None,
+                    role=ResultEvidenceRole.PRIMARY_EVIDENCE,
+                    provider=CODE_SCAN_PROVIDER,
+                    model_name=None,
+                    schema_version=None,
+                    manifest_version=None,
+                    has_valid_evidence=True,
+                    evidence_kind=RESULT_EVIDENCE_KIND_ENTITY_TRACEABILITY,
+                    created_at=now,
+                    updated_at=now,
+                )
+                repos.result_evidence_repo.save_many([result_evidence])
+                uow.commit()
+        except (ManualResultAlreadyExistsError, ImageAlreadyHasResultsError):
+            existing = self._lookup_existing_coverage(job_id, asset_id)
+            if existing is not None:
+                return PersistOutcome(
+                    persisted=False,
+                    reconciled=True,
+                    position_id=existing.position_id,
+                    active_result_id=existing.position_id,
+                    skipped_reason=PersistSkipReason.CONCURRENCY_CONFLICT,
+                    positions_persisted=positions_count,
+                )
+            return PersistOutcome(
+                persisted=False,
+                reconciled=False,
+                skipped_reason=PersistSkipReason.CONCURRENCY_CONFLICT,
+            )
+
+        logger.info(
+            "code_scan.position_only_persisted job_id=%s asset_id=%s result_kind=%s "
+            "positions_persisted=%s anchor_detection_id=%s",
+            job_id,
+            asset_id,
+            result_kind,
+            positions_count,
+            anchor_id,
+        )
+        return PersistOutcome(
+            persisted=True,
+            reconciled=True,
+            position_id=anchor_id,
+            active_result_id=anchor_id,
+            products_persisted=0,
+            positions_persisted=positions_count,
+        )
+
+    def _list_valid_position_detections(self, job_id: str, asset_id: str):
+        if self._position_detection_repo is None:
+            return []
+        try:
+            rows = self._position_detection_repo.list_by_asset(job_id, asset_id)
+        except Exception:
+            logger.warning(
+                "code_scan.position_detection_lookup_failed job_id=%s asset_id=%s",
+                job_id,
+                asset_id,
+            )
+            return []
+        return [
+            row
+            for row in rows
+            if row.detection_status in _POSITION_ONLY_VALID_STATUSES
+        ]
+
+    @staticmethod
+    def _find_result_evidence_for_asset(result_evidence_repo, job_id: str, asset_id: str):
+        if result_evidence_repo is None:
+            return None
+        try:
+            rows = result_evidence_repo.list_by_job_id(job_id)
+        except Exception:
+            return None
+        for row in rows:
+            if (row.source_asset_id or "").strip() == asset_id:
+                return row
+        return None
 
     def _lookup_existing_coverage(self, job_id: str, asset_id: str):
         try:

@@ -148,12 +148,15 @@ export {
   getSupplierReferenceImageDisplayUrl,
   getSupplierReferenceImageFileUrl,
   listClientSuppliers,
+  listClientSupplierLabelProfiles,
   listSupplierExtractionProfiles,
   listSupplierPromptConfigs,
   listSupplierReferenceAnnotations,
   listSupplierReferenceImages,
+  upsertClientSupplierLabelProfile,
   uploadSupplierReferenceImages,
 } from './clientSuppliersApi';
+export type { ClientSupplierLabelProfileRow } from './clientSuppliersApi';
 export type { ObservabilityMetricsQueryParams } from './observabilityApi';
 export { getObservabilityMetrics, getObservabilityMetricsPath } from './observabilityApi';
 export type { ProcessingAssetsQuery } from './processingApi';

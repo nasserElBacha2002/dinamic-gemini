@@ -51,6 +51,8 @@ dependencies = [
     "PyJWT>=2.13.0",
     "urllib3>=2.7.0",
     "requests>=2.33.0",
+    # PYSEC-2026-3552 — pin above vulnerable 49.x
+    "cryptography>=50.0.0",
 ]
 
 [project.optional-dependencies]

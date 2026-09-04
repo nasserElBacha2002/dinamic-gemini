@@ -40,6 +40,8 @@ export interface ConfirmedLocalResultRow {
   readonly row_version: number;
   /** Set when server reports applied_at (FINAL_POSITION_APPLIED). Distinct from SYNCED. */
   readonly applied_at: string | null;
+  /** Capture-time offline recognition profile snapshot (nullable for legacy rows). */
+  readonly recognition_profile_snapshot_json?: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -47,7 +49,7 @@ export interface ConfirmedLocalResultRow {
 export class ConfirmedLocalResultRepository {
   constructor(private readonly db: SQLiteDatabase) {}
 
-  async upsertConfirmed(input: {
+    async upsertConfirmed(input: {
     readonly capturePhotoId: string;
     readonly captureSessionId: string;
     readonly clientFileId: string | null;
@@ -65,6 +67,7 @@ export class ConfirmedLocalResultRepository {
     readonly preparedAssetSha256: string;
     readonly confirmedByUserId: string | null;
     readonly confirmedAt: string;
+    readonly recognitionProfileSnapshotJson?: string | null;
   }): Promise<ConfirmedLocalResultRow> {
     const now = new Date().toISOString();
     const existing = await this.getByPhotoId(input.capturePhotoId);
@@ -86,6 +89,7 @@ export class ConfirmedLocalResultRepository {
           prepared_asset_sha256 = ?,
           confirmed_by_user_id = ?,
           confirmed_at = ?,
+          recognition_profile_snapshot_json = COALESCE(?, recognition_profile_snapshot_json),
           sync_status = 'PENDING',
           sync_attempt_count = 0,
           next_retry_at = NULL,
@@ -107,6 +111,7 @@ export class ConfirmedLocalResultRepository {
         input.preparedAssetSha256,
         input.confirmedByUserId,
         input.confirmedAt,
+        input.recognitionProfileSnapshotJson ?? null,
         rowVersion,
         now,
         input.capturePhotoId,
@@ -124,10 +129,10 @@ export class ConfirmedLocalResultRepository {
         id, capture_photo_id, capture_session_id, client_file_id, asset_id,
         detected_internal_code, detected_quantity, confirmed_internal_code, confirmed_quantity,
         quantity_status, source, label_id, detected_symbology, parser_version, detector_version,
-        prepared_asset_sha256, confirmed_by_user_id, confirmed_at,
+        prepared_asset_sha256, confirmed_by_user_id, confirmed_at, recognition_profile_snapshot_json,
         sync_status, sync_attempt_count, next_retry_at, sync_last_error_code,
         row_version, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, NULL, NULL, 1, ?, ?);`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 0, NULL, NULL, 1, ?, ?);`,
       id,
       input.capturePhotoId,
       input.captureSessionId,
@@ -146,6 +151,7 @@ export class ConfirmedLocalResultRepository {
       input.preparedAssetSha256,
       input.confirmedByUserId,
       input.confirmedAt,
+      input.recognitionProfileSnapshotJson ?? null,
       now,
       now,
     );

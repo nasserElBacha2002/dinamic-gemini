@@ -7,6 +7,7 @@ import type { AssetProcessingSummary } from '../../api/types/processing';
 import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { useReprocessAsset } from './hooks/useReprocessAsset';
 
+// INTERNAL_OCR kept for reprocessing historical assets; not offered as a primary process-aisle mode.
 const STRATEGY_OPTIONS = ['INTERNAL', 'EXTERNAL', 'CODE_SCAN', 'INTERNAL_OCR'] as const;
 
 export interface ReprocessDialogProps {

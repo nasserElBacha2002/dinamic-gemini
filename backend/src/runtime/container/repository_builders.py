@@ -284,6 +284,29 @@ def build_supplier_extraction_profile_repository(build_repo: BuildSqlOrMemory):
     )
 
 
+def build_client_supplier_label_profile_repository(build_repo: BuildSqlOrMemory):
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_client_supplier_label_profile_repository import (
+            SqlClientSupplierLabelProfileRepository,
+        )
+
+        return SqlClientSupplierLabelProfileRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_client_supplier_label_profile_repository import (
+            MemoryClientSupplierLabelProfileRepository,
+        )
+
+        return MemoryClientSupplierLabelProfileRepository()
+
+    return build_repo(
+        backend_info_name="ClientSupplierLabelProfileRepository",
+        sql_error_subject="client_supplier_label_profile repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
 def build_supplier_reference_annotation_repository(build_repo: BuildSqlOrMemory):
     def _sql(client: SqlServerClient):
         from src.infrastructure.repositories.sql_supplier_extraction_profile_repository import (
