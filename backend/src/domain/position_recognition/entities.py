@@ -6,9 +6,10 @@ position already exists. Persistence/materialization belongs to later phases.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from types import MappingProxyType
 
 
 class PositionRecognitionSource(str, Enum):
@@ -33,8 +34,10 @@ class PositionSignatureVerification(str, Enum):
 class CanonicalPositionValidationStatus(str, Enum):
     VALID_EXISTING = "VALID_EXISTING"
     VALID_UNMATERIALIZED = "VALID_UNMATERIALIZED"
+    VALID_PENDING_RESOLUTION = "VALID_PENDING_RESOLUTION"
     INVALID_FORMAT = "INVALID_FORMAT"
     INVALID_SIGNATURE = "INVALID_SIGNATURE"
+    SIGNATURE_VALIDATION_SKIPPED = "SIGNATURE_VALIDATION_SKIPPED"
     AMBIGUOUS_CODE = "AMBIGUOUS_CODE"
     PROFILE_NOT_ALLOWED = "PROFILE_NOT_ALLOWED"
     FIELD_CONSTRAINT_VIOLATION = "FIELD_CONSTRAINT_VIOLATION"
@@ -43,6 +46,15 @@ class CanonicalPositionValidationStatus(str, Enum):
     PREEXISTENCE_REQUIRED_BY_LEGACY_POLICY = "PREEXISTENCE_REQUIRED_BY_LEGACY_POLICY"
     INVENTORY_NOT_WRITABLE = "INVENTORY_NOT_WRITABLE"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
+class PositionResolutionStatus(str, Enum):
+    NOT_EVALUATED = "NOT_EVALUATED"
+    EXISTING = "EXISTING"
+    NOT_FOUND = "NOT_FOUND"
+    SCOPE_MISMATCH = "SCOPE_MISMATCH"
+    INACTIVE = "INACTIVE"
+    ERROR = "ERROR"
 
 
 @dataclass(frozen=True)
@@ -77,7 +89,21 @@ class CanonicalPositionRecognition:
             verification=PositionSignatureVerification.NOT_APPLICABLE,
         )
     )
-    evidence: dict[str, Any] = field(default_factory=dict)
+    evidence: Mapping[str, str | int | float | bool | None] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+
+    def __post_init__(self) -> None:
+        if any(
+            value is not None and not isinstance(value, (str, int, float, bool))
+            for value in self.evidence.values()
+        ):
+            raise ValueError("canonical position evidence values must be immutable scalars")
+        object.__setattr__(
+            self,
+            "evidence",
+            MappingProxyType(dict(self.evidence)),
+        )
 
 
 @dataclass(frozen=True)
@@ -86,6 +112,7 @@ class CanonicalPositionValidationResult:
     recognition: CanonicalPositionRecognition | None = None
     error_code: str | None = None
     existing_position_label_id: str | None = None
+    resolution_status: PositionResolutionStatus = PositionResolutionStatus.NOT_EVALUATED
     policy_rejection: bool = False
     detail: str | None = None
 

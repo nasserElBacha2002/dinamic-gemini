@@ -338,6 +338,10 @@ class LabelValidationService:
             ),
             profile_source=LabelProfileSource.DINAMIC,
             label_kind=LabelKind.POSITION,
+            diagnostics={
+                "position_status": parsed_pos.status.value,
+                "position_payload": dict(payload),
+            },
         )
 
     def _validate_supplier(
@@ -470,9 +474,7 @@ class LabelValidationService:
             diagnostics["length"]["pass"] = False
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
-                detail=(
-                    f"LENGTH_MISMATCH: expected {rules.exact_length}, found {length}"
-                ),
+                detail=(f"LENGTH_MISMATCH: expected {rules.exact_length}, found {length}"),
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
                 diagnostics=diagnostics,
@@ -500,7 +502,8 @@ class LabelValidationService:
         if charset_err is not None:
             diagnostics["charset"]["pass"] = False
             return LabelValidationResult.invalid(
-                error_code=charset_err.error_code or LabelValidationErrorCode.LABEL_CHARSET_MISMATCH.value,
+                error_code=charset_err.error_code
+                or LabelValidationErrorCode.LABEL_CHARSET_MISMATCH.value,
                 detail=charset_err.detail or "CHARSET_MISMATCH",
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
@@ -523,9 +526,7 @@ class LabelValidationService:
             elif config.deterministic is None:
                 # Legacy length/charset already applied via effective_deterministic;
                 # keep code-rule fallback for hyphen/slash when no v2 charset.
-                code_err = self._validate_code_rules(
-                    normalized, config, label_kind=label_kind
-                )
+                code_err = self._validate_code_rules(normalized, config, label_kind=label_kind)
                 if code_err is not None:
                     return code_err
         except LabelProfileConfigurationError as exc:

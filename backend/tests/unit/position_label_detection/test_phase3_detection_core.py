@@ -16,6 +16,7 @@ from src.application.services.position_label_detection.resolver import PositionL
 from src.application.services.position_label_detection.validation_service import (
     PositionLabelValidationService,
 )
+from src.application.services.position_recognition import CanonicalPositionValidator
 from src.application.services.positioning_label_signing import (
     PositioningLabelSigningConfig,
     PositioningLabelSigningService,
@@ -42,6 +43,7 @@ from src.infrastructure.repositories.memory_client_position_label_repository imp
 from src.infrastructure.repositories.memory_image_position_label_detection_repository import (
     MemoryImagePositionLabelDetectionRepository,
 )
+from src.observability.metrics.registry import get_metrics_registry
 
 
 class _Clock:
@@ -184,9 +186,7 @@ def test_use_case_valid_and_idempotent() -> None:
     )
     repo_labels.save(label)
     signing = _signing()
-    use_case = _detection_use_case(
-        label_repo=repo_labels, detection_repo=repo_det, signing=signing
-    )
+    use_case = _detection_use_case(label_repo=repo_labels, detection_repo=repo_det, signing=signing)
     code = DetectedCode(
         symbology="QR_CODE",
         raw_value=json.dumps(payload, separators=(",", ":")),
@@ -208,6 +208,68 @@ def test_use_case_valid_and_idempotent() -> None:
     assert first.detections[0].position_name_snapshot == "B-02"
     assert first.detections[0].id == second.detections[0].id
     assert len(repo_det.list_by_job("job-1")) == 1
+
+
+def test_use_case_records_isolated_shadow_comparison_without_raw_code() -> None:
+    import json
+
+    metrics = get_metrics_registry()
+    metrics.reset_for_tests()
+    labels = MemoryClientPositionLabelRepository()
+    detections = MemoryImagePositionLabelDetectionRepository()
+    signing = _signing()
+    payload = _signed_payload("pos_shadow")
+    now = datetime(2026, 7, 31, tzinfo=timezone.utc)
+    labels.save(
+        ClientPositionLabel(
+            id=str(uuid4()),
+            client_id="client-1",
+            public_identifier="pos_shadow",
+            name="Shadow",
+            normalized_name="SHADOW",
+            status=ClientPositionLabelStatus.ACTIVE,
+            payload_version=1,
+            canonical_payload=payload,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    resolver = PositionLabelResolver(label_repo=labels)
+    use_case = _detection_use_case(
+        label_repo=labels,
+        detection_repo=detections,
+        signing=signing,
+        canonical_validator=CanonicalPositionValidator(
+            signing=signing,
+            resolver=resolver,
+        ),
+    )
+
+    result = use_case.execute(
+        ImagePositionDetectionCommand(
+            client_id="client-1",
+            inventory_id="inv-1",
+            job_id="job-shadow",
+            source_asset_id="asset-shadow",
+            codes=[
+                DetectedCode(
+                    symbology="QR_CODE",
+                    raw_value=json.dumps(payload),
+                    normalized_value=json.dumps(payload),
+                )
+            ],
+        )
+    )
+
+    shadow = result.detections[0].metadata_json["canonical_shadow"]
+    assert result.detections[0].detection_status is PositionLabelDetectionStatus.VALID
+    assert shadow["outcome"] == "MATCH"
+    assert shadow["resolution_status"] == "NOT_EVALUATED"
+    assert "pos_shadow" not in str(shadow)
+    snapshot = metrics.snapshot()
+    assert not any(name.startswith("position_recognition_total") for name in snapshot)
+    assert not any(name.startswith("position_validation_rejected_total") for name in snapshot)
+    assert any(name.startswith("position_validation_shadow_comparison_total") for name in snapshot)
 
 
 def test_use_case_ambiguous_two_positions() -> None:
@@ -233,9 +295,7 @@ def test_use_case_ambiguous_two_positions() -> None:
                 updated_at=now,
             )
         )
-    use_case = _detection_use_case(
-        label_repo=repo_labels, detection_repo=repo_det, signing=signing
-    )
+    use_case = _detection_use_case(label_repo=repo_labels, detection_repo=repo_det, signing=signing)
     p1 = signing.sign_payload(build_positioning_label_payload(public_label_id="pos_1"))
     p2 = signing.sign_payload(build_positioning_label_payload(public_label_id="pos_2"))
     result = use_case.execute(
@@ -323,7 +383,9 @@ def test_unsigned_active_label_accepted_when_qr_missing_signature() -> None:
             job_id="job-1",
             source_asset_id="asset-u",
             codes=[
-                DetectedCode(symbology="QR_CODE", raw_value=raw, normalized_value=raw, candidate_index=0)
+                DetectedCode(
+                    symbology="QR_CODE", raw_value=raw, normalized_value=raw, candidate_index=0
+                )
             ],
         )
     )
@@ -377,7 +439,9 @@ def test_unsigned_v2_missing_signature_rejected_not_legacy() -> None:
             job_id="job-1",
             source_asset_id="asset-v2-u",
             codes=[
-                DetectedCode(symbology="QR_CODE", raw_value=raw, normalized_value=raw, candidate_index=0)
+                DetectedCode(
+                    symbology="QR_CODE", raw_value=raw, normalized_value=raw, candidate_index=0
+                )
             ],
         )
     )
@@ -625,4 +689,3 @@ def test_job_scoped_idempotency_preserves_history() -> None:
     assert first.detections[0].id != second.detections[0].id
     assert len(repo_det.list_by_job("job-a")) == 1
     assert len(repo_det.list_by_job("job-b")) == 1
-

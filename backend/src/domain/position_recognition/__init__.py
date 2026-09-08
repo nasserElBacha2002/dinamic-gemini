@@ -5,6 +5,7 @@ from src.domain.position_recognition.entities import (
     CanonicalPositionValidationResult,
     CanonicalPositionValidationStatus,
     PositionRecognitionSource,
+    PositionResolutionStatus,
     PositionSignatureEvidence,
     PositionSignatureVerification,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "CanonicalPositionValidationResult",
     "CanonicalPositionValidationStatus",
     "PositionRecognitionSource",
+    "PositionResolutionStatus",
     "PositionSignatureEvidence",
     "PositionSignatureVerification",
 ]

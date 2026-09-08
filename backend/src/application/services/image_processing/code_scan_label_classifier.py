@@ -108,9 +108,7 @@ class CodeScanLabelClassifier:
         canonical_position_validator: CanonicalPositionValidator | None = None,
     ) -> None:
         self._validation = validation_service or LabelValidationService()
-        self._positions = canonical_position_validator or CanonicalPositionValidator(
-            label_validator=self._validation
-        )
+        self._positions = canonical_position_validator
 
     def classify(
         self,
@@ -154,9 +152,8 @@ class CodeScanLabelClassifier:
                 )
                 continue
 
-            if (
-                result.status is LabelValidationStatus.VALID
-                and isinstance(result.label, NormalizedItemLabel)
+            if result.status is LabelValidationStatus.VALID and isinstance(
+                result.label, NormalizedItemLabel
             ):
                 identity = ((result.label.label_id or result.label.sku) or "").strip()
                 if identity in seen_item_ids:
@@ -176,34 +173,36 @@ class CodeScanLabelClassifier:
                 )
                 continue
 
-            if (
-                result.status is LabelValidationStatus.VALID
-                and isinstance(result.label, NormalizedPositionLabel)
+            if result.status is LabelValidationStatus.VALID and isinstance(
+                result.label, NormalizedPositionLabel
             ):
-                canonical = self._positions.validate(
-                    CanonicalPositionValidationCommand(
-                        candidate=label_candidate,
-                        source=PositionRecognitionSource.CODE_SCAN,
-                        context=context,
-                        client_supplier_id=(
-                            context.resolved_profiles.position.client_supplier_id
-                            if context.resolved_profiles is not None
-                            else None
-                        ),
-                    )
-                )
-                if not canonical.operationally_accepted or canonical.recognition is None:
-                    rejections.append(
-                        ClassificationRejection(
-                            detection_index=idx,
-                            error_code=canonical.error_code or canonical.status.value,
-                            detail=canonical.detail,
-                            raw_payload_hash=_sha256_hex(raw),
-                            label_kind=LabelKind.POSITION,
+                identity = result.label.position_id.strip()
+                if self._positions is not None:
+                    canonical = self._positions.validate(
+                        CanonicalPositionValidationCommand(
+                            candidate=label_candidate,
+                            source=PositionRecognitionSource.CODE_SCAN,
+                            context=context,
+                            client_supplier_id=(
+                                context.resolved_profiles.position.client_supplier_id
+                                if context.resolved_profiles is not None
+                                else None
+                            ),
+                            structural_result=result,
                         )
                     )
-                    continue
-                identity = canonical.recognition.normalized_code
+                    if not canonical.operationally_accepted or canonical.recognition is None:
+                        rejections.append(
+                            ClassificationRejection(
+                                detection_index=idx,
+                                error_code=canonical.error_code or canonical.status.value,
+                                detail=canonical.detail,
+                                raw_payload_hash=_sha256_hex(raw),
+                                label_kind=LabelKind.POSITION,
+                            )
+                        )
+                        continue
+                    identity = canonical.recognition.normalized_code
                 if identity in seen_position_ids:
                     rejections.append(
                         ClassificationRejection(
@@ -217,9 +216,7 @@ class CodeScanLabelClassifier:
                     continue
                 seen_position_ids.add(identity)
                 positions.append(
-                    ClassifiedPosition(
-                        detection_index=idx, label=result.label, candidate=cand
-                    )
+                    ClassifiedPosition(detection_index=idx, label=result.label, candidate=cand)
                 )
                 continue
 
@@ -240,8 +237,7 @@ class CodeScanLabelClassifier:
             # Do not feed Dinamic-looking invalids back into the opposite kind path.
             if result.error_code and (
                 "DINAMIC" in result.error_code
-                or result.error_code
-                == LabelValidationErrorCode.LABEL_PROFILE_SOURCE_MISMATCH.value
+                or result.error_code == LabelValidationErrorCode.LABEL_PROFILE_SOURCE_MISMATCH.value
             ):
                 continue
             # Soft supplier mismatch may still be leftover for opposite legacy path

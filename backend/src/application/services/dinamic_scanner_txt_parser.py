@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from src.application.services.position_recognition import (
@@ -59,7 +60,9 @@ class ParsedDinamicScannerTxt:
     parse_warnings: tuple[str, ...]
 
 
-def _split_pipe_record(line: str, *, expected_parts: int, record_kind: str) -> tuple[list[str], tuple[str, ...]]:
+def _split_pipe_record(
+    line: str, *, expected_parts: int, record_kind: str
+) -> tuple[list[str], tuple[str, ...]]:
     parts = line.split("|")
     if len(parts) != expected_parts:
         return parts, (f"{record_kind}:invalid_field_count",)
@@ -107,13 +110,19 @@ def _validate_position_fields(parts: list[str]) -> tuple[str, str, str, tuple[st
     side_text = (side or "").strip()
     if not label:
         errors.append("position_label_id:required")
-    if not pallet_text:
-        errors.append("pallet:required")
     else:
         try:
-            normalize_position_code(pallet_text)
+            normalize_position_code(label)
         except PositionCodeNormalizationError as exc:
-            errors.append(f"pallet:{exc.code.lower()}")
+            suffix = {
+                "POSITION_CODE_TOO_LONG": "too_long",
+                "POSITION_CODE_CONTROL_CHARACTER": "control_character",
+            }.get(exc.code, "invalid")
+            errors.append(f"position_label_id:{suffix}")
+    if not pallet_text:
+        errors.append("pallet:required")
+    elif any(unicodedata.category(ch).startswith("C") for ch in pallet_text):
+        errors.append("pallet:control_character")
     if not side_text:
         errors.append("side:required")
     else:
@@ -135,9 +144,7 @@ def parse_dinamic_scanner_txt(
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
-        raise DinamicScannerTxtImportError(
-            TXT_INVALID_ENCODING, "TXT must be UTF-8"
-        ) from exc
+        raise DinamicScannerTxtImportError(TXT_INVALID_ENCODING, "TXT must be UTF-8") from exc
 
     if not text.strip():
         raise DinamicScannerTxtImportError(TXT_EMPTY, "TXT file is empty")
@@ -232,14 +239,10 @@ def aisle_code_from_txt_filename(filename: str | None) -> str:
         )
     raw = str(filename).strip()
     if ".." in raw or "/" in raw or "\\" in raw:
-        raise DinamicScannerTxtImportError(
-            TXT_INVALID_FILENAME, "TXT filename is not allowed"
-        )
+        raise DinamicScannerTxtImportError(TXT_INVALID_FILENAME, "TXT filename is not allowed")
     base = raw
     if not base or base in {".", ".."}:
-        raise DinamicScannerTxtImportError(
-            TXT_INVALID_FILENAME, "TXT filename is not allowed"
-        )
+        raise DinamicScannerTxtImportError(TXT_INVALID_FILENAME, "TXT filename is not allowed")
     lower = base.lower()
     if not lower.endswith(".txt"):
         raise DinamicScannerTxtImportError(

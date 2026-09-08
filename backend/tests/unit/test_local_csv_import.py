@@ -5,6 +5,7 @@ import io
 from datetime import datetime, timezone
 
 import pytest
+
 from src.application.services.local_csv_parser import (
     LocalCsvDocumentError,
     parse_local_csv,
@@ -221,10 +222,10 @@ def test_formula_cell_is_neutralized_and_reported() -> None:
 
     record = preview.execute(
         inventory_id="inventory-1",
-        content=_csv_bytes(notes="=HYPERLINK(\"https://invalid\")"),
+        content=_csv_bytes(notes='=HYPERLINK("https://invalid")'),
     )
 
-    assert record.rows[0].notes == "'=HYPERLINK(\"https://invalid\")"
+    assert record.rows[0].notes == '\'=HYPERLINK("https://invalid")'
     assert "notes:csv_formula_neutralized" in record.rows[0].validation_warnings
     assert record.rows[0].status == "PREVIEW_VALID"
     assert record.rows[0].detection_source == "LOCAL_CODE_SCAN"

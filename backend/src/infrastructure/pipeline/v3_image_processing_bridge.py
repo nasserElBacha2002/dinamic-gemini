@@ -359,9 +359,7 @@ def _build_canonical_position_validator(
         signing = PositioningLabelSigningService(
             PositioningLabelSigningConfig(
                 secret=getattr(settings, "positioning_label_hmac_secret", None),
-                key_version=int(
-                    getattr(settings, "positioning_label_hmac_key_version", 1) or 1
-                ),
+                key_version=int(getattr(settings, "positioning_label_hmac_key_version", 1) or 1),
                 previous_secrets=parse_previous_secrets(
                     getattr(settings, "positioning_label_hmac_previous_secrets", "")
                 ),
@@ -378,12 +376,13 @@ def _build_canonical_position_validator(
         signing=signing,
         resolver=resolver,
         policy=PositionCompatibilityPolicy.resolve(
-            signature_required=bool(
+            signature_validation_enabled=bool(
                 getattr(settings, "position_label_signature_validation_enabled", True)
             ),
-            preexistence_required=bool(
-                getattr(settings, "position_preexistence_required", True)
+            allow_unsigned_legacy=bool(
+                getattr(settings, "positioning_allow_unsigned_legacy", True)
             ),
+            preexistence_required=bool(getattr(settings, "position_preexistence_required", True)),
             flexible_validation_enabled=bool(
                 getattr(settings, "position_flexible_validation_enabled", False)
             ),
@@ -463,9 +462,7 @@ def _build_position_detection_use_case(settings):
         persistence_enabled=bool(
             getattr(settings, "position_label_detection_persistence_enabled", True)
         ),
-        max_codes_per_image=int(
-            getattr(settings, "position_label_max_codes_per_image", 32) or 32
-        ),
+        max_codes_per_image=int(getattr(settings, "position_label_max_codes_per_image", 32) or 32),
         persist_no_label=bool(getattr(settings, "position_label_persist_no_label", False)),
         canonical_validator=_build_canonical_position_validator(
             settings,
@@ -474,8 +471,14 @@ def _build_position_detection_use_case(settings):
         ),
     )
 
+
 def build_default_code_scan_persister(
-    *, job_source_asset_repo, source_asset_repo, clock, unit_of_work_factory, position_detection_repo=None
+    *,
+    job_source_asset_repo,
+    source_asset_repo,
+    clock,
+    unit_of_work_factory,
+    position_detection_repo=None,
 ):
     from src.application.services.image_processing.processing_result_persister import (
         ProcessingResultPersister,

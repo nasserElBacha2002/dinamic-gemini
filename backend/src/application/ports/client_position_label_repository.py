@@ -10,6 +10,10 @@ from src.domain.client_position_label.entities import (
 )
 
 
+class PositionLabelResolutionUnavailableError(RuntimeError):
+    """Transient storage failure while resolving a public position identifier."""
+
+
 class ClientPositionLabelRepository(Protocol):
     def get_by_id(self, label_id: str) -> ClientPositionLabel | None: ...
 
@@ -67,4 +71,6 @@ class ClientPositionLabelRepository(Protocol):
         marker_version: int,
     ) -> ClientPositionLabelArtifact | None: ...
 
-    def save_artifact(self, artifact: ClientPositionLabelArtifact) -> ClientPositionLabelArtifact: ...
+    def save_artifact(
+        self, artifact: ClientPositionLabelArtifact
+    ) -> ClientPositionLabelArtifact: ...

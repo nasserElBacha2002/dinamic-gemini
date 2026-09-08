@@ -27,6 +27,8 @@ from src.application.services.position_label_detection.validation_service import
 from src.application.services.position_recognition import (
     CanonicalPositionValidationCommand,
     CanonicalPositionValidator,
+    compare_position_shadow,
+    record_position_shadow_metric,
 )
 from src.domain.label_validation import CandidateLabel
 from src.domain.label_validation.context import LabelValidationContext
@@ -407,11 +409,9 @@ class ImagePositionDetectionUseCase:
         *,
         now: datetime,
     ) -> ImagePositionLabelDetection:
+        canonical = None
         if self._canonical_validator is not None:
-            # Phase 1 shadow integration: the canonical result is observable,
-            # while the established parser/policy below remains operationally
-            # authoritative until flexible validation is enabled in a later phase.
-            self._canonical_validator.validate(
+            canonical = self._canonical_validator.validate(
                 CanonicalPositionValidationCommand(
                     candidate=CandidateLabel(raw_payload=code.raw_value),
                     source=PositionRecognitionSource.CODE_SCAN,
@@ -420,9 +420,28 @@ class ImagePositionDetectionUseCase:
                         job_id=command.job_id,
                         client_id=command.client_id,
                     ),
-                    inventory_id=command.inventory_id,
-                )
+                ),
+                evaluate_preexistence=False,
+                record_operational_metrics=False,
             )
+
+        legacy = self._evaluate_position_code_legacy(command, code, now=now)
+        if canonical is not None:
+            comparison = compare_position_shadow(canonical, legacy.detection_status)
+            legacy.metadata_json = {
+                **(legacy.metadata_json or {}),
+                "canonical_shadow": comparison.to_metadata(),
+            }
+            record_position_shadow_metric(comparison)
+        return legacy
+
+    def _evaluate_position_code_legacy(
+        self,
+        command: ImagePositionDetectionCommand,
+        code: DetectedCode,
+        *,
+        now: datetime,
+    ) -> ImagePositionLabelDetection:
         parsed = self._parser.parse(code.raw_value)
         if parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE and parsed.label_id:
             legacy = self._policy.try_accept_unsigned_legacy(
@@ -587,7 +606,9 @@ class ImagePositionDetectionUseCase:
             )
 
         assert resolved.label is not None
-        if not _qr_hierarchy_matches_catalog(parsed.payload, resolved.label.canonical_payload or {}):
+        if not _qr_hierarchy_matches_catalog(
+            parsed.payload, resolved.label.canonical_payload or {}
+        ):
             logger.info(
                 "position_label_catalog_mismatch client_id=%s job_id=%s asset_id=%s "
                 "label_id=%s detector_version=%s correlation_id=%s",

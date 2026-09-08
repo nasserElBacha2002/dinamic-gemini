@@ -15,6 +15,7 @@ from src.application.services.image_processing.vision_candidate_bridge import (
     candidate_from_vision_analysis,
     normalize_vision_via_label_validation,
 )
+from src.application.services.label_validation import LabelValidationService
 from src.application.services.position_recognition import CanonicalPositionValidator
 from src.application.services.positioning_label_signing import (
     PositioningLabelSigningConfig,
@@ -37,6 +38,21 @@ from src.domain.label_profiles.entities import ResolvedLabelProfile, ResolvedLab
 from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
 from src.domain.label_validation import RecognitionSource
 from src.domain.label_validation.context import LabelValidationContext
+
+
+class CountingLabelValidationService(LabelValidationService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.best_effort_calls = 0
+        self.validate_calls = 0
+
+    def validate(self, candidate, *, context, label_kind):
+        self.validate_calls += 1
+        return super().validate(candidate, context=context, label_kind=label_kind)
+
+    def validate_best_effort(self, candidate, *, context):
+        self.best_effort_calls += 1
+        return super().validate_best_effort(candidate, context=context)
 
 
 def _profiles() -> ResolvedLabelProfiles:
@@ -167,6 +183,7 @@ def test_vision_position_segmented_via_label_validation() -> None:
         },
         duration_ms=8,
     )
+    validation = CountingLabelValidationService()
     out = normalize_vision_via_label_validation(
         job_id="job-1",
         asset_id="a1",
@@ -174,6 +191,10 @@ def test_vision_position_segmented_via_label_validation() -> None:
         validation_context=ctx,
         base_fields={},
         evidence={},
+        label_validation_service=validation,
+        canonical_position_validator=CanonicalPositionValidator(
+            label_validator=validation,
+        ),
     )
     assert out.status is ImageResultStatus.RESOLVED_EXTERNAL
     assert out.resolved_by == "EXTERNAL_PROVIDER"
@@ -182,6 +203,8 @@ def test_vision_position_segmented_via_label_validation() -> None:
     assert str(pos.get("pallet")) in ("04", "4")
     assert str(pos.get("side")).upper() == "RIGHT"
     assert str(pos.get("level")) in ("02", "2")
+    assert validation.validate_calls == 1
+    assert validation.best_effort_calls == 0
 
 
 def test_vision_dinamic_position_with_unverified_signature_is_rejected() -> None:

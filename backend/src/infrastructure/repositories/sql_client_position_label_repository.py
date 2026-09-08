@@ -12,6 +12,9 @@ from src.application.errors import (
     ClientPositionLabelConflictError,
     IdempotencyKeyReusedError,
 )
+from src.application.ports.client_position_label_repository import (
+    PositionLabelResolutionUnavailableError,
+)
 from src.database.sqlserver import SqlServerClient
 from src.domain.client_position_label.entities import (
     ClientPositionLabel,
@@ -33,14 +36,13 @@ def _is_active_marker_unique_violation(exc: BaseException) -> bool:
 
 def _map_label_integrity_error(exc: BaseException) -> None:
     if _is_idempotency_unique_violation(exc):
-        raise IdempotencyKeyReusedError(
-            "IDEMPOTENCY_KEY_REUSED: key already registered"
-        ) from exc
+        raise IdempotencyKeyReusedError("IDEMPOTENCY_KEY_REUSED: key already registered") from exc
     if _is_active_marker_unique_violation(exc):
         raise ClientPositionLabelConflictError(
             "Active marker already exists for this hierarchy index",
             code="POSITION_LABEL_MARKER_ACTIVE_EXISTS",
         ) from exc
+
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
@@ -107,11 +109,7 @@ def _row_to_label(row) -> ClientPositionLabel:
         ),
         pallet=optional_nonempty_db_str(getattr(row, "pallet", None)),
         side=optional_nonempty_db_str(getattr(row, "side", None)),
-        level=(
-            int(getattr(row, "level"))
-            if getattr(row, "level", None) is not None
-            else None
-        ),
+        level=(int(getattr(row, "level")) if getattr(row, "level", None) is not None else None),
         marker_index=(
             int(getattr(row, "marker_index"))
             if getattr(row, "marker_index", None) is not None
@@ -178,9 +176,14 @@ class SqlClientPositionLabelRepository:
         pub = (public_identifier or "").strip()
         if not pub:
             return None
-        with self._client.cursor() as cur:
-            cur.execute(_LABEL_SELECT + " WHERE public_identifier = ?", (pub,))
-            row = cur.fetchone()
+        try:
+            with self._client.cursor() as cur:
+                cur.execute(_LABEL_SELECT + " WHERE public_identifier = ?", (pub,))
+                row = cur.fetchone()
+        except (pyodbc.InterfaceError, pyodbc.OperationalError) as exc:
+            raise PositionLabelResolutionUnavailableError(
+                "position label repository unavailable"
+            ) from exc
         return _row_to_label(row) if row else None
 
     def get_by_idempotency_key(

@@ -16,6 +16,7 @@ from src.application.errors import (
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.positions.update_position_code import UpdatePositionCodeUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
@@ -99,6 +100,45 @@ def _aisle_review_sync(
 ) -> AisleReviewLifecycleSync:
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
     return AisleReviewLifecycleSync(aisle_repo, position_repo, clock, reconciler)
+
+
+def test_update_position_code_real_use_case_validates_and_records_review() -> None:
+    now = datetime(2026, 9, 8, 12, 0, 0, tzinfo=timezone.utc)
+    inventory = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
+    aisle = Aisle("aisle-1", inventory.id, "A01", AisleStatus.CREATED, now, now)
+    position = Position(
+        id="pos-1",
+        aisle_id=aisle.id,
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=True,
+        primary_evidence_id=None,
+        created_at=now,
+        updated_at=now,
+    )
+    inventory_repo = StubInventoryRepo(inventory)
+    aisle_repo = StubAisleRepo(aisle)
+    position_repo = StubPositionRepo(position)
+    review_repo = StubReviewRepo()
+    clock = FixedClock(now)
+    use_case = UpdatePositionCodeUseCase(
+        inventory_repo,
+        aisle_repo,
+        position_repo,
+        review_repo,
+        clock,
+        _aisle_review_sync(inventory_repo, aisle_repo, position_repo, clock),
+    )
+
+    use_case.execute(inventory.id, aisle.id, position.id, None, "  a-é/01  ")
+
+    saved = position_repo.get_by_id(position.id)
+    assert saved is not None
+    assert saved.corrected_position_code == "a-é/01"
+    assert saved.status is PositionStatus.CORRECTED
+    actions = review_repo.list_by_position(position.id)
+    assert len(actions) == 1
+    assert actions[0].after_json["corrected_position_code"] == "a-é/01"
 
 
 def test_confirm_position_sets_reviewed_and_creates_audit() -> None:

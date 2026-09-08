@@ -2097,8 +2097,9 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Master gate for flexible canonical position acceptance. False keeps legacy "
-            "signature/preexistence gates effective. Env: POSITION_FLEXIBLE_VALIDATION_ENABLED."
+            "Master gate for accepting previously unknown positions. False requires "
+            "POSITION_PREEXISTENCE_REQUIRED=true but does not reinterpret the historical "
+            "signature-validation flag. Env: POSITION_FLEXIBLE_VALIDATION_ENABLED."
         ),
     )
     positioning_allow_unsigned_legacy: bool = Field(

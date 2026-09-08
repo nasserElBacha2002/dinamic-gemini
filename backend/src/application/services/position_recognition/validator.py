@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Protocol
 
 from src.application.services.label_validation import LabelValidationService
+from src.application.services.position_label_detection.resolver import (
+    PositionLabelResolutionUnavailableError,
+)
 from src.application.services.position_recognition.normalization import (
     PositionCodeNormalizationError,
     normalize_position_code,
@@ -18,6 +22,7 @@ from src.domain.label_profiles.kinds import LabelProfileSource
 from src.domain.label_validation import (
     CandidateLabel,
     LabelValidationErrorCode,
+    LabelValidationResult,
     LabelValidationStatus,
     NormalizedPositionLabel,
 )
@@ -28,9 +33,12 @@ from src.domain.position_recognition import (
     CanonicalPositionValidationResult,
     CanonicalPositionValidationStatus,
     PositionRecognitionSource,
+    PositionResolutionStatus,
     PositionSignatureEvidence,
     PositionSignatureVerification,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PositionLabelResolverPort(Protocol):
@@ -43,7 +51,8 @@ class PositionLabelResolverPort(Protocol):
 class PositionCompatibilityPolicy:
     """Server-controlled compatibility policy; clients cannot override it."""
 
-    signature_required: bool = True
+    signature_validation_enabled: bool = True
+    allow_unsigned_legacy: bool = False
     preexistence_required: bool = True
     flexible_validation_enabled: bool = False
 
@@ -51,18 +60,27 @@ class PositionCompatibilityPolicy:
     def resolve(
         cls,
         *,
-        signature_required: bool,
+        signature_validation_enabled: bool,
+        allow_unsigned_legacy: bool = False,
         preexistence_required: bool,
         flexible_validation_enabled: bool,
     ) -> PositionCompatibilityPolicy:
-        # Disabling a legacy gate has no effect until flexible validation is
-        # deliberately enabled, avoiding contradictory partial deployments.
         flexible = bool(flexible_validation_enabled)
+        if not flexible and not preexistence_required:
+            raise PositionPolicyConfigurationError(
+                "POSITION_PREEXISTENCE_REQUIRED=false requires "
+                "POSITION_FLEXIBLE_VALIDATION_ENABLED=true"
+            )
         return cls(
-            signature_required=bool(signature_required) or not flexible,
-            preexistence_required=bool(preexistence_required) or not flexible,
+            signature_validation_enabled=bool(signature_validation_enabled),
+            allow_unsigned_legacy=bool(allow_unsigned_legacy),
+            preexistence_required=bool(preexistence_required),
             flexible_validation_enabled=flexible,
         )
+
+
+class PositionPolicyConfigurationError(ValueError):
+    """Contradictory server-side position policy configuration."""
 
 
 @dataclass(frozen=True)
@@ -70,11 +88,8 @@ class CanonicalPositionValidationCommand:
     candidate: CandidateLabel
     source: PositionRecognitionSource
     context: LabelValidationContext
-    company_id: str | None = None
-    inventory_id: str | None = None
-    aisle_id: str | None = None
     client_supplier_id: str | None = None
-    inventory_writable: bool = True
+    structural_result: LabelValidationResult | None = None
 
 
 class CanonicalPositionValidator:
@@ -94,25 +109,33 @@ class CanonicalPositionValidator:
         self._policy = policy or PositionCompatibilityPolicy()
 
     def validate(
-        self, command: CanonicalPositionValidationCommand
+        self,
+        command: CanonicalPositionValidationCommand,
+        *,
+        evaluate_preexistence: bool = True,
+        record_operational_metrics: bool = True,
     ) -> CanonicalPositionValidationResult:
-        self._metric("position_recognition_total", command)
-        if not command.inventory_writable:
-            return self._finish(
-                command,
-                CanonicalPositionValidationResult(
-                    status=CanonicalPositionValidationStatus.INVENTORY_NOT_WRITABLE,
-                    error_code="INVENTORY_NOT_WRITABLE",
-                ),
-            )
-
+        if record_operational_metrics:
+            self._metric("position_recognition_total", command)
         raw = command.candidate.raw_payload
-        dinamic_payload = self._parse_dinamic_payload(raw)
+        dinamic_payload = self._prevalidated_dinamic_payload(command.structural_result)
+        structurally_validated = dinamic_payload is not None
+        if dinamic_payload is None:
+            dinamic_payload = self._parse_dinamic_payload(raw)
         if dinamic_payload is not None:
-            result = self._validate_dinamic(command, dinamic_payload)
+            result = self._validate_dinamic(
+                command,
+                dinamic_payload,
+                evaluate_preexistence=evaluate_preexistence,
+                structurally_validated=structurally_validated,
+            )
         else:
             result = self._validate_profile_position(command)
-        return self._finish(command, result)
+        return self._finish(
+            command,
+            result,
+            record_operational_metrics=record_operational_metrics,
+        )
 
     @staticmethod
     def _parse_dinamic_payload(raw: str) -> dict | None:
@@ -124,13 +147,33 @@ class CanonicalPositionValidator:
             return parsed
         return None
 
+    @staticmethod
+    def _prevalidated_dinamic_payload(
+        result: LabelValidationResult | None,
+    ) -> dict | None:
+        if (
+            result is None
+            or result.status is not LabelValidationStatus.VALID
+            or not isinstance(result.label, NormalizedPositionLabel)
+            or result.label.profile_source is not LabelProfileSource.DINAMIC
+        ):
+            return None
+        payload = result.diagnostics.get("position_payload")
+        if isinstance(payload, dict) and payload.get("type") == POSITIONING_LABEL_TYPE:
+            return dict(payload)
+        return None
+
     def _validate_dinamic(
         self,
         command: CanonicalPositionValidationCommand,
         payload: dict,
+        *,
+        evaluate_preexistence: bool,
+        structurally_validated: bool,
     ) -> CanonicalPositionValidationResult:
         try:
-            validate_positioning_payload(payload)
+            if not structurally_validated:
+                validate_positioning_payload(payload)
             code = normalize_position_code(str(payload["label_id"]))
         except (ValueError, PositionCodeNormalizationError) as exc:
             return CanonicalPositionValidationResult(
@@ -148,7 +191,7 @@ class CanonicalPositionValidator:
             if signature_present
             else PositionSignatureVerification.MISSING
         )
-        if signature_present:
+        if signature_present and self._policy.signature_validation_enabled:
             if self._signing is None:
                 verification = PositionSignatureVerification.UNVERIFIED
             else:
@@ -181,6 +224,12 @@ class CanonicalPositionValidator:
             },
         )
 
+        if signature_present and not self._policy.signature_validation_enabled:
+            return CanonicalPositionValidationResult(
+                status=CanonicalPositionValidationStatus.SIGNATURE_VALIDATION_SKIPPED,
+                recognition=recognition,
+                error_code="SIGNATURE_VALIDATION_SKIPPED",
+            )
         if verification is PositionSignatureVerification.INVALID:
             return CanonicalPositionValidationResult(
                 status=CanonicalPositionValidationStatus.INVALID_SIGNATURE,
@@ -193,9 +242,8 @@ class CanonicalPositionValidator:
                 recognition=recognition,
                 error_code="SIGNATURE_VERIFIER_UNAVAILABLE",
             )
-        if (
-            verification is PositionSignatureVerification.MISSING
-            and self._policy.signature_required
+        if verification is PositionSignatureVerification.MISSING and not (
+            self._policy.allow_unsigned_legacy or self._policy.flexible_validation_enabled
         ):
             return CanonicalPositionValidationResult(
                 status=CanonicalPositionValidationStatus.SIGNATURE_REQUIRED_BY_LEGACY_POLICY,
@@ -208,6 +256,7 @@ class CanonicalPositionValidator:
             command,
             recognition,
             exact_public_identifier=code.raw_code,
+            evaluate_preexistence=evaluate_preexistence,
         )
 
     def _resolve_dinamic(
@@ -216,21 +265,34 @@ class CanonicalPositionValidator:
         recognition: CanonicalPositionRecognition,
         *,
         exact_public_identifier: str,
+        evaluate_preexistence: bool,
     ) -> CanonicalPositionValidationResult:
         client_id = (command.context.client_id or "").strip()
-        if self._resolver is None or not client_id:
-            if self._policy.preexistence_required:
+        if not evaluate_preexistence:
+            return CanonicalPositionValidationResult(
+                status=CanonicalPositionValidationStatus.VALID_PENDING_RESOLUTION,
+                recognition=recognition,
+                resolution_status=PositionResolutionStatus.NOT_EVALUATED,
+            )
+        if not client_id:
+            return CanonicalPositionValidationResult(
+                status=CanonicalPositionValidationStatus.INTERNAL_ERROR,
+                recognition=recognition,
+                error_code="POSITION_CLIENT_CONTEXT_MISSING",
+                resolution_status=PositionResolutionStatus.ERROR,
+            )
+        if self._resolver is None:
+            if not self._policy.preexistence_required:
                 return CanonicalPositionValidationResult(
-                    status=(
-                        CanonicalPositionValidationStatus.PREEXISTENCE_REQUIRED_BY_LEGACY_POLICY
-                    ),
+                    status=CanonicalPositionValidationStatus.VALID_UNMATERIALIZED,
                     recognition=recognition,
-                    error_code="PREEXISTENCE_REQUIRED_BY_LEGACY_POLICY",
-                    policy_rejection=True,
+                    resolution_status=PositionResolutionStatus.NOT_EVALUATED,
                 )
             return CanonicalPositionValidationResult(
-                status=CanonicalPositionValidationStatus.VALID_UNMATERIALIZED,
+                status=CanonicalPositionValidationStatus.INTERNAL_ERROR,
                 recognition=recognition,
+                error_code="POSITION_RESOLVER_UNAVAILABLE",
+                resolution_status=PositionResolutionStatus.ERROR,
             )
 
         try:
@@ -238,11 +300,18 @@ class CanonicalPositionValidator:
                 public_label_id=exact_public_identifier,
                 expected_client_id=client_id,
             )
-        except Exception:
+        except PositionLabelResolutionUnavailableError:
+            logger.warning(
+                "position_resolution_unavailable job_id=%s client_id=%s source=%s",
+                command.context.job_id,
+                client_id,
+                command.source.value,
+            )
             return CanonicalPositionValidationResult(
                 status=CanonicalPositionValidationStatus.INTERNAL_ERROR,
                 recognition=recognition,
-                error_code="POSITION_RESOLUTION_FAILED",
+                error_code="POSITION_RESOLUTION_UNAVAILABLE",
+                resolution_status=PositionResolutionStatus.ERROR,
             )
 
         if resolved.detection_status is PositionLabelDetectionStatus.VALID:
@@ -266,6 +335,7 @@ class CanonicalPositionValidator:
                 status=CanonicalPositionValidationStatus.VALID_EXISTING,
                 recognition=recognition,
                 existing_position_label_id=label.id,
+                resolution_status=PositionResolutionStatus.EXISTING,
             )
         if resolved.detection_status is PositionLabelDetectionStatus.LABEL_NOT_FOUND:
             status = (
@@ -278,17 +348,20 @@ class CanonicalPositionValidator:
                 recognition=recognition,
                 error_code=status.value if self._policy.preexistence_required else None,
                 policy_rejection=self._policy.preexistence_required,
+                resolution_status=PositionResolutionStatus.NOT_FOUND,
             )
         if resolved.detection_status is PositionLabelDetectionStatus.CLIENT_MISMATCH:
             return CanonicalPositionValidationResult(
                 status=CanonicalPositionValidationStatus.PROFILE_NOT_ALLOWED,
                 recognition=recognition,
                 error_code="POSITION_SCOPE_MISMATCH",
+                resolution_status=PositionResolutionStatus.SCOPE_MISMATCH,
             )
         return CanonicalPositionValidationResult(
             status=CanonicalPositionValidationStatus.FIELD_CONSTRAINT_VIOLATION,
             recognition=recognition,
             error_code="POSITION_NOT_ACTIVE",
+            resolution_status=PositionResolutionStatus.INACTIVE,
         )
 
     def _validate_profile_position(
@@ -310,7 +383,10 @@ class CanonicalPositionValidator:
                 status=CanonicalPositionValidationStatus.PROFILE_NOT_ALLOWED,
                 error_code="POSITION_SUPPLIER_SCOPE_MISMATCH",
             )
-        result = self._labels.validate_best_effort(command.candidate, context=command.context)
+        result = command.structural_result or self._labels.validate_best_effort(
+            command.candidate,
+            context=command.context,
+        )
         if result.status is LabelValidationStatus.AMBIGUOUS:
             return CanonicalPositionValidationResult(
                 status=CanonicalPositionValidationStatus.AMBIGUOUS_CODE,
@@ -389,7 +465,11 @@ class CanonicalPositionValidator:
         self,
         command: CanonicalPositionValidationCommand,
         result: CanonicalPositionValidationResult,
+        *,
+        record_operational_metrics: bool,
     ) -> CanonicalPositionValidationResult:
+        if not record_operational_metrics:
+            return result
         self._metric("position_validation_by_source_total", command)
         self._metric("position_validation_by_profile_total", command)
         if result.status is CanonicalPositionValidationStatus.VALID_UNMATERIALIZED:

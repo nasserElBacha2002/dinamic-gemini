@@ -172,7 +172,9 @@ def candidate_from_vision_analysis(
         raw_payload=raw,
         recognition_source=RecognitionSource.VISION,
         label_kind_hint=hint,
-        symbology=str(norm["symbology"]).strip() if isinstance(norm.get("symbology"), str) else None,
+        symbology=str(norm["symbology"]).strip()
+        if isinstance(norm.get("symbology"), str)
+        else None,
         label_id=label_id,
         sku=sku,
         quantity=qty,
@@ -244,8 +246,8 @@ def normalize_vision_via_label_validation(
             provider_name=analysis.provider_name,
             model_name=analysis.model_name,
             processing_duration_ms=analysis.duration_ms,
-                error_code=result.error_code or "VISION_AMBIGUOUS",
-                error_message=(result.detail or "Ambiguous Vision label")[:500],
+            error_code=result.error_code or "VISION_AMBIGUOUS",
+            error_message=(result.detail or "Ambiguous Vision label")[:500],
             execution_scope=ExecutionScope.SINGLE_ASSET,
             logical_asset_attempt=False,
         )
@@ -294,6 +296,7 @@ def normalize_vision_via_label_validation(
                     if validation_context.resolved_profiles is not None
                     else None
                 ),
+                structural_result=result,
             )
         )
         evidence_out["canonical_position_validation_status"] = canonical.status.value
@@ -351,7 +354,25 @@ def normalize_vision_via_label_validation(
         primary_qty = float(processed.quantity) if processed.quantity is not None else None
         evidence_out["profile_source"] = label.profile_source.value
     elif isinstance(label, NormalizedPositionLabel):
-        assert canonical_position is not None
+        if canonical_position is None:
+            return ImageProcessingResult(
+                job_id=job_id,
+                asset_id=asset_id,
+                status=ImageResultStatus.FAILED_TECHNICAL,
+                processing_mode=EXTERNAL_PROVIDER_STRATEGY,
+                resolved_by=EXTERNAL_PROVIDER_STRATEGY,
+                additional_fields={**base_fields, "vision_unified_validation": True},
+                normalized_result=analysis.normalized_result,
+                validation_errors=["CANONICAL_POSITION_RESULT_MISSING"],
+                evidence=evidence_out,
+                provider_name=analysis.provider_name,
+                model_name=analysis.model_name,
+                processing_duration_ms=analysis.duration_ms,
+                error_code="CANONICAL_POSITION_RESULT_MISSING",
+                error_message="Canonical position validation returned no recognition",
+                execution_scope=ExecutionScope.SINGLE_ASSET,
+                logical_asset_attempt=False,
+            )
         position_meta = {
             "position_id": canonical_position.normalized_code,
             "pallet": canonical_position.pallet,
