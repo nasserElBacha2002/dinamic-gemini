@@ -16,6 +16,10 @@ from src.application.services.local_csv_supplier_import_metadata import (
     SupplierImportMetadata,
     parse_supplier_import_notes,
 )
+from src.application.services.position_recognition import (
+    PositionCodeNormalizationError,
+    normalize_position_code,
+)
 from src.domain.local_csv_import.sources import (
     ALLOWED_DETECTION_SOURCES,
     INGESTION_SOURCE_LOCAL_CSV_IMPORT,
@@ -294,6 +298,11 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
             # position_code may be empty → requires review later
             if not values["position_code"]:
                 warnings.append("position_code:empty")
+            else:
+                try:
+                    normalize_position_code(values["position_code"])
+                except PositionCodeNormalizationError as exc:
+                    errors.append(f"position_code:{exc.code.lower()}")
             if not values["client_file_id"]:
                 values["client_file_id"] = values["capture_photo_id"]
                 warnings.append("client_file_id:defaulted_to_capture_photo_id")

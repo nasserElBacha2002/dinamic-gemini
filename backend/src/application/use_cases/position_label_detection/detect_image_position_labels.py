@@ -24,6 +24,12 @@ from src.application.services.position_label_detection.resolver import PositionL
 from src.application.services.position_label_detection.validation_service import (
     PositionLabelValidationService,
 )
+from src.application.services.position_recognition import (
+    CanonicalPositionValidationCommand,
+    CanonicalPositionValidator,
+)
+from src.domain.label_validation import CandidateLabel
+from src.domain.label_validation.context import LabelValidationContext
 from src.domain.position_label_detection.entities import (
     DETECTOR_NAME,
     DETECTOR_VERSION,
@@ -33,6 +39,7 @@ from src.domain.position_label_detection.entities import (
     PositionLabelDetectionStatus,
     PositionLabelSignatureStatus,
 )
+from src.domain.position_recognition import PositionRecognitionSource
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +147,7 @@ class ImagePositionDetectionUseCase:
         persistence_enabled: bool,
         max_codes_per_image: int,
         persist_no_label: bool = False,
+        canonical_validator: CanonicalPositionValidator | None = None,
         detector_name: str = DETECTOR_NAME,
         detector_version: str = DETECTOR_VERSION,
     ) -> None:
@@ -154,6 +162,7 @@ class ImagePositionDetectionUseCase:
         self._persistence_enabled = bool(persistence_enabled)
         self._max_codes = max(1, int(max_codes_per_image))
         self._persist_no_label = bool(persist_no_label)
+        self._canonical_validator = canonical_validator
         self._detector_name = detector_name
         self._detector_version = detector_version
 
@@ -398,6 +407,22 @@ class ImagePositionDetectionUseCase:
         *,
         now: datetime,
     ) -> ImagePositionLabelDetection:
+        if self._canonical_validator is not None:
+            # Phase 1 shadow integration: the canonical result is observable,
+            # while the established parser/policy below remains operationally
+            # authoritative until flexible validation is enabled in a later phase.
+            self._canonical_validator.validate(
+                CanonicalPositionValidationCommand(
+                    candidate=CandidateLabel(raw_payload=code.raw_value),
+                    source=PositionRecognitionSource.CODE_SCAN,
+                    context=LabelValidationContext(
+                        resolved_profiles=None,
+                        job_id=command.job_id,
+                        client_id=command.client_id,
+                    ),
+                    inventory_id=command.inventory_id,
+                )
+            )
         parsed = self._parser.parse(code.raw_value)
         if parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE and parsed.label_id:
             legacy = self._policy.try_accept_unsigned_legacy(

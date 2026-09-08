@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from src.application.services.dinamic_scanner_txt_parser import (
     aisle_code_from_txt_filename,
     parse_dinamic_scanner_txt,
@@ -99,6 +98,13 @@ def test_parser_rejects_invalid_side() -> None:
     parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS1|04|CENTER"))
     assert parsed.positions == ()
     assert any("side:invalid" in warning for warning in parsed.parse_warnings)
+
+
+def test_parser_rejects_position_code_above_canonical_limit() -> None:
+    parsed = parse_dinamic_scanner_txt(_txt(f"POSITION|POS1|{'P' * 65}|LEFT"))
+
+    assert parsed.positions == ()
+    assert any("pallet:position_code_too_long" in warning for warning in parsed.parse_warnings)
 
 
 def test_parser_product_before_position_is_rejected() -> None:

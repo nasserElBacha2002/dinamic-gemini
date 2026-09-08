@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from src.application.ports.external_image_analysis_provider import (
     ExternalAnalysisResult,
     ExternalAnalysisStatus,
@@ -13,6 +15,12 @@ from src.application.services.image_processing.vision_candidate_bridge import (
     candidate_from_vision_analysis,
     normalize_vision_via_label_validation,
 )
+from src.application.services.position_recognition import CanonicalPositionValidator
+from src.application.services.positioning_label_signing import (
+    PositioningLabelSigningConfig,
+    PositioningLabelSigningService,
+)
+from src.domain.aisle_location.payload import build_positioning_label_payload
 from src.domain.client_supplier.extraction_profile import (
     CONFIGURATION_SCHEMA_VERSION_V2,
     DeterministicBarcodeRules,
@@ -154,8 +162,8 @@ def test_vision_position_segmented_via_label_validation() -> None:
         model_name="x",
         # Hint POSITION so bridge does not default to ITEM; fields still come from raw.
         normalized_result={
-            "raw_payload": "A04-R-02|04|RIGHT|02",
-            "position_id": "A04-R-02",
+            "raw_payload": "a04-r-02|04|right|02",
+            "position_id": "a04-r-02",
         },
         duration_ms=8,
     )
@@ -174,6 +182,47 @@ def test_vision_position_segmented_via_label_validation() -> None:
     assert str(pos.get("pallet")) in ("04", "4")
     assert str(pos.get("side")).upper() == "RIGHT"
     assert str(pos.get("level")) in ("02", "2")
+
+
+def test_vision_dinamic_position_with_unverified_signature_is_rejected() -> None:
+    payload = build_positioning_label_payload(
+        public_label_id="POS-VISION-1",
+        key_version=1,
+        signature="0" * 64,
+    )
+    analysis = ExternalAnalysisResult(
+        status=ExternalAnalysisStatus.VALID,
+        provider_name="gemini",
+        model_name="x",
+        normalized_result={
+            "raw_payload": json.dumps(payload),
+            "position_id": "POS-VISION-1",
+        },
+    )
+    validator = CanonicalPositionValidator(
+        signing=PositioningLabelSigningService(
+            PositioningLabelSigningConfig(
+                secret="test-secret-at-least-16",
+                key_version=1,
+            )
+        )
+    )
+
+    out = normalize_vision_via_label_validation(
+        job_id="job-1",
+        asset_id="a1",
+        analysis=analysis,
+        validation_context=LabelValidationContext(
+            resolved_profiles=_profiles(),
+            client_id="client-1",
+        ),
+        base_fields={},
+        evidence={},
+        canonical_position_validator=validator,
+    )
+
+    assert out.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert out.error_code == "INVALID_SIGNATURE"
 
 
 def test_d1_invalid_not_eligible_for_vision() -> None:

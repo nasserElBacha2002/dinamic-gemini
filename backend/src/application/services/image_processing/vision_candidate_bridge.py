@@ -11,6 +11,10 @@ from typing import Any
 
 from src.application.ports.external_image_analysis_provider import ExternalAnalysisResult
 from src.application.services.label_validation import LabelValidationService
+from src.application.services.position_recognition import (
+    CanonicalPositionValidationCommand,
+    CanonicalPositionValidator,
+)
 from src.domain.image_processing.contracts import (
     ExecutionScope,
     ImageProcessingResult,
@@ -25,6 +29,7 @@ from src.domain.label_validation import (
     RecognitionSource,
 )
 from src.domain.label_validation.context import LabelValidationContext
+from src.domain.position_recognition import PositionRecognitionSource
 from src.domain.product_labels.processed import ProcessedProductLabel, ProductLabelOutcomeStatus
 
 logger = logging.getLogger(__name__)
@@ -188,6 +193,7 @@ def normalize_vision_via_label_validation(
     base_fields: dict[str, Any],
     evidence: dict[str, Any],
     label_validation_service: LabelValidationService | None = None,
+    canonical_position_validator: CanonicalPositionValidator | None = None,
 ) -> ImageProcessingResult:
     """Run Vision candidate through unified LabelValidationService (authority)."""
     service = label_validation_service or LabelValidationService()
@@ -276,6 +282,51 @@ def normalize_vision_via_label_validation(
         )
 
     label = result.label
+    canonical_position = None
+    if isinstance(label, NormalizedPositionLabel):
+        canonical = (canonical_position_validator or CanonicalPositionValidator()).validate(
+            CanonicalPositionValidationCommand(
+                candidate=candidate,
+                source=PositionRecognitionSource.VISION,
+                context=validation_context,
+                client_supplier_id=(
+                    validation_context.resolved_profiles.position.client_supplier_id
+                    if validation_context.resolved_profiles is not None
+                    else None
+                ),
+            )
+        )
+        evidence_out["canonical_position_validation_status"] = canonical.status.value
+        evidence_out["canonical_position_policy_rejection"] = canonical.policy_rejection
+        if not canonical.operationally_accepted or canonical.recognition is None:
+            _metrics_increment(
+                _VISION_REJECTED_TOTAL,
+                labels={"reason": canonical.status.value},
+            )
+            return ImageProcessingResult(
+                job_id=job_id,
+                asset_id=asset_id,
+                status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+                processing_mode=EXTERNAL_PROVIDER_STRATEGY,
+                resolved_by=EXTERNAL_PROVIDER_STRATEGY,
+                additional_fields={**base_fields, "vision_unified_validation": True},
+                normalized_result=analysis.normalized_result,
+                validation_errors=[canonical.error_code or canonical.status.value],
+                evidence=evidence_out,
+                provider_name=analysis.provider_name,
+                model_name=analysis.model_name,
+                processing_duration_ms=analysis.duration_ms,
+                error_code=canonical.error_code or canonical.status.value,
+                error_message="Vision position candidate failed authoritative validation",
+                execution_scope=ExecutionScope.SINGLE_ASSET,
+                logical_asset_attempt=False,
+            )
+        canonical_position = canonical.recognition
+        evidence_out["position_signature_verification"] = (
+            canonical_position.signature.verification.value
+        )
+        evidence_out["existing_position_label_id"] = canonical.existing_position_label_id
+
     product_results: list[ProcessedProductLabel] = []
     position_meta: dict[str, Any] | None = None
     primary_code: str | None = None
@@ -300,12 +351,13 @@ def normalize_vision_via_label_validation(
         primary_qty = float(processed.quantity) if processed.quantity is not None else None
         evidence_out["profile_source"] = label.profile_source.value
     elif isinstance(label, NormalizedPositionLabel):
+        assert canonical_position is not None
         position_meta = {
-            "position_id": label.position_id,
-            "pallet": label.pallet,
-            "side": label.side,
-            "level": label.level,
-            "raw_payload": label.raw_payload,
+            "position_id": canonical_position.normalized_code,
+            "pallet": canonical_position.pallet,
+            "side": canonical_position.side,
+            "level": canonical_position.level,
+            "raw_payload": canonical_position.raw_code,
             "profile_source": label.profile_source.value,
             "recognition_source": RecognitionSource.VISION.value,
         }

@@ -16,6 +16,7 @@ from src.application.services.image_processing.field_candidate_set import (
 from src.application.services.image_processing.profile_aware_processing_result_validator import (
     FieldCandidate,
 )
+from src.application.services.position_recognition import CanonicalPositionValidator
 from src.domain.image_processing.contracts import (
     ExecutionScope,
     ImageProcessingResult,
@@ -62,6 +63,13 @@ def _apply_client_code_priority(
 
 class ExternalResultNormalizer:
     """Normalize provider adapter output into the shared image-processing contract."""
+
+    def __init__(
+        self,
+        *,
+        canonical_position_validator: CanonicalPositionValidator | None = None,
+    ) -> None:
+        self._canonical_position_validator = canonical_position_validator
 
     def normalize(
         self,
@@ -242,6 +250,7 @@ class ExternalResultNormalizer:
                     validation_context=ctx,
                     base_fields=base_fields,
                     evidence=evidence,
+                    canonical_position_validator=self._canonical_position_validator,
                 )
             return self._normalize_via_profile(
                 job_id=job_id,

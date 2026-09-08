@@ -5,7 +5,6 @@ import io
 from datetime import datetime, timezone
 
 import pytest
-
 from src.application.services.local_csv_parser import (
     LocalCsvDocumentError,
     parse_local_csv,
@@ -180,6 +179,12 @@ def test_parser_accepts_mobile_detection_source() -> None:
     assert parsed.rows[0].detection_source == "LOCAL_CODE_SCAN"
     assert parsed.rows[0].ingestion_source == INGESTION_SOURCE_LOCAL_CSV_IMPORT
     assert parsed.rows[0].errors == ()
+
+
+def test_parser_rejects_position_code_above_canonical_persistence_limit() -> None:
+    parsed = parse_local_csv(_csv_bytes(position_code="P" * 65))
+
+    assert "position_code:position_code_too_long" in parsed.rows[0].errors
 
 
 def test_parser_accepts_legacy_local_csv_import_source_as_pending() -> None:

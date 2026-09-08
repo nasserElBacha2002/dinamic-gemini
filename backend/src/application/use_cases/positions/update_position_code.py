@@ -16,6 +16,7 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
+from src.application.services.position_recognition import normalize_position_code
 from src.application.use_cases.shared.review_validation import (
     ensure_position_not_deleted,
     ensure_review_job_matches_position,
@@ -65,6 +66,7 @@ class UpdatePositionCodeUseCase:
         new_code = (position_code or "").strip()
         if not new_code:
             raise ValueError("position_code is required")
+        normalize_position_code(new_code)
 
         now = self._clock.now()
         before_code = position.corrected_position_code

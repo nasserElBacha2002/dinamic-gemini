@@ -60,6 +60,7 @@ from src.application.services.label_validation import (
     item_profile_source,
     position_profile_source,
 )
+from src.application.services.position_recognition import CanonicalPositionValidator
 from src.application.services.product_labels.issued_product_label_resolver import (
     IssuedProductLabelResolver,
 )
@@ -266,6 +267,7 @@ class CodeScanProcessingStrategy:
         position_detection=None,
         issued_label_resolver: IssuedProductLabelResolver | None = None,
         label_validation_service: LabelValidationService | None = None,
+        canonical_position_validator: CanonicalPositionValidator | None = None,
         position_label_detection_repo=None,
         monotonic_fn: Callable[[], float] | None = None,
     ) -> None:
@@ -279,7 +281,10 @@ class CodeScanProcessingStrategy:
         self._position_detection = position_detection
         self._issued_label_resolver = issued_label_resolver
         self._label_validation = label_validation_service or LabelValidationService()
-        self._classifier = CodeScanLabelClassifier(self._label_validation)
+        self._classifier = CodeScanLabelClassifier(
+            self._label_validation,
+            canonical_position_validator=canonical_position_validator,
+        )
         self._position_detection_repo = position_label_detection_repo
         self._monotonic = monotonic_fn or time.monotonic
 

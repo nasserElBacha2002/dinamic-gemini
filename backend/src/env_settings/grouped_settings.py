@@ -2080,6 +2080,27 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: POSITION_LABEL_SIGNATURE_VALIDATION_ENABLED (default true)."
         ),
     )
+    position_preexistence_required: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_PREEXISTENCE_REQUIRED", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Canonical position policy: require an existing scoped position label before "
+            "operational acceptance. Defaults true for legacy compatibility. "
+            "Env: POSITION_PREEXISTENCE_REQUIRED."
+        ),
+    )
+    position_flexible_validation_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_FLEXIBLE_VALIDATION_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Master gate for flexible canonical position acceptance. False keeps legacy "
+            "signature/preexistence gates effective. Env: POSITION_FLEXIBLE_VALIDATION_ENABLED."
+        ),
+    )
     positioning_allow_unsigned_legacy: bool = Field(
         default_factory=lambda: (
             os.getenv("POSITIONING_ALLOW_UNSIGNED_LEGACY", "true").strip().lower()

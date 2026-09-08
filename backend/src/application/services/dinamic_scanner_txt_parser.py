@@ -6,6 +6,10 @@ import hashlib
 import re
 from dataclasses import dataclass
 
+from src.application.services.position_recognition import (
+    PositionCodeNormalizationError,
+    normalize_position_code,
+)
 from src.domain.client_position_label.hierarchy import PositionSide
 from src.domain.dinamic_scanner_txt.errors import (
     TXT_EMPTY,
@@ -105,6 +109,11 @@ def _validate_position_fields(parts: list[str]) -> tuple[str, str, str, tuple[st
         errors.append("position_label_id:required")
     if not pallet_text:
         errors.append("pallet:required")
+    else:
+        try:
+            normalize_position_code(pallet_text)
+        except PositionCodeNormalizationError as exc:
+            errors.append(f"pallet:{exc.code.lower()}")
     if not side_text:
         errors.append("side:required")
     else:

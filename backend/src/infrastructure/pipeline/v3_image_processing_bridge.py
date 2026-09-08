@@ -306,6 +306,7 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
     except Exception:
         logger.exception("code_scan.issued_label_resolver_unavailable")
 
+    canonical_position_validator = _build_canonical_position_validator(settings)
     return CodeScanProcessingStrategy(
         scanner=_LazyPyzbarCodeScanner(),
         content_reader=ArtifactStoreSourceAssetContentReader(
@@ -318,6 +319,7 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
         event_publisher=event_publisher,
         position_detection=_build_position_detection_use_case(settings),
         issued_label_resolver=issued_resolver,
+        canonical_position_validator=canonical_position_validator,
         position_label_detection_repo=_optional_position_detection_repo(),
     )
 
@@ -330,6 +332,63 @@ def _optional_position_detection_repo():
     except Exception:
         logger.exception("code_scan.position_detection_repo_unavailable")
         return None
+
+
+def _build_canonical_position_validator(
+    settings,
+    *,
+    resolver=None,
+    signing=None,
+    resolve_existing: bool = True,
+):
+    from src.application.services.position_label_detection.resolver import (
+        PositionLabelResolver,
+    )
+    from src.application.services.position_recognition import (
+        CanonicalPositionValidator,
+        PositionCompatibilityPolicy,
+    )
+    from src.application.services.positioning_label_signing import (
+        PositioningLabelSigningConfig,
+        PositioningLabelSigningService,
+        parse_previous_secrets,
+    )
+    from src.runtime.app_container import get_app_container
+
+    if signing is None:
+        signing = PositioningLabelSigningService(
+            PositioningLabelSigningConfig(
+                secret=getattr(settings, "positioning_label_hmac_secret", None),
+                key_version=int(
+                    getattr(settings, "positioning_label_hmac_key_version", 1) or 1
+                ),
+                previous_secrets=parse_previous_secrets(
+                    getattr(settings, "positioning_label_hmac_previous_secrets", "")
+                ),
+                required=bool(getattr(settings, "positioning_label_signing_required", False)),
+            )
+        )
+    if resolver is None and resolve_existing:
+        resolver = PositionLabelResolver(
+            label_repo=get_app_container().get_client_position_label_repo()
+        )
+    if not resolve_existing:
+        resolver = None
+    return CanonicalPositionValidator(
+        signing=signing,
+        resolver=resolver,
+        policy=PositionCompatibilityPolicy.resolve(
+            signature_required=bool(
+                getattr(settings, "position_label_signature_validation_enabled", True)
+            ),
+            preexistence_required=bool(
+                getattr(settings, "position_preexistence_required", True)
+            ),
+            flexible_validation_enabled=bool(
+                getattr(settings, "position_flexible_validation_enabled", False)
+            ),
+        ),
+    )
 
 
 def _build_position_detection_use_case(settings):
@@ -408,6 +467,11 @@ def _build_position_detection_use_case(settings):
             getattr(settings, "position_label_max_codes_per_image", 32) or 32
         ),
         persist_no_label=bool(getattr(settings, "position_label_persist_no_label", False)),
+        canonical_validator=_build_canonical_position_validator(
+            settings,
+            signing=signing,
+            resolve_existing=False,
+        ),
     )
 
 def build_default_code_scan_persister(
@@ -551,7 +615,9 @@ def build_default_external_fallback_orchestrator(
         request_repo=resolved_request_repo,
         clock=clock,
         provider_factory=_SnapshotProviderFactory(),
-        normalizer=ExternalResultNormalizer(),
+        normalizer=ExternalResultNormalizer(
+            canonical_position_validator=_build_canonical_position_validator(settings)
+        ),
         # Process-local CB; thresholds overridden per-call from snapshot profile when unset.
         circuit_breaker=None,
         concurrency_limiter=ExternalConcurrencyLimiter(
