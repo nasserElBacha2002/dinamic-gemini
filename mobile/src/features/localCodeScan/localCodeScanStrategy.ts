@@ -17,9 +17,21 @@ import {
   serializeProductRejections,
   type ProductLabelRejection,
 } from '../../core/productLabelRejection';
-import { applyPositionScan, getActivePosition, hydratePositionSessionFromDrafts } from './activePositionStore';
+import {
+  commitPositionActivation,
+  getActivePosition,
+  hydratePositionSessionFromDrafts,
+  preparePositionActivation,
+  type PreparedPositionActivation,
+} from './activePositionStore';
 import type { ActivePositionState } from '../../core/positionLabelPayload';
-import { parseDinamicPositionPayload } from '../../core/positionLabelPayload';
+import {
+  activePositionFromParsed,
+  createActivePositionState,
+  parseDinamicPositionPayload,
+  serializeActivePositionState,
+  serializeLegacyActivePositionState,
+} from '../../core/positionLabelPayload';
 import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
 import { runProfileAwareLocalScan } from './profileAwareLocalScan';
 import { isLikelyRawSegmentedPayload } from '../localCsv/supplierExportSemantics';
@@ -44,11 +56,7 @@ export interface LocalCodeScanStrategyDeps {
     state: ActivePositionState,
   ) => Promise<void>;
   readonly profileResolver?: LocalLabelProfileResolver | null;
-}
-
-function freezePositionSnapshotJson(captureSessionId: string): string | null {
-  const active = getActivePosition(captureSessionId);
-  return active ? JSON.stringify(active) : null;
+  readonly canonicalPositionStateEnabled?: boolean;
 }
 
 export interface LocalCodeScanInput {
@@ -328,6 +336,7 @@ export class LocalCodeScanStrategy {
       // Resolve POSITION independently of products (same photo may contain both).
       const activeBefore = getActivePosition(input.captureSessionId);
       let appliedPosition: ActivePositionState | null = null;
+      let preparedPosition: PreparedPositionActivation | null = null;
       let duplicatePosition = false;
       let positionRaw =
         consolidated.positionRawPayload ??
@@ -347,39 +356,51 @@ export class LocalCodeScanStrategy {
             ? Number.parseInt(String(levelRaw), 10)
             : null;
         positionRaw = profileAware.supplierPosition.rawPayload;
-        appliedPosition = {
-          labelId: posId,
-          positionLabelId: posId,
+        appliedPosition = createActivePositionState({
+          localRecognitionId: `${input.captureSessionId}:${input.capturePhotoId}:${hashPayloadFingerprint(positionRaw)}`,
+          captureSessionId: input.captureSessionId,
+          inventoryId: input.inventoryId ?? null,
+          aisleLocalId: input.aisleId ?? null,
+          rawCode: profileAware.supplierPosition.rawPayload,
+          positionCode: posId,
+          normalizedCode: profileAware.supplierPosition.normalizedPayload ?? posId,
           displayName: posId,
-          canonicalKey: posId,
+          rawPayload: profileAware.supplierPosition.rawPayload,
           pallet: profileAware.supplierPosition.pallet,
           side,
           level: Number.isFinite(levelNum as number) ? (levelNum as number) : null,
-          markerIndex: null,
-          markerTotal: null,
-          formattedMarker: null,
-          rawPayload: profileAware.supplierPosition.rawPayload,
-          sourcePayload: profileAware.supplierPosition.rawPayload,
-          validationStatus: 'STRUCTURALLY_VALID_UNVERIFIED',
-          signature: null,
-          keyVersion: null,
-        };
-        if (this.deps.onActivePositionChanged && appliedPosition.labelId) {
-          await this.deps.onActivePositionChanged(input.captureSessionId, appliedPosition);
-        }
+          source: 'LOCAL_CODE_SCAN',
+          profileId: profileAware.supplierPosition.profileId,
+          profileVersion: profileAware.supplierPosition.profileVersion,
+          clientSupplierId: profileAware.clientSupplierId,
+        });
       }
       if (positionRaw && !appliedPosition) {
-        const positionResult = applyPositionScan(input.captureSessionId, positionRaw);
-        if (positionResult.kind === 'applied' || positionResult.kind === 'duplicate') {
-          appliedPosition = positionResult.state;
-          duplicatePosition = positionResult.kind === 'duplicate';
+        const parsedPosition = parseDinamicPositionPayload(positionRaw);
+        if (parsedPosition) {
+          appliedPosition = activePositionFromParsed(parsedPosition, positionRaw, {
+            localRecognitionId: `${input.captureSessionId}:${input.capturePhotoId}:${hashPayloadFingerprint(positionRaw)}`,
+            captureSessionId: input.captureSessionId,
+            inventoryId: input.inventoryId ?? null,
+            aisleLocalId: input.aisleId ?? null,
+            source: 'LOCAL_CODE_SCAN',
+          });
         }
       }
-      if (appliedPosition && !duplicatePosition && this.deps.onActivePositionChanged && positionRaw) {
-        await this.deps.onActivePositionChanged(input.captureSessionId, appliedPosition);
+      if (appliedPosition) {
+        preparedPosition = preparePositionActivation(appliedPosition);
+        appliedPosition = preparedPosition.state;
+        duplicatePosition = preparedPosition.kind === 'duplicate';
       }
 
-      const positionSnapshotJson = freezePositionSnapshotJson(input.captureSessionId);
+      const serializePosition = this.deps.canonicalPositionStateEnabled
+        ? serializeActivePositionState
+        : serializeLegacyActivePositionState;
+      const positionSnapshotJson = appliedPosition
+        ? serializePosition(appliedPosition)
+        : activeBefore
+          ? serializePosition(activeBefore)
+          : null;
       const positionDetected = Boolean(appliedPosition);
 
       // Session-scoped label_id dedupe (count once).
@@ -467,7 +488,7 @@ export class LocalCodeScanStrategy {
         status = 'UNRESOLVED';
       }
 
-      await this.deps.drafts.upsertDraft({
+      const persistedDraft = await this.deps.drafts.upsertDraft({
         capturePhotoId: input.capturePhotoId,
         captureSessionId: input.captureSessionId,
         clientFileId: input.clientFileId,
@@ -528,7 +549,52 @@ export class LocalCodeScanStrategy {
           ? JSON.stringify(profileAware.recognitionSnapshot)
           : null,
         recognitionContext: input.recognitionContext ?? null,
+        ...(preparedPosition?.kind === 'applied'
+          ? { activePositionJson: serializePosition(preparedPosition.state) }
+          : {}),
+        positionLocalRecognitionId: this.deps.canonicalPositionStateEnabled
+          ? (appliedPosition ?? activeBefore)?.localRecognitionId ?? null
+          : null,
       });
+
+      if (
+        preparedPosition?.kind === 'applied' &&
+        persistedDraft.scan_generation === scanGeneration
+      ) {
+        commitPositionActivation(preparedPosition);
+        emitObservability(this.deps.reporter, {
+          name: 'mobile_position_activated_total',
+          sessionId: input.captureSessionId,
+          attributes: {
+            local_recognition_id: preparedPosition.state.localRecognitionId,
+            aisle_id: preparedPosition.state.aisleLocalId,
+            source: preparedPosition.state.source,
+          },
+        });
+        if (preparedPosition.state.clientSupplierId) {
+          emitObservability(this.deps.reporter, {
+            name: 'mobile_position_supplier_total',
+            sessionId: input.captureSessionId,
+            attributes: {
+              local_recognition_id: preparedPosition.state.localRecognitionId,
+            },
+          });
+        }
+        if (this.deps.onActivePositionChanged) {
+          await this.deps.onActivePositionChanged(
+            input.captureSessionId,
+            preparedPosition.state,
+          );
+        }
+      } else if (preparedPosition?.kind === 'duplicate') {
+        emitObservability(this.deps.reporter, {
+          name: 'mobile_position_duplicate_total',
+          sessionId: input.captureSessionId,
+          attributes: {
+            local_recognition_id: preparedPosition.state.localRecognitionId,
+          },
+        });
+      }
 
       const validLabelIds = products.map((p) => p.labelId);
       const rejectedLabelIds = rejections

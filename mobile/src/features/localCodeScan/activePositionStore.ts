@@ -7,13 +7,14 @@
 import type { ActivePositionState } from '../../core/positionLabelPayload';
 import {
   activePositionFromParsed,
+  parseActivePositionStateJson,
   parseDinamicPositionPayload,
 } from '../../core/positionLabelPayload';
 
 /** Keyed by captureSessionId. */
 const bySession = new Map<string, ActivePositionState>();
-/** Position label_ids already applied in this capture session (dedupe scope). */
-const seenPositionLabelIdsBySession = new Map<string, Set<string>>();
+/** Canonical position identities observed in this capture session (audit/dedupe scope). */
+const seenPositionIdentitiesBySession = new Map<string, Set<string>>();
 /** Sessions whose seen/active state was hydrated from persisted drafts. */
 const hydratedSessions = new Set<string>();
 
@@ -40,13 +41,13 @@ export function clearCurrentPosition(captureSessionId: string): void {
 /** Clears active position and dedupe history (session finished/cancelled). */
 export function resetPositionSession(captureSessionId: string): void {
   bySession.delete(captureSessionId);
-  seenPositionLabelIdsBySession.delete(captureSessionId);
+  seenPositionIdentitiesBySession.delete(captureSessionId);
   hydratedSessions.delete(captureSessionId);
 }
 
 export function clearAllActivePositions(): void {
   bySession.clear();
-  seenPositionLabelIdsBySession.clear();
+  seenPositionIdentitiesBySession.clear();
   hydratedSessions.clear();
 }
 
@@ -59,34 +60,30 @@ export function clearInMemoryPositionState(captureSessionId: string): void {
 }
 
 function seenForSession(captureSessionId: string): Set<string> {
-  let seen = seenPositionLabelIdsBySession.get(captureSessionId);
+  let seen = seenPositionIdentitiesBySession.get(captureSessionId);
   if (!seen) {
     seen = new Set<string>();
-    seenPositionLabelIdsBySession.set(captureSessionId, seen);
+    seenPositionIdentitiesBySession.set(captureSessionId, seen);
   }
   return seen;
 }
 
-function labelIdFromPositionSnapshotJson(json: string | null | undefined): string | null {
-  if (json == null || !String(json).trim()) return null;
+function activePositionStateFromSnapshotJson(
+  captureSessionId: string,
+  json: string,
+): ActivePositionState | null {
   try {
-    const parsed = JSON.parse(String(json)) as {
-      labelId?: string;
-      positionLabelId?: string;
-    };
-    const id = parsed.labelId ?? parsed.positionLabelId;
-    return typeof id === 'string' && id.trim() ? id.trim().toUpperCase() : null;
-  } catch {
-    return null;
-  }
-}
-
-function activePositionStateFromSnapshotJson(json: string): ActivePositionState | null {
-  try {
-    const parsed = JSON.parse(json) as ActivePositionState;
-    if (typeof parsed.labelId !== 'string' || !parsed.labelId.trim()) return null;
-    if (typeof parsed.rawPayload !== 'string' || !parsed.rawPayload.trim()) return null;
-    return parsed;
+    const value: unknown = JSON.parse(json);
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+    const row = value as Record<string, unknown>;
+    const inventoryId = typeof row.inventoryId === 'string' ? row.inventoryId : null;
+    const aisleLocalId = typeof row.aisleLocalId === 'string' ? row.aisleLocalId : null;
+    const parsed = parseActivePositionStateJson(json, {
+      captureSessionId,
+      inventoryId,
+      aisleLocalId,
+    });
+    return parsed.ok ? parsed.state : null;
   } catch {
     return null;
   }
@@ -109,14 +106,15 @@ export function hydratePositionSessionFromDrafts(
 
   drafts.forEach((draft, index) => {
     if (!draft.position_detected || !draft.position_snapshot_json?.trim()) return;
-    const labelId = labelIdFromPositionSnapshotJson(draft.position_snapshot_json);
-    if (labelId) seen.add(labelId);
-
     const order = draft.updated_at ? Date.parse(draft.updated_at) : index;
     const resolvedOrder = Number.isFinite(order) ? order : index;
     if (resolvedOrder >= latestOrder) {
-      const state = activePositionStateFromSnapshotJson(draft.position_snapshot_json);
+      const state = activePositionStateFromSnapshotJson(
+        captureSessionId,
+        draft.position_snapshot_json,
+      );
       if (state) {
+        seen.add(positionIdentity(state));
         latestActive = state;
         latestOrder = resolvedOrder;
       }
@@ -138,19 +136,65 @@ export function applyPositionScan(
 ): ApplyPositionScanResult {
   const parsed = parseDinamicPositionPayload(raw);
   if (!parsed) return { kind: 'not_position' };
-  const labelKey = parsed.labelId.trim().toUpperCase();
-  const seen = seenForSession(captureSessionId);
-  if (seen.has(labelKey)) {
-    const current = bySession.get(captureSessionId);
-    if (current) {
-      return { kind: 'duplicate', state: current };
-    }
-    return { kind: 'duplicate', state: activePositionFromParsed(parsed, raw.trim()) };
+  const next = activePositionFromParsed(parsed, raw.trim(), {
+    localRecognitionId: `legacy:${captureSessionId}:${parsed.canonicalKey}`,
+    captureSessionId,
+    inventoryId: null,
+    aisleLocalId: null,
+    source: 'LOCAL_CODE_SCAN',
+  });
+  const prepared = preparePositionActivation(next);
+  commitPositionActivation(prepared);
+  return prepared;
+}
+
+export type PreparedPositionActivation =
+  | { readonly kind: 'applied'; readonly state: ActivePositionState }
+  | { readonly kind: 'duplicate'; readonly state: ActivePositionState };
+
+/** Last confirmed transition wins; historical A may be reactivated after B. */
+export function preparePositionActivation(
+  next: ActivePositionState,
+): PreparedPositionActivation {
+  const current = bySession.get(next.captureSessionId);
+  if (current && positionIdentity(current) === positionIdentity(next)) {
+    return { kind: 'duplicate', state: current };
   }
-  const next = activePositionFromParsed(parsed, raw.trim());
-  bySession.set(captureSessionId, next);
-  seen.add(labelKey);
   return { kind: 'applied', state: next };
+}
+
+/** Call only after the corresponding SQLite unit of work commits. */
+export function commitPositionActivation(prepared: PreparedPositionActivation): void {
+  if (prepared.kind === 'duplicate') return;
+  bySession.set(prepared.state.captureSessionId, prepared.state);
+  seenForSession(prepared.state.captureSessionId).add(positionIdentity(prepared.state));
+}
+
+export function restorePositionSession(state: ActivePositionState): void {
+  bySession.set(state.captureSessionId, state);
+  seenForSession(state.captureSessionId).add(positionIdentity(state));
+  hydratedSessions.add(state.captureSessionId);
+}
+
+export async function activatePosition(
+  next: ActivePositionState,
+  persist: (state: ActivePositionState) => Promise<void>,
+): Promise<PreparedPositionActivation> {
+  const prepared = preparePositionActivation(next);
+  if (prepared.kind === 'duplicate') return prepared;
+  await persist(prepared.state);
+  commitPositionActivation(prepared);
+  return prepared;
+}
+
+function positionIdentity(position: ActivePositionState): string {
+  return [
+    position.normalizedCode,
+    position.captureSessionId,
+    position.aisleLocalId ?? '',
+    position.profileVersion ?? '',
+    position.clientSupplierId ?? '',
+  ].join('|');
 }
 
 export function positionCodeForExport(state: ActivePositionState | null): string {

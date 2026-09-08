@@ -31,6 +31,9 @@ from src.application.services.positioning_label_signing import (
     PositioningLabelSigningService,
 )
 from src.domain.aisle_location.payload import build_positioning_label_payload
+from src.domain.client_position_label.entities import (
+    ClientPositionLabelSignatureStatus,
+)
 from src.domain.client_supplier.extraction_profile import (
     ChecksumPolicy,
     CodeValidationRules,
@@ -67,7 +70,16 @@ class StubResolver:
     def resolve(self, *, public_label_id: str, expected_client_id: str):
         self.public_identifiers.append(public_label_id)
         label = (
-            SimpleNamespace(id="label-db-1", public_identifier=public_label_id)
+            SimpleNamespace(
+                id="label-db-1",
+                public_identifier=public_label_id,
+                signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
+                canonical_payload={
+                    "type": "DINAMIC_POSITION",
+                    "version": 1,
+                    "label_id": public_label_id,
+                },
+            )
             if self.status is PositionLabelDetectionStatus.VALID
             else None
         )
@@ -220,8 +232,12 @@ def test_supplier_position_without_signature_is_valid_unmaterialized() -> None:
 
 
 def test_unknown_dinamic_position_can_be_represented_when_policy_allows_it() -> None:
-    unsigned = json.dumps(build_positioning_label_payload(public_label_id="POS-UNKNOWN"))
+    signing = _signing()
+    signed = json.dumps(
+        signing.sign_payload(build_positioning_label_payload(public_label_id="POS-UNKNOWN"))
+    )
     validator = CanonicalPositionValidator(
+        signing=signing,
         resolver=StubResolver(PositionLabelDetectionStatus.LABEL_NOT_FOUND),
         policy=PositionCompatibilityPolicy.resolve(
             signature_validation_enabled=True,
@@ -230,7 +246,7 @@ def test_unknown_dinamic_position_can_be_represented_when_policy_allows_it() -> 
         ),
     )
 
-    result = validator.validate(_command(unsigned))
+    result = validator.validate(_command(signed))
 
     assert result.status is CanonicalPositionValidationStatus.VALID_UNMATERIALIZED
     assert result.structurally_valid is True
@@ -442,6 +458,22 @@ def test_legacy_unsigned_policy_remains_separate_from_signature_validation() -> 
     assert result.status is CanonicalPositionValidationStatus.VALID_EXISTING
 
 
+def test_flexible_mode_does_not_bypass_unsigned_legacy_catalog_gate() -> None:
+    unsigned = json.dumps(build_positioning_label_payload(public_label_id="POS-UNKNOWN"))
+    result = CanonicalPositionValidator(
+        resolver=StubResolver(PositionLabelDetectionStatus.LABEL_NOT_FOUND),
+        policy=PositionCompatibilityPolicy.resolve(
+            signature_validation_enabled=True,
+            allow_unsigned_legacy=True,
+            preexistence_required=False,
+            flexible_validation_enabled=True,
+        ),
+    ).validate(_command(unsigned))
+
+    assert result.status is CanonicalPositionValidationStatus.SIGNATURE_REQUIRED_BY_LEGACY_POLICY
+    assert result.error_code == "UNSIGNED_LEGACY_CATALOG_MISMATCH"
+
+
 def test_legacy_signature_flag_is_loaded_without_master_flag_reinterpretation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -460,6 +492,16 @@ def test_legacy_signature_flag_is_loaded_without_master_flag_reinterpretation(
     assert policy.signature_validation_enabled is False
     assert policy.preexistence_required is True
     assert policy.flexible_validation_enabled is False
+
+
+def test_contradictory_position_policy_is_rejected_when_settings_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POSITION_PREEXISTENCE_REQUIRED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_VALIDATION_ENABLED", "false")
+
+    with pytest.raises(ValueError, match="POSITION_FLEXIBLE_VALIDATION_ENABLED"):
+        LimitsAndSchemaSettings()
 
 
 def test_code_scan_reuses_structural_result_once_for_position() -> None:

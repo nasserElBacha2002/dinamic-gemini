@@ -16,6 +16,7 @@ import {
   formatLocalScanDetection,
   labelForLocalScanStatus,
   labelForPreliminarySyncStatus,
+  labelForPositionSyncState,
 } from '../features/localCodeScan/localScanUi';
 import {
   countExcludedPhotos,
@@ -573,6 +574,13 @@ export function UploadsScreen({
               labelForPreliminarySyncStatus(draft?.sync_status) ? (
                 <Text style={styles.muted} numberOfLines={2}>
                   {labelForPreliminarySyncStatus(draft?.sync_status)}
+                </Text>
+              ) : null}
+              {services.config.flags.mobilePreliminaryReconciliationView &&
+              draft?.position_local_recognition_id &&
+              labelForPositionSyncState(draft?.position_sync_state) ? (
+                <Text style={styles.muted} numberOfLines={2}>
+                  {labelForPositionSyncState(draft?.position_sync_state)}
                 </Text>
               ) : null}
               {photo.upload_status === 'retryable_error' ||

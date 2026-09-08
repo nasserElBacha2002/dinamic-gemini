@@ -854,6 +854,20 @@ CREATE INDEX IF NOT EXISTS idx_offline_supplier_recognition_config_lookup
 ALTER TABLE catalog_sync_meta ADD COLUMN catalog_projection_version INTEGER NOT NULL DEFAULT 0;
 `,
   },
+  {
+    version: 34,
+    name: 'position_state_and_reconciliation_v2',
+    sql: `
+ALTER TABLE local_detection_drafts ADD COLUMN position_local_recognition_id TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN position_sync_state TEXT NOT NULL DEFAULT 'NOT_APPLICABLE';
+ALTER TABLE local_detection_drafts ADD COLUMN position_server_result TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN position_server_error_code TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN position_remote_id TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN position_remote_label_id TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN position_reconciled_at TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN position_reconciliation_revision INTEGER NOT NULL DEFAULT 0;
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

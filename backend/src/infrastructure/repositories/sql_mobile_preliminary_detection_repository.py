@@ -59,6 +59,48 @@ def _row_to_entity(row) -> MobilePreliminaryDetection:
         schema_version=normalize_db_str(getattr(row, "schema_version", None)) or "1",
         created_at=_ensure_utc(getattr(row, "created_at", None)) or datetime.now(timezone.utc),
         updated_at=_ensure_utc(getattr(row, "updated_at", None)) or datetime.now(timezone.utc),
+        position_local_recognition_id=optional_nonempty_db_str(
+            getattr(row, "position_local_recognition_id", None)
+        ),
+        position_raw_code=optional_nonempty_db_str(getattr(row, "position_raw_code", None)),
+        position_claimed_normalized_code=optional_nonempty_db_str(
+            getattr(row, "position_claimed_normalized_code", None)
+        ),
+        position_claimed_remote_id=optional_nonempty_db_str(
+            getattr(row, "position_claimed_remote_id", None)
+        ),
+        position_claimed_remote_label_id=optional_nonempty_db_str(
+            getattr(row, "position_claimed_remote_label_id", None)
+        ),
+        position_source=optional_nonempty_db_str(getattr(row, "position_source", None)),
+        position_profile_id=optional_nonempty_db_str(getattr(row, "position_profile_id", None)),
+        position_profile_version=getattr(row, "position_profile_version", None),
+        position_client_supplier_id=optional_nonempty_db_str(
+            getattr(row, "position_client_supplier_id", None)
+        ),
+        position_signature_present=getattr(row, "position_signature_present", None),
+        position_signature_verification=optional_nonempty_db_str(
+            getattr(row, "position_signature_verification", None)
+        ),
+        position_captured_at=_ensure_utc(getattr(row, "position_captured_at", None)),
+        position_result_status=optional_nonempty_db_str(
+            getattr(row, "position_result_status", None)
+        ),
+        position_result_error_code=optional_nonempty_db_str(
+            getattr(row, "position_result_error_code", None)
+        ),
+        position_result_retryable=getattr(row, "position_result_retryable", None),
+        position_normalized_code=optional_nonempty_db_str(
+            getattr(row, "position_normalized_code", None)
+        ),
+        position_remote_id=optional_nonempty_db_str(getattr(row, "position_remote_id", None)),
+        position_remote_label_id=optional_nonempty_db_str(
+            getattr(row, "position_remote_label_id", None)
+        ),
+        position_validated_at=_ensure_utc(getattr(row, "position_validated_at", None)),
+        position_reconciliation_revision=int(
+            getattr(row, "position_reconciliation_revision", 0) or 0
+        ),
     )
 
 
@@ -67,7 +109,14 @@ id, draft_id, inventory_id, aisle_id, asset_id, client_file_id, status,
 internal_code, quantity, quantity_status, detected_format, detected_symbology,
 candidate_count, parser_version, detector_version, prepared_asset_sha256,
 payload_hash, processing_ms, detected_at, received_at, expires_at, validation_status,
-validation_error_code, schema_version, created_at, updated_at
+validation_error_code, schema_version, created_at, updated_at,
+position_local_recognition_id, position_raw_code, position_claimed_normalized_code,
+position_claimed_remote_id, position_claimed_remote_label_id, position_source,
+position_profile_id, position_profile_version, position_client_supplier_id,
+position_signature_present, position_signature_verification, position_captured_at,
+position_result_status, position_result_error_code, position_result_retryable,
+position_normalized_code, position_remote_id, position_remote_label_id,
+position_validated_at, position_reconciliation_revision
 """
 
 
@@ -127,13 +176,25 @@ class SqlMobilePreliminaryDetectionRepository:
                         internal_code, quantity, quantity_status, detected_format, detected_symbology,
                         candidate_count, parser_version, detector_version, prepared_asset_sha256,
                         payload_hash, processing_ms, detected_at, received_at, expires_at,
-                        validation_status, validation_error_code, schema_version, created_at, updated_at
+                        validation_status, validation_error_code, schema_version, created_at, updated_at,
+                        position_local_recognition_id, position_raw_code,
+                        position_claimed_normalized_code, position_claimed_remote_id,
+                        position_claimed_remote_label_id, position_source, position_profile_id,
+                        position_profile_version, position_client_supplier_id,
+                        position_signature_present, position_signature_verification,
+                        position_captured_at, position_result_status, position_result_error_code,
+                        position_result_retryable, position_normalized_code, position_remote_id,
+                        position_remote_label_id, position_validated_at,
+                        position_reconciliation_revision
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?,
                         ?, ?, ?, ?,
                         ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """,
                     (
@@ -163,6 +224,26 @@ class SqlMobilePreliminaryDetectionRepository:
                         row.schema_version,
                         row.created_at,
                         row.updated_at,
+                        row.position_local_recognition_id,
+                        row.position_raw_code,
+                        row.position_claimed_normalized_code,
+                        row.position_claimed_remote_id,
+                        row.position_claimed_remote_label_id,
+                        row.position_source,
+                        row.position_profile_id,
+                        row.position_profile_version,
+                        row.position_client_supplier_id,
+                        row.position_signature_present,
+                        row.position_signature_verification,
+                        row.position_captured_at,
+                        row.position_result_status,
+                        row.position_result_error_code,
+                        row.position_result_retryable,
+                        row.position_normalized_code,
+                        row.position_remote_id,
+                        row.position_remote_label_id,
+                        row.position_validated_at,
+                        row.position_reconciliation_revision,
                     ),
                 )
         except pyodbc.IntegrityError as exc:

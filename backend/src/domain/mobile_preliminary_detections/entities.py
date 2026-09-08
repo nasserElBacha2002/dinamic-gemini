@@ -34,3 +34,23 @@ class MobilePreliminaryDetection:
     schema_version: str
     created_at: datetime
     updated_at: datetime
+    position_local_recognition_id: str | None = None
+    position_raw_code: str | None = None
+    position_claimed_normalized_code: str | None = None
+    position_claimed_remote_id: str | None = None
+    position_claimed_remote_label_id: str | None = None
+    position_source: str | None = None
+    position_profile_id: str | None = None
+    position_profile_version: int | None = None
+    position_client_supplier_id: str | None = None
+    position_signature_present: bool | None = None
+    position_signature_verification: str | None = None
+    position_captured_at: datetime | None = None
+    position_result_status: str | None = None
+    position_result_error_code: str | None = None
+    position_result_retryable: bool | None = None
+    position_normalized_code: str | None = None
+    position_remote_id: str | None = None
+    position_remote_label_id: str | None = None
+    position_validated_at: datetime | None = None
+    position_reconciliation_revision: int = 0

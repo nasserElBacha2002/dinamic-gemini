@@ -332,10 +332,10 @@ class PipelineVisionSettings(BaseModel):
         description="Máximo de frames representativos en modo hybrid (None = sin límite). Env: HYBRID_MAX_FRAMES ('' o '0' = sin límite, 1..10000).",
     )
     v3_allow_missing_supplier_prompt_fallback: bool = Field(
-        default_factory=lambda: os.getenv("V3_ALLOW_MISSING_SUPPLIER_PROMPT_FALLBACK", "")
-        .strip()
-        .lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("V3_ALLOW_MISSING_SUPPLIER_PROMPT_FALLBACK", "").strip().lower()
+            in ("1", "true", "yes")
+        ),
         description=(
             "Emergency only: when true, v3 process_aisle jobs continue with protected-base-only prompts "
             "if no active supplier_prompt_configs row matches scope (fallback_used=true in metadata). "
@@ -634,7 +634,9 @@ class ApiRuntimeSettings(BaseModel):
         description="Enable Prometheus text exposition at GET /metrics. Env: METRICS_ENABLED.",
     )
     metrics_internal_auth: str = Field(
-        default_factory=lambda: (os.getenv("METRICS_INTERNAL_AUTH", "api_key") or "api_key").strip().lower(),
+        default_factory=lambda: (
+            (os.getenv("METRICS_INTERNAL_AUTH", "api_key") or "api_key").strip().lower()
+        ),
         description=(
             "Protect /metrics: api_key (require X-API-Key when API_KEY set; else deny in hosted), "
             "loopback (only 127.0.0.1/::1), open (local/test only). Env: METRICS_INTERNAL_AUTH."
@@ -800,8 +802,7 @@ class ArtifactStorageSettings(BaseModel):
     google_application_credentials: str = Field(
         default_factory=lambda: (os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "") or "").strip(),
         description=(
-            "Path to GCP service account JSON for GCS (ADC). "
-            "Env: GOOGLE_APPLICATION_CREDENTIALS."
+            "Path to GCP service account JSON for GCS (ADC). Env: GOOGLE_APPLICATION_CREDENTIALS."
         ),
     )
     artifact_storage_legacy_local_read_enabled: bool = Field(
@@ -865,8 +866,10 @@ class ArtifactStorageSettings(BaseModel):
         description="Comma-separated retry backoff seconds for artifact publication. Env: ARTIFACT_PUBLICATION_BACKOFF_SECONDS.",
     )
     artifact_publication_worker_enabled: bool = Field(
-        default_factory=lambda: os.getenv("ARTIFACT_PUBLICATION_WORKER_ENABLED", "false").lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("ARTIFACT_PUBLICATION_WORKER_ENABLED", "false").lower()
+            in ("1", "true", "yes")
+        ),
         description="Enable autonomous artifact publication outbox worker. Env: ARTIFACT_PUBLICATION_WORKER_ENABLED.",
     )
     artifact_publication_poll_seconds: int = Field(
@@ -882,7 +885,10 @@ class ArtifactStorageSettings(BaseModel):
         description="Max outbox rows claimed per worker poll. Env: ARTIFACT_PUBLICATION_BATCH_SIZE.",
     )
     artifact_staging_base_path: str = Field(
-        default_factory=lambda: (os.getenv("ARTIFACT_STAGING_BASE_PATH", "data/artifact-staging") or "data/artifact-staging").strip(),
+        default_factory=lambda: (
+            os.getenv("ARTIFACT_STAGING_BASE_PATH", "data/artifact-staging")
+            or "data/artifact-staging"
+        ).strip(),
         description="Filesystem root for durable artifact staging bytes. Env: ARTIFACT_STAGING_BASE_PATH.",
     )
 
@@ -910,9 +916,7 @@ class ArtifactStorageSettings(BaseModel):
         from src.env_settings.parsing import resolve_google_application_credentials_path
 
         raw_creds = (self.google_application_credentials or "").strip()
-        creds_path = (
-            resolve_google_application_credentials_path(raw_creds) if raw_creds else ""
-        )
+        creds_path = resolve_google_application_credentials_path(raw_creds) if raw_creds else ""
         if self.artifact_storage_provider == "gcs" and creds_path:
             if not _Path(creds_path).is_file():
                 raise ValueError(
@@ -1045,8 +1049,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     server_csv_import_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("SERVER_CSV_IMPORT_ENABLED", "false").strip().lower()
-            in ("1", "true", "yes")
+            os.getenv("SERVER_CSV_IMPORT_ENABLED", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
             "Phase 5: enable versioned local CSV inventory imports. "
@@ -1054,13 +1057,10 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
     )
     server_csv_import_max_bytes: int = Field(
-        default_factory=lambda: int(
-            os.getenv("SERVER_CSV_IMPORT_MAX_BYTES", str(5 * 1024 * 1024))
-        ),
+        default_factory=lambda: int(os.getenv("SERVER_CSV_IMPORT_MAX_BYTES", str(5 * 1024 * 1024))),
         ge=1,
         description=(
-            "Maximum local CSV request/file size in bytes. "
-            "Env: SERVER_CSV_IMPORT_MAX_BYTES."
+            "Maximum local CSV request/file size in bytes. Env: SERVER_CSV_IMPORT_MAX_BYTES."
         ),
     )
     server_local_inventory_package_enabled: bool = Field(
@@ -1136,13 +1136,10 @@ class LimitsAndSchemaSettings(BaseModel):
         description="Maximum lines per TXT file. Env: SERVER_DINAMIC_SCANNER_TXT_MAX_LINES.",
     )
     server_dinamic_scanner_txt_max_line_length: int = Field(
-        default_factory=lambda: int(
-            os.getenv("SERVER_DINAMIC_SCANNER_TXT_MAX_LINE_LENGTH", "512")
-        ),
+        default_factory=lambda: int(os.getenv("SERVER_DINAMIC_SCANNER_TXT_MAX_LINE_LENGTH", "512")),
         ge=1,
         description=(
-            "Maximum characters per TXT line. "
-            "Env: SERVER_DINAMIC_SCANNER_TXT_MAX_LINE_LENGTH."
+            "Maximum characters per TXT line. Env: SERVER_DINAMIC_SCANNER_TXT_MAX_LINE_LENGTH."
         ),
     )
     server_preliminary_detection_ingest_enabled: bool = Field(
@@ -1180,9 +1177,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     server_authoritative_local_code_scan_ingest_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST", "false")
-            .strip()
-            .lower()
+            os.getenv("SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
@@ -1192,9 +1187,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     server_skip_remote_code_scan_for_local_authority: bool = Field(
         default_factory=lambda: (
-            os.getenv("SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY", "false")
-            .strip()
-            .lower()
+            os.getenv("SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
@@ -1206,9 +1199,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     server_authoritative_aisle_finalization_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("SERVER_AUTHORITATIVE_AISLE_FINALIZATION", "false")
-            .strip()
-            .lower()
+            os.getenv("SERVER_AUTHORITATIVE_AISLE_FINALIZATION", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
@@ -1218,8 +1209,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     server_server_reprocess_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("SERVER_SERVER_REPROCESS", "false").strip().lower()
-            in ("1", "true", "yes")
+            os.getenv("SERVER_SERVER_REPROCESS", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
             "Phase 7: enable POST/GET server-reprocess (proposal runs; no overwrite). "
@@ -1228,9 +1218,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     server_server_reprocess_adoption_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("SERVER_SERVER_REPROCESS_ADOPTION", "false")
-            .strip()
-            .lower()
+            os.getenv("SERVER_SERVER_REPROCESS_ADOPTION", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
@@ -1247,8 +1235,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     server_aisle_revisions_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("SERVER_AISLE_REVISIONS", "false").strip().lower()
-            in ("1", "true", "yes")
+            os.getenv("SERVER_AISLE_REVISIONS", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
             "Phase 8: enable aisle revision create/edit/apply/history. "
@@ -1257,8 +1244,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     server_aisle_rollback_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("SERVER_AISLE_ROLLBACK", "false").strip().lower()
-            in ("1", "true", "yes")
+            os.getenv("SERVER_AISLE_ROLLBACK", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
             "Phase 8: enable POST .../rollback (requires SERVER_AISLE_REVISIONS). "
@@ -1269,12 +1255,8 @@ class LimitsAndSchemaSettings(BaseModel):
     @model_validator(mode="after")
     def validate_authoritative_local_flag_matrix(self) -> Self:
         """ingest=true requires skip=true (fail-closed; no remote fallback after local)."""
-        ingest = bool(
-            getattr(self, "server_authoritative_local_code_scan_ingest_enabled", False)
-        )
-        skip = bool(
-            getattr(self, "server_skip_remote_code_scan_for_local_authority", False)
-        )
+        ingest = bool(getattr(self, "server_authoritative_local_code_scan_ingest_enabled", False))
+        skip = bool(getattr(self, "server_skip_remote_code_scan_for_local_authority", False))
         if ingest and not skip:
             raise ValueError(
                 "Invalid authoritative local CODE_SCAN config: "
@@ -1286,9 +1268,7 @@ class LimitsAndSchemaSettings(BaseModel):
 
     aisle_identification_pipeline_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false")
-            .strip()
-            .lower()
+            os.getenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
@@ -1300,9 +1280,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     image_processing_orchestrator_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("IMAGE_PROCESSING_ORCHESTRATOR_ENABLED", "false")
-            .strip()
-            .lower()
+            os.getenv("IMAGE_PROCESSING_ORCHESTRATOR_ENABLED", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
@@ -1313,9 +1291,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     processing_attempts_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("PROCESSING_ATTEMPTS_ENABLED", "false")
-            .strip()
-            .lower()
+            os.getenv("PROCESSING_ATTEMPTS_ENABLED", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
@@ -1385,8 +1361,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     code_scan_enable_rotations: bool = Field(
         default_factory=lambda: (
-            os.getenv("CODE_SCAN_ENABLE_ROTATIONS", "true").strip().lower()
-            in ("1", "true", "yes")
+            os.getenv("CODE_SCAN_ENABLE_ROTATIONS", "true").strip().lower() in ("1", "true", "yes")
         ),
         description=(
             "Phase 3: when true, always attempt rotated variants (90/180/270) up to "
@@ -1500,11 +1475,15 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
     )
     internal_ocr_engine: str = Field(
-        default_factory=lambda: (os.getenv("INTERNAL_OCR_ENGINE", "tesseract") or "tesseract").strip().lower(),
+        default_factory=lambda: (
+            (os.getenv("INTERNAL_OCR_ENGINE", "tesseract") or "tesseract").strip().lower()
+        ),
         description="Phase 4 OCR engine key (only tesseract supported). Env: INTERNAL_OCR_ENGINE.",
     )
     internal_ocr_language: str = Field(
-        default_factory=lambda: (os.getenv("INTERNAL_OCR_LANGUAGE", "spa+eng") or "spa+eng").strip(),
+        default_factory=lambda: (
+            os.getenv("INTERNAL_OCR_LANGUAGE", "spa+eng") or "spa+eng"
+        ).strip(),
         description="Tesseract language pack(s). Env: INTERNAL_OCR_LANGUAGE.",
     )
     internal_ocr_max_variants: int = Field(
@@ -1529,9 +1508,7 @@ class LimitsAndSchemaSettings(BaseModel):
         description="Max longest image side before OCR. Env: INTERNAL_OCR_MAX_IMAGE_DIMENSION.",
     )
     max_internal_image_processing_concurrency: int = Field(
-        default_factory=lambda: int(
-            os.getenv("MAX_INTERNAL_IMAGE_PROCESSING_CONCURRENCY", "1")
-        ),
+        default_factory=lambda: int(os.getenv("MAX_INTERNAL_IMAGE_PROCESSING_CONCURRENCY", "1")),
         ge=1,
         le=16,
         description=(
@@ -1558,9 +1535,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
     )
     internal_ocr_ean_first_client_ids: str = Field(
-        default_factory=lambda: (
-            os.getenv("INTERNAL_OCR_EAN_FIRST_CLIENT_IDS", "") or ""
-        ).strip(),
+        default_factory=lambda: (os.getenv("INTERNAL_OCR_EAN_FIRST_CLIENT_IDS", "") or "").strip(),
         description=(
             "Comma-separated client UUIDs that map EAN→internal_code when present "
             "(MASOL-style without hardcoding client names). "
@@ -1582,8 +1557,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     internal_ocr_enable_deskew: bool = Field(
         default_factory=lambda: (
-            os.getenv("INTERNAL_OCR_ENABLE_DESKEW", "false").strip().lower()
-            in ("1", "true", "yes")
+            os.getenv("INTERNAL_OCR_ENABLE_DESKEW", "false").strip().lower() in ("1", "true", "yes")
         ),
         description="Include deskew as an OCR preprocessing variant. Env: INTERNAL_OCR_ENABLE_DESKEW.",
     )
@@ -1653,11 +1627,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     external_fallback_ambiguous_internal_code_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv(
-                "EXTERNAL_FALLBACK_AMBIGUOUS_INTERNAL_CODE_ENABLED", "false"
-            )
-            .strip()
-            .lower()
+            os.getenv("EXTERNAL_FALLBACK_AMBIGUOUS_INTERNAL_CODE_ENABLED", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
@@ -1758,9 +1728,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
     )
     external_fallback_provider: str = Field(
-        default_factory=lambda: (
-            os.getenv("EXTERNAL_FALLBACK_PROVIDER", "") or ""
-        ).strip().lower(),
+        default_factory=lambda: (os.getenv("EXTERNAL_FALLBACK_PROVIDER", "") or "").strip().lower(),
         description=(
             "Phase 5 primary external provider key (gemini|openai|claude|deepseek). "
             "Required when EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true; no silent default. "
@@ -1796,9 +1764,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
     )
     external_fallback_circuit_breaker_threshold: int = Field(
-        default_factory=lambda: int(
-            os.getenv("EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD", "5")
-        ),
+        default_factory=lambda: int(os.getenv("EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD", "5")),
         ge=1,
         le=100,
         description="Phase 5 failures before opening the circuit. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD.",
@@ -1812,9 +1778,7 @@ class LimitsAndSchemaSettings(BaseModel):
         description="Phase 5 circuit open cooldown. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_COOLDOWN_SECONDS.",
     )
     external_fallback_max_image_dimension: int = Field(
-        default_factory=lambda: int(
-            os.getenv("EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION", "2048")
-        ),
+        default_factory=lambda: int(os.getenv("EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION", "2048")),
         ge=256,
         le=8192,
         description="Phase 5 max longest image side before provider call. Env: EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION.",
@@ -1916,8 +1880,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     client_sequence_required: bool = Field(
         default_factory=lambda: (
-            os.getenv("CLIENT_SEQUENCE_REQUIRED", "false").strip().lower()
-            in ("1", "true", "yes")
+            os.getenv("CLIENT_SEQUENCE_REQUIRED", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
             "When true, uploads without client sequence_number are rejected for new clients "
@@ -2015,9 +1978,7 @@ class LimitsAndSchemaSettings(BaseModel):
             if os.getenv("POSITIONING_LABEL_SIGNING_REQUIRED") is not None
             and os.getenv("POSITIONING_LABEL_SIGNING_REQUIRED", "").strip() != ""
             else (
-                (os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "development")
-                .strip()
-                .lower()
+                (os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "development").strip().lower()
                 in ("production", "prod")
             )
         ),
@@ -2051,9 +2012,7 @@ class LimitsAndSchemaSettings(BaseModel):
         description="Max batch PDF size in bytes. Env: POSITION_LABEL_MAX_PDF_BYTES.",
     )
     position_label_batch_sync_limit: int = Field(
-        default_factory=lambda: int(
-            os.getenv("POSITION_LABEL_BATCH_SYNC_LIMIT", "200") or "200"
-        ),
+        default_factory=lambda: int(os.getenv("POSITION_LABEL_BATCH_SYNC_LIMIT", "200") or "200"),
         ge=1,
         description=(
             "Alias/ cap for sync batch size (same role as POSITION_LABEL_MAX_BATCH_SIZE). "
@@ -2231,9 +2190,7 @@ class LimitsAndSchemaSettings(BaseModel):
         description="Max DINAMIC_POSITION payload size. Env: POSITION_LABEL_MAX_PAYLOAD_BYTES.",
     )
     position_label_max_codes_per_image: int = Field(
-        default_factory=lambda: int(
-            os.getenv("POSITION_LABEL_MAX_CODES_PER_IMAGE", "32") or "32"
-        ),
+        default_factory=lambda: int(os.getenv("POSITION_LABEL_MAX_CODES_PER_IMAGE", "32") or "32"),
         ge=1,
         description=(
             "Max POSITION candidates validated/persisted per image "
@@ -2254,8 +2211,7 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     legacy_image_order_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("LEGACY_IMAGE_ORDER_ENABLED", "true").strip().lower()
-            in ("1", "true", "yes")
+            os.getenv("LEGACY_IMAGE_ORDER_ENABLED", "true").strip().lower() in ("1", "true", "yes")
         ),
         description=(
             "Allow legacy image-order derivation when client sequence is absent "
@@ -2266,6 +2222,14 @@ class LimitsAndSchemaSettings(BaseModel):
     @model_validator(mode="after")
     def validate_upload_size_relationship(self) -> Self:
         """Per-request total must be able to fit at least one max-size file."""
+        if (
+            not self.position_flexible_validation_enabled
+            and not self.position_preexistence_required
+        ):
+            raise ValueError(
+                "POSITION_PREEXISTENCE_REQUIRED=false requires "
+                "POSITION_FLEXIBLE_VALIDATION_ENABLED=true"
+            )
         if self.max_upload_file_size_mb <= 0 or self.max_upload_request_size_mb <= 0:
             raise ValueError(
                 "max_upload_file_size_mb and max_upload_request_size_mb must both be > 0"
@@ -2525,7 +2489,9 @@ class ObservabilitySettings(BaseModel):
         description="Retention days for INTERMEDIATE artifacts. Env: OBSERVABILITY_INTERMEDIATE_ARTIFACT_RETENTION_DAYS.",
     )
     observability_output_artifact_retention_days: int = Field(
-        default_factory=lambda: int(os.getenv("OBSERVABILITY_OUTPUT_ARTIFACT_RETENTION_DAYS", "180")),
+        default_factory=lambda: int(
+            os.getenv("OBSERVABILITY_OUTPUT_ARTIFACT_RETENTION_DAYS", "180")
+        ),
         ge=1,
         le=3650,
         description="Retention days for OUTPUT artifacts. Env: OBSERVABILITY_OUTPUT_ARTIFACT_RETENTION_DAYS.",
@@ -2592,8 +2558,10 @@ class ObservabilitySettings(BaseModel):
         ),
     )
     observability_input_snapshot_required: bool = Field(
-        default_factory=lambda: os.getenv("OBSERVABILITY_INPUT_SNAPSHOT_REQUIRED", "true").strip().lower()
-        in ("1", "true", "yes", "on"),
+        default_factory=lambda: (
+            os.getenv("OBSERVABILITY_INPUT_SNAPSHOT_REQUIRED", "true").strip().lower()
+            in ("1", "true", "yes", "on")
+        ),
         description=(
             "When true, a failure to persist the job input snapshot (job_source_assets) fails "
             "the job with INPUT_SNAPSHOT_PERSIST_FAILED. When false, the failure is recorded as a "
@@ -2617,9 +2585,7 @@ class ObservabilitySettings(BaseModel):
         ),
     )
     observability_download_temp_max_total_bytes: int = Field(
-        default_factory=lambda: int(
-            os.getenv("OBSERVABILITY_DOWNLOAD_TEMP_MAX_TOTAL_BYTES", "0")
-        ),
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_DOWNLOAD_TEMP_MAX_TOTAL_BYTES", "0")),
         ge=0,
         le=50_000_000_000,
         description=(

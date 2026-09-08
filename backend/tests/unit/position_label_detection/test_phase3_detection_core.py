@@ -155,6 +155,11 @@ def test_resolver_client_mismatch_and_invalidated() -> None:
     )
     repo.save(label)
     resolver = PositionLabelResolver(label_repo=repo)
+    canonical_case = resolver.resolve(
+        public_label_id="POS_A",
+        expected_client_id="client-a",
+    )
+    assert canonical_case.detection_status is PositionLabelDetectionStatus.VALID
     mismatch = resolver.resolve(public_label_id="pos_a", expected_client_id="client-b")
     assert mismatch.detection_status is PositionLabelDetectionStatus.CLIENT_MISMATCH
     assert mismatch.label is None
@@ -163,6 +168,26 @@ def test_resolver_client_mismatch_and_invalidated() -> None:
     repo.save(label)
     inv = resolver.resolve(public_label_id="pos_a", expected_client_id="client-a")
     assert inv.detection_status is PositionLabelDetectionStatus.LABEL_INVALIDATED
+
+    repo.save(
+        ClientPositionLabel(
+            id=str(uuid4()),
+            client_id="client-a",
+            public_identifier="POS_A",
+            name="A-02",
+            normalized_name="A-02",
+            status=ClientPositionLabelStatus.ACTIVE,
+            payload_version=1,
+            canonical_payload={},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    ambiguous = resolver.resolve(
+        public_label_id="pos_a",
+        expected_client_id="client-a",
+    )
+    assert ambiguous.detection_status is PositionLabelDetectionStatus.DUPLICATE_POSITION_CODES
 
 
 def test_use_case_valid_and_idempotent() -> None:

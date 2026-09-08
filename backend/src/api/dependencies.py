@@ -924,24 +924,74 @@ def get_list_aisle_assets_use_case(
 
 
 def get_upsert_preliminary_detection_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    label_profile_repo=Depends(get_client_supplier_label_profile_repo),
+    extraction_profile_repo=Depends(get_supplier_extraction_profile_repo),
     preliminary_repo=Depends(get_mobile_preliminary_detection_repo),
     clock: Clock = Depends(get_clock),
 ):
+    from src.application.services.label_profile_resolver import LabelProfileResolver
+    from src.application.services.position_label_detection.resolver import (
+        PositionLabelResolver,
+    )
+    from src.application.services.position_recognition import (
+        CanonicalPositionValidator,
+        PositionCompatibilityPolicy,
+    )
+    from src.application.services.positioning_label_signing import (
+        PositioningLabelSigningConfig,
+        PositioningLabelSigningService,
+        parse_previous_secrets,
+    )
     from src.application.use_cases.aisles.upsert_preliminary_detection import (
         UpsertPreliminaryDetectionUseCase,
     )
     from src.config import load_settings
 
     settings = load_settings()
+    container = get_app_container()
+    signing = PositioningLabelSigningService(
+        PositioningLabelSigningConfig(
+            secret=settings.positioning_label_hmac_secret or None,
+            key_version=int(settings.positioning_label_hmac_key_version),
+            previous_secrets=parse_previous_secrets(
+                settings.positioning_label_hmac_previous_secrets
+            ),
+            required=bool(settings.positioning_label_signing_required),
+        )
+    )
     return UpsertPreliminaryDetectionUseCase(
+        inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
         preliminary_repo=preliminary_repo,
         clock=clock,
         enabled=bool(
             getattr(settings, "server_preliminary_detection_ingest_enabled", False)
+        ),
+        canonical_position_validator=CanonicalPositionValidator(
+            signing=signing,
+            resolver=PositionLabelResolver(
+                label_repo=container.get_client_position_label_repo()
+            ),
+            policy=PositionCompatibilityPolicy.resolve(
+                signature_validation_enabled=bool(
+                    settings.position_label_signature_validation_enabled
+                ),
+                allow_unsigned_legacy=bool(settings.positioning_allow_unsigned_legacy),
+                preexistence_required=bool(settings.position_preexistence_required),
+                flexible_validation_enabled=bool(
+                    settings.position_flexible_validation_enabled
+                ),
+            ),
+        ),
+        label_profile_resolver=LabelProfileResolver(
+            label_profile_repo=label_profile_repo,
+            client_supplier_repo=client_supplier_repo,
+            extraction_profile_repo=extraction_profile_repo,
         ),
     )
 
@@ -1472,7 +1522,9 @@ def get_process_preliminary_reconciliations_use_case():
         state_repo=c.get_job_asset_processing_state_repo(),
         attempt_repo=c.get_processing_attempt_repo(),
         job_source_asset_repo=c.get_job_source_asset_repo(),
-        enabled=bool(getattr(settings, "server_preliminary_reconciliation_enabled", False)),
+        enabled=bool(
+            getattr(settings, "server_preliminary_reconciliation_enabled", False)
+        ),
         metrics_enabled=bool(
             getattr(settings, "preliminary_reconciliation_metrics_enabled", False)
         ),
@@ -1493,9 +1545,7 @@ def get_list_preliminary_reconciliations_use_case(
     return ListPreliminaryReconciliationsUseCase(
         aisle_repo=aisle_repo,
         reconciliation_repo=reconciliation_repo,
-        enabled=bool(
-            getattr(settings, "server_preliminary_reconciliation_enabled", False)
-        ),
+        enabled=bool(getattr(settings, "server_preliminary_reconciliation_enabled", False)),
     )
 
 

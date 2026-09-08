@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from src.application.services.label_validation import LabelValidationService
+from src.application.services.position_label_detection.position_label_policy import (
+    is_unsigned_legacy_catalog_match,
+)
 from src.application.services.position_label_detection.resolver import (
     PositionLabelResolutionUnavailableError,
 )
@@ -242,8 +245,9 @@ class CanonicalPositionValidator:
                 recognition=recognition,
                 error_code="SIGNATURE_VERIFIER_UNAVAILABLE",
             )
-        if verification is PositionSignatureVerification.MISSING and not (
-            self._policy.allow_unsigned_legacy or self._policy.flexible_validation_enabled
+        if (
+            verification is PositionSignatureVerification.MISSING
+            and not self._policy.allow_unsigned_legacy
         ):
             return CanonicalPositionValidationResult(
                 status=CanonicalPositionValidationStatus.SIGNATURE_REQUIRED_BY_LEGACY_POLICY,
@@ -257,6 +261,8 @@ class CanonicalPositionValidator:
             recognition,
             exact_public_identifier=code.raw_code,
             evaluate_preexistence=evaluate_preexistence,
+            unsigned_legacy_candidate=(verification is PositionSignatureVerification.MISSING),
+            payload_version=int(payload["version"]),
         )
 
     def _resolve_dinamic(
@@ -266,6 +272,8 @@ class CanonicalPositionValidator:
         *,
         exact_public_identifier: str,
         evaluate_preexistence: bool,
+        unsigned_legacy_candidate: bool,
+        payload_version: int,
     ) -> CanonicalPositionValidationResult:
         client_id = (command.context.client_id or "").strip()
         if not evaluate_preexistence:
@@ -282,6 +290,8 @@ class CanonicalPositionValidator:
                 resolution_status=PositionResolutionStatus.ERROR,
             )
         if self._resolver is None:
+            if unsigned_legacy_candidate:
+                return self._unsigned_legacy_rejection(recognition)
             if not self._policy.preexistence_required:
                 return CanonicalPositionValidationResult(
                     status=CanonicalPositionValidationStatus.VALID_UNMATERIALIZED,
@@ -322,6 +332,12 @@ class CanonicalPositionValidator:
                     recognition=recognition,
                     error_code="POSITION_RESOLUTION_INCOMPLETE",
                 )
+            if unsigned_legacy_candidate and not is_unsigned_legacy_catalog_match(
+                parsed_label_id=exact_public_identifier,
+                parsed_version=payload_version,
+                label=label,
+            ):
+                return self._unsigned_legacy_rejection(recognition)
             if not _recognition_matches_catalog(
                 recognition,
                 getattr(label, "canonical_payload", None),
@@ -338,6 +354,8 @@ class CanonicalPositionValidator:
                 resolution_status=PositionResolutionStatus.EXISTING,
             )
         if resolved.detection_status is PositionLabelDetectionStatus.LABEL_NOT_FOUND:
+            if unsigned_legacy_candidate:
+                return self._unsigned_legacy_rejection(recognition)
             status = (
                 CanonicalPositionValidationStatus.PREEXISTENCE_REQUIRED_BY_LEGACY_POLICY
                 if self._policy.preexistence_required
@@ -357,11 +375,29 @@ class CanonicalPositionValidator:
                 error_code="POSITION_SCOPE_MISMATCH",
                 resolution_status=PositionResolutionStatus.SCOPE_MISMATCH,
             )
+        if resolved.detection_status is PositionLabelDetectionStatus.DUPLICATE_POSITION_CODES:
+            return CanonicalPositionValidationResult(
+                status=CanonicalPositionValidationStatus.AMBIGUOUS_CODE,
+                recognition=recognition,
+                error_code="AMBIGUOUS_POSITION_IDENTIFIER",
+                resolution_status=PositionResolutionStatus.ERROR,
+            )
         return CanonicalPositionValidationResult(
             status=CanonicalPositionValidationStatus.FIELD_CONSTRAINT_VIOLATION,
             recognition=recognition,
             error_code="POSITION_NOT_ACTIVE",
             resolution_status=PositionResolutionStatus.INACTIVE,
+        )
+
+    @staticmethod
+    def _unsigned_legacy_rejection(
+        recognition: CanonicalPositionRecognition,
+    ) -> CanonicalPositionValidationResult:
+        return CanonicalPositionValidationResult(
+            status=CanonicalPositionValidationStatus.SIGNATURE_REQUIRED_BY_LEGACY_POLICY,
+            recognition=recognition,
+            error_code="UNSIGNED_LEGACY_CATALOG_MISMATCH",
+            policy_rejection=True,
         )
 
     def _validate_profile_position(

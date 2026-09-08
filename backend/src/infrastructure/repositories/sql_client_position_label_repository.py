@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,7 +14,11 @@ from src.application.errors import (
     IdempotencyKeyReusedError,
 )
 from src.application.ports.client_position_label_repository import (
+    PositionLabelIdentifierAmbiguousError,
     PositionLabelResolutionUnavailableError,
+)
+from src.application.services.position_recognition.normalization import (
+    normalize_position_code,
 )
 from src.database.sqlserver import SqlServerClient
 from src.domain.client_position_label.entities import (
@@ -176,15 +181,40 @@ class SqlClientPositionLabelRepository:
         pub = (public_identifier or "").strip()
         if not pub:
             return None
+        variants = tuple(
+            dict.fromkeys(
+                (
+                    unicodedata.normalize("NFC", pub),
+                    unicodedata.normalize("NFD", pub),
+                )
+            )
+        )
+        if len(variants) == 1:
+            variants = (variants[0], variants[0])
         try:
             with self._client.cursor() as cur:
-                cur.execute(_LABEL_SELECT + " WHERE public_identifier = ?", (pub,))
-                row = cur.fetchone()
+                cur.execute(
+                    _LABEL_SELECT
+                    + " WHERE UPPER(public_identifier) IN (UPPER(?), UPPER(?)) "
+                    "ORDER BY id OFFSET 0 ROWS FETCH NEXT 4 ROWS ONLY",
+                    variants,
+                )
+                candidates = [_row_to_label(row) for row in cur.fetchall()]
         except (pyodbc.InterfaceError, pyodbc.OperationalError) as exc:
             raise PositionLabelResolutionUnavailableError(
                 "position label repository unavailable"
             ) from exc
-        return _row_to_label(row) if row else None
+        canonical = normalize_position_code(pub).normalized_code
+        matches = [
+            label
+            for label in candidates
+            if normalize_position_code(label.public_identifier).normalized_code == canonical
+        ]
+        if len(matches) > 1:
+            raise PositionLabelIdentifierAmbiguousError(
+                "multiple labels share the canonical public identifier"
+            )
+        return matches[0] if matches else None
 
     def get_by_idempotency_key(
         self, client_id: str, idempotency_key: str

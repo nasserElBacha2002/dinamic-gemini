@@ -20,6 +20,26 @@ from src.domain.position_label_detection.entities import (
 )
 
 
+def is_unsigned_legacy_catalog_match(
+    *,
+    parsed_label_id: str,
+    parsed_version: int,
+    label: ClientPositionLabel,
+) -> bool:
+    """One compatibility rule shared by legacy and canonical validators."""
+    if parsed_version != 1:
+        return False
+    if label.signature_status is not ClientPositionLabelSignatureStatus.UNSIGNED:
+        return False
+    stored = label.canonical_payload or {}
+    return (
+        not stored.get("signature")
+        and (stored.get("type") or "").strip() == "DINAMIC_POSITION"
+        and (stored.get("label_id") or "").strip() == parsed_label_id.strip()
+        and int(stored.get("version") or 0) == 1
+    )
+
+
 class PositionLabelPolicyDecision(str, Enum):
     ACCEPT = "ACCEPT"
     ACCEPT_REQUIRES_REVIEW = "ACCEPT_REQUIRES_REVIEW"
@@ -78,17 +98,11 @@ class PositionLabelPolicyService:
             return None
         assert resolved.label is not None
         label = resolved.label
-        if label.signature_status is not ClientPositionLabelSignatureStatus.UNSIGNED:
-            return None
-
-        stored = label.canonical_payload or {}
-        if stored.get("signature"):
-            return None
-        if (stored.get("type") or "").strip() != "DINAMIC_POSITION":
-            return None
-        if (stored.get("label_id") or "").strip() != parsed.label_id.strip():
-            return None
-        if int(stored.get("version") or 0) != 1:
+        if not is_unsigned_legacy_catalog_match(
+            parsed_label_id=parsed.label_id,
+            parsed_version=int(parsed.version or 0),
+            label=label,
+        ):
             return None
 
         return PositionLabelPolicyOutcome(

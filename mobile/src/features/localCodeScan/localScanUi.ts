@@ -133,3 +133,23 @@ export function labelForPreliminarySyncStatus(
       return null;
   }
 }
+
+export function labelForPositionSyncState(
+  state: LocalDetectionDraftRow['position_sync_state'],
+): string | null {
+  switch (state) {
+    case 'LOCAL_VALIDATED':
+      return 'Posición reconocida localmente';
+    case 'QUEUED':
+    case 'SENDING':
+      return 'Posición pendiente de validación del servidor';
+    case 'CONFIRMED':
+      return 'Posición confirmada por el servidor';
+    case 'RETRYABLE_FAILURE':
+      return 'Validación de posición pendiente de reintento';
+    case 'REQUIRES_REVIEW':
+      return 'Posición rechazada — requiere revisión';
+    default:
+      return null;
+  }
+}

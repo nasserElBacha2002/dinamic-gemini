@@ -14,6 +14,7 @@ from src.application.use_cases.aisles.upsert_preliminary_detection import (
     PRELIMINARY_IDEMPOTENCY_CONFLICT,
     PRELIMINARY_INGEST_DISABLED,
     PRELIMINARY_VALIDATION_FAILED,
+    PositionAuthoritativeResultV2,
     PreliminaryDetectionIngestDisabledError,
     UpsertPreliminaryDetectionCommand,
     UpsertPreliminaryDetectionResult,
@@ -46,6 +47,23 @@ def _body(**over):
 
 
 PATH = "/api/v3/inventories/inv-1/aisles/aisle-1/preliminary-detections/draft-1"
+
+
+def _position_reference():
+    return {
+        "payload_version": 2,
+        "local_recognition_id": "local-position-1",
+        "raw_code": "POS-1",
+        "normalized_code": "POS-1",
+        "remote_position_id": None,
+        "remote_position_label_id": None,
+        "source": "LOCAL_CODE_SCAN",
+        "profile_id": None,
+        "profile_version": None,
+        "client_supplier_id": None,
+        "signature": {"present": False, "verification": "MISSING"},
+        "captured_at": "2026-07-24T11:59:00Z",
+    }
 
 
 def test_requires_auth():
@@ -112,7 +130,10 @@ def test_validation_failed_typed_code():
     app.dependency_overrides[get_upsert_preliminary_detection_use_case] = lambda: Stub()
     try:
         client = TestClient(app, raise_server_exceptions=False)
-        res = client.put(PATH, json=_body(internal_code=None, status="RESOLVED", quantity=None, quantity_status=None))
+        res = client.put(
+            PATH,
+            json=_body(internal_code=None, status="RESOLVED", quantity=None, quantity_status=None),
+        )
         # pydantic may reject first; if it reaches use case:
         if res.status_code == 422:
             body = res.json()
@@ -180,5 +201,75 @@ def test_aisle_not_found_mapped():
         client = TestClient(app, raise_server_exceptions=False)
         res = client.put(PATH, json=_body())
         assert res.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_v2_contract_maps_position_reference_and_authoritative_result():
+    class Stub:
+        def execute(self, cmd: UpsertPreliminaryDetectionCommand):
+            assert cmd.schema_version == "2"
+            assert cmd.position_reference is not None
+            assert cmd.position_reference.local_recognition_id == "local-position-1"
+            return UpsertPreliminaryDetectionResult(
+                draft_id="draft-1",
+                requested_draft_id="draft-1",
+                server_preliminary_id="srv-1",
+                status="VALIDATED",
+                received_at=datetime(2026, 7, 24, tzinfo=timezone.utc),
+                validation_errors=(),
+                position_result=PositionAuthoritativeResultV2(
+                    local_recognition_id="local-position-1",
+                    normalized_code="POS-1",
+                    remote_position_id=None,
+                    remote_position_label_id="server-label-1",
+                    status="ACCEPTED_EXISTING",
+                    error_code=None,
+                    retryable=False,
+                    server_timestamp=datetime(2026, 7, 24, tzinfo=timezone.utc),
+                ),
+            )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_upsert_preliminary_detection_use_case] = lambda: Stub()
+    try:
+        client = TestClient(app)
+        res = client.put(
+            PATH,
+            json=_body(schema_version="2", position_reference=_position_reference()),
+        )
+        assert res.status_code == 200
+        assert res.json()["position_result"] == {
+            "contract_version": 2,
+            "local_recognition_id": "local-position-1",
+            "normalized_code": "POS-1",
+            "remote_position_id": None,
+            "remote_position_label_id": "server-label-1",
+            "status": "ACCEPTED_EXISTING",
+            "error_code": None,
+            "retryable": False,
+            "server_timestamp": "2026-07-24T00:00:00Z",
+            "reconciliation_revision": 1,
+        }
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_v2_requires_position_reference():
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        res = client.put(PATH, json=_body(schema_version="2"))
+        assert res.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_v1_rejects_position_reference():
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        res = client.put(PATH, json=_body(position_reference=_position_reference()))
+        assert res.status_code == 422
     finally:
         app.dependency_overrides.clear()

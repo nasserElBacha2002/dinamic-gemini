@@ -13,6 +13,7 @@ import {
 import type { LocalDetectionDraftRow } from '../src/database/repositories/localDetectionDraftRepository';
 import type { FeatureFlags } from '../src/core/featureFlags';
 import { DEFAULT_FEATURE_FLAGS } from '../src/core/featureFlags';
+import { createActivePositionState } from '../src/core/positionLabelPayload';
 
 function flags(over: Partial<FeatureFlags> = {}): FeatureFlags {
   return { ...DEFAULT_FEATURE_FLAGS, mobilePreliminaryDetectionSync: true, ...over };
@@ -62,6 +63,23 @@ function draft(over: Partial<LocalDetectionDraftRow> = {}): LocalDetectionDraftR
   };
 }
 
+function draftWithPosition(over: Partial<LocalDetectionDraftRow> = {}): LocalDetectionDraftRow {
+  const position = createActivePositionState({
+    localRecognitionId: 'local-position-1',
+    captureSessionId: 'sess-1',
+    inventoryId: 'inv-1',
+    aisleLocalId: 'aisle-1',
+    rawCode: 'POS-A',
+    rawPayload: 'POS-A',
+    source: 'LOCAL_CODE_SCAN',
+  });
+  return draft({
+    position_snapshot_json: JSON.stringify(position),
+    position_local_recognition_id: 'local-position-1',
+    ...over,
+  });
+}
+
 function createHarness(opts: {
   flags?: FeatureFlags;
   drafts?: LocalDetectionDraftRow[];
@@ -81,6 +99,8 @@ function createHarness(opts: {
     completeSyncSuccess: jest.fn(async () => true),
     completeSyncTerminal: jest.fn(async () => true),
     completeSyncRetry: jest.fn(async () => true),
+    reconcilePositionResult: jest.fn(async () => true),
+    completePositionSyncResult: jest.fn(async () => true),
     getEarliestSyncRetryAt: jest.fn(async () => '2026-07-24T12:01:00.000Z'),
     markNotReady: jest.fn(async () => undefined),
     purgeSyncedOlderThan: jest.fn(async () => 0),
@@ -188,10 +208,13 @@ describe('PreliminaryDetectionSyncService', () => {
   });
 
   it('syncs successfully', async () => {
-    const { service, draftsRepo } = createHarness({});
+    const { service, draftsRepo, api } = createHarness({});
     const summary = await service.syncPending();
     expect(summary.synced).toBe(1);
     expect(draftsRepo.completeSyncSuccess).toHaveBeenCalled();
+    const request = (api.upsertDraft as jest.Mock).mock.calls[0]?.[3];
+    expect(request).toMatchObject({ schema_version: '1' });
+    expect(request).not.toHaveProperty('position_reference');
   });
 
   it('maps 422 to rejected via code', async () => {
@@ -254,5 +277,168 @@ describe('PreliminaryDetectionSyncService', () => {
     draftsRepo.completeSyncSuccess.mockResolvedValue(false);
     const summary = await service.syncPending();
     expect(summary.skipped_lease).toBe(1);
+  });
+
+  it('sends V2 without a remote id and reconciles accepted response by local id', async () => {
+    const position = createActivePositionState({
+      localRecognitionId: 'local-position-1',
+      captureSessionId: 'sess-1',
+      inventoryId: 'inv-1',
+      aisleLocalId: 'aisle-1',
+      rawCode: ' pos-a ',
+      rawPayload: ' pos-a ',
+      source: 'LOCAL_CODE_SCAN',
+    });
+    const upsert = jest.fn(async (..._args: unknown[]) => ({
+      draft_id: 'draft-1',
+      requested_draft_id: 'draft-1',
+      server_preliminary_id: 'server-1',
+      status: 'VALIDATED',
+      received_at: '2026-07-24T12:00:01.000Z',
+      validation_errors: [],
+      position_result: {
+        contract_version: 2,
+        local_recognition_id: 'local-position-1',
+        normalized_code: 'POS-A',
+        remote_position_id: null,
+        remote_position_label_id: null,
+        status: 'ACCEPTED_UNMATERIALIZED',
+        error_code: null,
+        retryable: false,
+        server_timestamp: '2026-07-24T12:00:01.000Z',
+        reconciliation_revision: 1,
+      },
+    }));
+    const { service, draftsRepo } = createHarness({
+      flags: flags({ positionSyncReferenceV2Enabled: true }),
+      drafts: [
+        draft({
+          position_snapshot_json: JSON.stringify(position),
+          position_local_recognition_id: 'local-position-1',
+        }),
+      ],
+      upsert,
+    });
+
+    const summary = await service.syncPending();
+    expect(summary.synced).toBe(1);
+    expect(upsert.mock.calls[0]?.[3]).toMatchObject({
+      schema_version: '2',
+      position_reference: {
+        local_recognition_id: 'local-position-1',
+        remote_position_id: null,
+      },
+    });
+    expect(draftsRepo.completePositionSyncResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localRecognitionId: 'local-position-1',
+        outcome: 'SUCCESS',
+      }),
+    );
+  });
+
+  it('does not confirm a V2 position when the response body rejects it', async () => {
+    const upsert = jest.fn(async (..._args: unknown[]) => ({
+      server_preliminary_id: 'server-1',
+      received_at: '2026-07-24T12:00:01.000Z',
+      position_result: {
+        contract_version: 2,
+        local_recognition_id: 'local-position-1',
+        normalized_code: 'POS-A',
+        remote_position_id: null,
+        remote_position_label_id: null,
+        status: 'REJECTED_SCOPE',
+        error_code: 'POSITION_SCOPE_MISMATCH',
+        retryable: false,
+        server_timestamp: '2026-07-24T12:00:01.000Z',
+        reconciliation_revision: 2,
+      },
+    }));
+    const { service, draftsRepo } = createHarness({
+      flags: flags({ positionSyncReferenceV2Enabled: true }),
+      drafts: [draftWithPosition()],
+      upsert,
+    });
+
+    const summary = await service.syncPending();
+    expect(summary.rejected).toBe(1);
+    expect(draftsRepo.completeSyncSuccess).not.toHaveBeenCalled();
+    expect(draftsRepo.completePositionSyncResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'REJECTED',
+        errorCode: 'POSITION_SCOPE_MISMATCH',
+      }),
+    );
+  });
+
+  it('requeues a retryable authoritative position result', async () => {
+    const upsert = jest.fn(async (..._args: unknown[]) => ({
+      server_preliminary_id: 'server-1',
+      received_at: '2026-07-24T12:00:01.000Z',
+      position_result: {
+        contract_version: 2,
+        local_recognition_id: 'local-position-1',
+        normalized_code: 'POS-A',
+        remote_position_id: null,
+        remote_position_label_id: null,
+        status: 'RETRYABLE_ERROR',
+        error_code: 'POSITION_VALIDATION_UNAVAILABLE',
+        retryable: true,
+        server_timestamp: '2026-07-24T12:00:01.000Z',
+        reconciliation_revision: 3,
+      },
+    }));
+    const { service, draftsRepo } = createHarness({
+      flags: flags({ positionSyncReferenceV2Enabled: true }),
+      drafts: [draftWithPosition()],
+      upsert,
+    });
+
+    expect((await service.syncPending()).retry).toBe(1);
+    expect(draftsRepo.completePositionSyncResult).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'RETRY' }),
+    );
+    expect(draftsRepo.completeSyncSuccess).not.toHaveBeenCalled();
+  });
+
+  it('ignores an older duplicate revision but rejects a response for another local id', async () => {
+    const response = {
+      server_preliminary_id: 'server-1',
+      received_at: '2026-07-24T12:00:01.000Z',
+      position_result: {
+        contract_version: 2,
+        local_recognition_id: 'local-position-1',
+        normalized_code: 'POS-A',
+        remote_position_id: null,
+        remote_position_label_id: null,
+        status: 'ACCEPTED_EXISTING',
+        error_code: null,
+        retryable: false,
+        server_timestamp: '2026-07-24T12:00:01.000Z',
+        reconciliation_revision: 1,
+      },
+    };
+    const acceptedHarness = createHarness({
+      flags: flags({ positionSyncReferenceV2Enabled: true }),
+      drafts: [draftWithPosition()],
+      upsert: jest.fn(async (..._args: unknown[]) => response),
+    });
+    acceptedHarness.draftsRepo.completePositionSyncResult.mockResolvedValue(false);
+    expect((await acceptedHarness.service.syncPending()).skipped_lease).toBe(1);
+
+    const mismatchedHarness = createHarness({
+      flags: flags({ positionSyncReferenceV2Enabled: true }),
+      drafts: [draftWithPosition()],
+      upsert: jest.fn(async (..._args: unknown[]) => ({
+        ...response,
+        position_result: {
+          ...response.position_result,
+          local_recognition_id: 'different-position',
+        },
+      })),
+    });
+    mismatchedHarness.draftsRepo.completePositionSyncResult.mockResolvedValue(false);
+    expect((await mismatchedHarness.service.syncPending()).conflict).toBe(1);
+    expect(mismatchedHarness.draftsRepo.completeSyncSuccess).not.toHaveBeenCalled();
   });
 });

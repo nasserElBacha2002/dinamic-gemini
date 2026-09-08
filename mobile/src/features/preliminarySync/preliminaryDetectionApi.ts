@@ -1,7 +1,7 @@
 import type { ApiClient } from '../../services/api/apiClient';
 
 export interface PreliminaryDetectionSyncRequest {
-  readonly schema_version: string;
+  readonly schema_version: '1' | '2';
   readonly capture_session_id: string;
   readonly capture_photo_id: string;
   readonly client_file_id: string;
@@ -20,6 +20,110 @@ export interface PreliminaryDetectionSyncRequest {
   readonly payload_hash: string | null;
   readonly processing_ms: number | null;
   readonly detected_at: string | null;
+  readonly position_reference?: PositionSyncReferenceV2;
+}
+
+export interface PositionSyncReferenceV2 {
+  readonly payload_version: 2;
+  readonly local_recognition_id: string;
+  readonly raw_code: string;
+  readonly normalized_code: string;
+  readonly remote_position_id: string | null;
+  readonly remote_position_label_id: string | null;
+  readonly source: string;
+  readonly profile_id: string | null;
+  readonly profile_version: number | null;
+  readonly client_supplier_id: string | null;
+  readonly signature: {
+    readonly present: boolean;
+    readonly verification: 'MISSING' | 'UNVERIFIED' | 'INVALID' | 'NOT_APPLICABLE';
+  };
+  readonly captured_at: string;
+}
+
+export type PositionAuthoritativeStatus =
+  | 'ACCEPTED_EXISTING'
+  | 'ACCEPTED_UNMATERIALIZED'
+  | 'REJECTED_FORMAT'
+  | 'REJECTED_PROFILE'
+  | 'REJECTED_SCOPE'
+  | 'REJECTED_INVENTORY_STATE'
+  | 'REJECTED_AMBIGUOUS'
+  | 'REJECTED_DUPLICATE'
+  | 'RETRYABLE_ERROR';
+
+export interface PositionSyncResultV2 {
+  readonly contract_version: 2;
+  readonly local_recognition_id: string;
+  readonly normalized_code: string | null;
+  readonly remote_position_id: string | null;
+  readonly remote_position_label_id: string | null;
+  readonly status: PositionAuthoritativeStatus;
+  readonly error_code: string | null;
+  readonly retryable: boolean;
+  readonly server_timestamp: string;
+  readonly reconciliation_revision: number;
+}
+
+const POSITION_STATUSES = new Set<PositionAuthoritativeStatus>([
+  'ACCEPTED_EXISTING',
+  'ACCEPTED_UNMATERIALIZED',
+  'REJECTED_FORMAT',
+  'REJECTED_PROFILE',
+  'REJECTED_SCOPE',
+  'REJECTED_INVENTORY_STATE',
+  'REJECTED_AMBIGUOUS',
+  'REJECTED_DUPLICATE',
+  'RETRYABLE_ERROR',
+]);
+
+export function parsePositionSyncResultV2(value: unknown): PositionSyncResultV2 | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (
+    row.contract_version !== 2 ||
+    typeof row.local_recognition_id !== 'string' ||
+    !row.local_recognition_id.trim() ||
+    typeof row.status !== 'string' ||
+    !POSITION_STATUSES.has(row.status as PositionAuthoritativeStatus) ||
+    typeof row.retryable !== 'boolean' ||
+    typeof row.server_timestamp !== 'string' ||
+    !Number.isFinite(Date.parse(row.server_timestamp)) ||
+    typeof row.reconciliation_revision !== 'number' ||
+    !Number.isInteger(row.reconciliation_revision) ||
+    row.reconciliation_revision < 0
+  ) {
+    return null;
+  }
+  const optionalText = (candidate: unknown): string | null | undefined => {
+    if (candidate === null) return null;
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+    return undefined;
+  };
+  const normalizedCode = optionalText(row.normalized_code);
+  const remotePositionId = optionalText(row.remote_position_id);
+  const remotePositionLabelId = optionalText(row.remote_position_label_id);
+  const errorCode = optionalText(row.error_code);
+  if (
+    normalizedCode === undefined ||
+    remotePositionId === undefined ||
+    remotePositionLabelId === undefined ||
+    errorCode === undefined
+  ) {
+    return null;
+  }
+  return {
+    contract_version: 2,
+    local_recognition_id: row.local_recognition_id.trim(),
+    normalized_code: normalizedCode,
+    remote_position_id: remotePositionId,
+    remote_position_label_id: remotePositionLabelId,
+    status: row.status as PositionAuthoritativeStatus,
+    error_code: errorCode,
+    retryable: row.retryable,
+    server_timestamp: row.server_timestamp,
+    reconciliation_revision: row.reconciliation_revision,
+  };
 }
 
 export interface PreliminaryDetectionSyncResponse {
@@ -29,6 +133,7 @@ export interface PreliminaryDetectionSyncResponse {
   readonly received_at: string;
   readonly validation_errors: readonly string[];
   readonly duplicate?: boolean;
+  readonly position_result?: PositionSyncResultV2 | null;
 }
 
 export class PreliminaryDetectionApi {

@@ -6,11 +6,15 @@ import {
   getActivePosition,
   hydratePositionSessionFromDrafts,
   resetPositionSession,
+  preparePositionActivation,
+  commitPositionActivation,
 } from '../src/features/localCodeScan/activePositionStore';
 import {
   classifyDinamicPositionPayload,
   formatMarkerPair,
   parseDinamicPositionPayload,
+  parseActivePositionStateJson,
+  createActivePositionState,
 } from '../src/core/positionLabelPayload';
 
 const v2Payload = (over: Record<string, unknown> = {}) =>
@@ -79,7 +83,7 @@ describe('positionLabelPayload', () => {
     if (result.kind !== 'applied') throw new Error('expected applied');
     const active = result.state;
     expect(active?.formattedMarker).toBe('02/02');
-    expect(active?.validationStatus).toBe('STRUCTURALLY_VALID_UNVERIFIED');
+    expect(active?.validationStatus).toBe('STRUCTURALLY_VALID');
     expect(active?.rawPayload).toBe(raw);
     expect(getActivePosition('sess-1')?.labelId).toBe('pos_xyz');
     expect(getActivePosition('other')).toBeNull();
@@ -95,8 +99,9 @@ describe('positionLabelPayload', () => {
     expect(dup.kind).toBe('duplicate');
     if (dup.kind !== 'duplicate') throw new Error('expected duplicate');
     expect(dup.state.labelId).toBe('POS002');
-    const dupPos1 = applyPositionScan('sess-dedupe', pos1);
-    expect(dupPos1.kind).toBe('duplicate');
+    const reactivatedPos1 = applyPositionScan('sess-dedupe', pos1);
+    expect(reactivatedPos1.kind).toBe('applied');
+    expect(getActivePosition('sess-dedupe')?.labelId).toBe('POS001');
   });
 
   it('rehydrates seen position ids from persisted drafts after in-memory loss', () => {
@@ -106,6 +111,12 @@ describe('positionLabelPayload', () => {
     const snap1 = getActivePosition('sess-restart')!;
     expect(applyPositionScan('sess-restart', pos2).kind).toBe('applied');
     const snap2 = getActivePosition('sess-restart')!;
+    const parsedSnapshot = parseActivePositionStateJson(JSON.stringify(snap2), {
+      captureSessionId: 'sess-restart',
+      inventoryId: null,
+      aisleLocalId: null,
+    });
+    if (!parsedSnapshot.ok) throw new Error(parsedSnapshot.errorCode);
 
     clearInMemoryPositionState('sess-restart');
     expect(getActivePosition('sess-restart')).toBeNull();
@@ -124,8 +135,8 @@ describe('positionLabelPayload', () => {
     ]);
 
     expect(getActivePosition('sess-restart')?.labelId).toBe('POS002');
-    expect(applyPositionScan('sess-restart', pos1).kind).toBe('duplicate');
-    expect(getActivePosition('sess-restart')?.labelId).toBe('POS002');
+    expect(applyPositionScan('sess-restart', pos1).kind).toBe('applied');
+    expect(getActivePosition('sess-restart')?.labelId).toBe('POS001');
   });
 
   it('allows same position label in a different capture session after rehydration', () => {
@@ -134,5 +145,73 @@ describe('positionLabelPayload', () => {
     clearInMemoryPositionState('sess-a');
     hydratePositionSessionFromDrafts('sess-b', []);
     expect(applyPositionScan('sess-b', pos1).kind).toBe('applied');
+  });
+
+  it('round-trips a supplier V2 position without remote ids', () => {
+    const supplier = createActivePositionState({
+      localRecognitionId: 'local-supplier-1',
+      captureSessionId: 'session-supplier',
+      inventoryId: 'inventory-1',
+      aisleLocalId: 'aisle-1',
+      rawCode: ' supplier-a ',
+      rawPayload: ' supplier-a ',
+      source: 'LOCAL_CODE_SCAN',
+      profileId: 'profile-1',
+      profileVersion: 3,
+      clientSupplierId: 'supplier-1',
+    });
+    expect(supplier.normalizedCode).toBe('SUPPLIER-A');
+    expect(supplier.remotePositionId).toBeNull();
+    expect(supplier.signatureEvidence.verification).toBe('MISSING');
+
+    const restored = parseActivePositionStateJson(JSON.stringify(supplier), {
+      captureSessionId: 'session-supplier',
+      inventoryId: 'inventory-1',
+      aisleLocalId: 'aisle-1',
+    });
+    expect(restored.ok).toBe(true);
+    const activation = preparePositionActivation(supplier);
+    commitPositionActivation(activation);
+    expect(getActivePosition('session-supplier')?.clientSupplierId).toBe('supplier-1');
+    const otherSupplier = createActivePositionState({
+      ...supplier,
+      localRecognitionId: 'local-supplier-2',
+      rawPayload: supplier.rawPayload,
+      clientSupplierId: 'supplier-2',
+    });
+    const supplierTransition = preparePositionActivation(otherSupplier);
+    expect(supplierTransition.kind).toBe('applied');
+  });
+
+  it('rejects corrupt persisted state without throwing', () => {
+    expect(
+      parseActivePositionStateJson('{broken', {
+        captureSessionId: 'session-1',
+        inventoryId: 'inventory-1',
+        aisleLocalId: 'aisle-1',
+      }),
+    ).toEqual({ ok: false, errorCode: 'ACTIVE_POSITION_JSON_INVALID' });
+  });
+
+  it('migrates a legacy active_position_json without requiring reinstall', () => {
+    const raw = v2Payload({ label_id: 'LEGACY-POS' });
+    const parsed = parseActivePositionStateJson(
+      JSON.stringify({
+        labelId: 'LEGACY-POS',
+        positionLabelId: 'LEGACY-POS',
+        rawPayload: raw,
+        sourcePayload: raw,
+      }),
+      {
+        captureSessionId: 'legacy-session',
+        inventoryId: 'inventory-1',
+        aisleLocalId: 'aisle-1',
+      },
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.migrated).toBe(true);
+    expect(parsed.state.schemaVersion).toBe(2);
+    expect(parsed.state.normalizedCode).toBe('LEGACY-POS');
   });
 });

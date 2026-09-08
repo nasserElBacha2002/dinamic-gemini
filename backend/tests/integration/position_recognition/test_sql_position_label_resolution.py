@@ -2,18 +2,35 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
 
 from src.application.services.position_label_detection.resolver import PositionLabelResolver
+from src.application.services.position_recognition import (
+    CanonicalPositionValidationCommand,
+    CanonicalPositionValidator,
+)
+from src.application.services.positioning_label_signing import (
+    PositioningLabelSigningConfig,
+    PositioningLabelSigningService,
+)
+from src.domain.aisle_location.payload import build_positioning_label_payload
 from src.domain.client.entities import Client, ClientStatus
 from src.domain.client_position_label.entities import (
     ClientPositionLabel,
+    ClientPositionLabelSignatureStatus,
     ClientPositionLabelStatus,
 )
+from src.domain.label_validation import CandidateLabel
+from src.domain.label_validation.context import LabelValidationContext
 from src.domain.position_label_detection.entities import PositionLabelDetectionStatus
+from src.domain.position_recognition import (
+    CanonicalPositionValidationStatus,
+    PositionRecognitionSource,
+)
 from src.infrastructure.repositories.sql_client_position_label_repository import (
     SqlClientPositionLabelRepository,
 )
@@ -33,16 +50,21 @@ def sql_client():
 
 
 def test_sql_resolver_scopes_status_and_database_identifier_collation(sql_client) -> None:
-    with sql_client.cursor() as cursor:
-        cursor.execute("SELECT CONVERT(nvarchar(128), DATABASEPROPERTYEX(DB_NAME(), 'Collation'))")
-        collation_row = cursor.fetchone()
-
     now = datetime.now(timezone.utc)
     token = uuid4().hex
     client_ids = [str(uuid4()), str(uuid4())]
     active_id = str(uuid4())
     inactive_id = str(uuid4())
     public_identifier = f"Pos_Case_{token}"
+    signing = PositioningLabelSigningService(
+        PositioningLabelSigningConfig(
+            secret="integration-position-secret",
+            key_version=1,
+        )
+    )
+    signed_payload = signing.sign_payload(
+        build_positioning_label_payload(public_label_id=public_identifier)
+    )
     client_repo = SqlClientRepository(sql_client)
     repo = SqlClientPositionLabelRepository(sql_client)
     resolver = PositionLabelResolver(label_repo=repo)
@@ -55,9 +77,12 @@ def test_sql_resolver_scopes_status_and_database_identifier_collation(sql_client
             normalized_name=f"POSITION {token}".upper(),
             status=ClientPositionLabelStatus.ACTIVE,
             payload_version=1,
-            canonical_payload={"label_id": public_identifier},
+            canonical_payload=signed_payload,
             created_at=now,
             updated_at=now,
+            signature=signed_payload["signature"],
+            signature_key_version=1,
+            signature_status=ClientPositionLabelSignatureStatus.SIGNED,
         ),
         ClientPositionLabel(
             id=inactive_id,
@@ -116,18 +141,27 @@ def test_sql_resolver_scopes_status_and_database_identifier_collation(sql_client
             is PositionLabelDetectionStatus.LABEL_INVALIDATED
         )
 
-        database_collation = str(collation_row[0] if collation_row else "").upper()
         swapped = public_identifier.swapcase()
         case_result = resolver.resolve(
             public_label_id=swapped,
             expected_client_id=client_ids[0],
         )
-        expected = (
-            PositionLabelDetectionStatus.LABEL_NOT_FOUND
-            if "_CS_" in database_collation or database_collation.endswith("_CS")
-            else PositionLabelDetectionStatus.VALID
+        assert case_result.detection_status is PositionLabelDetectionStatus.VALID
+
+        vision = CanonicalPositionValidator(
+            signing=signing,
+            resolver=resolver,
+        ).validate(
+            CanonicalPositionValidationCommand(
+                candidate=CandidateLabel(raw_payload=json.dumps(signed_payload)),
+                source=PositionRecognitionSource.VISION,
+                context=LabelValidationContext(
+                    client_id=client_ids[0],
+                    resolved_profiles=None,
+                ),
+            )
         )
-        assert case_result.detection_status is expected
+        assert vision.status is CanonicalPositionValidationStatus.VALID_EXISTING
     finally:
         with sql_client.cursor() as cursor:
             cursor.execute(
