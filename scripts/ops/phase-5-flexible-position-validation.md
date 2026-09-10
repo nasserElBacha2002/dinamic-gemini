@@ -9,7 +9,7 @@ SHADOW_SIGNATURE: PARTIAL (categories recorded; production window report not run
 SHADOW_PREEXISTENCE: PARTIAL (unit; live shadow report not run)
 REVIEW_ASSOCIATION: PARTIAL (normalized code + complete_association when request_id exists)
 SCOPED_ROLLOUT: PARTIAL (table + memory reader; SQL repo/API/wiring incomplete)
-PREFLIGHT: SCRIPT_READY (not executed against live DB in this pass)
+PREFLIGHT: PASSED (local DB after migration 0111)
 DEVICE_E2E: NOT_RUN
 GLOBAL_ROLLOUT: DISABLED
 READY_FOR_CONTROLLED_ROLLOUT: NO
@@ -32,12 +32,18 @@ READY_FOR_CONTROLLED_ROLLOUT: NO
 
 | Blocker | Why |
 |--------|-----|
-| Migration 0111 not applied / preflight not run live | Schema guarantees unverified on target DB |
 | Capability SQL reader + DI + admin path | Scoped ENFORCED cannot be operated end-to-end |
 | Review durable association incomplete | No dedicated REVIEW receipt create + multi-reviewer protection + TX failure matrix |
 | Shadow not integrated on all channels with live report | CODE_SCAN/Vision/Mobile/Import window evidence missing |
 | Full suites not run | pytest full, mypy, frontend, mobile, Device E2E, assembleRelease, SQL multi-conn — **not executed** |
 | Frontend profile signature_policy UI | Not updated in this pass |
+
+## Local apply evidence (this environment)
+
+- `db_migrate.py apply` → `current_version: 0111`, `compatible: true`, no pending
+- Schema spot-check: `signature_policy` columns present; `position_flexible_capabilities` + `UQ_pfc_scope_key`; backfill clean (0 bad rows)
+- `scripts/ops/phase-5-flexible-position-preflight.sql` → **PASSED** (no THROW)
+- Local `.env`: Phase 5 validation ON (channels + auto + flexible + shadow metrics); `.env.example` remains fail-closed
 
 ## Controlled rollout thresholds (not yet measured)
 
@@ -50,6 +56,8 @@ Declare YES only after measured evidence for:
 
 ## Validation executed this pass
 
-- Targeted pytest (phase5 + bridge + migration smoke + preflight script): **34 passed**
-- Ruff on touched modules: **passed**
-- Full backend / frontend / mobile / Device E2E / live SQL preflight: **NOT RUN**
+- Targeted pytest (phase5 + bridge + migration smoke + preflight script): **34 passed** (prior correction pass)
+- Ruff on touched modules: **passed** (prior correction pass)
+- Migration 0111 apply + validate + status: **passed** (this apply)
+- Live Phase 5 preflight: **PASSED** (this apply)
+- Full backend / frontend / mobile / Device E2E: **NOT RUN**
