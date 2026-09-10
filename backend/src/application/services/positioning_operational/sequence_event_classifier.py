@@ -74,23 +74,37 @@ def normalize_detection_status(
 
 def is_resolved_position_detection(
     detection: ImagePositionLabelDetection,
+    *,
+    aisle_location_id: str | None = None,
 ) -> bool:
-    """True when the row can establish a position cursor (status + id)."""
+    """True when the row can establish a position cursor (status + durable id).
+
+    Durable id is catalog ``position_label_id`` or materialized ``aisle_location_id``
+    (Phase 5 flexible / vision paths materialize without catalog label rows).
+    """
     status = normalize_detection_status(detection.detection_status)
     label_id = (detection.position_label_id or "").strip()
-    return status in _RESOLVED_CLASS_STATUSES and bool(label_id)
+    location_id = (aisle_location_id or "").strip() or _aisle_location_from_metadata(detection)
+    return status in _RESOLVED_CLASS_STATUSES and bool(label_id or location_id)
 
 
 def is_resolved_position_detection_status(
     status: str | PositionLabelDetectionStatus | None,
     *,
     position_label_id: str | None = None,
+    aisle_location_id: str | None = None,
 ) -> bool:
-    """Status-only helper; requires ``position_label_id`` for a true resolved count."""
+    """Status-only helper; requires catalog label id or aisle location id."""
     normalized = normalize_detection_status(status)
     if normalized not in _RESOLVED_CLASS_STATUSES:
         return False
-    return bool((position_label_id or "").strip())
+    return bool((position_label_id or "").strip() or (aisle_location_id or "").strip())
+
+
+def _aisle_location_from_metadata(detection: ImagePositionLabelDetection) -> str | None:
+    meta = detection.metadata_json if isinstance(detection.metadata_json, dict) else {}
+    value = (meta.get("aisle_location_id") or "").strip()
+    return value or None
 
 
 def message_for_sequence_event(event: SequencePositionEvent) -> str | None:
@@ -128,12 +142,16 @@ def reduce_asset_detections(
     detections: Sequence[ImagePositionLabelDetection],
     *,
     reconciler_transition_applied: bool = False,
+    aisle_location_by_detection_id: dict[str, str] | None = None,
 ) -> SequencePositionEvent:
-    """Deterministic reduction of all detections for one asset.
+    """Deterministic reduction of all detections for one source asset.
 
     Independent of repository order. ``reconciler_transition_applied`` must be
     true only when concrete SET_POSITION evidence exists; otherwise a resolved
     label yields ``POSITION_LABEL_RESOLVED`` (not transition applied).
+
+    ``aisle_location_by_detection_id`` supplies durable materialized location ids
+    when catalog ``position_label_id`` is absent (flexible / vision).
 
     Gap: P1 has no persisted per-frame transition ledger; callers should leave
     ``reconciler_transition_applied=False`` until that evidence exists.
@@ -148,6 +166,8 @@ def reduce_asset_detections(
             reason_code=PositionSequenceReasonCode.NO_SYMBOL,
             message=None,
         )
+
+    location_map = aisle_location_by_detection_id or {}
 
     # Stable order for tie-breaks (never depend on list order from repo).
     ordered = sorted(
@@ -168,6 +188,9 @@ def reduce_asset_detections(
     for det in ordered:
         status = normalize_detection_status(det.detection_status)
         label_id = (det.position_label_id or "").strip() or None
+        location_id = (location_map.get(det.id) or "").strip() or _aisle_location_from_metadata(
+            det
+        )
         if status in _NO_SYMBOL_STATUSES:
             no_symbol_rows.append(det)
             continue
@@ -175,7 +198,7 @@ def reduce_asset_detections(
             ambiguous_rows.append(det)
             continue
         if status in _RESOLVED_CLASS_STATUSES:
-            if label_id:
+            if label_id or location_id:
                 resolved_ok.append(det)
             else:
                 resolved_missing_id.append(det)

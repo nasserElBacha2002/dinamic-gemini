@@ -4,7 +4,7 @@ PREVIEWED → MATERIALIZING → CONFIRMED
 
 Failure / intervention:
   MATERIALIZING | MATERIALIZATION_FAILED → (lease expired + retry) → CONFIRMED
-  → REQUIRES_REVIEW when permanent / exhausted
+  → REQUIRES_REVIEW when permanent / exhausted (operator may still re-confirm)
 
 CONFIRMED means productive rows and required position materialization succeeded.
 Shared by CSV imports and inventory packages (same logical workflow).
@@ -40,18 +40,20 @@ LOCAL_CSV_IMPORT_CLAIMED_STATUSES = frozenset(
     }
 )
 
-# May be claimed only when lease expired (MATERIALIZING) or failed/review retryable.
+# May be claimed when lease expired (MATERIALIZING), failed, or operator retries after review.
 LOCAL_CSV_IMPORT_RESUMABLE_STATUSES = frozenset(
     {
         LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
         LOCAL_CSV_IMPORT_STATUS_MATERIALIZATION_FAILED,
+        LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW,
     }
 )
 
+# Soft-terminal: CONFIRMED is final; REQUIRES_REVIEW blocks recovery automation but
+# operator confirm may reclaim (see build_lease_claim).
 LOCAL_CSV_IMPORT_TERMINAL_STATUSES = frozenset(
     {
         LOCAL_CSV_IMPORT_STATUS_CONFIRMED,
-        LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW,
     }
 )
 

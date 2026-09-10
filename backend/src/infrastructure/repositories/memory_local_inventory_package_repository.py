@@ -98,11 +98,16 @@ class MemoryLocalInventoryPackageRepository:
             pkg = self._get_pkg_locked(inventory_id=inventory_id, export_id=export_id)
             if pkg.status == "CONFIRMED":
                 return self._with_csv(pkg), True
-            if pkg.status not in {"PREVIEWED", "MATERIALIZING", "MATERIALIZATION_FAILED"}:
+            if pkg.status not in {
+                "PREVIEWED",
+                "MATERIALIZING",
+                "MATERIALIZATION_FAILED",
+                "REQUIRES_REVIEW",
+            }:
                 raise LocalInventoryPackageImportError(
                     "PACKAGE_INVALID_STATUS",
                     f"Package status {pkg.status!r} cannot be confirmed "
-                    "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED → CONFIRMED)",
+                    "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED|REQUIRES_REVIEW → CONFIRMED)",
                 )
             record, rows_to_import, csv_confirmed = (
                 self._csv_import_repo.select_rows_to_import_on_cursor(  # type: ignore[attr-defined]
@@ -148,11 +153,16 @@ class MemoryLocalInventoryPackageRepository:
             pkg = self._get_pkg_locked(inventory_id=inventory_id, export_id=export_id)
             if pkg.status == "CONFIRMED":
                 return self._with_csv(pkg), True
-            if pkg.status not in {"PREVIEWED", "MATERIALIZING", "MATERIALIZATION_FAILED"}:
+            if pkg.status not in {
+                "PREVIEWED",
+                "MATERIALIZING",
+                "MATERIALIZATION_FAILED",
+                "REQUIRES_REVIEW",
+            }:
                 raise LocalInventoryPackageImportError(
                     "PACKAGE_INVALID_STATUS",
                     f"Package status {pkg.status!r} cannot be confirmed "
-                    "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED → CONFIRMED)",
+                    "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED|REQUIRES_REVIEW → CONFIRMED)",
                 )
 
             csv_record, duplicate = self._csv_import_repo.confirm_import_atomically(

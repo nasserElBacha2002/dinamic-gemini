@@ -193,6 +193,13 @@ class ReconcileJobPositionsUseCase:
         )
         detections_by_asset: dict[str, list[PositionDetectionRef]] = {}
         for detection in detections:
+            identity_loc = (
+                identities[detection.id].aisle_location_id
+                if detection.id in identities
+                else None
+            )
+            meta = detection.metadata_json if isinstance(detection.metadata_json, dict) else {}
+            meta_loc = (meta.get("aisle_location_id") or "").strip() or None
             detections_by_asset.setdefault(detection.source_asset_id, []).append(
                 PositionDetectionRef(
                     id=detection.id,
@@ -200,11 +207,7 @@ class ReconcileJobPositionsUseCase:
                     detection_status=detection.detection_status,
                     signature_status=detection.signature_status,
                     position_label_id=detection.position_label_id,
-                    aisle_location_id=(
-                        identities[detection.id].aisle_location_id
-                        if detection.id in identities
-                        else None
-                    ),
+                    aisle_location_id=(identity_loc or meta_loc),
                     position_name_snapshot=detection.position_name_snapshot,
                     detector_version=detection.detector_version,
                 )

@@ -283,6 +283,7 @@ class ConfirmLocalInventoryPackage:
             LOCAL_CSV_IMPORT_STATUS_MATERIALIZATION_FAILED,
             LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
             LOCAL_CSV_IMPORT_STATUS_PREVIEWED,
+            LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW,
         )
 
         if not self._enabled:
@@ -320,11 +321,12 @@ class ConfirmLocalInventoryPackage:
             LOCAL_CSV_IMPORT_STATUS_PREVIEWED,
             LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
             LOCAL_CSV_IMPORT_STATUS_MATERIALIZATION_FAILED,
+            LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW,
         }:
             raise LocalInventoryPackageImportError(
                 "PACKAGE_INVALID_STATUS",
                 f"Package status {package.status!r} cannot be confirmed "
-                "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED → CONFIRMED)",
+                "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED|REQUIRES_REVIEW → CONFIRMED)",
             )
 
         self._assert_staging_files_exist(package)
@@ -404,6 +406,11 @@ class ConfirmLocalInventoryPackage:
         from src.application.services.import_canonical_materialization_policy import (
             raise_for_canonical_failures,
         )
+        from src.domain.local_csv_import.error_codes import (
+            LOCAL_CSV_CANONICAL_MATERIALIZATION_REJECTED,
+            LOCAL_CSV_MATERIALIZATION_EXHAUSTED,
+            LOCAL_CSV_REQUIRES_REVIEW,
+        )
 
         productive = self._result_writer.list_for_import(claimed.csv_import_id)
         inventory = self._inventory_repo.get_by_id(inventory_id)
@@ -438,6 +445,12 @@ class ConfirmLocalInventoryPackage:
                 clock_now=self._clock.now,
                 owner=claim_owner,
                 expected_fencing_version=fencing,
+                requires_review=exc.code
+                in {
+                    LOCAL_CSV_CANONICAL_MATERIALIZATION_REJECTED,
+                    LOCAL_CSV_REQUIRES_REVIEW,
+                    LOCAL_CSV_MATERIALIZATION_EXHAUSTED,
+                },
             )
             raise
         except LocalCsvImportError as exc:
@@ -447,6 +460,12 @@ class ConfirmLocalInventoryPackage:
                 clock_now=self._clock.now,
                 owner=claim_owner,
                 expected_fencing_version=fencing,
+                requires_review=exc.code
+                in {
+                    LOCAL_CSV_CANONICAL_MATERIALIZATION_REJECTED,
+                    LOCAL_CSV_REQUIRES_REVIEW,
+                    LOCAL_CSV_MATERIALIZATION_EXHAUSTED,
+                },
             )
             raise LocalInventoryPackageImportError(exc.code, str(exc)) from exc
         except Exception as exc:

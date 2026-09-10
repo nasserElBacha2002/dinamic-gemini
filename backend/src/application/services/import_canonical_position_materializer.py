@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from src.application.dto.access_principal import AccessPrincipal
 from src.application.dto.position_materialization import MaterializePositionCommand
+from src.application.ports.repositories import AisleRepository
 from src.application.services.position_materialization.service import MaterializePositionService
 from src.application.services.position_recognition import (
     PositionCodeNormalizationError,
@@ -16,7 +18,10 @@ from src.application.services.position_recognition import (
 )
 from src.domain.local_csv_import.entities import LocalCsvProductiveResult
 from src.domain.local_csv_import.sources import INGESTION_SOURCE_DINAMIC_SCANNER_TXT
-from src.domain.position_materialization.entities import PositionMaterializationStatus
+from src.domain.position_materialization.entities import (
+    MAX_ID_LENGTH,
+    PositionMaterializationStatus,
+)
 from src.domain.position_recognition.entities import (
     CanonicalPositionRecognition,
     PositionRecognitionSource,
@@ -63,9 +68,11 @@ class ImportCanonicalPositionMaterializer:
         *,
         materialize_service: MaterializePositionService,
         enabled: bool,
+        aisle_repo: AisleRepository | None = None,
     ) -> None:
         self._service = materialize_service
         self._enabled = enabled
+        self._aisle_repo = aisle_repo
 
     def materialize_from_results(
         self,
@@ -84,6 +91,7 @@ class ImportCanonicalPositionMaterializer:
             is_platform=False,
         )
         seen: set[tuple[str, str]] = set()
+        supplier_by_aisle: dict[str, str | None] = {}
         attempted = 0
         created_or_reused = 0
         skipped = 0
@@ -112,11 +120,16 @@ class ImportCanonicalPositionMaterializer:
             seen.add(key)
             attempted += 1
             source = _source_for(result)
+            if result.aisle_id not in supplier_by_aisle:
+                supplier_by_aisle[result.aisle_id] = _aisle_client_supplier_id(
+                    self._aisle_repo, result.aisle_id
+                )
             command = _command_for(
                 result,
                 normalized_code=normalized,
                 source=source,
                 principal=principal,
+                client_supplier_id=supplier_by_aisle[result.aisle_id],
             )
             outcome = self._service.execute(command)
             if outcome.status in _SUCCESS_STATUSES:
@@ -165,18 +178,59 @@ def _source_for(result: LocalCsvProductiveResult) -> PositionRecognitionSource:
     return PositionRecognitionSource.CSV
 
 
+def materialization_capture_id(result: LocalCsvProductiveResult) -> str:
+    """Fit Phase 3 ``capture_id`` (max 36) while keeping mobile/TXT ids stable.
+
+    Prefer ``source_asset_id`` when the package already created a UUID asset.
+    Mobile ZIP photos use ``{session_id}:{media_store_id}`` (~47 chars). TXT imports
+    use ``txt-scan-…`` keys. Both exceed ``MAX_ID_LENGTH``; map them to a
+    deterministic UUID so confirm does not fail validation.
+    """
+    asset = (result.source_asset_id or "").strip()
+    if asset and len(asset) <= MAX_ID_LENGTH:
+        return asset
+    raw = (result.capture_photo_id or "").strip()
+    if raw and len(raw) <= MAX_ID_LENGTH:
+        return raw
+    if raw:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"dinamic:import-capture:{raw}"))
+    fallback = (result.id or "").strip()
+    if fallback and len(fallback) <= MAX_ID_LENGTH:
+        return fallback
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"dinamic:import-result:{result.import_id}:{raw}"))
+
+
+def _aisle_client_supplier_id(
+    aisle_repo: AisleRepository | None, aisle_id: str
+) -> str | None:
+    """Mirror aisle supplier onto recognition so Phase 3 scope checks pass.
+
+    Package/CSV productive rows do not carry ``client_supplier_id``; the aisle is
+    the durable scope owner used by materialization UoW.
+    """
+    if aisle_repo is None:
+        return None
+    aisle = aisle_repo.get_by_id(aisle_id)
+    if aisle is None:
+        return None
+    supplier = (aisle.client_supplier_id or "").strip()
+    return supplier or None
+
+
 def _command_for(
     result: LocalCsvProductiveResult,
     *,
     normalized_code: str,
     source: PositionRecognitionSource,
     principal: AccessPrincipal,
+    client_supplier_id: str | None = None,
 ) -> MaterializePositionCommand:
     raw = (result.position_code or "").strip() or normalized_code
     recognition = CanonicalPositionRecognition(
         raw_code=raw,
         normalized_code=normalized_code,
         source=source,
+        client_supplier_id=client_supplier_id,
         signature=PositionSignatureEvidence(
             present=False,
             verification=PositionSignatureVerification.NOT_APPLICABLE,
@@ -185,6 +239,7 @@ def _command_for(
             "import_id": result.import_id,
             "import_row_id": result.import_row_id,
             "productive_result_id": result.id,
+            "capture_photo_id": (result.capture_photo_id or "").strip() or None,
         },
     )
     identity = "\0".join(
@@ -203,5 +258,5 @@ def _command_for(
         idempotency_key=(
             f"import:{source.value.lower()}:{hashlib.sha256(identity).hexdigest()}"
         ),
-        capture_id=result.capture_photo_id or result.id,
+        capture_id=materialization_capture_id(result),
     )

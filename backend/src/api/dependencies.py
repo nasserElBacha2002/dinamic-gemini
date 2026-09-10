@@ -1081,6 +1081,7 @@ def _build_import_canonical_position_materializer(container):
     return ImportCanonicalPositionMaterializer(
         materialize_service=service,
         enabled=True,
+        aisle_repo=container.get_aisle_repo(),
     )
 
 
@@ -3351,6 +3352,7 @@ def get_aisle_positioning_sequence_use_case(
         coverage_repo=coverage_repo,
         product_record_repo=product_record_repo,
         enrichment_enabled=settings.position_results_enrichment_enabled,
+        materialized_identity_reader=get_app_container().get_materialized_position_identity_reader(),
     )
 
 

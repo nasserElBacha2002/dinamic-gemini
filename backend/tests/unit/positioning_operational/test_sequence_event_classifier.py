@@ -71,6 +71,40 @@ def test_valid_with_name_without_id_is_unresolved_missing_id() -> None:
     assert "transición" not in (event.message or "").lower()
 
 
+def test_valid_with_aisle_location_metadata_is_resolved() -> None:
+    det = _det(label_id=None, name="A04-R-02")
+    det.metadata_json = {"aisle_location_id": "loc-1"}
+    event = reduce_asset_detections([det])
+    assert event.event_kind is PositionSequenceEventKind.POSITION_LABEL_RESOLVED
+    assert event.reason_code is PositionSequenceReasonCode.LABEL_RESOLVED
+    assert event.position_label_name == "A04-R-02"
+    assert event.position_label_id is None
+
+
+def test_valid_with_aisle_location_map_is_resolved() -> None:
+    det = _det(det_id="d-vision", label_id=None, name="A04-R-02")
+    event = reduce_asset_detections(
+        [det],
+        aisle_location_by_detection_id={"d-vision": "loc-99"},
+    )
+    assert event.event_kind is PositionSequenceEventKind.POSITION_LABEL_RESOLVED
+    assert event.reason_code is PositionSequenceReasonCode.LABEL_RESOLVED
+
+
+def test_is_resolved_helpers_accept_aisle_location() -> None:
+    det = _det(label_id=None, name="A04-R-02")
+    det.metadata_json = {"aisle_location_id": "loc-1"}
+    assert is_resolved_position_detection(det) is True
+    assert (
+        is_resolved_position_detection_status(
+            PositionLabelDetectionStatus.VALID,
+            position_label_id=None,
+            aisle_location_id="loc-1",
+        )
+        is True
+    )
+
+
 def test_valid_without_id_is_unresolved_missing_id() -> None:
     event = reduce_asset_detections([_det(label_id=None, name=None)])
     assert event.event_kind is PositionSequenceEventKind.POSITION_LABEL_UNRESOLVED

@@ -561,9 +561,10 @@ def test_supplier_position_materializes_with_authoritative_scope_metadata() -> N
         PositionMaterializationStatus.RETRYABLE_FAILURE,
     ],
 )
-def test_materializer_rejection_fails_without_acknowledging(
+def test_materializer_rejection_degrades_to_evidence_persist(
     status: PositionMaterializationStatus,
 ) -> None:
+    """Location materialization failure must not wipe VALID position-label evidence."""
     persister, position_repo, result_evidence_repo, _, _, _ = _persister_harness()
     position_repo.replace_asset_detections_atomically(
         job_id=JOB_ID,
@@ -580,8 +581,11 @@ def test_materializer_rejection_fails_without_acknowledging(
         result=_position_only_result(), inventory_id=INV_ID, aisle_id=AISLE_ID
     )
 
-    assert outcome.skipped_reason is PersistSkipReason.POSITION_MATERIALIZATION_FAILED
-    assert list(result_evidence_repo.list_by_job_id(JOB_ID)) == []
+    assert outcome.persisted is True
+    assert outcome.skipped_reason is None
+    assert outcome.positions_persisted == 1
+    assert list(result_evidence_repo.list_by_job_id(JOB_ID))
+    materializer.execute.assert_called()
 
 
 def test_position_detection_repository_timeout_maps_to_retryable_persist_outcome() -> None:
@@ -622,7 +626,9 @@ def test_vision_position_creates_detection_and_materializes(caplog) -> None:
     assert "a04-r-02" not in repr(rows[0].metadata_json)
     assert rows[0].metadata_json["raw_payload_length"] == len(b"a04-r-02")
     assert rows[0].metadata_json["raw_hash_algorithm"] == RAW_EVIDENCE_HASH_ALGORITHM
+    assert rows[0].metadata_json.get("aisle_location_id")
     assert len(uow.locations) == 1
+    assert rows[0].metadata_json["aisle_location_id"] == next(iter(uow.locations.values())).id
     assert next(iter(uow.locations.values())).raw_recognition_code == "a04-r-02"
     assert "a04-r-02" not in caplog.text
     product_repo.save.assert_not_called()

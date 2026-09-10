@@ -542,7 +542,12 @@ def normalize_vision_via_label_validation(
         },
         evidence={
             **evidence_out,
-            **({"result_kind": "POSITION_ONLY"} if position_meta is not None else {}),
+            # Pure position photos only — never skip product persistence when both exist.
+            **(
+                {"result_kind": "POSITION_ONLY"}
+                if position_meta is not None and not product_results
+                else {}
+            ),
         },
         provider_name=analysis.provider_name,
         model_name=analysis.model_name,

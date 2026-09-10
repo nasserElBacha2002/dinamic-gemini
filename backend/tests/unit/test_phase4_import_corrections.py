@@ -22,6 +22,7 @@ from src.domain.local_csv_import.lease import build_lease_claim, lease_is_active
 from src.domain.local_csv_import.statuses import (
     LOCAL_CSV_IMPORT_STATUS_CONFIRMED,
     LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
+    LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW,
 )
 from src.domain.position_materialization.entities import PositionMaterializationStatus
 from src.infrastructure.repositories.local_csv_inventory_result_writer import (
@@ -158,6 +159,33 @@ def test_build_lease_claim_blocks_active_lease_even_for_same_owner() -> None:
     with pytest.raises(LocalCsvImportError) as exc:
         build_lease_claim(record, now=NOW, owner="owner-a", lease_sec=120)
     assert exc.value.code == "LOCAL_CSV_MATERIALIZATION_IN_PROGRESS"
+
+
+def test_build_lease_claim_allows_operator_retry_from_requires_review() -> None:
+    from src.domain.local_csv_import.entities import LocalCsvImport
+
+    record = LocalCsvImport(
+        id="i1",
+        export_id="e1",
+        schema_version="1.1",
+        inventory_id="inv",
+        device_id="d",
+        exported_at=NOW,
+        status=LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW,
+        content_hash="h",
+        total_rows=1,
+        valid_rows=1,
+        rejected_rows=0,
+        duplicate_rows=0,
+        created_at=NOW,
+        updated_at=NOW,
+        last_error_code="LOCAL_CSV_CANONICAL_MATERIALIZATION_REJECTED",
+        materialization_attempts=2,
+        fencing_version=0,
+    )
+    claim = build_lease_claim(record, now=NOW, owner="operator", lease_sec=120)
+    assert claim.owner == "operator"
+    assert claim.attempts == 3
 
 
 def test_unpublished_results_hidden_until_confirmed() -> None:

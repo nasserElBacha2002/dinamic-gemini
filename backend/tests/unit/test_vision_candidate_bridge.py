@@ -331,6 +331,7 @@ def test_vision_position_segmented_via_label_validation() -> None:
     )
     assert out.status is ImageResultStatus.RESOLVED_EXTERNAL
     assert out.resolved_by == "EXTERNAL_PROVIDER"
+    assert (out.evidence or {}).get("result_kind") == "POSITION_ONLY"
     pos = (out.evidence or {}).get("position_label_detection") or {}
     assert pos.get("position_id") == "A04-R-02"
     assert str(pos.get("pallet")) in ("04", "4")

@@ -43,7 +43,7 @@ def evaluate_position_establishment(
     if status == "LEGACY_UNSIGNED_REQUIRES_REVIEW":
         action = (
             PositionTransitionAction.SET_POSITION
-            if detection.position_label_id
+            if detection.position_label_id or detection.aisle_location_id
             else PositionTransitionAction.KEEP_POSITION
         )
         return PositionEstablishment(action, status)
@@ -51,9 +51,11 @@ def evaluate_position_establishment(
     # and signature-skipped supplier paths. INVALID already cleared above.
     if detection.position_label_id and signature in {"VALID", "MISSING", "SKIPPED"}:
         return PositionEstablishment(PositionTransitionAction.SET_POSITION, status)
+    # Flexible / vision: durable aisle location without catalog label id.
+    # Require a human-readable snapshot so bare location ids without context stay KEEP.
     if (
         detection.aisle_location_id
-        and signature == "SKIPPED"
+        and signature in {"VALID", "MISSING", "SKIPPED"}
         and (detection.position_name_snapshot or "").strip()
     ):
         return PositionEstablishment(PositionTransitionAction.SET_POSITION, status)

@@ -142,6 +142,22 @@ class PositionMaterializationCoordinator:
         result = command.result
         source = self._select_source(result)
         if not self._enabled:
+            if (
+                source is PositionRecognitionSource.VISION
+                and result.vision_position_evidence
+                and self._detection_repo is not None
+            ):
+                try:
+                    detections, _ = self._persist_vision_detections(
+                        command, result.vision_position_evidence
+                    )
+                except _PositionDetectionRepositoryRetryableError as exc:
+                    return self._technical_retry(source, exc.cause)
+                return PreparedMaterialization(
+                    status=PreparationStatus.READY,
+                    source=source,
+                    detections=tuple(detections),
+                )
             try:
                 detections = self._list_valid(result.job_id, result.asset_id)
             except _PositionDetectionRepositoryRetryableError as exc:
@@ -254,6 +270,13 @@ class PositionMaterializationCoordinator:
                 )
             )
             replayed = replayed or result_out.idempotent_replay
+        detections = self._stamp_aisle_locations_on_detections(
+            detections=detections,
+            associations=associations,
+            job_id=result.job_id,
+            asset_id=result.asset_id,
+            source=source,
+        )
         return PreparedMaterialization(
             status=PreparationStatus.READY,
             source=source,
@@ -492,6 +515,68 @@ class PositionMaterializationCoordinator:
             raise _PositionDetectionRepositoryRetryableError(exc) from exc
         return persisted, by_id
 
+    def _stamp_aisle_locations_on_detections(
+        self,
+        *,
+        detections: list[ImagePositionLabelDetection],
+        associations: list[MaterializationAssociation],
+        job_id: str,
+        asset_id: str,
+        source: PositionRecognitionSource,
+    ) -> list[ImagePositionLabelDetection]:
+        """Persist aisle_location_id on detection metadata for sequence/reconciler reads."""
+        if self._detection_repo is None or not associations:
+            return detections
+        by_detection = {a.detection_id: a.location_id for a in associations if a.location_id}
+        if not by_detection:
+            return detections
+        stamped: list[ImagePositionLabelDetection] = []
+        changed = False
+        for detection in detections:
+            location_id = by_detection.get(detection.id)
+            if not location_id:
+                stamped.append(detection)
+                continue
+            meta = dict(detection.metadata_json or {})
+            if meta.get("aisle_location_id") == location_id:
+                stamped.append(detection)
+                continue
+            meta["aisle_location_id"] = location_id
+            detection.metadata_json = meta
+            stamped.append(detection)
+            changed = True
+        if not changed:
+            return stamped
+        detector_version = (
+            VISION_POSITION_DETECTOR_VERSION
+            if source is PositionRecognitionSource.VISION
+            else (stamped[0].detector_version if stamped else None)
+        )
+        if not detector_version:
+            return stamped
+        try:
+            return list(
+                self._detection_repo.replace_asset_detections_atomically(
+                    job_id=job_id,
+                    source_asset_id=asset_id,
+                    detector_version=detector_version,
+                    detections=stamped,
+                )
+            )
+        except (
+            ImageProcessingRepositoryUnavailableError,
+            TimeoutError,
+            OSError,
+            pyodbc.InterfaceError,
+            pyodbc.OperationalError,
+        ):
+            logger.warning(
+                "position_detection_aisle_location_stamp_failed job_id=%s asset_id=%s",
+                job_id,
+                asset_id,
+            )
+            return stamped
+
     @staticmethod
     def _command_for_detection(
         *,
@@ -504,6 +589,14 @@ class PositionMaterializationCoordinator:
         vision_evidence: VisionPositionEvidence | None,
     ) -> MaterializePositionCommand | None:
         display_code = (detection.public_identifier or "").strip()
+        # Opaque Dinamic public ids (pos_*) are not shelf codes — prefer the human
+        # snapshot used for operational display / materialization identity.
+        snapshot = (detection.position_name_snapshot or "").strip()
+        if snapshot and (
+            not display_code
+            or display_code.lower().startswith("pos_")
+        ):
+            display_code = snapshot
         if not display_code:
             return None
         metadata = detection.metadata_json or {}

@@ -18,6 +18,9 @@ from src.application.ports.job_source_asset_repository import JobSourceAssetRepo
 from src.application.ports.manual_position_override_repository import (
     ManualPositionOverrideRepository,
 )
+from src.application.ports.materialized_position_identity_reader import (
+    MaterializedPositionIdentityReader,
+)
 from src.application.ports.position_reconciliation_repository import (
     PositionReconciliationRepository,
 )
@@ -83,6 +86,7 @@ class GetAislePositioningSequenceUseCase:
         coverage_repo: JobImageCoverageRepository,
         product_record_repo: ProductRecordRepository,
         enrichment_enabled: bool = True,
+        materialized_identity_reader: MaterializedPositionIdentityReader | None = None,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._job_repo = job_repo
@@ -97,6 +101,7 @@ class GetAislePositioningSequenceUseCase:
             product_record_repo=product_record_repo,
         )
         self._enrichment_enabled = enrichment_enabled
+        self._materialized_identities = materialized_identity_reader
 
     def execute(
         self, command: GetAislePositioningSequenceCommand
@@ -134,6 +139,27 @@ class GetAislePositioningSequenceUseCase:
         for d in detections:
             if d.source_asset_id in page_asset_ids:
                 det_by_asset[d.source_asset_id].append(d)
+
+        aisle_location_by_detection_id: dict[str, str] = {}
+        if self._materialized_identities is not None and detections:
+            page_detection_ids = [
+                d.id for asset_id in page_asset_ids for d in det_by_asset.get(asset_id, ())
+            ]
+            client_id = next(
+                ((d.client_id or "").strip() for d in detections if (d.client_id or "").strip()),
+                "",
+            )
+            if page_detection_ids and client_id:
+                identities = self._materialized_identities.read_by_detection_ids(
+                    page_detection_ids,
+                    client_id=client_id,
+                    inventory_id=command.inventory_id,
+                    aisle_id=command.aisle_id,
+                )
+                for detection_id, identity in identities.items():
+                    loc = (identity.aisle_location_id or "").strip()
+                    if loc:
+                        aisle_location_by_detection_id[detection_id] = loc
 
         assignments = list(self._reconciliation_repo.list_active_assignments(command.job_id))
         asg_by_asset: dict[str, list[ProductPositionAssignment]] = defaultdict(list)
@@ -178,6 +204,7 @@ class GetAislePositioningSequenceUseCase:
             event = reduce_asset_detections(
                 asset_det,
                 reconciler_transition_applied=False,
+                aisle_location_by_detection_id=aisle_location_by_detection_id,
             )
 
             auto_summaries: list[str] = []

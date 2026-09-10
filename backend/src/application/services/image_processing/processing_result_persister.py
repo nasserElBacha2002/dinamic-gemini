@@ -43,6 +43,7 @@ from src.application.services.image_processing.processing_result_kind import (
     validate_position_only_evidence,
 )
 from src.application.services.job_image_result_resolution import (
+    JobPhotoCoverageImage,
     unique_photo_coverage_images,
 )
 from src.application.services.position_materialization import (
@@ -246,6 +247,18 @@ class ProcessingResultPersister:
 
         live = self._source_asset_repo.get_by_id(asset_id)
         now = self._clock.now()
+
+        # Vision positions on product photos: persist detections + materialize before products.
+        if result.vision_position_evidence:
+            vision_block = self._persist_vision_positions_alongside_products(
+                result=result,
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                snap=snap,
+            )
+            if vision_block is not None:
+                return vision_block
+
         position_id = str(uuid.uuid4())
         evidence_id = str(uuid.uuid4())
         result_evidence_id = str(uuid.uuid4())
@@ -380,12 +393,41 @@ class ProcessingResultPersister:
                             position_id=existing.position_id,
                             skipped_reason=PersistSkipReason.MANUAL_RESULT_EXISTS,
                         )
-                    return PersistOutcome(
-                        persisted=False,
-                        reconciled=True,
-                        position_id=existing.position_id,
-                        active_result_id=existing.position_id,
-                        skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                    linked = repos.position_repo.get_by_id(existing.position_id)
+                    linked_job = (linked.job_id or "").strip() if linked is not None else ""
+                    if linked is not None and linked_job == job_id:
+                        return PersistOutcome(
+                            persisted=False,
+                            reconciled=True,
+                            position_id=existing.position_id,
+                            active_result_id=existing.position_id,
+                            skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                        )
+                    # Coverage points at a prior-job Position — heal by cloning under
+                    # this job so Posiciones / has_result see a matching job_id.
+                    logger.warning(
+                        "code_scan.coverage_cross_job_heal job_id=%s asset_id=%s "
+                        "coverage_position_id=%s linked_job_id=%s",
+                        job_id,
+                        asset_id,
+                        existing.position_id,
+                        linked_job or None,
+                    )
+                    return self._persist_same_asset_label_replay(
+                        repos=repos,
+                        uow=uow,
+                        job_id=job_id,
+                        asset_id=asset_id,
+                        prior_position_id=existing.position_id,
+                        skipped_duplicate=0,
+                        position=position,
+                        evidence=evidence,
+                        coverage=coverage,
+                        result_evidence=result_evidence,
+                        specs=specs,
+                        needs_review=needs_review,
+                        qty_source=qty_source,
+                        now=now,
                     )
                 if repos.image_coverage_repo.has_results_for_asset(
                     job_id=job_id, aisle_id=aisle_id, source_asset_id=asset_id
@@ -474,7 +516,34 @@ class ProcessingResultPersister:
                     )
 
                 if not products_to_save and products_skipped_duplicate:
-                    # All D1 labels already counted — do not create empty Position/coverage.
+                    # Same photos reprocessed: labels already claimed for this asset.
+                    # Clone a Position under the current job so job-scoped coverage /
+                    # Posiciones list / has_result (p.job_id match) all succeed.
+                    replay = self._same_asset_duplicate_label_replay(
+                        counted_repo=counted_repo,
+                        specs=specs,
+                        aisle_id=aisle_id,
+                        asset_id=asset_id,
+                    )
+                    if replay is not None:
+                        prior_position_id, skipped = replay
+                        return self._persist_same_asset_label_replay(
+                            repos=repos,
+                            uow=uow,
+                            job_id=job_id,
+                            asset_id=asset_id,
+                            prior_position_id=prior_position_id,
+                            skipped_duplicate=skipped,
+                            position=position,
+                            evidence=evidence,
+                            coverage=coverage,
+                            result_evidence=result_evidence,
+                            specs=specs,
+                            needs_review=needs_review,
+                            qty_source=qty_source,
+                            now=now,
+                        )
+                    # Different asset already owns these labels — skip empty Position.
                     return PersistOutcome(
                         persisted=False,
                         skipped_reason=PersistSkipReason.ALL_LABELS_DUPLICATE,
@@ -608,11 +677,40 @@ class ProcessingResultPersister:
             )
         )
         if not prepared.ready:
-            return PersistOutcome(
-                persisted=False,
-                skipped_reason=PersistSkipReason.POSITION_MATERIALIZATION_FAILED,
-                retryable=prepared.status is PreparationStatus.TECHNICAL_RETRY,
+            if prepared.status is PreparationStatus.TECHNICAL_RETRY:
+                return PersistOutcome(
+                    persisted=False,
+                    skipped_reason=PersistSkipReason.POSITION_MATERIALIZATION_FAILED,
+                    retryable=True,
+                )
+            # Do not fail the asset when location materialization rejects — still persist
+            # position-label evidence so operational sequence stays coherent.
+            logger.warning(
+                "code_scan.position_only_materialization_degraded job_id=%s asset_id=%s "
+                "prep_status=%s",
+                job_id,
+                asset_id,
+                prepared.status.value,
             )
+            coordinator = PositionMaterializationCoordinator(
+                clock=self._clock,
+                detection_repo=self._position_detection_repo,
+                materializer=self._position_materializer,
+                enabled=False,
+            )
+            prepared = coordinator.prepare(
+                PrepareMaterialization(
+                    result=result,
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                    snapshot=snap,
+                )
+            )
+            if not prepared.ready:
+                return PersistOutcome(
+                    persisted=False,
+                    skipped_reason=PersistSkipReason.POSITION_MATERIALIZATION_FAILED,
+                )
         valid_detections = list(prepared.detections)
         if self._position_detection_repo is not None and not valid_detections:
             return PersistOutcome(
@@ -828,6 +926,299 @@ class ProcessingResultPersister:
                 skipped_reason=PersistSkipReason.CONCURRENCY_CONFLICT,
             )
         return None
+
+    def _persist_vision_positions_alongside_products(
+        self,
+        *,
+        result: ImageProcessingResult,
+        inventory_id: str,
+        aisle_id: str,
+        snap: JobPhotoCoverageImage,
+    ) -> PersistOutcome | None:
+        """Persist + materialize vision position detections before product rows.
+
+        Returns a retryable failure outcome when materialization must abort the
+        asset; otherwise returns ``None`` so product persistence continues.
+        """
+        job_id = result.job_id
+        asset_id = result.asset_id
+        materialize_enabled = self._channel_materialization_enabled(result)
+        coordinator = PositionMaterializationCoordinator(
+            clock=self._clock,
+            detection_repo=self._position_detection_repo,
+            materializer=self._position_materializer,
+            enabled=materialize_enabled,
+        )
+        prepared = coordinator.prepare(
+            PrepareMaterialization(
+                result=result,
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                snapshot=snap,
+            )
+        )
+        if not prepared.ready:
+            if prepared.status is PreparationStatus.TECHNICAL_RETRY:
+                return PersistOutcome(
+                    persisted=False,
+                    skipped_reason=PersistSkipReason.POSITION_MATERIALIZATION_FAILED,
+                    retryable=True,
+                )
+            logger.warning(
+                "code_scan.vision_alongside_products_materialization_degraded "
+                "job_id=%s asset_id=%s prep_status=%s",
+                job_id,
+                asset_id,
+                prepared.status.value,
+            )
+            # Detections may already be persisted from the failed attempt; listing
+            # them with materialization off keeps product persistence unblocked.
+            coordinator = PositionMaterializationCoordinator(
+                clock=self._clock,
+                detection_repo=self._position_detection_repo,
+                materializer=self._position_materializer,
+                enabled=False,
+            )
+            prepared = coordinator.prepare(
+                PrepareMaterialization(
+                    result=result,
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                    snapshot=snap,
+                )
+            )
+            if not prepared.ready:
+                return PersistOutcome(
+                    persisted=False,
+                    skipped_reason=PersistSkipReason.POSITION_MATERIALIZATION_FAILED,
+                    retryable=prepared.status is PreparationStatus.TECHNICAL_RETRY,
+                )
+        coordinator.complete(CompleteMaterialization(prepared=prepared, success=True))
+        if prepared.associations:
+            try:
+                with self._uow_factory() as uow:
+                    uow.bind_lifecycle_scope(inventory_id=inventory_id, aisle_id=aisle_id)
+                    repos = uow.repositories
+                    if repos.materialization_receipt_repo is not None:
+                        now = self._clock.now()
+                        for association in prepared.associations:
+                            repos.materialization_receipt_repo.save(
+                                PositionMaterializationAssociationReceipt(
+                                    request_id=association.request_id,
+                                    target_type="IMAGE_RESULT",
+                                    target_id=association.detection_id,
+                                    created_at=now,
+                                    source_detection_id=association.detection_id,
+                                )
+                            )
+                        uow.commit()
+            except Exception:
+                logger.warning(
+                    "code_scan.vision_alongside_products_receipt_save_failed "
+                    "job_id=%s asset_id=%s",
+                    job_id,
+                    asset_id,
+                    exc_info=True,
+                )
+        logger.info(
+            "code_scan.vision_alongside_products_ready job_id=%s asset_id=%s "
+            "detections=%s associations=%s",
+            job_id,
+            asset_id,
+            len(prepared.detections),
+            len(prepared.associations),
+        )
+        return None
+
+    def _persist_same_asset_label_replay(
+        self,
+        *,
+        repos,
+        uow,
+        job_id: str,
+        asset_id: str,
+        prior_position_id: str,
+        skipped_duplicate: int,
+        position: Position,
+        evidence: Evidence,
+        coverage: ManualImageCoverageLink,
+        result_evidence: ResultEvidenceRecord,
+        specs: list[ProcessedProductLabel],
+        needs_review: bool,
+        qty_source: str,
+        now,
+    ) -> PersistOutcome:
+        """Reprocess same photos: ensure a Position exists under the current job_id.
+
+        Job-scoped Posiciones lists and ``has_result`` require ``positions.job_id`` to
+        match the active job. Linking coverage to a prior-job Position leaves the
+        table empty and the image uncounted.
+        """
+        prior = repos.position_repo.get_by_id(prior_position_id)
+        prior_job = (prior.job_id or "").strip() if prior is not None else ""
+        existing_cov = repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
+        existing_re = self._find_result_evidence_for_asset(
+            repos.result_evidence_repo, job_id, asset_id
+        )
+
+        def _coverage_for(target_position_id: str) -> ManualImageCoverageLink:
+            if existing_cov is not None:
+                return replace(existing_cov, position_id=target_position_id)
+            return replace(coverage, position_id=target_position_id)
+
+        def _result_evidence_for(target_position_id: str) -> ResultEvidenceRecord:
+            if existing_re is not None:
+                return replace(existing_re, position_id=target_position_id, updated_at=now)
+            return replace(result_evidence, position_id=target_position_id)
+
+        if prior is not None and prior_job == job_id:
+            coverage_same = _coverage_for(prior_position_id)
+            evidence_same = replace(evidence, entity_id=prior_position_id)
+            result_evidence_same = _result_evidence_for(prior_position_id)
+            repos.evidence_repo.save(evidence_same)
+            repos.manual_coverage_repo.save(coverage_same)
+            repos.result_evidence_repo.save_many([result_evidence_same])
+            uow.commit()
+            logger.info(
+                "code_scan.persisted_duplicate_label_replay_same_job job_id=%s "
+                "asset_id=%s position_id=%s products_skipped_duplicate=%s",
+                job_id,
+                asset_id,
+                prior_position_id,
+                skipped_duplicate,
+            )
+            return PersistOutcome(
+                persisted=True,
+                position_id=prior_position_id,
+                active_result_id=prior_position_id,
+                products_persisted=0,
+                products_skipped_duplicate=skipped_duplicate,
+                idempotent_replay=True,
+            )
+
+        cloned_products: list[ProductRecord] = []
+        prior_products = (
+            list(repos.product_record_repo.list_by_position(prior_position_id))
+            if prior is not None
+            else []
+        )
+        if prior_products:
+            for product in prior_products:
+                cloned_products.append(
+                    replace(
+                        product,
+                        id=str(uuid.uuid4()),
+                        position_id=position.id,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        else:
+            for spec in specs:
+                label_id = (spec.label_id or "").strip().upper() or None
+                qty = int(spec.quantity or 0)
+                if needs_review and qty == 0:
+                    cloned_products.append(
+                        ProductRecord(
+                            id=str(uuid.uuid4()),
+                            position_id=position.id,
+                            sku=str(spec.internal_code),
+                            description=None,
+                            detected_quantity=0,
+                            corrected_quantity=None,
+                            confidence=1.0,
+                            created_at=now,
+                            updated_at=now,
+                            qty_source="unresolved",
+                            qty_inference_reason=None,
+                            raw_qty=None,
+                            qty_parse_status="null",
+                            label_id=label_id,
+                        )
+                    )
+                    continue
+                cloned_products.append(
+                    ProductRecord(
+                        id=str(uuid.uuid4()),
+                        position_id=position.id,
+                        sku=str(spec.internal_code),
+                        description=None,
+                        detected_quantity=qty,
+                        corrected_quantity=None,
+                        confidence=1.0,
+                        created_at=now,
+                        updated_at=now,
+                        qty_source=qty_source,
+                        qty_inference_reason=None,
+                        raw_qty=qty,
+                        qty_parse_status="valid_positive",
+                        label_id=label_id,
+                    )
+                )
+
+        coverage_clone = _coverage_for(position.id)
+        result_evidence_clone = _result_evidence_for(position.id)
+        repos.position_repo.save(position)
+        for product in cloned_products:
+            repos.product_record_repo.save(product)
+        repos.evidence_repo.save(evidence)
+        repos.manual_coverage_repo.save(coverage_clone)
+        repos.result_evidence_repo.save_many([result_evidence_clone])
+        uow.commit()
+        logger.info(
+            "code_scan.persisted_duplicate_label_replay_clone job_id=%s asset_id=%s "
+            "position_id=%s prior_position_id=%s products_persisted=%s "
+            "products_skipped_duplicate=%s",
+            job_id,
+            asset_id,
+            position.id,
+            prior_position_id,
+            len(cloned_products),
+            skipped_duplicate,
+        )
+        return PersistOutcome(
+            persisted=True,
+            position_id=position.id,
+            active_result_id=position.id,
+            products_persisted=len(cloned_products),
+            products_skipped_duplicate=skipped_duplicate,
+            idempotent_replay=True,
+        )
+
+    @staticmethod
+    def _same_asset_duplicate_label_replay(
+        *,
+        counted_repo,
+        specs: list[ProcessedProductLabel],
+        aisle_id: str,
+        asset_id: str,
+    ) -> tuple[str, int] | None:
+        """If every D1 label was first claimed on this asset, return prior position_id.
+
+        Reprocess of the same photos must not leave the job without coverage.
+        Cross-asset duplicates (true aisle dedupe) return None.
+        """
+        if counted_repo is None:
+            return None
+        position_ids: set[str] = set()
+        skipped = 0
+        for spec in specs:
+            label_id = (spec.label_id or "").strip().upper() or None
+            if not label_id:
+                return None
+            claim = counted_repo.get(aisle_id, label_id)
+            if claim is None:
+                return None
+            if (claim.first_source_asset_id or "").strip() != (asset_id or "").strip():
+                return None
+            pid = (claim.first_position_id or "").strip()
+            if not pid:
+                return None
+            position_ids.add(pid)
+            skipped += 1
+        if len(position_ids) != 1 or skipped == 0:
+            return None
+        return next(iter(position_ids)), skipped
 
     @staticmethod
     def _find_result_evidence_for_asset(result_evidence_repo, job_id: str, asset_id: str):

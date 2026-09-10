@@ -307,11 +307,12 @@ class SqlLocalInventoryPackageRepository:
                 if pkg.status != "PREVIEWED" and pkg.status not in {
                     "MATERIALIZING",
                     "MATERIALIZATION_FAILED",
+                    "REQUIRES_REVIEW",
                 }:
                     raise LocalInventoryPackageImportError(
                         "PACKAGE_INVALID_STATUS",
                         f"Package status {pkg.status!r} cannot be confirmed "
-                        "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED → CONFIRMED)",
+                        "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED|REQUIRES_REVIEW → CONFIRMED)",
                     )
 
                 record, rows_to_import, csv_confirmed = (
@@ -390,11 +391,16 @@ class SqlLocalInventoryPackageRepository:
             if pkg.status == "CONFIRMED":
                 return self._hydrate_confirmed(pkg), True
 
-            if pkg.status not in {"PREVIEWED", "MATERIALIZING", "MATERIALIZATION_FAILED"}:
+            if pkg.status not in {
+                "PREVIEWED",
+                "MATERIALIZING",
+                "MATERIALIZATION_FAILED",
+                "REQUIRES_REVIEW",
+            }:
                 raise LocalInventoryPackageImportError(
                     "PACKAGE_INVALID_STATUS",
                     f"Package status {pkg.status!r} cannot be confirmed "
-                    "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED → CONFIRMED)",
+                    "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED|REQUIRES_REVIEW → CONFIRMED)",
                 )
 
             def _apply(
@@ -426,7 +432,7 @@ class SqlLocalInventoryPackageRepository:
                 "confirmed_by_user_id=?, materialization_owner=?, "
                 "materialization_lease_expires_at=?, fencing_version=?, updated_at=? "
                 "WHERE id=? AND status IN "
-                "('PREVIEWED', 'MATERIALIZING', 'MATERIALIZATION_FAILED')",
+                "('PREVIEWED', 'MATERIALIZING', 'MATERIALIZATION_FAILED', 'REQUIRES_REVIEW')",
                 (
                     "MATERIALIZING",
                     confirmed_by_user_id,
@@ -523,7 +529,7 @@ class SqlLocalInventoryPackageRepository:
                         "confirmed_by_user_id=?, materialization_owner=NULL, "
                         "materialization_lease_expires_at=NULL, updated_at=? "
                         "WHERE id=? AND status IN "
-                        "('PREVIEWED', 'MATERIALIZING', 'MATERIALIZATION_FAILED')",
+                        "('PREVIEWED', 'MATERIALIZING', 'MATERIALIZATION_FAILED', 'REQUIRES_REVIEW')",
                         (
                             "CONFIRMED",
                             now,
@@ -600,7 +606,7 @@ class SqlLocalInventoryPackageRepository:
                     "materialization_owner=NULL, materialization_lease_expires_at=NULL, "
                     "updated_at=? "
                     "WHERE id=? AND status IN "
-                    "('MATERIALIZING', 'MATERIALIZATION_FAILED', 'PREVIEWED')",
+                    "('MATERIALIZING', 'MATERIALIZATION_FAILED', 'PREVIEWED', 'REQUIRES_REVIEW')",
                     (failed_status, now, pkg.id),
                 )
                 failed = replace(

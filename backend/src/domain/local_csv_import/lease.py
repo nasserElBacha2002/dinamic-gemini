@@ -81,11 +81,6 @@ def build_lease_claim(
             LOCAL_CSV_MATERIALIZATION_IN_PROGRESS,
             "Import is already confirmed",
         )
-    if record.status == LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW:
-        raise LocalCsvImportError(
-            LOCAL_CSV_MATERIALIZATION_IN_PROGRESS,
-            "Import requires review and cannot be claimed",
-        )
 
     if record.status == LOCAL_CSV_IMPORT_STATUS_MATERIALIZING and lease_is_active(
         record, now=now
@@ -101,6 +96,7 @@ def build_lease_claim(
         LOCAL_CSV_IMPORT_STATUS_PREVIEWED,
         LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
         LOCAL_CSV_IMPORT_STATUS_MATERIALIZATION_FAILED,
+        LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW,
     }:
         raise LocalCsvImportError(
             LOCAL_CSV_MATERIALIZATION_IN_PROGRESS,
