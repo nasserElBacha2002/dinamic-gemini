@@ -482,6 +482,78 @@ class ImagePositionDetectionUseCase:
                         **_payload_hierarchy_meta(parsed.payload),
                     },
                 )
+            flexible = self._policy.try_accept_unsigned_flexible(
+                parsed=parsed,
+                expected_client_id=command.client_id,
+            )
+            if flexible is not None:
+                assert flexible.label is not None
+                label = flexible.label
+                if not _qr_hierarchy_matches_catalog(
+                    parsed.payload, label.canonical_payload or {}
+                ):
+                    logger.info(
+                        "position_label_flexible_unsigned_hierarchy_mismatch client_id=%s "
+                        "job_id=%s asset_id=%s label_id=%s detector_version=%s correlation_id=%s",
+                        command.client_id,
+                        command.job_id,
+                        command.source_asset_id,
+                        label.public_identifier,
+                        self._detector_version,
+                        command.correlation_id,
+                    )
+                    return self._build_row(
+                        command,
+                        now=now,
+                        status=PositionLabelDetectionStatus.INVALID_TYPE,
+                        signature_status=PositionLabelSignatureStatus.MISSING,
+                        payload_hash=parsed.payload_hash,
+                        public_identifier=parsed.label_id,
+                        payload_version=parsed.version,
+                        bounding_box_json=code.bounding_box,
+                        rotation_degrees=code.rotation_degrees,
+                        confidence=code.confidence,
+                        detail="catalog_hierarchy_mismatch",
+                        metadata={
+                            **PositionLabelPolicyService.metadata_for_reject(
+                                signature_status=PositionLabelSignatureStatus.MISSING,
+                                validation_status=PositionLabelDetectionStatus.INVALID_TYPE,
+                            ),
+                            **_payload_hierarchy_meta(parsed.payload),
+                        },
+                    )
+                logger.info(
+                    "position_label_resolved_flexible_unsigned client_id=%s job_id=%s asset_id=%s "
+                    "label_id=%s detection_status=%s policy_decision=%s detector_version=%s "
+                    "correlation_id=%s",
+                    command.client_id,
+                    command.job_id,
+                    command.source_asset_id,
+                    label.public_identifier,
+                    flexible.detection_status.value,
+                    flexible.policy_decision.value,
+                    self._detector_version,
+                    command.correlation_id,
+                )
+                return self._build_row(
+                    command,
+                    now=now,
+                    status=flexible.detection_status,
+                    signature_status=flexible.signature_status,
+                    payload_hash=parsed.payload_hash or label.payload_hash,
+                    public_identifier=label.public_identifier,
+                    position_label_id=label.id,
+                    position_name_snapshot=label.name,
+                    payload_version=parsed.version or label.payload_version,
+                    bounding_box_json=code.bounding_box,
+                    rotation_degrees=code.rotation_degrees,
+                    confidence=code.confidence,
+                    detail=flexible.detail,
+                    metadata={
+                        **flexible.metadata,
+                        **_payload_hierarchy_meta(parsed.payload),
+                    },
+                )
         if parsed.status is not PositionLabelDetectionStatus.VALID:
             logger.info(
                 "position_label_validation_failed client_id=%s job_id=%s asset_id=%s "

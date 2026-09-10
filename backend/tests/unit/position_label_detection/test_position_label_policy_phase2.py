@@ -76,6 +76,7 @@ def _use_case(
     labels: MemoryClientPositionLabelRepository,
     signing: PositioningLabelSigningService | None = None,
     allow_unsigned_legacy: bool = True,
+    allow_flexible_unsigned: bool = False,
 ) -> ImagePositionDetectionUseCase:
     signing_svc = signing or _signing()
     resolver = PositionLabelResolver(label_repo=labels)
@@ -89,6 +90,7 @@ def _use_case(
         policy=PositionLabelPolicyService(
             resolver=resolver,
             allow_unsigned_legacy=allow_unsigned_legacy,
+            allow_flexible_unsigned=allow_flexible_unsigned,
         ),
         repo=MemoryImagePositionLabelDetectionRepository(),
         clock=_Clock(),
@@ -311,6 +313,124 @@ def test_legacy_v1_unsigned_flag_off_rejects() -> None:
     raw = '{"type":"DINAMIC_POSITION","version":1,"label_id":"pos_no_legacy"}'
     det = _run(_use_case(labels=labels, allow_unsigned_legacy=False), raw)
     assert det.detection_status is PositionLabelDetectionStatus.MISSING_SIGNATURE
+    assert det.metadata_json.get("policy_decision") == PositionLabelPolicyDecision.REJECT.value
+
+
+def test_v2_unsigned_without_flexible_still_rejects() -> None:
+    labels = MemoryClientPositionLabelRepository()
+    payload = build_positioning_label_payload(
+        public_label_id="pos_v2",
+        version=2,
+        pallet="04",
+        side="RIGHT",
+        level=1,
+        marker_index=1,
+        marker_total=2,
+    )
+    _save_label(
+        labels,
+        public_id="pos_v2",
+        payload=payload,
+        signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
+    )
+    raw = json.dumps(
+        {
+            "type": "DINAMIC_POSITION",
+            "version": 2,
+            "label_id": "pos_v2",
+            "pallet": "04",
+            "side": "RIGHT",
+            "level": 1,
+            "marker_index": 1,
+            "marker_total": 2,
+        },
+        separators=(",", ":"),
+    )
+    det = _run(_use_case(labels=labels, allow_unsigned_legacy=True), raw)
+    assert det.detection_status is PositionLabelDetectionStatus.MISSING_SIGNATURE
+    assert det.metadata_json.get("policy_decision") == PositionLabelPolicyDecision.REJECT.value
+
+
+def test_v2_unsigned_flexible_accepts_catalog_match() -> None:
+    labels = MemoryClientPositionLabelRepository()
+    payload = build_positioning_label_payload(
+        public_label_id="pos_v2_flex",
+        version=2,
+        pallet="04",
+        side="RIGHT",
+        level=1,
+        marker_index=1,
+        marker_total=2,
+    )
+    _save_label(
+        labels,
+        public_id="pos_v2_flex",
+        payload=payload,
+        signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
+    )
+    raw = json.dumps(
+        {
+            "type": "DINAMIC_POSITION",
+            "version": 2,
+            "label_id": "pos_v2_flex",
+            "pallet": "04",
+            "side": "RIGHT",
+            "level": 1,
+            "marker_index": 1,
+            "marker_total": 2,
+        },
+        separators=(",", ":"),
+    )
+    det = _run(
+        _use_case(
+            labels=labels,
+            allow_unsigned_legacy=True,
+            allow_flexible_unsigned=True,
+        ),
+        raw,
+    )
+    assert det.detection_status is PositionLabelDetectionStatus.VALID
+    assert det.signature_status is PositionLabelSignatureStatus.MISSING
+    assert det.metadata_json.get("policy_decision") == PositionLabelPolicyDecision.ACCEPT.value
+    assert det.metadata_json.get("flexible_unsigned_accept") is True
+    assert det.position_label_id is not None
+
+
+def test_v2_unsigned_flexible_rejects_hierarchy_mismatch() -> None:
+    labels = MemoryClientPositionLabelRepository()
+    payload = build_positioning_label_payload(
+        public_label_id="pos_v2_bad",
+        version=2,
+        pallet="04",
+        side="RIGHT",
+        level=1,
+        marker_index=1,
+        marker_total=2,
+    )
+    _save_label(
+        labels,
+        public_id="pos_v2_bad",
+        payload=payload,
+        signature_status=ClientPositionLabelSignatureStatus.UNSIGNED,
+    )
+    raw = json.dumps(
+        {
+            "type": "DINAMIC_POSITION",
+            "version": 2,
+            "label_id": "pos_v2_bad",
+            "pallet": "99",
+            "side": "RIGHT",
+            "level": 1,
+            "marker_index": 1,
+            "marker_total": 2,
+        },
+        separators=(",", ":"),
+    )
+    det = _run(
+        _use_case(labels=labels, allow_flexible_unsigned=True),
+        raw,
+    )
+    assert det.detection_status is PositionLabelDetectionStatus.INVALID_TYPE
     assert det.metadata_json.get("policy_decision") == PositionLabelPolicyDecision.REJECT.value
 
 

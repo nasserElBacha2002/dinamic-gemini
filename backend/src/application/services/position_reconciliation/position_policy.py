@@ -47,7 +47,9 @@ def evaluate_position_establishment(
             else PositionTransitionAction.KEEP_POSITION
         )
         return PositionEstablishment(action, status)
-    if detection.position_label_id and signature == "VALID":
+    # VALID + catalog label: establish position for signed, flexible-unsigned (MISSING),
+    # and signature-skipped supplier paths. INVALID already cleared above.
+    if detection.position_label_id and signature in {"VALID", "MISSING", "SKIPPED"}:
         return PositionEstablishment(PositionTransitionAction.SET_POSITION, status)
     if (
         detection.aisle_location_id

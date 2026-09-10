@@ -442,6 +442,15 @@ def _build_position_detection_use_case(settings):
     )
     max_bytes = int(getattr(settings, "position_label_max_payload_bytes", 4096) or 4096)
     resolver = PositionLabelResolver(label_repo=label_repo)
+    signature_policy = str(
+        getattr(settings, "position_signature_policy", "REQUIRED") or "REQUIRED"
+    ).strip().upper()
+    flexible_unsigned = bool(settings.position_flexible_validation_enabled) and bool(
+        settings.position_flexible_code_scan_enabled
+    )
+    # OPTIONAL/NOT_APPLICABLE kill-switch/default also enables flexible unsigned accept.
+    if signature_policy in {"OPTIONAL", "NOT_APPLICABLE"}:
+        flexible_unsigned = True
     return ImagePositionDetectionUseCase(
         classifier=CodeClassifier(max_payload_bytes=max_bytes),
         parser=PositionLabelPayloadParser(max_payload_bytes=max_bytes),
@@ -457,6 +466,7 @@ def _build_position_detection_use_case(settings):
             allow_unsigned_legacy=bool(
                 getattr(settings, "positioning_allow_unsigned_legacy", True)
             ),
+            allow_flexible_unsigned=flexible_unsigned,
         ),
         repo=detection_repo,
         clock=clock,

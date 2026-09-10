@@ -189,8 +189,8 @@ def test_clear_policies(status, signature, client_id):
     assert row.warnings == ("SEQUENCE_GAP",)
 
 
-def test_missing_signature_on_valid_row_does_not_set_position():
-    """VALID detection with non-VALID signature must not SET_POSITION."""
+def test_missing_signature_on_valid_row_sets_position_when_catalog_label_present():
+    """VALID + MISSING + catalog label_id establishes position (flexible unsigned accept)."""
     row = reconcile(
         [
             frame(
@@ -200,8 +200,32 @@ def test_missing_signature_on_valid_row_does_not_set_position():
             ),
         ]
     )[0]
-    assert row.assignment_status is AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION
-    assert row.position_label_id is None
+    assert row.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
+    assert row.position_label_id == "label-1"
+
+
+def test_valid_flexible_unsigned_carries_forward_to_later_products():
+    rows = reconcile(
+        [
+            frame(
+                1,
+                detections=[
+                    detection(
+                        status="VALID",
+                        signature="MISSING",
+                        label_id="pos_v2_unsigned",
+                        position_name="Pallet 04 RIGHT",
+                    )
+                ],
+            ),
+            frame(2, items=["r1", "r2"]),
+        ]
+    )
+    assert [row.assignment_status for row in rows] == [
+        AssignmentStatus.ASSIGNED_AUTOMATIC,
+        AssignmentStatus.ASSIGNED_AUTOMATIC,
+    ]
+    assert {row.position_label_id for row in rows} == {"pos_v2_unsigned"}
 
 
 def test_resolved_legacy_unsigned_sets_position_with_review_warning():
@@ -222,7 +246,8 @@ def test_resolved_legacy_unsigned_sets_position_with_review_warning():
     assert "LEGACY_UNSIGNED_REQUIRES_REVIEW" in row.warnings
 
 
-def test_skipped_signature_does_not_set_position():
+def test_skipped_signature_with_catalog_label_sets_position():
+    """VALID + SKIPPED + catalog label_id establishes position (supplier/skipped HMAC)."""
     row = reconcile(
         [
             frame(
@@ -232,8 +257,8 @@ def test_skipped_signature_does_not_set_position():
             ),
         ]
     )[0]
-    assert row.assignment_status is AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION
-    assert row.position_label_id is None
+    assert row.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
+    assert row.position_label_id == "label-1"
 
 
 def test_unknown_signature_keeps_prior_position():
