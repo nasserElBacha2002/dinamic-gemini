@@ -136,7 +136,7 @@ export function applyPositionScan(
 ): ApplyPositionScanResult {
   const parsed = parseDinamicPositionPayload(raw);
   if (!parsed) return { kind: 'not_position' };
-  const next = activePositionFromParsed(parsed, raw.trim(), {
+  const next = activePositionFromParsed(parsed, raw, {
     localRecognitionId: `legacy:${captureSessionId}:${parsed.canonicalKey}`,
     captureSessionId,
     inventoryId: null,

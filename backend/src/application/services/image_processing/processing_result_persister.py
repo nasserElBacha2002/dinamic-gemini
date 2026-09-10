@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 from src.application.errors import (
@@ -45,9 +45,23 @@ from src.application.services.image_processing.processing_result_kind import (
 from src.application.services.job_image_result_resolution import (
     unique_photo_coverage_images,
 )
+from src.application.services.position_materialization import (
+    CompleteMaterialization,
+    MaterializePositionService,
+    PositionMaterializationCoordinator,
+    PreparationStatus,
+    PrepareMaterialization,
+    RecoverMaterialization,
+)
 from src.domain.evidence.entities import Evidence, EvidenceType
-from src.domain.image_processing.contracts import ImageProcessingResult, ImageResultStatus
-from src.domain.position_label_detection.entities import PositionLabelDetectionStatus
+from src.domain.image_processing.contracts import (
+    VISION_POSITION_DETECTOR_VERSION,
+    ImageProcessingResult,
+    ImageResultStatus,
+)
+from src.domain.position_materialization.entities import (
+    PositionMaterializationAssociationReceipt,
+)
 from src.domain.positions.entities import (
     Position,
     PositionCreationSource,
@@ -88,14 +102,6 @@ class PersistSkipReason(str, Enum):
     POSITION_MATERIALIZATION_FAILED = "POSITION_MATERIALIZATION_FAILED"
 
 
-_POSITION_ONLY_VALID_STATUSES = frozenset(
-    {
-        PositionLabelDetectionStatus.VALID,
-        PositionLabelDetectionStatus.SIGNATURE_VALIDATION_SKIPPED,
-    }
-)
-
-
 @dataclass(frozen=True)
 class PersistOutcome:
     persisted: bool
@@ -106,6 +112,8 @@ class PersistOutcome:
     products_persisted: int = 0
     products_skipped_duplicate: int = 0
     positions_persisted: int = 0
+    idempotent_replay: bool = False
+    retryable: bool = False
 
 
 def _coerce_positive_int_quantity(quantity: object) -> int | None:
@@ -175,12 +183,16 @@ class ProcessingResultPersister:
         clock: Clock,
         unit_of_work_factory: Callable[[], ManualImageResultUnitOfWork],
         position_detection_repo: ImagePositionLabelDetectionRepository | None = None,
+        position_materializer: MaterializePositionService | None = None,
+        position_auto_materialization_enabled: bool = False,
     ) -> None:
         self._job_source_asset_repo = job_source_asset_repo
         self._source_asset_repo = source_asset_repo
         self._clock = clock
         self._uow_factory = unit_of_work_factory
         self._position_detection_repo = position_detection_repo
+        self._position_materializer = position_materializer
+        self._position_auto_materialization_enabled = position_auto_materialization_enabled
 
     def persist(
         self,
@@ -214,9 +226,7 @@ class ProcessingResultPersister:
             )
 
         links = self._job_source_asset_repo.list_for_job(job_id)
-        photo_by_asset = {
-            img.source_asset_id: img for img in unique_photo_coverage_images(links)
-        }
+        photo_by_asset = {img.source_asset_id: img for img in unique_photo_coverage_images(links)}
         snap = photo_by_asset.get(asset_id)
         if snap is None or not (snap.job_source_asset_id or "").strip():
             logger.warning(
@@ -351,8 +361,7 @@ class ProcessingResultPersister:
 
         try:
             with self._uow_factory() as uow:
-                if hasattr(uow, "bind_lifecycle_scope"):
-                    uow.bind_lifecycle_scope(inventory_id=inventory_id, aisle_id=aisle_id)
+                uow.bind_lifecycle_scope(inventory_id=inventory_id, aisle_id=aisle_id)
                 repos = uow.repositories
                 uow.acquire_image_result_lock(job_id=job_id, source_asset_id=asset_id)
 
@@ -520,7 +529,7 @@ class ProcessingResultPersister:
         inventory_id: str,
         aisle_id: str,
     ) -> PersistOutcome:
-        """Acknowledge POSITION_ONLY: detections are materialized by CODE_SCAN strategy."""
+        """Persist POSITION_ONLY evidence and optionally materialize canonical locations."""
         job_id = result.job_id
         asset_id = result.asset_id
         result_kind = get_result_kind(result)
@@ -541,9 +550,7 @@ class ProcessingResultPersister:
             )
 
         links = self._job_source_asset_repo.list_for_job(job_id)
-        photo_by_asset = {
-            img.source_asset_id: img for img in unique_photo_coverage_images(links)
-        }
+        photo_by_asset = {img.source_asset_id: img for img in unique_photo_coverage_images(links)}
         snap = photo_by_asset.get(asset_id)
         if snap is None or not (snap.job_source_asset_id or "").strip():
             logger.warning(
@@ -555,18 +562,57 @@ class ProcessingResultPersister:
                 persisted=False, skipped_reason=PersistSkipReason.ASSET_NOT_IN_SNAPSHOT
             )
 
-        valid_detections = self._list_valid_position_detections(job_id, asset_id)
-        if self._position_detection_repo is not None and not valid_detections:
-            logger.warning(
-                "code_scan.position_only_no_durable_detections job_id=%s asset_id=%s",
-                job_id,
-                asset_id,
+        coordinator = PositionMaterializationCoordinator(
+            clock=self._clock,
+            detection_repo=self._position_detection_repo,
+            materializer=self._position_materializer,
+            enabled=self._position_auto_materialization_enabled,
+        )
+        if self._position_auto_materialization_enabled:
+            conflict = self._preflight_position_only_conflict(
+                job_id=job_id,
+                asset_id=asset_id,
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
             )
+            if conflict is not None:
+                if conflict.skipped_reason is PersistSkipReason.ALREADY_PERSISTED:
+                    recovered_replay = coordinator.recover(
+                        RecoverMaterialization(
+                            result=result,
+                            job_id=job_id,
+                            asset_id=asset_id,
+                            inventory_id=inventory_id,
+                            aisle_id=aisle_id,
+                        )
+                    )
+                    if recovered_replay is not None:
+                        conflict = replace(
+                            conflict,
+                            idempotent_replay=recovered_replay,
+                        )
+                return conflict
+        prepared = coordinator.prepare(
+            PrepareMaterialization(
+                result=result,
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                snapshot=snap,
+            )
+        )
+        if not prepared.ready:
+            return PersistOutcome(
+                persisted=False,
+                skipped_reason=PersistSkipReason.POSITION_MATERIALIZATION_FAILED,
+                retryable=prepared.status is PreparationStatus.TECHNICAL_RETRY,
+            )
+        valid_detections = list(prepared.detections)
+        if self._position_detection_repo is not None and not valid_detections:
             return PersistOutcome(
                 persisted=False,
                 skipped_reason=PersistSkipReason.POSITION_MATERIALIZATION_FAILED,
             )
-
+        materialization_replayed = prepared.idempotent_replay
         positions_count = len(valid_detections) if valid_detections else 1
         anchor_id = valid_detections[0].id if valid_detections else None
         now = self._clock.now()
@@ -575,20 +621,27 @@ class ProcessingResultPersister:
 
         try:
             with self._uow_factory() as uow:
-                if hasattr(uow, "bind_lifecycle_scope"):
-                    uow.bind_lifecycle_scope(inventory_id=inventory_id, aisle_id=aisle_id)
+                uow.bind_lifecycle_scope(inventory_id=inventory_id, aisle_id=aisle_id)
                 repos = uow.repositories
                 uow.acquire_image_result_lock(job_id=job_id, source_asset_id=asset_id)
 
                 existing = repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
                 if existing is not None:
                     if (existing.created_by_user_id or "").strip():
+                        coordinator.complete(
+                            CompleteMaterialization(
+                                prepared=prepared,
+                                success=False,
+                                error_code="IMAGE_MANUAL_RESULT_CONFLICT",
+                            )
+                        )
                         return PersistOutcome(
                             persisted=False,
                             reconciled=False,
                             position_id=existing.position_id,
                             skipped_reason=PersistSkipReason.MANUAL_RESULT_EXISTS,
                         )
+                    coordinator.complete(CompleteMaterialization(prepared=prepared, success=True))
                     return PersistOutcome(
                         persisted=False,
                         reconciled=True,
@@ -596,12 +649,14 @@ class ProcessingResultPersister:
                         active_result_id=existing.position_id,
                         skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
                         positions_persisted=positions_count,
+                        idempotent_replay=materialization_replayed,
                     )
 
                 existing_evidence = self._find_result_evidence_for_asset(
                     repos.result_evidence_repo, job_id, asset_id
                 )
                 if existing_evidence is not None and existing_evidence.has_valid_evidence:
+                    coordinator.complete(CompleteMaterialization(prepared=prepared, success=True))
                     return PersistOutcome(
                         persisted=False,
                         reconciled=True,
@@ -609,6 +664,7 @@ class ProcessingResultPersister:
                         active_result_id=existing_evidence.position_id or anchor_id,
                         skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
                         positions_persisted=positions_count,
+                        idempotent_replay=materialization_replayed,
                     )
 
                 result_evidence = ResultEvidenceRecord(
@@ -638,8 +694,30 @@ class ProcessingResultPersister:
                     updated_at=now,
                 )
                 repos.result_evidence_repo.save_many([result_evidence])
+                if prepared.associations:
+                    if repos.materialization_receipt_repo is None:
+                        raise RuntimeError(
+                            "Materialization receipt repository is required when auto-materialization is active"
+                        )
+                    for association in prepared.associations:
+                        repos.materialization_receipt_repo.save(
+                            PositionMaterializationAssociationReceipt(
+                                request_id=association.request_id,
+                                target_type="IMAGE_RESULT",
+                                target_id=result_evidence_id,
+                                created_at=now,
+                                source_detection_id=association.detection_id,
+                            )
+                        )
                 uow.commit()
         except (ManualResultAlreadyExistsError, ImageAlreadyHasResultsError):
+            coordinator.complete(
+                CompleteMaterialization(
+                    prepared=prepared,
+                    success=False,
+                    error_code="IMAGE_RESULT_CONCURRENCY_CONFLICT",
+                )
+            )
             existing = self._lookup_existing_coverage(job_id, asset_id)
             if existing is not None:
                 return PersistOutcome(
@@ -656,6 +734,7 @@ class ProcessingResultPersister:
                 skipped_reason=PersistSkipReason.CONCURRENCY_CONFLICT,
             )
 
+        coordinator.complete(CompleteMaterialization(prepared=prepared, success=True))
         logger.info(
             "code_scan.position_only_persisted job_id=%s asset_id=%s result_kind=%s "
             "positions_persisted=%s anchor_detection_id=%s",
@@ -672,25 +751,76 @@ class ProcessingResultPersister:
             active_result_id=anchor_id,
             products_persisted=0,
             positions_persisted=positions_count,
+            idempotent_replay=materialization_replayed,
         )
 
-    def _list_valid_position_detections(self, job_id: str, asset_id: str):
-        if self._position_detection_repo is None:
-            return []
+    def _preflight_position_only_conflict(
+        self,
+        *,
+        job_id: str,
+        asset_id: str,
+        inventory_id: str,
+        aisle_id: str,
+    ) -> PersistOutcome | None:
+        """Check image ownership under the manual-result lock before materialization."""
         try:
-            rows = self._position_detection_repo.list_by_asset(job_id, asset_id)
-        except Exception:
-            logger.warning(
-                "code_scan.position_detection_lookup_failed job_id=%s asset_id=%s",
-                job_id,
-                asset_id,
+            with self._uow_factory() as uow:
+                uow.bind_lifecycle_scope(
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                )
+                repos = uow.repositories
+                uow.acquire_image_result_lock(
+                    job_id=job_id,
+                    source_asset_id=asset_id,
+                )
+                existing = repos.manual_coverage_repo.get_by_job_and_asset(
+                    job_id,
+                    asset_id,
+                )
+                if existing is not None:
+                    if (existing.created_by_user_id or "").strip():
+                        return PersistOutcome(
+                            persisted=False,
+                            position_id=existing.position_id,
+                            skipped_reason=PersistSkipReason.MANUAL_RESULT_EXISTS,
+                        )
+                    return PersistOutcome(
+                        persisted=False,
+                        reconciled=True,
+                        position_id=existing.position_id,
+                        active_result_id=existing.position_id,
+                        skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                    )
+                if repos.image_coverage_repo.has_results_for_asset(
+                    job_id=job_id,
+                    aisle_id=aisle_id,
+                    source_asset_id=asset_id,
+                ):
+                    return PersistOutcome(
+                        persisted=False,
+                        reconciled=True,
+                        skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                    )
+                existing_evidence = self._find_result_evidence_for_asset(
+                    repos.result_evidence_repo,
+                    job_id,
+                    asset_id,
+                )
+                if existing_evidence is not None and existing_evidence.has_valid_evidence:
+                    return PersistOutcome(
+                        persisted=False,
+                        reconciled=True,
+                        position_id=existing_evidence.position_id,
+                        active_result_id=existing_evidence.position_id,
+                        skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                    )
+        except (ManualResultAlreadyExistsError, ImageAlreadyHasResultsError):
+            return PersistOutcome(
+                persisted=False,
+                skipped_reason=PersistSkipReason.CONCURRENCY_CONFLICT,
             )
-            return []
-        return [
-            row
-            for row in rows
-            if row.detection_status in _POSITION_ONLY_VALID_STATUSES
-        ]
+        return None
 
     @staticmethod
     def _find_result_evidence_for_asset(result_evidence_repo, job_id: str, asset_id: str):
@@ -708,9 +838,7 @@ class ProcessingResultPersister:
     def _lookup_existing_coverage(self, job_id: str, asset_id: str):
         try:
             with self._uow_factory() as uow:
-                return uow.repositories.manual_coverage_repo.get_by_job_and_asset(
-                    job_id, asset_id
-                )
+                return uow.repositories.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
         except Exception:
             logger.warning(
                 "code_scan.persist_conflict_lookup_failed job_id=%s asset_id=%s",
@@ -720,4 +848,9 @@ class ProcessingResultPersister:
             return None
 
 
-__all__ = ["PersistOutcome", "PersistSkipReason", "ProcessingResultPersister"]
+__all__ = [
+    "VISION_POSITION_DETECTOR_VERSION",
+    "PersistOutcome",
+    "PersistSkipReason",
+    "ProcessingResultPersister",
+]

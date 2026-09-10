@@ -20,6 +20,9 @@ from src.application.ports.local_inventory_package_repository import (
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.ports.sql_cursor import SqlCursorLike
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
+from src.application.services.import_canonical_position_materializer import (
+    ImportCanonicalPositionMaterializer,
+)
 from src.application.services.local_csv_parser import LocalCsvDocumentError
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.application.services.local_inventory_package_client_file_id import (
@@ -37,7 +40,11 @@ from src.domain.local_csv_import.entities import (
     LocalCsvImportRow,
     LocalCsvProductiveResult,
 )
-from src.domain.local_csv_import.errors import CONFLICT_POLICIES
+from src.domain.local_csv_import.errors import (
+    CONFLICT_POLICIES,
+    LOCAL_CSV_MATERIALIZATION_FAILED,
+    LocalCsvImportError,
+)
 from src.domain.local_inventory_package.entities import (
     LocalInventoryPackage,
     LocalInventoryPackagePhoto,
@@ -240,17 +247,23 @@ class ConfirmLocalInventoryPackage:
         result_writer: LocalCsvInventoryResultWriter,
         materializer: AisleSourceAssetMaterializer,
         aisle_repo: AisleRepository,
+        inventory_repo: InventoryRepository,
         clock: Clock,
         enabled: bool,
         position_materializer: LocalCsvPositionMaterializer | None = None,
+        canonical_position_materializer: ImportCanonicalPositionMaterializer | None = None,
+        materialization_lease_sec: int = 120,
     ) -> None:
         self._package_repo = package_repo
         self._result_writer = result_writer
         self._materializer = materializer
         self._aisle_repo = aisle_repo
+        self._inventory_repo = inventory_repo
         self._clock = clock
         self._enabled = enabled
         self._position_materializer = position_materializer
+        self._canonical_position_materializer = canonical_position_materializer
+        self._materialization_lease_sec = materialization_lease_sec
 
     def execute(
         self,
@@ -259,7 +272,19 @@ class ConfirmLocalInventoryPackage:
         export_id: str,
         conflict_policy: str = "SKIP",
         confirmed_by_user_id: str | None = None,
+        owner: str | None = None,
     ) -> tuple[LocalInventoryPackage, bool]:
+        from src.domain.inventory.write_policy import (
+            InventoryNotWritableError,
+            require_inventory_writable,
+        )
+        from src.domain.local_csv_import.statuses import (
+            LOCAL_CSV_IMPORT_STATUS_CONFIRMED,
+            LOCAL_CSV_IMPORT_STATUS_MATERIALIZATION_FAILED,
+            LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
+            LOCAL_CSV_IMPORT_STATUS_PREVIEWED,
+        )
+
         if not self._enabled:
             raise LocalInventoryPackageDisabledError()
         policy = (conflict_policy or "SKIP").strip().upper()
@@ -268,6 +293,14 @@ class ConfirmLocalInventoryPackage:
                 "LOCAL_CSV_CONFLICT_POLICY_INVALID",
                 f"conflict_policy must be one of: {', '.join(sorted(CONFLICT_POLICIES))}",
             )
+        try:
+            require_inventory_writable(
+                self._inventory_repo.get_by_id(inventory_id),
+                inventory_id=inventory_id,
+            )
+        except InventoryNotWritableError as exc:
+            raise LocalInventoryPackageImportError(exc.code, exc.detail) from exc
+
         export_id = export_id.strip()
         package = self._package_repo.get_by_export_id(
             inventory_id=inventory_id, export_id=export_id
@@ -277,18 +310,21 @@ class ConfirmLocalInventoryPackage:
                 PACKAGE_NOT_FOUND, "Package not found for export_id"
             )
 
-        # Optimistic status gate before any side effects.
-        if package.status == "CONFIRMED":
-            productive = self._result_writer.list_for_import(package.csv_import_id)
+        if package.status == LOCAL_CSV_IMPORT_STATUS_CONFIRMED:
+            productive = self._result_writer.list_published_for_import(package.csv_import_id)
             self._ensure_aisle_positions_from_productive(inventory_id, package, productive)
             self._mark_package_aisles_processed(package, productive)
             return package, True
 
-        if package.status != "PREVIEWED":
+        if package.status not in {
+            LOCAL_CSV_IMPORT_STATUS_PREVIEWED,
+            LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
+            LOCAL_CSV_IMPORT_STATUS_MATERIALIZATION_FAILED,
+        }:
             raise LocalInventoryPackageImportError(
                 "PACKAGE_INVALID_STATUS",
                 f"Package status {package.status!r} cannot be confirmed "
-                "(allowed: PREVIEWED → CONFIRMED)",
+                "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED → CONFIRMED)",
             )
 
         self._assert_staging_files_exist(package)
@@ -314,7 +350,7 @@ class ConfirmLocalInventoryPackage:
             *,
             cursor: SqlCursorLike | None = None,
         ) -> tuple[LocalCsvProductiveResult, ...]:
-            del package  # protocol requires package; evidence already staged
+            del package
             return self._apply_productive_db(
                 record,
                 rows_to_import,
@@ -323,20 +359,108 @@ class ConfirmLocalInventoryPackage:
                 cursor=cursor,
             )
 
-        confirmed, duplicate = self._package_repo.confirm_package_atomically(
-            inventory_id=inventory_id,
-            export_id=export_id,
-            conflict_policy=policy,
-            confirmed_by_user_id=confirmed_by_user_id,
-            apply_productive=apply_productive_db,
-            clock_now=self._clock.now,
-            stage_evidence=cast(PackageConfirmEvidenceStager, stage_evidence),
+        claim_owner = (
+            (owner or "").strip()
+            or (confirmed_by_user_id or "").strip()
+            or "system-package-import"
         )
-        # POST-COMMIT: positions + aisle status (outside the confirm TX).
-        productive = self._result_writer.list_for_import(confirmed.csv_import_id)
-        self._ensure_aisle_positions_from_productive(inventory_id, confirmed, productive)
-        self._mark_package_aisles_processed(confirmed, productive)
-        return confirmed, duplicate
+        try:
+            claimed, duplicate = self._package_repo.confirm_package_atomically(
+                inventory_id=inventory_id,
+                export_id=export_id,
+                conflict_policy=policy,
+                confirmed_by_user_id=confirmed_by_user_id,
+                apply_productive=apply_productive_db,
+                clock_now=self._clock.now,
+                owner=claim_owner,
+                lease_sec=self._materialization_lease_sec,
+                stage_evidence=cast(PackageConfirmEvidenceStager, stage_evidence),
+            )
+        except LocalCsvImportError as exc:
+            raise LocalInventoryPackageImportError(exc.code, str(exc)) from exc
+        if duplicate and claimed.status == LOCAL_CSV_IMPORT_STATUS_CONFIRMED:
+            return claimed, True
+
+        fencing = int(
+            (claimed.csv_import.fencing_version if claimed.csv_import is not None else 0)
+            or claimed.fencing_version
+            or 0
+        )
+        try:
+            require_inventory_writable(
+                self._inventory_repo.get_by_id(inventory_id),
+                inventory_id=inventory_id,
+            )
+        except InventoryNotWritableError as exc:
+            self._package_repo.mark_materialization_failed(
+                package_id=claimed.id,
+                error_code=exc.code,
+                clock_now=self._clock.now,
+                owner=claim_owner,
+                expected_fencing_version=fencing,
+            )
+            raise LocalInventoryPackageImportError(exc.code, exc.detail) from exc
+
+        from src.application.services.import_canonical_materialization_policy import (
+            raise_for_canonical_failures,
+        )
+
+        productive = self._result_writer.list_for_import(claimed.csv_import_id)
+        inventory = self._inventory_repo.get_by_id(inventory_id)
+        try:
+            self._ensure_aisle_positions_from_productive(inventory_id, claimed, productive)
+            if self._canonical_position_materializer is not None and productive:
+                client_id = ((inventory.client_id if inventory else None) or "").strip()
+                if not client_id:
+                    raise LocalInventoryPackageImportError(
+                        LOCAL_CSV_MATERIALIZATION_FAILED,
+                        "Inventory client_id is required for import position materialization",
+                    )
+                summary = self._canonical_position_materializer.materialize_from_results(
+                    productive,
+                    client_id=client_id,
+                    actor_id=confirmed_by_user_id,
+                )
+                raise_for_canonical_failures(summary)
+            self._mark_package_aisles_processed(claimed, productive)
+            confirmed = self._package_repo.finalize_package_confirmation(
+                package_id=claimed.id,
+                clock_now=self._clock.now,
+                confirmed_by_user_id=confirmed_by_user_id,
+                owner=claim_owner,
+                expected_fencing_version=fencing,
+            )
+            return confirmed, False
+        except LocalInventoryPackageImportError as exc:
+            self._package_repo.mark_materialization_failed(
+                package_id=claimed.id,
+                error_code=exc.code,
+                clock_now=self._clock.now,
+                owner=claim_owner,
+                expected_fencing_version=fencing,
+            )
+            raise
+        except LocalCsvImportError as exc:
+            self._package_repo.mark_materialization_failed(
+                package_id=claimed.id,
+                error_code=exc.code,
+                clock_now=self._clock.now,
+                owner=claim_owner,
+                expected_fencing_version=fencing,
+            )
+            raise LocalInventoryPackageImportError(exc.code, str(exc)) from exc
+        except Exception as exc:
+            self._package_repo.mark_materialization_failed(
+                package_id=claimed.id,
+                error_code="LOCAL_CSV_MATERIALIZATION_FAILED",
+                clock_now=self._clock.now,
+                owner=claim_owner,
+                expected_fencing_version=fencing,
+            )
+            raise LocalInventoryPackageImportError(
+                "LOCAL_CSV_MATERIALIZATION_FAILED",
+                "Package materialization failed due to an unexpected error",
+            ) from exc
 
     def _mark_package_aisles_processed(
         self,

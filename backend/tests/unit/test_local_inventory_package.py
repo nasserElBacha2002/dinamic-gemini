@@ -279,7 +279,13 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
             clock=clock,
         ),
     )
-    writer = MemoryLocalCsvInventoryResultWriter()
+    writer = MemoryLocalCsvInventoryResultWriter(
+        get_import_status=lambda import_id: (
+            None
+            if (rec := csv_repo.get_by_id(import_id)) is None
+            else rec.status
+        ),
+    )
     position_repo = MemoryPositionRepository()
     product_repo = MemoryProductRecordRepository()
     confirm = ConfirmLocalInventoryPackage(
@@ -287,6 +293,7 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
         clock=clock,
         enabled=True,
         position_materializer=LocalCsvPositionMaterializer(
@@ -421,12 +428,19 @@ def test_confirm_fits_long_mobile_client_file_id(tmp_path: Path) -> None:
             clock=clock,
         ),
     )
-    writer = MemoryLocalCsvInventoryResultWriter()
+    writer = MemoryLocalCsvInventoryResultWriter(
+        get_import_status=lambda import_id: (
+            None
+            if (rec := csv_repo.get_by_id(import_id)) is None
+            else rec.status
+        ),
+    )
     confirm = ConfirmLocalInventoryPackage(
         package_repo=package_repo,
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
         clock=clock,
         enabled=True,
         position_materializer=LocalCsvPositionMaterializer(
@@ -762,12 +776,19 @@ def test_confirm_multiproduct_same_photo_reuses_one_source_asset(tmp_path: Path)
             clock=clock,
         ),
     )
-    writer = MemoryLocalCsvInventoryResultWriter()
+    writer = MemoryLocalCsvInventoryResultWriter(
+        get_import_status=lambda import_id: (
+            None
+            if (rec := csv_repo.get_by_id(import_id)) is None
+            else rec.status
+        ),
+    )
     confirm = ConfirmLocalInventoryPackage(
         package_repo=package_repo,
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
         clock=clock,
         enabled=True,
         position_materializer=LocalCsvPositionMaterializer(

@@ -1204,6 +1204,8 @@ export interface PositionTechnicalSnapshot {
 export interface PositionAssignmentRef {
   id?: string | null;
   name?: string | null;
+  aisle_location_id?: string | null;
+  identity_kind?: 'CLIENT_POSITION_LABEL' | 'AISLE_LOCATION' | null;
 }
 
 export interface ManualPositionOverrideSummary {

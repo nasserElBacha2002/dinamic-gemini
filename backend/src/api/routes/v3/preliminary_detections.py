@@ -1,4 +1,4 @@
-"""v3 mobile preliminary CODE_SCAN drafts — diagnostic ingest only."""
+"""v3 mobile preliminary CODE_SCAN draft ingest."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ import logging
 
 from fastapi import APIRouter, Depends
 
-from src.api.dependencies import get_upsert_preliminary_detection_use_case
+from src.api.dependencies import (
+    get_upsert_preliminary_detection_use_case,
+    require_inventory_client_scope,
+)
 from src.api.errors import reraise_if_mapped
 from src.api.errors.structured_api_http import StructuredApiHttpError
 from src.api.schemas.preliminary_detection_schemas import (
@@ -14,6 +17,7 @@ from src.api.schemas.preliminary_detection_schemas import (
     PreliminaryDetectionUpsertRequest,
     PreliminaryDetectionUpsertResponse,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import AisleNotFoundError
 from src.application.use_cases.aisles.upsert_preliminary_detection import (
     PRELIMINARY_ASSET_PENDING,
@@ -34,13 +38,14 @@ router = APIRouter()
 @router.put(
     "/{inventory_id}/aisles/{aisle_id}/preliminary-detections/{draft_id}",
     response_model=PreliminaryDetectionUpsertResponse,
-    summary="Upsert mobile preliminary CODE_SCAN draft (non-authoritative)",
+    summary="Upsert mobile preliminary CODE_SCAN draft",
 )
 def upsert_preliminary_detection(
     inventory_id: str,
     aisle_id: str,
     draft_id: str,
     body: PreliminaryDetectionUpsertRequest,
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
     use_case: UpsertPreliminaryDetectionUseCase = Depends(
         get_upsert_preliminary_detection_use_case
     ),
@@ -70,6 +75,7 @@ def upsert_preliminary_detection(
                 payload_hash=body.payload_hash,
                 processing_ms=body.processing_ms,
                 detected_at=body.detected_at,
+                principal=principal,
                 position_reference=(
                     PositionReferenceEvidenceV2(
                         payload_version=body.position_reference.payload_version,
@@ -154,6 +160,8 @@ def upsert_preliminary_detection(
                 retryable=result.position_result.retryable,
                 server_timestamp=result.position_result.server_timestamp,
                 reconciliation_revision=result.position_result.reconciliation_revision,
+                created=result.position_result.created,
+                idempotent_replay=result.position_result.idempotent_replay,
             )
             if result.position_result is not None
             else None

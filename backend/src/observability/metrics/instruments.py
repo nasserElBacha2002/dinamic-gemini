@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from enum import Enum
+
 from src.observability.metrics.registry import get_metrics_registry
 
 # HTTP
@@ -101,6 +103,173 @@ PROCESSING_RECOVERY_TOTAL = "processing_recovery_total"
 PROCESSING_RECOVERY_FAILURE_TOTAL = "processing_recovery_failure_total"
 PROCESSING_STALE_JOBS_TOTAL = "processing_stale_jobs_total"
 
+# Vision candidate normalization. Values mirror the registry's metric-specific allowlist.
+VISION_CANDIDATE_TOTAL = "vision_candidate_total"
+
+
+class VisionCandidateMetricComponent(str, Enum):
+    CANDIDATE = "candidate"
+    VALIDATION = "validation"
+    CANONICAL_POSITION = "canonical_position"
+    BRIDGE = "bridge"
+
+
+class VisionCandidateMetricMode(str, Enum):
+    UNKNOWN = "UNKNOWN"
+    ITEM = "ITEM"
+    POSITION = "POSITION"
+
+
+class VisionCandidateMetricOutcome(str, Enum):
+    NO_CANDIDATE = "no_candidate"
+    RAW_EVIDENCE_REQUIRED = "raw_evidence_required"
+    AMBIGUOUS = "ambiguous"
+    INVALID = "invalid"
+    NOT_APPLICABLE = "not_applicable"
+    TECHNICAL_ERROR = "technical_error"
+    CANONICAL_REJECTED = "canonical_rejected"
+    RESOLVED = "resolved"
+    REQUIRES_REVIEW = "requires_review"
+    UNRECOGNIZED = "unrecognized"
+
+
+def record_vision_candidate(
+    *,
+    component: VisionCandidateMetricComponent,
+    mode: VisionCandidateMetricMode,
+    outcome: VisionCandidateMetricOutcome,
+) -> None:
+    """Increment one bounded Vision candidate bridge outcome."""
+    get_metrics_registry().inc(
+        VISION_CANDIDATE_TOTAL,
+        "Vision candidate bridge outcomes",
+        {
+            "component": component.value,
+            "mode": mode.value,
+            "outcome": outcome.value,
+        },
+    )
+
+
+# Canonical position materialization. Every dimension is a bounded enum.
+POSITION_MATERIALIZATION_TOTAL = "position_materialization_total"
+POSITION_FLEXIBLE_EVALUATION_TOTAL = "position_flexible_evaluation_total"
+POSITION_FLEXIBLE_DIVERGENCE_TOTAL = "position_flexible_divergence_total"
+
+
+_FLEXIBLE_CHANNELS = frozenset(
+    {"CODE_SCAN", "VISION", "MOBILE", "IMPORT", "REVIEW"}
+)
+_FLEXIBLE_EVALUATION_OUTCOMES = frozenset(
+    {
+        "SHADOW_DISABLED",
+        "MATCH_ACCEPT",
+        "MATCH_REJECT",
+        "DIVERGENCE_FLEXIBLE_ACCEPTS",
+        "DIVERGENCE_FLEXIBLE_REJECTS",
+    }
+)
+
+
+def record_position_flexible_evaluation(*, channel: str, outcome: str) -> None:
+    """Shadow/productive flexible evaluation outcome (no ids/codes)."""
+    get_metrics_registry().inc(
+        POSITION_FLEXIBLE_EVALUATION_TOTAL,
+        "Flexible position policy evaluations",
+        {
+            "channel": channel if channel in _FLEXIBLE_CHANNELS else "CODE_SCAN",
+            "outcome": outcome if outcome in _FLEXIBLE_EVALUATION_OUTCOMES else "MATCH_REJECT",
+        },
+    )
+
+
+def record_position_flexible_divergence(*, channel: str, outcome: str) -> None:
+    """Increment only when productive and flexible shadow accept/reject diverge."""
+    get_metrics_registry().inc(
+        POSITION_FLEXIBLE_DIVERGENCE_TOTAL,
+        "Flexible position policy divergences versus productive decisions",
+        {
+            "channel": channel if channel in _FLEXIBLE_CHANNELS else "CODE_SCAN",
+            "outcome": outcome if outcome in _FLEXIBLE_EVALUATION_OUTCOMES else "MATCH_REJECT",
+        },
+    )
+
+
+class PositionMaterializationMetricComponent(str, Enum):
+    SERVICE = "service"
+    COORDINATOR = "coordinator"
+    RECOVERY = "recovery"
+
+
+class PositionMaterializationMetricSource(str, Enum):
+    CODE_SCAN = "CODE_SCAN"
+    VISION = "VISION"
+    OCR = "OCR"
+    TXT = "TXT"
+    CSV = "CSV"
+    MANUAL = "MANUAL"
+    MOBILE = "MOBILE"
+    API = "API"
+    RECOVERY = "RECOVERY"
+
+
+class PositionMaterializationMetricMode(str, Enum):
+    DINAMIC = "DINAMIC"
+    SUPPLIER = "SUPPLIER"
+
+
+class PositionMaterializationMetricOutcome(str, Enum):
+    CREATED = "created"
+    REUSED = "reused"
+    IDEMPOTENT_REPLAY = "idempotent_replay"
+    VALIDATION_REJECTED = "validation_rejected"
+    IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    IDENTITY_CONFLICT = "identity_conflict"
+    ASSOCIATION_PENDING = "association_pending"
+    ASSOCIATION_RECOVERED = "association_recovered"
+    REQUIRES_REVIEW = "requires_review"
+    TECHNICAL_RETRY = "technical_retry"
+    RETRY_EXHAUSTED = "retry_exhausted"
+
+
+class PositionMaterializationMetricReason(str, Enum):
+    NONE = "none"
+    INVALID_REQUEST = "invalid_request"
+    SCOPE_REJECTED = "scope_rejected"
+    INVENTORY_STATE = "inventory_state"
+    IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    IDENTITY_CONFLICT = "identity_conflict"
+    INVARIANT_VIOLATION = "invariant_violation"
+    TECHNICAL_FAILURE = "technical_failure"
+    ASSOCIATION_WRITE_PENDING = "association_write_pending"
+    DOWNSTREAM_REQUIRES_REVIEW = "downstream_requires_review"
+    EVIDENCE_QUERY_FAILED = "evidence_query_failed"
+    EVIDENCE_CONTRADICTION = "evidence_contradiction"
+    ASSOCIATION_EVIDENCE_ABSENT = "association_evidence_absent"
+    MAX_ATTEMPTS = "max_attempts"
+
+
+def record_position_materialization(
+    *,
+    component: PositionMaterializationMetricComponent,
+    source: PositionMaterializationMetricSource,
+    mode: PositionMaterializationMetricMode,
+    outcome: PositionMaterializationMetricOutcome,
+    reason_code: PositionMaterializationMetricReason = PositionMaterializationMetricReason.NONE,
+) -> None:
+    """Increment the bounded materialization outcome counter."""
+    get_metrics_registry().inc(
+        POSITION_MATERIALIZATION_TOTAL,
+        "Canonical position materialization outcomes",
+        {
+            "component": component.value,
+            "source": source.value,
+            "mode": mode.value,
+            "outcome": outcome.value,
+            "reason_code": reason_code.value,
+        },
+    )
+
 
 def observe_http_request(
     *,
@@ -126,7 +295,11 @@ def observe_http_request(
         reg.inc(
             HTTP_RESPONSE_ERRORS_TOTAL,
             "HTTP error responses",
-            {"method": method.upper(), "route_template": route_template, "status_class": status_class},
+            {
+                "method": method.upper(),
+                "route_template": route_template,
+                "status_class": status_class,
+            },
         )
 
 
@@ -327,3 +500,29 @@ def record_position_reconciliation(
             "Unassigned products after reconciliation",
             {**labels, "status": bucket},
         )
+
+
+LOCAL_CSV_IMPORT_EVENTS_TOTAL = "local_csv_import_events_total"
+
+
+def record_local_csv_import_event(*, event: str) -> None:
+    """Bounded import lifecycle counters (no high-cardinality labels)."""
+    allowed = {
+        "claimed",
+        "active_lease_conflict",
+        "retry",
+        "lease_takeover",
+        "materialization_failed",
+        "recovery_succeeded",
+        "recovery_exhausted",
+        "requires_review",
+        "closed_inventory_rejected",
+        "package_csv_inconsistency_repaired",
+        "confirmed",
+    }
+    label = event if event in allowed else "other"
+    get_metrics_registry().inc(
+        LOCAL_CSV_IMPORT_EVENTS_TOTAL,
+        "Local CSV/package import lifecycle events",
+        {"event": label},
+    )

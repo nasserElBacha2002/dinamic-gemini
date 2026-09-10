@@ -33,9 +33,17 @@ class LocalCsvInventoryResultWriter(Protocol):
         cursor: SqlCursorLike | None = None,
     ) -> tuple[LocalCsvProductiveResult, ...]: ...
 
-    def list_for_inventory(self, inventory_id: str) -> tuple[LocalCsvProductiveResult, ...]: ...
+    def list_for_inventory(self, inventory_id: str) -> tuple[LocalCsvProductiveResult, ...]:
+        """Inventory-visible productive rows (import header status CONFIRMED only)."""
+        ...
 
-    def list_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]: ...
+    def list_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]:
+        """All productive rows for an import — includes staging during MATERIALIZING."""
+        ...
+
+    def list_published_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]:
+        """Productive rows only when the import header is CONFIRMED (public/API use)."""
+        ...
 
     def aisle_ids_with_ingestion_source(
         self,

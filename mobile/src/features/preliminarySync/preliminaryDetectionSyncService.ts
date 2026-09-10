@@ -56,7 +56,7 @@ export interface PreliminaryDetectionSyncServiceOptions {
 }
 
 /**
- * Syncs local CODE_SCAN drafts as non-authoritative diagnostic evidence.
+ * Syncs local CODE_SCAN drafts and persists server-authoritative V2 position results.
  * Never blocks upload or POST /process.
  * Background WorkManager is intentionally not implemented — JS scheduler only.
  */
@@ -337,24 +337,37 @@ export class PreliminaryDetectionSyncService {
       }
       if (positionResult) {
         const retryable = positionResult.status === 'RETRYABLE_ERROR';
-        const rejected = positionResult.status.startsWith('REJECTED_');
+        const conflict =
+          positionResult.status === 'REJECTED_CONFLICT' ||
+          positionResult.status === 'REJECTED_DUPLICATE';
+        const invariantViolation = positionResult.status === 'INVARIANT_VIOLATION';
+        const rejected =
+          positionResult.status.startsWith('REJECTED_') && !conflict;
+        const outcome = retryable
+          ? 'RETRY'
+          : conflict
+            ? 'CONFLICT'
+            : invariantViolation
+              ? 'FAILED_TERMINAL'
+              : rejected
+                ? 'REJECTED'
+                : 'SUCCESS';
         const completed = await this.options.drafts.completePositionSyncResult({
           draftId: draft.id,
           leaseToken,
           localRecognitionId: positionResult.local_recognition_id,
           serverPreliminaryId: response.server_preliminary_id,
           result: positionResult.status,
-          errorCode: retryable
-            ? positionResult.error_code ?? 'POSITION_RETRYABLE_ERROR'
-            : rejected
-              ? positionResult.error_code ?? positionResult.status
-              : null,
+          errorCode:
+            outcome === 'SUCCESS'
+              ? null
+              : positionResult.error_code ?? positionResult.status,
           remotePositionId: positionResult.remote_position_id,
           remotePositionLabelId: positionResult.remote_position_label_id,
           reconciledAt:
             positionResult.server_timestamp || new Date(this.nowMs()).toISOString(),
           revision: positionResult.reconciliation_revision,
-          outcome: retryable ? 'RETRY' : rejected ? 'REJECTED' : 'SUCCESS',
+          outcome,
           nextRetryAt: retryable
             ? new Date(this.nowMs() + 2_000).toISOString()
             : null,
@@ -378,6 +391,8 @@ export class PreliminaryDetectionSyncService {
         }
         if (!completed) return 'skipped_lease';
         if (retryable) return 'retry';
+        if (conflict) return 'conflict';
+        if (invariantViolation) return 'failed_terminal';
         if (rejected) {
           emitObservability(this.options.reporter, {
             name: 'mobile_position_sync_rejected_total',

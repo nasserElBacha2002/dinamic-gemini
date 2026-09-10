@@ -12,6 +12,7 @@ import logging
 import os
 import threading
 from collections.abc import Callable
+from datetime import timedelta
 from typing import TypeVar
 
 from src.application.ports.analytics_repository import AnalyticsRepository
@@ -36,6 +37,9 @@ from src.application.ports.mobile_preliminary_detection_repository import (
     MobilePreliminaryDetectionRepository,
 )
 from src.application.ports.operational_job_promotion import OperationalJobPromotionRepository
+from src.application.ports.position_materialization_unit_of_work import (
+    PositionMaterializationUnitOfWork,
+)
 from src.application.ports.preliminary_detection_reconciliation_repository import (
     PreliminaryDetectionReconciliationRepository,
 )
@@ -79,6 +83,21 @@ from src.application.services.job_artifact_verifier import JobArtifactVerifier
 from src.application.services.job_domain_result_verifier import JobDomainResultVerifier
 from src.application.services.operational_result_promotion_service import (
     OperationalResultPromotionService,
+)
+from src.application.services.local_csv_import_recovery import (
+    LocalCsvImportRecoveryConfig,
+    LocalCsvImportRecoveryService,
+)
+from src.application.services.local_csv_import_recovery_scheduler import (
+    LocalCsvImportRecoveryScheduler,
+    build_local_csv_import_recovery_scheduler,
+)
+from src.application.services.position_materialization import (
+    MaterializePositionService,
+    PositionMaterializationAssociationRecoveryService,
+    PositionMaterializationRecoveryConfig,
+    PositionMaterializationRecoveryScheduler,
+    build_position_materialization_recovery_scheduler,
 )
 from src.application.use_cases.finalization_recovery.resume_job_finalization import (
     FinalizationRecoveryCoordinator,
@@ -126,6 +145,14 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
 from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
     MemoryOperationalJobPromotionRepository,
 )
+from src.infrastructure.persistence.memory_position_materialization_unit_of_work import (
+    MemoryMaterializationAisle,
+    MemoryMaterializationInventory,
+    MemoryPositionMaterializationUnitOfWork,
+)
+from src.infrastructure.persistence.position_materialization_schema_verifier import (
+    SqlPositionMaterializationSchemaVerifier,
+)
 from src.infrastructure.persistence.sql_artifact_manifest_store import SqlArtifactManifestStore
 from src.infrastructure.persistence.sql_artifact_publication_outbox_store import (
     SqlArtifactPublicationOutboxStore,
@@ -139,6 +166,9 @@ from src.infrastructure.persistence.sql_job_result_unit_of_work import (
 )
 from src.infrastructure.persistence.sql_operational_job_promotion_repository import (
     SqlOperationalJobPromotionRepository,
+)
+from src.infrastructure.persistence.sql_position_materialization_unit_of_work import (
+    SqlPositionMaterializationUnitOfWork,
 )
 from src.infrastructure.storage.artifact_store import ArtifactStore
 from src.runtime.container.analytics_builders import build_analytics_repository
@@ -270,10 +300,10 @@ class AppContainer:
         self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
         self._supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None
         self._supplier_extraction_profile_repo: SupplierExtractionProfileRepository | None = None
-        self._client_supplier_label_profile_repo: ClientSupplierLabelProfileRepository | None = (
+        self._client_supplier_label_profile_repo: ClientSupplierLabelProfileRepository | None = None
+        self._supplier_reference_annotation_repo: SupplierReferenceAnnotationRepository | None = (
             None
         )
-        self._supplier_reference_annotation_repo: SupplierReferenceAnnotationRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
         self._evidence_repo: EvidenceRepository | None = None
@@ -299,6 +329,7 @@ class AppContainer:
         self._manual_position_override_repo = None
         self._image_position_label_detection_repo = None
         self._position_reconciliation_repo = None
+        self._materialized_position_identity_reader = None
         self._code_scan_repo: CodeScanRepository | None = None
         self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
         self._authoritative_local_code_scan_repo = None
@@ -319,6 +350,18 @@ class AppContainer:
         self._artifact_publication_outbox_store: ArtifactPublicationOutboxStore | None = None
         self._finalization_recovery_store = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
+        self._position_materialization_uow: PositionMaterializationUnitOfWork | None = None
+        self._position_materialization_service: MaterializePositionService | None = None
+        self._position_materialization_recovery_service: (
+            PositionMaterializationAssociationRecoveryService | None
+        ) = None
+        self._position_materialization_recovery_scheduler: (
+            PositionMaterializationRecoveryScheduler | None
+        ) = None
+        self._local_csv_import_recovery_service: LocalCsvImportRecoveryService | None = None
+        self._local_csv_import_recovery_scheduler: LocalCsvImportRecoveryScheduler | None = None
+        self._position_materialization_schema_verified = False
+        self._position_materialization_lock = threading.RLock()
 
     @property
     def settings(self) -> AppSettings:
@@ -363,6 +406,8 @@ class AppContainer:
         ``cursor()`` context); clearing the reference is sufficient. Optional ``close`` / ``dispose``
         / ``shutdown`` methods on other cached objects are invoked when present.
         """
+        self.stop_position_materialization_recovery_scheduler()
+        self.stop_local_csv_import_recovery_scheduler()
         client = self._v3_sql_client
         if client is not None:
             closer = getattr(client, "close", None)
@@ -438,6 +483,7 @@ class AppContainer:
         self._manual_position_override_repo = None
         self._image_position_label_detection_repo = None
         self._position_reconciliation_repo = None
+        self._materialized_position_identity_reader = None
         self._code_scan_repo = None
         self._preliminary_detection_repo = None
         self._authoritative_local_code_scan_repo = None
@@ -447,6 +493,13 @@ class AppContainer:
         self._preliminary_reconciliation_repo = None
         self._stored_artifact_reader = None
         self._repository_backend_resolution = None
+        self._position_materialization_uow = None
+        self._position_materialization_service = None
+        self._position_materialization_recovery_service = None
+        self._position_materialization_recovery_scheduler = None
+        self._local_csv_import_recovery_service = None
+        self._local_csv_import_recovery_scheduler = None
+        self._position_materialization_schema_verified = False
 
     def _probe_sql_for_repository_backend(self) -> None:
         """Validate SQL connectivity and cache SqlServerClient.
@@ -575,6 +628,176 @@ class AppContainer:
         """
         return self._get_repository_backend_resolution().mode == RepositoryBackendMode.SQL
 
+    def get_position_materialization_uow(self) -> PositionMaterializationUnitOfWork:
+        """Return this container's shared materialization persistence boundary."""
+        with self._position_materialization_lock:
+            if self._position_materialization_uow is None:
+                if self.is_sql_repository_backend():
+                    self.verify_position_materialization_recovery_schema()
+                    self._position_materialization_uow = SqlPositionMaterializationUnitOfWork(
+                        self._get_v3_sql_client()
+                    )
+                else:
+                    self._position_materialization_uow = MemoryPositionMaterializationUnitOfWork(
+                        location_repository=self.get_aisle_location_repo()
+                    )
+            self._synchronize_memory_position_materialization_scope()
+            return self._position_materialization_uow
+
+    def verify_position_materialization_recovery_schema(self, *, force: bool = False) -> None:
+        """Fail closed on the complete durable recovery schema when writes are eligible."""
+        if (
+            not self._settings.position_materialization_recovery_active
+            or not self.is_sql_repository_backend()
+        ):
+            return
+        with self._position_materialization_lock:
+            if self._position_materialization_schema_verified and not force:
+                return
+            SqlPositionMaterializationSchemaVerifier(self._get_v3_sql_client()).verify()
+            self._position_materialization_schema_verified = True
+
+    def _synchronize_memory_position_materialization_scope(self) -> None:
+        uow = self._position_materialization_uow
+        if not isinstance(uow, MemoryPositionMaterializationUnitOfWork):
+            return
+        for inventory in self.get_inventory_repo().list_all():
+            uow.add_inventory(
+                MemoryMaterializationInventory(
+                    id=inventory.id,
+                    client_id=(inventory.client_id or "").strip(),
+                    status=inventory.status.value,
+                    deleted=inventory.is_deleted,
+                )
+            )
+            for aisle in self.get_aisle_repo().list_by_inventory(inventory.id):
+                uow.add_aisle(
+                    MemoryMaterializationAisle(
+                        id=aisle.id,
+                        inventory_id=aisle.inventory_id,
+                        client_supplier_id=aisle.client_supplier_id,
+                        is_active=aisle.is_active,
+                    )
+                )
+
+    def get_position_materialization_service(self) -> MaterializePositionService:
+        """Return the shared service used by API and worker paths."""
+        with self._position_materialization_lock:
+            uow = self.get_position_materialization_uow()
+            if self._position_materialization_service is None:
+                self._position_materialization_service = MaterializePositionService(
+                    uow,
+                    clock=self.get_clock().now,
+                )
+            return self._position_materialization_service
+
+    def get_position_materialization_recovery_service(
+        self,
+    ) -> PositionMaterializationAssociationRecoveryService:
+        with self._position_materialization_lock:
+            if self._position_materialization_recovery_service is None:
+                settings = self._settings
+                self._position_materialization_recovery_service = (
+                    PositionMaterializationAssociationRecoveryService(
+                        self.get_position_materialization_uow(),
+                        config=PositionMaterializationRecoveryConfig(
+                            lease=timedelta(
+                                seconds=settings.position_materialization_recovery_lease_sec
+                            ),
+                            batch_size=settings.position_materialization_recovery_batch_size,
+                            max_attempts=settings.position_materialization_recovery_max_attempts,
+                            backoff_base=timedelta(
+                                seconds=settings.position_materialization_recovery_backoff_base_sec
+                            ),
+                            backoff_max=timedelta(
+                                seconds=settings.position_materialization_recovery_backoff_max_sec
+                            ),
+                        ),
+                    )
+                )
+            return self._position_materialization_recovery_service
+
+    def start_position_materialization_recovery_scheduler(
+        self,
+    ) -> PositionMaterializationRecoveryScheduler | None:
+        """Start this container's scheduler only when explicitly eligible."""
+        if not self._settings.position_materialization_recovery_active:
+            return None
+        self.verify_position_materialization_recovery_schema(force=True)
+        with self._position_materialization_lock:
+            if self._position_materialization_recovery_scheduler is None:
+                self._position_materialization_recovery_scheduler = (
+                    build_position_materialization_recovery_scheduler(
+                        service=self.get_position_materialization_recovery_service(),
+                        clock=self.get_clock(),
+                        enabled=True,
+                        interval_sec=self._settings.position_materialization_recovery_interval_sec,
+                    )
+                )
+            self._position_materialization_recovery_scheduler.start()
+            return self._position_materialization_recovery_scheduler
+
+    def stop_position_materialization_recovery_scheduler(self) -> None:
+        with self._position_materialization_lock:
+            scheduler = self._position_materialization_recovery_scheduler
+            if scheduler is not None:
+                scheduler.stop()
+            self._position_materialization_recovery_scheduler = None
+
+    def get_local_csv_import_recovery_service(self) -> LocalCsvImportRecoveryService:
+        if self._local_csv_import_recovery_service is None:
+            from src.api.dependencies import build_confirm_local_csv_import
+
+            settings = self._settings
+            confirm = build_confirm_local_csv_import(
+                container=self,
+                clock=self.get_clock(),
+                inventory_repo=self.get_inventory_repo(),
+                aisle_repo=self.get_aisle_repo(),
+                position_repo=self.get_position_repo(),
+                product_record_repo=self.get_product_record_repo(),
+                status_reconciler=InventoryStatusReconciler(
+                    inventory_repo=self.get_inventory_repo(),
+                    aisle_repo=self.get_aisle_repo(),
+                    clock=self.get_clock(),
+                ),
+            )
+            self._local_csv_import_recovery_service = LocalCsvImportRecoveryService(
+                import_repo=self.get_local_csv_import_repo(),
+                confirm=confirm,
+                clock=self.get_clock(),
+                config=LocalCsvImportRecoveryConfig(
+                    max_attempts=settings.local_csv_import_recovery_max_attempts,
+                    lease_sec=settings.local_csv_import_recovery_lease_sec,
+                    backoff_base_sec=settings.local_csv_import_recovery_backoff_base_sec,
+                    backoff_max_sec=settings.local_csv_import_recovery_backoff_max_sec,
+                    batch_size=settings.local_csv_import_recovery_batch_size,
+                ),
+            )
+        return self._local_csv_import_recovery_service
+
+    def start_local_csv_import_recovery_scheduler(
+        self,
+    ) -> LocalCsvImportRecoveryScheduler | None:
+        """Start import materialization recovery only when explicitly enabled."""
+        if not self._settings.local_csv_import_recovery_enabled:
+            return None
+        if self._local_csv_import_recovery_scheduler is None:
+            self._local_csv_import_recovery_scheduler = build_local_csv_import_recovery_scheduler(
+                service=self.get_local_csv_import_recovery_service(),
+                clock=self.get_clock(),
+                enabled=True,
+                interval_sec=self._settings.local_csv_import_recovery_interval_sec,
+            )
+        self._local_csv_import_recovery_scheduler.start()
+        return self._local_csv_import_recovery_scheduler
+
+    def stop_local_csv_import_recovery_scheduler(self) -> None:
+        scheduler = self._local_csv_import_recovery_scheduler
+        if scheduler is not None:
+            scheduler.stop()
+        self._local_csv_import_recovery_scheduler = None
+
     def _build_sql_repository_or_memory(
         self,
         *,
@@ -631,7 +854,15 @@ class AppContainer:
                 self._get_v3_sql_client()
             )
         else:
-            self._local_csv_result_writer = MemoryLocalCsvInventoryResultWriter()
+            import_repo = self.get_local_csv_import_repo()
+
+            def _status(import_id: str) -> str | None:
+                record = import_repo.get_by_id(import_id)
+                return record.status if record is not None else None
+
+            self._local_csv_result_writer = MemoryLocalCsvInventoryResultWriter(
+                get_import_status=_status
+            )
         return self._local_csv_result_writer
 
     def get_local_inventory_package_repo(self):
@@ -701,9 +932,7 @@ class AppContainer:
         if self._authoritative_aisle_finalization_repo is not None:
             return self._authoritative_aisle_finalization_repo
         self._authoritative_aisle_finalization_repo = (
-            build_authoritative_aisle_finalization_repository(
-                self._build_sql_repository_or_memory
-            )
+            build_authoritative_aisle_finalization_repository(self._build_sql_repository_or_memory)
         )
         return self._authoritative_aisle_finalization_repo
 
@@ -887,9 +1116,7 @@ class AppContainer:
 
         settings = load_settings()
         return CreateServerReprocessRun(
-            enabled=bool(
-                getattr(settings, "server_server_reprocess_enabled", False)
-            ),
+            enabled=bool(getattr(settings, "server_server_reprocess_enabled", False)),
             inventory_repo=self.get_inventory_repo(),
             aisle_repo=self.get_aisle_repo(),
             asset_repo=self.get_asset_repo(),
@@ -905,9 +1132,7 @@ class AppContainer:
             ListServerReprocessProposals,
         )
 
-        return ListServerReprocessProposals(
-            reprocess_repo=self.get_server_reprocess_repo()
-        )
+        return ListServerReprocessProposals(reprocess_repo=self.get_server_reprocess_repo())
 
     @property
     def execute_server_reprocess_run(self):
@@ -940,9 +1165,7 @@ class AppContainer:
 
         settings = load_settings()
         return AdoptServerReprocessProposals(
-            enabled=bool(
-                getattr(settings, "server_server_reprocess_adoption_enabled", False)
-            ),
+            enabled=bool(getattr(settings, "server_server_reprocess_adoption_enabled", False)),
             reprocess_repo=self.get_server_reprocess_repo(),
             authoritative_repo=self.get_authoritative_local_code_scan_repo(),
             position_repo=self.get_position_repo(),
@@ -1022,10 +1245,8 @@ class AppContainer:
     def get_client_supplier_label_profile_repo(self) -> ClientSupplierLabelProfileRepository:
         if self._client_supplier_label_profile_repo is not None:
             return self._client_supplier_label_profile_repo
-        self._client_supplier_label_profile_repo = (
-            build_client_supplier_label_profile_repository(
-                self._build_sql_repository_or_memory
-            )
+        self._client_supplier_label_profile_repo = build_client_supplier_label_profile_repository(
+            self._build_sql_repository_or_memory
         )
         return self._client_supplier_label_profile_repo
 
@@ -1308,6 +1529,30 @@ class AppContainer:
         )
         return self._position_reconciliation_repo
 
+    def get_materialized_position_identity_reader(self):
+        if self._materialized_position_identity_reader is not None:
+            return self._materialized_position_identity_reader
+        if self.is_sql_repository_backend():
+            from src.infrastructure.persistence.sql_materialized_position_identity_reader import (
+                SqlMaterializedPositionIdentityReader,
+            )
+
+            self._materialized_position_identity_reader = SqlMaterializedPositionIdentityReader(
+                self._get_v3_sql_client()
+            )
+        else:
+            from src.infrastructure.persistence.memory_materialized_position_identity_reader import (
+                MemoryMaterializedPositionIdentityReader,
+            )
+
+            unit_of_work = self.get_position_materialization_uow()
+            if not isinstance(unit_of_work, MemoryPositionMaterializationUnitOfWork):
+                raise RuntimeError("Memory identity reader requires memory materialization state")
+            self._materialized_position_identity_reader = MemoryMaterializedPositionIdentityReader(
+                unit_of_work
+            )
+        return self._materialized_position_identity_reader
+
     def get_recompute_consolidated_counts_use_case(self) -> RecomputeConsolidatedCountsUseCase:
         return build_recompute_consolidated_counts_use_case(
             raw_label_repo=self.get_raw_label_repo(),
@@ -1405,8 +1650,8 @@ class AppContainer:
 
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
-            self._external_image_analysis_request_repo = (
-                SqlExternalImageAnalysisRequestRepository(self._get_v3_sql_client())
+            self._external_image_analysis_request_repo = SqlExternalImageAnalysisRequestRepository(
+                self._get_v3_sql_client()
             )
         else:
             self._external_image_analysis_request_repo = (
@@ -1427,13 +1672,11 @@ class AppContainer:
 
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
-            self._global_fallback_batch_request_repo = (
-                SqlGlobalFallbackBatchRequestRepository(self._get_v3_sql_client())
+            self._global_fallback_batch_request_repo = SqlGlobalFallbackBatchRequestRepository(
+                self._get_v3_sql_client()
             )
         else:
-            self._global_fallback_batch_request_repo = (
-                MemoryGlobalFallbackBatchRequestRepository()
-            )
+            self._global_fallback_batch_request_repo = MemoryGlobalFallbackBatchRequestRepository()
         return self._global_fallback_batch_request_repo
 
     def get_processing_event_repo(self):
@@ -1449,9 +1692,7 @@ class AppContainer:
 
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
-            self._processing_event_repo = SqlProcessingEventRepository(
-                self._get_v3_sql_client()
-            )
+            self._processing_event_repo = SqlProcessingEventRepository(self._get_v3_sql_client())
         else:
             self._processing_event_repo = MemoryProcessingEventRepository()
         return self._processing_event_repo
@@ -1487,13 +1728,11 @@ class AppContainer:
 
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
-            self._processing_action_idempotency_repo = (
-                SqlProcessingActionIdempotencyRepository(self._get_v3_sql_client())
+            self._processing_action_idempotency_repo = SqlProcessingActionIdempotencyRepository(
+                self._get_v3_sql_client()
             )
         else:
-            self._processing_action_idempotency_repo = (
-                MemoryProcessingActionIdempotencyRepository()
-            )
+            self._processing_action_idempotency_repo = MemoryProcessingActionIdempotencyRepository()
         return self._processing_action_idempotency_repo
 
     def get_job_processing_lease_repo(self):
@@ -1565,9 +1804,7 @@ class AppContainer:
 
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
-            self._job_image_coverage_repo = SqlJobImageCoverageRepository(
-                self._get_v3_sql_client()
-            )
+            self._job_image_coverage_repo = SqlJobImageCoverageRepository(self._get_v3_sql_client())
         else:
             self._job_image_coverage_repo = MemoryJobImageCoverageRepository(
                 job_source_asset_repo=self.get_job_source_asset_repo(),
@@ -1609,6 +1846,9 @@ class AppContainer:
                     clock=self.get_clock(),
                 ),
             )
+            materialization_uow = self.get_position_materialization_uow()
+            if not isinstance(materialization_uow, MemoryPositionMaterializationUnitOfWork):
+                raise RuntimeError("Memory manual results require memory materialization state")
             repos = ManualImageResultRepositories(
                 position_repo=self.get_position_repo(),
                 product_record_repo=self.get_product_record_repo(),
@@ -1618,6 +1858,7 @@ class AppContainer:
                 review_repo=self.get_review_action_repo(),
                 image_coverage_repo=self.get_job_image_coverage_repo(),
                 counted_product_label_repo=self.get_counted_product_label_repo(),
+                materialization_receipt_repo=materialization_uow.association_receipt_repository,
             )
             self._manual_image_result_uow_factory = build_memory_manual_image_result_uow_factory(
                 repos,
@@ -1803,7 +2044,9 @@ class AppContainer:
             return self._finalization_recovery_store
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
-            self._finalization_recovery_store = SqlFinalizationRecoveryStore(self._get_v3_sql_client())
+            self._finalization_recovery_store = SqlFinalizationRecoveryStore(
+                self._get_v3_sql_client()
+            )
         else:
             self._finalization_recovery_store = MemoryFinalizationRecoveryStore()
         return self._finalization_recovery_store

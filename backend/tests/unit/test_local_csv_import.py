@@ -145,7 +145,13 @@ def _use_cases() -> tuple[
         )
     )
     import_repo = MemoryLocalCsvImportRepository()
-    writer = MemoryLocalCsvInventoryResultWriter()
+    writer = MemoryLocalCsvInventoryResultWriter(
+        get_import_status=lambda import_id: (
+            None
+            if (rec := import_repo.get_by_id(import_id)) is None
+            else rec.status
+        ),
+    )
     position_repo = MemoryPositionRepository()
     product_repo = MemoryProductRecordRepository()
     preview = PreviewLocalCsvImport(
@@ -160,6 +166,7 @@ def _use_cases() -> tuple[
         result_writer=writer,
         clock=FixedClock(),
         enabled=True,
+        inventory_repo=inventory_repo,
         position_materializer=LocalCsvPositionMaterializer(
             position_repo=position_repo,
             product_record_repo=product_repo,

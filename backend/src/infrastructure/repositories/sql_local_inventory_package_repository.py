@@ -29,6 +29,9 @@ from src.domain.local_inventory_package.errors import (
     PACKAGE_NOT_FOUND,
     LocalInventoryPackageImportError,
 )
+from src.infrastructure.database.sql_inventory_write_policy import (
+    default_require_inventory_writable_on_cursor,
+)
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 logger = logging.getLogger(__name__)
@@ -118,6 +121,7 @@ _PKG_COLS = (
     "id, inventory_id, export_id, csv_import_id, package_kind, package_version, status, "
     "package_checksum_sha256, csv_checksum_sha256, expected_photo_count, included_photo_count, "
     "aisle_id, capture_session_id, freeze_id, staging_dir, confirmed_at, confirmed_by_user_id, "
+    "materialization_owner, materialization_lease_expires_at, fencing_version, "
     "created_at, updated_at"
 )
 
@@ -180,6 +184,8 @@ class SqlLocalInventoryPackageRepository:
         confirmed_by_user_id: str | None,
         apply_productive: PackageConfirmProductiveApplier,
         clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int = 120,
         stage_evidence: PackageConfirmEvidenceStager | None = None,
     ) -> tuple[LocalInventoryPackage, bool]:
         """Confirm package + CSV under one final SQL transaction.
@@ -206,6 +212,8 @@ class SqlLocalInventoryPackageRepository:
                 confirmed_by_user_id=confirmed_by_user_id,
                 apply_productive=apply_productive,
                 clock_now=clock_now,
+                owner=owner,
+                lease_sec=lease_sec,
                 started=started,
             )
 
@@ -216,6 +224,8 @@ class SqlLocalInventoryPackageRepository:
             confirmed_by_user_id=confirmed_by_user_id,
             apply_productive=apply_productive,
             clock_now=clock_now,
+            owner=owner,
+            lease_sec=lease_sec,
             stage_evidence=stage_evidence,
             started=started,
         )
@@ -229,6 +239,8 @@ class SqlLocalInventoryPackageRepository:
         confirmed_by_user_id: str | None,
         apply_productive: PackageConfirmProductiveApplier,
         clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int,
         started: float,
     ) -> tuple[LocalInventoryPackage, bool]:
         with self._client.begin_transaction() as txn:  # type: ignore[attr-defined]
@@ -239,6 +251,8 @@ class SqlLocalInventoryPackageRepository:
                 confirmed_by_user_id=confirmed_by_user_id,
                 apply_productive=apply_productive,
                 clock_now=clock_now,
+                owner=owner,
+                lease_sec=lease_sec,
                 connection=txn.connection,
             )
             txn.commit()
@@ -259,6 +273,8 @@ class SqlLocalInventoryPackageRepository:
         confirmed_by_user_id: str | None,
         apply_productive: PackageConfirmProductiveApplier,
         clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int,
         stage_evidence: PackageConfirmEvidenceStager,
         started: float,
     ) -> tuple[LocalInventoryPackage, bool]:
@@ -288,11 +304,14 @@ class SqlLocalInventoryPackageRepository:
                     )
                     return confirmed, True
 
-                if pkg.status != "PREVIEWED":
+                if pkg.status != "PREVIEWED" and pkg.status not in {
+                    "MATERIALIZING",
+                    "MATERIALIZATION_FAILED",
+                }:
                     raise LocalInventoryPackageImportError(
                         "PACKAGE_INVALID_STATUS",
                         f"Package status {pkg.status!r} cannot be confirmed "
-                        "(allowed: PREVIEWED → CONFIRMED)",
+                        "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED → CONFIRMED)",
                     )
 
                 record, rows_to_import, csv_confirmed = (
@@ -337,6 +356,8 @@ class SqlLocalInventoryPackageRepository:
                 confirmed_by_user_id=confirmed_by_user_id,
                 apply_productive=apply_productive,
                 clock_now=clock_now,
+                owner=owner,
+                lease_sec=lease_sec,
                 connection=apply_txn.connection,
             )
             apply_txn.commit()
@@ -358,6 +379,8 @@ class SqlLocalInventoryPackageRepository:
         confirmed_by_user_id: str | None,
         apply_productive: PackageConfirmProductiveApplier,
         clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int,
         connection: object,
     ) -> tuple[LocalInventoryPackage, bool]:
         with sql_repository_cursor(self._client, connection=connection) as cur:  # type: ignore[arg-type]
@@ -367,11 +390,11 @@ class SqlLocalInventoryPackageRepository:
             if pkg.status == "CONFIRMED":
                 return self._hydrate_confirmed(pkg), True
 
-            if pkg.status != "PREVIEWED":
+            if pkg.status not in {"PREVIEWED", "MATERIALIZING", "MATERIALIZATION_FAILED"}:
                 raise LocalInventoryPackageImportError(
                     "PACKAGE_INVALID_STATUS",
                     f"Package status {pkg.status!r} cannot be confirmed "
-                    "(allowed: PREVIEWED → CONFIRMED)",
+                    "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED → CONFIRMED)",
                 )
 
             def _apply(
@@ -393,13 +416,26 @@ class SqlLocalInventoryPackageRepository:
                 apply_productive=_apply,
                 clock_now=clock_now,
                 cursor=cur,
+                owner=owner,
+                lease_sec=lease_sec,
             )
             now = clock_now()
             assert isinstance(now, datetime)
             cur.execute(
-                "UPDATE local_inventory_packages SET status=?, confirmed_at=?, "
-                "confirmed_by_user_id=?, updated_at=? WHERE id=? AND status=?",
-                ("CONFIRMED", now, confirmed_by_user_id, now, pkg.id, "PREVIEWED"),
+                "UPDATE local_inventory_packages SET status=?, confirmed_at=NULL, "
+                "confirmed_by_user_id=?, materialization_owner=?, "
+                "materialization_lease_expires_at=?, fencing_version=?, updated_at=? "
+                "WHERE id=? AND status IN "
+                "('PREVIEWED', 'MATERIALIZING', 'MATERIALIZATION_FAILED')",
+                (
+                    "MATERIALIZING",
+                    confirmed_by_user_id,
+                    csv_record.materialization_owner,
+                    csv_record.materialization_lease_expires_at,
+                    int(csv_record.fencing_version),
+                    now,
+                    pkg.id,
+                ),
             )
             if cur.rowcount != 1:
                 raise LocalInventoryPackageImportError(
@@ -408,9 +444,12 @@ class SqlLocalInventoryPackageRepository:
                 )
             confirmed = replace(
                 pkg,
-                status="CONFIRMED",
-                confirmed_at=now,
+                status="MATERIALIZING",
+                confirmed_at=None,
                 confirmed_by_user_id=confirmed_by_user_id,
+                materialization_owner=csv_record.materialization_owner,
+                materialization_lease_expires_at=csv_record.materialization_lease_expires_at,
+                fencing_version=int(csv_record.fencing_version or 0),
                 updated_at=now,
                 csv_import=csv_record,
             )
@@ -440,6 +479,134 @@ class SqlLocalInventoryPackageRepository:
     def _hydrate_confirmed(self, pkg: LocalInventoryPackage) -> LocalInventoryPackage:
         csv_import = self._csv_import_repo.get_by_id(pkg.csv_import_id)
         return replace(pkg, csv_import=csv_import)
+
+    def finalize_package_confirmation(
+        self,
+        *,
+        package_id: str,
+        clock_now: Callable[[], datetime],
+        confirmed_by_user_id: str | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalInventoryPackage:
+        with self._client.begin_transaction() as txn:
+            with sql_repository_cursor(self._client, connection=txn.connection) as cur:
+                cur.execute(
+                    f"SELECT {_PKG_COLS} FROM local_inventory_packages "
+                    "WITH (UPDLOCK, ROWLOCK) WHERE id = ?",
+                    ((package_id or "").strip(),),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise LocalInventoryPackageImportError(
+                        PACKAGE_NOT_FOUND, "Package not found"
+                    )
+                photos = self._load_photos(cur, str(getattr(row, "id")))
+                pkg = _package_from_db(row, photos)
+                now = clock_now()
+                csv_import = self._csv_import_repo.finalize_import_confirmation_on_cursor(
+                    cur,
+                    import_id=pkg.csv_import_id,
+                    clock_now=clock_now,
+                    confirmed_by_user_id=confirmed_by_user_id,
+                    owner=owner,
+                    expected_fencing_version=expected_fencing_version,
+                    require_inventory_writable_on_cursor=(
+                        default_require_inventory_writable_on_cursor
+                    ),
+                )
+                if pkg.status != "CONFIRMED":
+                    cur.execute(
+                        "UPDATE local_inventory_packages SET status=?, confirmed_at=?, "
+                        "confirmed_by_user_id=?, materialization_owner=NULL, "
+                        "materialization_lease_expires_at=NULL, updated_at=? "
+                        "WHERE id=? AND status IN "
+                        "('PREVIEWED', 'MATERIALIZING', 'MATERIALIZATION_FAILED')",
+                        (
+                            "CONFIRMED",
+                            now,
+                            confirmed_by_user_id or pkg.confirmed_by_user_id,
+                            now,
+                            pkg.id,
+                        ),
+                    )
+                    if cur.rowcount != 1:
+                        raise LocalInventoryPackageImportError(
+                            "PACKAGE_CONFIRM_CONFLICT",
+                            "Package was modified concurrently; finalize aborted",
+                        )
+                    confirmed = replace(
+                        pkg,
+                        status="CONFIRMED",
+                        confirmed_at=now,
+                        confirmed_by_user_id=confirmed_by_user_id or pkg.confirmed_by_user_id,
+                        updated_at=now,
+                        csv_import=csv_import,
+                    )
+                else:
+                    confirmed = replace(pkg, csv_import=csv_import)
+            txn.commit()
+            return confirmed
+
+    def mark_materialization_failed(
+        self,
+        *,
+        package_id: str,
+        error_code: str,
+        clock_now: Callable[[], datetime],
+        requires_review: bool = False,
+        next_retry_at: datetime | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalInventoryPackage:
+        with self._client.begin_transaction() as txn:
+            with sql_repository_cursor(self._client, connection=txn.connection) as cur:
+                cur.execute(
+                    f"SELECT {_PKG_COLS} FROM local_inventory_packages "
+                    "WITH (UPDLOCK, ROWLOCK) WHERE id = ?",
+                    ((package_id or "").strip(),),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise LocalInventoryPackageImportError(
+                        PACKAGE_NOT_FOUND, "Package not found"
+                    )
+                photos = self._load_photos(cur, str(getattr(row, "id")))
+                pkg = _package_from_db(row, photos)
+                if pkg.status == "CONFIRMED":
+                    csv_import = self._csv_import_repo.get_by_id(pkg.csv_import_id)
+                    txn.commit()
+                    return replace(pkg, csv_import=csv_import)
+                now = clock_now()
+                csv_import = self._csv_import_repo.mark_materialization_failed_on_cursor(
+                    cur,
+                    import_id=pkg.csv_import_id,
+                    error_code=error_code,
+                    clock_now=clock_now,
+                    requires_review=requires_review,
+                    next_retry_at=next_retry_at,
+                    owner=owner,
+                    expected_fencing_version=expected_fencing_version,
+                )
+                failed_status = (
+                    "REQUIRES_REVIEW" if requires_review else "MATERIALIZATION_FAILED"
+                )
+                cur.execute(
+                    "UPDATE local_inventory_packages SET status=?, "
+                    "materialization_owner=NULL, materialization_lease_expires_at=NULL, "
+                    "updated_at=? "
+                    "WHERE id=? AND status IN "
+                    "('MATERIALIZING', 'MATERIALIZATION_FAILED', 'PREVIEWED')",
+                    (failed_status, now, pkg.id),
+                )
+                failed = replace(
+                    pkg,
+                    status=failed_status,
+                    updated_at=now,
+                    csv_import=csv_import,
+                )
+            txn.commit()
+            return failed
 
     def _log_confirm_outcome(
         self,

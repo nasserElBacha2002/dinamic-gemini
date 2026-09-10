@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol
@@ -11,7 +12,54 @@ from src.domain.aisle_identification.modes import (
     AisleIdentificationMode,
 )
 from src.domain.label_validation.context import LabelValidationContext
+from src.domain.position_recognition.entities import (
+    CanonicalPositionRecognition,
+    PositionRecognitionSource,
+)
 from src.domain.product_labels.processed import ProcessedProductLabel
+
+RAW_EVIDENCE_HASH_ALGORITHM = "sha256-utf8-v1"
+VISION_POSITION_DETECTOR_NAME = "vision_candidate_bridge"
+VISION_POSITION_DETECTOR_VERSION = "vision-position-canonical-1.0.0"
+
+
+@dataclass(frozen=True)
+class RawEvidenceMetadata:
+    """Non-reversible metadata for the exact, pre-normalization input."""
+
+    payload_hash: str
+    utf8_length: int
+    hash_algorithm: str = RAW_EVIDENCE_HASH_ALGORITHM
+
+
+@dataclass(frozen=True)
+class VisionPositionEvidence:
+    """Authoritative validated Vision position input for persistence."""
+
+    recognition: CanonicalPositionRecognition
+    client_id: str
+    detector_name: str
+    detector_version: str
+    raw_evidence: RawEvidenceMetadata
+
+    def __post_init__(self) -> None:
+        if self.recognition.source is not PositionRecognitionSource.VISION:
+            raise ValueError("Vision evidence recognition source must be VISION")
+        if self.recognition.raw_code is None:
+            raise ValueError("Vision evidence requires the original raw code")
+        if not self.client_id.strip():
+            raise ValueError("Vision evidence client_id must not be blank")
+        if not self.detector_name.strip() or not self.detector_version.strip():
+            raise ValueError("Vision evidence detector identity must not be blank")
+        if not self.raw_evidence.payload_hash.strip() or self.raw_evidence.utf8_length < 0:
+            raise ValueError("Vision raw evidence metadata is invalid")
+        raw_bytes = self.recognition.raw_code.encode("utf-8")
+        if self.raw_evidence.utf8_length != len(raw_bytes):
+            raise ValueError("Vision raw evidence length does not match raw code")
+        if self.raw_evidence.hash_algorithm != RAW_EVIDENCE_HASH_ALGORITHM:
+            raise ValueError("Unsupported Vision raw evidence hash algorithm")
+        if self.raw_evidence.payload_hash != hashlib.sha256(raw_bytes).hexdigest():
+            raise ValueError("Vision raw evidence hash does not match raw code")
 
 
 class ExecutionScope(str, Enum):
@@ -79,6 +127,8 @@ class ImageProcessingResult:
     logical_asset_attempt: bool = True
     #: CODE_SCAN multi-product: 0..N typed physical product labels (D1 after registry resolve).
     product_results: list[ProcessedProductLabel] = field(default_factory=list)
+    #: Authoritative Vision position evidence; legacy ``evidence`` is projection-only.
+    vision_position_evidence: tuple[VisionPositionEvidence, ...] = ()
 
 
 class ProcessingStrategy(Protocol):

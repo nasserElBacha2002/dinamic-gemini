@@ -7,6 +7,7 @@ from src.domain.position_recognition.entities import (
     PositionRecognitionSource,
     PositionResolutionStatus,
     PositionSignatureEvidence,
+    PositionSignaturePolicy,
     PositionSignatureVerification,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "PositionRecognitionSource",
     "PositionResolutionStatus",
     "PositionSignatureEvidence",
+    "PositionSignaturePolicy",
     "PositionSignatureVerification",
 ]

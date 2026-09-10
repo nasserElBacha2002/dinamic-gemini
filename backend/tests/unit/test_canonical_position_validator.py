@@ -53,6 +53,7 @@ from src.domain.position_recognition import (
     CanonicalPositionValidationStatus,
     PositionRecognitionSource,
     PositionResolutionStatus,
+    PositionSignaturePolicy,
     PositionSignatureVerification,
 )
 from src.env_settings.grouped_settings import LimitsAndSchemaSettings
@@ -250,6 +251,26 @@ def test_unknown_dinamic_position_can_be_represented_when_policy_allows_it() -> 
 
     assert result.status is CanonicalPositionValidationStatus.VALID_UNMATERIALIZED
     assert result.structurally_valid is True
+
+
+def test_optional_missing_signature_flexible_path_to_valid_unmaterialized() -> None:
+    unsigned = json.dumps(build_positioning_label_payload(public_label_id="POS-FLEX-OPT"))
+    result = CanonicalPositionValidator(
+        signing=_signing(),
+        resolver=StubResolver(PositionLabelDetectionStatus.LABEL_NOT_FOUND),
+        policy=PositionCompatibilityPolicy.resolve(
+            signature_validation_enabled=True,
+            allow_unsigned_legacy=False,
+            preexistence_required=False,
+            flexible_validation_enabled=True,
+            signature_policy=PositionSignaturePolicy.OPTIONAL,
+        ),
+    ).validate(_command(unsigned))
+
+    assert result.status is CanonicalPositionValidationStatus.VALID_UNMATERIALIZED
+    assert result.recognition is not None
+    assert result.recognition.signature.verification is PositionSignatureVerification.MISSING
+    assert result.recognition.signature.present is False
 
 
 def test_invalid_position_format_is_rejected() -> None:
@@ -480,6 +501,15 @@ def test_legacy_signature_flag_is_loaded_without_master_flag_reinterpretation(
     monkeypatch.setenv("POSITION_LABEL_SIGNATURE_VALIDATION_ENABLED", "false")
     monkeypatch.setenv("POSITION_PREEXISTENCE_REQUIRED", "true")
     monkeypatch.setenv("POSITION_FLEXIBLE_VALIDATION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_AUTO_MATERIALIZATION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_IMPORT_MATERIALIZATION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_CODE_SCAN_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_VISION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_MOBILE_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_IMPORT_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_REVIEW_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_SHADOW_MODE_ENABLED", "false")
+    monkeypatch.setenv("POSITION_SIGNATURE_POLICY", "REQUIRED")
     settings = LimitsAndSchemaSettings()
 
     policy = PositionCompatibilityPolicy.resolve(
@@ -487,11 +517,13 @@ def test_legacy_signature_flag_is_loaded_without_master_flag_reinterpretation(
         allow_unsigned_legacy=settings.positioning_allow_unsigned_legacy,
         preexistence_required=settings.position_preexistence_required,
         flexible_validation_enabled=settings.position_flexible_validation_enabled,
+        signature_policy=settings.position_signature_policy,
     )
 
     assert policy.signature_validation_enabled is False
     assert policy.preexistence_required is True
     assert policy.flexible_validation_enabled is False
+    assert policy.signature_policy is PositionSignaturePolicy.REQUIRED
 
 
 def test_contradictory_position_policy_is_rejected_when_settings_load(
@@ -499,9 +531,51 @@ def test_contradictory_position_policy_is_rejected_when_settings_load(
 ) -> None:
     monkeypatch.setenv("POSITION_PREEXISTENCE_REQUIRED", "false")
     monkeypatch.setenv("POSITION_FLEXIBLE_VALIDATION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_AUTO_MATERIALIZATION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_IMPORT_MATERIALIZATION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_CODE_SCAN_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_VISION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_MOBILE_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_IMPORT_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_REVIEW_ENABLED", "false")
 
     with pytest.raises(ValueError, match="POSITION_FLEXIBLE_VALIDATION_ENABLED"):
         LimitsAndSchemaSettings()
+
+
+@pytest.mark.parametrize(
+    ("auto", "preexistence", "flexible", "valid"),
+    [
+        ("false", "true", "false", True),
+        ("true", "false", "true", True),
+        ("true", "true", "true", False),
+        ("true", "false", "false", False),
+        ("false", "false", "true", True),
+    ],
+)
+def test_position_auto_materialization_rollout_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+    auto: str,
+    preexistence: str,
+    flexible: str,
+    valid: bool,
+) -> None:
+    monkeypatch.setenv("POSITION_AUTO_MATERIALIZATION_ENABLED", auto)
+    monkeypatch.setenv("POSITION_PREEXISTENCE_REQUIRED", preexistence)
+    monkeypatch.setenv("POSITION_FLEXIBLE_VALIDATION_ENABLED", flexible)
+    monkeypatch.setenv("POSITION_IMPORT_MATERIALIZATION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_CODE_SCAN_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_VISION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_MOBILE_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_IMPORT_ENABLED", "false")
+    monkeypatch.setenv("POSITION_FLEXIBLE_REVIEW_ENABLED", "false")
+
+    if valid:
+        settings = LimitsAndSchemaSettings()
+        assert settings.position_auto_materialization_enabled is (auto == "true")
+    else:
+        with pytest.raises(ValueError):
+            LimitsAndSchemaSettings()
 
 
 def test_code_scan_reuses_structural_result_once_for_position() -> None:

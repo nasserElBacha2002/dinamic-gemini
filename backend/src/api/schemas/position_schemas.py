@@ -14,6 +14,7 @@ from src.api.schemas.result_evidence_schemas import (
     ResultEvidenceViewResponse,
     TraceabilityArtifactMetadataResponse,
 )
+from src.application.services.position_recognition import CANONICAL_POSITION_CODE_MAX_LENGTH
 from src.domain.reviews.entities import ReviewActionType
 
 _QtySourcePublic = Literal[
@@ -176,6 +177,12 @@ class ResultPositionRefResponse(BaseModel):
 
     id: Optional[str] = Field(None, description="client_position_labels.id snapshot.")
     name: Optional[str] = Field(None, description="Human label name (e.g. A-01).")
+    aisle_location_id: Optional[str] = Field(
+        None, description="Trusted materialized aisle_locations.id, when applicable."
+    )
+    identity_kind: Optional[str] = Field(
+        None, description="CLIENT_POSITION_LABEL or AISLE_LOCATION."
+    )
 
 
 class ResultPositionAssignmentResponse(BaseModel):
@@ -518,7 +525,11 @@ class ReviewActionRequest(BaseModel):
     corrected_quantity: Optional[int] = None
     sku: Optional[str] = None
     description: Optional[str] = None
-    position_code: Optional[str] = None
+    position_code: Optional[str] = Field(
+        None,
+        max_length=CANONICAL_POSITION_CODE_MAX_LENGTH,
+        description="Canonical position code (max length after normalization).",
+    )
     job_id: Optional[str] = Field(
         None,
         description="Inventory job id for this review; required for run-scoped positions, omitted for legacy.",

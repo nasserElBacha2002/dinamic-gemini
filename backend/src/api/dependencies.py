@@ -923,6 +923,17 @@ def get_list_aisle_assets_use_case(
     )
 
 
+def get_position_materialization_service(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    clock: Clock = Depends(get_clock),
+):
+    """Return the container-owned materializer shared with worker paths."""
+    _ = (inventory_repo, aisle_repo, clock)
+    container = get_app_container()
+    return container.get_position_materialization_service()
+
+
 def get_upsert_preliminary_detection_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
@@ -932,6 +943,7 @@ def get_upsert_preliminary_detection_use_case(
     extraction_profile_repo=Depends(get_supplier_extraction_profile_repo),
     preliminary_repo=Depends(get_mobile_preliminary_detection_repo),
     clock: Clock = Depends(get_clock),
+    position_materializer=Depends(get_position_materialization_service),
 ):
     from src.application.services.label_profile_resolver import LabelProfileResolver
     from src.application.services.position_label_detection.resolver import (
@@ -939,7 +951,7 @@ def get_upsert_preliminary_detection_use_case(
     )
     from src.application.services.position_recognition import (
         CanonicalPositionValidator,
-        PositionCompatibilityPolicy,
+        resolve_position_compatibility_policy,
     )
     from src.application.services.positioning_label_signing import (
         PositioningLabelSigningConfig,
@@ -969,25 +981,15 @@ def get_upsert_preliminary_detection_use_case(
         asset_repo=asset_repo,
         preliminary_repo=preliminary_repo,
         clock=clock,
-        enabled=bool(
-            getattr(settings, "server_preliminary_detection_ingest_enabled", False)
-        ),
+        enabled=bool(getattr(settings, "server_preliminary_detection_ingest_enabled", False)),
         canonical_position_validator=CanonicalPositionValidator(
             signing=signing,
-            resolver=PositionLabelResolver(
-                label_repo=container.get_client_position_label_repo()
-            ),
-            policy=PositionCompatibilityPolicy.resolve(
-                signature_validation_enabled=bool(
-                    settings.position_label_signature_validation_enabled
-                ),
-                allow_unsigned_legacy=bool(settings.positioning_allow_unsigned_legacy),
-                preexistence_required=bool(settings.position_preexistence_required),
-                flexible_validation_enabled=bool(
-                    settings.position_flexible_validation_enabled
-                ),
-            ),
+            resolver=PositionLabelResolver(label_repo=container.get_client_position_label_repo()),
+            policy=resolve_position_compatibility_policy(settings),
         ),
+        position_materializer=position_materializer,
+        auto_materialization_enabled=bool(settings.position_auto_materialization_enabled),
+        flexible_mobile_enabled=bool(settings.position_flexible_mobile_enabled),
         label_profile_resolver=LabelProfileResolver(
             label_profile_repo=label_profile_repo,
             client_supplier_repo=client_supplier_repo,
@@ -1061,6 +1063,94 @@ def _build_preview_local_csv_import(
     )
 
 
+def _build_import_canonical_position_materializer(container):
+    settings = container.settings
+    if not bool(getattr(settings, "position_import_materialization_enabled", False)):
+        return None
+    if not bool(getattr(settings, "position_flexible_import_enabled", False)):
+        return None
+    if not bool(getattr(settings, "position_flexible_validation_enabled", False)):
+        return None
+    from src.application.services.import_canonical_position_materializer import (
+        ImportCanonicalPositionMaterializer,
+    )
+
+    service = container.get_position_materialization_service()
+    if service is None:
+        return None
+    return ImportCanonicalPositionMaterializer(
+        materialize_service=service,
+        enabled=True,
+    )
+
+
+def build_confirm_local_csv_import(
+    *,
+    container,
+    clock: Clock,
+    inventory_repo: InventoryRepository,
+    aisle_repo: AisleRepository,
+    position_repo: PositionRepository,
+    product_record_repo: ProductRecordRepository,
+    status_reconciler: InventoryStatusReconciler,
+    enabled: bool | None = None,
+):
+    from src.application.services.local_csv_position_materializer import (
+        LocalCsvPositionMaterializer,
+    )
+    from src.application.services.positioning_label_signing import (
+        PositioningLabelSigningConfig,
+        PositioningLabelSigningService,
+        parse_previous_secrets,
+    )
+    from src.application.services.product_labels.issued_product_label_resolver import (
+        IssuedProductLabelResolver,
+    )
+    from src.application.use_cases.inventories.manage_local_csv_import import (
+        ConfirmLocalCsvImport,
+    )
+
+    settings = container.settings
+    signing = PositioningLabelSigningService(
+        PositioningLabelSigningConfig(
+            secret=settings.positioning_label_hmac_secret or None,
+            key_version=int(settings.positioning_label_hmac_key_version),
+            previous_secrets=parse_previous_secrets(
+                settings.positioning_label_hmac_previous_secrets
+            ),
+            required=bool(settings.positioning_label_signing_required),
+        )
+    )
+    canonical_materializer = _build_import_canonical_position_materializer(container)
+    return ConfirmLocalCsvImport(
+        import_repo=container.get_local_csv_import_repo(),
+        result_writer=container.get_local_csv_result_writer(),
+        clock=clock,
+        enabled=(
+            bool(getattr(settings, "server_csv_import_enabled", False))
+            if enabled is None
+            else enabled
+        ),
+        position_materializer=LocalCsvPositionMaterializer(
+            position_repo=position_repo,
+            product_record_repo=product_record_repo,
+            counted_product_label_repo=container.get_counted_product_label_repo(),
+            issued_label_resolver=IssuedProductLabelResolver(
+                issued_repo=container.get_issued_product_label_repo()
+            ),
+            inventory_repo=inventory_repo,
+            client_position_label_repo=container.get_client_position_label_repo(),
+            positioning_signing=signing if signing.can_sign else None,
+        ),
+        aisle_repo=aisle_repo,
+        status_reconciler=status_reconciler,
+        inventory_repo=inventory_repo,
+        canonical_position_materializer=canonical_materializer,
+        materialization_lease_sec=int(settings.local_csv_import_recovery_lease_sec),
+        materialization_max_attempts=int(settings.local_csv_import_recovery_max_attempts),
+    )
+
+
 def get_preview_local_csv_import_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
@@ -1086,51 +1176,13 @@ def get_confirm_local_csv_import_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ):
-    from src.application.services.local_csv_position_materializer import (
-        LocalCsvPositionMaterializer,
-    )
-    from src.application.services.positioning_label_signing import (
-        PositioningLabelSigningConfig,
-        PositioningLabelSigningService,
-        parse_previous_secrets,
-    )
-    from src.application.services.product_labels.issued_product_label_resolver import (
-        IssuedProductLabelResolver,
-    )
-    from src.application.use_cases.inventories.manage_local_csv_import import (
-        ConfirmLocalCsvImport,
-    )
-    from src.config import load_settings
-
-    settings = load_settings()
-    container = get_app_container()
-    signing = PositioningLabelSigningService(
-        PositioningLabelSigningConfig(
-            secret=settings.positioning_label_hmac_secret or None,
-            key_version=int(settings.positioning_label_hmac_key_version),
-            previous_secrets=parse_previous_secrets(
-                settings.positioning_label_hmac_previous_secrets
-            ),
-            required=bool(settings.positioning_label_signing_required),
-        )
-    )
-    return ConfirmLocalCsvImport(
-        import_repo=container.get_local_csv_import_repo(),
-        result_writer=container.get_local_csv_result_writer(),
+    return build_confirm_local_csv_import(
+        container=get_app_container(),
         clock=clock,
-        enabled=bool(getattr(settings, "server_csv_import_enabled", False)),
-        position_materializer=LocalCsvPositionMaterializer(
-            position_repo=position_repo,
-            product_record_repo=product_record_repo,
-            counted_product_label_repo=container.get_counted_product_label_repo(),
-            issued_label_resolver=IssuedProductLabelResolver(
-                issued_repo=container.get_issued_product_label_repo()
-            ),
-            inventory_repo=inventory_repo,
-            client_position_label_repo=container.get_client_position_label_repo(),
-            positioning_signing=signing if signing.can_sign else None,
-        ),
+        inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
         status_reconciler=status_reconciler,
     )
 
@@ -1234,6 +1286,7 @@ def get_confirm_local_inventory_package_use_case(
         result_writer=container.get_local_csv_result_writer(),
         materializer=materializer,
         aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
         clock=clock,
         enabled=bool(getattr(settings, "server_local_inventory_package_enabled", False)),
         position_materializer=LocalCsvPositionMaterializer(
@@ -1247,6 +1300,10 @@ def get_confirm_local_inventory_package_use_case(
             client_position_label_repo=container.get_client_position_label_repo(),
             positioning_signing=signing if signing.can_sign else None,
         ),
+        canonical_position_materializer=_build_import_canonical_position_materializer(
+            container
+        ),
+        materialization_lease_sec=int(settings.local_csv_import_recovery_lease_sec),
     )
 
 
@@ -1311,9 +1368,7 @@ def get_preview_dinamic_scanner_txt_import_use_case(
         clock=clock,
         enabled=_dinamic_scanner_txt_import_enabled(settings),
         max_lines=int(getattr(settings, "server_dinamic_scanner_txt_max_lines", 50_000)),
-        max_line_length=int(
-            getattr(settings, "server_dinamic_scanner_txt_max_line_length", 512)
-        ),
+        max_line_length=int(getattr(settings, "server_dinamic_scanner_txt_max_line_length", 512)),
     )
 
 
@@ -1328,55 +1383,22 @@ def get_confirm_dinamic_scanner_txt_import_use_case(
     create_aisle: CreateAisleUseCase = Depends(get_create_aisle_use_case),
 ):
     from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
-    from src.application.services.local_csv_position_materializer import (
-        LocalCsvPositionMaterializer,
-    )
-    from src.application.services.positioning_label_signing import (
-        PositioningLabelSigningConfig,
-        PositioningLabelSigningService,
-        parse_previous_secrets,
-    )
-    from src.application.services.product_labels.issued_product_label_resolver import (
-        IssuedProductLabelResolver,
-    )
     from src.application.use_cases.inventories.manage_dinamic_scanner_txt_import import (
         ConfirmDinamicScannerTxtImport,
-    )
-    from src.application.use_cases.inventories.manage_local_csv_import import (
-        ConfirmLocalCsvImport,
     )
     from src.config import load_settings
 
     settings = load_settings()
     container = get_app_container()
-    signing = PositioningLabelSigningService(
-        PositioningLabelSigningConfig(
-            secret=settings.positioning_label_hmac_secret or None,
-            key_version=int(settings.positioning_label_hmac_key_version),
-            previous_secrets=parse_previous_secrets(
-                settings.positioning_label_hmac_previous_secrets
-            ),
-            required=bool(settings.positioning_label_signing_required),
-        )
-    )
-    csv_confirm = ConfirmLocalCsvImport(
-        import_repo=container.get_local_csv_import_repo(),
-        result_writer=container.get_local_csv_result_writer(),
+    csv_confirm = build_confirm_local_csv_import(
+        container=container,
         clock=clock,
-        enabled=_csv_import_pipeline_enabled(settings),
-        position_materializer=LocalCsvPositionMaterializer(
-            position_repo=position_repo,
-            product_record_repo=product_record_repo,
-            counted_product_label_repo=container.get_counted_product_label_repo(),
-            issued_label_resolver=IssuedProductLabelResolver(
-                issued_repo=container.get_issued_product_label_repo()
-            ),
-            inventory_repo=inventory_repo,
-            client_position_label_repo=container.get_client_position_label_repo(),
-            positioning_signing=signing if signing.can_sign else None,
-        ),
+        inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
         status_reconciler=status_reconciler,
+        enabled=_csv_import_pipeline_enabled(settings),
     )
     aisle_resolver = DinamicScannerAisleResolver(
         inventory_repo=inventory_repo,
@@ -1409,9 +1431,7 @@ def get_evaluate_authoritative_aisle_readiness(
         authoritative_repo=c.get_authoritative_local_code_scan_repo(),
         finalization_repo=c.get_authoritative_aisle_finalization_repo(),
         position_repo=c.get_position_repo(),
-        enabled=bool(
-            getattr(settings, "server_authoritative_aisle_finalization_enabled", False)
-        ),
+        enabled=bool(getattr(settings, "server_authoritative_aisle_finalization_enabled", False)),
     )
 
 
@@ -1432,9 +1452,7 @@ def get_finalize_authoritative_aisle_use_case(
 
     settings = load_settings()
     c = get_app_container()
-    enabled = bool(
-        getattr(settings, "server_authoritative_aisle_finalization_enabled", False)
-    )
+    enabled = bool(getattr(settings, "server_authoritative_aisle_finalization_enabled", False))
     readiness = EvaluateAuthoritativeAisleReadiness(
         asset_repo=asset_repo,
         authoritative_repo=c.get_authoritative_local_code_scan_repo(),
@@ -1476,9 +1494,7 @@ def get_reconcile_preliminary_detections_use_case(
 
     settings = load_settings()
     enabled = bool(getattr(settings, "server_preliminary_reconciliation_enabled", False))
-    metrics_enabled = bool(
-        getattr(settings, "preliminary_reconciliation_metrics_enabled", False)
-    )
+    metrics_enabled = bool(getattr(settings, "preliminary_reconciliation_metrics_enabled", False))
     c = get_app_container()
     enqueue = EnqueuePreliminaryReconciliationsUseCase(
         aisle_repo=aisle_repo,
@@ -1522,9 +1538,7 @@ def get_process_preliminary_reconciliations_use_case():
         state_repo=c.get_job_asset_processing_state_repo(),
         attempt_repo=c.get_processing_attempt_repo(),
         job_source_asset_repo=c.get_job_source_asset_repo(),
-        enabled=bool(
-            getattr(settings, "server_preliminary_reconciliation_enabled", False)
-        ),
+        enabled=bool(getattr(settings, "server_preliminary_reconciliation_enabled", False)),
         metrics_enabled=bool(
             getattr(settings, "preliminary_reconciliation_metrics_enabled", False)
         ),
@@ -1697,9 +1711,7 @@ def get_export_aisle_code_scans_use_case(
 def get_upload_supplier_reference_images_use_case(
     client_repo: ClientRepository = Depends(get_client_repo),
     client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    reference_repo: SupplierReferenceImageRepository = Depends(
-        get_supplier_reference_image_repo
-    ),
+    reference_repo: SupplierReferenceImageRepository = Depends(get_supplier_reference_image_repo),
     artifact_storage=Depends(get_artifact_storage),
     clock: Clock = Depends(get_clock),
 ) -> UploadSupplierReferenceImagesUseCase:
@@ -1715,9 +1727,7 @@ def get_upload_supplier_reference_images_use_case(
 def get_list_supplier_reference_images_use_case(
     client_repo: ClientRepository = Depends(get_client_repo),
     client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    reference_repo: SupplierReferenceImageRepository = Depends(
-        get_supplier_reference_image_repo
-    ),
+    reference_repo: SupplierReferenceImageRepository = Depends(get_supplier_reference_image_repo),
 ) -> ListSupplierReferenceImagesUseCase:
     return ListSupplierReferenceImagesUseCase(
         client_repo=client_repo,
@@ -1729,9 +1739,7 @@ def get_list_supplier_reference_images_use_case(
 def get_get_supplier_reference_image_use_case(
     client_repo: ClientRepository = Depends(get_client_repo),
     client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    reference_repo: SupplierReferenceImageRepository = Depends(
-        get_supplier_reference_image_repo
-    ),
+    reference_repo: SupplierReferenceImageRepository = Depends(get_supplier_reference_image_repo),
 ) -> GetSupplierReferenceImageUseCase:
     return GetSupplierReferenceImageUseCase(
         client_repo=client_repo,
@@ -1743,9 +1751,7 @@ def get_get_supplier_reference_image_use_case(
 def get_delete_supplier_reference_image_use_case(
     client_repo: ClientRepository = Depends(get_client_repo),
     client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    reference_repo: SupplierReferenceImageRepository = Depends(
-        get_supplier_reference_image_repo
-    ),
+    reference_repo: SupplierReferenceImageRepository = Depends(get_supplier_reference_image_repo),
     artifact_storage=Depends(get_artifact_storage),
 ) -> DeleteSupplierReferenceImageUseCase:
     return DeleteSupplierReferenceImageUseCase(
@@ -2016,7 +2022,52 @@ def get_update_position_code_use_case(
     review_repo: ReviewActionRepository = Depends(get_review_action_repo),
     clock: Clock = Depends(get_clock),
     aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
+    principal: AccessPrincipal = Depends(get_access_principal),
+    position_materializer=Depends(get_position_materialization_service),
 ) -> UpdatePositionCodeUseCase:
+    from src.application.services.position_label_detection.resolver import (
+        PositionLabelResolver,
+    )
+    from src.application.services.position_recognition import (
+        AcceptPositionCoordinator,
+        CanonicalPositionValidator,
+        resolve_position_compatibility_policy,
+    )
+    from src.application.services.positioning_label_signing import (
+        PositioningLabelSigningConfig,
+        PositioningLabelSigningService,
+        parse_previous_secrets,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    flexible_review = bool(settings.position_flexible_review_enabled)
+    validator = None
+    accept_coordinator = None
+    if flexible_review:
+        container = get_app_container()
+        signing = PositioningLabelSigningService(
+            PositioningLabelSigningConfig(
+                secret=settings.positioning_label_hmac_secret or None,
+                key_version=int(settings.positioning_label_hmac_key_version),
+                previous_secrets=parse_previous_secrets(
+                    settings.positioning_label_hmac_previous_secrets
+                ),
+                required=bool(settings.positioning_label_signing_required),
+            )
+        )
+        validator = CanonicalPositionValidator(
+            signing=signing,
+            resolver=PositionLabelResolver(
+                label_repo=container.get_client_position_label_repo()
+            ),
+            policy=resolve_position_compatibility_policy(settings),
+        )
+        accept_coordinator = AcceptPositionCoordinator(
+            settings=settings,
+            auto_materialization_enabled=bool(settings.position_auto_materialization_enabled),
+            materializer=position_materializer,
+        )
     return UpdatePositionCodeUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
@@ -2024,6 +2075,11 @@ def get_update_position_code_use_case(
         review_repo=review_repo,
         clock=clock,
         aisle_review_sync=aisle_review_sync,
+        principal=principal,
+        canonical_position_validator=validator,
+        accept_coordinator=accept_coordinator,
+        flexible_review_enabled=flexible_review,
+        auto_materialization_enabled=bool(settings.position_auto_materialization_enabled),
     )
 
 
@@ -3075,6 +3131,10 @@ def get_position_reconciliation_repo():
     return get_app_container().get_position_reconciliation_repo()
 
 
+def get_materialized_position_identity_reader():
+    return get_app_container().get_materialized_position_identity_reader()
+
+
 def get_client_position_label_repo():
     return get_app_container().get_client_position_label_repo()
 
@@ -3180,6 +3240,7 @@ def get_reconcile_job_positions_use_case(
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     detection_repo=Depends(get_image_position_label_detection_repo),
     reconciliation_repo=Depends(get_position_reconciliation_repo),
+    materialized_identity_reader=Depends(get_materialized_position_identity_reader),
     ordered_session_repo=Depends(get_ordered_capture_session_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
     access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
@@ -3204,6 +3265,9 @@ def get_reconcile_job_positions_use_case(
         product_record_repo=product_record_repo,
         detection_repo=detection_repo,
         reconciliation_repo=reconciliation_repo,
+        materialized_identity_reader=(
+            materialized_identity_reader if settings.position_auto_materialization_enabled else None
+        ),
         clock=clock,
         position_repo=position_repo,
         readiness_policy=PositionReconciliationReadinessPolicy(ordered_session_repo),
@@ -3422,9 +3486,7 @@ def get_replace_aisle_location_label_use_case(
         replace_uow = SqlAisleLocationLabelReplaceUnitOfWork(container._get_v3_sql_client())
     else:
         if not isinstance(label_repo, MemoryAisleLocationLabelRepository):
-            raise RuntimeError(
-                "Memory replace UoW requires MemoryAisleLocationLabelRepository"
-            )
+            raise RuntimeError("Memory replace UoW requires MemoryAisleLocationLabelRepository")
         replace_uow = MemoryAisleLocationLabelReplaceUnitOfWork(label_repo)
     return ReplaceAisleLocationLabelUseCase(
         location_repo=location_repo,

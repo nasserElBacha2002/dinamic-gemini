@@ -1094,6 +1094,58 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: SERVER_LOCAL_INVENTORY_PACKAGE_MAX_BYTES."
         ),
     )
+    local_csv_import_recovery_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("LOCAL_CSV_IMPORT_RECOVERY_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Enable durable recovery for stuck local CSV / package import materialization. "
+            "Default false. Env: LOCAL_CSV_IMPORT_RECOVERY_ENABLED."
+        ),
+    )
+    local_csv_import_recovery_interval_sec: int = Field(
+        default_factory=lambda: int(
+            os.getenv("LOCAL_CSV_IMPORT_RECOVERY_INTERVAL_SEC", "60") or "60"
+        ),
+        ge=1,
+        le=3600,
+    )
+    local_csv_import_recovery_batch_size: int = Field(
+        default_factory=lambda: int(
+            os.getenv("LOCAL_CSV_IMPORT_RECOVERY_BATCH_SIZE", "20") or "20"
+        ),
+        ge=1,
+        le=1000,
+    )
+    local_csv_import_recovery_max_attempts: int = Field(
+        default_factory=lambda: int(
+            os.getenv("LOCAL_CSV_IMPORT_RECOVERY_MAX_ATTEMPTS", "5") or "5"
+        ),
+        ge=1,
+        le=100,
+    )
+    local_csv_import_recovery_lease_sec: int = Field(
+        default_factory=lambda: int(
+            os.getenv("LOCAL_CSV_IMPORT_RECOVERY_LEASE_SEC", "120") or "120"
+        ),
+        ge=5,
+        le=3600,
+    )
+    local_csv_import_recovery_backoff_base_sec: int = Field(
+        default_factory=lambda: int(
+            os.getenv("LOCAL_CSV_IMPORT_RECOVERY_BACKOFF_BASE_SEC", "60") or "60"
+        ),
+        ge=1,
+        le=86400,
+    )
+    local_csv_import_recovery_backoff_max_sec: int = Field(
+        default_factory=lambda: int(
+            os.getenv("LOCAL_CSV_IMPORT_RECOVERY_BACKOFF_MAX_SEC", "3600") or "3600"
+        ),
+        ge=1,
+        le=604800,
+    )
     server_dinamic_scanner_txt_import_enabled: bool = Field(
         default_factory=lambda: (
             (
@@ -1148,8 +1200,8 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 4: accept mobile preliminary CODE_SCAN drafts (diagnostic only). "
-            "Default false. Does not affect positions or authoritative pipeline results. "
+            "Accept mobile preliminary CODE_SCAN drafts. Position writes remain separately "
+            "gated by POSITION_AUTO_MATERIALIZATION_ENABLED. Default false. "
             "Env: SERVER_PRELIMINARY_DETECTION_INGEST."
         ),
     )
@@ -1263,6 +1315,14 @@ class LimitsAndSchemaSettings(BaseModel):
                 "SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST=true requires "
                 "SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY=true "
                 "(fail-closed; no remote CODE_SCAN fallback)."
+            )
+        if (
+            self.local_csv_import_recovery_backoff_max_sec
+            < self.local_csv_import_recovery_backoff_base_sec
+        ):
+            raise ValueError(
+                "LOCAL_CSV_IMPORT_RECOVERY_BACKOFF_MAX_SEC must be >= "
+                "LOCAL_CSV_IMPORT_RECOVERY_BACKOFF_BASE_SEC"
             )
         return self
 
@@ -2056,11 +2116,162 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Master gate for accepting previously unknown positions. False requires "
-            "POSITION_PREEXISTENCE_REQUIRED=true but does not reinterpret the historical "
-            "signature-validation flag. Env: POSITION_FLEXIBLE_VALIDATION_ENABLED."
+            "Master gate for accepting previously unknown positions. Flexible validation "
+            "may run without auto-materialization. Env: POSITION_FLEXIBLE_VALIDATION_ENABLED."
         ),
     )
+    position_signature_policy: str = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_SIGNATURE_POLICY", "REQUIRED").strip().upper() or "REQUIRED"
+        ),
+        description=(
+            "Dinamic signature semantics: REQUIRED (legacy), OPTIONAL, or NOT_APPLICABLE. "
+            "POSITIONING_ALLOW_UNSIGNED_LEGACY remains a separate catalog path when REQUIRED. "
+            "Env: POSITION_SIGNATURE_POLICY (default REQUIRED)."
+        ),
+    )
+    position_flexible_shadow_mode_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_FLEXIBLE_SHADOW_MODE_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Evaluate flexible policy in shadow without changing productive accept/reject. "
+            "Env: POSITION_FLEXIBLE_SHADOW_MODE_ENABLED (default false)."
+        ),
+    )
+    position_flexible_code_scan_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_FLEXIBLE_CODE_SCAN_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Channel gate: CODE_SCAN flexible accept. Requires master flexible validation. "
+            "Env: POSITION_FLEXIBLE_CODE_SCAN_ENABLED (default false)."
+        ),
+    )
+    position_flexible_vision_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_FLEXIBLE_VISION_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Channel gate: Vision flexible accept. Requires master flexible validation. "
+            "Env: POSITION_FLEXIBLE_VISION_ENABLED (default false)."
+        ),
+    )
+    position_flexible_mobile_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_FLEXIBLE_MOBILE_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Channel gate: mobile preliminary flexible accept. Requires master flexible. "
+            "Env: POSITION_FLEXIBLE_MOBILE_ENABLED (default false)."
+        ),
+    )
+    position_flexible_import_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_FLEXIBLE_IMPORT_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Channel gate: import flexible accept. Requires master flexible + "
+            "POSITION_IMPORT_MATERIALIZATION_ENABLED. Env: POSITION_FLEXIBLE_IMPORT_ENABLED."
+        ),
+    )
+    position_flexible_review_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_FLEXIBLE_REVIEW_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Channel gate: review UpdatePositionCode flexible validate/materialize. "
+            "Requires master flexible. Env: POSITION_FLEXIBLE_REVIEW_ENABLED (default false)."
+        ),
+    )
+    position_auto_materialization_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_AUTO_MATERIALIZATION_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Materialize canonically valid V2 mobile position references. Enabling requires "
+            "flexible validation and disables preexistence enforcement. "
+            "Env: POSITION_AUTO_MATERIALIZATION_ENABLED."
+        ),
+    )
+    position_import_materialization_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_IMPORT_MATERIALIZATION_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Materialize TXT/CSV/ZIP import position codes via the Phase 3 canonical "
+            "materializer. Requires POSITION_AUTO_MATERIALIZATION_ENABLED. Default false. "
+            "Env: POSITION_IMPORT_MATERIALIZATION_ENABLED."
+        ),
+    )
+    position_materialization_recovery_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("POSITION_MATERIALIZATION_RECOVERY_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Explicitly enable durable association recovery when auto-materialization is off. "
+            "Recovery is also eligible when POSITION_AUTO_MATERIALIZATION_ENABLED=true."
+        ),
+    )
+    position_materialization_recovery_interval_sec: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_MATERIALIZATION_RECOVERY_INTERVAL_SEC", "60") or "60"
+        ),
+        ge=1,
+        le=3600,
+    )
+    position_materialization_recovery_batch_size: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_MATERIALIZATION_RECOVERY_BATCH_SIZE", "20") or "20"
+        ),
+        ge=1,
+        le=1000,
+    )
+    position_materialization_recovery_max_attempts: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_MATERIALIZATION_RECOVERY_MAX_ATTEMPTS", "5") or "5"
+        ),
+        ge=1,
+        le=100,
+    )
+    position_materialization_recovery_lease_sec: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_MATERIALIZATION_RECOVERY_LEASE_SEC", "120") or "120"
+        ),
+        ge=5,
+        le=3600,
+    )
+    position_materialization_recovery_backoff_base_sec: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_MATERIALIZATION_RECOVERY_BACKOFF_BASE_SEC", "60") or "60"
+        ),
+        ge=1,
+        le=86400,
+    )
+    position_materialization_recovery_backoff_max_sec: int = Field(
+        default_factory=lambda: int(
+            os.getenv("POSITION_MATERIALIZATION_RECOVERY_BACKOFF_MAX_SEC", "3600") or "3600"
+        ),
+        ge=1,
+        le=604800,
+    )
+
+    @property
+    def position_materialization_recovery_active(self) -> bool:
+        return (
+            self.position_auto_materialization_enabled
+            or self.position_materialization_recovery_enabled
+        )
+
     positioning_allow_unsigned_legacy: bool = Field(
         default_factory=lambda: (
             os.getenv("POSITIONING_ALLOW_UNSIGNED_LEGACY", "true").strip().lower()
@@ -2229,6 +2440,56 @@ class LimitsAndSchemaSettings(BaseModel):
             raise ValueError(
                 "POSITION_PREEXISTENCE_REQUIRED=false requires "
                 "POSITION_FLEXIBLE_VALIDATION_ENABLED=true"
+            )
+        if self.position_auto_materialization_enabled and (
+            not self.position_flexible_validation_enabled or self.position_preexistence_required
+        ):
+            raise ValueError(
+                "POSITION_AUTO_MATERIALIZATION_ENABLED=true requires "
+                "POSITION_FLEXIBLE_VALIDATION_ENABLED=true and "
+                "POSITION_PREEXISTENCE_REQUIRED=false"
+            )
+        if self.position_import_materialization_enabled and (
+            not self.position_auto_materialization_enabled
+        ):
+            raise ValueError(
+                "POSITION_IMPORT_MATERIALIZATION_ENABLED=true requires "
+                "POSITION_AUTO_MATERIALIZATION_ENABLED=true"
+            )
+        signature_policy = str(self.position_signature_policy or "").strip().upper()
+        if signature_policy not in {"REQUIRED", "OPTIONAL", "NOT_APPLICABLE"}:
+            raise ValueError(
+                "POSITION_SIGNATURE_POLICY must be REQUIRED, OPTIONAL, or NOT_APPLICABLE"
+            )
+        object.__setattr__(self, "position_signature_policy", signature_policy)
+
+        channel_flags = {
+            "POSITION_FLEXIBLE_CODE_SCAN_ENABLED": self.position_flexible_code_scan_enabled,
+            "POSITION_FLEXIBLE_VISION_ENABLED": self.position_flexible_vision_enabled,
+            "POSITION_FLEXIBLE_MOBILE_ENABLED": self.position_flexible_mobile_enabled,
+            "POSITION_FLEXIBLE_IMPORT_ENABLED": self.position_flexible_import_enabled,
+            "POSITION_FLEXIBLE_REVIEW_ENABLED": self.position_flexible_review_enabled,
+        }
+        if any(channel_flags.values()) and not self.position_flexible_validation_enabled:
+            enabled = ", ".join(name for name, on in channel_flags.items() if on)
+            raise ValueError(
+                f"{enabled} requires POSITION_FLEXIBLE_VALIDATION_ENABLED=true"
+            )
+        if self.position_flexible_import_enabled and (
+            not self.position_import_materialization_enabled
+        ):
+            raise ValueError(
+                "POSITION_FLEXIBLE_IMPORT_ENABLED=true requires "
+                "POSITION_IMPORT_MATERIALIZATION_ENABLED=true "
+                "(and therefore POSITION_AUTO_MATERIALIZATION_ENABLED=true)"
+            )
+        if (
+            self.position_materialization_recovery_backoff_max_sec
+            < self.position_materialization_recovery_backoff_base_sec
+        ):
+            raise ValueError(
+                "POSITION_MATERIALIZATION_RECOVERY_BACKOFF_MAX_SEC must be >= "
+                "POSITION_MATERIALIZATION_RECOVERY_BACKOFF_BASE_SEC"
             )
         if self.max_upload_file_size_mb <= 0 or self.max_upload_request_size_mb <= 0:
             raise ValueError(

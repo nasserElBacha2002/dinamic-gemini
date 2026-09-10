@@ -139,6 +139,7 @@ def test_plan_stage_apply_race_marks_duplicate_without_productive_dupes(
                 confirmed_by_user_id="user-a",
                 apply_productive=apply_productive,
                 clock_now=clock.now,
+                owner="user-a",
                 stage_evidence=stage_evidence,
             )
         except BaseException as exc:  # noqa: BLE001 — capture for main thread

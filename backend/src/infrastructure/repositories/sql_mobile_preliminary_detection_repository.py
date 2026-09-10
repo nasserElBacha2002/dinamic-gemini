@@ -101,6 +101,11 @@ def _row_to_entity(row) -> MobilePreliminaryDetection:
         position_reconciliation_revision=int(
             getattr(row, "position_reconciliation_revision", 0) or 0
         ),
+        position_created=getattr(row, "position_created", None),
+        position_idempotent_replay=getattr(row, "position_idempotent_replay", None),
+        position_materialization_request_id=optional_nonempty_db_str(
+            getattr(row, "position_materialization_request_id", None)
+        ),
     )
 
 
@@ -116,13 +121,26 @@ position_profile_id, position_profile_version, position_client_supplier_id,
 position_signature_present, position_signature_verification, position_captured_at,
 position_result_status, position_result_error_code, position_result_retryable,
 position_normalized_code, position_remote_id, position_remote_label_id,
-position_validated_at, position_reconciliation_revision
+position_validated_at, position_reconciliation_revision,
+position_created, position_idempotent_replay, position_materialization_request_id
 """
 
 
 class SqlMobilePreliminaryDetectionRepository:
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
+
+    def exists_by_materialization_request_id(self, request_id: str) -> bool:
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT TOP (1) 1
+                FROM dbo.mobile_preliminary_detections
+                WHERE position_materialization_request_id = ?
+                """,
+                (request_id,),
+            )
+            return cur.fetchone() is not None
 
     def get_by_draft_id(self, draft_id: str) -> MobilePreliminaryDetection | None:
         did = (draft_id or "").strip()
@@ -185,7 +203,8 @@ class SqlMobilePreliminaryDetectionRepository:
                         position_captured_at, position_result_status, position_result_error_code,
                         position_result_retryable, position_normalized_code, position_remote_id,
                         position_remote_label_id, position_validated_at,
-                        position_reconciliation_revision
+                        position_reconciliation_revision, position_created,
+                        position_idempotent_replay, position_materialization_request_id
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?,
@@ -194,7 +213,7 @@ class SqlMobilePreliminaryDetectionRepository:
                         ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """,
                     (
@@ -244,6 +263,9 @@ class SqlMobilePreliminaryDetectionRepository:
                         row.position_remote_label_id,
                         row.position_validated_at,
                         row.position_reconciliation_revision,
+                        row.position_created,
+                        row.position_idempotent_replay,
+                        row.position_materialization_request_id,
                     ),
                 )
         except pyodbc.IntegrityError as exc:

@@ -15,6 +15,8 @@ import {
   parseDinamicPositionPayload,
   parseActivePositionStateJson,
   createActivePositionState,
+  normalizeLocalPositionCode,
+  serializeActivePositionState,
 } from '../src/core/positionLabelPayload';
 
 const v2Payload = (over: Record<string, unknown> = {}) =>
@@ -148,19 +150,23 @@ describe('positionLabelPayload', () => {
   });
 
   it('round-trips a supplier V2 position without remote ids', () => {
+    const rawCode = '  supplier-a  ';
+    const rawPayload = '\n supplier-payload \t';
     const supplier = createActivePositionState({
       localRecognitionId: 'local-supplier-1',
       captureSessionId: 'session-supplier',
       inventoryId: 'inventory-1',
       aisleLocalId: 'aisle-1',
-      rawCode: ' supplier-a ',
-      rawPayload: ' supplier-a ',
+      rawCode,
+      rawPayload,
       source: 'LOCAL_CODE_SCAN',
       profileId: 'profile-1',
       profileVersion: 3,
       clientSupplierId: 'supplier-1',
     });
     expect(supplier.normalizedCode).toBe('SUPPLIER-A');
+    expect(supplier.rawCode).toBe(rawCode);
+    expect(supplier.rawPayload).toBe(rawPayload);
     expect(supplier.remotePositionId).toBeNull();
     expect(supplier.signatureEvidence.verification).toBe('MISSING');
 
@@ -170,6 +176,15 @@ describe('positionLabelPayload', () => {
       aisleLocalId: 'aisle-1',
     });
     expect(restored.ok).toBe(true);
+    if (!restored.ok) throw new Error(restored.errorCode);
+    expect(restored.state.rawCode).toBe(rawCode);
+    expect(restored.state.rawPayload).toBe(rawPayload);
+    expect(restored.state.normalizedCode).toBe('SUPPLIER-A');
+    expect(JSON.parse(serializeActivePositionState(restored.state))).toMatchObject({
+      rawCode,
+      rawPayload,
+      normalizedCode: 'SUPPLIER-A',
+    });
     const activation = preparePositionActivation(supplier);
     commitPositionActivation(activation);
     expect(getActivePosition('session-supplier')?.clientSupplierId).toBe('supplier-1');
@@ -183,6 +198,46 @@ describe('positionLabelPayload', () => {
     expect(supplierTransition.kind).toBe('applied');
   });
 
+  it.each([
+    [' spaces and casing ', 'SPACES AND CASING'],
+    ['po\u0301s-a', 'PÓS-A'],
+    ['x'.repeat(64), 'X'.repeat(64)],
+  ])('uses canonical position normalization for %s', (input, expected) => {
+    expect(normalizeLocalPositionCode(input)).toBe(expected);
+  });
+
+  it.each(['', '\u0000POS-A', 'x'.repeat(65)])(
+    'rejects invalid canonical position code without corrupting state',
+    (input) => {
+      expect(() => normalizeLocalPositionCode(input)).toThrow();
+      expect(getActivePosition('invalid-session')).toBeNull();
+    },
+  );
+
+  it('compares persisted NFC/NFD codes canonically and stores NFC', () => {
+    const state = createActivePositionState({
+      localRecognitionId: 'unicode-position',
+      captureSessionId: 'unicode-session',
+      inventoryId: 'inventory-1',
+      aisleLocalId: 'aisle-1',
+      rawCode: 'pós-a',
+      rawPayload: 'pós-a',
+      source: 'LOCAL_CODE_SCAN',
+    });
+    const persisted = {
+      ...state,
+      labelId: 'PO\u0301S-A',
+      normalizedCode: 'po\u0301s-a',
+    };
+    const parsed = parseActivePositionStateJson(JSON.stringify(persisted), {
+      captureSessionId: 'unicode-session',
+      inventoryId: 'inventory-1',
+      aisleLocalId: 'aisle-1',
+    });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.state.normalizedCode).toBe('PÓS-A');
+  });
+
   it('rejects corrupt persisted state without throwing', () => {
     expect(
       parseActivePositionStateJson('{broken', {
@@ -194,7 +249,7 @@ describe('positionLabelPayload', () => {
   });
 
   it('migrates a legacy active_position_json without requiring reinstall', () => {
-    const raw = v2Payload({ label_id: 'LEGACY-POS' });
+    const raw = `  ${v2Payload({ label_id: 'LEGACY-POS' })}\n`;
     const parsed = parseActivePositionStateJson(
       JSON.stringify({
         labelId: 'LEGACY-POS',
@@ -213,5 +268,7 @@ describe('positionLabelPayload', () => {
     expect(parsed.migrated).toBe(true);
     expect(parsed.state.schemaVersion).toBe(2);
     expect(parsed.state.normalizedCode).toBe('LEGACY-POS');
+    expect(parsed.state.rawCode).toBe(raw);
+    expect(parsed.state.rawPayload).toBe(raw);
   });
 });

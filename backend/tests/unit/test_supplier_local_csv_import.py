@@ -614,13 +614,14 @@ def test_d1_invalid_letter_still_rejected_without_metadata() -> None:
 
 
 def test_preview_confirm_parity() -> None:
-    preview, import_repo, _, _ = _preview_stack()
+    preview, import_repo, inventory_repo, _ = _preview_stack()
     writer = MemoryLocalCsvInventoryResultWriter()
     confirm = ConfirmLocalCsvImport(
         import_repo=import_repo,
         result_writer=writer,
         clock=FixedClock(),
         enabled=True,
+        inventory_repo=inventory_repo,
     )
     record = preview.execute(
         inventory_id=INVENTORY_ID,

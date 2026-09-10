@@ -105,6 +105,14 @@ class LocalCsvImport:
     conflict_policy: str | None = None
     confirmed_by_user_id: str | None = None
     source_metadata_json: str | None = None
+    last_error_code: str | None = None
+    materialization_attempts: int = 0
+    materialization_owner: str | None = None
+    materialization_lease_expires_at: datetime | None = None
+    materialization_started_at: datetime | None = None
+    materialization_last_attempt_at: datetime | None = None
+    materialization_next_retry_at: datetime | None = None
+    fencing_version: int = 0
     rows: tuple[LocalCsvImportRow, ...] = field(default_factory=tuple)
 
 

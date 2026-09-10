@@ -145,6 +145,11 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
                 product_record_repo=get_product_record_repo(),
                 detection_repo=container.get_image_position_label_detection_repo(),
                 reconciliation_repo=container.get_position_reconciliation_repo(),
+                materialized_identity_reader=(
+                    container.get_materialized_position_identity_reader()
+                    if settings.position_auto_materialization_enabled
+                    else None
+                ),
                 clock=get_clock(),
                 position_repo=get_position_repo(),
                 readiness_policy=PositionReconciliationReadinessPolicy(

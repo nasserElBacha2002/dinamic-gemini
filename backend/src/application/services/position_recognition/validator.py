@@ -38,6 +38,7 @@ from src.domain.position_recognition import (
     PositionRecognitionSource,
     PositionResolutionStatus,
     PositionSignatureEvidence,
+    PositionSignaturePolicy,
     PositionSignatureVerification,
 )
 
@@ -58,6 +59,7 @@ class PositionCompatibilityPolicy:
     allow_unsigned_legacy: bool = False
     preexistence_required: bool = True
     flexible_validation_enabled: bool = False
+    signature_policy: PositionSignaturePolicy = PositionSignaturePolicy.REQUIRED
 
     @classmethod
     def resolve(
@@ -67,6 +69,7 @@ class PositionCompatibilityPolicy:
         allow_unsigned_legacy: bool = False,
         preexistence_required: bool,
         flexible_validation_enabled: bool,
+        signature_policy: PositionSignaturePolicy | str = PositionSignaturePolicy.REQUIRED,
     ) -> PositionCompatibilityPolicy:
         flexible = bool(flexible_validation_enabled)
         if not flexible and not preexistence_required:
@@ -74,11 +77,17 @@ class PositionCompatibilityPolicy:
                 "POSITION_PREEXISTENCE_REQUIRED=false requires "
                 "POSITION_FLEXIBLE_VALIDATION_ENABLED=true"
             )
+        policy = (
+            signature_policy
+            if isinstance(signature_policy, PositionSignaturePolicy)
+            else PositionSignaturePolicy(str(signature_policy).strip().upper())
+        )
         return cls(
             signature_validation_enabled=bool(signature_validation_enabled),
             allow_unsigned_legacy=bool(allow_unsigned_legacy),
             preexistence_required=bool(preexistence_required),
             flexible_validation_enabled=flexible,
+            signature_policy=policy,
         )
 
 
@@ -110,6 +119,19 @@ class CanonicalPositionValidator:
         self._signing = signing
         self._resolver = resolver
         self._policy = policy or PositionCompatibilityPolicy()
+
+    @property
+    def policy(self) -> PositionCompatibilityPolicy:
+        return self._policy
+
+    def with_policy(self, policy: PositionCompatibilityPolicy) -> CanonicalPositionValidator:
+        """Return a validator sharing adapters but using a different policy snapshot."""
+        return CanonicalPositionValidator(
+            label_validator=self._labels,
+            signing=self._signing,
+            resolver=self._resolver,
+            policy=policy,
+        )
 
     def validate(
         self,
@@ -189,23 +211,27 @@ class CanonicalPositionValidator:
         key_version = (
             int(payload["key_version"]) if payload.get("key_version") is not None else None
         )
-        verification = (
-            PositionSignatureVerification.UNVERIFIED
-            if signature_present
-            else PositionSignatureVerification.MISSING
-        )
-        if signature_present and self._policy.signature_validation_enabled:
-            if self._signing is None:
-                verification = PositionSignatureVerification.UNVERIFIED
-            else:
-                try:
-                    verification = (
-                        PositionSignatureVerification.VERIFIED
-                        if self._signing.verify_payload(payload)
-                        else PositionSignatureVerification.INVALID
-                    )
-                except ValueError:
-                    verification = PositionSignatureVerification.INVALID
+        signature_policy = self._policy.signature_policy
+        if signature_policy is PositionSignaturePolicy.NOT_APPLICABLE:
+            verification = PositionSignatureVerification.NOT_APPLICABLE
+        else:
+            verification = (
+                PositionSignatureVerification.UNVERIFIED
+                if signature_present
+                else PositionSignatureVerification.MISSING
+            )
+            if signature_present and self._policy.signature_validation_enabled:
+                if self._signing is None:
+                    verification = PositionSignatureVerification.UNVERIFIED
+                else:
+                    try:
+                        verification = (
+                            PositionSignatureVerification.VERIFIED
+                            if self._signing.verify_payload(payload)
+                            else PositionSignatureVerification.INVALID
+                        )
+                    except ValueError:
+                        verification = PositionSignatureVerification.INVALID
 
         recognition = CanonicalPositionRecognition(
             raw_code=raw_or_empty(command.candidate.raw_payload),
@@ -224,8 +250,19 @@ class CanonicalPositionValidator:
             evidence={
                 "format": POSITIONING_LABEL_TYPE,
                 "payload_version": int(payload["version"]),
+                "signature_policy": signature_policy.value,
             },
         )
+
+        if signature_policy is PositionSignaturePolicy.NOT_APPLICABLE:
+            return self._resolve_dinamic(
+                command,
+                recognition,
+                exact_public_identifier=code.raw_code,
+                evaluate_preexistence=evaluate_preexistence,
+                unsigned_legacy_candidate=False,
+                payload_version=int(payload["version"]),
+            )
 
         if signature_present and not self._policy.signature_validation_enabled:
             return CanonicalPositionValidationResult(
@@ -233,6 +270,7 @@ class CanonicalPositionValidator:
                 recognition=recognition,
                 error_code="SIGNATURE_VALIDATION_SKIPPED",
             )
+        # INVALID is never equated with MISSING, regardless of REQUIRED/OPTIONAL.
         if verification is PositionSignatureVerification.INVALID:
             return CanonicalPositionValidationResult(
                 status=CanonicalPositionValidationStatus.INVALID_SIGNATURE,
@@ -245,23 +283,29 @@ class CanonicalPositionValidator:
                 recognition=recognition,
                 error_code="SIGNATURE_VERIFIER_UNAVAILABLE",
             )
-        if (
-            verification is PositionSignatureVerification.MISSING
-            and not self._policy.allow_unsigned_legacy
-        ):
-            return CanonicalPositionValidationResult(
-                status=CanonicalPositionValidationStatus.SIGNATURE_REQUIRED_BY_LEGACY_POLICY,
-                recognition=recognition,
-                error_code="SIGNATURE_REQUIRED_BY_LEGACY_POLICY",
-                policy_rejection=True,
-            )
+
+        unsigned_legacy_candidate = False
+        if verification is PositionSignatureVerification.MISSING:
+            if signature_policy is PositionSignaturePolicy.OPTIONAL:
+                # Missing signature is allowed; continue to resolve/materialize.
+                unsigned_legacy_candidate = False
+            elif self._policy.allow_unsigned_legacy:
+                # REQUIRED + unsigned-legacy catalog path (legacy Dinamic).
+                unsigned_legacy_candidate = True
+            else:
+                return CanonicalPositionValidationResult(
+                    status=CanonicalPositionValidationStatus.SIGNATURE_REQUIRED_BY_LEGACY_POLICY,
+                    recognition=recognition,
+                    error_code="SIGNATURE_REQUIRED_BY_LEGACY_POLICY",
+                    policy_rejection=True,
+                )
 
         return self._resolve_dinamic(
             command,
             recognition,
             exact_public_identifier=code.raw_code,
             evaluate_preexistence=evaluate_preexistence,
-            unsigned_legacy_candidate=(verification is PositionSignatureVerification.MISSING),
+            unsigned_legacy_candidate=unsigned_legacy_candidate,
             payload_version=int(payload["version"]),
         )
 

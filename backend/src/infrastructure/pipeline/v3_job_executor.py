@@ -553,6 +553,8 @@ class V3JobExecutor:
             clock=self._clock,
             unit_of_work_factory=container.get_manual_image_result_uow_factory(),
             position_detection_repo=container.get_image_position_label_detection_repo(),
+            settings=settings,
+            container=container,
         )
         try:
             batch_journal = container.get_global_fallback_batch_request_repo()
@@ -574,9 +576,7 @@ class V3JobExecutor:
                 for st in state_repo.list_by_job(job.id):
                     states_by_asset[st.asset_id] = st
             except Exception:
-                logger.warning(
-                    "global_fallback.state_list_failed job_id=%s", job.id, exc_info=True
-                )
+                logger.warning("global_fallback.state_list_failed job_id=%s", job.id, exc_info=True)
         try:
             positions = self._position_repo.list_by_aisle(aisle.id, job_id=job.id)
         except TypeError:
@@ -708,9 +708,7 @@ class V3JobExecutor:
             cancellation_checkpoint=ctx.cancellation_checkpoint,
             legacy_local_read_enabled=ctx.legacy_local_read_enabled,
         )
-        max_frames = int(
-            getattr(settings, "hybrid_max_frames", None) or HYBRID_MAX_FRAMES_LOAD_CAP
-        )
+        max_frames = int(getattr(settings, "hybrid_max_frames", None) or HYBRID_MAX_FRAMES_LOAD_CAP)
         max_frames = min(max_frames, HYBRID_MAX_FRAMES_LOAD_CAP)
 
         merge_applier = GlobalFallbackMergeApplier(
@@ -722,9 +720,7 @@ class V3JobExecutor:
 
         def _persist_summary(job_id: str, summary: dict) -> None:
             if lease is None:
-                raise ValueError(
-                    f"modern job global_fallback requires JobLease (job_id={job_id})"
-                )
+                raise ValueError(f"modern job global_fallback requires JobLease (job_id={job_id})")
             self._state.merge_result_json_protected(
                 job_id, {"global_fallback": summary}, lease=lease
             )
@@ -896,6 +892,8 @@ class V3JobExecutor:
                 clock=self._clock,
                 unit_of_work_factory=container.get_manual_image_result_uow_factory(),
                 position_detection_repo=container.get_image_position_label_detection_repo(),
+                settings=settings,
+                container=container,
             )
 
             def _is_cancelled() -> bool:
@@ -1143,7 +1141,9 @@ class V3JobExecutor:
             "assets_failed_technical": int(progress_public.get("failed", 0) or 0),
             "assets_skipped": max(0, total_assets - assets_eligible),
         }
-        self._state.merge_result_json_protected(job_id, {"code_scan_counters": code_scan_counters}, lease=lease)
+        self._state.merge_result_json_protected(
+            job_id, {"code_scan_counters": code_scan_counters}, lease=lease
+        )
 
         # Loop-not-executed is decided solely by AisleProcessingOrchestrator
         # (job_outcome FAILED + error_message CODE_SCAN_ASSET_LOOP_NOT_EXECUTED).
@@ -1187,9 +1187,13 @@ class V3JobExecutor:
         # SUCCEEDED or PARTIALLY_COMPLETED — both are completed jobs. A partial run recorded
         # a mix of asset outcomes (some FAILED_TECHNICAL, some resolved/unrecognized/manual);
         # it is still a completed job, annotated in result_json for auditability.
-        self._state.merge_result_json_protected(job_id, {"code_scan_outcome": job_outcome.value}, lease=lease)
+        self._state.merge_result_json_protected(
+            job_id, {"code_scan_outcome": job_outcome.value}, lease=lease
+        )
         if job_outcome is CodeScanJobOutcome.PARTIALLY_COMPLETED:
-            self._state.merge_result_json_protected(job_id, {"code_scan_partial": True}, lease=lease)
+            self._state.merge_result_json_protected(
+                job_id, {"code_scan_partial": True}, lease=lease
+            )
 
         if global_fallback_ctx is not None:
             gf = self._run_global_external_fallback_after_internal(
@@ -1398,6 +1402,8 @@ class V3JobExecutor:
                 clock=self._clock,
                 unit_of_work_factory=container.get_manual_image_result_uow_factory(),
                 position_detection_repo=container.get_image_position_label_detection_repo(),
+                settings=settings,
+                container=container,
             )
 
             def _is_cancelled() -> bool:
@@ -1650,9 +1656,13 @@ class V3JobExecutor:
             },
         )
 
-        self._state.merge_result_json_protected(job_id, {"internal_ocr_outcome": job_outcome.value}, lease=lease)
+        self._state.merge_result_json_protected(
+            job_id, {"internal_ocr_outcome": job_outcome.value}, lease=lease
+        )
         if job_outcome is CodeScanJobOutcome.PARTIALLY_COMPLETED:
-            self._state.merge_result_json_protected(job_id, {"internal_ocr_partial": True}, lease=lease)
+            self._state.merge_result_json_protected(
+                job_id, {"internal_ocr_partial": True}, lease=lease
+            )
 
         try:
             if _is_cancelled():
@@ -1731,15 +1741,12 @@ class V3JobExecutor:
             aisle=aisle,
             aisle_id=aisle_id,
             lease=prep.lease,
-            lease_extension_seconds=int(
-                getattr(settings, "job_lease_duration_sec", 60) or 60
-            ),
+            lease_extension_seconds=int(getattr(settings, "job_lease_duration_sec", 60) or 60),
             renewal_safety_margin_sec=int(
                 getattr(settings, "job_lease_renewal_safety_margin_sec", 20) or 20
             ),
         )
         with self._monitoring_service.session(monitoring_req) as rt:
-
             lease = prep.lease
 
             # Leave startup_confirmed so the startup-progress watchdog does not treat

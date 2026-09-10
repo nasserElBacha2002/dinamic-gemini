@@ -229,12 +229,17 @@ def test_vision_candidate_minimal_position_resolves() -> None:
         resolved_profiles=_position_profiles(),
         position_extraction_configuration=cfg,
         job_id="job-1",
+        client_id="client-1",
     )
     analysis = ExternalAnalysisResult(
         status=ExternalAnalysisStatus.VALID,
         provider_name="gemini",
         model_name="x",
-        normalized_result={"label_kind": "POSITION", "position_id": "A04-R-02"},
+        normalized_result={
+            "label_kind": "POSITION",
+            "position_id": "A04-R-02",
+            "raw_payload": "A04-R-02",
+        },
         duration_ms=5,
     )
     out = normalize_vision_via_label_validation(

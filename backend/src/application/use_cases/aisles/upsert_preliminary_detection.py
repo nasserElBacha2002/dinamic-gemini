@@ -1,7 +1,8 @@
-"""Upsert mobile preliminary CODE_SCAN draft — diagnostic only, never creates positions."""
+"""Upsert mobile preliminary CODE_SCAN drafts with optional V2 materialization."""
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import uuid
@@ -9,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Literal, cast
 
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import (
     ClientSupplierClientMismatchError,
     ClientSupplierNotFoundError,
@@ -28,9 +30,17 @@ from src.application.services.label_profile_resolver import (
     LabelProfileResolutionContext,
     LabelProfileResolver,
 )
+from src.application.services.position_materialization import (
+    MaterializePositionCommand,
+    MaterializePositionService,
+)
 from src.application.services.position_recognition import (
     CanonicalPositionValidationCommand,
     CanonicalPositionValidator,
+)
+from src.application.services.position_recognition.normalization import (
+    PositionCodeNormalizationError,
+    normalize_position_code,
 )
 from src.application.services.preliminary_detection_content import (
     PreliminaryDetectionContentCanonicalizer,
@@ -39,7 +49,9 @@ from src.domain.label_profiles.errors import SupplierLabelProfileNotConfiguredEr
 from src.domain.label_validation import CandidateLabel
 from src.domain.label_validation.context import LabelValidationContext
 from src.domain.mobile_preliminary_detections.entities import MobilePreliminaryDetection
+from src.domain.position_materialization import PositionMaterializationStatus
 from src.domain.position_recognition import (
+    CanonicalPositionRecognition,
     CanonicalPositionValidationStatus,
     PositionRecognitionSource,
 )
@@ -78,13 +90,18 @@ PRELIMINARY_FORBIDDEN = "PRELIMINARY_FORBIDDEN"
 PositionAuthoritativeStatus = Literal[
     "ACCEPTED_EXISTING",
     "ACCEPTED_UNMATERIALIZED",
+    "MATERIALIZED",
+    "REUSED",
     "REJECTED_FORMAT",
+    "REJECTED_VALIDATION",
     "REJECTED_PROFILE",
     "REJECTED_SCOPE",
     "REJECTED_INVENTORY_STATE",
     "REJECTED_AMBIGUOUS",
+    "REJECTED_CONFLICT",
     "REJECTED_DUPLICATE",
     "RETRYABLE_ERROR",
+    "INVARIANT_VIOLATION",
 ]
 
 
@@ -112,6 +129,7 @@ class UpsertPreliminaryDetectionCommand:
     payload_hash: str | None
     processing_ms: int | None
     detected_at: datetime | None
+    principal: AccessPrincipal
     position_reference: PositionReferenceEvidenceV2 | None = None
 
 
@@ -148,6 +166,9 @@ class PositionAuthoritativeResultV2:
     retryable: bool
     server_timestamp: datetime
     reconciliation_revision: int = 1
+    created: bool = False
+    idempotent_replay: bool = False
+    materialization_request_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -174,6 +195,9 @@ class UpsertPreliminaryDetectionUseCase:
         enabled: bool,
         inventory_repo: InventoryRepository | None = None,
         canonical_position_validator: CanonicalPositionValidator | None = None,
+        position_materializer: MaterializePositionService | None = None,
+        auto_materialization_enabled: bool = False,
+        flexible_mobile_enabled: bool = False,
         label_profile_resolver: LabelProfileResolver | None = None,
         retention_days: int = _RETENTION_DAYS,
     ) -> None:
@@ -184,6 +208,9 @@ class UpsertPreliminaryDetectionUseCase:
         self._enabled = enabled
         self._inventory_repo = inventory_repo
         self._canonical_position_validator = canonical_position_validator
+        self._position_materializer = position_materializer
+        self._auto_materialization_enabled = bool(auto_materialization_enabled)
+        self._flexible_mobile_enabled = bool(flexible_mobile_enabled)
         self._label_profile_resolver = label_profile_resolver
         self._retention_days = max(1, int(retention_days))
         self._canonicalizer = PreliminaryDetectionContentCanonicalizer()
@@ -244,7 +271,13 @@ class UpsertPreliminaryDetectionUseCase:
 
         existing_draft = self._preliminary_repo.get_by_draft_id(incoming.draft_id)
         if existing_draft is not None:
-            return self._compare_existing(existing_draft, incoming, requested=incoming.draft_id)
+            result = self._compare_existing(
+                existing_draft,
+                incoming,
+                requested=incoming.draft_id,
+            )
+            self._recover_existing_position_association(existing_draft, result)
+            return result
 
         existing_key = self._preliminary_repo.get_by_idempotency_key(
             client_file_id=client_file,
@@ -253,7 +286,9 @@ class UpsertPreliminaryDetectionUseCase:
             prepared_asset_sha256=incoming.prepared_asset_sha256,
         )
         if existing_key is not None:
-            return self._compare_existing(existing_key, incoming, requested=incoming.draft_id)
+            result = self._compare_existing(existing_key, incoming, requested=incoming.draft_id)
+            self._recover_existing_position_association(existing_key, result)
+            return result
 
         position_result = self._validate_position_reference(
             command,
@@ -397,12 +432,30 @@ class UpsertPreliminaryDetectionUseCase:
             position_reconciliation_revision=(
                 position_result.reconciliation_revision if position_result else 0
             ),
+            position_created=position_result.created if position_result else None,
+            position_idempotent_replay=(
+                position_result.idempotent_replay if position_result else None
+            ),
+            position_materialization_request_id=(
+                position_result.materialization_request_id if position_result else None
+            ),
         )
         try:
             saved = self._preliminary_repo.insert(entity)
         except PreliminaryUniqueViolationError as exc:
-            return self._resolve_unique_race(exc.constraint, incoming)
+            resolved = self._resolve_unique_race(exc.constraint, incoming)
+            self._complete_position_association(
+                position_result,
+                success=resolved.duplicate and resolved.error_code is None,
+                error_code=(
+                    None
+                    if resolved.duplicate and resolved.error_code is None
+                    else PRELIMINARY_IDEMPOTENCY_CONFLICT
+                ),
+            )
+            return resolved
 
+        self._complete_position_association(position_result, success=True, error_code=None)
         logger.info(
             "preliminary_detection_validated draft_id=%s asset_id=%s status=%s",
             saved.draft_id,
@@ -418,6 +471,52 @@ class UpsertPreliminaryDetectionUseCase:
             validation_errors=(),
             position_result=position_result,
         )
+
+    def _complete_position_association(
+        self,
+        position_result: PositionAuthoritativeResultV2 | None,
+        *,
+        success: bool,
+        error_code: str | None,
+    ) -> None:
+        request_id = (
+            position_result.materialization_request_id if position_result is not None else None
+        )
+        if not request_id or self._position_materializer is None:
+            return
+        completed = self._position_materializer.complete_association(
+            request_id,
+            success=success,
+            error_code=error_code,
+            now=self._clock.now(),
+        )
+        if not completed:
+            logger.warning(
+                "preliminary_position_association_pending request_id=%s success=%s",
+                request_id,
+                success,
+            )
+
+    def _recover_existing_position_association(
+        self,
+        existing: MobilePreliminaryDetection,
+        result: UpsertPreliminaryDetectionResult,
+    ) -> None:
+        request_id = existing.position_materialization_request_id
+        if (
+            not result.duplicate
+            or result.error_code is not None
+            or not request_id
+            or self._position_materializer is None
+        ):
+            return
+        completed = self._position_materializer.complete_association(
+            request_id,
+            success=True,
+            now=self._clock.now(),
+        )
+        if not completed:
+            logger.warning("preliminary_position_association_repair_pending")
 
     def _resolve_unique_race(self, constraint: str, incoming) -> UpsertPreliminaryDetectionResult:
         if constraint == "draft_id":
@@ -461,7 +560,10 @@ class UpsertPreliminaryDetectionUseCase:
                 received_at=existing.received_at,
                 validation_errors=(),
                 duplicate=True,
-                position_result=self._position_result_from_entity(existing),
+                position_result=self._position_result_from_entity(
+                    existing,
+                    idempotent_replay=True,
+                ),
             )
         now = self._clock.now()
         return UpsertPreliminaryDetectionResult(
@@ -550,17 +652,22 @@ class UpsertPreliminaryDetectionUseCase:
             *,
             normalized_code: str | None = None,
             remote_position_label_id: str | None = None,
+            remote_position_id: str | None = None,
             retryable: bool = False,
+            created: bool = False,
+            idempotent_replay: bool = False,
         ) -> PositionAuthoritativeResultV2:
             return PositionAuthoritativeResultV2(
                 local_recognition_id=reference.local_recognition_id,
                 normalized_code=normalized_code,
-                remote_position_id=None,
+                remote_position_id=remote_position_id,
                 remote_position_label_id=remote_position_label_id,
                 status=status,
                 error_code=error_code,
                 retryable=retryable,
                 server_timestamp=now,
+                created=created,
+                idempotent_replay=idempotent_replay,
             )
 
         if self._inventory_repo is None:
@@ -621,16 +728,32 @@ class UpsertPreliminaryDetectionUseCase:
 
         recognition = canonical.recognition
         normalized_code = recognition.normalized_code if recognition is not None else None
-        if (
-            normalized_code is not None
-            and reference.normalized_code.strip().upper() != normalized_code
-        ):
+        if normalized_code is not None:
+            try:
+                claimed_code = normalize_position_code(reference.normalized_code).normalized_code
+                server_code = normalize_position_code(normalized_code).normalized_code
+            except PositionCodeNormalizationError:
+                return outcome(
+                    "REJECTED_FORMAT",
+                    "POSITION_NORMALIZED_CODE_INVALID",
+                    normalized_code=normalized_code,
+                )
+        else:
+            claimed_code = None
+            server_code = None
+        if claimed_code != server_code:
             return outcome(
                 "REJECTED_FORMAT",
                 "POSITION_NORMALIZED_CODE_MISMATCH",
                 normalized_code=normalized_code,
             )
         if canonical.status is CanonicalPositionValidationStatus.VALID_EXISTING:
+            if recognition is None:
+                return outcome(
+                    "RETRYABLE_ERROR",
+                    "POSITION_VALIDATOR_RESULT_INVALID",
+                    retryable=True,
+                )
             label_id = canonical.existing_position_label_id
             if (
                 reference.remote_position_label_id is not None
@@ -642,6 +765,13 @@ class UpsertPreliminaryDetectionUseCase:
                     normalized_code=normalized_code,
                     remote_position_label_id=label_id,
                 )
+            if self._auto_materialization_enabled:
+                return self._materialize_position(
+                    command,
+                    recognition=recognition,
+                    remote_position_label_id=label_id,
+                    now=now,
+                )
             return outcome(
                 "ACCEPTED_EXISTING",
                 None,
@@ -649,6 +779,26 @@ class UpsertPreliminaryDetectionUseCase:
                 remote_position_label_id=label_id,
             )
         if canonical.status is CanonicalPositionValidationStatus.VALID_UNMATERIALIZED:
+            if recognition is None:
+                return outcome(
+                    "RETRYABLE_ERROR",
+                    "POSITION_VALIDATOR_RESULT_INVALID",
+                    retryable=True,
+                )
+            # Unknown positions require Phase 5 mobile channel rollout + auto materialization.
+            if self._auto_materialization_enabled and self._flexible_mobile_enabled:
+                return self._materialize_position(
+                    command,
+                    recognition=recognition,
+                    remote_position_label_id=None,
+                    now=now,
+                )
+            if self._auto_materialization_enabled and not self._flexible_mobile_enabled:
+                return outcome(
+                    "REJECTED_POLICY",
+                    "POSITION_FLEXIBLE_MOBILE_DISABLED",
+                    normalized_code=normalized_code,
+                )
             return outcome("ACCEPTED_UNMATERIALIZED", None, normalized_code=normalized_code)
         if canonical.status is CanonicalPositionValidationStatus.AMBIGUOUS_CODE:
             return outcome(
@@ -677,9 +827,86 @@ class UpsertPreliminaryDetectionUseCase:
             normalized_code=normalized_code,
         )
 
+    def _materialize_position(
+        self,
+        command: UpsertPreliminaryDetectionCommand,
+        *,
+        recognition: CanonicalPositionRecognition,
+        remote_position_label_id: str | None,
+        now: datetime,
+    ) -> PositionAuthoritativeResultV2:
+        reference = command.position_reference
+        if reference is None:
+            return PositionAuthoritativeResultV2(
+                local_recognition_id="",
+                normalized_code=recognition.normalized_code,
+                remote_position_id=None,
+                remote_position_label_id=remote_position_label_id,
+                status="RETRYABLE_ERROR",
+                error_code="POSITION_REFERENCE_MISSING",
+                retryable=True,
+                server_timestamp=now,
+            )
+        if self._position_materializer is None:
+            return PositionAuthoritativeResultV2(
+                local_recognition_id=reference.local_recognition_id,
+                normalized_code=recognition.normalized_code,
+                remote_position_id=None,
+                remote_position_label_id=remote_position_label_id,
+                status="RETRYABLE_ERROR",
+                error_code="POSITION_MATERIALIZER_UNAVAILABLE",
+                retryable=True,
+                server_timestamp=now,
+            )
+        identity = "\x00".join(
+            (command.draft_id.strip(), reference.local_recognition_id.strip())
+        ).encode("utf-8")
+        idempotency_key = f"preliminary-v2:{hashlib.sha256(identity).hexdigest()}"
+        materialized = self._position_materializer.execute(
+            MaterializePositionCommand(
+                recognition=recognition,
+                inventory_id=command.inventory_id.strip(),
+                aisle_id=command.aisle_id.strip(),
+                principal=command.principal,
+                idempotency_key=idempotency_key,
+                capture_id=(command.capture_photo_id or command.asset_id).strip(),
+            )
+        )
+        status_map: dict[PositionMaterializationStatus, PositionAuthoritativeStatus] = {
+            PositionMaterializationStatus.MATERIALIZED: "MATERIALIZED",
+            PositionMaterializationStatus.REUSED: "REUSED",
+            PositionMaterializationStatus.REJECTED_VALIDATION: "REJECTED_VALIDATION",
+            PositionMaterializationStatus.REJECTED_SCOPE: "REJECTED_SCOPE",
+            PositionMaterializationStatus.REJECTED_IDEMPOTENCY_CONFLICT: ("REJECTED_CONFLICT"),
+            PositionMaterializationStatus.REJECTED_IDENTITY_CONFLICT: "REJECTED_DUPLICATE",
+            PositionMaterializationStatus.REJECTED_CONFLICT: "REJECTED_CONFLICT",
+            PositionMaterializationStatus.REJECTED_INVENTORY_STATE: ("REJECTED_INVENTORY_STATE"),
+            PositionMaterializationStatus.RETRYABLE_FAILURE: "RETRYABLE_ERROR",
+            PositionMaterializationStatus.INVARIANT_VIOLATION: "INVARIANT_VIOLATION",
+        }
+        accepted = materialized.accepted
+        return PositionAuthoritativeResultV2(
+            local_recognition_id=reference.local_recognition_id,
+            normalized_code=recognition.normalized_code,
+            remote_position_id=(materialized.location_id if accepted else None),
+            remote_position_label_id=remote_position_label_id,
+            status=status_map[materialized.status],
+            error_code=materialized.error_code,
+            retryable=(materialized.status is PositionMaterializationStatus.RETRYABLE_FAILURE),
+            server_timestamp=now,
+            created=(
+                materialized.status is PositionMaterializationStatus.MATERIALIZED
+                and not materialized.idempotent_replay
+            ),
+            idempotent_replay=materialized.idempotent_replay,
+            materialization_request_id=materialized.request_id,
+        )
+
     @staticmethod
     def _position_result_from_entity(
         row: MobilePreliminaryDetection,
+        *,
+        idempotent_replay: bool = False,
     ) -> PositionAuthoritativeResultV2 | None:
         if row.position_local_recognition_id is None or row.position_result_status is None:
             return None
@@ -693,6 +920,17 @@ class UpsertPreliminaryDetectionUseCase:
             retryable=bool(row.position_result_retryable),
             server_timestamp=row.position_validated_at or row.received_at,
             reconciliation_revision=row.position_reconciliation_revision,
+            created=(
+                bool(row.position_created)
+                if row.position_created is not None
+                else row.position_result_status == "MATERIALIZED"
+            ),
+            idempotent_replay=(
+                bool(row.position_idempotent_replay)
+                if row.position_idempotent_replay is not None
+                else idempotent_replay
+            ),
+            materialization_request_id=row.position_materialization_request_id,
         )
 
 

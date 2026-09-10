@@ -18,6 +18,7 @@ from src.application.services.label_validation import (
 from src.application.services.position_recognition import (
     CanonicalPositionValidationCommand,
     CanonicalPositionValidator,
+    PositionFlexibleShadowEvaluator,
 )
 from src.domain.code_scans.entities import CodeType
 from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
@@ -30,7 +31,10 @@ from src.domain.label_validation import (
     RecognitionSource,
 )
 from src.domain.label_validation.context import LabelValidationContext
-from src.domain.position_recognition import PositionRecognitionSource
+from src.domain.position_recognition import (
+    CanonicalPositionValidationStatus,
+    PositionRecognitionSource,
+)
 
 _SYMBOLOGY_BY_CODE_TYPE = {
     CodeType.QR: "QR_CODE",
@@ -106,9 +110,11 @@ class CodeScanLabelClassifier:
         self,
         validation_service: LabelValidationService | None = None,
         canonical_position_validator: CanonicalPositionValidator | None = None,
+        flexible_shadow_evaluator: PositionFlexibleShadowEvaluator | None = None,
     ) -> None:
         self._validation = validation_service or LabelValidationService()
         self._positions = canonical_position_validator
+        self._flexible_shadow = flexible_shadow_evaluator
 
     def classify(
         self,
@@ -178,19 +184,38 @@ class CodeScanLabelClassifier:
             ):
                 identity = result.label.position_id.strip()
                 if self._positions is not None:
-                    canonical = self._positions.validate(
-                        CanonicalPositionValidationCommand(
-                            candidate=label_candidate,
-                            source=PositionRecognitionSource.CODE_SCAN,
-                            context=context,
-                            client_supplier_id=(
-                                context.resolved_profiles.position.client_supplier_id
-                                if context.resolved_profiles is not None
-                                else None
-                            ),
-                            structural_result=result,
-                        )
+                    position_command = CanonicalPositionValidationCommand(
+                        candidate=label_candidate,
+                        source=PositionRecognitionSource.CODE_SCAN,
+                        context=context,
+                        client_supplier_id=(
+                            context.resolved_profiles.position.client_supplier_id
+                            if context.resolved_profiles is not None
+                            else None
+                        ),
+                        structural_result=result,
                     )
+                    if self._flexible_shadow is not None:
+                        # Shadow-only never changes productive accept/reject.
+                        canonical = self._flexible_shadow.evaluate(
+                            self._positions,
+                            position_command,
+                        ).productive
+                    else:
+                        canonical = self._positions.validate(position_command)
+                    if canonical.status is CanonicalPositionValidationStatus.AMBIGUOUS_CODE:
+                        ambiguous.append(idx)
+                        rejections.append(
+                            ClassificationRejection(
+                                detection_index=idx,
+                                error_code=canonical.error_code
+                                or LabelValidationErrorCode.AMBIGUOUS_LABEL_KIND.value,
+                                detail=canonical.detail,
+                                raw_payload_hash=_sha256_hex(raw),
+                                label_kind=LabelKind.POSITION,
+                            )
+                        )
+                        continue
                     if not canonical.operationally_accepted or canonical.recognition is None:
                         rejections.append(
                             ClassificationRejection(

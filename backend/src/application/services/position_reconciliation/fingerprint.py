@@ -44,6 +44,7 @@ def compute_input_fingerprint(snapshot: PositionReconciliationInputSnapshot) -> 
                         {
                             "detector_version": detection.detector_version,
                             "id": detection.id,
+                            "aisle_location_id": detection.aisle_location_id,
                             "position_label_id": detection.position_label_id,
                             "signature_status": _value(detection.signature_status),
                             "status": _value(detection.detection_status),
@@ -52,6 +53,7 @@ def compute_input_fingerprint(snapshot: PositionReconciliationInputSnapshot) -> 
                     ),
                     key=lambda detection: (
                         detection["id"],
+                        detection["aisle_location_id"] or "",
                         detection["status"],
                         detection["signature_status"],
                         detection["position_label_id"] or "",

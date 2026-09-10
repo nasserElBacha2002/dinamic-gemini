@@ -22,6 +22,9 @@ from src.infrastructure.persistence.sql_job_image_coverage_repository import (
 from src.infrastructure.persistence.sql_manual_image_coverage_repository import (
     SqlManualImageCoverageRepository,
 )
+from src.infrastructure.persistence.sql_position_materialization_association_receipt_repository import (
+    SqlPositionMaterializationAssociationReceiptRepository,
+)
 from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
 from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
 from src.infrastructure.repositories.sql_inventory_counted_product_label_repository import (
@@ -115,6 +118,11 @@ class SqlManualImageResultUnitOfWork:
             image_coverage_repo=SqlJobImageCoverageRepository(self._client, connection=conn),
             counted_product_label_repo=SqlInventoryCountedProductLabelRepository(
                 self._client, connection=conn
+            ),
+            materialization_receipt_repo=(
+                SqlPositionMaterializationAssociationReceiptRepository(
+                    self._client, connection=conn
+                )
             ),
         )
         # Lifecycle uses the SAME transactional connection — never AppContainer globals.

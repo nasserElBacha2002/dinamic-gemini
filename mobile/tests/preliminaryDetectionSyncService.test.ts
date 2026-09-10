@@ -326,6 +326,8 @@ describe('PreliminaryDetectionSyncService', () => {
       schema_version: '2',
       position_reference: {
         local_recognition_id: 'local-position-1',
+        raw_code: ' pos-a ',
+        normalized_code: 'POS-A',
         remote_position_id: null,
       },
     });
@@ -400,6 +402,89 @@ describe('PreliminaryDetectionSyncService', () => {
     );
     expect(draftsRepo.completeSyncSuccess).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['REJECTED_VALIDATION', 'REJECTED', 'rejected'],
+    ['REJECTED_SCOPE', 'REJECTED', 'rejected'],
+    ['REJECTED_CONFLICT', 'CONFLICT', 'conflict'],
+    ['REJECTED_DUPLICATE', 'CONFLICT', 'conflict'],
+    ['INVARIANT_VIOLATION', 'FAILED_TERMINAL', 'failed_terminal'],
+  ] as const)(
+    'persists %s with the correct final sync state',
+    async (status, persistedOutcome, summaryOutcome) => {
+      const upsert = jest.fn(async (..._args: unknown[]) => ({
+        server_preliminary_id: 'server-1',
+        received_at: '2026-07-24T12:00:01.000Z',
+        position_result: {
+          contract_version: 2,
+          local_recognition_id: 'local-position-1',
+          normalized_code: 'POS-A',
+          remote_position_id: null,
+          remote_position_label_id: null,
+          status,
+          error_code: `POSITION_${status}`,
+          retryable: false,
+          server_timestamp: '2026-07-24T12:00:01.000Z',
+          reconciliation_revision: 3,
+        },
+      }));
+      const { service, draftsRepo } = createHarness({
+        flags: flags({ positionSyncReferenceV2Enabled: true }),
+        drafts: [draftWithPosition()],
+        upsert,
+      });
+
+      const summary = await service.syncPending();
+      expect(summary[summaryOutcome]).toBe(1);
+      expect(draftsRepo.completePositionSyncResult).toHaveBeenCalledWith(
+        expect.objectContaining({
+          result: status,
+          outcome: persistedOutcome,
+          nextRetryAt: null,
+        }),
+      );
+      expect(draftsRepo.completeSyncSuccess).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['MATERIALIZED', 'REUSED'] as const)(
+    'persists authoritative IDs for %s',
+    async (status) => {
+      const upsert = jest.fn(async (..._args: unknown[]) => ({
+        server_preliminary_id: 'server-1',
+        received_at: '2026-07-24T12:00:01.000Z',
+        position_result: {
+          contract_version: 2,
+          local_recognition_id: 'local-position-1',
+          normalized_code: 'POS-A',
+          remote_position_id: 'loc_public_1',
+          remote_position_label_id: 'label-1',
+          status,
+          error_code: null,
+          retryable: false,
+          server_timestamp: '2026-07-24T12:00:01.000Z',
+          reconciliation_revision: 1,
+          created: status === 'MATERIALIZED',
+          idempotent_replay: status === 'REUSED',
+        },
+      }));
+      const { service, draftsRepo } = createHarness({
+        flags: flags({ positionSyncReferenceV2Enabled: true }),
+        drafts: [draftWithPosition()],
+        upsert,
+      });
+
+      expect((await service.syncPending()).synced).toBe(1);
+      expect(draftsRepo.completePositionSyncResult).toHaveBeenCalledWith(
+        expect.objectContaining({
+          result: status,
+          outcome: 'SUCCESS',
+          remotePositionId: 'loc_public_1',
+          remotePositionLabelId: 'label-1',
+        }),
+      );
+    },
+  );
 
   it('ignores an older duplicate revision but rejects a response for another local id', async () => {
     const response = {

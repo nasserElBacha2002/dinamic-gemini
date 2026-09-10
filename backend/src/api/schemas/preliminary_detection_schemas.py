@@ -50,18 +50,25 @@ class PositionAuthoritativeResultV2(BaseModel):
     status: Literal[
         "ACCEPTED_EXISTING",
         "ACCEPTED_UNMATERIALIZED",
+        "MATERIALIZED",
+        "REUSED",
         "REJECTED_FORMAT",
+        "REJECTED_VALIDATION",
         "REJECTED_PROFILE",
         "REJECTED_SCOPE",
         "REJECTED_INVENTORY_STATE",
         "REJECTED_AMBIGUOUS",
+        "REJECTED_CONFLICT",
         "REJECTED_DUPLICATE",
         "RETRYABLE_ERROR",
+        "INVARIANT_VIOLATION",
     ]
     error_code: str | None
     retryable: bool
     server_timestamp: datetime
     reconciliation_revision: int = Field(default=0, ge=0)
+    created: bool = False
+    idempotent_replay: bool = False
 
 
 class PreliminaryDetectionUpsertRequest(BaseModel):

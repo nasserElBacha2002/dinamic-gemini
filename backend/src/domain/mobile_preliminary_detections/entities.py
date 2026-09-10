@@ -54,3 +54,6 @@ class MobilePreliminaryDetection:
     position_remote_label_id: str | None = None
     position_validated_at: datetime | None = None
     position_reconciliation_revision: int = 0
+    position_created: bool | None = None
+    position_idempotent_replay: bool | None = None
+    position_materialization_request_id: str | None = None

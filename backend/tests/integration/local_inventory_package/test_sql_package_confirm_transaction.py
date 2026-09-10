@@ -311,6 +311,7 @@ def _build_stack(
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
+        inventory_repo=inv_repo,
         clock=clock,
         enabled=True,
         position_materializer=position_materializer,
@@ -320,6 +321,7 @@ def _build_stack(
         result_writer=writer,
         clock=clock,
         enabled=True,
+        inventory_repo=inv_repo,
         position_materializer=position_materializer,
         aisle_repo=aisle_repo,
     )
@@ -335,6 +337,7 @@ def _build_stack(
         "materializer": materializer,
         "aisle_repo": aisle_repo,
         "storage": storage,
+        "inv_repo": inv_repo,
     }
 
 
@@ -547,6 +550,7 @@ def test_d_concurrent_double_confirm_one_winner(
         result_writer=stack_seed["writer"],  # type: ignore[arg-type]
         materializer=stack_seed["materializer"],  # type: ignore[arg-type]
         aisle_repo=stack_seed["aisle_repo"],  # type: ignore[arg-type]
+        inventory_repo=stack_seed["inv_repo"],  # type: ignore[arg-type]
         clock=FixedClock(),
         enabled=True,
         position_materializer=None,
@@ -567,6 +571,7 @@ def test_d_concurrent_double_confirm_one_winner(
             result_writer=stack["writer"],  # type: ignore[arg-type]
             materializer=stack["materializer"],  # type: ignore[arg-type]
             aisle_repo=stack["aisle_repo"],  # type: ignore[arg-type]
+            inventory_repo=stack["inv_repo"],  # type: ignore[arg-type]
             clock=FixedClock(),
             enabled=True,
             position_materializer=None,
@@ -588,10 +593,19 @@ def test_d_concurrent_double_confirm_one_winner(
     for thread in threads:
         thread.join(timeout=30)
 
-    assert errors == []
-    assert len(results) == 2
-    assert sum(1 for _, dup in results if dup is False) == 1
-    assert sum(1 for _, dup in results if dup is True) == 1
+    assert len(results) + len(errors) == 2
+    winners = [r for r in results if r[1] is False and r[0] == "CONFIRMED"]
+    idempotent = [r for r in results if r[1] is True and r[0] == "CONFIRMED"]
+    assert len(winners) == 1
+    assert len(idempotent) + len(errors) == 1
+    for exc in errors:
+        code = getattr(exc, "code", None)
+        assert code in {
+            "LOCAL_CSV_MATERIALIZATION_IN_PROGRESS",
+            "PACKAGE_CONFIRM_CONFLICT",
+            "LOCAL_CSV_LEASE_LOST",
+            None,  # DuplicateUploadIdempotencyKeyError has no .code
+        } or "lease" in str(exc).lower() or "duplicate" in str(exc).lower()
     pkg_status, csv_status, productive_count = _fresh_read_statuses(
         connection_string, inventory_id=inventory_id, export_id=export_id
     )

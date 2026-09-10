@@ -31,6 +31,14 @@ class PositionSignatureVerification(str, Enum):
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
+class PositionSignaturePolicy(str, Enum):
+    """Profile-aware signature semantics for Dinamic positioning payloads."""
+
+    REQUIRED = "REQUIRED"
+    OPTIONAL = "OPTIONAL"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
 class CanonicalPositionValidationStatus(str, Enum):
     VALID_EXISTING = "VALID_EXISTING"
     VALID_UNMATERIALIZED = "VALID_UNMATERIALIZED"
@@ -71,7 +79,7 @@ class PositionSignatureEvidence:
 class CanonicalPositionRecognition:
     """Validated semantic position identity, independent from persistence IDs."""
 
-    raw_code: str
+    raw_code: str | None
     normalized_code: str
     source: PositionRecognitionSource
     pallet: str | None = None

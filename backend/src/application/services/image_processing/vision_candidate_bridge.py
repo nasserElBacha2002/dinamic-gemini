@@ -6,7 +6,7 @@ Vision-inferred fields when a raw payload is present (StructuredPayloadExtractor
 
 from __future__ import annotations
 
-import logging
+import hashlib
 from typing import Any
 
 from src.application.ports.external_image_analysis_provider import ExternalAnalysisResult
@@ -16,9 +16,14 @@ from src.application.services.position_recognition import (
     CanonicalPositionValidator,
 )
 from src.domain.image_processing.contracts import (
+    RAW_EVIDENCE_HASH_ALGORITHM,
+    VISION_POSITION_DETECTOR_NAME,
+    VISION_POSITION_DETECTOR_VERSION,
     ExecutionScope,
     ImageProcessingResult,
     ImageResultStatus,
+    RawEvidenceMetadata,
+    VisionPositionEvidence,
 )
 from src.domain.label_profiles.kinds import LabelKind
 from src.domain.label_validation import (
@@ -31,13 +36,22 @@ from src.domain.label_validation import (
 from src.domain.label_validation.context import LabelValidationContext
 from src.domain.position_recognition import PositionRecognitionSource
 from src.domain.product_labels.processed import ProcessedProductLabel, ProductLabelOutcomeStatus
-
-logger = logging.getLogger(__name__)
+from src.observability.metrics.instruments import (
+    VisionCandidateMetricComponent,
+    VisionCandidateMetricMode,
+    VisionCandidateMetricOutcome,
+    record_vision_candidate,
+)
 
 EXTERNAL_PROVIDER_STRATEGY = "EXTERNAL_PROVIDER"
 
-_VISION_RESOLVED_TOTAL = "vision_resolved_total"
-_VISION_REJECTED_TOTAL = "vision_validation_rejected_total"
+VISION_POSITION_RAW_EVIDENCE_REQUIRED = "VISION_POSITION_RAW_EVIDENCE_REQUIRED"
+
+_EXPLICIT_RAW_EVIDENCE_FIELDS = (
+    "raw_payload",
+    "barcode",
+    "code_value",
+)
 
 _LOGISTIC_SEMANTIC_TYPES = frozenset(
     {
@@ -81,12 +95,21 @@ def _processed_from_normalized_item(
     )
 
 
-def _metrics_increment(name: str, *, labels: dict[str, str] | None = None) -> None:
-    logger.info(
-        "metric.name=%s metric.value=1 labels=%s",
-        name,
-        labels or {},
+def _vision_mode(kind: LabelKind) -> VisionCandidateMetricMode:
+    return (
+        VisionCandidateMetricMode.POSITION
+        if kind is LabelKind.POSITION
+        else VisionCandidateMetricMode.ITEM
     )
+
+
+def _validation_outcome(status: LabelValidationStatus) -> VisionCandidateMetricOutcome:
+    return {
+        LabelValidationStatus.AMBIGUOUS: VisionCandidateMetricOutcome.AMBIGUOUS,
+        LabelValidationStatus.INVALID: VisionCandidateMetricOutcome.INVALID,
+        LabelValidationStatus.NOT_APPLICABLE: VisionCandidateMetricOutcome.NOT_APPLICABLE,
+        LabelValidationStatus.TECHNICAL_ERROR: VisionCandidateMetricOutcome.TECHNICAL_ERROR,
+    }.get(status, VisionCandidateMetricOutcome.TECHNICAL_ERROR)
 
 
 def candidate_from_vision_analysis(
@@ -102,21 +125,13 @@ def candidate_from_vision_analysis(
     """
     norm = analysis.normalized_result if isinstance(analysis.normalized_result, dict) else {}
     raw = None
-    for key in (
-        "raw_payload",
-        "raw",
-        "barcode",
-        "code_value",
-        "payload",
-        "scanned_value",
-    ):
+    raw_evidence_source = None
+    for key in _EXPLICIT_RAW_EVIDENCE_FIELDS:
         value = norm.get(key)
         if isinstance(value, str) and value.strip():
-            raw = value.strip()
+            raw = value
+            raw_evidence_source = key
             break
-    if raw is None and analysis.internal_code:
-        # Prefer treating provider code as raw when no explicit payload — extractor may apply.
-        raw = str(analysis.internal_code).strip()
 
     sku = None
     for key in ("sku", "internal_code", "gtin", "ean"):
@@ -126,8 +141,8 @@ def candidate_from_vision_analysis(
             break
     if sku is None and analysis.internal_code:
         code = str(analysis.internal_code).strip()
-        # When raw equals provider code, leave sku unset so SIMPLE WHOLE→label_id|sku mapping decides.
-        if raw is None or code != raw:
+        # Preserve legacy SIMPLE WHOLE behavior when internal_code is the only identity.
+        if raw is not None and code != raw:
             sku = code
 
     label_id = None
@@ -155,18 +170,23 @@ def candidate_from_vision_analysis(
     side = norm.get("side") if isinstance(norm.get("side"), str) else None
     level = norm.get("level") if isinstance(norm.get("level"), str) else None
 
-    if not raw and not any((sku, label_id, position_id, pallet)):
+    if raw is None and not any((sku, label_id, position_id, pallet, analysis.internal_code)):
         return None
-
-    # Synthetic raw for structured-only Vision output (validator requires raw or identity).
-    if not raw:
-        raw = sku or label_id or position_id or ""
 
     hint = label_kind_hint
     if hint is None and position_id:
         hint = LabelKind.POSITION
     elif hint is None and (sku or label_id):
         hint = LabelKind.ITEM
+
+    # Legacy ITEM validation may still use a provider identity as CandidateLabel input.
+    # It is explicitly marked non-authoritative and can never produce typed raw evidence.
+    if raw is None:
+        raw = (
+            ""
+            if hint is LabelKind.POSITION
+            else str(analysis.internal_code or sku or label_id or "")
+        )
 
     return CandidateLabel(
         raw_payload=raw,
@@ -182,7 +202,11 @@ def candidate_from_vision_analysis(
         pallet=pallet.strip() if isinstance(pallet, str) else None,
         side=side.strip() if isinstance(side, str) else None,
         level=level.strip() if isinstance(level, str) else None,
-        metadata={"provider": analysis.provider_name or "", "model": analysis.model_name or ""},
+        metadata={
+            "provider": analysis.provider_name or "",
+            "model": analysis.model_name or "",
+            "raw_evidence_source": raw_evidence_source or "",
+        },
     )
 
 
@@ -201,7 +225,11 @@ def normalize_vision_via_label_validation(
     service = label_validation_service or LabelValidationService()
     candidate = candidate_from_vision_analysis(analysis)
     if candidate is None:
-        _metrics_increment(_VISION_REJECTED_TOTAL, labels={"reason": "NO_CANDIDATE"})
+        record_vision_candidate(
+            component=VisionCandidateMetricComponent.CANDIDATE,
+            mode=VisionCandidateMetricMode.UNKNOWN,
+            outcome=VisionCandidateMetricOutcome.NO_CANDIDATE,
+        )
         return ImageProcessingResult(
             job_id=job_id,
             asset_id=asset_id,
@@ -221,6 +249,38 @@ def normalize_vision_via_label_validation(
         )
 
     kind = candidate.label_kind_hint or LabelKind.ITEM
+    if (
+        kind is LabelKind.POSITION
+        and candidate.metadata.get("raw_evidence_source") not in _EXPLICIT_RAW_EVIDENCE_FIELDS
+    ):
+        record_vision_candidate(
+            component=VisionCandidateMetricComponent.VALIDATION,
+            mode=VisionCandidateMetricMode.POSITION,
+            outcome=VisionCandidateMetricOutcome.RAW_EVIDENCE_REQUIRED,
+        )
+        return ImageProcessingResult(
+            job_id=job_id,
+            asset_id=asset_id,
+            status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+            processing_mode=EXTERNAL_PROVIDER_STRATEGY,
+            resolved_by=EXTERNAL_PROVIDER_STRATEGY,
+            additional_fields={**base_fields, "vision_unified_validation": True},
+            normalized_result=analysis.normalized_result,
+            validation_errors=[VISION_POSITION_RAW_EVIDENCE_REQUIRED],
+            evidence={
+                **evidence,
+                "vision_unified_validation": True,
+                "vision_validation": VISION_POSITION_RAW_EVIDENCE_REQUIRED,
+                "recognition_source": RecognitionSource.VISION.value,
+            },
+            provider_name=analysis.provider_name,
+            model_name=analysis.model_name,
+            processing_duration_ms=analysis.duration_ms,
+            error_code=VISION_POSITION_RAW_EVIDENCE_REQUIRED,
+            error_message="Vision position requires explicitly observed raw evidence",
+            execution_scope=ExecutionScope.SINGLE_ASSET,
+            logical_asset_attempt=False,
+        )
     result = service.validate(candidate, context=validation_context, label_kind=kind)
 
     evidence_out = {
@@ -232,7 +292,11 @@ def normalize_vision_via_label_validation(
     }
 
     if result.status is LabelValidationStatus.AMBIGUOUS:
-        _metrics_increment(_VISION_REJECTED_TOTAL, labels={"reason": "AMBIGUOUS"})
+        record_vision_candidate(
+            component=VisionCandidateMetricComponent.VALIDATION,
+            mode=_vision_mode(kind),
+            outcome=VisionCandidateMetricOutcome.AMBIGUOUS,
+        )
         return ImageProcessingResult(
             job_id=job_id,
             asset_id=asset_id,
@@ -253,7 +317,11 @@ def normalize_vision_via_label_validation(
         )
 
     if result.status is not LabelValidationStatus.VALID or result.label is None:
-        _metrics_increment(_VISION_REJECTED_TOTAL, labels={"reason": result.status.value})
+        record_vision_candidate(
+            component=VisionCandidateMetricComponent.VALIDATION,
+            mode=_vision_mode(kind),
+            outcome=_validation_outcome(result.status),
+        )
         return ImageProcessingResult(
             job_id=job_id,
             asset_id=asset_id,
@@ -285,6 +353,7 @@ def normalize_vision_via_label_validation(
 
     label = result.label
     canonical_position = None
+    typed_position_evidence: tuple[VisionPositionEvidence, ...] = ()
     if isinstance(label, NormalizedPositionLabel):
         canonical = (canonical_position_validator or CanonicalPositionValidator()).validate(
             CanonicalPositionValidationCommand(
@@ -302,9 +371,10 @@ def normalize_vision_via_label_validation(
         evidence_out["canonical_position_validation_status"] = canonical.status.value
         evidence_out["canonical_position_policy_rejection"] = canonical.policy_rejection
         if not canonical.operationally_accepted or canonical.recognition is None:
-            _metrics_increment(
-                _VISION_REJECTED_TOTAL,
-                labels={"reason": canonical.status.value},
+            record_vision_candidate(
+                component=VisionCandidateMetricComponent.CANONICAL_POSITION,
+                mode=VisionCandidateMetricMode.POSITION,
+                outcome=VisionCandidateMetricOutcome.CANONICAL_REJECTED,
             )
             return ImageProcessingResult(
                 job_id=job_id,
@@ -325,6 +395,22 @@ def normalize_vision_via_label_validation(
                 logical_asset_attempt=False,
             )
         canonical_position = canonical.recognition
+        raw_code = canonical_position.raw_code
+        assert raw_code is not None
+        raw_bytes = raw_code.encode("utf-8")
+        typed_position_evidence = (
+            VisionPositionEvidence(
+                recognition=canonical_position,
+                client_id=validation_context.client_id or "",
+                detector_name=VISION_POSITION_DETECTOR_NAME,
+                detector_version=VISION_POSITION_DETECTOR_VERSION,
+                raw_evidence=RawEvidenceMetadata(
+                    payload_hash=hashlib.sha256(raw_bytes).hexdigest(),
+                    utf8_length=len(raw_bytes),
+                    hash_algorithm=RAW_EVIDENCE_HASH_ALGORITHM,
+                ),
+            ),
+        )
         evidence_out["position_signature_verification"] = (
             canonical_position.signature.verification.value
         )
@@ -378,9 +464,25 @@ def normalize_vision_via_label_validation(
             "pallet": canonical_position.pallet,
             "side": canonical_position.side,
             "level": canonical_position.level,
-            "raw_payload": canonical_position.raw_code,
+            "position_detection_count": 1,
+            "position_ambiguous": False,
+            "position_statuses": ["VALID"],
+            "client_id": validation_context.client_id,
             "profile_source": label.profile_source.value,
             "recognition_source": RecognitionSource.VISION.value,
+            "normalized_positions": [
+                {
+                    "position_id": canonical_position.normalized_code,
+                    "pallet": canonical_position.pallet,
+                    "side": canonical_position.side,
+                    "level": canonical_position.level,
+                    "marker_index": canonical_position.marker_index,
+                    "marker_total": canonical_position.marker_total,
+                    "client_supplier_id": canonical_position.client_supplier_id,
+                    "profile_id": canonical_position.profile_id,
+                    "profile_version": canonical_position.profile_version,
+                }
+            ],
         }
         evidence_out["position_label_detection"] = position_meta
         evidence_out["profile_source"] = label.profile_source.value
@@ -409,9 +511,19 @@ def normalize_vision_via_label_validation(
     if result.diagnostics:
         evidence_out["identity_diagnostics"] = result.diagnostics
 
-    _metrics_increment(
-        _VISION_RESOLVED_TOTAL,
-        labels={"label_kind": kind.value, "status": status.value},
+    metric_outcome = (
+        VisionCandidateMetricOutcome.RESOLVED
+        if status is ImageResultStatus.RESOLVED_EXTERNAL
+        else (
+            VisionCandidateMetricOutcome.REQUIRES_REVIEW
+            if status is ImageResultStatus.PENDING_MANUAL_REVIEW
+            else VisionCandidateMetricOutcome.UNRECOGNIZED
+        )
+    )
+    record_vision_candidate(
+        component=VisionCandidateMetricComponent.BRIDGE,
+        mode=_vision_mode(kind),
+        outcome=metric_outcome,
     )
     return ImageProcessingResult(
         job_id=job_id,
@@ -428,17 +540,22 @@ def normalize_vision_via_label_validation(
             "quantity": primary_qty,
             "position": position_meta,
         },
-        evidence=evidence_out,
+        evidence={
+            **evidence_out,
+            **({"result_kind": "POSITION_ONLY"} if position_meta is not None else {}),
+        },
         provider_name=analysis.provider_name,
         model_name=analysis.model_name,
         processing_duration_ms=analysis.duration_ms,
         execution_scope=ExecutionScope.SINGLE_ASSET,
         logical_asset_attempt=False,
         product_results=list(product_results),
+        vision_position_evidence=typed_position_evidence,
     )
 
 
 __all__ = [
+    "VISION_POSITION_RAW_EVIDENCE_REQUIRED",
     "candidate_from_vision_analysis",
     "normalize_vision_via_label_validation",
 ]

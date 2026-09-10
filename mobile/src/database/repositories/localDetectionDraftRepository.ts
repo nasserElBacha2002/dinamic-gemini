@@ -614,7 +614,7 @@ export class LocalDetectionDraftRepository {
     readonly remotePositionLabelId: string | null;
     readonly reconciledAt: string;
     readonly revision: number;
-    readonly outcome: 'SUCCESS' | 'RETRY' | 'REJECTED';
+    readonly outcome: 'SUCCESS' | 'RETRY' | 'REJECTED' | 'CONFLICT' | 'FAILED_TERMINAL';
     readonly nextRetryAt: string | null;
   }): Promise<boolean> {
     const syncStatus =
@@ -622,7 +622,11 @@ export class LocalDetectionDraftRepository {
         ? 'SYNCED'
         : input.outcome === 'RETRY'
           ? 'RETRY_SCHEDULED'
-          : 'REJECTED';
+          : input.outcome === 'CONFLICT'
+            ? 'CONFLICT'
+            : input.outcome === 'FAILED_TERMINAL'
+              ? 'FAILED_TERMINAL'
+              : 'REJECTED';
     const positionState =
       input.outcome === 'SUCCESS'
         ? 'CONFIRMED'

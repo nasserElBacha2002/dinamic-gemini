@@ -31,6 +31,8 @@ class PublishedPositionRef:
 
     id: str | None
     name: str | None
+    aisle_location_id: str | None = None
+    identity_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,7 @@ def map_assignment_to_view(
     assigned = assignment.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
     name = (assignment.position_name_snapshot or "").strip() or None
     label_id = (assignment.position_label_id or "").strip() or None
+    location_id = (assignment.aisle_location_id or "").strip() or None
 
     if status_value == ReconciliationStatus.STALE.value:
         availability = PositionReadAvailability.RECONCILIATION_STALE
@@ -78,8 +81,15 @@ def map_assignment_to_view(
         availability = PositionReadAvailability.UNASSIGNED
 
     position = (
-        PublishedPositionRef(id=label_id, name=name)
-        if assigned and (label_id or name)
+        PublishedPositionRef(
+            id=label_id,
+            name=name,
+            aisle_location_id=location_id,
+            identity_kind=(
+                "CLIENT_POSITION_LABEL" if label_id else ("AISLE_LOCATION" if location_id else None)
+            ),
+        )
+        if assigned and (label_id or location_id or name)
         else None
     )
     source = (

@@ -29,6 +29,7 @@ module.exports = {
     '<rootDir>/tests/localCsvExportCodeScanGate.test.ts',
     '<rootDir>/tests/runLocalCsvExport.test.ts',
     '<rootDir>/tests/preliminaryDetectionSyncService.test.ts',
+    '<rootDir>/tests/positionSyncV2Contract.test.ts',
     '<rootDir>/tests/preliminarySyncDoesNotBlockProcess.test.ts',
     '<rootDir>/tests/preliminaryReconciliationPhase5.test.ts',
     '<rootDir>/tests/confirmLocalResult.test.ts',

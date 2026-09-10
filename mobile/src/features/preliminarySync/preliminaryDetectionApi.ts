@@ -1,4 +1,5 @@
 import type { ApiClient } from '../../services/api/apiClient';
+import { normalizeLocalPositionCode } from '../../core/positionLabelPayload';
 
 export interface PreliminaryDetectionSyncRequest {
   readonly schema_version: '1' | '2';
@@ -44,13 +45,18 @@ export interface PositionSyncReferenceV2 {
 export type PositionAuthoritativeStatus =
   | 'ACCEPTED_EXISTING'
   | 'ACCEPTED_UNMATERIALIZED'
+  | 'MATERIALIZED'
+  | 'REUSED'
   | 'REJECTED_FORMAT'
+  | 'REJECTED_VALIDATION'
   | 'REJECTED_PROFILE'
   | 'REJECTED_SCOPE'
   | 'REJECTED_INVENTORY_STATE'
   | 'REJECTED_AMBIGUOUS'
+  | 'REJECTED_CONFLICT'
   | 'REJECTED_DUPLICATE'
-  | 'RETRYABLE_ERROR';
+  | 'RETRYABLE_ERROR'
+  | 'INVARIANT_VIOLATION';
 
 export interface PositionSyncResultV2 {
   readonly contract_version: 2;
@@ -63,18 +69,25 @@ export interface PositionSyncResultV2 {
   readonly retryable: boolean;
   readonly server_timestamp: string;
   readonly reconciliation_revision: number;
+  readonly created: boolean;
+  readonly idempotent_replay: boolean;
 }
 
 const POSITION_STATUSES = new Set<PositionAuthoritativeStatus>([
   'ACCEPTED_EXISTING',
   'ACCEPTED_UNMATERIALIZED',
+  'MATERIALIZED',
+  'REUSED',
   'REJECTED_FORMAT',
+  'REJECTED_VALIDATION',
   'REJECTED_PROFILE',
   'REJECTED_SCOPE',
   'REJECTED_INVENTORY_STATE',
   'REJECTED_AMBIGUOUS',
+  'REJECTED_CONFLICT',
   'REJECTED_DUPLICATE',
   'RETRYABLE_ERROR',
+  'INVARIANT_VIOLATION',
 ]);
 
 export function parsePositionSyncResultV2(value: unknown): PositionSyncResultV2 | null {
@@ -95,6 +108,13 @@ export function parsePositionSyncResultV2(value: unknown): PositionSyncResultV2 
   ) {
     return null;
   }
+  if (
+    (row.created !== undefined && typeof row.created !== 'boolean') ||
+    (row.idempotent_replay !== undefined &&
+      typeof row.idempotent_replay !== 'boolean')
+  ) {
+    return null;
+  }
   const optionalText = (candidate: unknown): string | null | undefined => {
     if (candidate === null) return null;
     if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
@@ -112,17 +132,38 @@ export function parsePositionSyncResultV2(value: unknown): PositionSyncResultV2 
   ) {
     return null;
   }
+  let canonicalCode: string | null = null;
+  if (normalizedCode !== null) {
+    try {
+      canonicalCode = normalizeLocalPositionCode(normalizedCode);
+    } catch {
+      return null;
+    }
+  }
+  const status = row.status as PositionAuthoritativeStatus;
+  const created = row.created === true;
+  const idempotentReplay = row.idempotent_replay === true;
+  if (
+    row.retryable !== (status === 'RETRYABLE_ERROR') ||
+    (created && (status !== 'MATERIALIZED' || idempotentReplay)) ||
+    ((status === 'MATERIALIZED' || status === 'REUSED') &&
+      remotePositionId === null)
+  ) {
+    return null;
+  }
   return {
     contract_version: 2,
     local_recognition_id: row.local_recognition_id.trim(),
-    normalized_code: normalizedCode,
+    normalized_code: canonicalCode,
     remote_position_id: remotePositionId,
     remote_position_label_id: remotePositionLabelId,
-    status: row.status as PositionAuthoritativeStatus,
+    status,
     error_code: errorCode,
     retryable: row.retryable,
     server_timestamp: row.server_timestamp,
     reconciliation_revision: row.reconciliation_revision,
+    created,
+    idempotent_replay: idempotentReplay,
   };
 }
 

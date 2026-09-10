@@ -307,6 +307,15 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
         logger.exception("code_scan.issued_label_resolver_unavailable")
 
     canonical_position_validator = _build_canonical_position_validator(settings)
+    from src.application.services.position_recognition import (
+        FlexiblePositionChannel,
+        PositionFlexibleShadowEvaluator,
+    )
+
+    flexible_shadow = PositionFlexibleShadowEvaluator(
+        enabled=bool(getattr(settings, "position_flexible_shadow_mode_enabled", False)),
+        channel=FlexiblePositionChannel.CODE_SCAN,
+    )
     return CodeScanProcessingStrategy(
         scanner=_LazyPyzbarCodeScanner(),
         content_reader=ArtifactStoreSourceAssetContentReader(
@@ -320,6 +329,7 @@ def build_default_code_scan_strategy(settings, artifact_store, *, event_publishe
         position_detection=_build_position_detection_use_case(settings),
         issued_label_resolver=issued_resolver,
         canonical_position_validator=canonical_position_validator,
+        flexible_shadow_evaluator=flexible_shadow,
         position_label_detection_repo=_optional_position_detection_repo(),
     )
 
@@ -347,6 +357,7 @@ def _build_canonical_position_validator(
     from src.application.services.position_recognition import (
         CanonicalPositionValidator,
         PositionCompatibilityPolicy,
+        PositionSignaturePolicy,
     )
     from src.application.services.positioning_label_signing import (
         PositioningLabelSigningConfig,
@@ -372,6 +383,13 @@ def _build_canonical_position_validator(
         )
     if not resolve_existing:
         resolver = None
+    raw_signature_policy = str(
+        getattr(settings, "position_signature_policy", "REQUIRED") or "REQUIRED"
+    ).strip().upper()
+    try:
+        signature_policy = PositionSignaturePolicy(raw_signature_policy)
+    except ValueError:
+        signature_policy = PositionSignaturePolicy.REQUIRED
     return CanonicalPositionValidator(
         signing=signing,
         resolver=resolver,
@@ -386,6 +404,7 @@ def _build_canonical_position_validator(
             flexible_validation_enabled=bool(
                 getattr(settings, "position_flexible_validation_enabled", False)
             ),
+            signature_policy=signature_policy,
         ),
     )
 
@@ -479,10 +498,24 @@ def build_default_code_scan_persister(
     clock,
     unit_of_work_factory,
     position_detection_repo=None,
+    settings=None,
+    container=None,
 ):
     from src.application.services.image_processing.processing_result_persister import (
         ProcessingResultPersister,
     )
+
+    enabled = bool(getattr(settings, "position_auto_materialization_enabled", False)) and (
+        bool(getattr(settings, "position_flexible_code_scan_enabled", False))
+        or bool(getattr(settings, "position_flexible_vision_enabled", False))
+    )
+    materializer = None
+    if enabled:
+        if container is None:
+            raise RuntimeError(
+                "position materialization requires the runtime application container"
+            )
+        materializer = container.get_position_materialization_service()
 
     return ProcessingResultPersister(
         job_source_asset_repo=job_source_asset_repo,
@@ -490,6 +523,8 @@ def build_default_code_scan_persister(
         clock=clock,
         unit_of_work_factory=unit_of_work_factory,
         position_detection_repo=position_detection_repo,
+        position_materializer=materializer,
+        position_auto_materialization_enabled=enabled,
     )
 
 

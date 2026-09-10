@@ -15,17 +15,35 @@ from src.domain.local_csv_import.entities import (
     LocalCsvImport,
     LocalCsvImportRow,
 )
+from src.domain.local_csv_import.error_codes import normalize_stable_error_code
 from src.domain.local_csv_import.errors import (
     LOCAL_CSV_EXPORT_CONFLICT,
     LOCAL_CSV_EXPORT_NOT_PREVIEWED,
+    LOCAL_CSV_IMPORT_INVALID_STATUS,
+    LOCAL_CSV_MATERIALIZATION_FAILED,
     LOCAL_CSV_SECONDARY_CONFLICT,
     LocalCsvImportError,
+)
+from src.domain.local_csv_import.lease import (
+    assert_owner_may_finalize,
+    build_lease_claim,
+)
+from src.domain.local_csv_import.statuses import (
+    LOCAL_CSV_IMPORT_RESUMABLE_STATUSES,
+    LOCAL_CSV_IMPORT_STATUS_CONFIRMED,
+    LOCAL_CSV_IMPORT_STATUS_MATERIALIZATION_FAILED,
+    LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
+    LOCAL_CSV_IMPORT_STATUS_PREVIEWED,
+    LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW,
 )
 from src.infrastructure.database.sql_batch import (
     EXECUTEMANY_IMPORT_ROW_PARAM_SET_CHUNK,
     SQL_VALUES_PAIR_CHUNK_SIZE,
     chunked,
     cursor_executemany,
+)
+from src.infrastructure.database.sql_inventory_write_policy import (
+    default_require_inventory_writable_on_cursor,
 )
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
@@ -61,7 +79,13 @@ def partition_secondary_key_candidates(
 _IMPORT_COLUMNS = (
     "id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
     "content_hash, total_rows, valid_rows, rejected_rows, duplicate_rows, conflict_policy, "
-    "confirmed_at, confirmed_by_user_id, source_metadata_json, created_at, updated_at"
+    "confirmed_at, confirmed_by_user_id, source_metadata_json, last_error_code, "
+    "materialization_attempts, materialization_owner, materialization_lease_expires_at, "
+    "materialization_started_at, materialization_last_attempt_at, materialization_next_retry_at, "
+    "fencing_version, created_at, updated_at"
+)
+_CLAIMED_STATUS_SQL = (
+    "('CONFIRMED', 'MATERIALIZING', 'MATERIALIZATION_FAILED')"
 )
 _ROW_COLUMNS = (
     "id, import_id, row_number, inventory_id, aisle_id, capture_session_id, capture_photo_id, "
@@ -184,6 +208,28 @@ def _import_from_db(row: object, rows: tuple[LocalCsvImportRow, ...]) -> LocalCs
             if getattr(row, "source_metadata_json", None) is not None
             else None
         ),
+        last_error_code=(
+            str(getattr(row, "last_error_code")).strip() or None
+            if getattr(row, "last_error_code", None) is not None
+            else None
+        ),
+        materialization_attempts=int(getattr(row, "materialization_attempts", 0) or 0),
+        materialization_owner=(
+            str(getattr(row, "materialization_owner")).strip() or None
+            if getattr(row, "materialization_owner", None) is not None
+            else None
+        ),
+        materialization_lease_expires_at=_utc(
+            getattr(row, "materialization_lease_expires_at", None)
+        ),
+        materialization_started_at=_utc(getattr(row, "materialization_started_at", None)),
+        materialization_last_attempt_at=_utc(
+            getattr(row, "materialization_last_attempt_at", None)
+        ),
+        materialization_next_retry_at=_utc(
+            getattr(row, "materialization_next_retry_at", None)
+        ),
+        fencing_version=int(getattr(row, "fencing_version", 0) or 0),
         created_at=_utc_required(getattr(row, "created_at"), field="created_at"),
         updated_at=_utc_required(getattr(row, "updated_at"), field="updated_at"),
         rows=rows,
@@ -264,7 +310,8 @@ class SqlLocalCsvImportRepository:
                     "JOIN local_csv_imports i ON i.id = r.import_id "
                     f"INNER JOIN (VALUES {values_sql}) AS c(session_id, label_id) "
                     "ON c.session_id = r.capture_session_id AND c.label_id = r.label_id "
-                    "WHERE i.status = 'CONFIRMED' AND r.status = 'IMPORTED' "
+                    "WHERE i.status IN "
+                    f"{_CLAIMED_STATUS_SQL} AND r.status = 'IMPORTED' "
                     "AND r.label_id IS NOT NULL",
                     tuple(flat),
                 )
@@ -280,7 +327,8 @@ class SqlLocalCsvImportRepository:
                     f"INNER JOIN (VALUES {values_sql}) AS c(session_id, photo_id) "
                     "ON c.session_id = r.capture_session_id "
                     "AND c.photo_id = r.capture_photo_id "
-                    "WHERE i.status = 'CONFIRMED' AND r.status = 'IMPORTED' "
+                    "WHERE i.status IN "
+                    f"{_CLAIMED_STATUS_SQL} AND r.status = 'IMPORTED' "
                     "AND r.label_id IS NULL",
                     tuple(flat),
                 )
@@ -313,7 +361,8 @@ class SqlLocalCsvImportRepository:
                 "SELECT r.capture_session_id, r.capture_photo_id, r.label_id, r.detection_source "
                 "FROM local_csv_import_rows r "
                 "JOIN local_csv_imports i ON i.id = r.import_id "
-                "WHERE i.status = 'CONFIRMED' AND r.status = 'IMPORTED'"
+                "WHERE i.status IN "
+                f"{_CLAIMED_STATUS_SQL} AND r.status = 'IMPORTED'"
             )
             for row in cur.fetchall():
                 key = local_csv_row_secondary_key(
@@ -379,8 +428,16 @@ class SqlLocalCsvImportRepository:
         )
         rows = tuple(_row_from_db(row) for row in cur.fetchall())
         record = _import_from_db(header, rows)
-        if record.status == "CONFIRMED":
+        if record.status == LOCAL_CSV_IMPORT_STATUS_CONFIRMED:
             return record, (), True
+        if record.status in LOCAL_CSV_IMPORT_RESUMABLE_STATUSES:
+            # Productive rows already claimed; resume materialization only.
+            return record, (), False
+        if record.status != LOCAL_CSV_IMPORT_STATUS_PREVIEWED:
+            raise LocalCsvImportError(
+                LOCAL_CSV_IMPORT_INVALID_STATUS,
+                f"Import status {record.status!r} cannot be confirmed",
+            )
 
         eligible = {
             row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"
@@ -401,6 +458,47 @@ class SqlLocalCsvImportRepository:
             to_import.append(row)
         return record, tuple(to_import), False
 
+    def claim_import_for_materialization(
+        self,
+        *,
+        inventory_id: str,
+        export_id: str,
+        conflict_policy: str,
+        confirmed_by_user_id: str | None,
+        apply_productive: LocalCsvProductiveApplier,
+        clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int,
+        cursor: SqlCursorLike | None = None,
+    ) -> tuple[LocalCsvImport, bool]:
+        if cursor is not None:
+            return self._claim_import_on_cursor(
+                cursor,
+                inventory_id=inventory_id,
+                export_id=export_id,
+                conflict_policy=conflict_policy,
+                confirmed_by_user_id=confirmed_by_user_id,
+                apply_productive=apply_productive,
+                clock_now=clock_now,
+                owner=owner,
+                lease_sec=lease_sec,
+            )
+        with self._client.begin_transaction() as txn:
+            with sql_repository_cursor(self._client, connection=txn.connection) as cur:
+                result = self._claim_import_on_cursor(
+                    cur,
+                    inventory_id=inventory_id,
+                    export_id=export_id,
+                    conflict_policy=conflict_policy,
+                    confirmed_by_user_id=confirmed_by_user_id,
+                    apply_productive=apply_productive,
+                    clock_now=clock_now,
+                    owner=owner,
+                    lease_sec=lease_sec,
+                )
+            txn.commit()
+            return result
+
     def confirm_import_atomically(
         self,
         *,
@@ -411,32 +509,23 @@ class SqlLocalCsvImportRepository:
         apply_productive: LocalCsvProductiveApplier,
         clock_now: Callable[[], datetime],
         cursor: SqlCursorLike | None = None,
+        owner: str | None = None,
+        lease_sec: int = 120,
     ) -> tuple[LocalCsvImport, bool]:
-        if cursor is not None:
-            return self._confirm_import_on_cursor(
-                cursor,
-                inventory_id=inventory_id,
-                export_id=export_id,
-                conflict_policy=conflict_policy,
-                confirmed_by_user_id=confirmed_by_user_id,
-                apply_productive=apply_productive,
-                clock_now=clock_now,
-            )
-        with self._client.begin_transaction() as txn:
-            with sql_repository_cursor(self._client, connection=txn.connection) as cur:
-                result = self._confirm_import_on_cursor(
-                    cur,
-                    inventory_id=inventory_id,
-                    export_id=export_id,
-                    conflict_policy=conflict_policy,
-                    confirmed_by_user_id=confirmed_by_user_id,
-                    apply_productive=apply_productive,
-                    clock_now=clock_now,
-                )
-            txn.commit()
-            return result
+        resolved_owner = (owner or confirmed_by_user_id or "system-import").strip()
+        return self.claim_import_for_materialization(
+            inventory_id=inventory_id,
+            export_id=export_id,
+            conflict_policy=conflict_policy,
+            confirmed_by_user_id=confirmed_by_user_id,
+            apply_productive=apply_productive,
+            clock_now=clock_now,
+            owner=resolved_owner,
+            lease_sec=lease_sec,
+            cursor=cursor,
+        )
 
-    def _confirm_import_on_cursor(
+    def _claim_import_on_cursor(
         self,
         cur: SqlCursorLike,
         *,
@@ -446,6 +535,8 @@ class SqlLocalCsvImportRepository:
         confirmed_by_user_id: str | None,
         apply_productive: LocalCsvProductiveApplier,
         clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int,
     ) -> tuple[LocalCsvImport, bool]:
         record, to_import, already_confirmed = self.select_rows_to_import_on_cursor(
             cur,
@@ -455,6 +546,30 @@ class SqlLocalCsvImportRepository:
         )
         if already_confirmed:
             return record, True
+
+        now = clock_now()
+        claim = build_lease_claim(
+            record, now=now, owner=owner, lease_sec=lease_sec
+        )
+
+        if record.status in LOCAL_CSV_IMPORT_RESUMABLE_STATUSES:
+            resumed = replace(
+                record,
+                status=LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
+                conflict_policy=conflict_policy or record.conflict_policy,
+                confirmed_by_user_id=confirmed_by_user_id or record.confirmed_by_user_id,
+                last_error_code=None,
+                materialization_attempts=claim.attempts,
+                materialization_owner=claim.owner,
+                materialization_lease_expires_at=claim.lease_expires_at,
+                materialization_started_at=claim.started_at,
+                materialization_last_attempt_at=claim.last_attempt_at,
+                materialization_next_retry_at=None,
+                fencing_version=claim.fencing_version,
+                updated_at=now,
+            )
+            self._persist(cur, resumed)
+            return resumed, False
 
         conflict_keys = self.find_confirmed_secondary_keys(
             {row.secondary_key for row in record.rows if row.status == "PREVIEW_VALID"},
@@ -485,21 +600,226 @@ class SqlLocalCsvImportRepository:
                 )
             )
         updated_rows.sort(key=lambda r: r.row_number)
-        now = clock_now()
-        confirmed = replace(
+        materializing = replace(
             record,
-            status="CONFIRMED",
+            status=LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
             valid_rows=sum(row.status == "IMPORTED" for row in updated_rows),
             duplicate_rows=sum(row.status == "DUPLICATE" for row in updated_rows),
             rejected_rows=sum(row.status == "REJECTED" for row in updated_rows),
             conflict_policy=conflict_policy,
-            confirmed_at=now,
+            confirmed_at=None,
             confirmed_by_user_id=confirmed_by_user_id,
+            last_error_code=None,
+            materialization_attempts=claim.attempts,
+            materialization_owner=claim.owner,
+            materialization_lease_expires_at=claim.lease_expires_at,
+            materialization_started_at=claim.started_at,
+            materialization_last_attempt_at=claim.last_attempt_at,
+            materialization_next_retry_at=None,
+            fencing_version=claim.fencing_version,
             updated_at=now,
             rows=tuple(updated_rows),
         )
+        self._persist(cur, materializing)
+        return materializing, False
+
+    def finalize_import_confirmation_on_cursor(
+        self,
+        cur: SqlCursorLike,
+        *,
+        import_id: str,
+        clock_now: Callable[[], datetime],
+        confirmed_by_user_id: str | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+        require_inventory_writable_on_cursor: Callable[[SqlCursorLike, str], None]
+        | None = None,
+    ) -> LocalCsvImport:
+        cur.execute(
+            f"SELECT {_IMPORT_COLUMNS} FROM local_csv_imports "
+            "WITH (UPDLOCK, ROWLOCK) WHERE id = ?",
+            ((import_id or "").strip(),),
+        )
+        header = cur.fetchone()
+        if header is None:
+            raise LocalCsvImportError(
+                LOCAL_CSV_EXPORT_NOT_PREVIEWED, "import not found"
+            )
+        cur.execute(
+            f"SELECT {_ROW_COLUMNS} FROM local_csv_import_rows "
+            "WHERE import_id = ? ORDER BY row_number",
+            (str(header.id),),
+        )
+        rows = tuple(_row_from_db(row) for row in cur.fetchall())
+        record = _import_from_db(header, rows)
+        if record.status == LOCAL_CSV_IMPORT_STATUS_CONFIRMED:
+            return record
+        assert_owner_may_finalize(
+            record,
+            owner=owner,
+            expected_fencing_version=expected_fencing_version,
+        )
+        if record.status not in LOCAL_CSV_IMPORT_RESUMABLE_STATUSES:
+            raise LocalCsvImportError(
+                LOCAL_CSV_IMPORT_INVALID_STATUS,
+                f"Import status {record.status!r} cannot be finalized",
+            )
+        checker = (
+            require_inventory_writable_on_cursor
+            or default_require_inventory_writable_on_cursor
+        )
+        checker(cur, record.inventory_id)
+        now = clock_now()
+        confirmed = replace(
+            record,
+            status=LOCAL_CSV_IMPORT_STATUS_CONFIRMED,
+            confirmed_at=now,
+            confirmed_by_user_id=confirmed_by_user_id or record.confirmed_by_user_id,
+            last_error_code=None,
+            materialization_owner=None,
+            materialization_lease_expires_at=None,
+            materialization_next_retry_at=None,
+            updated_at=now,
+        )
         self._persist(cur, confirmed)
-        return confirmed, False
+        return confirmed
+
+    def finalize_import_confirmation(
+        self,
+        *,
+        import_id: str,
+        clock_now: Callable[[], datetime],
+        confirmed_by_user_id: str | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalCsvImport:
+        with self._client.begin_transaction() as txn:
+            with sql_repository_cursor(self._client, connection=txn.connection) as cur:
+                confirmed = self.finalize_import_confirmation_on_cursor(
+                    cur,
+                    import_id=import_id,
+                    clock_now=clock_now,
+                    confirmed_by_user_id=confirmed_by_user_id,
+                    owner=owner,
+                    expected_fencing_version=expected_fencing_version,
+                )
+            txn.commit()
+            return confirmed
+
+    def mark_materialization_failed_on_cursor(
+        self,
+        cur: SqlCursorLike,
+        *,
+        import_id: str,
+        error_code: str,
+        clock_now: Callable[[], datetime],
+        requires_review: bool = False,
+        next_retry_at: datetime | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalCsvImport:
+        code = normalize_stable_error_code(
+            error_code, fallback=LOCAL_CSV_MATERIALIZATION_FAILED
+        )
+        cur.execute(
+            f"SELECT {_IMPORT_COLUMNS} FROM local_csv_imports "
+            "WITH (UPDLOCK, ROWLOCK) WHERE id = ?",
+            ((import_id or "").strip(),),
+        )
+        header = cur.fetchone()
+        if header is None:
+            raise LocalCsvImportError(
+                LOCAL_CSV_EXPORT_NOT_PREVIEWED, "import not found"
+            )
+        cur.execute(
+            f"SELECT {_ROW_COLUMNS} FROM local_csv_import_rows "
+            "WHERE import_id = ? ORDER BY row_number",
+            (str(header.id),),
+        )
+        rows = tuple(_row_from_db(row) for row in cur.fetchall())
+        record = _import_from_db(header, rows)
+        if record.status == LOCAL_CSV_IMPORT_STATUS_CONFIRMED:
+            return record
+        assert_owner_may_finalize(
+            record,
+            owner=owner,
+            expected_fencing_version=expected_fencing_version,
+        )
+        now = clock_now()
+        failed = replace(
+            record,
+            status=(
+                LOCAL_CSV_IMPORT_STATUS_REQUIRES_REVIEW
+                if requires_review
+                else LOCAL_CSV_IMPORT_STATUS_MATERIALIZATION_FAILED
+            ),
+            last_error_code=code,
+            materialization_owner=None,
+            materialization_lease_expires_at=None,
+            materialization_next_retry_at=next_retry_at,
+            updated_at=now,
+        )
+        self._persist(cur, failed)
+        return failed
+
+    def mark_materialization_failed(
+        self,
+        *,
+        import_id: str,
+        error_code: str,
+        clock_now: Callable[[], datetime],
+        requires_review: bool = False,
+        next_retry_at: datetime | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalCsvImport:
+        with self._client.begin_transaction() as txn:
+            with sql_repository_cursor(self._client, connection=txn.connection) as cur:
+                failed = self.mark_materialization_failed_on_cursor(
+                    cur,
+                    import_id=import_id,
+                    error_code=error_code,
+                    clock_now=clock_now,
+                    requires_review=requires_review,
+                    next_retry_at=next_retry_at,
+                    owner=owner,
+                    expected_fencing_version=expected_fencing_version,
+                )
+            txn.commit()
+            return failed
+
+    def list_recovery_candidates(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> tuple[LocalCsvImport, ...]:
+        capped = max(1, min(int(limit), 500))
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"SELECT TOP ({capped}) {_IMPORT_COLUMNS} FROM local_csv_imports "
+                "WHERE (status = ? AND materialization_lease_expires_at <= ?) "
+                "OR (status = ? AND (materialization_next_retry_at IS NULL "
+                "OR materialization_next_retry_at <= ?)) "
+                "ORDER BY updated_at",
+                (
+                    LOCAL_CSV_IMPORT_STATUS_MATERIALIZING,
+                    now,
+                    LOCAL_CSV_IMPORT_STATUS_MATERIALIZATION_FAILED,
+                    now,
+                ),
+            )
+            headers = cur.fetchall()
+            results: list[LocalCsvImport] = []
+            for header in headers:
+                cur.execute(
+                    f"SELECT {_ROW_COLUMNS} FROM local_csv_import_rows "
+                    "WHERE import_id = ? ORDER BY row_number",
+                    (str(header.id),),
+                )
+                rows = tuple(_row_from_db(row) for row in cur.fetchall())
+                results.append(_import_from_db(header, rows))
+        return tuple(results)
 
     def save(self, record: LocalCsvImport) -> LocalCsvImport:
         with sql_repository_cursor(self._client) as cur:
@@ -523,6 +843,14 @@ class SqlLocalCsvImportRepository:
             record.confirmed_at,
             record.confirmed_by_user_id,
             record.source_metadata_json,
+            record.last_error_code,
+            int(record.materialization_attempts),
+            record.materialization_owner,
+            record.materialization_lease_expires_at,
+            record.materialization_started_at,
+            record.materialization_last_attempt_at,
+            record.materialization_next_retry_at,
+            int(record.fencing_version),
             record.updated_at,
             record.id,
         )
@@ -530,7 +858,11 @@ class SqlLocalCsvImportRepository:
             "UPDATE local_csv_imports SET export_id=?, schema_version=?, inventory_id=?, "
             "device_id=?, exported_at=?, status=?, content_hash=?, total_rows=?, valid_rows=?, "
             "rejected_rows=?, duplicate_rows=?, conflict_policy=?, confirmed_at=?, "
-            "confirmed_by_user_id=?, source_metadata_json=?, updated_at=? WHERE id=?",
+            "confirmed_by_user_id=?, source_metadata_json=?, last_error_code=?, "
+            "materialization_attempts=?, materialization_owner=?, "
+            "materialization_lease_expires_at=?, materialization_started_at=?, "
+            "materialization_last_attempt_at=?, materialization_next_retry_at=?, "
+            "fencing_version=?, updated_at=? WHERE id=?",
             values,
         )
         if cur.rowcount == 0:
@@ -539,8 +871,11 @@ class SqlLocalCsvImportRepository:
                 "(id, export_id, schema_version, inventory_id, device_id, exported_at, status, "
                 "content_hash, total_rows, valid_rows, rejected_rows, duplicate_rows, "
                 "conflict_policy, confirmed_at, confirmed_by_user_id, source_metadata_json, "
-                "created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "last_error_code, materialization_attempts, materialization_owner, "
+                "materialization_lease_expires_at, materialization_started_at, "
+                "materialization_last_attempt_at, materialization_next_retry_at, "
+                "fencing_version, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.id,
                     record.export_id,
@@ -558,6 +893,14 @@ class SqlLocalCsvImportRepository:
                     record.confirmed_at,
                     record.confirmed_by_user_id,
                     record.source_metadata_json,
+                    record.last_error_code,
+                    int(record.materialization_attempts),
+                    record.materialization_owner,
+                    record.materialization_lease_expires_at,
+                    record.materialization_started_at,
+                    record.materialization_last_attempt_at,
+                    record.materialization_next_retry_at,
+                    int(record.fencing_version),
                     record.created_at,
                     record.updated_at,
                 ),

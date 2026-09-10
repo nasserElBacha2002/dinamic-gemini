@@ -1,4 +1,5 @@
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
+import { normalizeLocalPositionCode } from '../../core/positionLabelPayload';
 import type {
   PositionSyncReferenceV2,
   PreliminaryDetectionSyncRequest,
@@ -63,8 +64,8 @@ function parsePositionReference(json: string | null): PositionSyncReferenceV2 | 
     return null;
   }
   const localRecognitionId = requiredText(value.localRecognitionId);
-  const rawCode = requiredText(value.rawCode);
-  const normalizedCode = requiredText(value.normalizedCode);
+  const rawCode = exactText(value.rawCode);
+  const normalizedCode = canonicalPositionCode(value.normalizedCode);
   const source = requiredText(value.source);
   const capturedAt = requiredText(value.capturedAt);
   if (!localRecognitionId || !rawCode || !normalizedCode || !source || !capturedAt) {
@@ -97,6 +98,19 @@ function requiredText(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function exactText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
 function optionalText(value: unknown): string | null {
   return value == null ? null : requiredText(value);
+}
+
+function canonicalPositionCode(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    return normalizeLocalPositionCode(value);
+  } catch {
+    return null;
+  }
 }

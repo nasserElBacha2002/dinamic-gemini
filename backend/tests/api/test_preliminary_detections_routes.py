@@ -6,8 +6,12 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_upsert_preliminary_detection_use_case
+from src.api.dependencies import (
+    get_upsert_preliminary_detection_use_case,
+    require_inventory_client_scope,
+)
 from src.api.server import app
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import AisleNotFoundError
 from src.application.use_cases.aisles.upsert_preliminary_detection import (
     PRELIMINARY_ASSET_PENDING,
@@ -25,6 +29,15 @@ from src.auth.schemas import AuthUser
 
 def _fake_admin() -> AuthUser:
     return AuthUser(id="admin", username="admin", role="administrator")
+
+
+def _principal() -> AccessPrincipal:
+    return AccessPrincipal(
+        actor_id="admin",
+        client_id="client-1",
+        roles=frozenset({"administrator"}),
+        is_platform=False,
+    )
 
 
 def _body(**over):
@@ -76,6 +89,7 @@ def test_success_validated():
     class Stub:
         def execute(self, cmd: UpsertPreliminaryDetectionCommand):
             assert cmd.draft_id == "draft-1"
+            assert cmd.principal == _principal()
             return UpsertPreliminaryDetectionResult(
                 draft_id="draft-1",
                 requested_draft_id="draft-1",
@@ -86,6 +100,7 @@ def test_success_validated():
             )
 
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[require_inventory_client_scope] = _principal
     app.dependency_overrides[get_upsert_preliminary_detection_use_case] = lambda: Stub()
     try:
         client = TestClient(app)
@@ -103,6 +118,7 @@ def test_disabled_returns_typed_code():
             raise PreliminaryDetectionIngestDisabledError()
 
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[require_inventory_client_scope] = _principal
     app.dependency_overrides[get_upsert_preliminary_detection_use_case] = lambda: Stub()
     try:
         client = TestClient(app, raise_server_exceptions=False)
@@ -127,6 +143,7 @@ def test_validation_failed_typed_code():
             )
 
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[require_inventory_client_scope] = _principal
     app.dependency_overrides[get_upsert_preliminary_detection_use_case] = lambda: Stub()
     try:
         client = TestClient(app, raise_server_exceptions=False)
@@ -156,6 +173,7 @@ def test_conflict_typed_code():
             )
 
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[require_inventory_client_scope] = _principal
     app.dependency_overrides[get_upsert_preliminary_detection_use_case] = lambda: Stub()
     try:
         client = TestClient(app, raise_server_exceptions=False)
@@ -180,6 +198,7 @@ def test_asset_pending_typed_code():
             )
 
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[require_inventory_client_scope] = _principal
     app.dependency_overrides[get_upsert_preliminary_detection_use_case] = lambda: Stub()
     try:
         client = TestClient(app, raise_server_exceptions=False)
@@ -196,6 +215,7 @@ def test_aisle_not_found_mapped():
             raise AisleNotFoundError("Aisle not found: aisle-1")
 
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[require_inventory_client_scope] = _principal
     app.dependency_overrides[get_upsert_preliminary_detection_use_case] = lambda: Stub()
     try:
         client = TestClient(app, raise_server_exceptions=False)
@@ -231,6 +251,7 @@ def test_v2_contract_maps_position_reference_and_authoritative_result():
             )
 
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[require_inventory_client_scope] = _principal
     app.dependency_overrides[get_upsert_preliminary_detection_use_case] = lambda: Stub()
     try:
         client = TestClient(app)
@@ -250,6 +271,8 @@ def test_v2_contract_maps_position_reference_and_authoritative_result():
             "retryable": False,
             "server_timestamp": "2026-07-24T00:00:00Z",
             "reconciliation_revision": 1,
+            "created": False,
+            "idempotent_replay": False,
         }
     finally:
         app.dependency_overrides.clear()
@@ -257,6 +280,7 @@ def test_v2_contract_maps_position_reference_and_authoritative_result():
 
 def test_v2_requires_position_reference():
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[require_inventory_client_scope] = _principal
     try:
         client = TestClient(app, raise_server_exceptions=False)
         res = client.put(PATH, json=_body(schema_version="2"))
@@ -267,6 +291,7 @@ def test_v2_requires_position_reference():
 
 def test_v1_rejects_position_reference():
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[require_inventory_client_scope] = _principal
     try:
         client = TestClient(app, raise_server_exceptions=False)
         res = client.put(PATH, json=_body(position_reference=_position_reference()))

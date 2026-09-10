@@ -22,6 +22,8 @@ def detection(
     client_id="client-1",
     signature="VALID",
     label_id="label-1",
+    aisle_location_id=None,
+    position_name=None,
 ):
     return PositionDetectionRef(
         id=detection_id,
@@ -29,7 +31,8 @@ def detection(
         detection_status=status,
         signature_status=signature,
         position_label_id=label_id,
-        position_name_snapshot=label_id,
+        aisle_location_id=aisle_location_id,
+        position_name_snapshot=position_name if position_name is not None else label_id,
     )
 
 
@@ -91,6 +94,53 @@ def test_product_before_first_position():
 def test_same_image_detection_applies_before_items():
     row = reconcile([frame(1, items=["r1"], detections=[detection()])])[0]
     assert row.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
+
+
+def test_trusted_materialized_skipped_detection_establishes_position():
+    row = reconcile(
+        [
+            frame(
+                1,
+                items=["r1"],
+                detections=[
+                    detection(
+                        signature="SKIPPED",
+                        label_id=None,
+                        aisle_location_id="location-1",
+                        position_name="A04-R-02",
+                    )
+                ],
+            )
+        ]
+    )[0]
+    assert row.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
+    assert row.position_label_id is None
+    assert row.aisle_location_id == "location-1"
+    assert row.position_name_snapshot == "A04-R-02"
+
+
+@pytest.mark.parametrize(
+    ("aisle_location_id", "position_name"),
+    [(None, "A04-R-02"), ("location-1", ""), (None, "")],
+)
+def test_bare_skipped_detection_does_not_establish_position(aisle_location_id, position_name):
+    row = reconcile(
+        [
+            frame(
+                1,
+                items=["r1"],
+                detections=[
+                    detection(
+                        signature="SKIPPED",
+                        label_id=None,
+                        aisle_location_id=aisle_location_id,
+                        position_name=position_name,
+                    )
+                ],
+            )
+        ]
+    )[0]
+    assert row.assignment_status is AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION
 
 
 def test_ambiguity_clears_until_next_valid_position():

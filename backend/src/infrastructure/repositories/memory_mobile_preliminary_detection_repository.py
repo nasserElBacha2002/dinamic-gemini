@@ -16,6 +16,11 @@ class MemoryMobilePreliminaryDetectionRepository:
         self._by_draft: dict[str, MobilePreliminaryDetection] = {}
         self._by_idem: dict[tuple[str, str, str, str], MobilePreliminaryDetection] = {}
 
+    def exists_by_materialization_request_id(self, request_id: str) -> bool:
+        return any(
+            row.position_materialization_request_id == request_id for row in self._by_draft.values()
+        )
+
     def get_by_draft_id(self, draft_id: str) -> MobilePreliminaryDetection | None:
         return self._by_draft.get((draft_id or "").strip())
 

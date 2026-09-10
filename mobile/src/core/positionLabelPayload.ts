@@ -303,9 +303,9 @@ export function createActivePositionState(
   input: LocalPositionRecognitionInput
 ): ActivePositionState {
   const normalizedCode = normalizeLocalPositionCode(input.normalizedCode ?? input.rawCode);
-  const rawCode = input.rawCode.trim();
+  const rawCode = input.rawCode;
   const positionCode = (input.positionCode ?? input.rawCode).trim();
-  const rawPayload = input.rawPayload.trim();
+  const rawPayload = input.rawPayload;
   return {
     schemaVersion: LOCAL_POSITION_SCHEMA_VERSION,
     payloadVersion: POSITION_SYNC_PAYLOAD_VERSION,
@@ -389,7 +389,8 @@ export function parseActivePositionStateJson(
     return parseV2ActivePosition(value, expected);
   }
   const labelId = textOrNull(value.labelId) ?? textOrNull(value.positionLabelId);
-  const rawPayload = textOrNull(value.rawPayload) ?? textOrNull(value.sourcePayload);
+  const rawPayload =
+    exactTextOrNull(value.rawPayload) ?? exactTextOrNull(value.sourcePayload);
   if (!labelId || !rawPayload) {
     return { ok: false, errorCode: 'ACTIVE_POSITION_LEGACY_INVALID' };
   }
@@ -438,7 +439,7 @@ function parseV2ActivePosition(
   value: Record<string, unknown>,
   expected: Omit<PositionActivationContext, 'localRecognitionId' | 'source'>
 ): ActivePositionParseResult {
-  const rawCode = textOrNull(value.rawCode);
+  const rawCode = exactTextOrNull(value.rawCode);
   const normalizedCode = textOrNull(value.normalizedCode);
   const localRecognitionId = textOrNull(value.localRecognitionId);
   const source = textOrNull(value.source);
@@ -446,11 +447,15 @@ function parseV2ActivePosition(
     return { ok: false, errorCode: 'ACTIVE_POSITION_SCHEMA_INVALID' };
   }
   const identityCode = textOrNull(value.labelId) ?? rawCode;
+  const canonicalIdentityCode = safeNormalizePositionCode(identityCode);
+  const canonicalStoredCode = safeNormalizePositionCode(normalizedCode);
   if (
     value.captureSessionId !== expected.captureSessionId ||
     value.inventoryId !== expected.inventoryId ||
     value.aisleLocalId !== expected.aisleLocalId ||
-    safeNormalizePositionCode(identityCode) !== normalizedCode
+    canonicalIdentityCode === null ||
+    canonicalStoredCode === null ||
+    canonicalIdentityCode !== canonicalStoredCode
   ) {
     return { ok: false, errorCode: 'ACTIVE_POSITION_CONTEXT_MISMATCH' };
   }
@@ -476,8 +481,8 @@ function parseV2ActivePosition(
     markerIndex: integerOrNull(value.markerIndex),
     markerTotal: integerOrNull(value.markerTotal),
     formattedMarker: textOrNull(value.formattedMarker),
-    rawPayload: textOrNull(value.rawPayload) ?? rawCode,
-    sourcePayload: textOrNull(value.sourcePayload) ?? rawCode,
+    rawPayload: exactTextOrNull(value.rawPayload) ?? rawCode,
+    sourcePayload: exactTextOrNull(value.sourcePayload) ?? rawCode,
     signature: textOrNull(value.signature) ?? textOrNull(value.signatureValue),
     keyVersion: integerOrNull(value.keyVersion),
   };
@@ -493,7 +498,7 @@ function parseV2ActivePosition(
       inventoryId: expected.inventoryId,
       aisleLocalId: expected.aisleLocalId,
       rawCode,
-      normalizedCode,
+      normalizedCode: canonicalStoredCode,
       remotePositionId: textOrNull(value.remotePositionId),
       remotePositionLabelId: textOrNull(value.remotePositionLabelId),
       source,
@@ -518,6 +523,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function textOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function exactTextOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
 }
 
 function integerOrNull(value: unknown): number | null {
