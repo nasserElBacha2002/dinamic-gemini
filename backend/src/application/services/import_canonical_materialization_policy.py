@@ -35,7 +35,7 @@ _RETRYABLE_STATUSES = frozenset(
 )
 
 
-class CanonicalImportMaterializationOutcome(Exception):
+class CanonicalImportMaterializationOutcome(Exception):  # noqa: N818
     """Carries the last materialization status for caller classification."""
 
     def __init__(

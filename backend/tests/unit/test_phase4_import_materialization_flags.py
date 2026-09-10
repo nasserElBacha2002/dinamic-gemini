@@ -27,6 +27,7 @@ def test_import_materialization_defaults_off(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("POSITION_FLEXIBLE_VALIDATION_ENABLED", "false")
     monkeypatch.setenv("POSITION_PREEXISTENCE_REQUIRED", "true")
     monkeypatch.setenv("POSITION_AUTO_MATERIALIZATION_ENABLED", "false")
+    monkeypatch.setenv("POSITION_SIGNATURE_POLICY", "REQUIRED")
     monkeypatch.setenv("POSITION_FLEXIBLE_CODE_SCAN_ENABLED", "false")
     monkeypatch.setenv("POSITION_FLEXIBLE_VISION_ENABLED", "false")
     monkeypatch.setenv("POSITION_FLEXIBLE_MOBILE_ENABLED", "false")

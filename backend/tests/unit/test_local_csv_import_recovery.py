@@ -25,6 +25,7 @@ from src.infrastructure.repositories.memory_inventory_repository import MemoryIn
 from src.infrastructure.repositories.memory_local_csv_import_repository import (
     MemoryLocalCsvImportRepository,
 )
+
 NOW = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
 
 

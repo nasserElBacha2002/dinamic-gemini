@@ -489,8 +489,10 @@ class SqlLocalInventoryPackageRepository:
         owner: str | None = None,
         expected_fencing_version: int | None = None,
     ) -> LocalInventoryPackage:
-        with self._client.begin_transaction() as txn:
-            with sql_repository_cursor(self._client, connection=txn.connection) as cur:
+        with self._client.begin_transaction() as txn:  # type: ignore[attr-defined]
+            with sql_repository_cursor(
+                self._client, connection=txn.connection
+            ) as cur:  # type: ignore[arg-type]
                 cur.execute(
                     f"SELECT {_PKG_COLS} FROM local_inventory_packages "
                     "WITH (UPDLOCK, ROWLOCK) WHERE id = ?",
@@ -559,8 +561,10 @@ class SqlLocalInventoryPackageRepository:
         owner: str | None = None,
         expected_fencing_version: int | None = None,
     ) -> LocalInventoryPackage:
-        with self._client.begin_transaction() as txn:
-            with sql_repository_cursor(self._client, connection=txn.connection) as cur:
+        with self._client.begin_transaction() as txn:  # type: ignore[attr-defined]
+            with sql_repository_cursor(
+                self._client, connection=txn.connection
+            ) as cur:  # type: ignore[arg-type]
                 cur.execute(
                     f"SELECT {_PKG_COLS} FROM local_inventory_packages "
                     "WITH (UPDLOCK, ROWLOCK) WHERE id = ?",

@@ -15,6 +15,7 @@ from src.application.dto.position_materialization import (
     MaterializePositionCommand,
 )
 from src.database.sqlserver import SqlServerClient
+from src.domain.inventory.write_policy import writable_status_values
 from src.domain.position_materialization.entities import (
     MaterializePositionResult,
     PositionMaterializationAssociationClaim,
@@ -23,7 +24,6 @@ from src.domain.position_materialization.entities import (
     PositionMaterializationEvidenceStatus,
     PositionMaterializationStatus,
 )
-from src.domain.inventory.write_policy import writable_status_values
 from src.domain.position_materialization.errors import (
     PositionMaterializationConflictError,
     PositionMaterializationInvariantError,

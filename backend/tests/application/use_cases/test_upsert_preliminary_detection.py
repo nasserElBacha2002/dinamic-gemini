@@ -183,6 +183,7 @@ def _uc(
     canonical_validator=None,
     materializer=None,
     auto_materialization_enabled: bool = False,
+    flexible_mobile_enabled: bool = False,
 ) -> tuple[UpsertPreliminaryDetectionUseCase, MemoryMobilePreliminaryDetectionRepository]:
     inventory_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
@@ -202,6 +203,7 @@ def _uc(
             canonical_position_validator=canonical_validator,
             position_materializer=materializer,
             auto_materialization_enabled=auto_materialization_enabled,
+            flexible_mobile_enabled=flexible_mobile_enabled,
         ),
         repo,
     )
@@ -525,6 +527,7 @@ def test_v2_valid_unmaterialized_is_materialized_with_server_authority():
         canonical_validator=Validator(),
         materializer=materializer,
         auto_materialization_enabled=True,
+        flexible_mobile_enabled=True,
     )
 
     result = uc.execute(_cmd(schema_version="2", position_reference=_position_reference()))

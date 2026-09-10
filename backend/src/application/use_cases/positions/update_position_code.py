@@ -231,13 +231,14 @@ class UpdatePositionCodeUseCase:
         materialization = outcome.materialization
         if (
             materialization is not None
-            and (materialization.request_id or "").strip()
             and self._position_materializer is not None
         ):
-            # Durable association for review-driven materialization (Phase 3 ports).
-            self._position_materializer.complete_association(
-                materialization.request_id,
-                success=True,
-                now=self._clock.now(),
-            )
+            request_id = (materialization.request_id or "").strip()
+            if request_id:
+                # Durable association for review-driven materialization (Phase 3 ports).
+                self._position_materializer.complete_association(
+                    request_id,
+                    success=True,
+                    now=self._clock.now(),
+                )
         return location_id

@@ -139,7 +139,8 @@ def test_code_scan_persister_builder_wires_materializer_when_auto_on() -> None:
     assert persister._position_materializer is materializer
     container.get_position_materialization_service.assert_called_once_with()
     code_scan_result = SimpleNamespace(vision_position_evidence=())
-    assert persister._channel_materialization_enabled(code_scan_result) is False
+    # Flexible master off → Phase 3 auto alone enables materialization.
+    assert persister._channel_materialization_enabled(code_scan_result) is True
 
 
 def test_code_scan_persister_builder_skips_materializer_when_auto_off() -> None:

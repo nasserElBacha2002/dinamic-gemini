@@ -81,9 +81,6 @@ from src.application.services.finalization_recovery_eligibility import (
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_artifact_verifier import JobArtifactVerifier
 from src.application.services.job_domain_result_verifier import JobDomainResultVerifier
-from src.application.services.operational_result_promotion_service import (
-    OperationalResultPromotionService,
-)
 from src.application.services.local_csv_import_recovery import (
     LocalCsvImportRecoveryConfig,
     LocalCsvImportRecoveryService,
@@ -91,6 +88,9 @@ from src.application.services.local_csv_import_recovery import (
 from src.application.services.local_csv_import_recovery_scheduler import (
     LocalCsvImportRecoveryScheduler,
     build_local_csv_import_recovery_scheduler,
+)
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
 )
 from src.application.services.position_materialization import (
     MaterializePositionService,

@@ -49,7 +49,17 @@ def _container(*, recovery_enabled: bool = False) -> AppContainer:
     container = AppContainer(
         AppSettings(
             sqlserver_enabled=False,
+            # Hermetic fail-closed flags — ignore developer .env flexible/auto knobs.
+            position_flexible_validation_enabled=False,
+            position_preexistence_required=True,
             position_auto_materialization_enabled=False,
+            position_import_materialization_enabled=False,
+            position_signature_policy="REQUIRED",
+            position_flexible_code_scan_enabled=False,
+            position_flexible_vision_enabled=False,
+            position_flexible_mobile_enabled=False,
+            position_flexible_import_enabled=False,
+            position_flexible_review_enabled=False,
             position_materialization_recovery_enabled=recovery_enabled,
         )
     )

@@ -855,11 +855,18 @@ class ProcessingResultPersister:
             return None
 
     def _channel_materialization_enabled(self, result: ImageProcessingResult) -> bool:
-        """Auto master + flexible master + per-channel flag for the recognition source."""
+        """Gate auto-materialization; keep CODE_SCAN vs VISION independent when flexible.
+
+        Phase 3: ``position_auto_materialization_enabled`` alone enables materialization of
+        already-validated detections (legacy preexistence path).
+
+        Phase 5: when the flexible master is on, each channel must also be enabled —
+        Vision ON must not enable CODE_SCAN materialization and vice versa.
+        """
         if not self._position_auto_materialization_enabled:
             return False
         if not self._flexible_validation_enabled:
-            return False
+            return True
         if result.vision_position_evidence:
             return self._flexible_vision_enabled
         return self._flexible_code_scan_enabled
