@@ -41,6 +41,7 @@ _ALLOWED_LABEL_KEYS = frozenset(
         "mode",
         "source",
         "channel",
+        "category",
     }
 )
 
@@ -82,7 +83,20 @@ _BOUNDED_METRIC_LABEL_VALUES: dict[str, dict[str, frozenset[str]]] = {
                 "unrecognized",
             }
         ),
-    }
+    },
+    "position_flexible_divergence_total": {
+        "channel": frozenset({"CODE_SCAN", "VISION", "MOBILE", "IMPORT", "REVIEW"}),
+        "outcome": frozenset(
+            {
+                "SHADOW_DISABLED",
+                "MATCH_ACCEPT",
+                "MATCH_REJECT",
+                "DIVERGENCE_FLEXIBLE_ACCEPTS",
+                "DIVERGENCE_FLEXIBLE_REJECTS",
+            }
+        ),
+        "category": frozenset({"SIGNATURE", "PREEXISTENCE", "OTHER", "NONE"}),
+    },
 }
 
 DEFAULT_MAX_SERIES_PER_METRIC = 500

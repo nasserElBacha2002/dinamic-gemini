@@ -25,6 +25,9 @@ def _to_utc(dt: datetime | None) -> datetime | None:
 
 
 def _row_to_profile(row) -> ClientSupplierLabelProfile:
+    signature_policy = "REQUIRED"
+    if hasattr(row, "signature_policy") and row.signature_policy is not None:
+        signature_policy = str(row.signature_policy).strip().upper() or "REQUIRED"
     return ClientSupplierLabelProfile(
         id=str(row.id),
         client_supplier_id=str(row.client_supplier_id),
@@ -32,6 +35,7 @@ def _row_to_profile(row) -> ClientSupplierLabelProfile:
         source=LabelProfileSource(str(row.source).strip().upper()),
         created_at=_to_utc(row.created_at),
         updated_at=_to_utc(row.updated_at),
+        signature_policy=signature_policy,
     )
 
 
@@ -55,11 +59,12 @@ class SqlClientSupplierLabelProfileRepository(ClientSupplierLabelProfileReposito
                     cur.execute(
                         """
                         UPDATE client_supplier_label_profiles
-                        SET source = ?, updated_at = ?
+                        SET source = ?, signature_policy = ?, updated_at = ?
                         WHERE client_supplier_id = ? AND label_kind = ?
                         """,
                         (
                             profile.source.value,
+                            (profile.signature_policy or "REQUIRED").strip().upper(),
                             updated,
                             profile.client_supplier_id,
                             profile.label_kind.value,
@@ -69,14 +74,16 @@ class SqlClientSupplierLabelProfileRepository(ClientSupplierLabelProfileReposito
                         cur.execute(
                             """
                             INSERT INTO client_supplier_label_profiles (
-                                id, client_supplier_id, label_kind, source, created_at, updated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?)
+                                id, client_supplier_id, label_kind, source,
+                                signature_policy, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
                             """,
                             (
                                 profile.id,
                                 profile.client_supplier_id,
                                 profile.label_kind.value,
                                 profile.source.value,
+                                (profile.signature_policy or "REQUIRED").strip().upper(),
                                 created,
                                 updated,
                             ),
@@ -97,6 +104,7 @@ class SqlClientSupplierLabelProfileRepository(ClientSupplierLabelProfileReposito
                         source=profile.source,
                         created_at=existing.created_at,
                         updated_at=updated,
+                        signature_policy=profile.signature_policy,
                     )
         if last_exc is not None:
             raise last_exc
@@ -108,7 +116,8 @@ class SqlClientSupplierLabelProfileRepository(ClientSupplierLabelProfileReposito
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
-                SELECT id, client_supplier_id, label_kind, source, created_at, updated_at
+                SELECT id, client_supplier_id, label_kind, source, signature_policy,
+                       created_at, updated_at
                 FROM client_supplier_label_profiles
                 WHERE client_supplier_id = ? AND label_kind = ?
                 """,
@@ -123,7 +132,8 @@ class SqlClientSupplierLabelProfileRepository(ClientSupplierLabelProfileReposito
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
-                SELECT id, client_supplier_id, label_kind, source, created_at, updated_at
+                SELECT id, client_supplier_id, label_kind, source, signature_policy,
+                       created_at, updated_at
                 FROM client_supplier_label_profiles
                 WHERE client_supplier_id = ?
                 ORDER BY label_kind

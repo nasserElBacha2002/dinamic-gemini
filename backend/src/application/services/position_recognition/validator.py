@@ -133,6 +133,19 @@ class CanonicalPositionValidator:
             policy=policy,
         )
 
+    def _effective_signature_policy(
+        self, command: CanonicalPositionValidationCommand
+    ) -> PositionSignaturePolicy:
+        """Profile policy wins when present; settings policy is the default/kill-switch."""
+        profiles = command.context.resolved_profiles
+        if profiles is not None:
+            profile_policy = getattr(profiles.position, "signature_policy", None)
+            if profile_policy is not None:
+                if isinstance(profile_policy, PositionSignaturePolicy):
+                    return profile_policy
+                return PositionSignaturePolicy(str(profile_policy).strip().upper())
+        return self._policy.signature_policy
+
     def validate(
         self,
         command: CanonicalPositionValidationCommand,
@@ -211,7 +224,7 @@ class CanonicalPositionValidator:
         key_version = (
             int(payload["key_version"]) if payload.get("key_version") is not None else None
         )
-        signature_policy = self._policy.signature_policy
+        signature_policy = self._effective_signature_policy(command)
         if signature_policy is PositionSignaturePolicy.NOT_APPLICABLE:
             verification = PositionSignatureVerification.NOT_APPLICABLE
         else:
@@ -255,6 +268,13 @@ class CanonicalPositionValidator:
         )
 
         if signature_policy is PositionSignaturePolicy.NOT_APPLICABLE:
+            if signature_present:
+                return CanonicalPositionValidationResult(
+                    status=CanonicalPositionValidationStatus.SIGNATURE_NOT_ALLOWED_FOR_PROFILE,
+                    recognition=recognition,
+                    error_code="SIGNATURE_NOT_ALLOWED_FOR_PROFILE",
+                    policy_rejection=True,
+                )
             return self._resolve_dinamic(
                 command,
                 recognition,

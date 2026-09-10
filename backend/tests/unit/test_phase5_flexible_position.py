@@ -24,6 +24,7 @@ from src.application.services.position_recognition import (
     PositionSignaturePolicy,
     compare_flexible_shadow,
     is_flexible_channel_enabled,
+    resolve_effective_position_policy,
 )
 from src.application.services.positioning_label_signing import (
     PositioningLabelSigningConfig,
@@ -186,6 +187,26 @@ def test_signature_not_applicable_skips_hmac() -> None:
     )
 
 
+def test_signature_not_applicable_rejects_present_signature() -> None:
+    result = CanonicalPositionValidator(
+        signing=_signing(),
+        resolver=StubResolver(PositionLabelDetectionStatus.LABEL_NOT_FOUND),
+        policy=PositionCompatibilityPolicy.resolve(
+            signature_validation_enabled=True,
+            allow_unsigned_legacy=False,
+            preexistence_required=False,
+            flexible_validation_enabled=True,
+            signature_policy=PositionSignaturePolicy.NOT_APPLICABLE,
+        ),
+    ).validate(_command(_signed_payload("POS-NA")))
+
+    assert (
+        result.status is CanonicalPositionValidationStatus.SIGNATURE_NOT_ALLOWED_FOR_PROFILE
+    )
+    assert result.error_code == "SIGNATURE_NOT_ALLOWED_FOR_PROFILE"
+    assert result.operationally_accepted is False
+
+
 def test_channel_gate_requires_master_flexible(monkeypatch: pytest.MonkeyPatch) -> None:
     _legacy_defaults(monkeypatch)
     monkeypatch.setenv("POSITION_FLEXIBLE_CODE_SCAN_ENABLED", "true")
@@ -261,6 +282,7 @@ def test_shadow_does_not_change_productive_outcome() -> None:
     assert evaluation.shadow.status is CanonicalPositionValidationStatus.VALID_UNMATERIALIZED
     assert evaluation.comparison is not None
     assert evaluation.comparison.outcome is FlexibleShadowOutcome.DIVERGENCE_FLEXIBLE_ACCEPTS
+    assert "PREEXISTENCE" in evaluation.comparison.divergence_categories
     snapshot = metrics.snapshot()
     assert any("position_flexible_evaluation_total" in name for name in snapshot)
     assert any("position_flexible_divergence_total" in name for name in snapshot)
@@ -388,6 +410,101 @@ def test_accept_coordinator_rejects_null_location_on_materialize_success(
     assert outcome.error_code == "POSITION_LOCATION_ID_REQUIRED"
 
 
+def test_accept_never_soft_accepts_unmaterialized_when_channel_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _legacy_defaults(monkeypatch)
+    settings = LimitsAndSchemaSettings()
+    recognition = CanonicalPositionRecognition(
+        raw_code="POS-1",
+        normalized_code="POS-1",
+        source=PositionRecognitionSource.CODE_SCAN,
+        signature=PositionSignatureEvidence(
+            present=True,
+            verification=PositionSignatureVerification.VERIFIED,
+        ),
+    )
+    validation = CanonicalPositionValidationResult(
+        status=CanonicalPositionValidationStatus.VALID_UNMATERIALIZED,
+        recognition=recognition,
+    )
+    outcome = AcceptPositionCoordinator(
+        settings=settings,
+        auto_materialization_enabled=False,
+    ).accept(
+        AcceptPositionRequest(
+            validation=validation,
+            channel=FlexiblePositionChannel.CODE_SCAN,
+        )
+    )
+    assert outcome.accepted is False
+    assert outcome.location_id is None
+    assert outcome.error_code == "POSITION_UNMATERIALIZED_NOT_ACCEPTED"
+
+
+def test_accept_valid_existing_requires_nonempty_location_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _legacy_defaults(monkeypatch)
+    settings = LimitsAndSchemaSettings()
+    validation = CanonicalPositionValidationResult(
+        status=CanonicalPositionValidationStatus.VALID_EXISTING,
+        existing_position_label_id="  ",
+    )
+    outcome = AcceptPositionCoordinator(
+        settings=settings,
+        auto_materialization_enabled=False,
+    ).accept(
+        AcceptPositionRequest(
+            validation=validation,
+            channel=FlexiblePositionChannel.CODE_SCAN,
+        )
+    )
+    assert outcome.accepted is False
+    assert outcome.error_code == "POSITION_LOCATION_ID_REQUIRED"
+
+
+def test_resolve_effective_position_policy_channel_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _legacy_defaults(monkeypatch)
+    monkeypatch.setenv("POSITION_FLEXIBLE_VALIDATION_ENABLED", "true")
+    monkeypatch.setenv("POSITION_PREEXISTENCE_REQUIRED", "false")
+    monkeypatch.setenv("POSITION_AUTO_MATERIALIZATION_ENABLED", "true")
+    monkeypatch.setenv("POSITION_FLEXIBLE_CODE_SCAN_ENABLED", "true")
+    settings = LimitsAndSchemaSettings()
+
+    legacy = resolve_effective_position_policy(
+        FlexiblePositionChannel.VISION,
+        settings,
+        profile_signature_policy=PositionSignaturePolicy.OPTIONAL,
+        capability_enforced=True,
+    )
+    assert legacy.flexible_validation_enabled is False
+    assert legacy.preexistence_required is True
+    assert legacy.signature_policy is PositionSignaturePolicy.OPTIONAL
+
+    flexible = resolve_effective_position_policy(
+        FlexiblePositionChannel.CODE_SCAN,
+        settings,
+        profile_signature_policy="OPTIONAL",
+        capability_enforced=True,
+    )
+    assert flexible.flexible_validation_enabled is True
+    assert flexible.preexistence_required is False
+    assert flexible.signature_policy is PositionSignaturePolicy.OPTIONAL
+
+    shadow_only = resolve_effective_position_policy(
+        FlexiblePositionChannel.CODE_SCAN,
+        settings,
+        profile_signature_policy=None,
+        capability_enforced=False,
+    )
+    assert shadow_only.flexible_validation_enabled is False
+    assert shadow_only.preexistence_required is True
+    assert shadow_only.signature_policy is PositionSignaturePolicy.REQUIRED
+
+
 def test_ambiguous_code_does_not_become_position() -> None:
     """AMBIGUOUS_CODE from resolver must not be classified as a position."""
 
@@ -456,3 +573,58 @@ def test_code_scan_classifier_ambiguous_precedence_over_position() -> None:
     assert result.ambiguous_indexes == (0,)
     assert result.positions == ()
     assert result.items == ()
+
+
+def test_capability_reader_isolates_clients() -> None:
+    from datetime import UTC, datetime
+
+    from src.application.ports.position_flexible_capability_reader import (
+        PositionFlexibleCapability,
+        PositionFlexibleCapabilityMode,
+    )
+    from src.infrastructure.persistence.memory_position_flexible_capability_reader import (
+        MemoryPositionFlexibleCapabilityReader,
+        capability_enforced,
+    )
+
+    now = datetime.now(UTC)
+    reader = MemoryPositionFlexibleCapabilityReader(
+        [
+            PositionFlexibleCapability(
+                id="cap-a",
+                client_id="client-a",
+                channel="CODE_SCAN",
+                mode=PositionFlexibleCapabilityMode.ENFORCED,
+                enabled=True,
+                created_at=now,
+                updated_at=now,
+            ),
+            PositionFlexibleCapability(
+                id="cap-b",
+                client_id="client-b",
+                channel="CODE_SCAN",
+                mode=PositionFlexibleCapabilityMode.SHADOW,
+                enabled=True,
+                created_at=now,
+                updated_at=now,
+            ),
+        ]
+    )
+    assert capability_enforced(reader, client_id="client-a", channel="CODE_SCAN") is True
+    assert capability_enforced(reader, client_id="client-b", channel="CODE_SCAN") is False
+    assert capability_enforced(reader, client_id="client-c", channel="CODE_SCAN") is False
+    assert capability_enforced(None, client_id="client-a", channel="CODE_SCAN") is False
+
+
+def test_shadow_records_materialization_possible_category() -> None:
+    productive = CanonicalPositionValidationResult(
+        status=CanonicalPositionValidationStatus.PREEXISTENCE_REQUIRED_BY_LEGACY_POLICY,
+        error_code="PREEXISTENCE_REQUIRED",
+    )
+    shadow = CanonicalPositionValidationResult(
+        status=CanonicalPositionValidationStatus.VALID_UNMATERIALIZED,
+    )
+    comparison = compare_flexible_shadow(productive, shadow)
+    assert comparison.diverged is True
+    assert "PREEXISTENCE" in comparison.divergence_categories
+    assert "MATERIALIZATION_POSSIBLE" in comparison.divergence_categories

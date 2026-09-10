@@ -2078,6 +2078,7 @@ def get_update_position_code_use_case(
         principal=principal,
         canonical_position_validator=validator,
         accept_coordinator=accept_coordinator,
+        position_materializer=position_materializer if flexible_review else None,
         flexible_review_enabled=flexible_review,
         auto_materialization_enabled=bool(settings.position_auto_materialization_enabled),
     )

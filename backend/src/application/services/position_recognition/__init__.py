@@ -11,6 +11,7 @@ from src.application.services.position_recognition.channel_gates import (
 )
 from src.application.services.position_recognition.flexible_shadow import (
     FlexibleShadowComparison,
+    FlexibleShadowDivergenceCategory,
     FlexibleShadowEvaluation,
     FlexibleShadowOutcome,
     PositionFlexibleShadowEvaluator,
@@ -24,6 +25,7 @@ from src.application.services.position_recognition.normalization import (
     normalize_position_code,
 )
 from src.application.services.position_recognition.policy_from_settings import (
+    resolve_effective_position_policy,
     resolve_position_compatibility_policy,
 )
 from src.application.services.position_recognition.shadow_comparison import (
@@ -49,6 +51,7 @@ __all__ = [
     "CanonicalPositionValidator",
     "FlexiblePositionChannel",
     "FlexibleShadowComparison",
+    "FlexibleShadowDivergenceCategory",
     "FlexibleShadowEvaluation",
     "FlexibleShadowOutcome",
     "NormalizedPositionCode",
@@ -65,5 +68,6 @@ __all__ = [
     "is_flexible_channel_enabled",
     "normalize_position_code",
     "record_position_shadow_metric",
+    "resolve_effective_position_policy",
     "resolve_position_compatibility_policy",
 ]

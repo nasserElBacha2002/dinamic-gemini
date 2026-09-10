@@ -171,6 +171,11 @@ _FLEXIBLE_EVALUATION_OUTCOMES = frozenset(
 )
 
 
+_FLEXIBLE_DIVERGENCE_CATEGORIES = frozenset(
+    {"SIGNATURE", "PREEXISTENCE", "OTHER", "NONE"}
+)
+
+
 def record_position_flexible_evaluation(*, channel: str, outcome: str) -> None:
     """Shadow/productive flexible evaluation outcome (no ids/codes)."""
     get_metrics_registry().inc(
@@ -183,7 +188,12 @@ def record_position_flexible_evaluation(*, channel: str, outcome: str) -> None:
     )
 
 
-def record_position_flexible_divergence(*, channel: str, outcome: str) -> None:
+def record_position_flexible_divergence(
+    *,
+    channel: str,
+    outcome: str,
+    category: str = "OTHER",
+) -> None:
     """Increment only when productive and flexible shadow accept/reject diverge."""
     get_metrics_registry().inc(
         POSITION_FLEXIBLE_DIVERGENCE_TOTAL,
@@ -191,6 +201,9 @@ def record_position_flexible_divergence(*, channel: str, outcome: str) -> None:
         {
             "channel": channel if channel in _FLEXIBLE_CHANNELS else "CODE_SCAN",
             "outcome": outcome if outcome in _FLEXIBLE_EVALUATION_OUTCOMES else "MATCH_REJECT",
+            "category": (
+                category if category in _FLEXIBLE_DIVERGENCE_CATEGORIES else "OTHER"
+            ),
         },
     )
 

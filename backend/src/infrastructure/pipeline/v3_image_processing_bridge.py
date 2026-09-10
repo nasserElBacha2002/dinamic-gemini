@@ -356,8 +356,9 @@ def _build_canonical_position_validator(
     )
     from src.application.services.position_recognition import (
         CanonicalPositionValidator,
-        PositionCompatibilityPolicy,
-        PositionSignaturePolicy,
+    )
+    from src.application.services.position_recognition.policy_from_settings import (
+        resolve_position_compatibility_policy,
     )
     from src.application.services.positioning_label_signing import (
         PositioningLabelSigningConfig,
@@ -383,29 +384,11 @@ def _build_canonical_position_validator(
         )
     if not resolve_existing:
         resolver = None
-    raw_signature_policy = str(
-        getattr(settings, "position_signature_policy", "REQUIRED") or "REQUIRED"
-    ).strip().upper()
-    try:
-        signature_policy = PositionSignaturePolicy(raw_signature_policy)
-    except ValueError:
-        signature_policy = PositionSignaturePolicy.REQUIRED
+
     return CanonicalPositionValidator(
         signing=signing,
         resolver=resolver,
-        policy=PositionCompatibilityPolicy.resolve(
-            signature_validation_enabled=bool(
-                getattr(settings, "position_label_signature_validation_enabled", True)
-            ),
-            allow_unsigned_legacy=bool(
-                getattr(settings, "positioning_allow_unsigned_legacy", True)
-            ),
-            preexistence_required=bool(getattr(settings, "position_preexistence_required", True)),
-            flexible_validation_enabled=bool(
-                getattr(settings, "position_flexible_validation_enabled", False)
-            ),
-            signature_policy=signature_policy,
-        ),
+        policy=resolve_position_compatibility_policy(settings),
     )
 
 
@@ -505,12 +488,10 @@ def build_default_code_scan_persister(
         ProcessingResultPersister,
     )
 
-    enabled = bool(getattr(settings, "position_auto_materialization_enabled", False)) and (
-        bool(getattr(settings, "position_flexible_code_scan_enabled", False))
-        or bool(getattr(settings, "position_flexible_vision_enabled", False))
-    )
+    # Master auto flag only — channel isolation happens at persist time per source.
+    auto_enabled = bool(settings.position_auto_materialization_enabled)
     materializer = None
-    if enabled:
+    if auto_enabled:
         if container is None:
             raise RuntimeError(
                 "position materialization requires the runtime application container"
@@ -524,7 +505,10 @@ def build_default_code_scan_persister(
         unit_of_work_factory=unit_of_work_factory,
         position_detection_repo=position_detection_repo,
         position_materializer=materializer,
-        position_auto_materialization_enabled=enabled,
+        position_auto_materialization_enabled=auto_enabled,
+        flexible_validation_enabled=bool(settings.position_flexible_validation_enabled),
+        flexible_code_scan_enabled=bool(settings.position_flexible_code_scan_enabled),
+        flexible_vision_enabled=bool(settings.position_flexible_vision_enabled),
     )
 
 

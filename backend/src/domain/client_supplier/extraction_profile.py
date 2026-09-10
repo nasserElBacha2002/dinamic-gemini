@@ -1058,6 +1058,8 @@ class SupplierExtractionProfile:
     row_version: int = 1
     #: Phase 1 — ITEM or POSITION; NULL legacy rows treated as ITEM after migration.
     label_kind: LabelKind | None = None
+    #: Phase 5 — Dinamic signature semantics for POSITION profiles (default REQUIRED).
+    signature_policy: str = "REQUIRED"
 
     @property
     def is_active(self) -> bool:

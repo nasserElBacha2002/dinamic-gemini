@@ -94,6 +94,7 @@ PositionAuthoritativeStatus = Literal[
     "REUSED",
     "REJECTED_FORMAT",
     "REJECTED_VALIDATION",
+    "REJECTED_POLICY",
     "REJECTED_PROFILE",
     "REJECTED_SCOPE",
     "REJECTED_INVENTORY_STATE",
@@ -799,7 +800,12 @@ class UpsertPreliminaryDetectionUseCase:
                     "POSITION_FLEXIBLE_MOBILE_DISABLED",
                     normalized_code=normalized_code,
                 )
-            return outcome("ACCEPTED_UNMATERIALIZED", None, normalized_code=normalized_code)
+            # Productive path never soft-accepts unmaterialized positions.
+            return outcome(
+                "REJECTED_POLICY",
+                "POSITION_UNMATERIALIZED_REQUIRES_FLEXIBLE_MOBILE",
+                normalized_code=normalized_code,
+            )
         if canonical.status is CanonicalPositionValidationStatus.AMBIGUOUS_CODE:
             return outcome(
                 "REJECTED_AMBIGUOUS",

@@ -22,6 +22,7 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
+from src.application.services.position_materialization.service import MaterializePositionService
 from src.application.services.position_recognition import (
     AcceptPositionCoordinator,
     AcceptPositionRequest,
@@ -62,6 +63,7 @@ class UpdatePositionCodeUseCase:
         principal: AccessPrincipal | None = None,
         canonical_position_validator: CanonicalPositionValidator | None = None,
         accept_coordinator: AcceptPositionCoordinator | None = None,
+        position_materializer: MaterializePositionService | None = None,
         flexible_review_enabled: bool = False,
         auto_materialization_enabled: bool = False,
     ) -> None:
@@ -74,6 +76,7 @@ class UpdatePositionCodeUseCase:
         self._principal = principal
         self._canonical_position_validator = canonical_position_validator
         self._accept_coordinator = accept_coordinator
+        self._position_materializer = position_materializer
         self._flexible_review_enabled = bool(flexible_review_enabled)
         self._auto_materialization_enabled = bool(auto_materialization_enabled)
 
@@ -114,6 +117,8 @@ class UpdatePositionCodeUseCase:
                 raw_code=new_code,
                 normalized_code=normalized.normalized_code,
             )
+            if not (location_id or "").strip():
+                raise ValueError("POSITION_LOCATION_ID_REQUIRED")
 
         now = self._clock.now()
         before_code = position.corrected_position_code
@@ -121,7 +126,7 @@ class UpdatePositionCodeUseCase:
             position.review_resolution.value if position.review_resolution is not None else None
         )
 
-        position.corrected_position_code = new_code
+        position.corrected_position_code = normalized.normalized_code
         position.status = PositionStatus.CORRECTED
         position.review_resolution = PositionReviewResolution.POSITION_CODE_CORRECTED
         position.needs_review = False
@@ -130,7 +135,8 @@ class UpdatePositionCodeUseCase:
         self._position_repo.save(position)
 
         after_json: dict[str, str | None] = {
-            "corrected_position_code": new_code,
+            "corrected_position_code": normalized.normalized_code,
+            "raw_position_code": new_code,
             "review_resolution": PositionReviewResolution.POSITION_CODE_CORRECTED.value,
         }
         if location_id is not None:
@@ -179,7 +185,10 @@ class UpdatePositionCodeUseCase:
                 raise ValueError(
                     validation.error_code or validation.status.value or "POSITION_REJECTED"
                 )
-            return validation.existing_position_label_id
+            location_id = (validation.existing_position_label_id or "").strip() or None
+            if location_id is None:
+                raise ValueError("POSITION_LOCATION_ID_REQUIRED")
+            return location_id
 
         materialize_command = None
         if self._auto_materialization_enabled:
@@ -215,4 +224,20 @@ class UpdatePositionCodeUseCase:
         )
         if not outcome.accepted:
             raise ValueError(outcome.error_code or "POSITION_REJECTED")
-        return outcome.location_id
+        location_id = (outcome.location_id or "").strip() or None
+        if location_id is None:
+            raise ValueError("POSITION_LOCATION_ID_REQUIRED")
+
+        materialization = outcome.materialization
+        if (
+            materialization is not None
+            and (materialization.request_id or "").strip()
+            and self._position_materializer is not None
+        ):
+            # Durable association for review-driven materialization (Phase 3 ports).
+            self._position_materializer.complete_association(
+                materialization.request_id,
+                success=True,
+                now=self._clock.now(),
+            )
+        return location_id

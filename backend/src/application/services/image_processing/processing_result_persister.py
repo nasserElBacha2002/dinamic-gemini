@@ -185,6 +185,9 @@ class ProcessingResultPersister:
         position_detection_repo: ImagePositionLabelDetectionRepository | None = None,
         position_materializer: MaterializePositionService | None = None,
         position_auto_materialization_enabled: bool = False,
+        flexible_validation_enabled: bool = False,
+        flexible_code_scan_enabled: bool = False,
+        flexible_vision_enabled: bool = False,
     ) -> None:
         self._job_source_asset_repo = job_source_asset_repo
         self._source_asset_repo = source_asset_repo
@@ -193,6 +196,9 @@ class ProcessingResultPersister:
         self._position_detection_repo = position_detection_repo
         self._position_materializer = position_materializer
         self._position_auto_materialization_enabled = position_auto_materialization_enabled
+        self._flexible_validation_enabled = bool(flexible_validation_enabled)
+        self._flexible_code_scan_enabled = bool(flexible_code_scan_enabled)
+        self._flexible_vision_enabled = bool(flexible_vision_enabled)
 
     def persist(
         self,
@@ -562,13 +568,14 @@ class ProcessingResultPersister:
                 persisted=False, skipped_reason=PersistSkipReason.ASSET_NOT_IN_SNAPSHOT
             )
 
+        materialize_enabled = self._channel_materialization_enabled(result)
         coordinator = PositionMaterializationCoordinator(
             clock=self._clock,
             detection_repo=self._position_detection_repo,
             materializer=self._position_materializer,
-            enabled=self._position_auto_materialization_enabled,
+            enabled=materialize_enabled,
         )
-        if self._position_auto_materialization_enabled:
+        if materialize_enabled:
             conflict = self._preflight_position_only_conflict(
                 job_id=job_id,
                 asset_id=asset_id,
@@ -846,6 +853,16 @@ class ProcessingResultPersister:
                 asset_id,
             )
             return None
+
+    def _channel_materialization_enabled(self, result: ImageProcessingResult) -> bool:
+        """Auto master + flexible master + per-channel flag for the recognition source."""
+        if not self._position_auto_materialization_enabled:
+            return False
+        if not self._flexible_validation_enabled:
+            return False
+        if result.vision_position_evidence:
+            return self._flexible_vision_enabled
+        return self._flexible_code_scan_enabled
 
 
 __all__ = [

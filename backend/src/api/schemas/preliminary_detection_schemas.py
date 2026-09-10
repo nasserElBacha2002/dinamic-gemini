@@ -54,6 +54,7 @@ class PositionAuthoritativeResultV2(BaseModel):
         "REUSED",
         "REJECTED_FORMAT",
         "REJECTED_VALIDATION",
+        "REJECTED_POLICY",
         "REJECTED_PROFILE",
         "REJECTED_SCOPE",
         "REJECTED_INVENTORY_STATE",

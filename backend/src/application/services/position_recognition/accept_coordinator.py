@@ -42,7 +42,10 @@ class AcceptPositionOutcome:
 
 
 class AcceptPositionCoordinator:
-    """Thin accept gate: VALID_UNMATERIALIZED + flexible channel + auto → materialize."""
+    """Thin accept gate: VALID_UNMATERIALIZED + flexible channel + auto → materialize.
+
+    Productive accept never returns ``accepted=True`` with a null ``location_id``.
+    """
 
     def __init__(
         self,
@@ -66,11 +69,21 @@ class AcceptPositionCoordinator:
             )
 
         if validation.status is CanonicalPositionValidationStatus.VALID_EXISTING:
-            return AcceptPositionOutcome(
+            location_id = (validation.existing_position_label_id or "").strip() or None
+            if location_id is None:
+                return AcceptPositionOutcome(
+                    accepted=False,
+                    validation=validation,
+                    location_id=None,
+                    error_code="POSITION_LOCATION_ID_REQUIRED",
+                )
+            outcome = AcceptPositionOutcome(
                 accepted=True,
                 validation=validation,
-                location_id=validation.existing_position_label_id,
+                location_id=location_id,
             )
+            assert outcome.location_id
+            return outcome
 
         if validation.status is not CanonicalPositionValidationStatus.VALID_UNMATERIALIZED:
             return AcceptPositionOutcome(
@@ -89,14 +102,17 @@ class AcceptPositionCoordinator:
                     location_id=None,
                     error_code="AUTO_MATERIALIZATION_REQUIRED_FOR_FLEXIBLE_CHANNEL",
                 )
-            return self._materialize_required(request)
+            outcome = self._materialize_required(request)
+            if outcome.accepted:
+                assert outcome.location_id
+            return outcome
 
-        # Legacy / non-channel path: VALID_UNMATERIALIZED without channel rollout
-        # remains unmaterialized (preexistence policy should usually prevent this).
+        # Legacy / channel off: unmaterialized is not operationally accepted.
         return AcceptPositionOutcome(
-            accepted=True,
+            accepted=False,
             validation=validation,
             location_id=None,
+            error_code="POSITION_UNMATERIALIZED_NOT_ACCEPTED",
         )
 
     def _materialize_required(self, request: AcceptPositionRequest) -> AcceptPositionOutcome:
@@ -129,7 +145,6 @@ class AcceptPositionCoordinator:
             )
         location_id = (result.location_id or "").strip() or None
         if location_id is None:
-            # Soft-accept with null location is forbidden when productive position required.
             return AcceptPositionOutcome(
                 accepted=False,
                 validation=validation,
@@ -137,9 +152,11 @@ class AcceptPositionCoordinator:
                 materialization=result,
                 error_code="POSITION_LOCATION_ID_REQUIRED",
             )
-        return AcceptPositionOutcome(
+        outcome = AcceptPositionOutcome(
             accepted=True,
             validation=validation,
             location_id=location_id,
             materialization=result,
         )
+        assert outcome.location_id
+        return outcome

@@ -134,11 +134,12 @@ def test_update_position_code_real_use_case_validates_and_records_review() -> No
 
     saved = position_repo.get_by_id(position.id)
     assert saved is not None
-    assert saved.corrected_position_code == "a-é/01"
+    assert saved.corrected_position_code == "A-É/01"
     assert saved.status is PositionStatus.CORRECTED
     actions = review_repo.list_by_position(position.id)
     assert len(actions) == 1
-    assert actions[0].after_json["corrected_position_code"] == "a-é/01"
+    assert actions[0].after_json["corrected_position_code"] == "A-É/01"
+    assert actions[0].after_json["raw_position_code"] == "a-é/01"
 
 
 def test_confirm_position_sets_reviewed_and_creates_audit() -> None:
