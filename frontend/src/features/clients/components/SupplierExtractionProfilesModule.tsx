@@ -867,23 +867,6 @@ export default function SupplierExtractionProfilesModule({
                 }
               />
             </Box>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={formState.configuration.quantity_rules.allow_decimals}
-                  onChange={(e) =>
-                    updateConfiguration((prev) => ({
-                      ...prev,
-                      quantity_rules: {
-                        ...prev.quantity_rules,
-                        allow_decimals: e.target.checked,
-                      },
-                    }))
-                  }
-                />
-              }
-              label={t('clients.extraction_profile.quantity_allow_decimals')}
-            />
           </Stack>
         </SectionCard>
 

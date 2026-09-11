@@ -6,6 +6,10 @@ import logging
 import re
 from collections.abc import Mapping
 
+from src.application.services.label_validation.integer_quantity import (
+    IntegerQuantityError,
+    parse_integer_quantity,
+)
 from src.application.services.label_validation.payload_pattern import (
     PayloadPatternError,
 )
@@ -898,24 +902,16 @@ class LabelValidationService:
         qty_out: int | None = None
         if quantity is not None:
             try:
-                qty_out = int(quantity)
-            except (TypeError, ValueError):
+                qty_out = parse_integer_quantity(quantity)
+            except IntegerQuantityError as exc:
                 return LabelValidationResult.invalid(
                     error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
-                    detail="quantity must be an integer",
+                    detail=exc.message,
                     profile_source=LabelProfileSource.SUPPLIER,
                     label_kind=LabelKind.ITEM,
-                    diagnostics={"failed_field": "quantity"},
+                    diagnostics={"failed_field": "quantity", "quantity_error": exc.code},
                 )
             qrules = config.quantity_rules
-            if not qrules.allow_decimals and isinstance(quantity, float):
-                return LabelValidationResult.invalid(
-                    error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
-                    detail="quantity decimals are not allowed",
-                    profile_source=LabelProfileSource.SUPPLIER,
-                    label_kind=LabelKind.ITEM,
-                    diagnostics={"failed_field": "quantity"},
-                )
             if qty_out < 0 and not qrules.allow_negative:
                 return LabelValidationResult.invalid(
                     error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,

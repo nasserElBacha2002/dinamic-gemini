@@ -138,6 +138,7 @@ export default function PayloadStructureSection({ configuration, labelKind, onCh
             value={mapping}
             labelKind={labelKind}
             index={index}
+            expectedSegmentCount={rules.expected_segment_count}
             onChange={(next) => setMappings(rules.field_mappings.map((item, itemIndex) => itemIndex === index ? next : item))}
             onRemove={() => setMappings(rules.field_mappings.filter((_, itemIndex) => itemIndex !== index))}
           />

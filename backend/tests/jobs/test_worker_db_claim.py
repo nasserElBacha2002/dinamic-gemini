@@ -5,11 +5,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from src.domain.jobs.entities import Job as V3Job
 from src.domain.jobs.entities import JobStatus as V3JobStatus
 from src.jobs import job_store
 from src.jobs.models import JobInput, JobRecord, JobStatus
 from src.jobs.worker import worker_loop
+from src.jobs.worker_runtime import (
+    REASON_REPOSITORIES_NOT_INITIALIZED,
+    get_embedded_worker_runtime,
+    reset_embedded_worker_runtime_for_tests,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_worker_runtime() -> None:
+    reset_embedded_worker_runtime_for_tests()
 
 
 def _make_job(job_id: str, status: JobStatus = JobStatus.QUEUED) -> JobRecord:
@@ -178,6 +190,10 @@ def test_claim_next_job_logs_exception_when_db_claim_fails(monkeypatch, caplog) 
 def test_claim_next_job_logs_error_when_sql_mode_configured_but_repos_unavailable(
     monkeypatch, caplog
 ) -> None:
+    def _boom_v3_repo() -> None:
+        raise RuntimeError("v3 repo missing")
+
+    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", _boom_v3_repo)
     monkeypatch.setattr(job_store, "_db_repos", lambda: None)
     monkeypatch.setattr(
         job_store,
@@ -186,6 +202,85 @@ def test_claim_next_job_logs_error_when_sql_mode_configured_but_repos_unavailabl
     )
     with caplog.at_level(logging.ERROR):
         claimed = job_store.claim_next_job(Path("output"))
+        job_store.claim_next_job(Path("output"))
 
     assert claimed is None
-    assert "SQL worker mode configured but DB repositories are unavailable" in caplog.text
+    assert caplog.text.count("job_worker_unavailable") == 1
+    assert "v3_job_repository_unavailable" in caplog.text
+    assert "SQL worker mode configured but DB repositories are unavailable" not in caplog.text
+
+
+def test_claim_next_job_sql_mode_without_claimable_repo_marks_repositories_not_initialized(
+    monkeypatch, caplog
+) -> None:
+    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: object())
+    monkeypatch.setattr(job_store, "_db_repos", lambda: None)
+    monkeypatch.setattr(
+        job_store,
+        "load_settings",
+        lambda: SimpleNamespace(sqlserver_enabled=True, sqlserver_connection_string="Driver=ok"),
+    )
+    with caplog.at_level(logging.ERROR):
+        claimed = job_store.claim_next_job(Path("output"))
+        job_store.claim_next_job(Path("output"))
+
+    assert claimed is None
+    assert caplog.text.count("job_worker_unavailable") == 1
+    assert REASON_REPOSITORIES_NOT_INITIALIZED in caplog.text
+    assert (
+        get_embedded_worker_runtime().snapshot().unavailable_reason
+        == REASON_REPOSITORIES_NOT_INITIALIZED
+    )
+
+
+def test_claim_next_job_sql_idle_with_v3_repo_does_not_log_legacy_unavailable(
+    monkeypatch, caplog
+) -> None:
+    class IdleV3Repo:
+        def claim_next_queued_job(self):
+            return None
+
+    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: IdleV3Repo())
+    monkeypatch.setattr(job_store, "_db_repos", lambda: None)
+    monkeypatch.setattr(
+        job_store,
+        "load_settings",
+        lambda: SimpleNamespace(
+            sqlserver_enabled=True,
+            sqlserver_connection_string="Driver=ok",
+            legacy_stage8_sql_bridge_disabled=True,
+        ),
+    )
+    with caplog.at_level(logging.ERROR):
+        claimed = job_store.claim_next_job(Path("output"))
+
+    assert claimed is None
+    assert "job_worker_unavailable" not in caplog.text
+    assert get_embedded_worker_runtime().snapshot().unavailable_reason is None
+
+
+def test_claim_next_job_recovers_and_logs_once_after_unavailable(monkeypatch, caplog) -> None:
+    state = {"fail": True}
+
+    class FlipV3Repo:
+        def claim_next_queued_job(self):
+            if state["fail"]:
+                raise RuntimeError("transient")
+            return None
+
+    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: FlipV3Repo())
+    monkeypatch.setattr(job_store, "_db_repos", lambda: None)
+    monkeypatch.setattr(
+        job_store,
+        "load_settings",
+        lambda: SimpleNamespace(sqlserver_enabled=True, sqlserver_connection_string="Driver=ok"),
+    )
+    with caplog.at_level(logging.INFO):
+        assert job_store.claim_next_job(Path("output")) is None
+        assert get_embedded_worker_runtime().snapshot().unavailable_reason == "v3_job_repository_unavailable"
+        state["fail"] = False
+        assert job_store.claim_next_job(Path("output")) is None
+
+    assert "job_worker_unavailable reason=v3_job_repository_unavailable" in caplog.text
+    assert "job_worker_recovered" in caplog.text
+    assert get_embedded_worker_runtime().snapshot().unavailable_reason is None

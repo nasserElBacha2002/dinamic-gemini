@@ -75,10 +75,18 @@ class ProcessedProductLabel:
         except ValueError:
             status = ProductLabelOutcomeStatus.MALFORMED
         qty = data.get("quantity")
+        if isinstance(qty, bool):
+            quantity = None
+        elif isinstance(qty, int):
+            quantity = qty
+        elif isinstance(qty, str) and qty.isdigit():
+            quantity = int(qty)
+        else:
+            quantity = None
         return cls(
             label_id=(str(data["label_id"]).strip().upper() if data.get("label_id") else None),
             internal_code=(str(data["internal_code"]).strip() if data.get("internal_code") else None),
-            quantity=int(qty) if isinstance(qty, int) or (isinstance(qty, str) and qty.isdigit()) else None,
+            quantity=quantity,
             format_version=(str(data["format_version"]) if data.get("format_version") else None),
             checksum=(str(data["checksum"]).upper() if data.get("checksum") else None),
             validation_status=status,

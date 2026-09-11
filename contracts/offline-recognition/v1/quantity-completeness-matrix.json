@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "description": "Single decision table for ITEM quantity completeness. Backend and mobile must emit the same identity_complete / completion_complete / persistence_complete / missing fields / fallback_eligible. POSITION never requires quantity. Never invent quantity=0 or quantity=1.",
+  "algorithm": {
+    "quantity_required_for_completion": [
+      "POSITION → false",
+      "required=true OR expected_presence=ALWAYS OR 'quantity' in required_fields → true",
+      "missing_quantity_action=RESOLVE_CODE_ONLY (and not explicitly required) → false",
+      "OPTIONAL and not explicitly required: EXTERNAL_FALLBACK or allow_external_fallback → true, else false",
+      "missing_quantity_action=EXTERNAL_FALLBACK → true",
+      "missing_quantity_action=PENDING_MANUAL_REVIEW or UNRECOGNIZED → true",
+      "else allow_external_fallback"
+    ],
+    "fallback_eligible": "identity_complete AND quantity missing AND quantity_required_for_completion AND (allow_external_fallback OR missing_quantity_action=EXTERNAL_FALLBACK)"
+  },
+  "rows": [
+    {
+      "id": "item_required_always_pending_missing",
+      "kind": "ITEM",
+      "required": true,
+      "expected_presence": "ALWAYS",
+      "missing_quantity_action": "PENDING_MANUAL_REVIEW",
+      "allow_external_fallback": false,
+      "required_fields": ["label_id", "quantity"],
+      "fields": { "label_id": "PRD-123456", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": true,
+        "identity_complete": true,
+        "completion_complete": false,
+        "persistence_complete": false,
+        "missing_completion_fields": ["quantity"],
+        "fallback_eligible": false
+      }
+    },
+    {
+      "id": "item_required_always_fallback_missing",
+      "kind": "ITEM",
+      "required": true,
+      "expected_presence": "ALWAYS",
+      "missing_quantity_action": "EXTERNAL_FALLBACK",
+      "allow_external_fallback": true,
+      "required_fields": ["label_id", "quantity"],
+      "fields": { "label_id": "PRD-123456", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": true,
+        "identity_complete": true,
+        "completion_complete": false,
+        "persistence_complete": false,
+        "missing_completion_fields": ["quantity"],
+        "fallback_eligible": true
+      }
+    },
+    {
+      "id": "item_required_with_quantity_present",
+      "kind": "ITEM",
+      "required": true,
+      "expected_presence": "ALWAYS",
+      "missing_quantity_action": "EXTERNAL_FALLBACK",
+      "allow_external_fallback": true,
+      "required_fields": ["label_id", "quantity"],
+      "fields": { "label_id": "PRD-123456", "quantity": 12 },
+      "expected": {
+        "quantity_required_for_completion": true,
+        "identity_complete": true,
+        "completion_complete": true,
+        "persistence_complete": true,
+        "missing_completion_fields": [],
+        "fallback_eligible": false
+      }
+    },
+    {
+      "id": "item_optional_resolve_code_only",
+      "kind": "ITEM",
+      "required": false,
+      "expected_presence": "OPTIONAL",
+      "missing_quantity_action": "RESOLVE_CODE_ONLY",
+      "allow_external_fallback": false,
+      "required_fields": ["label_id"],
+      "fields": { "label_id": "LPNA000184", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": false,
+        "identity_complete": true,
+        "completion_complete": true,
+        "persistence_complete": true,
+        "missing_completion_fields": [],
+        "fallback_eligible": false
+      }
+    },
+    {
+      "id": "item_optional_pending_no_fallback",
+      "kind": "ITEM",
+      "required": false,
+      "expected_presence": "OPTIONAL",
+      "missing_quantity_action": "PENDING_MANUAL_REVIEW",
+      "allow_external_fallback": false,
+      "required_fields": ["label_id"],
+      "fields": { "label_id": "ASI-2W5H8D", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": false,
+        "identity_complete": true,
+        "completion_complete": true,
+        "persistence_complete": true,
+        "missing_completion_fields": [],
+        "fallback_eligible": false
+      }
+    },
+    {
+      "id": "item_optional_pending_allow_fallback",
+      "kind": "ITEM",
+      "required": false,
+      "expected_presence": "OPTIONAL",
+      "missing_quantity_action": "PENDING_MANUAL_REVIEW",
+      "allow_external_fallback": true,
+      "required_fields": ["label_id"],
+      "fields": { "label_id": "PRD-123456", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": true,
+        "identity_complete": true,
+        "completion_complete": false,
+        "persistence_complete": false,
+        "missing_completion_fields": ["quantity"],
+        "fallback_eligible": true
+      }
+    },
+    {
+      "id": "item_optional_external_fallback",
+      "kind": "ITEM",
+      "required": false,
+      "expected_presence": "OPTIONAL",
+      "missing_quantity_action": "EXTERNAL_FALLBACK",
+      "allow_external_fallback": true,
+      "required_fields": ["label_id"],
+      "fields": { "label_id": "PRD-123456", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": true,
+        "identity_complete": true,
+        "completion_complete": false,
+        "persistence_complete": false,
+        "missing_completion_fields": ["quantity"],
+        "fallback_eligible": true
+      }
+    },
+    {
+      "id": "item_optional_unrecognized_no_fallback",
+      "kind": "ITEM",
+      "required": false,
+      "expected_presence": "OPTIONAL",
+      "missing_quantity_action": "UNRECOGNIZED",
+      "allow_external_fallback": false,
+      "required_fields": ["label_id"],
+      "fields": { "label_id": "PRD-123456", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": false,
+        "identity_complete": true,
+        "completion_complete": true,
+        "persistence_complete": true,
+        "missing_completion_fields": [],
+        "fallback_eligible": false
+      }
+    },
+    {
+      "id": "item_quantity_in_required_fields",
+      "kind": "ITEM",
+      "required": false,
+      "expected_presence": "OPTIONAL",
+      "missing_quantity_action": "RESOLVE_CODE_ONLY",
+      "allow_external_fallback": false,
+      "required_fields": ["label_id", "quantity"],
+      "fields": { "label_id": "PRD-123456", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": true,
+        "identity_complete": true,
+        "completion_complete": false,
+        "persistence_complete": false,
+        "missing_completion_fields": ["quantity"],
+        "fallback_eligible": false
+      }
+    },
+    {
+      "id": "item_unknown_pending",
+      "kind": "ITEM",
+      "required": false,
+      "expected_presence": "UNKNOWN",
+      "missing_quantity_action": "PENDING_MANUAL_REVIEW",
+      "allow_external_fallback": false,
+      "required_fields": ["label_id"],
+      "fields": { "label_id": "PRD-123456", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": true,
+        "identity_complete": true,
+        "completion_complete": false,
+        "persistence_complete": false,
+        "missing_completion_fields": ["quantity"],
+        "fallback_eligible": false
+      }
+    },
+    {
+      "id": "item_unknown_resolve",
+      "kind": "ITEM",
+      "required": false,
+      "expected_presence": "UNKNOWN",
+      "missing_quantity_action": "RESOLVE_CODE_ONLY",
+      "allow_external_fallback": false,
+      "required_fields": ["label_id"],
+      "fields": { "label_id": "PRD-123456", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": false,
+        "identity_complete": true,
+        "completion_complete": true,
+        "persistence_complete": true,
+        "missing_completion_fields": [],
+        "fallback_eligible": false
+      }
+    },
+    {
+      "id": "item_identity_missing",
+      "kind": "ITEM",
+      "required": true,
+      "expected_presence": "ALWAYS",
+      "missing_quantity_action": "EXTERNAL_FALLBACK",
+      "allow_external_fallback": true,
+      "required_fields": ["label_id", "quantity"],
+      "fields": { "label_id": null, "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": true,
+        "identity_complete": false,
+        "completion_complete": false,
+        "persistence_complete": false,
+        "missing_completion_fields": ["label_id", "quantity"],
+        "fallback_eligible": false
+      }
+    },
+    {
+      "id": "position_never_requires_quantity",
+      "kind": "POSITION",
+      "required": true,
+      "expected_presence": "ALWAYS",
+      "missing_quantity_action": "EXTERNAL_FALLBACK",
+      "allow_external_fallback": true,
+      "required_fields": ["position_id"],
+      "fields": { "position_id": "LOC-A01-02", "quantity": null },
+      "expected": {
+        "quantity_required_for_completion": false,
+        "identity_complete": true,
+        "completion_complete": true,
+        "persistence_complete": true,
+        "missing_completion_fields": [],
+        "fallback_eligible": false
+      }
+    }
+  ]
+}

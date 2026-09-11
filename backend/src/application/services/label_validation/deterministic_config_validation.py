@@ -204,6 +204,18 @@ def _validate_mappings(
                     LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,
                     "segment_index must be a non-negative integer",
                 )
+            if (
+                rules.expected_segment_count is not None
+                and mapping.segment_index >= int(rules.expected_segment_count)
+            ):
+                raise ExtractionProfileConfigurationError(
+                    LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,
+                    (
+                        "segment_index "
+                        f"{mapping.segment_index} is out of range for expected_segment_count "
+                        f"{rules.expected_segment_count}"
+                    ),
+                )
         elif mapping.source is FieldMappingSource.WHOLE:
             if mapping.segment_index is not None:
                 raise ExtractionProfileConfigurationError(

@@ -3,6 +3,7 @@
 from src.application.services.label_validation.gs1_payload_parser import Gs1PayloadParser
 from src.application.services.label_validation.job_validation_context import (
     build_label_validation_context_from_job,
+    build_label_validation_context_from_resolved_profiles,
     item_profile_source,
     load_resolved_label_profiles_from_job,
     position_profile_source,
@@ -25,6 +26,7 @@ __all__ = [
     "LabelValidationService",
     "StructuredPayloadExtractor",
     "build_label_validation_context_from_job",
+    "build_label_validation_context_from_resolved_profiles",
     "compile_payload_pattern",
     "item_profile_source",
     "load_resolved_label_profiles_from_job",

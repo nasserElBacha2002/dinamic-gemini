@@ -26,7 +26,7 @@ import {
   defaultExtractionProfileConfiguration,
   LABEL_RECOGNITION_TEMPLATES,
 } from '../../utils/defaultExtractionProfileConfiguration';
-import { normalizeExtractionProfileForSave } from '../../utils/normalizeDeterministicFieldMappings';
+import { normalizeExtractionProfileForSave, validateExtractionProfileForSave } from '../../utils/normalizeDeterministicFieldMappings';
 import BarcodeRulesSection from './BarcodeRulesSection';
 import BasicIdentitySection from './BasicIdentitySection';
 import ExamplesEditor from './ExamplesEditor';
@@ -126,6 +126,11 @@ export default function LabelRecognitionProfileModule({ clientId, supplierId, su
 
   const handleSave = async (activate: boolean) => {
     try {
+      const saveErrors = validateExtractionProfileForSave(draft.configuration);
+      if (saveErrors.length > 0) {
+        showSnackbar(t('clients.extraction_profile.save_blocked_invalid_mappings'), 'error');
+        return;
+      }
       const configuration = normalizeExtractionProfileForSave(draft.configuration);
       await createMutation.mutateAsync({
         configuration: configuration as unknown as Record<string, unknown>,

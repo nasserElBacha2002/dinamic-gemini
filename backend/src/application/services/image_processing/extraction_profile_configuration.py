@@ -52,6 +52,38 @@ class ExtractionProfileConfigurationError(ValueError):
         self.message = message
 
 
+def _parse_optional_segment_index(value: object, *, field: str) -> int | None:
+    """Require an explicit integer segment_index; never invent or truncate."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ExtractionProfileConfigurationError(
+            "LABEL_FIELD_MAPPING_INVALID",
+            f"{field} must be a non-negative integer",
+        )
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        raise ExtractionProfileConfigurationError(
+            "LABEL_FIELD_MAPPING_INVALID",
+            f"{field} must be a non-negative integer (decimals are not accepted)",
+        )
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if not text.lstrip("-").isdigit() or any(marker in text for marker in ".,"):
+            raise ExtractionProfileConfigurationError(
+                "LABEL_FIELD_MAPPING_INVALID",
+                f"{field} must be a non-negative integer",
+            )
+        return int(text)
+    raise ExtractionProfileConfigurationError(
+        "LABEL_FIELD_MAPPING_INVALID",
+        f"{field} must be a non-negative integer",
+    )
+
+
 def _as_str_tuple(raw: object, *, field: str) -> tuple[str, ...]:
     if raw is None:
         return ()
@@ -608,7 +640,6 @@ def _parse_deterministic_rules(raw: dict[str, Any]) -> DeterministicBarcodeRules
                 f"duplicate mapping target {target!r}",
             )
         seen_targets.add(target)
-        segment_index = item.get("segment_index")
         ai_raw = item.get("application_identifier")
         application_identifier = (
             str(ai_raw).strip() if ai_raw is not None and str(ai_raw).strip() else None
@@ -617,7 +648,10 @@ def _parse_deterministic_rules(raw: dict[str, Any]) -> DeterministicBarcodeRules
             FieldMappingRule(
                 target=target,
                 source=source,
-                segment_index=int(segment_index) if segment_index is not None else None,
+                segment_index=_parse_optional_segment_index(
+                    item.get("segment_index"),
+                    field=f"deterministic.field_mappings[{idx}].segment_index",
+                ),
                 application_identifier=application_identifier,
             )
         )

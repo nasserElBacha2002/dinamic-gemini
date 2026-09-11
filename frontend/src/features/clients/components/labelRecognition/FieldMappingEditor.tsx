@@ -11,13 +11,42 @@ interface Props {
   value: DeterministicFieldMapping;
   labelKind: LabelKind;
   index: number;
+  expectedSegmentCount?: number | null;
   onChange: (value: DeterministicFieldMapping) => void;
   onRemove: () => void;
 }
 
-export default function FieldMappingEditor({ value, labelKind, index, onChange, onRemove }: Props) {
+export default function FieldMappingEditor({
+  value,
+  labelKind,
+  index,
+  expectedSegmentCount,
+  onChange,
+  onRemove,
+}: Props) {
   const { t } = useTranslation();
   const targets = labelKind === 'ITEM' ? ITEM_TARGETS : POSITION_TARGETS;
+  const segmentIndexMissing =
+    value.source === 'SEGMENT' &&
+    (value.segment_index == null || Number.isNaN(Number(value.segment_index)));
+  const segmentIndexInvalid =
+    value.source === 'SEGMENT' &&
+    value.segment_index != null &&
+    (!Number.isInteger(value.segment_index) || value.segment_index < 0);
+  const segmentIndexOutOfRange =
+    value.source === 'SEGMENT' &&
+    typeof value.segment_index === 'number' &&
+    Number.isInteger(value.segment_index) &&
+    typeof expectedSegmentCount === 'number' &&
+    expectedSegmentCount > 0 &&
+    value.segment_index >= expectedSegmentCount;
+  const segmentIndexError = segmentIndexMissing
+    ? t('clients.extraction_profile.segment_index_required')
+    : segmentIndexInvalid
+      ? t('clients.extraction_profile.segment_index_invalid')
+      : segmentIndexOutOfRange
+        ? t('clients.extraction_profile.segment_index_out_of_range')
+        : '';
   return (
     <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr auto' } }}>
       <TextField
@@ -39,8 +68,7 @@ export default function FieldMappingEditor({ value, labelKind, index, onChange, 
           onChange({
             ...value,
             source,
-            // SEGMENT requires an explicit index; UI used to display `index` as a
-            // fallback while leaving segment_index null → API 422 on save.
+            // Suggest an index when the user chooses SEGMENT; never repair on save.
             segment_index: source === 'SEGMENT' ? (value.segment_index ?? index) : null,
             application_identifier:
               source === 'APPLICATION_IDENTIFIER' ? value.application_identifier : null,
@@ -55,14 +83,22 @@ export default function FieldMappingEditor({ value, labelKind, index, onChange, 
         <TextField
           size="small"
           type="number"
-          inputProps={{ min: 0 }}
+          inputProps={{ min: 0, step: 1 }}
           label={t('clients.extraction_profile.segment_index')}
-          value={value.segment_index ?? index}
-          onChange={(event) => onChange({ ...value, segment_index: Number(event.target.value) })}
-          onBlur={() => {
-            if (value.segment_index == null || Number.isNaN(value.segment_index)) {
-              onChange({ ...value, segment_index: index });
+          value={value.segment_index ?? ''}
+          error={Boolean(segmentIndexError)}
+          helperText={segmentIndexError || ' '}
+          onChange={(event) => {
+            const raw = event.target.value;
+            if (raw === '') {
+              onChange({ ...value, segment_index: null });
+              return;
             }
+            const parsed = Number(raw);
+            onChange({
+              ...value,
+              segment_index: Number.isFinite(parsed) ? parsed : null,
+            });
           }}
         />
       ) : value.source === 'APPLICATION_IDENTIFIER' ? (
