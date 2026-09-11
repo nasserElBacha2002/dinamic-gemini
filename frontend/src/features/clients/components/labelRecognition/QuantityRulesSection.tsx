@@ -105,15 +105,7 @@ export default function QuantityRulesSection({ configuration, onChange }: Props)
           }
           label={t('clients.extraction_profile.quantity_required_auto')}
         />
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={Boolean(rules.allow_decimals)}
-              onChange={(e) => update({ allow_decimals: e.target.checked })}
-            />
-          }
-          label={t('clients.extraction_profile.quantity_allow_decimals')}
-        />
+        <Alert severity="info">{t('clients.extraction_profile.quantity_decimals_not_supported')}</Alert>
       </Stack>
     </SectionCard>
   );

@@ -5,6 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.application.ports.supplier_extraction_profile_repository import (
+    SupplierExtractionProfileRepository,
+)
 from src.application.services.image_processing.extraction_profile_configuration import (
     ExtractionProfileConfigurationError,
     parse_extraction_configuration,
@@ -14,7 +17,7 @@ from src.application.services.label_validation.label_validation_service import (
     validate_extraction_configuration_for_code_scan,
 )
 from src.domain.client_supplier.extraction_profile import ExtractionProfileConfiguration
-from src.domain.label_profiles.entities import ResolvedLabelProfiles
+from src.domain.label_profiles.entities import ResolvedLabelProfile, ResolvedLabelProfiles
 from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
 from src.domain.label_validation.context import LabelValidationContext
 
@@ -134,3 +137,64 @@ def position_profile_source(context: LabelValidationContext) -> LabelProfileSour
     if context.resolved_profiles is None:
         return LabelProfileSource.DINAMIC
     return context.resolved_profiles.position.source
+
+
+def _load_supplier_kind_configuration(
+    *,
+    assignment: ResolvedLabelProfile,
+    extraction_profile_repo: SupplierExtractionProfileRepository,
+    client_id: str,
+    supplier_id: str,
+) -> ExtractionProfileConfiguration | None:
+    """Load the SUPPLIER extraction configuration for one resolved kind."""
+    if assignment.source is not LabelProfileSource.SUPPLIER:
+        return None
+    profile_id = assignment.extraction_profile_id
+    version = assignment.extraction_profile_version
+    if profile_id and version is not None:
+        profile = extraction_profile_repo.get_by_client_supplier_kind_version(
+            client_id, supplier_id, assignment.label_kind, int(version)
+        )
+        if profile is None:
+            profile = extraction_profile_repo.get_by_id(profile_id)
+        if profile is not None and profile.configuration is not None:
+            return profile.configuration
+        return None
+    profile = extraction_profile_repo.get_active_by_kind(
+        client_id, supplier_id, assignment.label_kind
+    )
+    if profile is not None:
+        return profile.configuration
+    return None
+
+
+def build_label_validation_context_from_resolved_profiles(
+    *,
+    resolved: ResolvedLabelProfiles,
+    extraction_profile_repo: SupplierExtractionProfileRepository,
+    client_id: str,
+    supplier_id: str,
+    job_id: str | None = None,
+) -> LabelValidationContext | None:
+    """Build validation context from already-resolved ITEM/POSITION profiles."""
+    item_cfg = _load_supplier_kind_configuration(
+        assignment=resolved.item,
+        extraction_profile_repo=extraction_profile_repo,
+        client_id=client_id,
+        supplier_id=supplier_id,
+    )
+    position_cfg = _load_supplier_kind_configuration(
+        assignment=resolved.position,
+        extraction_profile_repo=extraction_profile_repo,
+        client_id=client_id,
+        supplier_id=supplier_id,
+    )
+    if item_cfg is None and position_cfg is None:
+        return None
+    return LabelValidationContext(
+        resolved_profiles=resolved,
+        item_extraction_configuration=item_cfg,
+        position_extraction_configuration=position_cfg,
+        job_id=job_id,
+        client_id=client_id,
+    )

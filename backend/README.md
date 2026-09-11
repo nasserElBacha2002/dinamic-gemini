@@ -223,7 +223,9 @@ This backend now uses a versioned schema guard to prevent rolling out code again
 - Backend container images install **`pyodbc`**, **unixODBC**, and **Microsoft ODBC Driver 18** (`msodbcsql18`) using the architecture-native package from Microsoft’s Debian 12 repo (same driver name **`ODBC Driver 18 for SQL Server`** inside the container as on a typical Linux host).
 - Runtime guard:
   - startup check compares DB version vs required version
-  - `/ready` returns `503` when schema is incompatible
+  - `/ready` returns `503` when schema is incompatible, the repository backend is unusable,
+    or the **embedded worker** (when `EMBEDDED_WORKER_ENABLED=true`) is not operable.
+    An empty job queue is healthy. `/health` remains liveness (`ok` always true).
   - `/health` exposes compatibility metadata
 
 Important env vars:

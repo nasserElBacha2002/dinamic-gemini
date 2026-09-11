@@ -6,8 +6,12 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from src.application.ports.job_source_asset_repository import JobSourceAssetLink
 from src.application.services.image_processing.processing_result_persister import (
+    PersistenceMode,
+    PersistOutcome,
     PersistSkipReason,
     ProcessingResultPersister,
 )
@@ -47,7 +51,13 @@ def _link(*, job_id: str, asset_id: str) -> JobSourceAssetLink:
     )
 
 
-def _persister_harness(*, asset_id: str = "asset-1", job_id: str = "job-1"):
+def _persister_harness(
+    *,
+    asset_id: str = "asset-1",
+    job_id: str = "job-1",
+    existing_coverage=None,
+    existing_position=None,
+):
     now = datetime(2026, 7, 21, 12, 0, 0, tzinfo=timezone.utc)
     job_source = MagicMock()
     job_source.list_for_job.return_value = [_link(job_id=job_id, asset_id=asset_id)]
@@ -61,10 +71,11 @@ def _persister_harness(*, asset_id: str = "asset-1", job_id: str = "job-1"):
 
     saved: dict[str, object] = {}
     position_repo = MagicMock()
+    position_repo.get_by_id.return_value = existing_position
     product_repo = MagicMock()
     evidence_repo = MagicMock()
     coverage_repo = MagicMock()
-    coverage_repo.get_by_job_and_asset.return_value = None
+    coverage_repo.get_by_job_and_asset.return_value = existing_coverage
     image_coverage_repo = MagicMock()
     image_coverage_repo.has_results_for_asset.return_value = False
     result_evidence_repo = MagicMock()
@@ -122,7 +133,8 @@ def test_persist_code_without_quantity_creates_needs_review_position():
     # Identity preserved as review position; no ProductRecord / no qty=0 invent.
     assert outcome.persisted is True
     assert outcome.products_persisted == 0
-    assert outcome.skipped_reason is PersistSkipReason.IDENTITY_REVIEW_PERSISTED
+    assert outcome.skipped_reason is None
+    assert outcome.persistence_mode is PersistenceMode.IDENTITY_REVIEW
     position = saved["position"]
     assert position.needs_review is True
     assert position.detected_summary_json["quantity_status"] == "MISSING"
@@ -191,3 +203,62 @@ def test_persist_missing_code_still_skipped():
     assert outcome.persisted is False
     assert outcome.skipped_reason is PersistSkipReason.MISSING_CODE_OR_QUANTITY
     assert "position" not in saved
+
+
+def test_persist_outcome_rejects_persisted_with_skipped_reason() -> None:
+    with pytest.raises(ValueError, match="skipped_reason"):
+        PersistOutcome(
+            persisted=True,
+            skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+        )
+
+
+def test_decimal_quantity_is_not_truncated_to_product_record() -> None:
+    persister, saved, job_id, asset_id = _persister_harness()
+    result = ImageProcessingResult(
+        job_id=job_id,
+        asset_id=asset_id,
+        status=ImageResultStatus.RESOLVED_EXTERNAL,
+        processing_mode="EXTERNAL_PROVIDER",
+        resolved_by="EXTERNAL_PROVIDER",
+        internal_code="3075807",
+        quantity=1.5,
+        execution_scope=ExecutionScope.AISLE_BATCH,
+        logical_asset_attempt=True,
+        provider_name="claude",
+        evidence={"identity_valid": True, "missing_fields": ["quantity"]},
+    )
+    outcome = persister.persist(result=result, inventory_id="inv-1", aisle_id="aisle-1")
+    assert outcome.persisted is True
+    assert outcome.persistence_mode is PersistenceMode.IDENTITY_REVIEW
+    assert outcome.skipped_reason is None
+    assert "product" not in saved
+    assert saved["position"].needs_review is True
+
+
+def test_identity_review_idempotent_replay() -> None:
+    existing = SimpleNamespace(position_id="pos-existing", created_by_user_id=None)
+    linked = SimpleNamespace(job_id="job-1")
+    persister, saved, job_id, asset_id = _persister_harness(
+        existing_coverage=existing,
+        existing_position=linked,
+    )
+    result = ImageProcessingResult(
+        job_id=job_id,
+        asset_id=asset_id,
+        status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+        processing_mode="CODE_SCAN",
+        resolved_by="code_scan",
+        internal_code="PRD-123456",
+        quantity=None,
+        error_code="MISSING_QUANTITY",
+        evidence={"identity_valid": True, "enrichment_complete": False},
+    )
+    outcome = persister.persist(result=result, inventory_id="inv-1", aisle_id="aisle-1")
+    assert outcome.persisted is True
+    assert outcome.idempotent_replay is True
+    assert outcome.persistence_mode is PersistenceMode.IDENTITY_REVIEW
+    assert outcome.skipped_reason is None
+    assert outcome.position_id == "pos-existing"
+    assert "position" not in saved
+    assert "product" not in saved

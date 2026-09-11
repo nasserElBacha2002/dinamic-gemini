@@ -49,6 +49,7 @@ from src.config import load_settings, resolve_sqlserver_connection_config
 from src.database.migrations import ensure_schema_compatibility, get_required_schema_version
 from src.database.sqlserver import SqlServerClient
 from src.jobs.worker import worker_loop
+from src.jobs.worker_runtime import get_embedded_worker_runtime
 from src.observability.metrics.registry import get_metrics_registry
 from src.observability.metrics_auth import metrics_access_allowed
 from src.observability.middleware import ObservabilityMiddleware
@@ -290,12 +291,14 @@ async def health() -> HealthResponse:
 
 @app.get("/ready")
 async def ready() -> Response:
-    """Readiness: fail when schema is incompatible or the repository backend is unusable.
+    """Readiness: fail when schema, repository backend, or required worker is unusable.
 
     503 cases (repository backend): SQL required but unavailable, MEMORY_ONLY forbidden for
     this environment, MEMORY_FALLBACK forbidden for this environment — all surfaced as
     ``resolved=False`` / ``healthy=False`` by :meth:`AppContainer.get_repository_backend_status`,
-    which never raises. No bare ``except Exception: return 200`` here.
+    which never raises. When ``EMBEDDED_WORKER_ENABLED`` is true, also fail if the in-process
+    worker was not started, died, or cannot claim (empty queue is healthy). Dedicated-worker
+    deployments (embedded disabled) do not fail ready for a missing local thread.
     """
     if schema_guard_state.checked and not schema_guard_state.compatible:
         return JSONResponse(
@@ -338,15 +341,31 @@ async def ready() -> Response:
                 "reason": SCHEMA_PRECONDITION_ERROR,
             },
         )
+    worker_problem = get_embedded_worker_runtime().readiness_problem()
+    if worker_problem is not None:
+        reason_code, detail = worker_problem
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "reason": reason_code,
+                "detail": detail,
+            },
+        )
     return JSONResponse(status_code=200, content={"ok": True})
 
 
 def _worker_thread_fn() -> None:
+    runtime = get_embedded_worker_runtime()
     base = Path(load_settings().output_dir)
+    unexpected = False
     try:
-        worker_loop(base)
+        worker_loop(base, stop=runtime.should_stop)
     except Exception as e:
+        unexpected = True
         logger.exception("Worker error: %s", e)
+    finally:
+        runtime.mark_thread_finished(unexpected=unexpected)
 
 
 @app.on_event("startup")
@@ -441,13 +460,47 @@ def start_worker() -> None:
     wire_position_materialization_recovery_scheduler(container)
     wire_local_csv_import_recovery_scheduler(container)
 
+    sql_mode = bool(settings.sqlserver_enabled and sql_res.connection_string.strip())
+    runtime = get_embedded_worker_runtime()
+
     if not settings.embedded_worker_enabled:
         logger.info(
             "Embedded worker disabled (EMBEDDED_WORKER_ENABLED=false); "
             "run dedicated worker process (e.g. `python -m src.jobs.run_worker`)."
         )
+        runtime.configure(required=False, sql_mode=sql_mode)
         return
-    t = threading.Thread(target=_worker_thread_fn, daemon=True)
+
+    runtime.configure(required=True, sql_mode=sql_mode)
+    if runtime.is_thread_alive():
+        logger.info("Embedded worker already running; skip second start")
+        return
+
+    if sql_mode:
+        try:
+            job_repo = container.get_job_repo()
+            if not callable(getattr(job_repo, "claim_next_queued_job", None)):
+                raise RuntimeError("JobRepository does not support claim_next_queued_job")
+            if container.is_sql_repository_backend():
+                logger.info("Embedded worker SQL claim path ready (v3 JobRepository)")
+            else:
+                logger.info(
+                    "Embedded worker JobRepository ready in non-SQL mode=%s",
+                    container.get_repository_backend_mode_value(),
+                )
+        except Exception as exc:
+            from src.jobs.worker_runtime import REASON_REPOSITORY_INIT_FAILED
+
+            if container.is_sql_repository_backend():
+                raise
+            logger.exception("Embedded worker JobRepository init failed")
+            runtime.mark_unavailable(
+                REASON_REPOSITORY_INIT_FAILED,
+                error_type=type(exc).__name__,
+            )
+
+    t = threading.Thread(target=_worker_thread_fn, daemon=True, name="dinamic-embedded-worker")
+    runtime.mark_started(t)
     t.start()
     logger.info("Worker thread started")
 
@@ -456,6 +509,9 @@ def start_worker() -> None:
 def stop_observability_runtime() -> None:
     from src.runtime.app_container import get_app_container
 
+    runtime = get_embedded_worker_runtime()
+    runtime.request_stop()
+    runtime.join(timeout_sec=5.0)
     stop_recovery_scheduler()
     container = get_app_container()
     stop_position_materialization_recovery_scheduler(container)

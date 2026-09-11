@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Protocol
 
 from src.application.ports.clock import Clock
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
@@ -19,16 +20,21 @@ from src.application.services.dinamic_scanner_txt_to_local_csv import (
     build_parsed_local_csv_from_scanner_txt,
 )
 from src.application.services.label_profile_resolver import LabelProfileResolver
+from src.application.services.label_validation.job_validation_context import (
+    build_label_validation_context_from_resolved_profiles,
+)
 from src.application.use_cases.inventories.manage_local_csv_import import (
     ConfirmLocalCsvImport,
     PreviewLocalCsvImport,
 )
+from src.domain.aisle.entities import Aisle
 from src.domain.dinamic_scanner_txt.constants import SCANNER_TXT_PENDING_AISLE_ID
 from src.domain.dinamic_scanner_txt.errors import (
     DinamicScannerTxtImportDisabledError,
     DinamicScannerTxtImportError,
 )
 from src.domain.dinamic_scanner_txt.metadata import DinamicScannerTxtImportMetadata
+from src.domain.inventory.entities import Inventory
 from src.domain.local_csv_import.entities import LocalCsvImport
 from src.domain.local_csv_import.errors import (
     LOCAL_CSV_IMPORT_NOT_FOUND,
@@ -63,6 +69,10 @@ class DinamicScannerTxtConfirmResult:
     duplicate: bool
 
 
+class _InventoryClient(Protocol):
+    client_id: str | None
+
+
 class PreviewDinamicScannerTxtImport:
     def __init__(
         self,
@@ -93,21 +103,21 @@ class PreviewDinamicScannerTxtImport:
         self,
         *,
         inventory_id: str,
-        aisle,
+        aisle: Aisle | None,
     ):
         """Resolve effective SUPPLIER profiles for the aisle when available."""
         if self._label_profile_resolver is None or self._extraction_profile_repo is None:
             return None
-        inventory = self._inventory_repo.get_by_id(inventory_id)
+        inventory: Inventory | _InventoryClient | None = self._inventory_repo.get_by_id(
+            inventory_id
+        )
         if inventory is None:
             return None
-        client_id = getattr(inventory, "client_id", None)
-        supplier_id = getattr(aisle, "client_supplier_id", None) if aisle is not None else None
+        client_id = inventory.client_id
+        supplier_id = aisle.client_supplier_id if aisle is not None else None
         if not client_id or not supplier_id:
             return None
         from src.application.services.label_profile_resolver import LabelProfileResolutionContext
-        from src.domain.label_profiles.kinds import LabelProfileSource
-        from src.domain.label_validation.context import LabelValidationContext
 
         resolved = self._label_profile_resolver.resolve(
             LabelProfileResolutionContext(
@@ -116,49 +126,11 @@ class PreviewDinamicScannerTxtImport:
                 aisle=aisle,
             )
         )
-        item_cfg = None
-        position_cfg = None
-        if resolved.item.source is LabelProfileSource.SUPPLIER:
-            pid = resolved.item.extraction_profile_id
-            ver = resolved.item.extraction_profile_version
-            if pid and ver is not None:
-                profile = self._extraction_profile_repo.get_by_client_supplier_kind_version(
-                    client_id, supplier_id, resolved.item.label_kind, int(ver)
-                )
-                if profile is None:
-                    profile = self._extraction_profile_repo.get_by_id(pid)
-                if profile is not None and profile.configuration is not None:
-                    item_cfg = profile.configuration
-            else:
-                profile = self._extraction_profile_repo.get_active_by_kind(
-                    client_id, supplier_id, resolved.item.label_kind
-                )
-                if profile is not None:
-                    item_cfg = profile.configuration
-        if resolved.position.source is LabelProfileSource.SUPPLIER:
-            pid = resolved.position.extraction_profile_id
-            ver = resolved.position.extraction_profile_version
-            if pid and ver is not None:
-                profile = self._extraction_profile_repo.get_by_client_supplier_kind_version(
-                    client_id, supplier_id, resolved.position.label_kind, int(ver)
-                )
-                if profile is None:
-                    profile = self._extraction_profile_repo.get_by_id(pid)
-                if profile is not None and profile.configuration is not None:
-                    position_cfg = profile.configuration
-            else:
-                profile = self._extraction_profile_repo.get_active_by_kind(
-                    client_id, supplier_id, resolved.position.label_kind
-                )
-                if profile is not None:
-                    position_cfg = profile.configuration
-        if item_cfg is None and position_cfg is None:
-            return None
-        return LabelValidationContext(
-            resolved_profiles=resolved,
-            item_extraction_configuration=item_cfg,
-            position_extraction_configuration=position_cfg,
+        return build_label_validation_context_from_resolved_profiles(
+            resolved=resolved,
+            extraction_profile_repo=self._extraction_profile_repo,
             client_id=client_id,
+            supplier_id=supplier_id,
         )
 
     def execute(

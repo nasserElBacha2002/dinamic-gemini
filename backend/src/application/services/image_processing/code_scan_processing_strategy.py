@@ -60,6 +60,9 @@ from src.application.services.label_validation import (
     item_profile_source,
     position_profile_source,
 )
+from src.application.services.label_validation.recognition_completeness import (
+    evaluate_recognition_completeness,
+)
 from src.application.services.position_recognition import (
     CanonicalPositionValidator,
     PositionFlexibleShadowEvaluator,
@@ -68,6 +71,7 @@ from src.application.services.product_labels.issued_product_label_resolver impor
     IssuedProductLabelResolver,
 )
 from src.domain.assets.entities import SourceAsset
+from src.domain.client_supplier.extraction_profile import MissingQuantityAction
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import (
     RAW_EVIDENCE_HASH_ALGORITHM,
@@ -925,53 +929,46 @@ class CodeScanProcessingStrategy:
                     if validation_ctx is not None
                     else None
                 )
-                minimal = bool(
-                    item_cfg is not None and getattr(item_cfg, "is_minimal", lambda: False)()
-                )
-                qty_rules = getattr(item_cfg, "quantity_rules", None) if item_cfg else None
-                qty_required = bool(getattr(qty_rules, "required", False)) if qty_rules else False
-                allow_external = (
-                    bool(getattr(qty_rules, "allow_external_fallback", False))
-                    if qty_rules
-                    else False
-                )
-                missing_action = getattr(qty_rules, "missing_quantity_action", None)
-                expected_presence = getattr(qty_rules, "expected_presence", None)
-                presence_value = (
-                    getattr(expected_presence, "value", str(expected_presence or ""))
-                    if expected_presence is not None
-                    else ""
-                )
-                action_value = (
-                    getattr(missing_action, "value", None)
-                    if missing_action is not None
-                    else "PENDING_MANUAL_REVIEW"
-                )
-                # OPTIONAL + not required: identity-only codes are complete unless the
-                # profile explicitly asks for Vision enrichment (EXTERNAL_FALLBACK).
-                optional_identity_ok = (
-                    not qty_required
-                    and presence_value.upper() == "OPTIONAL"
-                    and action_value != "EXTERNAL_FALLBACK"
-                    and not allow_external
-                )
-                enrichment_incomplete = primary_qty is None and (
-                    qty_required
-                    or logistic_only
-                    or (
-                        not optional_identity_ok
-                        and missing_action is not None
-                        and action_value != "RESOLVE_CODE_ONLY"
+                minimal = bool(item_cfg is not None and item_cfg.is_minimal())
+                fallback_eligible = False
+                action_value = MissingQuantityAction.PENDING_MANUAL_REVIEW.value
+                missing_fields: list[str] = ["quantity"]
+                if item_cfg is not None:
+                    completeness = evaluate_recognition_completeness(
+                        kind=LabelKind.ITEM,
+                        configuration=item_cfg,
+                        fields={
+                            "label_id": primary_code,
+                            "sku": (
+                                getattr(first, "internal_code", None)
+                                if first is not None
+                                else None
+                            ),
+                            "quantity": primary_qty,
+                        },
                     )
-                )
+                    action_value = item_cfg.quantity_rules.missing_quantity_action.value
+                    fallback_eligible = completeness.fallback_eligible
+                    missing_fields = list(completeness.missing_completion_fields) or ["quantity"]
+                    enrichment_incomplete = primary_qty is None and (
+                        not completeness.completion_complete or logistic_only
+                    )
+                else:
+                    enrichment_incomplete = primary_qty is None and logistic_only
                 # Identity confirmed + missing completion fields must not look fully resolved
                 # when the profile requires quantity (or enrichment). Never invent qty=0.
                 if enrichment_incomplete and primary_code:
-                    if action_value == "EXTERNAL_FALLBACK" or allow_external:
+                    if (
+                        action_value == MissingQuantityAction.EXTERNAL_FALLBACK.value
+                        or fallback_eligible
+                    ):
                         status = ImageResultStatus.PENDING_MANUAL_REVIEW
-                    elif action_value == "UNRECOGNIZED":
+                    elif action_value == MissingQuantityAction.UNRECOGNIZED.value:
                         status = ImageResultStatus.UNRECOGNIZED
-                    elif action_value == "RESOLVE_CODE_ONLY" and not qty_required:
+                    elif (
+                        action_value == MissingQuantityAction.RESOLVE_CODE_ONLY.value
+                        and not fallback_eligible
+                    ):
                         status = ImageResultStatus.RESOLVED_INTERNAL
                     else:
                         status = ImageResultStatus.PENDING_MANUAL_REVIEW
@@ -981,8 +978,8 @@ class CodeScanProcessingStrategy:
                         "enrichment_complete": False,
                         "quantity_status": "MISSING",
                         "quantity_source": None,
-                        "fallback_eligible": bool(allow_external),
-                        "missing_fields": ["quantity"],
+                        "fallback_eligible": fallback_eligible,
+                        "missing_fields": missing_fields,
                     }
                     if logistic_only and not minimal:
                         evidence["logistic_unit_review"] = True

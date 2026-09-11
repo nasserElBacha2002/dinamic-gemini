@@ -15,6 +15,7 @@ environment, MEMORY_FALLBACK forbidden for the environment). No bare
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Iterator
 
 import pytest
@@ -22,6 +23,11 @@ from fastapi.testclient import TestClient
 
 from src.api.schema_guard import schema_guard_state
 from src.api.server import app
+from src.jobs.worker_runtime import (
+    READY_REASON_JOB_WORKER_UNAVAILABLE,
+    REASON_REPOSITORIES_NOT_INITIALIZED,
+    get_embedded_worker_runtime,
+)
 from src.runtime.app_container import AppContainer
 from src.runtime.container.repository_backend import RepositoryBackendStatus
 
@@ -45,6 +51,9 @@ def _isolate_schema_guard_state() -> Iterator[None]:
     schema_guard_state.current_version = None
     schema_guard_state.service = None
     schema_guard_state.reason = None
+    runtime = get_embedded_worker_runtime()
+    runtime.configure(required=False, sql_mode=False)
+    runtime.mark_cycle_ok()
     yield
     for key, value in saved.items():
         setattr(schema_guard_state, key, value)
@@ -212,3 +221,63 @@ def test_health_reports_resolved_healthy_backend(monkeypatch: pytest.MonkeyPatch
     assert body["repository_backend_healthy"] is True
     assert body["fallback_activated"] is True
     assert body["repository_backend_reason_code"] == "SQL_PROBE_FAILED_MEMORY_FALLBACK_ACTIVE"
+
+
+def test_ready_503_when_required_embedded_worker_has_no_repositories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_backend_status(
+        monkeypatch,
+        mode="sql",
+        environment="production",
+        resolved=True,
+        healthy=True,
+    )
+    runtime = get_embedded_worker_runtime()
+    runtime.configure(required=True, sql_mode=True)
+    stop = threading.Event()
+
+    def _park() -> None:
+        stop.wait(30)
+
+    thread = threading.Thread(target=_park, daemon=True)
+    runtime.mark_started(thread)
+    thread.start()
+    runtime.mark_unavailable(REASON_REPOSITORIES_NOT_INITIALIZED)
+
+    resp = client.get("/ready")
+    stop.set()
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["reason"] == READY_REASON_JOB_WORKER_UNAVAILABLE
+    assert body["detail"] == REASON_REPOSITORIES_NOT_INITIALIZED
+
+
+def test_ready_200_when_required_worker_idle_after_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_backend_status(
+        monkeypatch,
+        mode="sql",
+        environment="production",
+        resolved=True,
+        healthy=True,
+    )
+    runtime = get_embedded_worker_runtime()
+    runtime.configure(required=True, sql_mode=True)
+
+    def _park(stop: threading.Event) -> None:
+        stop.wait(30)
+
+    stop = threading.Event()
+    thread = threading.Thread(target=_park, args=(stop,), daemon=True)
+    runtime.mark_started(thread)
+    thread.start()
+    runtime.mark_unavailable(REASON_REPOSITORIES_NOT_INITIALIZED)
+    assert client.get("/ready").status_code == 503
+    runtime.mark_cycle_ok()
+    resp = client.get("/ready")
+    stop.set()
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}

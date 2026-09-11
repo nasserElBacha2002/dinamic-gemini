@@ -16,6 +16,11 @@ from typing import Any, Optional, cast
 
 from src.config import load_settings
 from src.jobs.models import JobInput, JobProgress, JobRecord, JobStatus
+from src.jobs.worker_runtime import (
+    REASON_REPOSITORIES_NOT_INITIALIZED,
+    REASON_V3_JOB_REPOSITORY_UNAVAILABLE,
+    get_embedded_worker_runtime,
+)
 from src.utils.validation import validate_job_id
 
 logger = logging.getLogger(__name__)
@@ -166,87 +171,127 @@ def get_job(base_path: Path, job_id: str) -> Optional[JobRecord]:
         return None
 
 
+def _job_record_from_v3_claimed(claimed_v3: Any) -> JobRecord:
+    metadata = dict(claimed_v3.payload_json or {})
+    metadata.setdefault("job_type", claimed_v3.job_type)
+    metadata.setdefault("target_type", claimed_v3.target_type)
+    metadata.setdefault("target_id", claimed_v3.target_id)
+    return JobRecord(
+        job_id=claimed_v3.id,
+        input=JobInput(
+            video_path="",
+            mode="hybrid",
+            confidence_threshold=0.7,
+            metadata=metadata,
+        ),
+        status=JobStatus(claimed_v3.status.value),
+        progress=JobProgress(stage="claimed", percent=1),
+        output=None,
+        error=claimed_v3.error_message,
+        created_at=claimed_v3.created_at.isoformat(),
+        updated_at=claimed_v3.updated_at.isoformat(),
+    )
+
+
+def _try_claim_v3_job(settings: object) -> tuple[bool, Optional[JobRecord]]:
+    """Attempt v3 ``inventory_jobs`` claim.
+
+    Returns ``(claim_path_available, job_or_none)``. ``job_or_none is None`` with
+    ``claim_path_available True`` means a successful idle poll (no queued jobs).
+    """
+    from src.runtime.v3_deps import get_job_repo
+
+    v3_repo = get_job_repo()
+    stale_timeout_sec = int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0)
+    reclaim_stale = getattr(v3_repo, "reclaim_stale_running_jobs", None)
+    if callable(reclaim_stale) and stale_timeout_sec > 0:
+        reclaimed = int(reclaim_stale(stale_timeout_sec) or 0)
+        if reclaimed > 0:
+            logger.warning(
+                "Reclaimed stale RUNNING v3 jobs before claim: count=%s timeout_sec=%s",
+                reclaimed,
+                stale_timeout_sec,
+            )
+    claim_v3 = getattr(v3_repo, "claim_next_queued_job", None)
+    if not callable(claim_v3):
+        return False, None
+    claimed_v3 = claim_v3()
+    if claimed_v3 is None:
+        return True, None
+    return True, _job_record_from_v3_claimed(claimed_v3)
+
+
 def claim_next_job(base_path: Path) -> Optional[JobRecord]:
     """Claim next queued job from DB (preferred) or legacy in-memory queue.
 
-    Production path: SQL-backed atomic claim from jobs table.
-    Local legacy fallback (only when SQL mode is disabled): in-memory queue + get_job().
+    Production path: v3 ``inventory_jobs`` via the app-container JobRepository, then
+    optional legacy Stage-8 ``jobs`` table when that bridge is still enabled.
+    An empty v3 queue is a successful idle poll — it must not be treated as
+    "DB repositories unavailable" merely because the legacy bridge is off.
+    Local in-memory queue is used only when SQL mode is disabled.
     """
     settings = load_settings()
-    db_claim_configured = bool(
+    sql_mode = bool(
         getattr(settings, "sqlserver_enabled", False) and _sqlserver_effective_cs(settings)
     )
-    # Preferred v3 source: inventory_jobs via v3 JobRepository claim.
+    runtime = get_embedded_worker_runtime()
+    v3_claim_available = False
+
     try:
-        from src.runtime.v3_deps import get_job_repo
-
-        v3_repo = get_job_repo()
-        stale_timeout_sec = int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0)
-        reclaim_stale = getattr(v3_repo, "reclaim_stale_running_jobs", None)
-        if callable(reclaim_stale) and stale_timeout_sec > 0:
-            reclaimed = int(reclaim_stale(stale_timeout_sec) or 0)
-            if reclaimed > 0:
-                logger.warning(
-                    "Reclaimed stale RUNNING v3 jobs before claim: count=%s timeout_sec=%s",
-                    reclaimed,
-                    stale_timeout_sec,
+        v3_claim_available, claimed = _try_claim_v3_job(settings)
+        if claimed is not None:
+            runtime.mark_cycle_ok()
+            return claimed
+    except Exception as exc:
+        v3_claim_available = False
+        if sql_mode:
+            first_failure = runtime.snapshot().unavailable_reason is None
+            runtime.mark_unavailable(
+                REASON_V3_JOB_REPOSITORY_UNAVAILABLE,
+                error_type=type(exc).__name__,
+            )
+            if first_failure:
+                logger.exception(
+                    "v3 DB claim_next_queued_job failed while SQL worker mode is enabled"
                 )
-        claim_v3 = getattr(v3_repo, "claim_next_queued_job", None)
-        if callable(claim_v3):
-            claimed_v3 = claim_v3()
-            if claimed_v3 is not None:
-                metadata = dict(claimed_v3.payload_json or {})
-                metadata.setdefault("job_type", claimed_v3.job_type)
-                metadata.setdefault("target_type", claimed_v3.target_type)
-                metadata.setdefault("target_id", claimed_v3.target_id)
-                return JobRecord(
-                    job_id=claimed_v3.id,
-                    input=JobInput(
-                        video_path="",
-                        mode="hybrid",
-                        confidence_threshold=0.7,
-                        metadata=metadata,
-                    ),
-                    status=JobStatus(claimed_v3.status.value),
-                    progress=JobProgress(stage="claimed", percent=1),
-                    output=None,
-                    error=claimed_v3.error_message,
-                    created_at=claimed_v3.created_at.isoformat(),
-                    updated_at=claimed_v3.updated_at.isoformat(),
-                )
-    except Exception:
-        logger.exception("v3 DB claim_next_queued_job failed while SQL worker mode is enabled")
+        else:
+            logger.exception("v3 DB claim_next_queued_job failed while SQL worker mode is enabled")
 
-    # Legacy DB source: jobs table (v2 compatibility only).
+    # Legacy DB source: jobs table (v2 compatibility only). Drain when the bridge is on.
     repos = _db_repos()
     if repos is not None:
         jobs_repo, _, _ = repos
         try:
             data = jobs_repo.claim_next_queued_job()
+            runtime.mark_cycle_ok()
             if data is None:
                 return None
             return JobRecord.model_validate(data)
         except Exception:
-            # Explicitly surface DB claim failures; do not mask as a normal idle poll.
             logger.exception("DB claim_next_queued_job failed while SQL worker mode is enabled")
             return None
-    if db_claim_configured:
-        # SQL mode is expected but claim infrastructure is unavailable.
-        logger.error(
-            "SQL worker mode configured but DB repositories are unavailable; cannot claim queued jobs"
-        )
+
+    if v3_claim_available and sql_mode:
+        # Idle on the v3 JobRepository. Legacy Stage-8 repos are optional (bridge may be off).
+        runtime.mark_cycle_ok()
         return None
 
-    # Legacy/local fallback only (non-distributed).
+    if sql_mode:
+        if runtime.snapshot().unavailable_reason is None:
+            runtime.mark_unavailable(REASON_REPOSITORIES_NOT_INITIALIZED)
+        return None
+
     try:
         from src.jobs.queue import dequeue
 
         job_id = dequeue(timeout=0.1)
         if not job_id:
+            runtime.mark_cycle_ok()
             return None
         claimed = get_job(base_path, job_id)
         if claimed is None:
             logger.warning("Dequeued legacy job %s not found in store", job_id)
+        runtime.mark_cycle_ok()
         return claimed
     except Exception as e:
         logger.warning("Legacy queue claim failed: %s", e)

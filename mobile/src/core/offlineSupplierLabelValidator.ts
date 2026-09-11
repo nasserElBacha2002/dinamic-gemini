@@ -8,6 +8,11 @@
  * validate prefix/length/charset on identity field only → quantity/completeness.
  */
 
+import {
+  decideQuantityCompleteness,
+  fallbackEligible,
+} from './quantityCompleteness';
+
 export type LocalRecognitionStatus =
   | 'VALID'
   | 'INVALID'
@@ -239,19 +244,7 @@ function extractFields(
         });
       }
       if (target === 'quantity') {
-        const qtyText = String(segmentValue).trim();
-        if (/[.,\s]/.test(qtyText)) {
-          throw Object.assign(new Error('quantity segment is not an integer'), {
-            code: 'LABEL_FIELD_INVALID',
-          });
-        }
-        const n = Number.parseInt(qtyText, 10);
-        if (!Number.isFinite(n)) {
-          throw Object.assign(new Error('quantity segment is not an integer'), {
-            code: 'LABEL_FIELD_INVALID',
-          });
-        }
-        out.quantity = n;
+        out.quantity = parseIntegerQuantityOrThrow(String(segmentValue).trim());
       } else {
         out[target] = normalizeFieldValue(segmentValue, rules);
       }
@@ -277,8 +270,12 @@ function extractFields(
     if (String(mapping.source).toUpperCase() !== 'WHOLE') continue;
     const target = String(mapping.target).toLowerCase();
     if (target === 'quantity') {
-      const n = Number.parseInt(normalized, 10);
-      out.quantity = Number.isFinite(n) ? n : null;
+      const qtyText = String(normalized).trim();
+      if (!qtyText) {
+        out.quantity = null;
+      } else {
+        out.quantity = parseIntegerQuantityOrThrow(qtyText);
+      }
     } else {
       out[target] = normalized;
     }
@@ -320,27 +317,19 @@ function identityShapeSubject(
   return { value: structuralPayload, field: 'payload' };
 }
 
-function quantityRequiredForCompletion(
-  cfg: OfflineExtractionConfiguration,
-): boolean {
-  const rules = cfg.quantity_rules ?? null;
-  if (rules?.required) return true;
-  const presence = String(rules?.expected_presence ?? '').toUpperCase();
-  if (presence === 'ALWAYS') return true;
-  const required = new Set(
-    (cfg.required_fields ?? []).map((f) => String(f).trim().toLowerCase()),
-  );
-  if (required.has('quantity')) return true;
-  const missingAction = String(rules?.missing_quantity_action ?? 'PENDING_MANUAL_REVIEW');
-  if (missingAction === 'RESOLVE_CODE_ONLY') return false;
-  if (presence === 'OPTIONAL' && !rules?.required) {
-    if (missingAction === 'EXTERNAL_FALLBACK') return true;
-    if (rules?.allow_external_fallback) return true;
-    return false;
+function parseIntegerQuantityOrThrow(qtyText: string): number {
+  if (!/^-?\d+$/.test(qtyText)) {
+    throw Object.assign(new Error('quantity must be an integer'), {
+      code: 'LABEL_FIELD_INVALID',
+    });
   }
-  if (missingAction === 'EXTERNAL_FALLBACK') return true;
-  if (missingAction === 'PENDING_MANUAL_REVIEW') return true;
-  return Boolean(rules?.allow_external_fallback);
+  const n = Number(qtyText);
+  if (!Number.isInteger(n)) {
+    throw Object.assign(new Error('quantity decimals are not allowed'), {
+      code: 'LABEL_FIELD_INVALID',
+    });
+  }
+  return n;
 }
 
 export function validateSupplierPayloadOffline(input: {
@@ -685,7 +674,14 @@ export function validateSupplierPayloadOffline(input: {
         configurationSchemaVersion: cfg.configuration_schema_version ?? null,
       });
     }
-    const qtyRequired = quantityRequiredForCompletion(cfg);
+    const qtyDecision = decideQuantityCompleteness({
+      kind: 'ITEM',
+      required: Boolean(cfg.quantity_rules?.required),
+      expected_presence: cfg.quantity_rules?.expected_presence,
+      missing_quantity_action: cfg.quantity_rules?.missing_quantity_action,
+      allow_external_fallback: Boolean(cfg.quantity_rules?.allow_external_fallback),
+      required_fields: cfg.required_fields,
+    });
     const requiredFields = new Set(
       (cfg.required_fields ?? ['label_id']).map((f) => String(f).toLowerCase()),
     );
@@ -696,7 +692,7 @@ export function validateSupplierPayloadOffline(input: {
     if ((requiredFields.has('sku') || requiredFields.has('internal_code')) && !sku && !labelId) {
       missingCompletion.push('sku');
     }
-    if (qtyRequired && quantity == null) {
+    if (qtyDecision.quantity_required_for_completion && quantity == null) {
       missingCompletion.push('quantity');
     }
     const identityComplete = Boolean(labelId || sku);
@@ -717,6 +713,10 @@ export function validateSupplierPayloadOffline(input: {
         enrichment_complete: completionComplete,
         missing_completion_fields: missingCompletion,
         missing_persistence_fields: missingCompletion,
+        fallback_eligible: fallbackEligible(qtyDecision, {
+          identityComplete,
+          quantityPresent: quantity != null,
+        }),
         quantity_status: quantity == null ? 'MISSING' : 'PRESENT',
         quantity_source: quantity == null ? null : 'CODE_SCAN',
       },

@@ -47,22 +47,28 @@ def _log_sql_worker_health() -> None:
     except Exception as exc:  # pragma: no cover - defensive startup telemetry
         pyodbc_error = str(exc)
 
-    repo_available = False
+    legacy_repos_available = False
+    v3_claimable = False
     repo_error = ""
     try:
         from src.jobs.job_store import _db_repos
+        from src.runtime.v3_deps import get_job_repo
 
         repos: Any = _db_repos()
-        repo_available = repos is not None
+        legacy_repos_available = repos is not None
+        v3_repo = get_job_repo()
+        v3_claimable = callable(getattr(v3_repo, "claim_next_queued_job", None))
     except Exception as exc:  # pragma: no cover - defensive startup telemetry
-        repo_error = str(exc)
+        repo_error = type(exc).__name__
 
     logger.info(
-        "Worker SQL health: sql_enabled=%s sql_conn_configured=%s pyodbc_import_ok=%s sql_repos_available=%s",
+        "Worker SQL health: sql_enabled=%s sql_conn_configured=%s pyodbc_import_ok=%s "
+        "v3_job_repo_claimable=%s legacy_stage8_repos_available=%s",
         sql_enabled,
         sql_conn_configured,
         pyodbc_import_ok,
-        repo_available,
+        v3_claimable,
+        legacy_repos_available,
     )
     if pyodbc_error:
         logger.warning("Worker SQL health detail: pyodbc import failed: %s", pyodbc_error)

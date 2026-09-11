@@ -10,21 +10,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from src.domain.client_supplier.extraction_profile import (
-    ExtractionProfileConfiguration,
-    MissingQuantityAction,
-    QuantityPresence,
+from src.application.services.label_validation.quantity_completeness import (
+    QuantityCompletenessDecision,
+    decide_quantity_completeness_from_config,
 )
+from src.domain.client_supplier.extraction_profile import ExtractionProfileConfiguration
 from src.domain.label_profiles.kinds import LabelKind
 
-_IDENTITY_FIELD_CANDIDATES: frozenset[str] = frozenset(
-    {
-        "label_id",
-        "position_id",
-        "sku",
-        "internal_code",
-    }
-)
 _POSITION_IDENTITY_FIELDS: frozenset[str] = frozenset({"position_id"})
 _ITEM_IDENTITY_FIELDS: frozenset[str] = frozenset({"label_id", "sku", "internal_code"})
 
@@ -37,6 +29,7 @@ class RecognitionCompleteness:
     missing_identity_fields: tuple[str, ...]
     missing_completion_fields: tuple[str, ...]
     missing_persistence_fields: tuple[str, ...]
+    fallback_eligible: bool = False
 
     def to_diagnostics(self) -> dict[str, Any]:
         return {
@@ -47,6 +40,7 @@ class RecognitionCompleteness:
             "missing_completion_fields": list(self.missing_completion_fields),
             "missing_persistence_fields": list(self.missing_persistence_fields),
             "enrichment_complete": self.completion_complete,
+            "fallback_eligible": self.fallback_eligible,
         }
 
 
@@ -89,63 +83,28 @@ def _identity_required(kind: LabelKind, config: ExtractionProfileConfiguration) 
     identity = tuple(sorted(f for f in required if f in allowed))
     if identity:
         return identity
-    # Minimal profiles: primary identity from kind.
     if kind is LabelKind.POSITION:
         return ("position_id",)
     if config.is_minimal():
         return ("label_id",)
-    # Legacy FULL defaults often require internal_code.
     if "internal_code" in required or "sku" in required:
         return tuple(f for f in ("internal_code", "sku") if f in required) or ("internal_code",)
     return ("label_id",)
 
 
-def _quantity_required_for_completion(config: ExtractionProfileConfiguration) -> bool:
-    rules = config.quantity_rules
-    if rules.required:
-        return True
-    if rules.expected_presence is QuantityPresence.ALWAYS:
-        return True
-    required = {f.strip().lower() for f in config.required_fields if f and str(f).strip()}
-    if "quantity" in required:
-        return True
-    # Identity-only resolve: absence is valid.
-    if rules.missing_quantity_action is MissingQuantityAction.RESOLVE_CODE_ONLY:
-        return False
-    # Optional quantity must not force incomplete just because the profile says
-    # PENDING_MANUAL_REVIEW (legacy defaults). Only enrichment / always-required
-    # policies keep quantity on the completion checklist.
-    if rules.expected_presence is QuantityPresence.OPTIONAL and not rules.required:
-        if rules.missing_quantity_action is MissingQuantityAction.EXTERNAL_FALLBACK:
-            return True
-        if rules.allow_external_fallback:
-            return True
-        return False
-    if rules.missing_quantity_action is MissingQuantityAction.EXTERNAL_FALLBACK:
-        return True
-    if rules.missing_quantity_action is MissingQuantityAction.PENDING_MANUAL_REVIEW:
-        return True
-    return bool(rules.allow_external_fallback)
-
-
-def _completion_required(kind: LabelKind, config: ExtractionProfileConfiguration) -> tuple[str, ...]:
+def _completion_required(
+    kind: LabelKind,
+    config: ExtractionProfileConfiguration,
+    decision: QuantityCompletenessDecision,
+) -> tuple[str, ...]:
     identity = list(_identity_required(kind, config))
     required = {f.strip().lower() for f in config.required_fields if f and str(f).strip()}
-    extras = [
-        f
-        for f in sorted(required)
-        if f not in identity and f != "quantity"
-    ]
+    extras = [f for f in sorted(required) if f not in identity and f != "quantity"]
     fields = identity + extras
-    if kind is LabelKind.ITEM and _quantity_required_for_completion(config):
+    if kind is LabelKind.ITEM and decision.quantity_required_for_completion:
         if "quantity" not in fields:
             fields.append("quantity")
     return tuple(fields)
-
-
-def _persistence_required(kind: LabelKind, config: ExtractionProfileConfiguration) -> tuple[str, ...]:
-    """Productive ProductRecord requires completion fields (incl. quantity when required)."""
-    return _completion_required(kind, config)
 
 
 def evaluate_recognition_completeness(
@@ -153,16 +112,9 @@ def evaluate_recognition_completeness(
     kind: LabelKind,
     configuration: ExtractionProfileConfiguration | None,
     fields: Mapping[str, Any] | None,
-    field_sources: Mapping[str, Any] | None = None,
 ) -> RecognitionCompleteness:
-    """Evaluate identity / completion / persistence from profile + semantic fields.
-
-    ``field_sources`` is accepted for contract parity / future policy and does not
-    change presence checks.
-    """
-    del field_sources  # reserved for provenance-aware policies
+    """Evaluate identity / completion / persistence from profile + semantic fields."""
     if configuration is None:
-        # Fail-closed without a profile: treat as incomplete.
         return RecognitionCompleteness(
             identity_complete=False,
             completion_complete=False,
@@ -170,19 +122,16 @@ def evaluate_recognition_completeness(
             missing_identity_fields=("profile",),
             missing_completion_fields=("profile",),
             missing_persistence_fields=("profile",),
+            fallback_eligible=False,
         )
 
+    decision = decide_quantity_completeness_from_config(kind=kind, configuration=configuration)
     normalized = _normalize_fields(fields)
     identity_req = _identity_required(kind, configuration)
-    completion_req = _completion_required(kind, configuration)
-    persistence_req = _persistence_required(kind, configuration)
+    completion_req = _completion_required(kind, configuration, decision)
+    persistence_req = completion_req
 
     missing_identity = tuple(f for f in identity_req if not _field_present(normalized, f))
-    # label_id-only identity: allow sku/internal_code as alternate when label_id missing
-    # only when required set includes them — already encoded in identity_req.
-
-    # For ITEM identity, either label_id OR (sku/internal_code) may satisfy when
-    # required_fields listed alternatives — handled by listing both in required.
     if (
         kind is LabelKind.ITEM
         and missing_identity
@@ -193,31 +142,18 @@ def evaluate_recognition_completeness(
 
     missing_completion = tuple(f for f in completion_req if not _field_present(normalized, f))
     missing_persistence = tuple(f for f in persistence_req if not _field_present(normalized, f))
+    identity_complete = not missing_identity
+    quantity_present = _field_present(normalized, "quantity")
 
     return RecognitionCompleteness(
-        identity_complete=not missing_identity,
+        identity_complete=identity_complete,
         completion_complete=not missing_completion,
         persistence_complete=not missing_persistence,
         missing_identity_fields=missing_identity,
         missing_completion_fields=missing_completion,
         missing_persistence_fields=missing_persistence,
+        fallback_eligible=decision.fallback_eligible(
+            identity_complete=identity_complete,
+            quantity_present=quantity_present,
+        ),
     )
-
-
-class RecognitionCompletenessEvaluator:
-    """Cohesive evaluator API shared by CODE_SCAN / Vision / TXT / CSV / persister."""
-
-    def evaluate(
-        self,
-        *,
-        kind: LabelKind,
-        configuration: ExtractionProfileConfiguration | None,
-        fields: Mapping[str, Any] | None,
-        field_sources: Mapping[str, Any] | None = None,
-    ) -> RecognitionCompleteness:
-        return evaluate_recognition_completeness(
-            kind=kind,
-            configuration=configuration,
-            fields=fields,
-            field_sources=field_sources,
-        )

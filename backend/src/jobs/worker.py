@@ -18,6 +18,7 @@ from src.jobs.worker_bootstrap import (
     checkpoint_v3_job_bootstrap,
     fail_v3_job_bootstrap,
 )
+from src.jobs.worker_runtime import REASON_CLAIM_LOOP_EXCEPTION, get_embedded_worker_runtime
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
 logger = logging.getLogger(__name__)
@@ -406,11 +407,21 @@ def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> N
     idle_sleep_sec = 1.0
     idle_log_every_sec = 30.0
     last_idle_log_ts = 0.0
+    runtime = get_embedded_worker_runtime()
     logger.info("Worker loop started; polling for queued jobs")
     while True:
         if stop and stop():
             break
-        claimed = claim_next_job(base_path)
+        try:
+            claimed = claim_next_job(base_path)
+        except Exception as exc:
+            logger.exception("Worker claim_next_job raised unexpectedly")
+            runtime.mark_unavailable(
+                REASON_CLAIM_LOOP_EXCEPTION,
+                error_type=type(exc).__name__,
+            )
+            time.sleep(idle_sleep_sec)
+            continue
         if claimed is None:
             now = time.monotonic()
             if now - last_idle_log_ts >= idle_log_every_sec:
