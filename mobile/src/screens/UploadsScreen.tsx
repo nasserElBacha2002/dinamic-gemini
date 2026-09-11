@@ -6,7 +6,10 @@ import { hasForeignUploadLease, UPLOAD_WORKER_OWNER_JS } from '../core/uploadLea
 import type { LocalDetectionDraftRow } from '../database/repositories/localDetectionDraftRepository';
 import type { ConfirmedLocalResultRow } from '../database/repositories/confirmedLocalResultRepository';
 import type { CapturePhotoRow } from '../database/schema/captureSchema';
-import { canExportSession } from '../features/localCsv/canExportSession';
+import {
+  canExportSession,
+  countIncompleteLocalCodeScans,
+} from '../features/localCsv/canExportSession';
 import {
   mapLocalCsvExportError,
   runLocalCsvExport,
@@ -305,12 +308,22 @@ export function UploadsScreen({
   ).length;
   const allUploaded = trackedCount > 0 && uploadedCount >= trackedCount && pendingUploads === 0;
   const csvExport = services.config.flags.mobileCsvExport !== false;
+  const localCodeScanEnabled = services.config.flags.mobileLocalCodeScan === true;
+  const incompleteScans = localCodeScanEnabled
+    ? countIncompleteLocalCodeScans({
+        photos,
+        drafts: Object.values(localDraftByPhoto),
+      })
+    : 0;
   const exportGate = canExportSession({
     session: sessionRow,
     photos,
     csvExportEnabled: csvExport,
     exportInProgress: exportBusy,
+    localCodeScanEnabled,
+    localDetectionDrafts: Object.values(localDraftByPhoto),
   });
+  const exportBlockedByScan = !exportGate.ok && incompleteScans > 0;
 
   const openConfirm = () => {
     if (!ready || busy) return;
@@ -448,6 +461,12 @@ export function UploadsScreen({
             ) : (
               <Text style={styles.muted}>No hay fotos pendientes de carga en esta sesión.</Text>
             )}
+            {exportBlockedByScan ? (
+              <Text style={styles.muted}>
+                Escaneando códigos locales… ({incompleteScans} pendiente
+                {incompleteScans === 1 ? '' : 's'}). El export se habilita al terminar.
+              </Text>
+            ) : null}
             {exportHint ? <Text style={styles.notif}>{exportHint}</Text> : null}
             {exportBusy ? <ActivityIndicator /> : null}
             {authSyncPending > 0 ? (
@@ -516,8 +535,14 @@ export function UploadsScreen({
             ) : null}
             {csvExport && services.localCsvExport ? (
               <Button
-                label={exportBusy ? 'Exportando ZIP…' : 'Exportar ZIP (CSV + fotos)'}
-                disabled={exportBusy}
+                label={
+                  exportBusy
+                    ? 'Exportando ZIP…'
+                    : exportBlockedByScan
+                      ? `Escaneando… (${incompleteScans})`
+                      : 'Exportar ZIP (CSV + fotos)'
+                }
+                disabled={exportBusy || !exportGate.ok}
                 onPress={() => {
                   if (!services.localCsvExport) {
                     onError('Exportación no disponible.');

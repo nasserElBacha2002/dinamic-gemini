@@ -57,6 +57,28 @@ _DINAMIC_POSITION_HINT = re.compile(r"DINAMIC_POSITION|\"type\"\s*:\s*\"DINAMIC"
 
 _MAX_PAYLOAD_FOR_REGEX = 512
 
+# Prefer structural / mapping failures over cross-kind PREFIX when both INVALID.
+_STRUCTURAL_INVALID_CODES = frozenset(
+    {
+        LabelValidationErrorCode.LABEL_SEGMENT_COUNT_MISMATCH.value,
+        LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,
+        LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
+        LabelValidationErrorCode.LABEL_CHARSET_MISMATCH.value,
+        LabelValidationErrorCode.LABEL_PATTERN_MISMATCH.value,
+        LabelValidationErrorCode.LABEL_GS1_INVALID.value,
+        LabelValidationErrorCode.LABEL_GS1_REQUIRED_AI_MISSING.value,
+        LabelValidationErrorCode.LABEL_GS1_CHECK_DIGIT_FAILED.value,
+        LabelValidationErrorCode.LABEL_GS1_FIELD_INVALID.value,
+        LabelValidationErrorCode.LABEL_GS1_SEPARATOR_INVALID.value,
+        LabelValidationErrorCode.LABEL_REQUIRED_FIELD_MISSING.value,
+        LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
+        LabelValidationErrorCode.LABEL_CHECKSUM_FAILED.value,
+        LabelValidationErrorCode.DINAMIC_FORMAT_INVALID.value,
+        LabelValidationErrorCode.DINAMIC_CHECKSUM_FAILED.value,
+        LabelValidationErrorCode.DINAMIC_POSITION_INVALID.value,
+    }
+)
+
 # Re-export for callers that imported context from this module.
 __all__ = [
     "LabelProfileConfigurationError",
@@ -65,6 +87,72 @@ __all__ = [
     "compile_payload_pattern",
     "validate_extraction_configuration_for_code_scan",
 ]
+
+
+def _kind_validation_summary(result: LabelValidationResult) -> dict[str, object | None]:
+    return {
+        "status": result.status.value,
+        "error_code": result.error_code,
+        "detail": result.detail,
+        "profile_source": result.profile_source.value if result.profile_source else None,
+        "label_kind": result.label_kind.value if result.label_kind else None,
+        "profile_id": (result.diagnostics or {}).get("profile_id"),
+        "profile_version": (result.diagnostics or {}).get("profile_version"),
+    }
+
+
+def _with_dual_diagnostics(
+    result: LabelValidationResult,
+    dual: dict[str, object],
+    *,
+    selected_kind: LabelKind | None,
+) -> LabelValidationResult:
+    merged = {
+        **(result.diagnostics or {}),
+        **dual,
+        "selected_kind": selected_kind.value if selected_kind is not None else None,
+    }
+    return LabelValidationResult(
+        status=result.status,
+        label=result.label,
+        error_code=result.error_code,
+        detail=result.detail,
+        profile_source=result.profile_source,
+        label_kind=result.label_kind,
+        diagnostics=merged,
+    )
+
+
+def _prefer_invalid_when_both_fail(
+    item: LabelValidationResult,
+    position: LabelValidationResult,
+) -> LabelValidationResult:
+    """When both kinds INVALID, prefer the structural failure over a PREFIX mismatch.
+
+    Classic misdiagnosis: a POSITION identity payload fails ITEM with
+    LABEL_PREFIX_MISMATCH while POSITION fails with LABEL_SEGMENT_COUNT_MISMATCH —
+    surfacing only ITEM hides the actionable structural error. Prefer per-kind
+    diagnostics; top-level error_code remains for legacy single-code consumers.
+    """
+    item_code = (item.error_code or "").strip()
+    position_code = (position.error_code or "").strip()
+    item_prefix = item_code == LabelValidationErrorCode.LABEL_PREFIX_MISMATCH.value
+    position_prefix = position_code == LabelValidationErrorCode.LABEL_PREFIX_MISMATCH.value
+    item_structural = item_code in _STRUCTURAL_INVALID_CODES
+    position_structural = position_code in _STRUCTURAL_INVALID_CODES
+    if item_prefix and position_structural and not position_prefix:
+        return position
+    if position_prefix and item_structural and not item_prefix:
+        return item
+    if position_structural and not item_structural:
+        return position
+    if item_structural and not position_structural:
+        return item
+    # Stable default: prefer POSITION structural diagnostics when codes equal weight,
+    # else keep ITEM for legacy single-error consumers (documented dual diagnostics).
+    if position_structural and item_structural:
+        return position
+    return item
 
 
 class LabelProfileConfigurationError(ValueError):
@@ -175,9 +263,17 @@ class LabelValidationService:
         """Evaluate ITEM and POSITION profiles; surface AMBIGUOUS when both VALID.
 
         Ignores ``label_kind_hint`` so CODE_SCAN cannot get accidental kind precedence.
+
+        When both kinds are INVALID, keep independent diagnostics and prefer the
+        top-level ``error_code`` that is *not* a cross-kind PREFIX mismatch when the
+        other kind failed for a structural reason (segment/mapping/length/charset).
         """
         item = self.validate(candidate, context=context, label_kind=LabelKind.ITEM)
         position = self.validate(candidate, context=context, label_kind=LabelKind.POSITION)
+        dual = {
+            "item_validation": _kind_validation_summary(item),
+            "position_validation": _kind_validation_summary(position),
+        }
         if (
             item.status is LabelValidationStatus.VALID
             and position.status is LabelValidationStatus.VALID
@@ -186,18 +282,28 @@ class LabelValidationService:
                 status=LabelValidationStatus.AMBIGUOUS,
                 error_code=LabelValidationErrorCode.AMBIGUOUS_LABEL_KIND.value,
                 detail="payload matches both ITEM and POSITION profiles",
-                diagnostics={"item": item.diagnostics, "position": position.diagnostics},
+                diagnostics={**dual, "item": item.diagnostics, "position": position.diagnostics},
             )
         if item.status is LabelValidationStatus.VALID:
-            return item
+            return _with_dual_diagnostics(item, dual, selected_kind=LabelKind.ITEM)
         if position.status is LabelValidationStatus.VALID:
-            return position
-        # Prefer fail-closed Dinamic INVALID over soft NOT_APPLICABLE.
+            return _with_dual_diagnostics(position, dual, selected_kind=LabelKind.POSITION)
+        if (
+            item.status is LabelValidationStatus.INVALID
+            and position.status is LabelValidationStatus.INVALID
+        ):
+            chosen = _prefer_invalid_when_both_fail(item, position)
+            return _with_dual_diagnostics(
+                chosen,
+                dual,
+                selected_kind=None,
+            )
         if item.status is LabelValidationStatus.INVALID:
-            return item
+            return _with_dual_diagnostics(item, dual, selected_kind=None)
         if position.status is LabelValidationStatus.INVALID:
-            return position
-        return item if item.status is not LabelValidationStatus.NOT_APPLICABLE else position
+            return _with_dual_diagnostics(position, dual, selected_kind=None)
+        fallback = item if item.status is not LabelValidationStatus.NOT_APPLICABLE else position
+        return _with_dual_diagnostics(fallback, dual, selected_kind=None)
 
     def _profile_for(
         self, context: LabelValidationContext, label_kind: LabelKind
@@ -401,24 +507,106 @@ class LabelValidationService:
         structured = extracted.candidate
         rules = config.effective_deterministic()
         normalized = extracted.normalized_payload
+        extraction_diags = {
+            k: v
+            for k, v in (structured.metadata or {}).items()
+            if k
+            in {
+                "payload_structure",
+                "delimiter_detected",
+                "segment_count",
+                "mapped_fields",
+                "gs1_application_identifiers",
+            }
+        }
 
         if rules.payload_structure is not PayloadStructure.GS1:
+            subject, failed_field = self._identity_shape_subject(
+                label_kind=label_kind,
+                rules=rules,
+                normalized_payload=normalized,
+                candidate=structured,
+            )
+            if not subject:
+                return LabelValidationResult.invalid(
+                    error_code=LabelValidationErrorCode.LABEL_REQUIRED_FIELD_MISSING.value,
+                    detail=f"identity field {failed_field!r} missing after structured extraction",
+                    profile_source=LabelProfileSource.SUPPLIER,
+                    label_kind=label_kind,
+                    diagnostics={
+                        **extraction_diags,
+                        "failed_field": failed_field,
+                        "validation_error_code": (
+                            LabelValidationErrorCode.LABEL_REQUIRED_FIELD_MISSING.value
+                        ),
+                    },
+                )
             shape_err = self._validate_deterministic_shape(
-                normalized=normalized,
+                normalized=subject,
                 rules=rules,
                 config=config,
                 label_kind=label_kind,
+                failed_field=failed_field,
+                extra_diagnostics=extraction_diags,
             )
             if shape_err is not None:
                 return shape_err
 
         if label_kind is LabelKind.ITEM:
-            return self._normalize_supplier_item(
+            result = self._normalize_supplier_item(
                 structured, raw=extracted.raw_payload, config=config
             )
-        return self._normalize_supplier_position(
-            structured, raw=extracted.raw_payload, config=config
-        )
+        else:
+            result = self._normalize_supplier_position(
+                structured, raw=extracted.raw_payload, config=config
+            )
+        if extraction_diags and result.diagnostics is not None:
+            merged = {**extraction_diags, **(result.diagnostics or {})}
+            return LabelValidationResult(
+                status=result.status,
+                label=result.label,
+                error_code=result.error_code,
+                detail=result.detail,
+                profile_source=result.profile_source,
+                label_kind=result.label_kind,
+                diagnostics=merged,
+            )
+        if extraction_diags and result.diagnostics is None:
+            return LabelValidationResult(
+                status=result.status,
+                label=result.label,
+                error_code=result.error_code,
+                detail=result.detail,
+                profile_source=result.profile_source,
+                label_kind=result.label_kind,
+                diagnostics=extraction_diags,
+            )
+        return result
+
+    @staticmethod
+    def _identity_shape_subject(
+        *,
+        label_kind: LabelKind,
+        rules,
+        normalized_payload: str,
+        candidate: CandidateLabel,
+    ) -> tuple[str, str]:
+        """Return (value, field_name) for prefix/length/charset identity checks.
+
+        SEGMENTED: identity rules apply to the mapped identity field only — never the
+        full payload (delimiter + other segments must not affect exact_length).
+        SIMPLE: whole normalized payload (equals WHOLE→identity mapping).
+        """
+        if rules.payload_structure is PayloadStructure.SEGMENTED:
+            if label_kind is LabelKind.ITEM:
+                if candidate.label_id and str(candidate.label_id).strip():
+                    return str(candidate.label_id).strip(), "label_id"
+                if candidate.sku and str(candidate.sku).strip():
+                    return str(candidate.sku).strip(), "sku"
+                return "", "label_id"
+            position_id = (candidate.position_id or candidate.label_id or "").strip()
+            return position_id, "position_id"
+        return normalized_payload, "payload"
 
     def _validate_deterministic_shape(
         self,
@@ -427,9 +615,13 @@ class LabelValidationService:
         rules,
         config: ExtractionProfileConfiguration,
         label_kind: LabelKind,
+        failed_field: str = "payload",
+        extra_diagnostics: dict | None = None,
     ) -> LabelValidationResult | None:
         prefix = (rules.expected_prefix or "").strip()
         diagnostics: dict = {
+            **(extra_diagnostics or {}),
+            "failed_field": failed_field,
             "found": normalized,
             "prefix": {
                 "expected": prefix or None,
@@ -449,10 +641,13 @@ class LabelValidationService:
         }
         if prefix and not normalized.startswith(prefix):
             diagnostics["prefix"]["pass"] = False
+            diagnostics["validation_error_code"] = (
+                LabelValidationErrorCode.LABEL_PREFIX_MISMATCH.value
+            )
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_PREFIX_MISMATCH.value,
                 detail=(
-                    f"PREFIX_MISMATCH: expected prefix {prefix!r}, "
+                    f"PREFIX_MISMATCH on {failed_field}: expected prefix {prefix!r}, "
                     f"found {normalized[: max(len(prefix) + 4, 24)]!r}"
                 ),
                 profile_source=LabelProfileSource.SUPPLIER,
@@ -461,9 +656,12 @@ class LabelValidationService:
             )
         suffix = (rules.expected_suffix or "").strip()
         if suffix and not normalized.endswith(suffix):
+            diagnostics["validation_error_code"] = (
+                LabelValidationErrorCode.LABEL_SUFFIX_MISMATCH.value
+            )
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_SUFFIX_MISMATCH.value,
-                detail=f"payload must end with {suffix!r}",
+                detail=f"payload must end with {suffix!r} (field {failed_field})",
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
                 diagnostics=diagnostics,
@@ -472,27 +670,45 @@ class LabelValidationService:
         length = len(normalized)
         if rules.exact_length is not None and length != int(rules.exact_length):
             diagnostics["length"]["pass"] = False
+            diagnostics["validation_error_code"] = (
+                LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value
+            )
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
-                detail=(f"LENGTH_MISMATCH: expected {rules.exact_length}, found {length}"),
+                detail=(
+                    f"LENGTH_MISMATCH on {failed_field}: expected {rules.exact_length}, "
+                    f"found {length}"
+                ),
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
                 diagnostics=diagnostics,
             )
         if rules.min_length is not None and length < int(rules.min_length):
             diagnostics["length"]["pass"] = False
+            diagnostics["validation_error_code"] = (
+                LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value
+            )
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
-                detail=f"LENGTH_MISMATCH: shorter than min_length {rules.min_length} (found {length})",
+                detail=(
+                    f"LENGTH_MISMATCH on {failed_field}: shorter than min_length "
+                    f"{rules.min_length} (found {length})"
+                ),
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
                 diagnostics=diagnostics,
             )
         if rules.max_length is not None and length > int(rules.max_length):
             diagnostics["length"]["pass"] = False
+            diagnostics["validation_error_code"] = (
+                LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value
+            )
             return LabelValidationResult.invalid(
                 error_code=LabelValidationErrorCode.LABEL_LENGTH_MISMATCH.value,
-                detail=f"LENGTH_MISMATCH: longer than max_length {rules.max_length} (found {length})",
+                detail=(
+                    f"LENGTH_MISMATCH on {failed_field}: longer than max_length "
+                    f"{rules.max_length} (found {length})"
+                ),
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
                 diagnostics=diagnostics,
@@ -501,6 +717,9 @@ class LabelValidationService:
         charset_err = self._validate_charset(normalized, rules.character_set, label_kind)
         if charset_err is not None:
             diagnostics["charset"]["pass"] = False
+            diagnostics["validation_error_code"] = (
+                LabelValidationErrorCode.LABEL_CHARSET_MISMATCH.value
+            )
             return LabelValidationResult.invalid(
                 error_code=charset_err.error_code
                 or LabelValidationErrorCode.LABEL_CHARSET_MISMATCH.value,
@@ -517,11 +736,17 @@ class LabelValidationService:
             if pattern_text:
                 compiled = compile_payload_pattern(pattern_text)
                 if not compiled.fullmatch(normalized):
+                    diagnostics["validation_error_code"] = (
+                        LabelValidationErrorCode.LABEL_PATTERN_MISMATCH.value
+                    )
                     return LabelValidationResult.invalid(
                         error_code=LabelValidationErrorCode.LABEL_PATTERN_MISMATCH.value,
-                        detail="payload does not match custom_payload_pattern",
+                        detail=(
+                            f"field {failed_field} does not match custom_payload_pattern"
+                        ),
                         profile_source=LabelProfileSource.SUPPLIER,
                         label_kind=label_kind,
+                        diagnostics=diagnostics,
                     )
             elif config.deterministic is None:
                 # Legacy length/charset already applied via effective_deterministic;
@@ -536,16 +761,21 @@ class LabelValidationService:
                 detail=exc.message,
                 profile_source=LabelProfileSource.SUPPLIER,
                 label_kind=label_kind,
+                diagnostics=diagnostics,
             )
 
         if rules.checksum_policy is ChecksumPolicy.EAN_GTIN:
             digits = "".join(ch for ch in normalized if ch.isdigit())
             if not self._ean_checksum_ok(digits, config):
+                diagnostics["validation_error_code"] = (
+                    LabelValidationErrorCode.LABEL_CHECKSUM_FAILED.value
+                )
                 return LabelValidationResult.invalid(
                     error_code=LabelValidationErrorCode.LABEL_CHECKSUM_FAILED.value,
                     detail="EAN/GTIN checksum failed",
                     profile_source=LabelProfileSource.SUPPLIER,
                     label_kind=label_kind,
+                    diagnostics=diagnostics,
                 )
         return None
 
@@ -651,13 +881,48 @@ class LabelValidationService:
                     detail="quantity must be an integer",
                     profile_source=LabelProfileSource.SUPPLIER,
                     label_kind=LabelKind.ITEM,
+                    diagnostics={"failed_field": "quantity"},
                 )
-            if qty_out < 1 and not config.quantity_rules.allow_negative:
+            qrules = config.quantity_rules
+            if not qrules.allow_decimals and isinstance(quantity, float):
+                return LabelValidationResult.invalid(
+                    error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
+                    detail="quantity decimals are not allowed",
+                    profile_source=LabelProfileSource.SUPPLIER,
+                    label_kind=LabelKind.ITEM,
+                    diagnostics={"failed_field": "quantity"},
+                )
+            if qty_out < 0 and not qrules.allow_negative:
+                return LabelValidationResult.invalid(
+                    error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
+                    detail="quantity must not be negative",
+                    profile_source=LabelProfileSource.SUPPLIER,
+                    label_kind=LabelKind.ITEM,
+                    diagnostics={"failed_field": "quantity"},
+                )
+            if qty_out == 0 and int(qrules.minimum) >= 1 and not qrules.allow_negative:
                 return LabelValidationResult.invalid(
                     error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
                     detail="quantity must be a positive integer",
                     profile_source=LabelProfileSource.SUPPLIER,
                     label_kind=LabelKind.ITEM,
+                    diagnostics={"failed_field": "quantity"},
+                )
+            if qty_out < int(qrules.minimum):
+                return LabelValidationResult.invalid(
+                    error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
+                    detail=f"quantity below minimum {qrules.minimum}",
+                    profile_source=LabelProfileSource.SUPPLIER,
+                    label_kind=LabelKind.ITEM,
+                    diagnostics={"failed_field": "quantity"},
+                )
+            if qty_out > int(qrules.maximum):
+                return LabelValidationResult.invalid(
+                    error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
+                    detail=f"quantity above maximum {qrules.maximum}",
+                    profile_source=LabelProfileSource.SUPPLIER,
+                    label_kind=LabelKind.ITEM,
+                    diagnostics={"failed_field": "quantity"},
                 )
         sku_required = "internal_code" in required or "sku" in required
         if not sku:
@@ -697,6 +962,20 @@ class LabelValidationService:
             "enrichment_complete": bool(sku) and qty_out is not None,
             "recognition_mode": config.recognition_mode.value,
         }
+        from src.application.services.label_validation.recognition_completeness import (
+            evaluate_recognition_completeness,
+        )
+
+        completeness = evaluate_recognition_completeness(
+            kind=LabelKind.ITEM,
+            configuration=config,
+            fields={
+                "label_id": label_id,
+                "sku": sku,
+                "quantity": qty_out,
+            },
+        )
+        identity_diags.update(completeness.to_diagnostics())
         return LabelValidationResult.valid(
             NormalizedItemLabel(
                 label_id=label_id,
@@ -769,11 +1048,12 @@ class LabelValidationService:
     ) -> bool:
         if not config.accepted_barcode_formats:
             return True
-        # Vision/OCR/CSV may lack barcode symbology (text handoff or pre-scanned payload).
+        # Vision/OCR/CSV/TXT may lack barcode symbology (text handoff or pre-scanned payload).
         if not symbology and recognition_source in (
             RecognitionSource.VISION,
             RecognitionSource.OCR,
             RecognitionSource.CSV,
+            RecognitionSource.TXT,
         ):
             return True
         if not symbology:

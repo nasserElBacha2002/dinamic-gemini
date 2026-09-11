@@ -8,6 +8,31 @@ interface Props {
   onChange: (configuration: ExtractionProfileConfiguration) => void;
 }
 
+function withQuantityRequired(
+  configuration: ExtractionProfileConfiguration,
+  required: boolean
+): ExtractionProfileConfiguration {
+  const requiredFields = [...(configuration.required_fields ?? [])].filter(
+    (field) => field !== 'quantity'
+  );
+  if (required) {
+    requiredFields.push('quantity');
+  }
+  return {
+    ...configuration,
+    required_fields: requiredFields,
+    quantity_rules: {
+      ...configuration.quantity_rules,
+      required,
+      expected_presence: required
+        ? 'ALWAYS'
+        : configuration.quantity_rules.expected_presence === 'ALWAYS'
+          ? 'OPTIONAL'
+          : configuration.quantity_rules.expected_presence,
+    },
+  };
+}
+
 export default function QuantityRulesSection({ configuration, onChange }: Props) {
   const { t } = useTranslation();
   const rules = configuration.quantity_rules;
@@ -38,7 +63,21 @@ export default function QuantityRulesSection({ configuration, onChange }: Props)
           size="small"
           label={t('clients.extraction_profile.quantity_expected_presence')}
           value={rules.expected_presence ?? 'ALWAYS'}
-          onChange={(e) => update({ expected_presence: e.target.value as typeof rules.expected_presence })}
+          onChange={(e) => {
+            const expected_presence = e.target.value as typeof rules.expected_presence;
+            if (expected_presence === 'ALWAYS') {
+              onChange(withQuantityRequired(configuration, true));
+              return;
+            }
+            onChange({
+              ...withQuantityRequired(configuration, false),
+              quantity_rules: {
+                ...configuration.quantity_rules,
+                required: false,
+                expected_presence,
+              },
+            });
+          }}
         >
           <MenuItem value="ALWAYS">{t('clients.extraction_profile.presence_always')}</MenuItem>
           <MenuItem value="OPTIONAL">{t('clients.extraction_profile.presence_optional')}</MenuItem>
@@ -61,7 +100,7 @@ export default function QuantityRulesSection({ configuration, onChange }: Props)
           control={
             <Checkbox
               checked={Boolean(rules.required)}
-              onChange={(e) => update({ required: e.target.checked })}
+              onChange={(e) => onChange(withQuantityRequired(configuration, e.target.checked))}
             />
           }
           label={t('clients.extraction_profile.quantity_required_auto')}

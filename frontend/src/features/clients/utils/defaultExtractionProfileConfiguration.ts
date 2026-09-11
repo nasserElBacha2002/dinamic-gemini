@@ -1,16 +1,15 @@
 import type { ExtractionProfileConfiguration, LabelKind } from '../../../api/types/extractionProfile';
 
-/** Minimal SUPPLIER v2 default — identity first (prefix/length/charset + primary target). */
+/** Minimal SUPPLIER v2 default — identity first (prefix/length/charset + primary target).
+
+ * POSITION defaults to SIMPLE + WHOLE→position_id (aligned with backend
+ * ``minimal_supplier_position_configuration``). SEGMENTED pipe layouts are opt-in
+ * via ``positionSegmentedTemplate`` so identity-only barcodes are not rejected.
+ */
 export function defaultExtractionProfileConfiguration(
   labelKind: LabelKind = 'ITEM'
 ): ExtractionProfileConfiguration {
   const isPosition = labelKind === 'POSITION';
-  const positionSegmentedMappings = [
-    { target: 'position_id', source: 'SEGMENT' as const, segment_index: 0 },
-    { target: 'pallet', source: 'SEGMENT' as const, segment_index: 1 },
-    { target: 'side', source: 'SEGMENT' as const, segment_index: 2 },
-    { target: 'level', source: 'SEGMENT' as const, segment_index: 3 },
-  ];
   return {
     configuration_schema_version: 2,
     recognition_mode: 'MINIMAL',
@@ -21,18 +20,18 @@ export function defaultExtractionProfileConfiguration(
       exact_length: null,
       min_length: null,
       max_length: null,
-      character_set: isPosition ? 'ALPHANUMERIC_WITH_HYPHEN' : 'UPPERCASE_ALPHANUMERIC',
+      character_set: isPosition ? 'ALPHANUMERIC_WITH_HYPHEN' : 'ALPHANUMERIC_WITH_HYPHEN',
       normalization: {
         trim_outer_whitespace: true,
         case_normalization: 'UPPER',
         remove_internal_spaces: true,
         remove_hyphens: false,
       },
-      payload_structure: isPosition ? 'SEGMENTED' : 'SIMPLE',
-      delimiter: isPosition ? '|' : null,
-      expected_segment_count: isPosition ? 4 : null,
+      payload_structure: 'SIMPLE',
+      delimiter: null,
+      expected_segment_count: null,
       field_mappings: isPosition
-        ? positionSegmentedMappings
+        ? [{ target: 'position_id', source: 'WHOLE' }]
         : [{ target: 'label_id', source: 'WHOLE' }],
       checksum_policy: 'NONE',
       required_application_identifiers: [],
@@ -54,6 +53,9 @@ export function defaultExtractionProfileConfiguration(
       default_value: null,
       accepted_units: [],
       expected_presence: 'OPTIONAL',
+      // Identity-only default — enable EXTERNAL_FALLBACK via inventory enrichment template.
+      // PENDING_MANUAL_REVIEW is the persistable action; RESOLVE_CODE_ONLY is rejected by
+      // the backend profile parser in this phase.
       missing_quantity_action: 'PENDING_MANUAL_REVIEW',
       allow_external_fallback: false,
       allowed_spatial_relations: [],
@@ -163,7 +165,7 @@ export function lpnSimpleTemplate(): ExtractionProfileConfiguration {
     deterministic: {
       ...base.deterministic!,
       payload_structure: 'SIMPLE',
-      character_set: 'UPPERCASE_ALPHANUMERIC',
+      character_set: 'ALPHANUMERIC_WITH_HYPHEN',
       normalization: {
         ...base.deterministic!.normalization,
         case_normalization: 'UPPER',
@@ -173,10 +175,37 @@ export function lpnSimpleTemplate(): ExtractionProfileConfiguration {
   };
 }
 
+/** Opt-in SEGMENTED POSITION (pipe: position_id|pallet|side|level). Never the create default. */
+export function positionSegmentedTemplate(): ExtractionProfileConfiguration {
+  const base = defaultExtractionProfileConfiguration('POSITION');
+  return {
+    ...base,
+    recognition_mode: 'FULL',
+    required_fields: ['position_id'],
+    deterministic: {
+      ...base.deterministic!,
+      payload_structure: 'SEGMENTED',
+      delimiter: '|',
+      expected_segment_count: 4,
+      field_mappings: [
+        { target: 'position_id', source: 'SEGMENT', segment_index: 0 },
+        { target: 'pallet', source: 'SEGMENT', segment_index: 1 },
+        { target: 'side', source: 'SEGMENT', segment_index: 2 },
+        { target: 'level', source: 'SEGMENT', segment_index: 3 },
+      ],
+    },
+  };
+}
+
 export const LABEL_RECOGNITION_TEMPLATES = [
   { id: 'gs1_sscc', labelKey: 'clients.extraction_profile.template_gs1_sscc', build: gs1SsccTemplate },
   { id: 'gs1_gtin', labelKey: 'clients.extraction_profile.template_gs1_gtin', build: gs1GtinTemplate },
   { id: 'lpn_simple', labelKey: 'clients.extraction_profile.template_lpn_simple', build: lpnSimpleTemplate },
+  {
+    id: 'position_segmented',
+    labelKey: 'clients.extraction_profile.template_position_segmented',
+    build: positionSegmentedTemplate,
+  },
 ] as const;
 
 /** Opt-in template — never auto-applied. */

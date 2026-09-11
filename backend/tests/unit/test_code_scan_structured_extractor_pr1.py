@@ -27,12 +27,14 @@ from src.domain.aisle_identification.modes import (
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client_supplier.extraction_profile import (
     CONFIGURATION_SCHEMA_VERSION_V2,
+    CharacterSetPolicy,
     DeterministicBarcodeRules,
     ExtractionProfileConfiguration,
     FieldMappingRule,
     FieldMappingSource,
     PayloadStructure,
     QuantityExtractionRules,
+    QuantityPresence,
 )
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import ImageProcessingContext, ImageResultStatus
@@ -214,7 +216,12 @@ def test_code_scan_segmented_item_maps_fields_not_raw_sku() -> None:
         configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
         required_fields=("label_id", "sku", "quantity"),
         accepted_barcode_formats=("CODE128",),
-        quantity_rules=QuantityExtractionRules(required=True, minimum=1),
+        quantity_rules=QuantityExtractionRules(
+            required=True,
+            minimum=1,
+            expected_presence=QuantityPresence.ALWAYS,
+            allow_external_fallback=False,
+        ),
         deterministic=DeterministicBarcodeRules(
             payload_structure=PayloadStructure.SEGMENTED,
             delimiter="|",
@@ -328,3 +335,74 @@ def test_code_scan_snapshot_delimiter_v1_vs_v2() -> None:
     assert a.product_results[0].internal_code == "SKU1"
     assert a.product_results[0].quantity == 5
     assert b.status is not ImageResultStatus.RESOLVED_INTERNAL
+
+
+def test_code_scan_segmented_identity_rules_four_items_total_90() -> None:
+    """CODE_SCAN: SEGMENTED label_id|qty with exact_length on identity only."""
+    item_cfg = ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        required_fields=("label_id", "quantity"),
+        accepted_barcode_formats=("CODE128", "QR"),
+        quantity_rules=QuantityExtractionRules(
+            required=True,
+            minimum=1,
+            expected_presence=QuantityPresence.ALWAYS,
+            allow_external_fallback=False,
+        ),
+        deterministic=DeterministicBarcodeRules(
+            expected_prefix="ASI",
+            exact_length=10,
+            character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+            payload_structure=PayloadStructure.SEGMENTED,
+            delimiter="|",
+            expected_segment_count=2,
+            field_mappings=(
+                FieldMappingRule("label_id", FieldMappingSource.SEGMENT, 0),
+                FieldMappingRule("quantity", FieldMappingSource.SEGMENT, 1),
+            ),
+        ),
+    )
+    pos_cfg = ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        required_fields=("position_id",),
+        accepted_barcode_formats=("CODE128", "QR"),
+        deterministic=DeterministicBarcodeRules(
+            expected_prefix="ASP",
+            exact_length=13,
+            character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+            field_mappings=(FieldMappingRule("position_id", FieldMappingSource.WHOLE),),
+        ),
+    )
+    payloads = (
+        "ASI-7K2M9Q|24",
+        "ASI-4F8N3C|12",
+        "ASI-9T6R2V|48",
+        "ASI-2W5H8D|6",
+    )
+    expected = {
+        "ASI-7K2M9Q": 24,
+        "ASI-4F8N3C": 12,
+        "ASI-9T6R2V": 48,
+        "ASI-2W5H8D": 6,
+    }
+    total = 0
+    for payload in payloads:
+        ctx = LabelValidationContext(
+            resolved_profiles=_profiles(),
+            item_extraction_configuration=item_cfg,
+            position_extraction_configuration=pos_cfg,
+            job_id="job-seg",
+        )
+        result = _strategy(payload).process(_ctx(ctx, job_id="job-seg"), _asset())
+        assert result.status is ImageResultStatus.RESOLVED_INTERNAL, (
+            payload,
+            result.status,
+            result.error_code,
+        )
+        assert result.error_code not in {"MISSING_QUANTITY", "LABEL_LENGTH_MISMATCH"}
+        assert len(result.product_results) == 1
+        product = result.product_results[0]
+        assert product.label_id in expected
+        assert int(product.quantity or 0) == expected[product.label_id]
+        total += int(product.quantity or 0)
+    assert total == 90

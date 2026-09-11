@@ -26,6 +26,7 @@ import {
   defaultExtractionProfileConfiguration,
   LABEL_RECOGNITION_TEMPLATES,
 } from '../../utils/defaultExtractionProfileConfiguration';
+import { normalizeExtractionProfileForSave } from '../../utils/normalizeDeterministicFieldMappings';
 import BarcodeRulesSection from './BarcodeRulesSection';
 import BasicIdentitySection from './BasicIdentitySection';
 import ExamplesEditor from './ExamplesEditor';
@@ -125,14 +126,23 @@ export default function LabelRecognitionProfileModule({ clientId, supplierId, su
 
   const handleSave = async (activate: boolean) => {
     try {
+      const configuration = normalizeExtractionProfileForSave(draft.configuration);
       await createMutation.mutateAsync({
-        configuration: draft.configuration as unknown as Record<string, unknown>,
+        configuration: configuration as unknown as Record<string, unknown>,
         visual_notes: draft.visualNotes.trim() || null,
         activate,
         label_kind: labelKind,
         ...(activate ? { effective_source: draft.source } : {}),
       });
-      setDrafts((current) => ({ ...current, [labelKind]: { ...current[labelKind], dirty: false, initialized: false } }));
+      setDrafts((current) => ({
+        ...current,
+        [labelKind]: {
+          ...current[labelKind],
+          configuration,
+          dirty: false,
+          initialized: false,
+        },
+      }));
       showSnackbar(t(activate ? 'clients.extraction_profile.created_and_activated_success' : 'clients.extraction_profile.created_success'), 'success');
     } catch {
       // Mutation state renders the localized error.

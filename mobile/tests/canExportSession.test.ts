@@ -145,6 +145,41 @@ describe('canExportSession', () => {
     ).toBe(false);
   });
 
+  it('blocks export while local CODE_SCAN drafts are in flight', () => {
+    const gate = canExportSession({
+      session: session({ status: 'review' }),
+      photos: [photo()],
+      localCodeScanEnabled: true,
+      localDetectionDrafts: [
+        { capture_photo_id: 'session-1:1', status: 'SCANNING' },
+      ],
+    });
+    expect(gate.ok).toBe(false);
+    expect(gate.reason).toMatch(/Escaneo local/i);
+  });
+
+  it('blocks export when stable photos still lack a draft', () => {
+    const gate = canExportSession({
+      session: session({ status: 'review' }),
+      photos: [photo()],
+      localCodeScanEnabled: true,
+      localDetectionDrafts: [],
+    });
+    expect(gate.ok).toBe(false);
+  });
+
+  it('allows export once drafts are terminal', () => {
+    const gate = canExportSession({
+      session: session({ status: 'review' }),
+      photos: [photo()],
+      localCodeScanEnabled: true,
+      localDetectionDrafts: [
+        { capture_photo_id: 'session-1:1', status: 'RESOLVED' },
+      ],
+    });
+    expect(gate.ok).toBe(true);
+  });
+
   it('isSessionExportableStatus allows handoff and upload statuses', () => {
     expect(isSessionExportableStatus('local_completed')).toBe(true);
     expect(isSessionExportableStatus('review')).toBe(true);

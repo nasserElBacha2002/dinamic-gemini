@@ -148,6 +148,186 @@
         "quantity": 20,
         "error_code": null
       }
+    },
+    {
+      "id": "provider_a_simple_item",
+      "label_kind": "ITEM",
+      "raw_payload": "PRD-123456",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "MINIMAL",
+        "required_fields": ["label_id"],
+        "deterministic": {
+          "expected_prefix": "PRD",
+          "exact_length": 10,
+          "character_set": "ALPHANUMERIC_WITH_HYPHEN",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "UPPER",
+            "remove_internal_spaces": true,
+            "remove_hyphens": false
+          },
+          "payload_structure": "SIMPLE",
+          "field_mappings": [{ "target": "label_id", "source": "WHOLE" }]
+        }
+      },
+      "expected": {
+        "status": "VALID",
+        "label_id": "PRD-123456",
+        "sku": null,
+        "quantity": null,
+        "error_code": null
+      }
+    },
+    {
+      "id": "provider_a_simple_position",
+      "label_kind": "POSITION",
+      "raw_payload": "LOC-A01-02",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "MINIMAL",
+        "required_fields": ["position_id"],
+        "deterministic": {
+          "expected_prefix": "LOC",
+          "exact_length": 10,
+          "character_set": "ALPHANUMERIC_WITH_HYPHEN",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "UPPER",
+            "remove_internal_spaces": true,
+            "remove_hyphens": false
+          },
+          "payload_structure": "SIMPLE",
+          "field_mappings": [{ "target": "position_id", "source": "WHOLE" }]
+        }
+      },
+      "expected": {
+        "status": "VALID",
+        "position_id": "LOC-A01-02",
+        "error_code": null
+      }
+    },
+    {
+      "id": "provider_b_segmented_item",
+      "label_kind": "ITEM",
+      "raw_payload": "I|LPN7788|SKU900|24",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "FULL",
+        "required_fields": ["label_id", "sku", "quantity"],
+        "deterministic": {
+          "payload_structure": "SEGMENTED",
+          "delimiter": "|",
+          "expected_segment_count": 4,
+          "character_set": "ANY",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "NONE",
+            "remove_internal_spaces": false,
+            "remove_hyphens": false
+          },
+          "field_mappings": [
+            { "target": "label_id", "source": "SEGMENT", "segment_index": 1 },
+            { "target": "sku", "source": "SEGMENT", "segment_index": 2 },
+            { "target": "quantity", "source": "SEGMENT", "segment_index": 3 }
+          ]
+        }
+      },
+      "expected": {
+        "status": "VALID",
+        "label_id": "LPN7788",
+        "sku": "SKU900",
+        "quantity": 24,
+        "error_code": null
+      }
+    },
+    {
+      "id": "provider_b_segmented_position",
+      "label_kind": "POSITION",
+      "raw_payload": "P|POS55|03|RIGHT",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "FULL",
+        "required_fields": ["position_id"],
+        "deterministic": {
+          "payload_structure": "SEGMENTED",
+          "delimiter": "|",
+          "expected_segment_count": 4,
+          "character_set": "ANY",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "NONE",
+            "remove_internal_spaces": false,
+            "remove_hyphens": false
+          },
+          "field_mappings": [
+            { "target": "position_id", "source": "SEGMENT", "segment_index": 1 },
+            { "target": "pallet", "source": "SEGMENT", "segment_index": 2 },
+            { "target": "side", "source": "SEGMENT", "segment_index": 3 }
+          ]
+        }
+      },
+      "expected": {
+        "status": "VALID",
+        "position_id": "POS55",
+        "error_code": null
+      }
+    },
+    {
+      "id": "provider_c_item_no_shared_prefix",
+      "label_kind": "ITEM",
+      "raw_payload": "123456789012",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "MINIMAL",
+        "required_fields": ["label_id"],
+        "deterministic": {
+          "exact_length": 12,
+          "character_set": "NUMERIC",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "NONE",
+            "remove_internal_spaces": true,
+            "remove_hyphens": false
+          },
+          "payload_structure": "SIMPLE",
+          "field_mappings": [{ "target": "label_id", "source": "WHOLE" }]
+        }
+      },
+      "expected": {
+        "status": "VALID",
+        "label_id": "123456789012",
+        "sku": null,
+        "quantity": null,
+        "error_code": null
+      }
+    },
+    {
+      "id": "provider_c_position_no_shared_prefix",
+      "label_kind": "POSITION",
+      "raw_payload": "WH7-R04-L2",
+      "configuration": {
+        "configuration_schema_version": 2,
+        "recognition_mode": "MINIMAL",
+        "required_fields": ["position_id"],
+        "deterministic": {
+          "exact_length": 10,
+          "character_set": "ALPHANUMERIC_WITH_HYPHEN",
+          "normalization": {
+            "trim_outer_whitespace": true,
+            "case_normalization": "UPPER",
+            "remove_internal_spaces": true,
+            "remove_hyphens": false
+          },
+          "payload_structure": "SIMPLE",
+          "field_mappings": [{ "target": "position_id", "source": "WHOLE" }]
+        }
+      },
+      "expected": {
+        "status": "VALID",
+        "position_id": "WH7-R04-L2",
+        "error_code": null
+      }
     }
   ]
 }

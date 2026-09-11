@@ -340,11 +340,33 @@ def test_minimal_item_identity_only_without_quantity() -> None:
     )
     ctx = _profiles(item_cfg=item_cfg, pos_cfg=pos_cfg)
     result = _strategy("LPNA000184").process(_ctx(ctx), _asset())
+    # Identity-only default (RESOLVE_CODE_ONLY): resolved without inventing quantity.
     assert result.status is ImageResultStatus.RESOLVED_INTERNAL
-    assert result.error_code != "MISSING_QUANTITY"
+    assert result.quantity is None
     assert result.product_results[0].label_id == "LPNA000184"
     assert result.product_results[0].internal_code is None
     assert result.product_results[0].quantity is None
+
+
+def test_inventory_enrichment_item_requests_missing_quantity() -> None:
+    from src.domain.client_supplier.extraction_profile import inventory_count_item_configuration
+
+    item_cfg = inventory_count_item_configuration(expected_prefix="LPNA", exact_length=10)
+    pos_cfg = ExtractionProfileConfiguration(
+        configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
+        required_fields=("position_id",),
+        accepted_barcode_formats=("QR",),
+        deterministic=DeterministicBarcodeRules(
+            field_mappings=(FieldMappingRule("position_id", FieldMappingSource.WHOLE),),
+            expected_prefix="NEVER-POS",
+        ),
+    )
+    ctx = _profiles(item_cfg=item_cfg, pos_cfg=pos_cfg)
+    result = _strategy("LPNA000184").process(_ctx(ctx), _asset())
+    assert result.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert result.error_code == "MISSING_QUANTITY"
+    assert (result.evidence or {}).get("fallback_eligible") is True
+    assert result.quantity is None
 
 
 def test_supplier_wired_invalid_payload_not_legacy_missing_quantity() -> None:
@@ -360,6 +382,7 @@ def test_supplier_wired_invalid_payload_not_legacy_missing_quantity() -> None:
         "LABEL_PREFIX_MISMATCH",
         "LABEL_SEGMENT_COUNT_MISMATCH",
         "LABEL_FIELD_MAPPING_INVALID",
+        "POSITION_LABEL_UNRESOLVED",
     }
 
 

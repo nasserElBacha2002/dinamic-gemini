@@ -1341,6 +1341,7 @@ def get_preview_dinamic_scanner_txt_import_use_case(
     create_aisle: CreateAisleUseCase = Depends(get_create_aisle_use_case),
 ):
     from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
+    from src.application.services.label_profile_resolver import LabelProfileResolver
     from src.application.use_cases.inventories.manage_dinamic_scanner_txt_import import (
         PreviewDinamicScannerTxtImport,
     )
@@ -1361,6 +1362,11 @@ def get_preview_dinamic_scanner_txt_import_use_case(
         client_supplier_repo=client_supplier_repo,
         create_aisle=create_aisle,
     )
+    label_profile_resolver = LabelProfileResolver(
+        label_profile_repo=container.get_client_supplier_label_profile_repo(),
+        client_supplier_repo=client_supplier_repo,
+        extraction_profile_repo=container.get_supplier_extraction_profile_repo(),
+    )
     return PreviewDinamicScannerTxtImport(
         inventory_repo=inventory_repo,
         aisle_resolver=aisle_resolver,
@@ -1370,6 +1376,8 @@ def get_preview_dinamic_scanner_txt_import_use_case(
         enabled=_dinamic_scanner_txt_import_enabled(settings),
         max_lines=int(getattr(settings, "server_dinamic_scanner_txt_max_lines", 50_000)),
         max_line_length=int(getattr(settings, "server_dinamic_scanner_txt_max_line_length", 512)),
+        label_profile_resolver=label_profile_resolver,
+        extraction_profile_repo=container.get_supplier_extraction_profile_repo(),
     )
 
 

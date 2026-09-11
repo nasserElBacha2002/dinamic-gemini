@@ -928,6 +928,100 @@ class CodeScanProcessingStrategy:
                 minimal = bool(
                     item_cfg is not None and getattr(item_cfg, "is_minimal", lambda: False)()
                 )
+                qty_rules = getattr(item_cfg, "quantity_rules", None) if item_cfg else None
+                qty_required = bool(getattr(qty_rules, "required", False)) if qty_rules else False
+                allow_external = (
+                    bool(getattr(qty_rules, "allow_external_fallback", False))
+                    if qty_rules
+                    else False
+                )
+                missing_action = getattr(qty_rules, "missing_quantity_action", None)
+                expected_presence = getattr(qty_rules, "expected_presence", None)
+                presence_value = (
+                    getattr(expected_presence, "value", str(expected_presence or ""))
+                    if expected_presence is not None
+                    else ""
+                )
+                action_value = (
+                    getattr(missing_action, "value", None)
+                    if missing_action is not None
+                    else "PENDING_MANUAL_REVIEW"
+                )
+                # OPTIONAL + not required: identity-only codes are complete unless the
+                # profile explicitly asks for Vision enrichment (EXTERNAL_FALLBACK).
+                optional_identity_ok = (
+                    not qty_required
+                    and presence_value.upper() == "OPTIONAL"
+                    and action_value != "EXTERNAL_FALLBACK"
+                    and not allow_external
+                )
+                enrichment_incomplete = primary_qty is None and (
+                    qty_required
+                    or logistic_only
+                    or (
+                        not optional_identity_ok
+                        and missing_action is not None
+                        and action_value != "RESOLVE_CODE_ONLY"
+                    )
+                )
+                # Identity confirmed + missing completion fields must not look fully resolved
+                # when the profile requires quantity (or enrichment). Never invent qty=0.
+                if enrichment_incomplete and primary_code:
+                    if action_value == "EXTERNAL_FALLBACK" or allow_external:
+                        status = ImageResultStatus.PENDING_MANUAL_REVIEW
+                    elif action_value == "UNRECOGNIZED":
+                        status = ImageResultStatus.UNRECOGNIZED
+                    elif action_value == "RESOLVE_CODE_ONLY" and not qty_required:
+                        status = ImageResultStatus.RESOLVED_INTERNAL
+                    else:
+                        status = ImageResultStatus.PENDING_MANUAL_REVIEW
+                    evidence = {
+                        **(evidence or {}),
+                        "identity_valid": True,
+                        "enrichment_complete": False,
+                        "quantity_status": "MISSING",
+                        "quantity_source": None,
+                        "fallback_eligible": bool(allow_external),
+                        "missing_fields": ["quantity"],
+                    }
+                    if logistic_only and not minimal:
+                        evidence["logistic_unit_review"] = True
+                        evidence["limitation"] = (
+                            "LOGISTIC_UNIT_NO_PRODUCT_RECORD: "
+                            "SSCC/LPN recognized; inventory SKU rows not auto-created"
+                        )
+                    elif logistic_only and minimal:
+                        evidence["logistic_unit_identity_only"] = True
+                    result = ImageProcessingResult(
+                        job_id=context.job_id,
+                        asset_id=context.asset_id,
+                        status=status,
+                        processing_mode=mode,
+                        resolved_by=STRATEGY_KEY,
+                        internal_code=primary_code,
+                        quantity=None,
+                        evidence=evidence,
+                        warnings=list(consolidated.warnings) + scan_warnings,
+                        validation_errors=["MISSING_QUANTITY"],
+                        error_code="MISSING_QUANTITY",
+                        execution_scope=ExecutionScope.SINGLE_ASSET,
+                        logical_asset_attempt=False,
+                        processing_duration_ms=duration_ms,
+                        product_results=list(product_results),
+                    )
+                    self._publish_asset_event(
+                        context,
+                        "code_scan.validation_completed",
+                        message="identity confirmed; enrichment incomplete",
+                        metadata={
+                            "status": status.value,
+                            "product_count": counted,
+                            "enrichment_complete": False,
+                        },
+                    )
+                    self._finalize_asset_event(context, result)
+                    return result
+
                 status = (
                     ImageResultStatus.PENDING_MANUAL_REVIEW
                     if logistic_only and not minimal
@@ -948,6 +1042,14 @@ class CodeScanProcessingStrategy:
                         "identity_valid": True,
                         "enrichment_complete": False,
                         "logistic_unit_identity_only": True,
+                    }
+                else:
+                    evidence = {
+                        **(evidence or {}),
+                        "identity_valid": True,
+                        "enrichment_complete": primary_qty is not None,
+                        "quantity_status": "PRESENT" if primary_qty is not None else "MISSING",
+                        "quantity_source": "CODE_SCAN" if primary_qty is not None else None,
                     }
                 result = ImageProcessingResult(
                     job_id=context.job_id,

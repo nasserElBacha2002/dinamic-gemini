@@ -509,7 +509,12 @@ class LocalCsvPositionMaterializer:
         created_at = existing.created_at if existing is not None else now
 
         save_product = True
-        if label_id:
+        # Incomplete lines must not consume the counted-label claim.
+        if has_product_line and qty is None:
+            save_product = False
+            needs_review = True
+
+        if label_id and save_product:
             resolved = self._resolve_issued_label(
                 result, label_id=label_id, inventory_client_id=inventory_client_id
             )
@@ -533,28 +538,37 @@ class LocalCsvPositionMaterializer:
                 needs_review = bool(result.requires_review) or (
                     is_txt and not position_payload_ok
                 )
-                label_registry_status = "ok"
-                label_authority = "issued"
-                claimed = self._counted_product_label_repo.try_claim(
-                    InventoryCountedProductLabel(
-                        id=str(uuid.uuid4()),
-                        inventory_id=result.inventory_id,
-                        aisle_id=result.aisle_id,
-                        label_id=label_id,
-                        first_product_record_id=product_id,
-                        first_source_asset_id=(result.source_asset_id or "").strip()
-                        or position_id,
-                        first_job_id="",
-                        first_position_id=position_id,
-                        created_at=now,
-                    )
-                )
-                if not claimed:
-                    # Idempotent re-import / cross-row dedupe: never create a second ProductRecord.
-                    # Still refresh position when it already exists from the winning claim path.
-                    if existing is None:
-                        return False
+                if qty is None:
                     save_product = False
+                    needs_review = True
+                    label_registry_status = "ok"
+                    label_authority = "issued"
+                else:
+                    label_registry_status = "ok"
+                    label_authority = "issued"
+                    claimed = self._counted_product_label_repo.try_claim(
+                        InventoryCountedProductLabel(
+                            id=str(uuid.uuid4()),
+                            inventory_id=result.inventory_id,
+                            aisle_id=result.aisle_id,
+                            label_id=label_id,
+                            first_product_record_id=product_id,
+                            first_source_asset_id=(result.source_asset_id or "").strip()
+                            or position_id,
+                            first_job_id="",
+                            first_position_id=position_id,
+                            created_at=now,
+                        )
+                    )
+                    if not claimed:
+                        # Idempotent re-import / cross-row dedupe: never create a second ProductRecord.
+                        # Still refresh position when it already exists from the winning claim path.
+                        if existing is None:
+                            return False
+                        save_product = False
+        elif label_id and not save_product:
+            label_registry_status = "deferred_incomplete"
+            label_authority = "pending_quantity"
 
         # Link the package photo as primary evidence so list ``has_evidence`` is true
         # (canonical view keys has_evidence off primary_evidence_id).
@@ -567,6 +581,18 @@ class LocalCsvPositionMaterializer:
         )
         if not position_payload_ok:
             summary["position_payload_status"] = "ignored_invalid"
+
+        # Never invent detected_quantity=0 from a missing quantity. Keep the
+        # position (+ review flag) and skip the product row until qty is known.
+        # Explicit quantity 0 remains distinct (qty is not None).
+        if has_product_line and qty is None:
+            save_product = False
+            needs_review = True
+            summary["explicit_quantity_missing"] = True
+            summary["quantity_status"] = "MISSING"
+            summary["missing_fields"] = ["quantity"]
+        elif qty is not None:
+            summary["quantity_status"] = "PRESENT"
 
         position = Position(
             id=position_id,
@@ -586,13 +612,13 @@ class LocalCsvPositionMaterializer:
         )
         self._position_repo.save(position)
 
-        if save_product:
+        if save_product and qty is not None:
             product = ProductRecord(
                 id=product_id,
                 position_id=position_id,
                 sku=sku,
                 description=None,
-                detected_quantity=qty if qty is not None else 0,
+                detected_quantity=qty,
                 corrected_quantity=None,
                 confidence=1.0,
                 created_at=created_at,

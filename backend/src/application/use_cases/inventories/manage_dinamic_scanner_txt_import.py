@@ -71,6 +71,8 @@ class PreviewDinamicScannerTxtImport:
         enabled: bool,
         max_lines: int,
         max_line_length: int,
+        label_profile_resolver: object | None = None,
+        extraction_profile_repo: object | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_resolver = aisle_resolver
@@ -80,6 +82,80 @@ class PreviewDinamicScannerTxtImport:
         self._enabled = enabled
         self._max_lines = max_lines
         self._max_line_length = max_line_length
+        self._label_profile_resolver = label_profile_resolver
+        self._extraction_profile_repo = extraction_profile_repo
+
+    def _build_validation_context(
+        self,
+        *,
+        inventory_id: str,
+        aisle,
+    ):
+        """Resolve effective SUPPLIER profiles for the aisle when available."""
+        if self._label_profile_resolver is None or self._extraction_profile_repo is None:
+            return None
+        inventory = self._inventory_repo.get_by_id(inventory_id)
+        if inventory is None:
+            return None
+        client_id = getattr(inventory, "client_id", None)
+        supplier_id = getattr(aisle, "client_supplier_id", None) if aisle is not None else None
+        if not client_id or not supplier_id:
+            return None
+        from src.application.services.label_profile_resolver import LabelProfileResolutionContext
+        from src.domain.label_profiles.kinds import LabelProfileSource
+        from src.domain.label_validation.context import LabelValidationContext
+
+        resolved = self._label_profile_resolver.resolve(
+            LabelProfileResolutionContext(
+                client_id=client_id,
+                client_supplier_id=supplier_id,
+                aisle=aisle,
+            )
+        )
+        item_cfg = None
+        position_cfg = None
+        if resolved.item.source is LabelProfileSource.SUPPLIER:
+            pid = resolved.item.extraction_profile_id
+            ver = resolved.item.extraction_profile_version
+            if pid and ver is not None:
+                profile = self._extraction_profile_repo.get_by_client_supplier_kind_version(
+                    client_id, supplier_id, resolved.item.label_kind, int(ver)
+                )
+                if profile is None:
+                    profile = self._extraction_profile_repo.get_by_id(pid)
+                if profile is not None and profile.configuration is not None:
+                    item_cfg = profile.configuration
+            else:
+                profile = self._extraction_profile_repo.get_active_by_kind(
+                    client_id, supplier_id, resolved.item.label_kind
+                )
+                if profile is not None:
+                    item_cfg = profile.configuration
+        if resolved.position.source is LabelProfileSource.SUPPLIER:
+            pid = resolved.position.extraction_profile_id
+            ver = resolved.position.extraction_profile_version
+            if pid and ver is not None:
+                profile = self._extraction_profile_repo.get_by_client_supplier_kind_version(
+                    client_id, supplier_id, resolved.position.label_kind, int(ver)
+                )
+                if profile is None:
+                    profile = self._extraction_profile_repo.get_by_id(pid)
+                if profile is not None and profile.configuration is not None:
+                    position_cfg = profile.configuration
+            else:
+                profile = self._extraction_profile_repo.get_active_by_kind(
+                    client_id, supplier_id, resolved.position.label_kind
+                )
+                if profile is not None:
+                    position_cfg = profile.configuration
+        if item_cfg is None and position_cfg is None:
+            return None
+        return LabelValidationContext(
+            resolved_profiles=resolved,
+            item_extraction_configuration=item_cfg,
+            position_extraction_configuration=position_cfg,
+            client_id=client_id,
+        )
 
     def execute(
         self,
@@ -96,14 +172,19 @@ class PreviewDinamicScannerTxtImport:
             )
 
         aisle_code = aisle_code_from_txt_filename(filename)
+        existing_aisle = self._aisle_resolver.find_existing(
+            inventory_id=inventory_id,
+            aisle_code=aisle_code,
+        )
+        validation_ctx = self._build_validation_context(
+            inventory_id=inventory_id,
+            aisle=existing_aisle,
+        )
         parsed_txt = parse_dinamic_scanner_txt(
             content,
             max_lines=self._max_lines,
             max_line_length=self._max_line_length,
-        )
-        existing_aisle = self._aisle_resolver.find_existing(
-            inventory_id=inventory_id,
-            aisle_code=aisle_code,
+            validation_context=validation_ctx,
         )
         aisle_will_be_created = existing_aisle is None
         staging_aisle_id = (

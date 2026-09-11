@@ -6,8 +6,8 @@ Mobile authoritative rows are operator-confirmed on device. Backend does **not**
 issued-label registry (same components as CV/TXT productive paths).
 
 ``LOCAL_MANUAL_CORRECTION`` never consumes a counted-label claim: ``label_id`` is ignored.
-Historical rows without ``label_id`` keep the legacy apply path (including missing quantity
-→ review via ``legacy_missing_quantity``).
+Historical rows without ``label_id`` keep the legacy apply path. Missing quantity
+never invents ``0`` — productive product specs are omitted until quantity is present.
 """
 
 from __future__ import annotations
@@ -91,17 +91,8 @@ def _legacy_manual_correction(
     qty_status: str,
 ) -> list[ProcessedProductLabel]:
     if qty_status == AuthoritativeQuantityStatus.MISSING.value or row.quantity is None:
-        return [
-            ProcessedProductLabel(
-                label_id=None,
-                internal_code=code,
-                quantity=0,
-                format_version=None,
-                checksum=None,
-                validation_status=ProductLabelOutcomeStatus.VALID,
-                detail="authoritative_manual_correction_legacy_missing_quantity",
-            )
-        ]
+        # Absence ≠ zero. Skip productive specs until quantity is present.
+        return []
     qty = row.quantity
     if not isinstance(qty, int) or qty <= 0:
         return []
@@ -125,17 +116,8 @@ def _legacy_code_scan(
     qty_status: str,
 ) -> list[ProcessedProductLabel]:
     if qty_status == AuthoritativeQuantityStatus.MISSING.value or row.quantity is None:
-        return [
-            ProcessedProductLabel(
-                label_id=None,
-                internal_code=code,
-                quantity=0,
-                format_version=None,
-                checksum=None,
-                validation_status=ProductLabelOutcomeStatus.VALID,
-                detail="legacy_missing_quantity",
-            )
-        ]
+        # Absence ≠ zero. Skip productive specs until quantity is present.
+        return []
     qty = row.quantity
     if not isinstance(qty, int) or qty <= 0:
         return []

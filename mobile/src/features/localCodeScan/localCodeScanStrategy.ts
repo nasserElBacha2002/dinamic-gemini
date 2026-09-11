@@ -472,13 +472,26 @@ export class LocalCodeScanStrategy {
       const supplierMissingQty =
         primary?.formatVersion === 'SUPPLIER' &&
         profileAware.supplierItem?.quantity == null;
-      const persistQuantity = supplierMissingQty
+      let persistQuantity = supplierMissingQty
         ? null
         : d1Mode
           ? primary?.quantity ?? null
           : primary?.quantity ?? consolidated.quantity;
+      // Plain-text / supplier ASP codes often consolidate as MISSING_QUANTITY (legacy
+      // grammar treats them as product SKU without qty). When POSITION matched and no
+      // product rows remain, treat as position-only — do not ask for product quantity.
       const isPositionOnly =
-        positionDetected && products.length === 0 && (d1Mode || consolidated.status === 'NO_VALID_CODE');
+        positionDetected &&
+        products.length === 0 &&
+        (d1Mode ||
+          consolidated.status === 'NO_VALID_CODE' ||
+          consolidated.status === 'MISSING_QUANTITY' ||
+          (profileAware.supplierPosition?.status === 'VALID' &&
+            profileAware.supplierItem?.status !== 'VALID'));
+      if (isPositionOnly) {
+        persistInternalCode = null;
+        persistQuantity = null;
+      }
       if (
         status === 'RESOLVED' &&
         products.length === 0 &&
@@ -500,8 +513,9 @@ export class LocalCodeScanStrategy {
         productResultsJson,
         rejectionsJson,
         positionDetected,
-        quantityStatus:
-          consolidated.status === 'MISSING_QUANTITY' || supplierMissingQty
+        quantityStatus: isPositionOnly
+          ? null
+          : consolidated.status === 'MISSING_QUANTITY' || supplierMissingQty
             ? 'MISSING'
             : persistQuantity != null
               ? 'PRESENT'
@@ -635,14 +649,17 @@ export class LocalCodeScanStrategy {
           rejections_count: rejections.length,
           duplicate_labels: duplicateLabels,
           duplicate_position: duplicatePosition,
-          consolidation_status: consolidated.status,
+          consolidation_status: isPositionOnly
+            ? 'POSITION_LABEL_DETECTED'
+            : consolidated.status,
         },
       });
 
+      const draftStatus = isPositionOnly ? 'DETECTED_UNVERIFIED' : status;
       const eventName =
-        status === 'AMBIGUOUS'
+        draftStatus === 'AMBIGUOUS'
           ? 'local_scan_ambiguous'
-          : status === 'FAILED'
+          : draftStatus === 'FAILED'
             ? 'local_scan_failed'
             : 'local_scan_completed';
       emitObservability(this.deps.reporter, {
@@ -653,8 +670,10 @@ export class LocalCodeScanStrategy {
         attributes: {
           local_scan_ms: processingMs,
           local_scan_candidate_count: candidates.length,
-          local_scan_status: status,
-          consolidation_status: consolidated.status,
+          local_scan_status: draftStatus,
+          consolidation_status: isPositionOnly
+            ? 'POSITION_LABEL_DETECTED'
+            : consolidated.status,
           detector_version: LOCAL_CODE_DETECTOR_VERSION,
           parser_version: LABEL_PAYLOAD_PARSER_VERSION,
           capture_photo_id: input.capturePhotoId,
@@ -677,7 +696,7 @@ export class LocalCodeScanStrategy {
               : candidates[0]?.symbology) ?? null,
         },
       });
-      return isPositionOnly ? 'DETECTED_UNVERIFIED' : status;
+      return draftStatus;
     } catch (e) {
       const processingMs = Math.max(0, Math.round(this.nowMs() - started));
       const message = String(e);

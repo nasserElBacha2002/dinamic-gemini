@@ -101,12 +101,24 @@ export default function ImportLocalInventoryPackageDialog({
       }
     } catch (e) {
       setPreview(null);
-      setError(
-        resolveApiErrorMessage(
-          e instanceof ApiError ? e : new ApiError(String(e)),
-          'inventory.import_package.preview_error'
-        )
-      );
+      if (
+        e instanceof ApiError &&
+        e.data?.code === 'LOCAL_INVENTORY_PACKAGE_INVENTORY_MISMATCH' &&
+        typeof e.data.detail === 'string' &&
+        e.data.detail.trim()
+      ) {
+        // Prefer server detail (includes package vs path inventory ids) for diagnosis.
+        setError(
+          `${t('inventory.import_package.errors.inventory_mismatch')} ${e.data.detail.trim()}`,
+        );
+      } else {
+        setError(
+          resolveApiErrorMessage(
+            e instanceof ApiError ? e : new ApiError(String(e)),
+            'inventory.import_package.preview_error'
+          )
+        );
+      }
     } finally {
       setBusy(null);
     }

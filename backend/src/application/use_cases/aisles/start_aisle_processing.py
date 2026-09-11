@@ -867,55 +867,114 @@ class StartAisleProcessingUseCase:
                 SupplierPromptResolver,
             )
 
-            if self._supplier_prompt_config_repo is None or self._client_supplier_repo is None:
-                raise ValueError(
-                    "SUPPLIER_PROMPT_REQUIRED: supplier prompt repositories are not configured"
+            def _disable_vision_without_supplier_prompt(*, reason: str) -> None:
+                """AUTO/label-code start must not hard-fail on missing Vision prompt."""
+                nonlocal external_fallback, supplier_prompt_snapshot
+                logger.warning(
+                    "aisle.external_fallback_disabled_missing_supplier_prompt "
+                    "inventory_id=%s aisle_id=%s processing_mode=%s reason=%s",
+                    command.inventory_id,
+                    command.aisle_id,
+                    processing_mode.value,
+                    reason,
                 )
-            prompt_resolver = SupplierPromptResolver(
-                inventory_repo=self._inventory_repo,
-                aisle_repo=self._aisle_repo,
-                client_supplier_repo=self._client_supplier_repo,
-                supplier_prompt_config_repo=self._supplier_prompt_config_repo,
+                patched = dict(external_fallback)
+                patched["fallback_enabled"] = False
+                if "enabled" in patched:
+                    patched["enabled"] = False
+                external_fallback = patched
+                supplier_prompt_snapshot = None
+
+            repos_missing = (
+                self._supplier_prompt_config_repo is None
+                or self._client_supplier_repo is None
             )
-            supplier_prompt_resolution = prompt_resolver.resolve(
-                inventory_id=command.inventory_id,
-                aisle_id=command.aisle_id,
-                provider_name=str(external_fallback.get("fallback_provider") or "") or None,
-                model_name=str(external_fallback.get("fallback_model") or "") or None,
-                allow_missing_supplier_prompt_fallback=False,
-            )
-            if supplier_prompt_resolution.resolution_status != "resolved" or not (
-                supplier_prompt_resolution.editable_instructions or ""
-            ).strip():
-                code = supplier_prompt_resolution.error_code or "SUPPLIER_PROMPT_REQUIRED"
-                if code == SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG:
-                    code = "SUPPLIER_PROMPT_REQUIRED"
-                elif code == SupplierPromptResolutionErrorCode.CLIENT_SUPPLIER_NOT_FOUND:
-                    code = "SUPPLIER_NOT_RESOLVED"
-                raise ValueError(
-                    f"{code}: active non-empty supplier prompt is required when "
-                    "external fallback is enabled for a supplier-associated aisle"
+            if repos_missing:
+                if processing_mode is AisleProcessingMode.VISION_ONLY:
+                    raise ValueError(
+                        "SUPPLIER_PROMPT_REQUIRED: supplier prompt repositories "
+                        "are not configured"
+                    )
+                _disable_vision_without_supplier_prompt(
+                    reason="supplier_prompt_repositories_not_configured"
                 )
-            try:
-                profile_id = None
-                if isinstance(supplier_extraction_profile, dict):
-                    profile_id = supplier_extraction_profile.get("supplier_profile_id")
-                resolved_prompt = build_resolved_supplier_prompt(
-                    supplier_id=str(
-                        supplier_prompt_resolution.client_supplier_id or supplier_id
-                    ),
-                    prompt_id=str(supplier_prompt_resolution.supplier_prompt_config_id),
-                    prompt_version=int(
-                        supplier_prompt_resolution.supplier_prompt_config_version or 1
-                    ),
-                    content=str(supplier_prompt_resolution.editable_instructions),
-                    extraction_profile_id=str(profile_id) if profile_id else None,
-                    source_level="aisle.client_supplier.supplier_prompt_configs",
-                    is_active=True,
+            else:
+                prompt_resolver = SupplierPromptResolver(
+                    inventory_repo=self._inventory_repo,
+                    aisle_repo=self._aisle_repo,
+                    client_supplier_repo=self._client_supplier_repo,
+                    supplier_prompt_config_repo=self._supplier_prompt_config_repo,
                 )
-            except SupplierPromptConfigError as exc:
-                raise ValueError(f"{exc.code}: {exc.message}") from exc
-            supplier_prompt_snapshot = resolved_prompt.public_snapshot(include_content=True)
+                supplier_prompt_resolution = prompt_resolver.resolve(
+                    inventory_id=command.inventory_id,
+                    aisle_id=command.aisle_id,
+                    provider_name=str(external_fallback.get("fallback_provider") or "")
+                    or None,
+                    model_name=str(external_fallback.get("fallback_model") or "") or None,
+                    allow_missing_supplier_prompt_fallback=False,
+                )
+                if supplier_prompt_resolution.resolution_status != "resolved" or not (
+                    supplier_prompt_resolution.editable_instructions or ""
+                ).strip():
+                    code = (
+                        supplier_prompt_resolution.error_code or "SUPPLIER_PROMPT_REQUIRED"
+                    )
+                    if (
+                        code
+                        == SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG
+                    ):
+                        code = "SUPPLIER_PROMPT_REQUIRED"
+                    elif (
+                        code == SupplierPromptResolutionErrorCode.CLIENT_SUPPLIER_NOT_FOUND
+                    ):
+                        code = "SUPPLIER_NOT_RESOLVED"
+                    # Vision-only explicitly needs supplier AI instructions.
+                    # AUTO / CODE_SCAN primary: continue with labels only.
+                    if processing_mode is AisleProcessingMode.VISION_ONLY:
+                        raise ValueError(
+                            f"{code}: active non-empty supplier prompt is required when "
+                            "Vision/external fallback is requested for a "
+                            "supplier-associated aisle"
+                        )
+                    _disable_vision_without_supplier_prompt(reason=str(code))
+                else:
+                    try:
+                        profile_id = None
+                        if isinstance(supplier_extraction_profile, dict):
+                            profile_id = supplier_extraction_profile.get(
+                                "supplier_profile_id"
+                            )
+                        resolved_prompt = build_resolved_supplier_prompt(
+                            supplier_id=str(
+                                supplier_prompt_resolution.client_supplier_id
+                                or supplier_id
+                            ),
+                            prompt_id=str(
+                                supplier_prompt_resolution.supplier_prompt_config_id
+                            ),
+                            prompt_version=int(
+                                supplier_prompt_resolution.supplier_prompt_config_version
+                                or 1
+                            ),
+                            content=str(
+                                supplier_prompt_resolution.editable_instructions
+                            ),
+                            extraction_profile_id=(
+                                str(profile_id) if profile_id else None
+                            ),
+                            source_level=(
+                                "aisle.client_supplier.supplier_prompt_configs"
+                            ),
+                            is_active=True,
+                        )
+                    except SupplierPromptConfigError as exc:
+                        if processing_mode is AisleProcessingMode.VISION_ONLY:
+                            raise ValueError(f"{exc.code}: {exc.message}") from exc
+                        _disable_vision_without_supplier_prompt(reason=str(exc.code))
+                    else:
+                        supplier_prompt_snapshot = resolved_prompt.public_snapshot(
+                            include_content=True
+                        )
         label_profiles_snapshot = None
         supplier_wiring_warnings: list[str] = []
         if self._label_profile_repo is not None and self._client_supplier_repo is not None:

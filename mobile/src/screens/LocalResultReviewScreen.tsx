@@ -226,6 +226,11 @@ export function LocalResultReviewScreen({
   }, [items]);
 
   const allConfirmed = items.length > 0 && summary.pendingReview === 0;
+  const scansInFlight =
+    rescanning ||
+    items.some(
+      (i) => i.draft?.status === 'PENDING' || i.draft?.status === 'SCANNING' || i.draft == null,
+    );
 
   const updateEdit = (photoId: string, patch: Partial<ConfirmLocalResultEdits>) => {
     setEditsByPhotoId((prev) => ({
@@ -292,6 +297,11 @@ export function LocalResultReviewScreen({
             {summary.applied} · Errores: {summary.errors}
           </Text>
           {rescanning ? <Text style={styles.muted}>Reejecutando escaneo local…</Text> : null}
+          {scansInFlight && !rescanning ? (
+            <Text style={styles.muted}>
+              Escaneo local en curso. Esperá a que termine antes de continuar.
+            </Text>
+          ) : null}
           {!allConfirmed ? (
             <ErrorText text="Confirmá el código de cada fotografía antes de continuar." />
           ) : null}
@@ -304,8 +314,8 @@ export function LocalResultReviewScreen({
             }}
           />
           <Button
-            label="Continuar a cargas"
-            disabled={!allConfirmed}
+            label={scansInFlight ? 'Escaneando…' : 'Continuar a cargas'}
+            disabled={!allConfirmed || scansInFlight}
             onPress={() => onDone(sessionId)}
           />
         </View>
@@ -356,12 +366,27 @@ export function LocalResultReviewScreen({
             <SmallButton
               label={edits.quantityStatus === 'PRESENT' ? 'Sin cantidad' : 'Con cantidad'}
               disabled={isConfirmed}
-              onPress={() =>
+              onPress={() => {
+                if (edits.quantityStatus === 'PRESENT') {
+                  updateEdit(item.photo.id, {
+                    quantityStatus: 'MISSING',
+                    quantity: null,
+                  });
+                  return;
+                }
+                // Do not mark PRESENT without a typed numeric value.
+                if (edits.quantity == null || Number.isNaN(edits.quantity)) {
+                  updateEdit(item.photo.id, {
+                    quantityStatus: 'MISSING',
+                    quantity: null,
+                  });
+                  return;
+                }
                 updateEdit(item.photo.id, {
-                  quantityStatus: edits.quantityStatus === 'PRESENT' ? 'MISSING' : 'PRESENT',
-                  quantity: edits.quantityStatus === 'PRESENT' ? null : edits.quantity ?? 1,
-                })
-              }
+                  quantityStatus: 'PRESENT',
+                  quantity: edits.quantity,
+                });
+              }}
             />
             {isConfirmed ? (
               <Text style={styles.muted}>
@@ -370,7 +395,12 @@ export function LocalResultReviewScreen({
             ) : (
               <Button
                 label={confirmingId === item.photo.id ? 'Confirmando…' : 'Confirmar resultado'}
-                disabled={confirmingId === item.photo.id || scanning}
+                disabled={
+                  confirmingId === item.photo.id ||
+                  scanning ||
+                  (edits.quantityStatus === 'PRESENT' &&
+                    (edits.quantity == null || Number.isNaN(edits.quantity)))
+                }
                 onPress={() => void confirmPhoto(item)}
               />
             )}

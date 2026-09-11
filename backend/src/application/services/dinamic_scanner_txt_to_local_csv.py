@@ -29,10 +29,18 @@ def _position_payload_raw(product: ParsedScannerProduct) -> tuple[str, tuple[str
     position = product.position
     if position is None:
         return "", ()
-    side = PositionSide(position.side.strip().upper())
+    pallet = (position.pallet or "").strip()
+    side_text = (position.side or "").strip()
+    if not pallet or not side_text:
+        # SIMPLE identity positions may lack hierarchy — do not invent defaults.
+        return "", ()
+    try:
+        side = PositionSide(side_text.upper())
+    except ValueError:
+        return "", ("position:side_invalid",)
     payload = build_positioning_label_payload(
         public_label_id=position.label_id,
-        pallet=position.pallet,
+        pallet=pallet,
         side=side,
         level=1,
         marker_index=1,
@@ -63,7 +71,7 @@ def build_parsed_local_csv_from_scanner_txt(
     """Map scanner products to ParsedLocalCsv rows for PreviewLocalCsvImport."""
     if not parsed_txt.products:
         raise DinamicScannerTxtImportError(
-            TXT_EMPTY, "TXT contains no product (D1) records"
+            TXT_EMPTY, "TXT contains no product records"
         )
 
     export_id = _export_id(parsed_txt.content_hash, aisle_code, inventory_id)

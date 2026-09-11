@@ -73,6 +73,8 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   LOCAL_CSV_IMPORT_INVALID_STATUS: 'inventory.import_package.errors.invalid_status',
   LOCAL_CSV_MATERIALIZATION_FAILED: 'inventory.import_package.errors.materialization_failed',
   PACKAGE_INVALID_STATUS: 'inventory.import_package.errors.invalid_status',
+  LOCAL_INVENTORY_PACKAGE_INVENTORY_MISMATCH: 'inventory.import_package.errors.inventory_mismatch',
+  LOCAL_CSV_INVENTORY_MISMATCH: 'inventory.import_package.errors.inventory_mismatch',
 };
 
 export function v3StructuredErrorCodeToTranslationKey(code: string): string | null {

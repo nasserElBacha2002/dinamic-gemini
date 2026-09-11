@@ -94,7 +94,11 @@ class PreviewLocalInventoryPackage:
         if parsed.inventory_id != inventory_id:
             raise LocalInventoryPackageImportError(
                 PACKAGE_INVENTORY_MISMATCH,
-                "Package inventory_id does not match the path inventory_id",
+                (
+                    "Package inventory_id does not match the path inventory_id "
+                    f"(package={parsed.inventory_id!r} path={inventory_id!r} "
+                    f"export_id={parsed.export_id!r})"
+                ),
             )
 
         existing = self._package_repo.get_by_export_id(

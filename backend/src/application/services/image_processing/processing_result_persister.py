@@ -101,6 +101,7 @@ class PersistSkipReason(str, Enum):
     NON_POSITIVE_QUANTITY = "NON_POSITIVE_QUANTITY"
     ALL_LABELS_DUPLICATE = "ALL_LABELS_DUPLICATE"
     POSITION_MATERIALIZATION_FAILED = "POSITION_MATERIALIZATION_FAILED"
+    IDENTITY_REVIEW_PERSISTED = "IDENTITY_REVIEW_PERSISTED"
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,36 @@ def _coerce_positive_int_quantity(quantity: object) -> int | None:
     return None
 
 
+def _identity_code_from_result(result: ImageProcessingResult) -> str | None:
+    code = (result.internal_code or "").strip()
+    if code:
+        return code
+    for item in result.product_results or []:
+        if isinstance(item, dict):
+            from src.domain.product_labels.processed import ProcessedProductLabel
+
+            item = ProcessedProductLabel.from_dict(item)
+        label_id = (getattr(item, "label_id", None) or "").strip()
+        internal = (getattr(item, "internal_code", None) or "").strip()
+        logistic = (getattr(item, "logistic_unit_id", None) or "").strip()
+        found = internal or label_id or logistic
+        if found:
+            return found
+    return None
+
+
+def _label_id_from_result(result: ImageProcessingResult) -> str | None:
+    for item in result.product_results or []:
+        if isinstance(item, dict):
+            from src.domain.product_labels.processed import ProcessedProductLabel
+
+            item = ProcessedProductLabel.from_dict(item)
+        label_id = (getattr(item, "label_id", None) or "").strip()
+        if label_id:
+            return label_id
+    return None
+
+
 def _product_specs_from_result(result: ImageProcessingResult) -> list[ProcessedProductLabel]:
     specs: list[ProcessedProductLabel] = []
     for item in result.product_results or []:
@@ -148,18 +179,9 @@ def _product_specs_from_result(result: ImageProcessingResult) -> list[ProcessedP
     code = (result.internal_code or "").strip()
     if not code:
         return []
+    # Never invent quantity=0 from absence.
     if result.quantity is None:
-        return [
-            ProcessedProductLabel(
-                label_id=None,
-                internal_code=code,
-                quantity=0,
-                format_version=None,
-                checksum=None,
-                validation_status=ProductLabelOutcomeStatus.VALID,
-                detail="legacy_missing_quantity",
-            )
-        ]
+        return []
     qty = _coerce_positive_int_quantity(result.quantity)
     if qty is None or qty <= 0:
         return []
@@ -208,10 +230,20 @@ class ProcessingResultPersister:
         inventory_id: str,
         aisle_id: str,
     ) -> PersistOutcome:
-        if (
-            result.status is not ImageResultStatus.RESOLVED_INTERNAL
-            and result.status is not ImageResultStatus.RESOLVED_EXTERNAL
-        ):
+        identity_valid = False
+        if isinstance(result.evidence, dict):
+            identity_valid = bool(result.evidence.get("identity_valid"))
+        has_identity = bool(_identity_code_from_result(result)) or identity_valid
+
+        allowed_statuses = {
+            ImageResultStatus.RESOLVED_INTERNAL,
+            ImageResultStatus.RESOLVED_EXTERNAL,
+        }
+        # Identity-confirmed incomplete results must not disappear: allow review persist.
+        if result.status is ImageResultStatus.PENDING_MANUAL_REVIEW and has_identity:
+            allowed_statuses.add(ImageResultStatus.PENDING_MANUAL_REVIEW)
+
+        if result.status not in allowed_statuses:
             return PersistOutcome(
                 persisted=False, skipped_reason=PersistSkipReason.NOT_RESOLVED_INTERNAL
             )
@@ -228,6 +260,12 @@ class ProcessingResultPersister:
 
         specs = _product_specs_from_result(result)
         if not specs:
+            if has_identity:
+                return self._persist_incomplete_identity_review(
+                    result=result,
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                )
             return PersistOutcome(
                 persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
             )
@@ -283,7 +321,7 @@ class ProcessingResultPersister:
             entity_slug = "code_scan"
 
         primary = specs[0]
-        needs_review = (primary.quantity or 0) == 0 and primary.detail == "legacy_missing_quantity"
+        needs_review = False
         entity_uid = f"{job_id}_{entity_slug}_{asset_id}"
 
         summary: dict = {
@@ -295,15 +333,13 @@ class ProcessingResultPersister:
             "source_image_original_filename": snap.original_filename,
             "source_image_sequence": snap.position_order + 1,
             "creation_source": PositionCreationSource.AUTOMATIC.value,
-            "qty_source": "unresolved" if needs_review else qty_source,
-            "qty_parse_status": "null" if needs_review else "valid_positive",
+            "qty_source": qty_source,
+            "qty_parse_status": "valid_positive",
+            "quantity_status": "PRESENT",
             "resolved_by": provider,
             "product_count": len(specs),
             "product_label_ids": [s.label_id for s in specs if s.label_id],
         }
-        if needs_review:
-            summary["count_status"] = "NEEDS_REVIEW"
-            summary["explicit_quantity_missing"] = True
 
         storage_path = snap.storage_key or f"{entity_slug}://{asset_id}"
         if live is not None:
@@ -595,6 +631,217 @@ class ProcessingResultPersister:
             active_result_id=position_id,
             products_persisted=products_persisted,
             products_skipped_duplicate=products_skipped_duplicate,
+        )
+
+    def _persist_incomplete_identity_review(
+        self,
+        *,
+        result: ImageProcessingResult,
+        inventory_id: str,
+        aisle_id: str,
+    ) -> PersistOutcome:
+        """Persist identity + evidence + needs_review without inventing quantity=0.
+
+        Productive ProductRecord is omitted until persistence_complete fields exist.
+        Coverage uniqueness makes this idempotent on retry.
+        """
+        job_id = result.job_id
+        asset_id = result.asset_id
+        identity_code = _identity_code_from_result(result)
+        if not identity_code:
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
+            )
+
+        links = self._job_source_asset_repo.list_for_job(job_id)
+        photo_by_asset = {img.source_asset_id: img for img in unique_photo_coverage_images(links)}
+        snap = photo_by_asset.get(asset_id)
+        if snap is None or not (snap.job_source_asset_id or "").strip():
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.ASSET_NOT_IN_SNAPSHOT
+            )
+
+        live = self._source_asset_repo.get_by_id(asset_id)
+        now = self._clock.now()
+        position_id = str(uuid.uuid4())
+        evidence_id = str(uuid.uuid4())
+        result_evidence_id = str(uuid.uuid4())
+        coverage_id = str(uuid.uuid4())
+
+        resolved_by = (result.resolved_by or CODE_SCAN_PROVIDER).strip()
+        if (
+            resolved_by.upper() == "EXTERNAL_PROVIDER"
+            or resolved_by == EXTERNAL_PROVIDER
+            or result.status is ImageResultStatus.RESOLVED_EXTERNAL
+        ):
+            provider = (result.provider_name or EXTERNAL_PROVIDER).strip() or EXTERNAL_PROVIDER
+            entity_slug = "external"
+        elif resolved_by.upper() == "INTERNAL_OCR" or resolved_by == INTERNAL_OCR_PROVIDER:
+            provider = INTERNAL_OCR_PROVIDER
+            entity_slug = "internal_ocr"
+        else:
+            provider = CODE_SCAN_PROVIDER
+            entity_slug = "code_scan"
+
+        entity_uid = f"{job_id}_{entity_slug}_{asset_id}"
+        evidence_bag = result.evidence if isinstance(result.evidence, dict) else {}
+        missing_fields = evidence_bag.get("missing_fields") or ["quantity"]
+        label_id = _label_id_from_result(result)
+        summary: dict = {
+            "entity_uid": entity_uid,
+            "entity_type": "PALLET",
+            "internal_code": identity_code,
+            "label_id": label_id,
+            "source_image_id": asset_id,
+            "source_asset_id": asset_id,
+            "source_image_original_filename": snap.original_filename,
+            "source_image_sequence": snap.position_order + 1,
+            "creation_source": PositionCreationSource.AUTOMATIC.value,
+            "qty_source": "unresolved",
+            "qty_parse_status": "null",
+            "quantity_status": "MISSING",
+            "explicit_quantity_missing": True,
+            "count_status": "NEEDS_REVIEW",
+            "missing_fields": list(missing_fields),
+            "identity_valid": True,
+            "enrichment_complete": False,
+            "error_code": result.error_code or "MISSING_QUANTITY",
+            "resolved_by": provider,
+            "product_count": 0,
+            "product_label_ids": [label_id] if label_id else [],
+        }
+
+        storage_path = snap.storage_key or f"{entity_slug}://{asset_id}"
+        if live is not None:
+            storage_path = live.storage_path or live.storage_key or storage_path
+
+        position = Position(
+            id=position_id,
+            aisle_id=aisle_id,
+            status=PositionStatus.DETECTED,
+            confidence=1.0,
+            needs_review=True,
+            primary_evidence_id=evidence_id,
+            created_at=now,
+            updated_at=now,
+            review_resolution=None,
+            detected_summary_json=summary,
+            corrected_summary_json=None,
+            corrected_position_code=None,
+            job_id=job_id,
+            creation_source=PositionCreationSource.AUTOMATIC,
+        )
+        evidence = Evidence(
+            id=evidence_id,
+            entity_type="position",
+            entity_id=position_id,
+            type=EvidenceType.ORIGINAL_IMAGE,
+            storage_path=storage_path,
+            is_primary=True,
+            source_asset_id=asset_id,
+            content_type=snap.mime_type or (live.content_type if live else None),
+            storage_key=snap.storage_key or (live.storage_key if live else None),
+            file_size_bytes=live.file_size_bytes if live else None,
+        )
+        result_evidence = ResultEvidenceRecord(
+            id=result_evidence_id,
+            job_id=job_id,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            position_id=position_id,
+            entity_uid=entity_uid,
+            model_entity_id=None,
+            raw_manifest_entry_id=None,
+            manifest_entry_id=None,
+            raw_source_image_id=asset_id,
+            resolved_manifest_entry_id=None,
+            source_image_id=asset_id,
+            source_asset_id=asset_id,
+            traceability_status=TraceabilityStatus.VALID.value,
+            traceability_warning=None,
+            role=ResultEvidenceRole.PRIMARY_EVIDENCE,
+            provider=provider,
+            model_name=None,
+            schema_version=None,
+            manifest_version=None,
+            has_valid_evidence=True,
+            evidence_kind=RESULT_EVIDENCE_KIND_ENTITY_TRACEABILITY,
+            created_at=now,
+            updated_at=now,
+        )
+        coverage = ManualImageCoverageLink(
+            id=coverage_id,
+            job_id=job_id,
+            job_source_asset_id=snap.job_source_asset_id,
+            source_asset_id=asset_id,
+            position_id=position_id,
+            aisle_id=aisle_id,
+            inventory_id=inventory_id,
+            created_by_user_id=None,
+            created_at=now,
+        )
+
+        try:
+            with self._uow_factory() as uow:
+                uow.bind_lifecycle_scope(inventory_id=inventory_id, aisle_id=aisle_id)
+                repos = uow.repositories
+                uow.acquire_image_result_lock(job_id=job_id, source_asset_id=asset_id)
+
+                existing = repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
+                if existing is not None:
+                    if (existing.created_by_user_id or "").strip():
+                        return PersistOutcome(
+                            persisted=False,
+                            reconciled=False,
+                            position_id=existing.position_id,
+                            skipped_reason=PersistSkipReason.MANUAL_RESULT_EXISTS,
+                        )
+                    linked = repos.position_repo.get_by_id(existing.position_id)
+                    linked_job = (linked.job_id or "").strip() if linked is not None else ""
+                    if linked is not None and linked_job == job_id:
+                        return PersistOutcome(
+                            persisted=True,
+                            reconciled=True,
+                            position_id=existing.position_id,
+                            active_result_id=existing.position_id,
+                            skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                            idempotent_replay=True,
+                            products_persisted=0,
+                        )
+                    return PersistOutcome(
+                        persisted=False,
+                        position_id=existing.position_id,
+                        skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                    )
+
+                repos.position_repo.save(position)
+                repos.evidence_repo.save(evidence)
+                repos.result_evidence_repo.save(result_evidence)
+                repos.manual_coverage_repo.save(coverage)
+                uow.commit()
+        except ManualResultAlreadyExistsError:
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.MANUAL_RESULT_EXISTS
+            )
+        except ImageAlreadyHasResultsError:
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.ALREADY_PERSISTED
+            )
+
+        logger.info(
+            "code_scan.identity_review_persisted job_id=%s asset_id=%s position_id=%s "
+            "internal_code=%s quantity_status=MISSING",
+            job_id,
+            asset_id,
+            position_id,
+            identity_code,
+        )
+        return PersistOutcome(
+            persisted=True,
+            position_id=position_id,
+            active_result_id=position_id,
+            products_persisted=0,
+            skipped_reason=PersistSkipReason.IDENTITY_REVIEW_PERSISTED,
         )
 
     def _persist_position_only(

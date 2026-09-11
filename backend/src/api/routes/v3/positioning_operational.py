@@ -13,6 +13,7 @@ from src.api.dependencies import (
     get_reprocess_aisle_positioning_use_case,
 )
 from src.api.errors.error_mapping import reraise_if_mapped
+from src.api.errors.process_start_value_errors import structured_process_value_error
 from src.api.schemas.positioning_operational_schemas import (
     AisleOperationalPositioningViewResponse,
     PositioningReprocessRequest,
@@ -177,4 +178,11 @@ def reprocess_aisle_positioning(
         )
     except (AisleNotFoundError, InventoryNotFoundError) as e:
         reraise_if_mapped(e)
+        raise
+    except Exception as e:
+        # Full-aisle reprocess delegates to StartAisleProcessing — map the same
+        # business/config errors as POST .../process (never leak as 500).
+        reraise_if_mapped(e)
+        if isinstance(e, ValueError):
+            raise structured_process_value_error(e) from e
         raise

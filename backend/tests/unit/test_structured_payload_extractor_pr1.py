@@ -27,6 +27,7 @@ from src.domain.client_supplier.extraction_profile import (
     PayloadNormalizationRules,
     PayloadStructure,
     QuantityExtractionRules,
+    QuantityPresence,
 )
 from src.domain.label_profiles.entities import ResolvedLabelProfile, ResolvedLabelProfiles
 from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
@@ -74,11 +75,19 @@ def _v2_item(
     required: tuple[str, ...] = ("sku",),
     pattern: str | None = None,
 ) -> ExtractionProfileConfiguration:
+    qty_required = "quantity" in {f.strip().lower() for f in required}
     return ExtractionProfileConfiguration(
         configuration_schema_version=CONFIGURATION_SCHEMA_VERSION_V2,
         required_fields=required,
         custom_payload_pattern=pattern,
-        quantity_rules=QuantityExtractionRules(required=False, minimum=1),
+        quantity_rules=QuantityExtractionRules(
+            required=qty_required,
+            minimum=1,
+            expected_presence=(
+                QuantityPresence.ALWAYS if qty_required else QuantityPresence.OPTIONAL
+            ),
+            allow_external_fallback=False,
+        ),
         accepted_barcode_formats=("CODE128", "QR"),
         deterministic=DeterministicBarcodeRules(
             expected_prefix=prefix,
