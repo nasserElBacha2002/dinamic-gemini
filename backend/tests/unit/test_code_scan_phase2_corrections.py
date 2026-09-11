@@ -31,7 +31,10 @@ from src.domain.aisle_identification.modes import (
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client_supplier.extraction_profile import (
     ExtractionProfileConfiguration,
+    MissingQuantityAction,
     QrPayloadFormat,
+    QuantityExtractionRules,
+    QuantityPresence,
 )
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import ImageProcessingContext, ImageResultStatus
@@ -109,6 +112,9 @@ def _profiles(
 def _item_cfg(
     pattern: str, *, required: tuple[str, ...] = ("internal_code",)
 ) -> ExtractionProfileConfiguration:
+    # Phase2 identity fixtures are PLAIN_CODE without quantity; keep RESOLVE_CODE_ONLY
+    # unless the caller explicitly requires quantity in ``required``.
+    quantity_required = "quantity" in required
     return ExtractionProfileConfiguration(
         accepted_barcode_formats=("CODE128", "QR"),
         custom_payload_pattern=pattern,
@@ -116,6 +122,18 @@ def _item_cfg(
         qr_payload_formats=(
             QrPayloadFormat.PLAIN_CODE.value,
             QrPayloadFormat.CODE_QUANTITY_PIPE.value,
+        ),
+        quantity_rules=QuantityExtractionRules(
+            required=quantity_required,
+            expected_presence=(
+                QuantityPresence.ALWAYS if quantity_required else QuantityPresence.OPTIONAL
+            ),
+            missing_quantity_action=(
+                MissingQuantityAction.PENDING_MANUAL_REVIEW
+                if quantity_required
+                else MissingQuantityAction.RESOLVE_CODE_ONLY
+            ),
+            allow_external_fallback=False,
         ),
     )
 

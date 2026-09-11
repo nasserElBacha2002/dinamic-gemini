@@ -303,13 +303,17 @@ def parse_dinamic_scanner_txt(
                 pos_id = getattr(result.label, "position_id", None) or line
                 pallet_raw = getattr(result.label, "pallet", None)
                 side_raw = getattr(result.label, "side", None)
-                pallet = str(pallet_raw).strip() if pallet_raw else None
-                side = str(side_raw).strip().upper() if side_raw else None
+                supplier_pallet: str | None = (
+                    str(pallet_raw).strip() if pallet_raw else None
+                )
+                supplier_side: str | None = (
+                    str(side_raw).strip().upper() if side_raw else None
+                )
                 current_position = ParsedScannerPosition(
                     line_number=line_number,
                     label_id=str(pos_id).strip(),
-                    pallet=pallet or None,
-                    side=side or None,
+                    pallet=supplier_pallet or None,
+                    side=supplier_side or None,
                 )
                 positions.append(current_position)
                 continue

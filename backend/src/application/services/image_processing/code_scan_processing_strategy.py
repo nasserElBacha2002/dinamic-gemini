@@ -1124,16 +1124,34 @@ class CodeScanProcessingStrategy:
                     )
                     self._finalize_asset_event(context, result)
                     return result
-                error_code = "POSITION_LABEL_UNRESOLVED" if not position_ok else None
+                supplier_position_failed = (
+                    position_meta.get("position_profile_source")
+                    == LabelProfileSource.SUPPLIER.value
+                    and not position_ok
+                )
+                first_position_error = next(
+                    (
+                        s
+                        for s in statuses
+                        if s and s not in ("VALID", "SIGNATURE_VALIDATION_SKIPPED")
+                    ),
+                    None,
+                )
+                if supplier_position_failed and first_position_error:
+                    error_code: str | None = str(first_position_error)
+                    status = ImageResultStatus.PENDING_MANUAL_REVIEW
+                else:
+                    error_code = "POSITION_LABEL_UNRESOLVED" if not position_ok else None
+                    status = (
+                        ImageResultStatus.RESOLVED_INTERNAL
+                        if position_ok
+                        else ImageResultStatus.UNRECOGNIZED
+                    )
                 self._metrics.increment("code_scan.position_only")
                 result = ImageProcessingResult(
                     job_id=context.job_id,
                     asset_id=context.asset_id,
-                    status=(
-                        ImageResultStatus.RESOLVED_INTERNAL
-                        if position_ok
-                        else ImageResultStatus.UNRECOGNIZED
-                    ),
+                    status=status,
                     processing_mode=mode,
                     resolved_by=STRATEGY_KEY,
                     evidence={
@@ -1323,7 +1341,21 @@ class CodeScanProcessingStrategy:
                 status=ImageResultStatus.PENDING_MANUAL_REVIEW,
                 processing_mode=mode,
                 resolved_by=STRATEGY_KEY,
-                evidence={"profile_validation_executed": True},
+                evidence={
+                    "profile_validation_executed": True,
+                    "supplier_label_rejections": [
+                        {
+                            "validation_status": r.error_code,
+                            "detail": r.detail,
+                            "detection_index": r.detection_index,
+                            "raw_value_sha256": r.raw_payload_hash,
+                            "label_kind": (
+                                r.label_kind.value if r.label_kind is not None else None
+                            ),
+                        }
+                        for r in supplier_rejections
+                    ],
+                },
                 warnings=["SUPPLIER_LABEL_REJECTED"] + scan_warnings,
                 error_code=error_code,
                 execution_scope=ExecutionScope.SINGLE_ASSET,
@@ -1599,13 +1631,14 @@ class CodeScanProcessingStrategy:
             )
 
         for rejection in classification.rejections:
-            if rejection.label_kind is LabelKind.POSITION or (
-                rejection.error_code
-                and (
-                    "DINAMIC" in rejection.error_code
-                    or rejection.error_code
-                    == LabelValidationErrorCode.LABEL_PROFILE_SOURCE_MISMATCH.value
-                )
+            # Only POSITION-kind rejections belong in position detection indexes.
+            # ITEM Dinamic integrity failures must not create a false position-only path.
+            if rejection.label_kind is LabelKind.POSITION:
+                indexes.append(rejection.detection_index)
+                statuses.append(rejection.error_code or "INVALID")
+            elif rejection.error_code in (
+                LabelValidationErrorCode.DINAMIC_POSITION_INVALID.value,
+                LabelValidationErrorCode.LABEL_PROFILE_SOURCE_MISMATCH.value,
             ):
                 indexes.append(rejection.detection_index)
                 statuses.append(rejection.error_code or "INVALID")

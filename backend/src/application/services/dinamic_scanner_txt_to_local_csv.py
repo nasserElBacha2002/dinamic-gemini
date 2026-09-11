@@ -81,12 +81,14 @@ def build_parsed_local_csv_from_scanner_txt(
 
     for index, product in enumerate(parsed_txt.products, start=1):
         position = product.position
-        position_code = position.pallet if position is not None else ""
+        position_code = (
+            (position.pallet or "") if position is not None else ""
+        )
         position_label_id = position.label_id if position is not None else ""
         position_payload_raw, payload_errors = _position_payload_raw(product)
         errors = tuple(dict.fromkeys((*product.errors, *payload_errors)))
         scan_ref = _scan_row_ref(export_id, product.line_number)
-        values = {
+        values: dict[str, str] = {
             "schema_version": SCHEMA_VERSION_WITH_LABEL_ID,
             "export_id": export_id,
             "exported_at": exported_at_text,

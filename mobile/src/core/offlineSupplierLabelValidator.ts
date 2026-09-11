@@ -324,7 +324,7 @@ function quantityRequiredForCompletion(
   cfg: OfflineExtractionConfiguration,
 ): boolean {
   const rules = cfg.quantity_rules ?? null;
-  if (Boolean(rules?.required)) return true;
+  if (rules?.required) return true;
   const presence = String(rules?.expected_presence ?? '').toUpperCase();
   if (presence === 'ALWAYS') return true;
   const required = new Set(
@@ -335,7 +335,7 @@ function quantityRequiredForCompletion(
   if (missingAction === 'RESOLVE_CODE_ONLY') return false;
   if (presence === 'OPTIONAL' && !rules?.required) {
     if (missingAction === 'EXTERNAL_FALLBACK') return true;
-    if (Boolean(rules?.allow_external_fallback)) return true;
+    if (rules?.allow_external_fallback) return true;
     return false;
   }
   if (missingAction === 'EXTERNAL_FALLBACK') return true;

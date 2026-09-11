@@ -11,7 +11,9 @@ REVIEW_COPY = ROOT / "review" / "phase-5-flexible-position-preflight.sql"
 
 def test_preflight_script_exists_and_throws_on_errors() -> None:
     text = PREFLIGHT.read_text(encoding="utf-8")
-    assert REVIEW_COPY.read_text(encoding="utf-8") == text
+    # ``review/`` is gitignored; when a local review copy exists it must stay in sync.
+    if REVIEW_COPY.exists():
+        assert REVIEW_COPY.read_text(encoding="utf-8") == text
     assert "THROW 51011" in text
     assert "signature_policy" in text
     assert "position_flexible_capabilities" in text

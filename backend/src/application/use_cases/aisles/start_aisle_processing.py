@@ -878,6 +878,8 @@ class StartAisleProcessingUseCase:
                     processing_mode.value,
                     reason,
                 )
+                if external_fallback is None:
+                    return
                 patched = dict(external_fallback)
                 patched["fallback_enabled"] = False
                 if "enabled" in patched:
@@ -885,11 +887,10 @@ class StartAisleProcessingUseCase:
                 external_fallback = patched
                 supplier_prompt_snapshot = None
 
-            repos_missing = (
+            if (
                 self._supplier_prompt_config_repo is None
                 or self._client_supplier_repo is None
-            )
-            if repos_missing:
+            ):
                 if processing_mode is AisleProcessingMode.VISION_ONLY:
                     raise ValueError(
                         "SUPPLIER_PROMPT_REQUIRED: supplier prompt repositories "

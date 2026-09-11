@@ -27,7 +27,7 @@ describe('mobile capture bug-fix source contracts', () => {
     expect(app).toMatch(/onLayout/);
   });
 
-  it('ReviewScreen keeps ZIP enabled except while exporting', () => {
+  it('ReviewScreen gates ZIP export on canExportSession while scans complete', () => {
     const review = read('src/screens/ReviewScreen.tsx');
     expect(review).toMatch(/canExportSession/);
     expect(review).toMatch(/runLocalCsvExport/);
@@ -36,8 +36,9 @@ describe('mobile capture bug-fix source contracts', () => {
     expect(review).toMatch(/Guardar captura/);
     expect(review).not.toMatch(/Subir fotos y resultados/);
     expect(review).not.toMatch(/Continuar carga al servidor/);
-    expect(review).toMatch(/disabled=\{exportBusy \|\| !sessionId \|\| !services\.localCsvExport\}/);
-    expect(review).not.toMatch(/disabled=\{!exportGate\.ok/);
+    expect(review).toMatch(/disabled=\{/);
+    expect(review).toMatch(/!exportGate\.ok/);
+    expect(review).toMatch(/exportBusy/);
   });
 
   it('LocalActivityScreen offers Exportar ZIP for any session with CSV export', () => {

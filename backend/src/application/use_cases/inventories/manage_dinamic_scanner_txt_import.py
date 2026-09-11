@@ -7,6 +7,9 @@ from dataclasses import dataclass, replace
 from src.application.ports.clock import Clock
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.repositories import InventoryRepository
+from src.application.ports.supplier_extraction_profile_repository import (
+    SupplierExtractionProfileRepository,
+)
 from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
 from src.application.services.dinamic_scanner_txt_parser import (
     aisle_code_from_txt_filename,
@@ -15,6 +18,7 @@ from src.application.services.dinamic_scanner_txt_parser import (
 from src.application.services.dinamic_scanner_txt_to_local_csv import (
     build_parsed_local_csv_from_scanner_txt,
 )
+from src.application.services.label_profile_resolver import LabelProfileResolver
 from src.application.use_cases.inventories.manage_local_csv_import import (
     ConfirmLocalCsvImport,
     PreviewLocalCsvImport,
@@ -71,8 +75,8 @@ class PreviewDinamicScannerTxtImport:
         enabled: bool,
         max_lines: int,
         max_line_length: int,
-        label_profile_resolver: object | None = None,
-        extraction_profile_repo: object | None = None,
+        label_profile_resolver: LabelProfileResolver | None = None,
+        extraction_profile_repo: SupplierExtractionProfileRepository | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_resolver = aisle_resolver

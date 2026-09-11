@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import Enum
+from typing import cast
 
 from src.application.errors import (
     ImageAlreadyHasResultsError,
@@ -816,7 +817,7 @@ class ProcessingResultPersister:
 
                 repos.position_repo.save(position)
                 repos.evidence_repo.save(evidence)
-                repos.result_evidence_repo.save(result_evidence)
+                repos.result_evidence_repo.save_many([result_evidence])
                 repos.manual_coverage_repo.save(coverage)
                 uow.commit()
         except ManualResultAlreadyExistsError:
@@ -1303,8 +1304,10 @@ class ProcessingResultPersister:
         """
         prior = repos.position_repo.get_by_id(prior_position_id)
         prior_job = (prior.job_id or "").strip() if prior is not None else ""
-        existing_cov = repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
-        existing_re = self._find_result_evidence_for_asset(
+        existing_cov: ManualImageCoverageLink | None = (
+            repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
+        )
+        existing_re: ResultEvidenceRecord | None = self._find_result_evidence_for_asset(
             repos.result_evidence_repo, job_id, asset_id
         )
 
@@ -1468,7 +1471,9 @@ class ProcessingResultPersister:
         return next(iter(position_ids)), skipped
 
     @staticmethod
-    def _find_result_evidence_for_asset(result_evidence_repo, job_id: str, asset_id: str):
+    def _find_result_evidence_for_asset(
+        result_evidence_repo, job_id: str, asset_id: str
+    ) -> ResultEvidenceRecord | None:
         if result_evidence_repo is None:
             return None
         try:
@@ -1477,7 +1482,7 @@ class ProcessingResultPersister:
             return None
         for row in rows:
             if (row.source_asset_id or "").strip() == asset_id:
-                return row
+                return cast(ResultEvidenceRecord, row)
         return None
 
     def _lookup_existing_coverage(self, job_id: str, asset_id: str):

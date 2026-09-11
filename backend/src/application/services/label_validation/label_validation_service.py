@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 
 from src.application.services.label_validation.payload_pattern import (
     PayloadPatternError,
@@ -79,6 +80,23 @@ _STRUCTURAL_INVALID_CODES = frozenset(
     }
 )
 
+# Fail-closed Dinamic integrity under SUPPLIER must beat opposite-kind pattern noise.
+_DINAMIC_INTEGRITY_CODES = frozenset(
+    {
+        LabelValidationErrorCode.DINAMIC_FORMAT_INVALID.value,
+        LabelValidationErrorCode.DINAMIC_CHECKSUM_FAILED.value,
+        LabelValidationErrorCode.DINAMIC_POSITION_INVALID.value,
+        LabelValidationErrorCode.LABEL_PROFILE_SOURCE_MISMATCH.value,
+    }
+)
+
+_CROSS_KIND_PATTERN_NOISE = frozenset(
+    {
+        LabelValidationErrorCode.LABEL_PATTERN_MISMATCH.value,
+        LabelValidationErrorCode.LABEL_PREFIX_MISMATCH.value,
+    }
+)
+
 # Re-export for callers that imported context from this module.
 __all__ = [
     "LabelProfileConfigurationError",
@@ -103,7 +121,7 @@ def _kind_validation_summary(result: LabelValidationResult) -> dict[str, object 
 
 def _with_dual_diagnostics(
     result: LabelValidationResult,
-    dual: dict[str, object],
+    dual: Mapping[str, object],
     *,
     selected_kind: LabelKind | None,
 ) -> LabelValidationResult:
@@ -136,6 +154,12 @@ def _prefer_invalid_when_both_fail(
     """
     item_code = (item.error_code or "").strip()
     position_code = (position.error_code or "").strip()
+    # Dinamic integrity under SUPPLIER is fail-closed and must not be hidden by the
+    # opposite kind's pattern/prefix mismatch (e.g. bad D1 vs POSITION regex).
+    if item_code in _DINAMIC_INTEGRITY_CODES and position_code in _CROSS_KIND_PATTERN_NOISE:
+        return item
+    if position_code in _DINAMIC_INTEGRITY_CODES and item_code in _CROSS_KIND_PATTERN_NOISE:
+        return position
     item_prefix = item_code == LabelValidationErrorCode.LABEL_PREFIX_MISMATCH.value
     position_prefix = position_code == LabelValidationErrorCode.LABEL_PREFIX_MISMATCH.value
     item_structural = item_code in _STRUCTURAL_INVALID_CODES

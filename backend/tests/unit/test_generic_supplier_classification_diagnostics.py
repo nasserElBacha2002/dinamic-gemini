@@ -70,20 +70,20 @@ def test_both_invalid_prefers_structural_over_prefix() -> None:
     )
     # Intentionally SEGMENTED so a SIMPLE location identity fails structurally.
     from src.domain.client_supplier.extraction_profile import (
+        CONFIGURATION_SCHEMA_VERSION_V2,
+        CaseNormalization,
         DeterministicBarcodeRules,
+        ExtractionProfileConfiguration,
+        FieldDataType,
         FieldMappingRule,
         FieldMappingSource,
+        MissingQuantityAction,
         PayloadNormalizationRules,
         PayloadStructure,
-        CaseNormalization,
-        ExtractionProfileConfiguration,
-        RecognitionMode,
-        CONFIGURATION_SCHEMA_VERSION_V2,
         PositionLabelSemanticType,
         QuantityExtractionRules,
-        FieldDataType,
         QuantityPresence,
-        MissingQuantityAction,
+        RecognitionMode,
     )
 
     position = ExtractionProfileConfiguration(
