@@ -65,6 +65,7 @@ backend/docker-compose.override.yml
 output/
 *.log
 *.json
+!contracts/position-sync/v2/*.json
 !package.json
 !package-lock.json
 !tsconfig.json

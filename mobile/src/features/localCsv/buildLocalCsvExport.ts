@@ -182,6 +182,9 @@ function productsForPhoto(
 /**
  * Fail closed: ZIP handoff must not ship unresolved LOCAL_PENDING-only captures
  * (backend would stage photos with zero inventory results).
+ *
+ * Product identity may be `internal_code` (SKU) and/or `label_id` (identity-only
+ * supplier profiles). Either is enough for a productive row.
  */
 export function assertLocalCsvRowsExportReady(rows: readonly LocalCsvRow[]): void {
   if (rows.length === 0) {
@@ -200,13 +203,60 @@ export function assertLocalCsvRowsExportReady(rows: readonly LocalCsvRow[]): voi
     if (source === 'LOCAL_POSITION_LABEL') {
       return false;
     }
-    return String(r.internal_code ?? '').trim().length > 0;
+    const hasInternal = String(r.internal_code ?? '').trim().length > 0;
+    const hasLabelId = String(r.label_id ?? '').trim().length > 0;
+    return hasInternal || hasLabelId;
   });
   if (products.length === 0) {
     throw new Error(
-      'PACKAGE_EXPORT_NO_PRODUCTS: el export no tiene productos con código interno. Escaneá o confirmá al menos un SKU antes de exportar.',
+      'PACKAGE_EXPORT_NO_PRODUCTS: el export no tiene productos con código interno o label_id. Escaneá o confirmá al menos un ítem antes de exportar.',
     );
   }
+}
+
+function isInFlightLocalDraftStatus(status: string | null | undefined): boolean {
+  return status === 'PENDING' || status === 'SCANNING' || status === 'NOT_APPLICABLE';
+}
+
+/**
+ * Photos whose local scan finished with no new product rows (position markers,
+ * session-duplicate labels, empty detections) must not block ZIP as LOCAL_PENDING.
+ */
+function settledEmptyRowSource(input: {
+  readonly draft: LocalDetectionDraftRow | undefined;
+  readonly confirmed: ConfirmedLocalResultRow | undefined;
+  readonly isPositionContext: boolean;
+}): string {
+  if (input.confirmed) {
+    return input.confirmed.source;
+  }
+  if (!input.draft || isInFlightLocalDraftStatus(input.draft.status)) {
+    return 'LOCAL_PENDING';
+  }
+  // Marker rows are skipped by backend materializer for inventory lines.
+  if (input.isPositionContext) {
+    return 'LOCAL_POSITION_LABEL';
+  }
+  const rejections = parseStoredProductRejections(input.draft.rejections_json);
+  const duplicateOnly =
+    rejections.length > 0 &&
+    rejections.every(
+      (r) =>
+        r.validationStatus === 'DUPLICATE_LABEL' ||
+        String(r.reason ?? '').includes('duplicate') ||
+        String(r.reason ?? '').includes('session_label_already_counted'),
+    );
+  if (duplicateOnly) {
+    return 'LOCAL_POSITION_LABEL';
+  }
+  if (
+    input.draft.error_code === 'POSITION_LABEL_DETECTED' ||
+    input.draft.error_code === 'POSITION_LABEL_DUPLICATE'
+  ) {
+    return 'LOCAL_POSITION_LABEL';
+  }
+  // Terminal scan with nothing to emit (e.g. no codes) — keep review flag, do not block ZIP.
+  return 'LOCAL_POSITION_LABEL';
 }
 
 export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
@@ -379,18 +429,23 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
     };
 
     if (products.length === 0) {
-      const isPositionOnly = detectedHere || supplierPosition != null;
+      const isPositionContext =
+        detectedHere ||
+        supplierPosition != null ||
+        Boolean(String(position.positionCode ?? '').trim());
+      const source = settledEmptyRowSource({
+        draft,
+        confirmed,
+        isPositionContext,
+      });
       rows.push({
         ...base,
         internal_code: '',
         label_id: '',
         quantity: '',
-        quantity_status: isPositionOnly ? 'NOT_APPLICABLE' : base.quantity_status,
-        source: confirmed
-          ? confirmed.source
-          : isPositionOnly
-            ? 'LOCAL_POSITION_LABEL'
-            : 'LOCAL_PENDING',
+        quantity_status:
+          source === 'LOCAL_POSITION_LABEL' ? 'NOT_APPLICABLE' : base.quantity_status,
+        source,
       });
       continue;
     }

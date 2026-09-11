@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
+import type { LocalDetectionDraftRow } from '../database/repositories/localDetectionDraftRepository';
 import type { CaptureSnapshot } from '../features/capture/captureService';
-import { canExportSession } from '../features/localCsv/canExportSession';
+import {
+  canExportSession,
+  countIncompleteLocalCodeScans,
+} from '../features/localCsv/canExportSession';
 import {
   mapLocalCsvExportError,
   runLocalCsvExport,
@@ -32,19 +36,47 @@ export function ReviewScreen({
   const canConfirm = counts.waiting === 0 && counts.errors === 0;
   const context = snapshot?.context;
   const csvExport = services.config.flags.mobileCsvExport !== false;
+  const localCodeScanEnabled = services.config.flags.mobileLocalCodeScan === true;
   const [exportBusy, setExportBusy] = useState(false);
   const [exportHint, setExportHint] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<LocalDetectionDraftRow[]>([]);
 
   const sessionId = snapshot?.session?.id;
   const sessionStatus = snapshot?.session?.status;
   const isLocalCompleted = sessionStatus === 'local_completed';
   const isReadOnly = isLocalCompleted;
+
+  const refreshDrafts = useCallback(() => {
+    if (!sessionId || !localCodeScanEnabled) {
+      setDrafts([]);
+      return;
+    }
+    void services.localDetectionDrafts.listForSession(sessionId).then(setDrafts).catch(() => {
+      setDrafts([]);
+    });
+  }, [localCodeScanEnabled, services, sessionId]);
+
+  useEffect(() => {
+    refreshDrafts();
+    if (!sessionId || !localCodeScanEnabled) {
+      return;
+    }
+    const t = setInterval(refreshDrafts, 1500);
+    return () => clearInterval(t);
+  }, [localCodeScanEnabled, refreshDrafts, sessionId]);
+
+  const incompleteScans = localCodeScanEnabled
+    ? countIncompleteLocalCodeScans({ photos, drafts })
+    : 0;
   const exportGate = canExportSession({
     session: snapshot?.session,
     photos,
     csvExportEnabled: csvExport,
     exportInProgress: exportBusy,
+    localCodeScanEnabled,
+    localDetectionDrafts: drafts,
   });
+  const exportBlockedByScan = !exportGate.ok && incompleteScans > 0;
 
   return (
     <PhotoWorkList
@@ -80,6 +112,12 @@ export function ReviewScreen({
           {!canConfirm && !isLocalCompleted ? (
             <ErrorText text="Resolvé errores o esperá validaciones antes de continuar." />
           ) : null}
+          {exportBlockedByScan ? (
+            <Text style={styles.muted}>
+              Escaneando códigos locales… ({incompleteScans} pendiente
+              {incompleteScans === 1 ? '' : 's'}). El export se habilita al terminar.
+            </Text>
+          ) : null}
           {exportHint ? <Text style={styles.row}>{exportHint}</Text> : null}
           {exportBusy ? <ActivityIndicator /> : null}
           {!isReadOnly ? (
@@ -104,8 +142,19 @@ export function ReviewScreen({
           ) : null}
           {csvExport ? (
             <Button
-              label={exportBusy ? 'Exportando ZIP…' : 'Exportar ZIP (CSV + fotos)'}
-              disabled={exportBusy || !sessionId || !services.localCsvExport}
+              label={
+                exportBusy
+                  ? 'Exportando ZIP…'
+                  : exportBlockedByScan
+                    ? `Escaneando… (${incompleteScans})`
+                    : 'Exportar ZIP (CSV + fotos)'
+              }
+              disabled={
+                exportBusy ||
+                !exportGate.ok ||
+                !sessionId ||
+                !services.localCsvExport
+              }
               onPress={() => {
                 if (!sessionId || !services.localCsvExport) {
                   onError('Exportación no disponible.');

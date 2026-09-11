@@ -38,16 +38,9 @@ def partition_key_from_assignment_view(
     if view is None:
         return ""
     if isinstance(view, EffectiveProductPositionView):
-        label_id = (
-            view.effective_position.id if view.effective_position else None
-        ) or ""
-        reason = (
-            view.manual_override.reason_code.value if view.manual_override else ""
-        )
-        return (
-            f"{label_id}|{view.effective_source.value}|"
-            f"{view.effective_status}|{reason}"
-        )
+        label_id = (view.effective_position.id if view.effective_position else None) or ""
+        reason = view.manual_override.reason_code.value if view.manual_override else ""
+        return f"{label_id}|{view.effective_source.value}|{view.effective_status}|{reason}"
     label_id = (view.position.id if view.position else None) or ""
     status = (view.assignment_status or "").strip()
     reason = (view.assignment_reason or "").strip()
@@ -112,12 +105,18 @@ def view_to_position_payload(
         }
     if view.availability is PositionReadAvailability.FEATURE_DISABLED:
         return None
-    if view.position is None or not (view.position.name or view.position.id):
+    if view.position is None or not (
+        view.position.name or view.position.id or view.position.aisle_location_id
+    ):
         return None
-    return {
+    payload = {
         "id": view.position.id,
         "name": view.position.name,
     }
+    if view.position.aisle_location_id:
+        payload["aisle_location_id"] = view.position.aisle_location_id
+        payload["identity_kind"] = view.position.identity_kind
+    return payload
 
 
 def view_to_position_assignment_payload(
@@ -175,9 +174,7 @@ def apply_published_assignment_to_summary(
     summary: Any,
     *,
     primary_product_id: str | None,
-    views_by_result_id: dict[
-        str, PublishedPositionAssignmentView | EffectiveProductPositionView
-    ],
+    views_by_result_id: dict[str, PublishedPositionAssignmentView | EffectiveProductPositionView],
 ) -> Any:
     """Enrich a PositionSummary-like object from the Phase 5 read model.
 
@@ -251,9 +248,7 @@ def matches_position_filters(
             return False
         if with_position is False and effective is not None and effective.name:
             return False
-        if position_label_id and (
-            (effective.id if effective else "") != position_label_id.strip()
-        ):
+        if position_label_id and ((effective.id if effective else "") != position_label_id.strip()):
             return False
         if position_name and (
             ((effective.name or "") if effective else "").strip().lower()
@@ -281,8 +276,7 @@ def matches_position_filters(
             return False
         if (
             manual_position_invalidated is not None
-            and ("MANUAL_POSITION_INVALIDATED" in view.warnings)
-            is not manual_position_invalidated
+            and ("MANUAL_POSITION_INVALIDATED" in view.warnings) is not manual_position_invalidated
         ):
             return False
         if (
@@ -293,11 +287,7 @@ def matches_position_filters(
             return False
         return True
     if position_source:
-        actual_source = (
-            "AUTOMATIC"
-            if view is not None and view.position is not None
-            else "NONE"
-        )
+        actual_source = "AUTOMATIC" if view is not None and view.position is not None else "NONE"
         if actual_source != position_source.strip().upper():
             return False
     if has_manual_override is True or manual_reason_code:
@@ -343,20 +333,12 @@ def export_fields_from_view(
     if isinstance(view, EffectiveProductPositionView):
         manual = view.manual_override
         return {
-            "position_label_id": (
-                view.effective_position.id if view.effective_position else None
-            ),
-            "position_name": (
-                view.effective_position.name if view.effective_position else None
-            ),
+            "position_label_id": (view.effective_position.id if view.effective_position else None),
+            "position_name": (view.effective_position.name if view.effective_position else None),
             "position_assignment_status": view.effective_status,
-            "position_assignment_reason": (
-                manual.reason_code.value if manual else None
-            ),
+            "position_assignment_reason": (manual.reason_code.value if manual else None),
             "position_assignment_source": view.effective_source.value,
-            "reconciliation_id": (
-                manual.automatic_reconciliation_id if manual else None
-            ),
+            "reconciliation_id": (manual.automatic_reconciliation_id if manual else None),
             "reconciliation_version": None,
             "sequence_number": None,
             "source_asset_id": manual.source_asset_id if manual else None,
@@ -375,16 +357,10 @@ def export_fields_from_view(
                 view.automatic_position.name if view.automatic_position else None
             ),
             "manual_override_id": manual.id if manual else None,
-            "manual_override_action": (
-                manual.override_action.value if manual else None
-            ),
-            "manual_override_reason_code": (
-                manual.reason_code.value if manual else None
-            ),
+            "manual_override_action": (manual.override_action.value if manual else None),
+            "manual_override_reason_code": (manual.reason_code.value if manual else None),
             "manual_override_reason_text": manual.reason_text if manual else None,
-            "manual_override_created_by": (
-                manual.created_by_user_id if manual else None
-            ),
+            "manual_override_created_by": (manual.created_by_user_id if manual else None),
             "manual_override_created_at": manual.created_at if manual else None,
             "manual_override_version": manual.version if manual else None,
         }

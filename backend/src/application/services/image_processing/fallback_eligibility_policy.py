@@ -159,10 +159,28 @@ class FallbackEligibilityPolicy:
         if not self.enabled:
             return FallbackDecision(False, "FALLBACK_DISABLED")
 
-        # 2. Already resolved
-        if result.status is ImageResultStatus.RESOLVED_INTERNAL:
-            return FallbackDecision(False, "ALREADY_RESOLVED")
+        enrichment_incomplete = _evidence_flag(result, "enrichment_complete") is False
+        identity_valid = _evidence_flag(result, "identity_valid") is True
+        missing_qty = (not facts.has_quantity) and (
+            facts.has_missing_quantity_error or enrichment_incomplete or identity_valid
+        )
+
+        # 2. Already resolved — but identity-only / incomplete enrichment is NOT complete.
         if result.status is ImageResultStatus.RESOLVED_EXTERNAL:
+            return FallbackDecision(False, "ALREADY_RESOLVED")
+        if result.status is ImageResultStatus.RESOLVED_INTERNAL:
+            if missing_qty and facts.has_internal_code:
+                allow = _evidence_flag(result, "fallback_eligible")
+                if allow is False:
+                    return FallbackDecision(False, "MISSING_QUANTITY_POLICY_DENIES")
+                if allow is True:
+                    return FallbackDecision(
+                        True,
+                        "MISSING_QUANTITY",
+                        EXTERNAL_PROVIDER_STRATEGY,
+                    )
+                # Profile did not stamp fallback_eligible: treat as incomplete, not resolved.
+                return FallbackDecision(False, "IDENTITY_ONLY_NOT_ENRICHED")
             return FallbackDecision(False, "ALREADY_RESOLVED")
 
         # 3. Technical / never-eligible error codes
@@ -197,8 +215,8 @@ class FallbackEligibilityPolicy:
                 )
             return FallbackDecision(False, "STATUS_NOT_ELIGIBLE")
 
-        # 5. Code present, quantity missing
-        if facts.has_missing_quantity_error and not facts.has_quantity:
+        # 5. Code present, quantity missing (explicit MISSING_QUANTITY or enrichment gap)
+        if missing_qty:
             allow = _evidence_flag(result, "fallback_eligible")
             if allow is False:
                 return FallbackDecision(False, "MISSING_QUANTITY_POLICY_DENIES")

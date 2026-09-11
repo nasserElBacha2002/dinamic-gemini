@@ -47,5 +47,8 @@ class LocalInventoryPackage:
     updated_at: datetime
     confirmed_at: datetime | None = None
     confirmed_by_user_id: str | None = None
+    materialization_owner: str | None = None
+    materialization_lease_expires_at: datetime | None = None
+    fencing_version: int = 0
     photos: tuple[LocalInventoryPackagePhoto, ...] = field(default_factory=tuple)
     csv_import: LocalCsvImport | None = None

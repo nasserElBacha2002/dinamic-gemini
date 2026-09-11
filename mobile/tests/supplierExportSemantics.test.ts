@@ -5,7 +5,10 @@ import {
   positionFromRecognitionSnapshot,
   productsFromRecognitionSnapshot,
 } from '../src/features/localCsv/supplierExportSemantics';
-import { buildLocalCsvRows } from '../src/features/localCsv/buildLocalCsvExport';
+import {
+  assertLocalCsvRowsExportReady,
+  buildLocalCsvRows,
+} from '../src/features/localCsv/buildLocalCsvExport';
 import type { CapturePhotoRow, CaptureSessionRow } from '../src/database/schema/captureSchema';
 import { EMPTY_CURSOR } from '../src/core/compositeCursor';
 
@@ -262,5 +265,125 @@ describe('supplier export semantics', () => {
         internal_code: 'LPNA000184|SKU773421|24',
       }),
     ).toBe(false);
+  });
+
+  it('isDraftExportReady accepts terminal duplicate-only and identity-only drafts', () => {
+    expect(
+      isDraftExportReady({
+        status: 'RESOLVED',
+        product_results_json: null,
+        rejections_json: JSON.stringify([
+          {
+            labelId: 'ASI-9T6R2V',
+            validationStatus: 'DUPLICATE_LABEL',
+            reason: 'session_label_already_counted',
+          },
+        ]),
+      }),
+    ).toBe(true);
+    expect(
+      isDraftExportReady({
+        status: 'RESOLVED',
+        label_id: 'ASI-2W5H8D',
+        internal_code: null,
+        product_results_json: JSON.stringify([
+          { labelId: 'ASI-2W5H8D', internalCode: null, quantity: 6 },
+        ]),
+      }),
+    ).toBe(true);
+  });
+
+  it('export accepts identity-only products and does not mark duplicates as LOCAL_PENDING', () => {
+    const now = '2026-01-01T00:00:00.000Z';
+    const session = {
+      id: 'session-1',
+      inventory_id: 'inv-1',
+      inventory_name: 'Inv',
+      aisle_id: 'aisle-1',
+      aisle_name: 'A1',
+      status: 'review',
+      active_freeze_id: null,
+      capture_freeze_generation: null,
+    } as never;
+    const mkPhoto = (id: string, seq: number): CapturePhotoRow =>
+      ({
+        id,
+        capture_session_id: 'session-1',
+        asset_id: String(seq),
+        client_file_id: `cf-${seq}`,
+        status: 'stable',
+        upload_status: 'not_queued',
+        sequence_number: seq,
+        date_added: seq,
+        detected_at: now,
+        stable_at: now,
+        created_at: now,
+      }) as CapturePhotoRow;
+
+    const rows = buildLocalCsvRows({
+      session,
+      photos: [mkPhoto('photo-dup', 1), mkPhoto('photo-item', 2)],
+      drafts: [
+        {
+          capture_photo_id: 'photo-dup',
+          capture_session_id: 'session-1',
+          status: 'RESOLVED',
+          internal_code: null,
+          label_id: null,
+          product_results_json: null,
+          rejections_json: JSON.stringify([
+            {
+              labelId: 'ASI-9T6R2V',
+              validationStatus: 'DUPLICATE_LABEL',
+              reason: 'session_label_already_counted',
+            },
+          ]),
+          position_detected: 0,
+          position_snapshot_json: JSON.stringify({
+            labelId: 'ASP-A01-P03-L',
+            positionLabelId: 'ASP-A01-P03-L',
+            displayName: 'ASP-A01-P03-L',
+            rawPayload: 'ASP-A01-P03-L',
+          }),
+        } as never,
+        {
+          capture_photo_id: 'photo-item',
+          capture_session_id: 'session-1',
+          status: 'RESOLVED',
+          internal_code: null,
+          label_id: 'ASI-2W5H8D',
+          quantity: 6,
+          quantity_status: 'PRESENT',
+          product_results_json: JSON.stringify([
+            {
+              labelId: 'ASI-2W5H8D',
+              internalCode: null,
+              quantity: 6,
+              formatVersion: 'SUPPLIER',
+              validationStatus: 'VALID',
+            },
+          ]),
+          position_detected: 0,
+          position_snapshot_json: JSON.stringify({
+            labelId: 'ASP-A01-P03-L',
+            positionLabelId: 'ASP-A01-P03-L',
+            displayName: 'ASP-A01-P03-L',
+            rawPayload: 'ASP-A01-P03-L',
+          }),
+        } as never,
+      ],
+      confirmed: [],
+      deviceId: 'dev-1',
+      companyId: null,
+      clientId: 'client-1',
+    });
+
+    expect(rows.find((r) => r.capture_photo_id === 'photo-dup')?.source).toBe(
+      'LOCAL_POSITION_LABEL',
+    );
+    expect(rows.find((r) => r.capture_photo_id === 'photo-item')?.source).toBe('LOCAL_CODE_SCAN');
+    expect(rows.find((r) => r.capture_photo_id === 'photo-item')?.internal_code).toBe('');
+    expect(rows.find((r) => r.capture_photo_id === 'photo-item')?.label_id).toBe('ASI-2W5H8D');
+    expect(() => assertLocalCsvRowsExportReady(rows)).not.toThrow();
   });
 });

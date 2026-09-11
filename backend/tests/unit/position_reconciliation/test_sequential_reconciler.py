@@ -22,6 +22,8 @@ def detection(
     client_id="client-1",
     signature="VALID",
     label_id="label-1",
+    aisle_location_id=None,
+    position_name=None,
 ):
     return PositionDetectionRef(
         id=detection_id,
@@ -29,7 +31,8 @@ def detection(
         detection_status=status,
         signature_status=signature,
         position_label_id=label_id,
-        position_name_snapshot=label_id,
+        aisle_location_id=aisle_location_id,
+        position_name_snapshot=position_name if position_name is not None else label_id,
     )
 
 
@@ -93,6 +96,53 @@ def test_same_image_detection_applies_before_items():
     assert row.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
 
 
+def test_trusted_materialized_skipped_detection_establishes_position():
+    row = reconcile(
+        [
+            frame(
+                1,
+                items=["r1"],
+                detections=[
+                    detection(
+                        signature="SKIPPED",
+                        label_id=None,
+                        aisle_location_id="location-1",
+                        position_name="A04-R-02",
+                    )
+                ],
+            )
+        ]
+    )[0]
+    assert row.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
+    assert row.position_label_id is None
+    assert row.aisle_location_id == "location-1"
+    assert row.position_name_snapshot == "A04-R-02"
+
+
+@pytest.mark.parametrize(
+    ("aisle_location_id", "position_name"),
+    [(None, "A04-R-02"), ("location-1", ""), (None, "")],
+)
+def test_bare_skipped_detection_does_not_establish_position(aisle_location_id, position_name):
+    row = reconcile(
+        [
+            frame(
+                1,
+                items=["r1"],
+                detections=[
+                    detection(
+                        signature="SKIPPED",
+                        label_id=None,
+                        aisle_location_id=aisle_location_id,
+                        position_name=position_name,
+                    )
+                ],
+            )
+        ]
+    )[0]
+    assert row.assignment_status is AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION
+
+
 def test_ambiguity_clears_until_next_valid_position():
     rows = reconcile(
         [
@@ -139,8 +189,8 @@ def test_clear_policies(status, signature, client_id):
     assert row.warnings == ("SEQUENCE_GAP",)
 
 
-def test_missing_signature_on_valid_row_does_not_set_position():
-    """VALID detection with non-VALID signature must not SET_POSITION."""
+def test_missing_signature_on_valid_row_sets_position_when_catalog_label_present():
+    """VALID + MISSING + catalog label_id establishes position (flexible unsigned accept)."""
     row = reconcile(
         [
             frame(
@@ -150,8 +200,32 @@ def test_missing_signature_on_valid_row_does_not_set_position():
             ),
         ]
     )[0]
-    assert row.assignment_status is AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION
-    assert row.position_label_id is None
+    assert row.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
+    assert row.position_label_id == "label-1"
+
+
+def test_valid_flexible_unsigned_carries_forward_to_later_products():
+    rows = reconcile(
+        [
+            frame(
+                1,
+                detections=[
+                    detection(
+                        status="VALID",
+                        signature="MISSING",
+                        label_id="pos_v2_unsigned",
+                        position_name="Pallet 04 RIGHT",
+                    )
+                ],
+            ),
+            frame(2, items=["r1", "r2"]),
+        ]
+    )
+    assert [row.assignment_status for row in rows] == [
+        AssignmentStatus.ASSIGNED_AUTOMATIC,
+        AssignmentStatus.ASSIGNED_AUTOMATIC,
+    ]
+    assert {row.position_label_id for row in rows} == {"pos_v2_unsigned"}
 
 
 def test_resolved_legacy_unsigned_sets_position_with_review_warning():
@@ -172,7 +246,8 @@ def test_resolved_legacy_unsigned_sets_position_with_review_warning():
     assert "LEGACY_UNSIGNED_REQUIRES_REVIEW" in row.warnings
 
 
-def test_skipped_signature_does_not_set_position():
+def test_skipped_signature_with_catalog_label_sets_position():
+    """VALID + SKIPPED + catalog label_id establishes position (supplier/skipped HMAC)."""
     row = reconcile(
         [
             frame(
@@ -182,8 +257,8 @@ def test_skipped_signature_does_not_set_position():
             ),
         ]
     )[0]
-    assert row.assignment_status is AssignmentStatus.UNASSIGNED_NO_PREVIOUS_POSITION
-    assert row.position_label_id is None
+    assert row.assignment_status is AssignmentStatus.ASSIGNED_AUTOMATIC
+    assert row.position_label_id == "label-1"
 
 
 def test_unknown_signature_keeps_prior_position():

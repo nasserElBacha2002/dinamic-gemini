@@ -106,11 +106,18 @@ export function LocalActivityScreen({
                   void services.capture
                     .getSessionSnapshot(item.sessionId)
                     .then(async (snap) => {
+                      const drafts = services.config.flags.mobileLocalCodeScan
+                        ? await services.localDetectionDrafts
+                            .listForSession(item.sessionId)
+                            .catch(() => [])
+                        : [];
                       const gate = canExportSession({
                         session: snap.session,
                         photos: snap.photos,
                         csvExportEnabled: csvExport,
                         exportInProgress: false,
+                        localCodeScanEnabled: services.config.flags.mobileLocalCodeScan === true,
+                        localDetectionDrafts: drafts,
                       });
                       if (!gate.ok) {
                         onError(gate.reason);

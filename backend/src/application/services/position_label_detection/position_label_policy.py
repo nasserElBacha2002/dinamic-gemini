@@ -20,6 +20,45 @@ from src.domain.position_label_detection.entities import (
 )
 
 
+def is_unsigned_legacy_catalog_match(
+    *,
+    parsed_label_id: str,
+    parsed_version: int,
+    label: ClientPositionLabel,
+) -> bool:
+    """Legacy REQUIRED path: only catalog-registered v1 UNSIGNED labels."""
+    return is_unsigned_catalog_match(
+        parsed_label_id=parsed_label_id,
+        parsed_version=parsed_version,
+        label=label,
+        allowed_versions=frozenset({1}),
+    )
+
+
+def is_unsigned_catalog_match(
+    *,
+    parsed_label_id: str,
+    parsed_version: int,
+    label: ClientPositionLabel,
+    allowed_versions: frozenset[int] | None = None,
+) -> bool:
+    """Catalog UNSIGNED Dinamic match — shared by legacy and flexible accept paths."""
+    versions = allowed_versions if allowed_versions is not None else frozenset({1})
+    if int(parsed_version or 0) not in versions:
+        return False
+    if label.signature_status is not ClientPositionLabelSignatureStatus.UNSIGNED:
+        return False
+    stored = label.canonical_payload or {}
+    stored_version = int(stored.get("version") or 0)
+    return (
+        not stored.get("signature")
+        and (stored.get("type") or "").strip() == "DINAMIC_POSITION"
+        and (stored.get("label_id") or "").strip() == parsed_label_id.strip()
+        and stored_version == int(parsed_version or 0)
+        and stored_version in versions
+    )
+
+
 class PositionLabelPolicyDecision(str, Enum):
     ACCEPT = "ACCEPT"
     ACCEPT_REQUIRES_REVIEW = "ACCEPT_REQUIRES_REVIEW"
@@ -40,18 +79,27 @@ class PositionLabelPolicyOutcome:
 class PositionLabelPolicyService:
     """Centralizes unsigned-legacy compatibility and observability policy fields."""
 
+    # Dinamic positioning payload versions that may be accepted unsigned under flexible/OPTIONAL.
+    _FLEXIBLE_UNSIGNED_VERSIONS = frozenset({1, 2})
+
     def __init__(
         self,
         *,
         resolver: PositionLabelResolver,
         allow_unsigned_legacy: bool = True,
+        allow_flexible_unsigned: bool = False,
     ) -> None:
         self._resolver = resolver
         self._allow_unsigned_legacy = bool(allow_unsigned_legacy)
+        self._allow_flexible_unsigned = bool(allow_flexible_unsigned)
 
     @property
     def allow_unsigned_legacy(self) -> bool:
         return self._allow_unsigned_legacy
+
+    @property
+    def allow_flexible_unsigned(self) -> bool:
+        return self._allow_flexible_unsigned
 
     def try_accept_unsigned_legacy(
         self,
@@ -66,7 +114,7 @@ class PositionLabelPolicyService:
             return None
         if not parsed.label_id:
             return None
-        # v2+ payloads must carry signature on the QR — never downgrade to legacy unsigned.
+        # v2+ on the REQUIRED/legacy path must carry signature — use flexible accept instead.
         if int(parsed.version or 0) != 1:
             return None
 
@@ -78,17 +126,11 @@ class PositionLabelPolicyService:
             return None
         assert resolved.label is not None
         label = resolved.label
-        if label.signature_status is not ClientPositionLabelSignatureStatus.UNSIGNED:
-            return None
-
-        stored = label.canonical_payload or {}
-        if stored.get("signature"):
-            return None
-        if (stored.get("type") or "").strip() != "DINAMIC_POSITION":
-            return None
-        if (stored.get("label_id") or "").strip() != parsed.label_id.strip():
-            return None
-        if int(stored.get("version") or 0) != 1:
+        if not is_unsigned_legacy_catalog_match(
+            parsed_label_id=parsed.label_id,
+            parsed_version=int(parsed.version or 0),
+            label=label,
+        ):
             return None
 
         return PositionLabelPolicyOutcome(
@@ -103,6 +145,58 @@ class PositionLabelPolicyService:
                 "requires_review": True,
                 "signature_validation_status": PositionLabelSignatureStatus.MISSING.value,
                 "unsigned_legacy_compat": True,
+            },
+        )
+
+    def try_accept_unsigned_flexible(
+        self,
+        *,
+        parsed: ParsedPositionLabelPayload,
+        expected_client_id: str,
+    ) -> PositionLabelPolicyOutcome | None:
+        """OPTIONAL/flexible: accept catalog UNSIGNED Dinamic labels (v1/v2) without QR signature.
+
+        Still requires a tenant-scoped catalog match and hierarchy-compatible payload.
+        Invalid signatures are never accepted here (parser status must be MISSING_SIGNATURE).
+        """
+        if not self._allow_flexible_unsigned:
+            return None
+        if parsed.status is not PositionLabelDetectionStatus.MISSING_SIGNATURE:
+            return None
+        if not parsed.label_id:
+            return None
+        version = int(parsed.version or 0)
+        if version not in self._FLEXIBLE_UNSIGNED_VERSIONS:
+            return None
+
+        resolved = self._resolver.resolve(
+            public_label_id=parsed.label_id,
+            expected_client_id=expected_client_id,
+        )
+        if resolved.detection_status is not PositionLabelDetectionStatus.VALID:
+            return None
+        assert resolved.label is not None
+        label = resolved.label
+        if not is_unsigned_catalog_match(
+            parsed_label_id=parsed.label_id,
+            parsed_version=version,
+            label=label,
+            allowed_versions=self._FLEXIBLE_UNSIGNED_VERSIONS,
+        ):
+            return None
+
+        return PositionLabelPolicyOutcome(
+            detection_status=PositionLabelDetectionStatus.VALID,
+            signature_status=PositionLabelSignatureStatus.MISSING,
+            policy_decision=PositionLabelPolicyDecision.ACCEPT,
+            requires_review=False,
+            label=label,
+            detail="flexible_unsigned_accepted",
+            metadata={
+                "policy_decision": PositionLabelPolicyDecision.ACCEPT.value,
+                "requires_review": False,
+                "signature_validation_status": PositionLabelSignatureStatus.MISSING.value,
+                "flexible_unsigned_accept": True,
             },
         )
 

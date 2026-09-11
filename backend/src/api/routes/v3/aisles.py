@@ -14,8 +14,6 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_JOB_NOT_IN_AISLE_CATEGORY_C,
     HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY,
     HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
-    HTTP_DETAIL_SUPPLIER_NOT_RESOLVED,
-    HTTP_DETAIL_SUPPLIER_PROMPT_REQUIRED,
 )
 from src.api.dependencies import (
     get_activate_aisle_use_case,
@@ -53,12 +51,7 @@ from src.api.dependencies import (
     require_inventory_client_scope,
 )
 from src.api.errors import reraise_if_mapped
-from src.api.errors.structured_api_http import (
-    PROCESS_VALIDATION_FAILED,
-    SUPPLIER_NOT_RESOLVED,
-    SUPPLIER_PROMPT_REQUIRED,
-    StructuredApiHttpError,
-)
+from src.api.errors.process_start_value_errors import structured_process_value_error
 from src.api.mappers.result_evidence_mapper import job_traceability_to_response
 from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest, UpdateAisleRequest
 from src.api.schemas.benchmark_schemas import (
@@ -272,24 +265,6 @@ from .shared import aisle_to_response, job_to_detail, job_to_summary, status_res
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _structured_process_value_error(exc: ValueError) -> StructuredApiHttpError:
-    """Map process-start configuration ValueErrors to structured 422 (never 500)."""
-    msg = str(exc).strip() or "Invalid process request"
-    code = PROCESS_VALIDATION_FAILED
-    detail = msg
-    if ":" in msg:
-        head, rest = msg.split(":", 1)
-        head = head.strip()
-        if head and head == head.upper() and all(c.isalnum() or c == "_" for c in head):
-            code = head
-            detail = rest.strip() or msg
-    if code == SUPPLIER_PROMPT_REQUIRED:
-        detail = HTTP_DETAIL_SUPPLIER_PROMPT_REQUIRED
-    elif code == SUPPLIER_NOT_RESOLVED:
-        detail = HTTP_DETAIL_SUPPLIER_NOT_RESOLVED
-    return StructuredApiHttpError(422, error_code=code, detail=detail)
 
 
 def _aisle_response(
@@ -648,7 +623,7 @@ def start_aisle_processing(
     except Exception as e:
         reraise_if_mapped(e)
         if isinstance(e, ValueError):
-            raise _structured_process_value_error(e) from e
+            raise structured_process_value_error(e) from e
         raise
 
 

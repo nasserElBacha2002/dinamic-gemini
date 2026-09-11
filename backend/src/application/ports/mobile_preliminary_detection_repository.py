@@ -18,6 +18,8 @@ class PreliminaryUniqueViolationError(Exception):
 
 
 class MobilePreliminaryDetectionRepository(Protocol):
+    def exists_by_materialization_request_id(self, request_id: str) -> bool: ...
+
     def get_by_draft_id(self, draft_id: str) -> MobilePreliminaryDetection | None: ...
 
     def get_by_idempotency_key(

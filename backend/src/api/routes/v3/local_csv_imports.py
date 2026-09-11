@@ -85,7 +85,13 @@ def _raise_import_error(exc: LocalCsvImportError) -> None:
     status = 422
     if exc.code in {LOCAL_CSV_IMPORT_DISABLED, LOCAL_CSV_IMPORT_NOT_FOUND, "INVENTORY_NOT_FOUND"}:
         status = 404
-    elif exc.code in {LOCAL_CSV_EXPORT_CONFLICT, LOCAL_CSV_SECONDARY_CONFLICT}:
+    elif exc.code in {
+        LOCAL_CSV_EXPORT_CONFLICT,
+        LOCAL_CSV_SECONDARY_CONFLICT,
+        "INVENTORY_NOT_WRITABLE",
+        "INVENTORY_CLOSED",
+        "LATE_SYNC_REJECTED",
+    }:
         status = 409
     raise StructuredApiHttpError(status, error_code=exc.code, detail=str(exc)) from exc
 

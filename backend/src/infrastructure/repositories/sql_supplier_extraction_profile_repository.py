@@ -100,6 +100,10 @@ def _row_to_supplier_extraction_profile(row: object) -> SupplierExtractionProfil
     )
     label_kind_raw = getattr(row, "label_kind", None)
     label_kind = parse_label_kind(str(label_kind_raw)) if label_kind_raw else None
+    raw_policy = getattr(row, "signature_policy", None)
+    signature_policy = str(raw_policy or "REQUIRED").strip().upper() or "REQUIRED"
+    if signature_policy not in {"REQUIRED", "OPTIONAL", "NOT_APPLICABLE"}:
+        signature_policy = "REQUIRED"
     return SupplierExtractionProfile(
         id=_require_str(row, "id"),
         client_id=_require_str(row, "client_id"),
@@ -117,6 +121,7 @@ def _row_to_supplier_extraction_profile(row: object) -> SupplierExtractionProfil
         updated_at=updated_at,
         row_version=int(getattr(row, "row_version", 1) or 1),
         label_kind=label_kind,
+        signature_policy=signature_policy,
     )
 
 
@@ -150,7 +155,7 @@ def _row_to_reference_annotation(row: object) -> ReferenceAnnotation:
 _SELECT_PROFILE_COLUMNS = """
     id, client_id, supplier_id, profile_key, version, status, configuration_json,
     visual_notes, created_by, created_at, activated_by, activated_at,
-    superseded_at, updated_at, row_version, label_kind
+    superseded_at, updated_at, row_version, label_kind, signature_policy
 """
 
 
@@ -177,9 +182,9 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
                     id, client_id, supplier_id, profile_key, version, status,
                     configuration_json, visual_notes, created_by, created_at,
                     activated_by, activated_at, superseded_at, updated_at, row_version,
-                    label_kind
+                    label_kind, signature_policy
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     profile.id,
@@ -198,6 +203,7 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
                     updated,
                     int(profile.row_version),
                     _label_kind_scope_value(profile.label_kind),
+                    (profile.signature_policy or "REQUIRED").strip().upper(),
                 ),
             )
 
@@ -364,9 +370,9 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
                             id, client_id, supplier_id, profile_key, version, status,
                             configuration_json, visual_notes, created_by, created_at,
                             activated_by, activated_at, superseded_at, updated_at, row_version,
-                            label_kind
+                            label_kind, signature_policy
                         )
-                        VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, NULL, NULL, NULL, ?, 1, ?)
+                        VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, NULL, NULL, NULL, ?, 1, ?, 'REQUIRED')
                         """,
                         (
                             new_id,

@@ -46,9 +46,22 @@ class _SupplierBackingRefs:
     extraction_profile_version: int | None = None
     supplier_prompt_config_id: str | None = None
     supplier_prompt_config_version: int | None = None
+    signature_policy: str | None = None
 
     def has_any(self) -> bool:
         return self.extraction_profile_id is not None or self.supplier_prompt_config_id is not None
+
+
+def _normalize_signature_policy(raw: object) -> str:
+    text = str(raw or "").strip().upper()
+    if not text:
+        return "REQUIRED"
+    if text not in {"REQUIRED", "OPTIONAL", "NOT_APPLICABLE"}:
+        raise ValueError(
+            "signature_policy must be REQUIRED, OPTIONAL, or NOT_APPLICABLE;"
+            f" got {text!r}"
+        )
+    return text
 
 
 class LabelProfileResolver:
@@ -140,6 +153,11 @@ class LabelProfileResolver:
             client_supplier_id=supplier_id,
             profile_config_id=stored.id if stored else None,
             resolution_source=resolution_source,
+            signature_policy=(
+                _normalize_signature_policy(stored.signature_policy)
+                if stored is not None and stored.id
+                else None
+            ),
         )
 
         if source != LabelProfileSource.SUPPLIER:
@@ -158,6 +176,11 @@ class LabelProfileResolver:
                 label_kind=label_kind.value,
                 client_supplier_id=supplier_id,
             )
+        profile_policy = None
+        if backing.signature_policy is not None:
+            profile_policy = _normalize_signature_policy(backing.signature_policy)
+        elif stored is not None and stored.id:
+            profile_policy = _normalize_signature_policy(stored.signature_policy)
         return ResolvedLabelProfile(
             label_kind=label_kind,
             source=source,
@@ -168,6 +191,7 @@ class LabelProfileResolver:
             extraction_profile_version=backing.extraction_profile_version,
             supplier_prompt_config_id=backing.supplier_prompt_config_id,
             supplier_prompt_config_version=backing.supplier_prompt_config_version,
+            signature_policy=profile_policy,
         )
 
     def _load_supplier_backings(
@@ -199,6 +223,7 @@ class LabelProfileResolver:
                 extraction_profile_version=int(extraction.version) if extraction else None,
                 supplier_prompt_config_id=prompt.id if prompt else None,
                 supplier_prompt_config_version=int(prompt.version) if prompt else None,
+                signature_policy=extraction.signature_policy if extraction is not None else None,
             )
         return out
 

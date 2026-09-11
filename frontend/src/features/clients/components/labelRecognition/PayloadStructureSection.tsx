@@ -35,7 +35,35 @@ export default function PayloadStructureSection({ configuration, labelKind, onCh
           exclusive
           size="small"
           value={rules.payload_structure}
-          onChange={(_, value: PayloadStructure | null) => value && updateRules({ payload_structure: value })}
+          onChange={(_, value: PayloadStructure | null) => {
+            if (!value) return;
+            const nextMappings = rules.field_mappings.map((mapping, index) => {
+              if (value === 'SEGMENTED') {
+                return {
+                  ...mapping,
+                  source: 'SEGMENT' as const,
+                  segment_index: mapping.segment_index ?? index,
+                  application_identifier: null,
+                };
+              }
+              if (value === 'SIMPLE') {
+                return {
+                  ...mapping,
+                  source: 'WHOLE' as const,
+                  segment_index: null,
+                  application_identifier: null,
+                };
+              }
+              return mapping;
+            });
+            updateRules({
+              payload_structure: value,
+              field_mappings: nextMappings,
+              ...(value === 'SIMPLE'
+                ? { delimiter: null, expected_segment_count: null }
+                : {}),
+            });
+          }}
         >
           <ToggleButton value="SIMPLE">{t('clients.extraction_profile.structure_simple')}</ToggleButton>
           <ToggleButton value="SEGMENTED">{t('clients.extraction_profile.structure_segmented')}</ToggleButton>
@@ -114,7 +142,28 @@ export default function PayloadStructureSection({ configuration, labelKind, onCh
             onRemove={() => setMappings(rules.field_mappings.filter((_, itemIndex) => itemIndex !== index))}
           />
         ))}
-        <Button size="small" startIcon={<AddIcon />} sx={{ alignSelf: 'flex-start' }} onClick={() => setMappings([...rules.field_mappings, { target: labelKind === 'ITEM' ? 'sku' : 'position_id', source: rules.payload_structure === 'GS1' ? 'APPLICATION_IDENTIFIER' : rules.payload_structure === 'SEGMENTED' ? 'SEGMENT' : 'WHOLE' }])}>
+        <Button
+          size="small"
+          startIcon={<AddIcon />}
+          sx={{ alignSelf: 'flex-start' }}
+          onClick={() => {
+            const source =
+              rules.payload_structure === 'GS1'
+                ? 'APPLICATION_IDENTIFIER'
+                : rules.payload_structure === 'SEGMENTED'
+                  ? 'SEGMENT'
+                  : 'WHOLE';
+            setMappings([
+              ...rules.field_mappings,
+              {
+                target: labelKind === 'ITEM' ? 'sku' : 'position_id',
+                source,
+                segment_index: source === 'SEGMENT' ? rules.field_mappings.length : null,
+                application_identifier: source === 'APPLICATION_IDENTIFIER' ? '01' : null,
+              },
+            ]);
+          }}
+        >
           {t('clients.extraction_profile.add_mapping')}
         </Button>
         <Alert severity="info">

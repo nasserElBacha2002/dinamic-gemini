@@ -720,7 +720,7 @@ def minimal_supplier_item_configuration(
     *,
     expected_prefix: str | None = None,
     exact_length: int | None = None,
-    character_set: CharacterSetPolicy = CharacterSetPolicy.UPPERCASE_ALPHANUMERIC,
+    character_set: CharacterSetPolicy = CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
     semantic_type: str = ItemLabelSemanticType.LPN.value,
 ) -> ExtractionProfileConfiguration:
     """v2 MINIMAL ITEM — identity via label_id only (no sku/quantity required)."""
@@ -738,7 +738,8 @@ def minimal_supplier_item_configuration(
             minimum=1,
             default_value=None,
             expected_presence=QuantityPresence.OPTIONAL,
-            missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
+            # Identity-only default: no universal external Vision fallback.
+            missing_quantity_action=MissingQuantityAction.RESOLVE_CODE_ONLY,
             allow_external_fallback=False,
             allowed_spatial_relations=(),
         ),
@@ -790,6 +791,94 @@ def minimal_supplier_item_configuration(
     )
 
 
+def inventory_count_item_configuration(
+    *,
+    expected_prefix: str | None = None,
+    exact_length: int | None = None,
+    character_set: CharacterSetPolicy = CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+    semantic_type: str = ItemLabelSemanticType.LPN.value,
+) -> ExtractionProfileConfiguration:
+    """MINIMAL ITEM identity + quantity completion via external enrichment when missing."""
+    base = minimal_supplier_item_configuration(
+        expected_prefix=expected_prefix,
+        exact_length=exact_length,
+        character_set=character_set,
+        semantic_type=semantic_type,
+    )
+    return ExtractionProfileConfiguration(
+        configuration_schema_version=base.configuration_schema_version,
+        recognition_mode=base.recognition_mode,
+        semantic_type=base.semantic_type,
+        internal_code_sources=base.internal_code_sources,
+        forbidden_internal_code_sources=base.forbidden_internal_code_sources,
+        quantity_rules=QuantityExtractionRules(
+            aliases=(),
+            required=False,
+            data_type=FieldDataType.INTEGER,
+            allow_decimals=False,
+            minimum=1,
+            default_value=None,
+            expected_presence=QuantityPresence.OPTIONAL,
+            missing_quantity_action=MissingQuantityAction.EXTERNAL_FALLBACK,
+            allow_external_fallback=True,
+            allowed_spatial_relations=(),
+        ),
+        validation_rules=base.validation_rules,
+        label_detection_rules=base.label_detection_rules,
+        accepted_barcode_formats=base.accepted_barcode_formats,
+        qr_payload_formats=base.qr_payload_formats,
+        custom_payload_pattern=base.custom_payload_pattern,
+        required_fields=base.required_fields,
+        aliases=base.aliases,
+        allow_unconfigured_code_source_fallback=False,
+        deterministic=base.deterministic,
+    )
+
+
+def manual_review_item_configuration(
+    *,
+    expected_prefix: str | None = None,
+    exact_length: int | None = None,
+    character_set: CharacterSetPolicy = CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+    semantic_type: str = ItemLabelSemanticType.LPN.value,
+) -> ExtractionProfileConfiguration:
+    """MINIMAL ITEM: missing quantity goes to manual review (no external fallback)."""
+    base = minimal_supplier_item_configuration(
+        expected_prefix=expected_prefix,
+        exact_length=exact_length,
+        character_set=character_set,
+        semantic_type=semantic_type,
+    )
+    return ExtractionProfileConfiguration(
+        configuration_schema_version=base.configuration_schema_version,
+        recognition_mode=base.recognition_mode,
+        semantic_type=base.semantic_type,
+        internal_code_sources=base.internal_code_sources,
+        forbidden_internal_code_sources=base.forbidden_internal_code_sources,
+        quantity_rules=QuantityExtractionRules(
+            aliases=(),
+            required=False,
+            data_type=FieldDataType.INTEGER,
+            allow_decimals=False,
+            minimum=1,
+            default_value=None,
+            expected_presence=QuantityPresence.OPTIONAL,
+            missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
+            allow_external_fallback=False,
+            allowed_spatial_relations=(),
+        ),
+        validation_rules=base.validation_rules,
+        label_detection_rules=base.label_detection_rules,
+        accepted_barcode_formats=base.accepted_barcode_formats,
+        qr_payload_formats=base.qr_payload_formats,
+        custom_payload_pattern=base.custom_payload_pattern,
+        required_fields=base.required_fields,
+        aliases=base.aliases,
+        allow_unconfigured_code_source_fallback=False,
+        deterministic=base.deterministic,
+    )
+
+
 def minimal_supplier_position_configuration(
     *,
     expected_prefix: str | None = None,
@@ -808,7 +897,7 @@ def minimal_supplier_position_configuration(
             aliases=(),
             required=False,
             expected_presence=QuantityPresence.OPTIONAL,
-            missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
+            missing_quantity_action=MissingQuantityAction.RESOLVE_CODE_ONLY,
             allow_external_fallback=False,
             allowed_spatial_relations=(),
         ),
@@ -1058,6 +1147,8 @@ class SupplierExtractionProfile:
     row_version: int = 1
     #: Phase 1 — ITEM or POSITION; NULL legacy rows treated as ITEM after migration.
     label_kind: LabelKind | None = None
+    #: Phase 5 — Dinamic signature semantics for POSITION profiles (default REQUIRED).
+    signature_policy: str = "REQUIRED"
 
     @property
     def is_active(self) -> bool:
@@ -1138,5 +1229,7 @@ __all__ = [
     "gs1_sscc_template",
     "inventory_seven_digit_internal_code_template",
     "minimal_supplier_item_configuration",
+    "inventory_count_item_configuration",
+    "manual_review_item_configuration",
     "minimal_supplier_position_configuration",
 ]

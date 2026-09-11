@@ -9,7 +9,6 @@ import { useParams, useNavigate, useLocation, useSearchParams } from 'react-rout
 import { Alert, Box, Button, Tooltip, Typography } from '@mui/material';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import ImageSearchOutlinedIcon from '@mui/icons-material/ImageSearchOutlined';
-import JobPositionDetectionsPanel from '../features/positionLabels/JobPositionDetectionsPanel';
 import AislePositioningOperationalPanel from '../features/positioning/AislePositioningOperationalPanel';
 import AisleProcessingDialog from '../features/inventories/components/AisleProcessingDialog';
 import { useAisleProcessingFlow } from '../features/inventories/hooks/useAisleProcessingFlow';
@@ -962,7 +961,6 @@ export default function AislePositionsPage() {
               updateFilters({ resultsView: v }, { historyMode: 'push' });
             }}
           />
-          <JobPositionDetectionsPanel inventoryId={inventoryId} jobId={pickedRunJobId} />
         </Box>
       ) : null}
 

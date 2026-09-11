@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.application.services.position_recognition import (
+    CANONICAL_POSITION_CODE_MAX_LENGTH,
+)
+from src.application.services.position_recognition import (
+    normalize_position_code as normalize_canonical_position_code,
+)
+
 SKU_MAX_LENGTH = 128
 DESCRIPTION_MAX_LENGTH = 512
-POSITION_CODE_MAX_LENGTH = 64
+POSITION_CODE_MAX_LENGTH = CANONICAL_POSITION_CODE_MAX_LENGTH
 
 
 @dataclass(frozen=True)
@@ -56,10 +63,8 @@ def validate_manual_image_result_input(
         raise ValueError(f"description must be at most {DESCRIPTION_MAX_LENGTH} characters")
 
     normalized_position_code = normalize_position_code(position_code)
-    if normalized_position_code is not None and len(normalized_position_code) > POSITION_CODE_MAX_LENGTH:
-        raise ValueError(
-            f"position_code must be at most {POSITION_CODE_MAX_LENGTH} characters"
-        )
+    if normalized_position_code is not None:
+        normalize_canonical_position_code(normalized_position_code)
 
     return ManualImageResultInput(
         sku=normalized_sku,

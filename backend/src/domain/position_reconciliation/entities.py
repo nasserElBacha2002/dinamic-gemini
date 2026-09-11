@@ -55,6 +55,7 @@ class PositionDetectionRef:
     detection_status: PositionLabelDetectionStatus | str
     signature_status: PositionLabelSignatureStatus | str
     position_label_id: str | None = None
+    aisle_location_id: str | None = None
     position_name_snapshot: str | None = None
     detector_version: str | None = None
 
@@ -78,6 +79,7 @@ class PositionAssignmentDecision:
     assignment_status: AssignmentStatus
     assignment_reason: str
     position_label_id: str | None = None
+    aisle_location_id: str | None = None
     position_name_snapshot: str | None = None
     source_detection_id: str | None = None
     assignment_source: AssignmentSource | None = None
@@ -126,6 +128,7 @@ class ProductPositionAssignment:
     created_at: datetime
     updated_at: datetime
     position_label_id: str | None = None
+    aisle_location_id: str | None = None
     position_name_snapshot: str | None = None
     source_detection_id: str | None = None
     assignment_source: AssignmentSource | None = None

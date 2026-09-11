@@ -1292,6 +1292,13 @@
       "confirming": "Importando…",
       "preview_error": "No se pudo validar el archivo de importación.",
       "confirm_error": "No se pudo confirmar la importación.",
+      "errors": {
+        "canonical_rejected": "La materialización de posiciones fue rechazada (revisá el proveedor/formato del pasillo).",
+        "requires_review": "La importación quedó en revisión. Podés reintentar confirmar tras corregir el problema.",
+        "invalid_status": "Este archivo no está en un estado que permita confirmar. Volvé a validar o reintentá.",
+        "materialization_failed": "Falló la materialización de la importación. Reintentá confirmar.",
+        "inventory_mismatch": "El ZIP pertenece a otro inventario. Abrí el inventario correcto (el del manifesto) o elegí el export que corresponde a este inventario."
+      },
       "preview_ready": "Export {{exportId}}: {{valid}}/{{total}} filas válidas, {{rejected}} rechazadas, {{photos}} fotos.",
       "preview_ready_txt": "Export {{exportId}} · pasillo {{aisle}}: {{products}} productos, {{positions}} posiciones, {{omitted}} omitidos; {{valid}}/{{total}} filas válidas, {{rejected}} rechazadas.",
       "conflict_policy": "Si ya existen resultados",
@@ -1511,6 +1518,7 @@
       "template_gs1_sscc": "GS1 SSCC",
       "template_gs1_gtin": "GS1 GTIN",
       "template_lpn_simple": "LPN simple",
+      "template_position_segmented": "Posición segmentada (pipe)",
       "section_barcode_rules": "2. Código de barras / QR",
       "expected_prefix": "Prefijo esperado",
       "expected_suffix": "Sufijo esperado",

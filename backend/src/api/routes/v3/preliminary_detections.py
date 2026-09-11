@@ -1,4 +1,4 @@
-"""v3 mobile preliminary CODE_SCAN drafts — diagnostic ingest only."""
+"""v3 mobile preliminary CODE_SCAN draft ingest."""
 
 from __future__ import annotations
 
@@ -6,19 +6,26 @@ import logging
 
 from fastapi import APIRouter, Depends
 
-from src.api.dependencies import get_upsert_preliminary_detection_use_case
+from src.api.dependencies import (
+    get_upsert_preliminary_detection_use_case,
+    require_inventory_client_scope,
+)
 from src.api.errors import reraise_if_mapped
 from src.api.errors.structured_api_http import StructuredApiHttpError
 from src.api.schemas.preliminary_detection_schemas import (
+    PositionAuthoritativeResultV2,
     PreliminaryDetectionUpsertRequest,
     PreliminaryDetectionUpsertResponse,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import AisleNotFoundError
 from src.application.use_cases.aisles.upsert_preliminary_detection import (
     PRELIMINARY_ASSET_PENDING,
     PRELIMINARY_IDEMPOTENCY_CONFLICT,
     PRELIMINARY_INGEST_DISABLED,
     PRELIMINARY_VALIDATION_FAILED,
+    PositionReferenceEvidenceV2,
+    PositionSignatureEvidenceV2,
     PreliminaryDetectionIngestDisabledError,
     UpsertPreliminaryDetectionCommand,
     UpsertPreliminaryDetectionUseCase,
@@ -31,14 +38,17 @@ router = APIRouter()
 @router.put(
     "/{inventory_id}/aisles/{aisle_id}/preliminary-detections/{draft_id}",
     response_model=PreliminaryDetectionUpsertResponse,
-    summary="Upsert mobile preliminary CODE_SCAN draft (non-authoritative)",
+    summary="Upsert mobile preliminary CODE_SCAN draft",
 )
 def upsert_preliminary_detection(
     inventory_id: str,
     aisle_id: str,
     draft_id: str,
     body: PreliminaryDetectionUpsertRequest,
-    use_case: UpsertPreliminaryDetectionUseCase = Depends(get_upsert_preliminary_detection_use_case),
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case: UpsertPreliminaryDetectionUseCase = Depends(
+        get_upsert_preliminary_detection_use_case
+    ),
 ) -> PreliminaryDetectionUpsertResponse:
     try:
         result = use_case.execute(
@@ -65,6 +75,28 @@ def upsert_preliminary_detection(
                 payload_hash=body.payload_hash,
                 processing_ms=body.processing_ms,
                 detected_at=body.detected_at,
+                principal=principal,
+                position_reference=(
+                    PositionReferenceEvidenceV2(
+                        payload_version=body.position_reference.payload_version,
+                        local_recognition_id=body.position_reference.local_recognition_id,
+                        raw_code=body.position_reference.raw_code,
+                        normalized_code=body.position_reference.normalized_code,
+                        remote_position_id=body.position_reference.remote_position_id,
+                        remote_position_label_id=body.position_reference.remote_position_label_id,
+                        source=body.position_reference.source,
+                        profile_id=body.position_reference.profile_id,
+                        profile_version=body.position_reference.profile_version,
+                        client_supplier_id=body.position_reference.client_supplier_id,
+                        signature=PositionSignatureEvidenceV2(
+                            present=body.position_reference.signature.present,
+                            verification=body.position_reference.signature.verification,
+                        ),
+                        captured_at=body.position_reference.captured_at,
+                    )
+                    if body.position_reference is not None
+                    else None
+                ),
             )
         )
     except PreliminaryDetectionIngestDisabledError as exc:
@@ -117,4 +149,21 @@ def upsert_preliminary_detection(
         received_at=result.received_at,
         validation_errors=list(result.validation_errors),
         duplicate=result.duplicate,
+        position_result=(
+            PositionAuthoritativeResultV2(
+                local_recognition_id=result.position_result.local_recognition_id,
+                normalized_code=result.position_result.normalized_code,
+                remote_position_id=result.position_result.remote_position_id,
+                remote_position_label_id=result.position_result.remote_position_label_id,
+                status=result.position_result.status,
+                error_code=result.position_result.error_code,
+                retryable=result.position_result.retryable,
+                server_timestamp=result.position_result.server_timestamp,
+                reconciliation_revision=result.position_result.reconciliation_revision,
+                created=result.position_result.created,
+                idempotent_replay=result.position_result.idempotent_replay,
+            )
+            if result.position_result is not None
+            else None
+        ),
     )

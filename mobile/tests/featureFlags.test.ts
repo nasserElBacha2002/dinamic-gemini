@@ -144,6 +144,13 @@ describe('featureFlags', () => {
     }
   });
 
+  it('keeps canonical position rollout flags off by default', () => {
+    const resolved = resolveFeatureFlags({}, 'development');
+    expect(resolved.mobileCanonicalPositionStateEnabled).toBe(false);
+    expect(resolved.positionActiveStateRestoreEnabled).toBe(false);
+    expect(resolved.positionSyncReferenceV2Enabled).toBe(false);
+  });
+
   it('can independently enable phase9 offline operations flags', () => {
     const on = resolveFeatureFlags(
       {

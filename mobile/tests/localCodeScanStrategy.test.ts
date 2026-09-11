@@ -43,6 +43,7 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
       productResultsJson?: string | null;
       rejectionsJson?: string | null;
       positionDetected?: boolean | null;
+      positionLocalRecognitionId?: string | null;
     }): Promise<LocalDetectionDraftRow> {
       const existing = rows.find(
         (r) =>
@@ -96,6 +97,10 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
         position_detected: input.positionDetected
           ? 1
           : (existing?.position_detected ?? 0),
+        position_local_recognition_id:
+          input.positionLocalRecognitionId ??
+          existing?.position_local_recognition_id ??
+          null,
         detected_at: existing?.detected_at ?? now,
         created_at: existing?.created_at ?? now,
         updated_at: now,
@@ -341,7 +346,28 @@ describe('LocalCodeScanStrategy position dedupe', () => {
     expect(trace?.attributes?.duplicate_position).toBe(true);
   });
 
-  it('rehydrates from prior drafts after in-memory loss and treats repeat scan as duplicate', async () => {
+  it('does not mutate in-memory active position when the SQLite unit of work fails', async () => {
+    const drafts = createMemoryDrafts();
+    drafts.upsertDraft = jest.fn(async () => {
+      throw new Error('SQLITE_WRITE_FAILED');
+    });
+    const { clearInMemoryPositionState, getActivePosition } = await import(
+      '../src/features/localCodeScan/activePositionStore'
+    );
+    clearInMemoryPositionState(sessionId);
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [{ rawValue: posPayload('POS-ROLLBACK'), symbology: 'QR_CODE' }],
+      evaluateCapability: async () => 'SUPPORTED',
+    });
+
+    await expect(
+      strategy.execute({ ...baseInput, capturePhotoId: 'photo-rollback' }),
+    ).rejects.toThrow('SQLITE_WRITE_FAILED');
+    expect(getActivePosition(sessionId)).toBeNull();
+  });
+
+  it('rehydrates after restart and applies A to B to A as the latest transition', async () => {
     const drafts = createMemoryDrafts();
     let positionCallbacks = 0;
     const pos1 = posPayload('POS001');
@@ -381,8 +407,48 @@ describe('LocalCodeScanStrategy position dedupe', () => {
       },
     });
     await strategy3.execute({ ...baseInput, capturePhotoId: 'photo-r3' });
-    expect(positionCallbacks).toBe(2);
-    expect(drafts.rows[2]?.error_code).toBe('POSITION_LABEL_DUPLICATE');
+    expect(positionCallbacks).toBe(3);
+    expect(drafts.rows[2]?.error_code).toBe('POSITION_LABEL_DETECTED');
+  });
+
+  it('freezes the active position snapshot on each later product draft', async () => {
+    const drafts = createMemoryDrafts();
+    const product1 = buildProductLabelPayload({
+      labelId: 'PRODUCT0001',
+      internalCode: 'SKU-1',
+      quantity: 1,
+    });
+    const product2 = buildProductLabelPayload({
+      labelId: 'PRODUCT0002',
+      internalCode: 'SKU-2',
+      quantity: 1,
+    });
+    const detections = [posPayload('POS-A'), product1, posPayload('POS-B'), product2];
+    let index = 0;
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [{ rawValue: detections[index++]!, symbology: 'QR_CODE' }],
+      evaluateCapability: async () => 'SUPPORTED',
+      canonicalPositionStateEnabled: true,
+    });
+    for (let photo = 0; photo < detections.length; photo += 1) {
+      await strategy.execute({
+        ...baseInput,
+        capturePhotoId: `photo-snapshot-${photo}`,
+        preparedAssetFingerprint: `sha256:${String(photo).padStart(64, '0')}`,
+      });
+    }
+
+    const productOneSnapshot = JSON.parse(drafts.rows[1]!.position_snapshot_json!);
+    const productTwoSnapshot = JSON.parse(drafts.rows[3]!.position_snapshot_json!);
+    expect(productOneSnapshot.normalizedCode).toBe('POS-A');
+    expect(productTwoSnapshot.normalizedCode).toBe('POS-B');
+    expect(drafts.rows[1]!.position_local_recognition_id).toBe(
+      productOneSnapshot.localRecognitionId,
+    );
+    expect(drafts.rows[3]!.position_local_recognition_id).toBe(
+      productTwoSnapshot.localRecognitionId,
+    );
   });
 
   it('preserves valid D1 when position is duplicate on same photo', async () => {
@@ -445,6 +511,102 @@ describe('LocalCodeScanStrategy position dedupe', () => {
     );
     expect(trace?.attributes?.duplicate_position).toBe(true);
     expect(trace?.attributes?.d1_valid_count).toBe(1);
+  });
+});
+
+describe('LocalCodeScanStrategy supplier position-only ASP', () => {
+  const sessionId = 'session-asp-pos';
+  const aspRaw = 'ASP-A01-P04-R';
+
+  beforeEach(async () => {
+    const { clearAllActivePositions } = await import(
+      '../src/features/localCodeScan/activePositionStore'
+    );
+    clearAllActivePositions();
+  });
+
+  it('does not treat ASP position as MISSING_QUANTITY product draft', async () => {
+    const drafts = createMemoryDrafts();
+    const profileResolver = {
+      resolveForAisle: jest.fn(async () => ({
+        item: {
+          labelKind: 'ITEM' as const,
+          source: 'SUPPLIER' as const,
+          resolutionSource: 'CLIENT_SUPPLIER' as const,
+          clientSupplierId: 'sup-a',
+          missingSupplierProfile: false,
+          recognitionConfigNotReady: false,
+          profile: null,
+          configuration: {
+            recognition_mode: 'FULL',
+            required_fields: ['label_id', 'quantity'],
+            deterministic: {
+              expected_prefix: 'ASI',
+              exact_length: 10,
+              character_set: 'ALPHANUMERIC_WITH_HYPHEN',
+              payload_structure: 'SEGMENTED',
+              delimiter: '|',
+              expected_segment_count: 2,
+              field_mappings: [
+                { target: 'label_id', source: 'SEGMENT', segment_index: 0 },
+                { target: 'quantity', source: 'SEGMENT', segment_index: 1 },
+              ],
+            },
+          },
+        },
+        position: {
+          labelKind: 'POSITION' as const,
+          source: 'SUPPLIER' as const,
+          resolutionSource: 'CLIENT_SUPPLIER' as const,
+          clientSupplierId: 'sup-a',
+          missingSupplierProfile: false,
+          recognitionConfigNotReady: false,
+          profile: {
+            profile_id: 'pos-prof',
+            profile_version: 1,
+            configuration_schema_version: 2,
+          },
+          configuration: {
+            recognition_mode: 'MINIMAL',
+            required_fields: ['label_id'],
+            deterministic: {
+              expected_prefix: 'ASP',
+              character_set: 'ALPHANUMERIC_WITH_HYPHEN',
+              payload_structure: 'SIMPLE',
+              field_mappings: [{ target: 'label_id', source: 'WHOLE' }],
+            },
+          },
+        },
+      })),
+    };
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [{ rawValue: aspRaw, symbology: 'QR_CODE' }],
+      evaluateCapability: async () => 'SUPPORTED',
+      profileResolver: profileResolver as never,
+    });
+
+    const status = await strategy.execute({
+      capturePhotoId: 'photo-asp',
+      captureSessionId: sessionId,
+      clientFileId: 'cf-asp',
+      preparedUri: 'file:///tmp/asp.jpg',
+      preparedAssetFingerprint: 'sha256:asp',
+      processingMode: 'CODE_SCAN',
+      flagEnabled: true,
+      inventoryId: 'inv-1',
+      aisleId: 'aisle-1',
+      recognitionContext: 'OFFLINE',
+    });
+
+    expect(status).toBe('DETECTED_UNVERIFIED');
+    const row = drafts.rows[0];
+    expect(row?.error_code).toBe('POSITION_LABEL_DETECTED');
+    expect(row?.position_detected).toBe(1);
+    expect(row?.internal_code).toBeNull();
+    expect(row?.quantity).toBeNull();
+    expect(row?.quantity_status).toBeNull();
+    expect(row?.product_results_json).toBeNull();
   });
 });
 

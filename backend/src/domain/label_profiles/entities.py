@@ -22,6 +22,7 @@ class ClientSupplierLabelProfile:
     source: LabelProfileSource
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    signature_policy: str = "REQUIRED"
 
 
 def virtual_dinamic_label_profile(
@@ -35,6 +36,7 @@ def virtual_dinamic_label_profile(
         source=LabelProfileSource.DINAMIC,
         created_at=None,
         updated_at=None,
+        signature_policy="REQUIRED",
     )
 
 
@@ -51,6 +53,8 @@ class ResolvedLabelProfile:
     extraction_profile_version: int | None = None
     supplier_prompt_config_id: str | None = None
     supplier_prompt_config_version: int | None = None
+    # None → use settings POSITION_SIGNATURE_POLICY (kill-switch / default).
+    signature_policy: str | None = None
 
     def to_snapshot_dict(self) -> dict[str, Any]:
         return {
@@ -63,6 +67,11 @@ class ResolvedLabelProfile:
             "extraction_profile_version": self.extraction_profile_version,
             "supplier_prompt_config_id": self.supplier_prompt_config_id,
             "supplier_prompt_config_version": self.supplier_prompt_config_version,
+            "profile_id": self.extraction_profile_id or self.profile_config_id,
+            "profile_version": self.extraction_profile_version
+            or self.supplier_prompt_config_version,
+            "signature_policy": self.signature_policy,
+            "resolved_signature_policy": self.signature_policy,
         }
 
 
@@ -97,6 +106,11 @@ class ResolvedLabelProfiles:
 def _profile_from_dict(data: dict[str, Any], default_kind: LabelKind) -> ResolvedLabelProfile:
     kind_raw = data.get("label_kind") or default_kind.value
     source_raw = data.get("source") or LabelProfileSource.DINAMIC.value
+    raw_policy: str | None = None
+    if data.get("signature_policy") is not None:
+        candidate = str(data.get("signature_policy") or "").strip().upper() or None
+        if candidate in {"REQUIRED", "OPTIONAL", "NOT_APPLICABLE"}:
+            raw_policy = candidate
     return ResolvedLabelProfile(
         label_kind=LabelKind(str(kind_raw).strip().upper()),
         source=LabelProfileSource(str(source_raw).strip().upper()),
@@ -119,4 +133,5 @@ def _profile_from_dict(data: dict[str, Any], default_kind: LabelKind) -> Resolve
         supplier_prompt_config_version=int(data["supplier_prompt_config_version"])
         if data.get("supplier_prompt_config_version") is not None
         else None,
+        signature_policy=raw_policy,
     )

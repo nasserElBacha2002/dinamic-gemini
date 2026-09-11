@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,6 +19,7 @@ from src.application.services.image_processing.legacy_llm_processing_strategy im
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_image_processing_bridge import (
     build_default_aisle_processing_orchestrator,
+    build_default_code_scan_persister,
 )
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 
@@ -54,6 +56,112 @@ def test_build_default_require_sql_fails_fast_when_repos_missing() -> None:
             require_sql=True,
         )
     assert "require_sql=True" in str(exc.value)
+
+
+def test_code_scan_persister_builder_propagates_enabled_materializer() -> None:
+    materializer = MagicMock()
+    container = MagicMock()
+    container.get_position_materialization_service.return_value = materializer
+    clock = MagicMock()
+
+    persister = build_default_code_scan_persister(
+        job_source_asset_repo=MagicMock(),
+        source_asset_repo=MagicMock(),
+        clock=clock,
+        unit_of_work_factory=MagicMock(),
+        position_detection_repo=MagicMock(),
+        settings=SimpleNamespace(
+            position_auto_materialization_enabled=True,
+            position_flexible_validation_enabled=True,
+            position_flexible_code_scan_enabled=True,
+            position_flexible_vision_enabled=False,
+        ),
+        container=container,
+    )
+
+    assert persister._position_auto_materialization_enabled is True
+    assert persister._flexible_code_scan_enabled is True
+    assert persister._flexible_vision_enabled is False
+    assert persister._position_materializer is materializer
+    container.get_position_materialization_service.assert_called_once_with()
+
+
+def test_vision_on_does_not_enable_code_scan_materialization_alone() -> None:
+    """Vision channel ON must not imply CODE_SCAN flexible materialization."""
+    materializer = MagicMock()
+    container = MagicMock()
+    container.get_position_materialization_service.return_value = materializer
+    persister = build_default_code_scan_persister(
+        job_source_asset_repo=MagicMock(),
+        source_asset_repo=MagicMock(),
+        clock=MagicMock(),
+        unit_of_work_factory=MagicMock(),
+        position_detection_repo=MagicMock(),
+        settings=SimpleNamespace(
+            position_auto_materialization_enabled=True,
+            position_flexible_validation_enabled=True,
+            position_flexible_code_scan_enabled=False,
+            position_flexible_vision_enabled=True,
+        ),
+        container=container,
+    )
+    assert persister._position_auto_materialization_enabled is True
+    assert persister._flexible_vision_enabled is True
+    assert persister._flexible_code_scan_enabled is False
+    assert persister._position_materializer is materializer
+    # CODE_SCAN source → channel gate off
+    code_scan_result = SimpleNamespace(vision_position_evidence=())
+    assert persister._channel_materialization_enabled(code_scan_result) is False
+    vision_result = SimpleNamespace(vision_position_evidence=(object(),))
+    assert persister._channel_materialization_enabled(vision_result) is True
+
+
+def test_code_scan_persister_builder_wires_materializer_when_auto_on() -> None:
+    """Auto master wires materializer; channel flags stay independent."""
+    container = MagicMock()
+    materializer = MagicMock()
+    container.get_position_materialization_service.return_value = materializer
+    persister = build_default_code_scan_persister(
+        job_source_asset_repo=MagicMock(),
+        source_asset_repo=MagicMock(),
+        clock=MagicMock(),
+        unit_of_work_factory=MagicMock(),
+        position_detection_repo=MagicMock(),
+        settings=SimpleNamespace(
+            position_auto_materialization_enabled=True,
+            position_flexible_validation_enabled=False,
+            position_flexible_code_scan_enabled=False,
+            position_flexible_vision_enabled=False,
+        ),
+        container=container,
+    )
+    assert persister._position_auto_materialization_enabled is True
+    assert persister._position_materializer is materializer
+    container.get_position_materialization_service.assert_called_once_with()
+    code_scan_result = SimpleNamespace(vision_position_evidence=())
+    # Flexible master off → Phase 3 auto alone enables materialization.
+    assert persister._channel_materialization_enabled(code_scan_result) is True
+
+
+def test_code_scan_persister_builder_skips_materializer_when_auto_off() -> None:
+    container = MagicMock()
+    persister = build_default_code_scan_persister(
+        job_source_asset_repo=MagicMock(),
+        source_asset_repo=MagicMock(),
+        clock=MagicMock(),
+        unit_of_work_factory=MagicMock(),
+        position_detection_repo=MagicMock(),
+        settings=SimpleNamespace(
+            position_auto_materialization_enabled=False,
+            position_flexible_validation_enabled=True,
+            position_flexible_code_scan_enabled=True,
+            position_flexible_vision_enabled=True,
+        ),
+        container=container,
+    )
+    assert persister._position_auto_materialization_enabled is False
+    assert persister._position_materializer is None
+    container.get_position_materialization_service.assert_not_called()
 
 
 def test_merge_result_json_preserves_sibling_keys() -> None:

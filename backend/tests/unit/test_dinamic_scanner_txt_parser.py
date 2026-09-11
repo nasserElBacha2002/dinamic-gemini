@@ -101,6 +101,43 @@ def test_parser_rejects_invalid_side() -> None:
     assert any("side:invalid" in warning for warning in parsed.parse_warnings)
 
 
+def test_parser_accepts_position_label_id_at_canonical_limit() -> None:
+    parsed = parse_dinamic_scanner_txt(_txt(f"POSITION|{'L' * 64}|PALLET-01|LEFT"))
+
+    assert parsed.positions[0].label_id == "L" * 64
+    assert parsed.positions[0].pallet == "PALLET-01"
+
+
+def test_parser_rejects_position_label_id_above_canonical_limit() -> None:
+    parsed = parse_dinamic_scanner_txt(_txt(f"POSITION|{'L' * 65}|PALLET-01|LEFT"))
+
+    assert parsed.positions == ()
+    assert any("position_label_id:too_long" in warning for warning in parsed.parse_warnings)
+
+
+def test_parser_accepts_pallet_without_position_identity_length_rule() -> None:
+    pallet = "P" * 65
+    parsed = parse_dinamic_scanner_txt(_txt(f"POSITION|POS1|{pallet}|LEFT"))
+
+    assert parsed.positions[0].pallet == pallet
+
+
+def test_parser_rejects_pallet_format_character() -> None:
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS1|PAL\u200bLET|LEFT"))
+
+    assert parsed.positions == ()
+    assert any("pallet:control_character" in warning for warning in parsed.parse_warnings)
+
+
+def test_parser_rejects_position_label_format_character() -> None:
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS\u200b1|PALLET-01|LEFT"))
+
+    assert parsed.positions == ()
+    assert any(
+        "position_label_id:control_character" in warning for warning in parsed.parse_warnings
+    )
+
+
 def test_parser_product_before_position_is_rejected() -> None:
     parsed = parse_dinamic_scanner_txt(_txt(_valid_d1_line()))
     assert "product:no_valid_active_position" in parsed.products[0].errors
@@ -146,11 +183,7 @@ def test_txt_checksum_invalid_rejected() -> None:
 
 def test_txt_malformed_d1_rejected() -> None:
     vectors = _load_vectors()
-    raw = next(
-        v["raw"]
-        for v in vectors["vectors"]
-        if v["name"] == "malformed-grammar-bad-label"
-    )
+    raw = next(v["raw"] for v in vectors["vectors"] if v["name"] == "malformed-grammar-bad-label")
     parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", raw))
     assert "d1:malformed" in parsed.products[0].errors
 

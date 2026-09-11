@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 
 from src.application.ports.sql_cursor import SqlCursorLike
@@ -17,6 +17,7 @@ from src.domain.local_csv_import.entities import (
     local_csv_row_secondary_key,
 )
 from src.domain.local_csv_import.sources import INGESTION_SOURCE_LOCAL_CSV_IMPORT
+from src.domain.local_csv_import.statuses import LOCAL_CSV_IMPORT_STATUS_CONFIRMED
 from src.infrastructure.database.sql_batch import (
     EXECUTEMANY_PRODUCTIVE_PARAM_SET_CHUNK,
     SQL_IN_CHUNK_SIZE,
@@ -38,9 +39,14 @@ _PRODUCTIVE_INSERT_SQL = (
 
 
 class MemoryLocalCsvInventoryResultWriter:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        get_import_status: Callable[[str], str | None] | None = None,
+    ) -> None:
         self._by_id: dict[str, LocalCsvProductiveResult] = {}
         self._lock = threading.Lock()
+        self._get_import_status = get_import_status
 
     def apply_import(
         self,
@@ -109,11 +115,28 @@ class MemoryLocalCsvInventoryResultWriter:
                 applied.append(result)
         return tuple(applied)
 
+    def _is_import_published(self, import_id: str) -> bool:
+        # Fail-closed: without a status resolver, never treat staging rows as published.
+        if self._get_import_status is None:
+            return False
+        return self._get_import_status(import_id) == LOCAL_CSV_IMPORT_STATUS_CONFIRMED
+
     def list_for_inventory(self, inventory_id: str) -> tuple[LocalCsvProductiveResult, ...]:
-        return tuple(r for r in self._by_id.values() if r.inventory_id == inventory_id)
+        with self._lock:
+            return tuple(
+                r
+                for r in self._by_id.values()
+                if r.inventory_id == inventory_id and self._is_import_published(r.import_id)
+            )
 
     def list_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]:
+        """All productive rows — used during materialization regardless of header status."""
         return tuple(r for r in self._by_id.values() if r.import_id == import_id)
+
+    def list_published_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]:
+        if not self._is_import_published(import_id):
+            return ()
+        return self.list_for_import(import_id)
 
     def aisle_ids_with_ingestion_source(
         self,
@@ -132,6 +155,7 @@ class MemoryLocalCsvInventoryResultWriter:
                 if r.inventory_id == inventory_id
                 and r.aisle_id in wanted
                 and r.ingestion_source == target
+                and self._is_import_published(r.import_id)
             )
 
 
@@ -243,18 +267,32 @@ class SqlLocalCsvInventoryResultWriter:
     def list_for_inventory(self, inventory_id: str) -> tuple[LocalCsvProductiveResult, ...]:
         with self._client.cursor() as cur:  # type: ignore[attr-defined]
             cur.execute(
-                "SELECT * FROM local_csv_productive_results WHERE inventory_id = ? "
-                "ORDER BY created_at, id",
-                (inventory_id,),
+                "SELECT p.* FROM local_csv_productive_results p "
+                "INNER JOIN local_csv_imports i ON i.id = p.import_id "
+                "WHERE p.inventory_id = ? AND i.status = ? "
+                "ORDER BY p.created_at, p.id",
+                (inventory_id, LOCAL_CSV_IMPORT_STATUS_CONFIRMED),
             )
             return tuple(_productive_from_db(row) for row in cur.fetchall())
 
     def list_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]:
+        """All productive rows — used during materialization regardless of header status."""
         with self._client.cursor() as cur:  # type: ignore[attr-defined]
             cur.execute(
                 "SELECT * FROM local_csv_productive_results WHERE import_id = ? "
                 "ORDER BY created_at, id",
                 (import_id,),
+            )
+            return tuple(_productive_from_db(row) for row in cur.fetchall())
+
+    def list_published_for_import(self, import_id: str) -> tuple[LocalCsvProductiveResult, ...]:
+        with self._client.cursor() as cur:  # type: ignore[attr-defined]
+            cur.execute(
+                "SELECT p.* FROM local_csv_productive_results p "
+                "INNER JOIN local_csv_imports i ON i.id = p.import_id "
+                "WHERE p.import_id = ? AND i.status = ? "
+                "ORDER BY p.created_at, p.id",
+                (import_id, LOCAL_CSV_IMPORT_STATUS_CONFIRMED),
             )
             return tuple(_productive_from_db(row) for row in cur.fetchall())
 
@@ -272,10 +310,16 @@ class SqlLocalCsvInventoryResultWriter:
             for chunk in chunked(list(aisle_ids), SQL_IN_CHUNK_SIZE):
                 placeholders = ", ".join("?" for _ in chunk)
                 cur.execute(
-                    "SELECT DISTINCT aisle_id FROM local_csv_productive_results "
-                    f"WHERE inventory_id = ? AND ingestion_source = ? "
-                    f"AND aisle_id IN ({placeholders})",
-                    (inventory_id, target, *chunk),
+                    "SELECT DISTINCT p.aisle_id FROM local_csv_productive_results p "
+                    "INNER JOIN local_csv_imports i ON i.id = p.import_id "
+                    f"WHERE p.inventory_id = ? AND p.ingestion_source = ? "
+                    f"AND i.status = ? AND p.aisle_id IN ({placeholders})",
+                    (
+                        inventory_id,
+                        target,
+                        LOCAL_CSV_IMPORT_STATUS_CONFIRMED,
+                        *chunk,
+                    ),
                 )
                 found.update(str(row[0]) for row in cur.fetchall() if row[0])
         return frozenset(found)

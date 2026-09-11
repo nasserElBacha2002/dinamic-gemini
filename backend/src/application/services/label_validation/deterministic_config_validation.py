@@ -16,6 +16,7 @@ from src.domain.client_supplier.extraction_profile import (
     ExtractionProfileConfiguration,
     FieldMappingSource,
     PayloadStructure,
+    QuantityPresence,
 )
 from src.domain.label_profiles.kinds import LabelKind
 from src.domain.label_validation import LabelValidationErrorCode
@@ -57,6 +58,7 @@ def validate_deterministic_barcode_rules(
             )
     _validate_mappings(rules, label_kind=label_kind)
     _validate_examples_shape(configuration)
+    _validate_quantity_required_consistency(configuration)
     if rules.use_advanced_pattern or configuration.custom_payload_pattern:
         pattern = configuration.custom_payload_pattern or configuration.validation_rules.code.regex
         if not pattern:
@@ -68,6 +70,32 @@ def validate_deterministic_barcode_rules(
             compile_payload_pattern(pattern)
         except PayloadPatternError as exc:
             raise ExtractionProfileConfigurationError(exc.code, exc.message) from exc
+
+
+def _validate_quantity_required_consistency(
+    configuration: ExtractionProfileConfiguration,
+) -> None:
+    """Reject contradictory quantity required signals at save/activate time.
+
+    Historical profiles may leave ``quantity_rules.required`` at the dataclass
+    default (True) while listing only identity fields — that remains allowed.
+    Contradictions that confuse runtime completeness are rejected:
+    - ``quantity`` listed in ``required_fields`` while ``quantity_rules.required`` is false
+    - ``quantity_rules.required`` true with ``expected_presence=OPTIONAL``
+    """
+    required = {f.strip().lower() for f in configuration.required_fields if f and str(f).strip()}
+    qty_listed = "quantity" in required
+    qrules = configuration.quantity_rules
+    if qty_listed and not qrules.required:
+        raise ExtractionProfileConfigurationError(
+            LabelValidationErrorCode.LABEL_PROFILE_CONFIGURATION_INVALID.value,
+            "required_fields includes 'quantity' but quantity_rules.required is false",
+        )
+    if qrules.required and qrules.expected_presence is QuantityPresence.OPTIONAL:
+        raise ExtractionProfileConfigurationError(
+            LabelValidationErrorCode.LABEL_PROFILE_CONFIGURATION_INVALID.value,
+            "quantity_rules.required=true is incompatible with expected_presence=OPTIONAL",
+        )
 
 
 def _validate_gs1_rules(rules: DeterministicBarcodeRules) -> None:

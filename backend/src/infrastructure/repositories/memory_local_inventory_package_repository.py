@@ -67,6 +67,8 @@ class MemoryLocalInventoryPackageRepository:
         confirmed_by_user_id: str | None,
         apply_productive: PackageConfirmProductiveApplier,
         clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int = 120,
         stage_evidence: PackageConfirmEvidenceStager | None = None,
     ) -> tuple[LocalInventoryPackage, bool]:
         policy = (conflict_policy or "SKIP").strip().upper()
@@ -84,6 +86,8 @@ class MemoryLocalInventoryPackageRepository:
                 confirmed_by_user_id=confirmed_by_user_id,
                 apply_productive=apply_productive,
                 clock_now=clock_now,
+                owner=owner,
+                lease_sec=lease_sec,
             )
 
         planning_pkg: LocalInventoryPackage | None = None
@@ -94,11 +98,16 @@ class MemoryLocalInventoryPackageRepository:
             pkg = self._get_pkg_locked(inventory_id=inventory_id, export_id=export_id)
             if pkg.status == "CONFIRMED":
                 return self._with_csv(pkg), True
-            if pkg.status != "PREVIEWED":
+            if pkg.status not in {
+                "PREVIEWED",
+                "MATERIALIZING",
+                "MATERIALIZATION_FAILED",
+                "REQUIRES_REVIEW",
+            }:
                 raise LocalInventoryPackageImportError(
                     "PACKAGE_INVALID_STATUS",
                     f"Package status {pkg.status!r} cannot be confirmed "
-                    "(allowed: PREVIEWED → CONFIRMED)",
+                    "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED|REQUIRES_REVIEW → CONFIRMED)",
                 )
             record, rows_to_import, csv_confirmed = (
                 self._csv_import_repo.select_rows_to_import_on_cursor(  # type: ignore[attr-defined]
@@ -124,6 +133,8 @@ class MemoryLocalInventoryPackageRepository:
             confirmed_by_user_id=confirmed_by_user_id,
             apply_productive=apply_productive,
             clock_now=clock_now,
+            owner=owner,
+            lease_sec=lease_sec,
         )
 
     def _confirm_single_phase(
@@ -135,16 +146,23 @@ class MemoryLocalInventoryPackageRepository:
         confirmed_by_user_id: str | None,
         apply_productive: PackageConfirmProductiveApplier,
         clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int,
     ) -> tuple[LocalInventoryPackage, bool]:
         with self._lock:
             pkg = self._get_pkg_locked(inventory_id=inventory_id, export_id=export_id)
             if pkg.status == "CONFIRMED":
                 return self._with_csv(pkg), True
-            if pkg.status != "PREVIEWED":
+            if pkg.status not in {
+                "PREVIEWED",
+                "MATERIALIZING",
+                "MATERIALIZATION_FAILED",
+                "REQUIRES_REVIEW",
+            }:
                 raise LocalInventoryPackageImportError(
                     "PACKAGE_INVALID_STATUS",
                     f"Package status {pkg.status!r} cannot be confirmed "
-                    "(allowed: PREVIEWED → CONFIRMED)",
+                    "(allowed: PREVIEWED|MATERIALIZING|MATERIALIZATION_FAILED|REQUIRES_REVIEW → CONFIRMED)",
                 )
 
             csv_record, duplicate = self._csv_import_repo.confirm_import_atomically(
@@ -159,19 +177,103 @@ class MemoryLocalInventoryPackageRepository:
                 ),
                 clock_now=clock_now,
                 cursor=_MemoryCursor(self._lock),
+                owner=owner,
+                lease_sec=lease_sec,
             )
             now = clock_now()
-            confirmed = replace(
+            claimed = replace(
                 pkg,
-                status="CONFIRMED",
-                confirmed_at=now,
+                status="MATERIALIZING",
+                confirmed_at=None,
                 confirmed_by_user_id=confirmed_by_user_id,
+                materialization_owner=csv_record.materialization_owner,
+                materialization_lease_expires_at=csv_record.materialization_lease_expires_at,
+                fencing_version=int(csv_record.fencing_version or 0),
                 updated_at=now,
                 photos=tuple(pkg.photos),
                 csv_import=csv_record,
             )
-            self._by_id[confirmed.id] = confirmed
-            return confirmed, duplicate
+            self._by_id[claimed.id] = claimed
+            return claimed, duplicate
+
+    def finalize_package_confirmation(
+        self,
+        *,
+        package_id: str,
+        clock_now: Callable[[], datetime],
+        confirmed_by_user_id: str | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalInventoryPackage:
+        with self._lock:
+            pkg = self._by_id.get(package_id)
+            if pkg is None:
+                raise LocalInventoryPackageImportError(
+                    PACKAGE_NOT_FOUND, "Package not found"
+                )
+            now = clock_now()
+            csv_import = self._csv_import_repo.finalize_import_confirmation_on_cursor(
+                _MemoryCursor(self._lock),
+                import_id=pkg.csv_import_id,
+                clock_now=clock_now,
+                confirmed_by_user_id=confirmed_by_user_id,
+                owner=owner,
+                expected_fencing_version=expected_fencing_version,
+            )
+            if pkg.status != "CONFIRMED":
+                confirmed = replace(
+                    pkg,
+                    status="CONFIRMED",
+                    confirmed_at=now,
+                    confirmed_by_user_id=confirmed_by_user_id or pkg.confirmed_by_user_id,
+                    updated_at=now,
+                    csv_import=csv_import,
+                )
+                self._by_id[confirmed.id] = confirmed
+                return confirmed
+            return self._with_csv(replace(pkg, csv_import=csv_import))
+
+    def mark_materialization_failed(
+        self,
+        *,
+        package_id: str,
+        error_code: str,
+        clock_now: Callable[[], datetime],
+        requires_review: bool = False,
+        next_retry_at: datetime | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalInventoryPackage:
+        with self._lock:
+            pkg = self._by_id.get(package_id)
+            if pkg is None:
+                raise LocalInventoryPackageImportError(
+                    PACKAGE_NOT_FOUND, "Package not found"
+                )
+            if pkg.status == "CONFIRMED":
+                return self._with_csv(pkg)
+            now = clock_now()
+            csv_import = self._csv_import_repo.mark_materialization_failed_on_cursor(
+                _MemoryCursor(self._lock),
+                import_id=pkg.csv_import_id,
+                error_code=error_code,
+                clock_now=clock_now,
+                requires_review=requires_review,
+                next_retry_at=next_retry_at,
+                owner=owner,
+                expected_fencing_version=expected_fencing_version,
+            )
+            failed_status = (
+                "REQUIRES_REVIEW" if requires_review else "MATERIALIZATION_FAILED"
+            )
+            failed = replace(
+                pkg,
+                status=failed_status,
+                updated_at=now,
+                csv_import=csv_import,
+            )
+            self._by_id[failed.id] = failed
+            return failed
 
     def _get_pkg_locked(self, *, inventory_id: str, export_id: str) -> LocalInventoryPackage:
         pkg = next(

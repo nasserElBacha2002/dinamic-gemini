@@ -114,22 +114,39 @@ def test_persist_code_without_quantity_creates_needs_review_position():
         execution_scope=ExecutionScope.AISLE_BATCH,
         logical_asset_attempt=True,
         provider_name="claude",
+        evidence={"identity_valid": True, "missing_fields": ["quantity"]},
     )
 
     outcome = persister.persist(result=result, inventory_id="inv-1", aisle_id="aisle-1")
 
+    # Identity preserved as review position; no ProductRecord / no qty=0 invent.
     assert outcome.persisted is True
-    assert outcome.skipped_reason is None
+    assert outcome.products_persisted == 0
+    assert outcome.skipped_reason is PersistSkipReason.IDENTITY_REVIEW_PERSISTED
     position = saved["position"]
-    product = saved["product"]
     assert position.needs_review is True
-    assert position.detected_summary_json["count_status"] == "NEEDS_REVIEW"
-    assert position.detected_summary_json["explicit_quantity_missing"] is True
+    assert position.detected_summary_json["quantity_status"] == "MISSING"
     assert position.detected_summary_json["internal_code"] == "3075807"
-    assert product.sku == "3075807"
-    assert product.detected_quantity == 0
-    assert product.qty_parse_status == "null"
-    assert product.qty_source == "unresolved"
+    assert "product" not in saved or saved.get("product") is None
+
+
+def test_persist_pending_identity_also_creates_review():
+    persister, saved, job_id, asset_id = _persister_harness()
+    result = ImageProcessingResult(
+        job_id=job_id,
+        asset_id=asset_id,
+        status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+        processing_mode="CODE_SCAN",
+        resolved_by="code_scan",
+        internal_code="PRD-123456",
+        quantity=None,
+        error_code="MISSING_QUANTITY",
+        evidence={"identity_valid": True, "enrichment_complete": False},
+    )
+    outcome = persister.persist(result=result, inventory_id="inv-1", aisle_id="aisle-1")
+    assert outcome.persisted is True
+    assert saved["position"].needs_review is True
+    assert outcome.products_persisted == 0
 
 
 def test_persist_code_with_positive_quantity_unchanged():

@@ -263,9 +263,8 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
     drafts: localDetectionDrafts,
     reporter: obsWire?.reporter ?? null,
     profileResolver: offlineRecognitionResolver,
-    onActivePositionChanged: async (sessionId, state) => {
-      await captureRepo.updateActivePositionJson(sessionId, JSON.stringify(state));
-    },
+    canonicalPositionStateEnabled:
+      config.flags.mobileCanonicalPositionStateEnabled,
   });
   void localCodeScan.recoverStaleDrafts().catch(() => {
     // best-effort recovery after process death
@@ -512,6 +511,8 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
     finishInstrumentation: config.flags.captureFinishInstrumentation,
     finishSafeMediaCheck: config.flags.captureFinishSafeMediaCheck,
     sessionFreeze: config.flags.captureSessionFreeze,
+    positionActiveStateRestoreEnabled:
+      config.flags.positionActiveStateRestoreEnabled,
   });
   captureServiceRef.current = capture;
 

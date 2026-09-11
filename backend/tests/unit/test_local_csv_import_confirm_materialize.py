@@ -43,6 +43,7 @@ def test_confirm_materializes_positions_only_after_apply_import() -> None:
             status=InventoryStatus.DRAFT,
             created_at=NOW,
             updated_at=NOW,
+            client_id="client-1",
         )
     )
     aisle_repo = MemoryAisleRepository()
@@ -73,6 +74,7 @@ def test_confirm_materializes_positions_only_after_apply_import() -> None:
         clock=FixedClock(),
         enabled=True,
         position_materializer=materializer,
+        inventory_repo=inventory_repo,
     )
 
     staged = preview.execute(inventory_id="inventory-1", content=_csv_bytes())

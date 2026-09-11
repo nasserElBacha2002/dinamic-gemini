@@ -10,6 +10,9 @@ from src.application.ports.inventory_counted_product_label_repository import (
 )
 from src.application.ports.job_image_coverage_repository import JobImageCoverageRepository
 from src.application.ports.manual_image_coverage_repository import ManualImageCoverageRepository
+from src.application.ports.position_materialization_association_receipt_repository import (
+    PositionMaterializationAssociationReceiptRepository,
+)
 from src.application.ports.repositories import (
     EvidenceRepository,
     PositionRepository,
@@ -29,6 +32,7 @@ class ManualImageResultRepositories:
     review_repo: ReviewActionRepository
     image_coverage_repo: JobImageCoverageRepository
     counted_product_label_repo: InventoryCountedProductLabelRepository
+    materialization_receipt_repo: PositionMaterializationAssociationReceiptRepository | None = None
 
 
 class ManualImageResultUnitOfWork(Protocol):

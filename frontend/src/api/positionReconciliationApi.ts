@@ -19,6 +19,7 @@ export interface ProductPositionAssignmentDto {
   ordered_capture_session_id: string | null;
   sequence_number: number | null;
   position_label_id: string | null;
+  aisle_location_id: string | null;
   position_name: string | null;
   source_detection_id: string | null;
   assignment_status: PositionAssignmentStatus;

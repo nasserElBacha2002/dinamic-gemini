@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
@@ -20,6 +20,15 @@ from src.infrastructure.observability.sql_operational_metrics_source import (
 )
 from src.observability.metrics.registry import MetricsRegistry, get_metrics_registry
 from src.observability.operational_metrics import configure_operational_metrics_collector
+
+if TYPE_CHECKING:
+    from src.application.services.local_csv_import_recovery_scheduler import (
+        LocalCsvImportRecoveryScheduler,
+    )
+    from src.application.services.position_materialization import (
+        PositionMaterializationRecoveryScheduler,
+    )
+    from src.runtime.app_container import AppContainer
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +119,34 @@ def stop_recovery_scheduler() -> None:
     if _recovery_scheduler is not None:
         _recovery_scheduler.stop()
         _recovery_scheduler = None
+
+
+def wire_position_materialization_recovery_scheduler(
+    container: AppContainer,
+) -> PositionMaterializationRecoveryScheduler | None:
+    """Start autonomous association recovery using container-owned lifecycle."""
+    scheduler = container.start_position_materialization_recovery_scheduler()
+    if scheduler is None:
+        logger.info("Position materialization recovery scheduler disabled")
+    return scheduler
+
+
+def stop_position_materialization_recovery_scheduler(container: AppContainer) -> None:
+    container.stop_position_materialization_recovery_scheduler()
+
+
+def wire_local_csv_import_recovery_scheduler(
+    container: AppContainer,
+) -> LocalCsvImportRecoveryScheduler | None:
+    """Start autonomous import materialization recovery using container-owned lifecycle."""
+    scheduler = container.start_local_csv_import_recovery_scheduler()
+    if scheduler is None:
+        logger.info("Local CSV import recovery scheduler disabled")
+    return scheduler
+
+
+def stop_local_csv_import_recovery_scheduler(container: AppContainer) -> None:
+    container.stop_local_csv_import_recovery_scheduler()
 
 
 def refresh_operational_gauges_for_scrape() -> None:

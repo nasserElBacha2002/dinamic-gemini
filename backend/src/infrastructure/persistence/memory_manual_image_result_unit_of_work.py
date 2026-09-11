@@ -11,6 +11,9 @@ from src.application.ports.manual_image_result_unit_of_work import (
     ManualImageResultRepositories,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
+from src.infrastructure.persistence.memory_position_materialization_association_receipt_repository import (
+    MemoryPositionMaterializationAssociationReceiptRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +115,11 @@ class MemoryManualImageResultUnitOfWork:
             _restore_store(repos.evidence_repo, self._snapshots.get("evidence"))
             _restore_store(repos.result_evidence_repo, self._snapshots.get("result_evidence"))
             _restore_store(repos.review_repo, self._snapshots.get("review"))
+            if repos.materialization_receipt_repo is not None:
+                _restore_store(
+                    repos.materialization_receipt_repo,
+                    self._snapshots.get("materialization_receipt"),
+                )
             _restore_coverage(repos.manual_coverage_repo, self._snapshots.get("coverage"))
         self._committed = False
         self._rolled_back = True
@@ -125,6 +133,11 @@ class MemoryManualImageResultUnitOfWork:
             "evidence": _snapshot_store(repos.evidence_repo),
             "result_evidence": _snapshot_store(repos.result_evidence_repo),
             "review": _snapshot_store(repos.review_repo),
+            "materialization_receipt": (
+                _snapshot_store(repos.materialization_receipt_repo)
+                if repos.materialization_receipt_repo is not None
+                else None
+            ),
             "coverage": _snapshot_coverage(repos.manual_coverage_repo),
         }
         self._committed = False
@@ -146,6 +159,11 @@ def build_memory_manual_image_result_uow_factory(
     repositories: ManualImageResultRepositories,
     lifecycle_sync: AisleReviewLifecycleSync,
 ) -> Callable[[], MemoryManualImageResultUnitOfWork]:
+    if repositories.materialization_receipt_repo is None:
+        repositories.materialization_receipt_repo = (
+            MemoryPositionMaterializationAssociationReceiptRepository()
+        )
+
     def factory() -> MemoryManualImageResultUnitOfWork:
         return MemoryManualImageResultUnitOfWork(
             repositories=repositories,

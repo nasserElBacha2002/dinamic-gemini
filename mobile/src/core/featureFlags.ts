@@ -93,6 +93,12 @@ export interface FeatureFlags {
   readonly mobileOfflineServerProcessing: boolean;
   /** Phase 9: backend idempotency helpers for offline replays (default false). */
   readonly serverOfflineIdempotencySupport: boolean;
+  /** Canonical active position persistence V2 (rollout off by default). */
+  readonly mobileCanonicalPositionStateEnabled: boolean;
+  /** Restore active position from capture_sessions (rollout off by default). */
+  readonly positionActiveStateRestoreEnabled: boolean;
+  /** Add PositionSyncReference V2 to preliminary evidence. */
+  readonly positionSyncReferenceV2Enabled: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -143,6 +149,9 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   mobileOfflineRevisions: false,
   mobileOfflineServerProcessing: false,
   serverOfflineIdempotencySupport: false,
+  mobileCanonicalPositionStateEnabled: false,
+  positionActiveStateRestoreEnabled: false,
+  positionSyncReferenceV2Enabled: false,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -244,5 +253,8 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     mobileOfflineRevisions: bool('mobileOfflineRevisions', false),
     mobileOfflineServerProcessing: bool('mobileOfflineServerProcessing', false),
     serverOfflineIdempotencySupport: bool('serverOfflineIdempotencySupport', false),
+    mobileCanonicalPositionStateEnabled: bool('mobileCanonicalPositionStateEnabled', false),
+    positionActiveStateRestoreEnabled: bool('positionActiveStateRestoreEnabled', false),
+    positionSyncReferenceV2Enabled: bool('positionSyncReferenceV2Enabled', false),
   };
 }

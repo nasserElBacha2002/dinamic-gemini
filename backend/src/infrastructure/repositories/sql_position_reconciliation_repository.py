@@ -33,7 +33,7 @@ FROM dbo.position_reconciliations
 _ASSIGNMENT_SELECT = """
 SELECT id, client_id, inventory_id, job_id, result_id, source_asset_id,
        ordered_capture_session_id, sequence_number, position_label_id,
-       position_name_snapshot, source_detection_id, assignment_status,
+       aisle_location_id, position_name_snapshot, source_detection_id, assignment_status,
        assignment_reason, assignment_source, reconciliation_id,
        reconciliation_version, is_active, created_at, updated_at, superseded_at
 FROM dbo.product_position_assignments
@@ -91,6 +91,7 @@ def _assignment(row: Any) -> ProductPositionAssignment:
         ordered_capture_session_id=optional_nonempty_db_str(row.ordered_capture_session_id),
         sequence_number=int(row.sequence_number) if row.sequence_number is not None else None,
         position_label_id=optional_nonempty_db_str(row.position_label_id),
+        aisle_location_id=optional_nonempty_db_str(row.aisle_location_id),
         position_name_snapshot=optional_nonempty_db_str(row.position_name_snapshot),
         source_detection_id=optional_nonempty_db_str(row.source_detection_id),
         assignment_status=AssignmentStatus(normalize_db_str(row.assignment_status)),
@@ -162,7 +163,8 @@ class SqlPositionReconciliationRepository:
     def get_last_attempt_by_job(self, job_id: str) -> PositionReconciliation | None:
         with self._client.cursor() as cur:
             cur.execute(
-                "SELECT TOP 1 " + _RECONCILIATION_SELECT.split("SELECT ", 1)[1]
+                "SELECT TOP 1 "
+                + _RECONCILIATION_SELECT.split("SELECT ", 1)[1]
                 + " WHERE job_id = ? ORDER BY created_at DESC, id DESC",
                 (job_id,),
             )
@@ -223,9 +225,7 @@ class SqlPositionReconciliationRepository:
             txn.commit()
             return reconciliation
 
-    def record_failed_attempt(
-        self, attempt: PositionReconciliation
-    ) -> PositionReconciliation:
+    def record_failed_attempt(self, attempt: PositionReconciliation) -> PositionReconciliation:
         attempt.status = ReconciliationStatus.FAILED
         attempt.is_active = False
         with self._client.begin_transaction() as txn:
@@ -332,10 +332,10 @@ class SqlPositionReconciliationRepository:
                     INSERT INTO dbo.product_position_assignments (
                         id, client_id, inventory_id, job_id, result_id, source_asset_id,
                         ordered_capture_session_id, sequence_number, position_label_id,
-                        position_name_snapshot, source_detection_id, assignment_status,
+                        aisle_location_id, position_name_snapshot, source_detection_id, assignment_status,
                         assignment_reason, assignment_source, reconciliation_id,
                         reconciliation_version, is_active, created_at, updated_at, superseded_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         row.id,
@@ -347,6 +347,7 @@ class SqlPositionReconciliationRepository:
                         row.ordered_capture_session_id,
                         row.sequence_number,
                         row.position_label_id,
+                        row.aisle_location_id,
                         row.position_name_snapshot,
                         row.source_detection_id,
                         row.assignment_status.value,

@@ -85,8 +85,8 @@ export function userMessageForLocalCsvExportError(error: LocalCsvExportUserError
       return 'No se pudo exportar: este dispositivo no puede escanear códigos localmente. Verificá que la app tenga el módulo de captura instalado (Android).';
     case 'photos_unstable':
       return 'No se pudo exportar: las fotos aún se están procesando. Esperá unos segundos y volvé a intentar.';
-    case 'no_products':
-      return 'No se pudo exportar: no hay productos con código interno. Escaneá al menos un SKU (las fotos de posición solas no alcanzan).';
+      case 'no_products':
+      return 'No se pudo exportar: no hay productos con código interno o label_id. Escaneá al menos un ítem (las fotos de posición solas no alcanzan).';
     case 'empty':
       return 'No hay fotos para exportar.';
     case 'photo_read':

@@ -58,6 +58,7 @@ class PreliminaryDetectionContent:
     payload_hash: str | None
     schema_version: str
     detected_at: str | None
+    position_evidence: tuple[Any, ...] | None
 
     def fingerprint_without_draft_id(self) -> tuple[Any, ...]:
         """Secondary-key content compare excludes draft_id (identity may differ)."""
@@ -77,6 +78,7 @@ class PreliminaryDetectionContent:
             self.payload_hash,
             self.schema_version,
             self.detected_at,
+            self.position_evidence,
         )
 
     def fingerprint(self) -> tuple[Any, ...]:
@@ -87,6 +89,49 @@ class PreliminaryDetectionContentCanonicalizer:
     @staticmethod
     def from_command_like(obj: Any) -> PreliminaryDetectionContent:
         detected_at = getattr(obj, "detected_at", None)
+        position_reference = getattr(obj, "position_reference", None)
+        position_evidence: tuple[Any, ...] | None
+        if position_reference is not None:
+            signature = getattr(position_reference, "signature", None)
+            captured_at = getattr(position_reference, "captured_at", None)
+            position_evidence = (
+                int(getattr(position_reference, "payload_version", 0) or 0),
+                _norm_str(getattr(position_reference, "local_recognition_id", None)),
+                _norm_str(getattr(position_reference, "raw_code", None)),
+                _norm_upper(getattr(position_reference, "normalized_code", None)),
+                _norm_str(getattr(position_reference, "remote_position_id", None)),
+                _norm_str(getattr(position_reference, "remote_position_label_id", None)),
+                _norm_upper(getattr(position_reference, "source", None)),
+                _norm_str(getattr(position_reference, "profile_id", None)),
+                getattr(position_reference, "profile_version", None),
+                _norm_str(getattr(position_reference, "client_supplier_id", None)),
+                getattr(signature, "present", None),
+                _norm_upper(getattr(signature, "verification", None)),
+                _norm_detected_at(captured_at)
+                if isinstance(captured_at, datetime)
+                else _norm_str(captured_at),
+            )
+        else:
+            local_recognition_id = getattr(obj, "position_local_recognition_id", None)
+            position_evidence = (
+                (
+                    2,
+                    _norm_str(local_recognition_id),
+                    _norm_str(getattr(obj, "position_raw_code", None)),
+                    _norm_upper(getattr(obj, "position_claimed_normalized_code", None)),
+                    _norm_str(getattr(obj, "position_claimed_remote_id", None)),
+                    _norm_str(getattr(obj, "position_claimed_remote_label_id", None)),
+                    _norm_upper(getattr(obj, "position_source", None)),
+                    _norm_str(getattr(obj, "position_profile_id", None)),
+                    getattr(obj, "position_profile_version", None),
+                    _norm_str(getattr(obj, "position_client_supplier_id", None)),
+                    getattr(obj, "position_signature_present", None),
+                    _norm_upper(getattr(obj, "position_signature_verification", None)),
+                    _norm_detected_at(getattr(obj, "position_captured_at", None)),
+                )
+                if local_recognition_id is not None
+                else None
+            )
         schema = _norm_str(getattr(obj, "schema_version", None)) or "1"
         if schema.lower() == "v1":
             schema = "1"
@@ -109,6 +154,7 @@ class PreliminaryDetectionContentCanonicalizer:
             detected_at=_norm_detected_at(detected_at)
             if isinstance(detected_at, datetime)
             else _norm_str(detected_at),
+            position_evidence=position_evidence,
         )
 
     @staticmethod

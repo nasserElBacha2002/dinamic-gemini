@@ -80,7 +80,13 @@ def _seed_previewed(tmp_path: Path):
     package_repo = MemoryLocalInventoryPackageRepository(csv_import_repo=csv_repo)
     storage = MemoryArtifactStorage()
     assets = MemorySourceAssetRepository()
-    writer = MemoryLocalCsvInventoryResultWriter()
+    writer = MemoryLocalCsvInventoryResultWriter(
+        get_import_status=lambda import_id: (
+            None
+            if (rec := csv_repo.get_by_id(import_id)) is None
+            else rec.status
+        ),
+    )
     clock = FixedClock()
     materializer = AisleSourceAssetMaterializer(
         aisle_repo=aisle_repo,
@@ -125,6 +131,7 @@ def _seed_previewed(tmp_path: Path):
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
+        inventory_repo=inv_repo,
         clock=clock,
         enabled=True,
         position_materializer=position_materializer,
@@ -205,12 +212,17 @@ def test_concurrent_double_confirm_one_winner(tmp_path: Path) -> None:
         t.start()
     for t in threads:
         t.join(timeout=10)
-    assert errors == []
-    assert len(results) == 2
-    winners = [r for r in results if r[1] is False]
-    idempotent = [r for r in results if r[1] is True]
+    assert len(results) + len(errors) == 2
+    winners = [r for r in results if r[1] is False and r[0] == "CONFIRMED"]
+    idempotent = [r for r in results if r[1] is True and r[0] == "CONFIRMED"]
     assert len(winners) == 1
-    assert len(idempotent) == 1
+    assert len(idempotent) + len(errors) == 1
+    for exc in errors:
+        assert getattr(exc, "code", None) in {
+            "LOCAL_CSV_MATERIALIZATION_IN_PROGRESS",
+            "PACKAGE_CONFIRM_CONFLICT",
+            "LOCAL_CSV_LEASE_LOST",
+        }
     final = package_repo.get_by_export_id(inventory_id="inventory-1", export_id=pkg.export_id)
     assert final is not None and final.status == "CONFIRMED"
     csv = csv_repo.get_by_export_id(inventory_id="inventory-1", export_id=pkg.export_id)
@@ -242,6 +254,7 @@ def test_invalid_package_status_rejected(tmp_path: Path) -> None:
             ),
         ),
         aisle_repo=aisle_repo,
+        inventory_repo=inv_repo,
         clock=clock,
         enabled=True,
     )
@@ -278,17 +291,18 @@ def test_post_commit_materialize_failure_then_retry_succeeds(tmp_path: Path) -> 
 
     confirm._position_materializer.materialize = flaky_materialize  # type: ignore[method-assign, union-attr]
 
-    with pytest.raises(RuntimeError, match="post-commit materialize failure"):
+    with pytest.raises(LocalInventoryPackageImportError) as exc:
         confirm.execute(
             inventory_id="inventory-1",
             export_id=pkg.export_id,
             confirmed_by_user_id="user-1",
         )
+    assert exc.value.code == "LOCAL_CSV_MATERIALIZATION_FAILED"
 
-    confirmed = package_repo.get_by_export_id(inventory_id="inventory-1", export_id=pkg.export_id)
-    assert confirmed is not None
-    assert confirmed.status == "CONFIRMED"
-    assert len(writer.list_for_inventory("inventory-1")) >= 1
+    failed = package_repo.get_by_export_id(inventory_id="inventory-1", export_id=pkg.export_id)
+    assert failed is not None
+    assert failed.status == "MATERIALIZATION_FAILED"
+    assert writer.list_for_inventory("inventory-1") == ()
 
     second, duplicate = confirm.execute(
         inventory_id="inventory-1",
@@ -296,5 +310,6 @@ def test_post_commit_materialize_failure_then_retry_succeeds(tmp_path: Path) -> 
         confirmed_by_user_id="user-1",
     )
     assert second.status == "CONFIRMED"
-    assert duplicate is True
+    assert duplicate is False
     assert calls["count"] >= 2
+    assert len(writer.list_for_inventory("inventory-1")) >= 1

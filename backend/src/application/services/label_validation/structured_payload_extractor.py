@@ -80,6 +80,17 @@ class StructuredPayloadExtractor:
                 recognition_source=recognition_source,
             )
 
+        if rules.payload_structure is PayloadStructure.SEGMENTED:
+            return self._extract_segmented(
+                raw=raw,
+                configuration=configuration,
+                rules=rules,
+                label_kind=label_kind,
+                symbology=symbology,
+                recognition_source=recognition_source,
+            )
+
+        # SIMPLE: full identity normalization applies to the whole payload.
         normalized = self.normalize(raw, rules)
         try:
             fields = self._map_fields(
@@ -87,6 +98,7 @@ class StructuredPayloadExtractor:
                 rules=rules,
                 label_kind=label_kind,
                 schema_version=int(configuration.configuration_schema_version),
+                segments=None,
             )
         except StructuredExtractionError as exc:
             return StructuredExtractionResult(
@@ -103,7 +115,10 @@ class StructuredPayloadExtractor:
             label_kind=label_kind,
             symbology=symbology,
             recognition_source=recognition_source,
-            extra_meta={},
+            extra_meta={
+                "payload_structure": PayloadStructure.SIMPLE.value,
+                "mapped_fields": ",".join(sorted(k for k, v in fields.items() if v)),
+            },
         )
 
     def _extract_gs1(
@@ -167,7 +182,116 @@ class StructuredPayloadExtractor:
             label_kind=label_kind,
             symbology=symbology,
             recognition_source=recognition_source,
-            extra_meta=ai_meta,
+            extra_meta={
+                **ai_meta,
+                "payload_structure": PayloadStructure.GS1.value,
+                "mapped_fields": ",".join(sorted(k for k, v in fields.items() if v)),
+            },
+        )
+
+    def _extract_segmented(
+        self,
+        *,
+        raw: str,
+        configuration: ExtractionProfileConfiguration,
+        rules: DeterministicBarcodeRules,
+        label_kind: LabelKind,
+        symbology: str | None,
+        recognition_source: RecognitionSource,
+    ) -> StructuredExtractionResult:
+        """SEGMENTED: structural trim → split → map → per-field identity normalize.
+
+        Identifier normalization (case / hyphens / internal spaces) must not run on the
+        full payload before splitting — otherwise delimiter + quantity participate in
+        identity shape checks. Quantity segments are strip-only.
+        """
+        structural = self.normalize_structural(raw, rules)
+        delimiter = rules.delimiter or "|"
+        if not delimiter or len(delimiter) > _MAX_DELIMITER_LEN:
+            return StructuredExtractionResult(
+                raw_payload=raw,
+                normalized_payload=structural,
+                error_code=LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,
+                detail="invalid segmented delimiter",
+            )
+        delimiter_detected = delimiter in structural
+        if (
+            rules.expected_segment_count is not None
+            and int(rules.expected_segment_count) > 1
+            and not delimiter_detected
+        ):
+            return StructuredExtractionResult(
+                raw_payload=raw,
+                normalized_payload=structural,
+                error_code=LabelValidationErrorCode.LABEL_SEGMENT_COUNT_MISMATCH.value,
+                detail=(
+                    f"delimiter not found in payload; "
+                    f"expected {rules.expected_segment_count} segments"
+                ),
+            )
+        segments = structural.split(delimiter)
+        segment_count = len(segments)
+        if segment_count > _MAX_SEGMENTS:
+            return StructuredExtractionResult(
+                raw_payload=raw,
+                normalized_payload=structural,
+                error_code=LabelValidationErrorCode.LABEL_SEGMENT_COUNT_MISMATCH.value,
+                detail=f"segment count exceeds {_MAX_SEGMENTS}",
+            )
+        if (
+            rules.expected_segment_count is not None
+            and segment_count != int(rules.expected_segment_count)
+        ):
+            return StructuredExtractionResult(
+                raw_payload=raw,
+                normalized_payload=structural,
+                error_code=LabelValidationErrorCode.LABEL_SEGMENT_COUNT_MISMATCH.value,
+                detail=(
+                    f"expected {rules.expected_segment_count} segments, "
+                    f"got {segment_count}"
+                ),
+            )
+        try:
+            fields = self._map_fields(
+                normalized=structural,
+                rules=rules,
+                label_kind=label_kind,
+                schema_version=int(configuration.configuration_schema_version),
+                segments=segments,
+            )
+        except StructuredExtractionError as exc:
+            return StructuredExtractionResult(
+                raw_payload=raw,
+                normalized_payload=structural,
+                error_code=exc.code,
+                detail=exc.message,
+            )
+
+        normalized_fields: dict[str, str | None] = {}
+        for key, value in fields.items():
+            if value is None:
+                normalized_fields[key] = None
+                continue
+            if key == "quantity":
+                normalized_fields[key] = str(value).strip()
+            else:
+                normalized_fields[key] = self.normalize_field_value(str(value), rules)
+
+        return self._candidate_from_fields(
+            raw=raw,
+            normalized=structural,
+            fields=normalized_fields,
+            label_kind=label_kind,
+            symbology=symbology,
+            recognition_source=recognition_source,
+            extra_meta={
+                "payload_structure": PayloadStructure.SEGMENTED.value,
+                "delimiter_detected": "true" if delimiter_detected else "false",
+                "segment_count": str(segment_count),
+                "mapped_fields": ",".join(
+                    sorted(k for k, v in normalized_fields.items() if v)
+                ),
+            },
         )
 
     def _candidate_from_fields(
@@ -193,8 +317,18 @@ class StructuredPayloadExtractor:
         quantity = fields.get("quantity")
         qty_out: int | float | None = None
         if quantity is not None and str(quantity).strip() != "":
+            qty_text = str(quantity).strip()
+            # Reject decimals here; allow_decimals is enforced in LabelValidationService
+            # with profile quantity_rules (keeps extractor free of full qty policy).
+            if any(sep in qty_text for sep in (".", ",", " ")):
+                return StructuredExtractionResult(
+                    raw_payload=raw,
+                    normalized_payload=normalized,
+                    error_code=LabelValidationErrorCode.LABEL_FIELD_INVALID.value,
+                    detail="quantity segment is not an integer",
+                )
             try:
-                qty_out = int(str(quantity).strip())
+                qty_out = int(qty_text)
             except ValueError:
                 return StructuredExtractionResult(
                     raw_payload=raw,
@@ -274,8 +408,17 @@ class StructuredPayloadExtractor:
         return out
 
     @staticmethod
-    def normalize(raw: str, rules: DeterministicBarcodeRules) -> str:
+    def normalize_structural(raw: str, rules: DeterministicBarcodeRules) -> str:
+        """Safe pre-split normalization — preserve delimiter and segment interiors."""
         text = raw
+        if rules.normalization.trim_outer_whitespace:
+            text = text.strip()
+        return text
+
+    @staticmethod
+    def normalize_field_value(value: str, rules: DeterministicBarcodeRules) -> str:
+        """Per-field identity normalization after structural mapping."""
+        text = value
         norm = rules.normalization
         if norm.trim_outer_whitespace:
             text = text.strip()
@@ -289,6 +432,12 @@ class StructuredPayloadExtractor:
             text = text.lower()
         return text
 
+    @staticmethod
+    def normalize(raw: str, rules: DeterministicBarcodeRules) -> str:
+        """Full-payload normalization for SIMPLE identity payloads."""
+        text = StructuredPayloadExtractor.normalize_structural(raw, rules)
+        return StructuredPayloadExtractor.normalize_field_value(text, rules)
+
     def _map_fields(
         self,
         *,
@@ -296,6 +445,7 @@ class StructuredPayloadExtractor:
         rules: DeterministicBarcodeRules,
         label_kind: LabelKind,
         schema_version: int,
+        segments: list[str] | None = None,
     ) -> dict[str, str | None]:
         allowed = (
             ITEM_FIELD_TARGETS
@@ -334,29 +484,29 @@ class StructuredPayloadExtractor:
                 )
             seen_targets.add(target)
 
-        segments: list[str] | None = None
-        if rules.payload_structure is PayloadStructure.SEGMENTED:
+        resolved_segments = segments
+        if rules.payload_structure is PayloadStructure.SEGMENTED and resolved_segments is None:
             delimiter = rules.delimiter or "|"
             if not delimiter or len(delimiter) > _MAX_DELIMITER_LEN:
                 raise StructuredExtractionError(
                     LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,
                     "invalid segmented delimiter",
                 )
-            segments = normalized.split(delimiter)
-            if len(segments) > _MAX_SEGMENTS:
+            resolved_segments = normalized.split(delimiter)
+            if len(resolved_segments) > _MAX_SEGMENTS:
                 raise StructuredExtractionError(
                     LabelValidationErrorCode.LABEL_SEGMENT_COUNT_MISMATCH.value,
                     f"segment count exceeds {_MAX_SEGMENTS}",
                 )
             if (
                 rules.expected_segment_count is not None
-                and len(segments) != int(rules.expected_segment_count)
+                and len(resolved_segments) != int(rules.expected_segment_count)
             ):
                 raise StructuredExtractionError(
                     LabelValidationErrorCode.LABEL_SEGMENT_COUNT_MISMATCH.value,
                     (
                         f"expected {rules.expected_segment_count} segments, "
-                        f"got {len(segments)}"
+                        f"got {len(resolved_segments)}"
                     ),
                 )
 
@@ -366,18 +516,24 @@ class StructuredPayloadExtractor:
             if mapping.source is FieldMappingSource.WHOLE:
                 out[target] = normalized
             elif mapping.source is FieldMappingSource.SEGMENT:
-                if segments is None:
+                if resolved_segments is None:
                     raise StructuredExtractionError(
                         LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,
                         "segment mapping requires SEGMENTED structure",
                     )
                 idx = mapping.segment_index
-                if idx is None or idx < 0 or idx >= len(segments):
+                if idx is None or idx < 0 or idx >= len(resolved_segments):
                     raise StructuredExtractionError(
                         LabelValidationErrorCode.LABEL_SEGMENT_COUNT_MISMATCH.value,
-                        f"segment index {idx} out of range",
+                        f"segment index {idx} out of range for {len(resolved_segments)} segments",
                     )
-                out[target] = segments[idx]
+                segment_value = resolved_segments[idx]
+                if segment_value is None or str(segment_value).strip() == "":
+                    raise StructuredExtractionError(
+                        LabelValidationErrorCode.LABEL_REQUIRED_FIELD_MISSING.value,
+                        f"mapped segment for {target!r} is empty",
+                    )
+                out[target] = segment_value
             elif mapping.source is FieldMappingSource.APPLICATION_IDENTIFIER:
                 raise StructuredExtractionError(
                     LabelValidationErrorCode.LABEL_FIELD_MAPPING_INVALID.value,

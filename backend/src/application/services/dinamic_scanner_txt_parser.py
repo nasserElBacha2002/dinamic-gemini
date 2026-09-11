@@ -1,12 +1,22 @@
-"""Parse Dinamic Scanner ESP32 aisle TXT exports (POSITION + D1 records)."""
+"""Parse Dinamic Scanner ESP32 aisle TXT exports (POSITION + D1 records).
+
+Optional SUPPLIER extraction profiles enable generic SIMPLE/SEGMENTED payloads on the
+same sequential POSITION→product association model — without hardcoding supplier prefixes.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass
 
+from src.application.services.position_recognition import (
+    PositionCodeNormalizationError,
+    normalize_position_code,
+)
 from src.domain.client_position_label.hierarchy import PositionSide
+from src.domain.client_supplier.extraction_profile import ExtractionProfileConfiguration
 from src.domain.dinamic_scanner_txt.errors import (
     TXT_EMPTY,
     TXT_EMPTY_AISLE_NAME,
@@ -18,6 +28,14 @@ from src.domain.dinamic_scanner_txt.errors import (
     TXT_TOO_MANY_LINES,
     DinamicScannerTxtImportError,
 )
+from src.domain.label_profiles.entities import ResolvedLabelProfile, ResolvedLabelProfiles
+from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
+from src.domain.label_validation import (
+    CandidateLabel,
+    LabelValidationStatus,
+    RecognitionSource,
+)
+from src.domain.label_validation.context import LabelValidationContext
 from src.domain.product_labels.format import (
     ProductLabelValidationStatus,
     parse_product_label_payload,
@@ -25,14 +43,16 @@ from src.domain.product_labels.format import (
 
 _POSITION_PREFIX = "POSITION|"
 _VERSIONED_PRODUCT_PATTERN = re.compile(r"^D\d+\|", re.IGNORECASE)
+# Explicitly prohibited JSON Dinamic position payloads in TXT (legacy rule).
+_FORBIDDEN_JSON_POSITION = re.compile(r"DINAMIC_POSITION|\"type\"\s*:\s*\"DINAMIC", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
 class ParsedScannerPosition:
     line_number: int
     label_id: str
-    pallet: str
-    side: str
+    pallet: str | None
+    side: str | None
 
 
 @dataclass(frozen=True)
@@ -55,7 +75,9 @@ class ParsedDinamicScannerTxt:
     parse_warnings: tuple[str, ...]
 
 
-def _split_pipe_record(line: str, *, expected_parts: int, record_kind: str) -> tuple[list[str], tuple[str, ...]]:
+def _split_pipe_record(
+    line: str, *, expected_parts: int, record_kind: str
+) -> tuple[list[str], tuple[str, ...]]:
     parts = line.split("|")
     if len(parts) != expected_parts:
         return parts, (f"{record_kind}:invalid_field_count",)
@@ -103,8 +125,19 @@ def _validate_position_fields(parts: list[str]) -> tuple[str, str, str, tuple[st
     side_text = (side or "").strip()
     if not label:
         errors.append("position_label_id:required")
+    else:
+        try:
+            normalize_position_code(label)
+        except PositionCodeNormalizationError as exc:
+            suffix = {
+                "POSITION_CODE_TOO_LONG": "too_long",
+                "POSITION_CODE_CONTROL_CHARACTER": "control_character",
+            }.get(exc.code, "invalid")
+            errors.append(f"position_label_id:{suffix}")
     if not pallet_text:
         errors.append("pallet:required")
+    elif any(unicodedata.category(ch).startswith("C") for ch in pallet_text):
+        errors.append("pallet:control_character")
     if not side_text:
         errors.append("side:required")
     else:
@@ -121,14 +154,20 @@ def parse_dinamic_scanner_txt(
     *,
     max_lines: int = 50_000,
     max_line_length: int = 512,
+    validation_context: LabelValidationContext | None = None,
+    item_configuration: ExtractionProfileConfiguration | None = None,
+    position_configuration: ExtractionProfileConfiguration | None = None,
 ) -> ParsedDinamicScannerTxt:
-    """Parse TXT body sequentially; line order defines product→position association."""
+    """Parse TXT body sequentially; line order defines product→position association.
+
+    Prefer ``validation_context`` with real resolved profiles / snapshotted configs.
+    Optional ``item_configuration`` / ``position_configuration`` remain for unit tests
+    and build an ephemeral context without fabricating supplier/profile ids.
+    """
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
-        raise DinamicScannerTxtImportError(
-            TXT_INVALID_ENCODING, "TXT must be UTF-8"
-        ) from exc
+        raise DinamicScannerTxtImportError(TXT_INVALID_ENCODING, "TXT must be UTF-8") from exc
 
     if not text.strip():
         raise DinamicScannerTxtImportError(TXT_EMPTY, "TXT file is empty")
@@ -139,6 +178,51 @@ def parse_dinamic_scanner_txt(
     products: list[ParsedScannerProduct] = []
     parse_warnings: list[str] = []
     non_empty_lines = 0
+
+    label_svc = None
+    validation_ctx = validation_context
+    if validation_ctx is None and (
+        item_configuration is not None or position_configuration is not None
+    ):
+        from src.application.services.label_validation.label_validation_service import (
+            LabelValidationService,
+        )
+
+        label_svc = LabelValidationService()
+        item_src = (
+            LabelProfileSource.SUPPLIER
+            if item_configuration is not None
+            else LabelProfileSource.DINAMIC
+        )
+        pos_src = (
+            LabelProfileSource.SUPPLIER
+            if position_configuration is not None
+            else LabelProfileSource.DINAMIC
+        )
+        validation_ctx = LabelValidationContext(
+            resolved_profiles=ResolvedLabelProfiles(
+                item=ResolvedLabelProfile(
+                    label_kind=LabelKind.ITEM,
+                    source=item_src,
+                    client_supplier_id=None,
+                    resolution_source="EPHEMERAL_TXT",
+                ),
+                position=ResolvedLabelProfile(
+                    label_kind=LabelKind.POSITION,
+                    source=pos_src,
+                    client_supplier_id=None,
+                    resolution_source="EPHEMERAL_TXT",
+                ),
+            ),
+            item_extraction_configuration=item_configuration,
+            position_extraction_configuration=position_configuration,
+        )
+    elif validation_ctx is not None:
+        from src.application.services.label_validation.label_validation_service import (
+            LabelValidationService,
+        )
+
+        label_svc = LabelValidationService()
 
     for line_number, raw_line in enumerate(text.splitlines(), start=1):
         if line_number > max_lines:
@@ -155,6 +239,10 @@ def parse_dinamic_scanner_txt(
         if not line:
             continue
         non_empty_lines += 1
+
+        if _FORBIDDEN_JSON_POSITION.search(line):
+            parse_warnings.append(f"line {line_number}: forbidden_dinamic_position_json")
+            continue
 
         if line.startswith(_POSITION_PREFIX):
             parts, count_errors = _split_pipe_record(line, expected_parts=4, record_kind="POSITION")
@@ -202,6 +290,68 @@ def parse_dinamic_scanner_txt(
             )
             continue
 
+        if label_svc is not None and validation_ctx is not None:
+            result = label_svc.validate_best_effort(
+                CandidateLabel(
+                    raw_payload=line,
+                    recognition_source=RecognitionSource.TXT,
+                ),
+                context=validation_ctx,
+            )
+            dual = result.diagnostics or {}
+            if result.status is LabelValidationStatus.VALID and result.label_kind is LabelKind.POSITION:
+                pos_id = getattr(result.label, "position_id", None) or line
+                pallet_raw = getattr(result.label, "pallet", None)
+                side_raw = getattr(result.label, "side", None)
+                supplier_pallet: str | None = (
+                    str(pallet_raw).strip() if pallet_raw else None
+                )
+                supplier_side: str | None = (
+                    str(side_raw).strip().upper() if side_raw else None
+                )
+                current_position = ParsedScannerPosition(
+                    line_number=line_number,
+                    label_id=str(pos_id).strip(),
+                    pallet=supplier_pallet or None,
+                    side=supplier_side or None,
+                )
+                positions.append(current_position)
+                continue
+            if result.status is LabelValidationStatus.VALID and result.label_kind is LabelKind.ITEM:
+                label_id = (getattr(result.label, "label_id", None) or "").strip()
+                sku = (getattr(result.label, "sku", None) or "").strip() or label_id
+                qty_raw = getattr(result.label, "quantity", None)
+                quantity = int(qty_raw) if qty_raw is not None else None
+                errors_list: list[str] = []
+                if current_position is None:
+                    errors_list.append("product:no_valid_active_position")
+                products.append(
+                    ParsedScannerProduct(
+                        line_number=line_number,
+                        label_id=label_id,
+                        internal_code=sku,
+                        quantity=quantity,
+                        checksum="",
+                        position=current_position,
+                        errors=tuple(dict.fromkeys(errors_list)),
+                        warnings=(),
+                    )
+                )
+                continue
+            if result.status is LabelValidationStatus.AMBIGUOUS:
+                parse_warnings.append(f"line {line_number}: ambiguous_label_kind")
+                continue
+            if result.status is LabelValidationStatus.INVALID:
+                item_err = (dual.get("item_validation") or {}).get("error_code")
+                pos_err = (dual.get("position_validation") or {}).get("error_code")
+                detail = result.error_code or "supplier_invalid"
+                parse_warnings.append(
+                    f"line {line_number}: {detail}"
+                    + (f";item={item_err}" if item_err else "")
+                    + (f";position={pos_err}" if pos_err else "")
+                )
+                continue
+
         parse_warnings.append(f"line {line_number}: unknown_record")
 
     if non_empty_lines == 0:
@@ -223,14 +373,10 @@ def aisle_code_from_txt_filename(filename: str | None) -> str:
         )
     raw = str(filename).strip()
     if ".." in raw or "/" in raw or "\\" in raw:
-        raise DinamicScannerTxtImportError(
-            TXT_INVALID_FILENAME, "TXT filename is not allowed"
-        )
+        raise DinamicScannerTxtImportError(TXT_INVALID_FILENAME, "TXT filename is not allowed")
     base = raw
     if not base or base in {".", ".."}:
-        raise DinamicScannerTxtImportError(
-            TXT_INVALID_FILENAME, "TXT filename is not allowed"
-        )
+        raise DinamicScannerTxtImportError(TXT_INVALID_FILENAME, "TXT filename is not allowed")
     lower = base.lower()
     if not lower.endswith(".txt"):
         raise DinamicScannerTxtImportError(

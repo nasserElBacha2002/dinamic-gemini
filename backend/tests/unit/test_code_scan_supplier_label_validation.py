@@ -25,7 +25,12 @@ from src.domain.aisle_identification.modes import (
     AisleIdentificationMode,
 )
 from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.client_supplier.extraction_profile import ExtractionProfileConfiguration
+from src.domain.client_supplier.extraction_profile import (
+    ExtractionProfileConfiguration,
+    MissingQuantityAction,
+    QuantityExtractionRules,
+    QuantityPresence,
+)
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import ImageProcessingContext, ImageResultStatus
 from src.domain.label_profiles.entities import ResolvedLabelProfile, ResolvedLabelProfiles
@@ -126,12 +131,23 @@ def test_code_scan_supplier_item_resolves_without_issued_registry() -> None:
             accepted_barcode_formats=("CODE128",),
             custom_payload_pattern=r"^SUP[0-9]{8}$",
             required_fields=("internal_code",),
+            # Identity-only (no qty on barcode): must resolve without inventing quantity.
+            quantity_rules=QuantityExtractionRules(
+                aliases=(),
+                required=False,
+                expected_presence=QuantityPresence.OPTIONAL,
+                missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
+                allow_external_fallback=False,
+                allowed_spatial_relations=(),
+            ),
         ),
         job_id="job-1",
         client_id="client-1",
     )
     result = _strategy("SUP12345678").process(_context(validation_ctx=ctx), _asset())
     assert result.status is ImageResultStatus.RESOLVED_INTERNAL
+    assert result.quantity is None
+    assert result.error_code is None
     assert len(result.product_results) == 1
     assert result.product_results[0].internal_code == "SUP12345678"
     assert result.product_results[0].format_version == "SUPPLIER"

@@ -36,7 +36,8 @@ describe('UploadsScreen JSX hygiene', () => {
     expect(source).toMatch(/Todas las fotos ya están en el servidor/);
     expect(source).toMatch(/En el servidor/);
     expect(source).toMatch(/Exportar ZIP \(CSV \+ fotos\)/);
-    expect(source).toMatch(/disabled=\{exportBusy\}/);
+    expect(source).toMatch(/canExportSession/);
+    expect(source).toMatch(/disabled=\{exportBusy \|\| !exportGate\.ok\}/);
   });
 
   it('uses session-scoped or result-scoped sync from the aisle dialog path', () => {

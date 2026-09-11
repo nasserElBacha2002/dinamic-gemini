@@ -31,7 +31,10 @@ from src.domain.aisle_identification.modes import (
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client_supplier.extraction_profile import (
     ExtractionProfileConfiguration,
+    MissingQuantityAction,
     QrPayloadFormat,
+    QuantityExtractionRules,
+    QuantityPresence,
 )
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import ImageProcessingContext, ImageResultStatus
@@ -106,7 +109,12 @@ def _profiles(
     )
 
 
-def _item_cfg(pattern: str, *, required: tuple[str, ...] = ("internal_code",)) -> ExtractionProfileConfiguration:
+def _item_cfg(
+    pattern: str, *, required: tuple[str, ...] = ("internal_code",)
+) -> ExtractionProfileConfiguration:
+    # Phase2 identity fixtures are PLAIN_CODE without quantity; keep RESOLVE_CODE_ONLY
+    # unless the caller explicitly requires quantity in ``required``.
+    quantity_required = "quantity" in required
     return ExtractionProfileConfiguration(
         accepted_barcode_formats=("CODE128", "QR"),
         custom_payload_pattern=pattern,
@@ -114,6 +122,18 @@ def _item_cfg(pattern: str, *, required: tuple[str, ...] = ("internal_code",)) -
         qr_payload_formats=(
             QrPayloadFormat.PLAIN_CODE.value,
             QrPayloadFormat.CODE_QUANTITY_PIPE.value,
+        ),
+        quantity_rules=QuantityExtractionRules(
+            required=quantity_required,
+            expected_presence=(
+                QuantityPresence.ALWAYS if quantity_required else QuantityPresence.OPTIONAL
+            ),
+            missing_quantity_action=(
+                MissingQuantityAction.PENDING_MANUAL_REVIEW
+                if quantity_required
+                else MissingQuantityAction.RESOLVE_CODE_ONLY
+            ),
+            allow_external_fallback=False,
         ),
     )
 
@@ -226,9 +246,15 @@ def test_supplier_position_materialized_and_only_position_not_unrecognized() -> 
     assert len(stored) == 1
     assert stored[0].public_identifier == "POS-RACK01"
     assert stored[0].metadata_json.get("profile_source") == "SUPPLIER"
-    assert (result.evidence or {}).get("position_label_detection", {}).get(
-        "normalized_positions"
+    assert stored[0].signature_status.value == "SKIPPED"
+    assert stored[0].metadata_json.get("client_supplier_id") == "sup-1"
+    assert stored[0].metadata_json.get("profile_id") == "ep-pos"
+    assert stored[0].metadata_json.get("profile_version") == 1
+    normalized = (
+        (result.evidence or {}).get("position_label_detection", {}).get("normalized_positions")
     )
+    assert normalized
+    assert normalized[0]["client_supplier_id"] == "sup-1"
 
 
 def test_supplier_position_plus_item() -> None:
@@ -340,9 +366,7 @@ def test_snapshot_job_a_v1_job_b_v2_position_observable() -> None:
 
 def test_valid_d1_under_supplier_is_source_mismatch_not_format_invalid() -> None:
     label_id = generate_product_label_id()
-    payload = build_product_label_payload(
-        label_id=label_id, internal_code="SKU1", quantity=2
-    )
+    payload = build_product_label_payload(label_id=label_id, internal_code="SKU1", quantity=2)
     svc = LabelValidationService()
     result = svc.validate(
         CandidateLabel(raw_payload=payload, symbology="QR_CODE"),
@@ -358,9 +382,7 @@ def test_valid_d1_under_supplier_is_source_mismatch_not_format_invalid() -> None
 
 def test_code_scan_fail_closed_invalid_checksum_under_supplier() -> None:
     label_id = generate_product_label_id()
-    payload = build_product_label_payload(
-        label_id=label_id, internal_code="SKU1", quantity=2
-    )
+    payload = build_product_label_payload(label_id=label_id, internal_code="SKU1", quantity=2)
     bad = payload[:-1] + ("0" if payload[-1] != "0" else "1")
     ctx = LabelValidationContext(
         resolved_profiles=_profiles(),

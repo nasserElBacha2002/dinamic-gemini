@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from src.application.ports.clock import Clock
@@ -9,6 +10,9 @@ from src.application.ports.local_csv_import_repository import LocalCsvImportRepo
 from src.application.ports.local_csv_inventory_result_writer import LocalCsvInventoryResultWriter
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.ports.sql_cursor import SqlCursorLike
+from src.application.services.import_canonical_position_materializer import (
+    ImportCanonicalPositionMaterializer,
+)
 from src.application.services.local_csv_parser import (
     ParsedLocalCsv,
     ParsedLocalCsvRow,
@@ -19,6 +23,10 @@ from src.application.services.supplier_local_csv_row_revalidator import (
     SupplierCsvAuthoritativeFields,
     SupplierLocalCsvRowRevalidator,
 )
+from src.domain.inventory.write_policy import (
+    InventoryNotWritableError,
+    require_inventory_writable,
+)
 from src.domain.local_csv_import.entities import (
     LocalCsvImport,
     LocalCsvImportRow,
@@ -26,13 +34,21 @@ from src.domain.local_csv_import.entities import (
 )
 from src.domain.local_csv_import.errors import (
     CONFLICT_POLICIES,
+    INVENTORY_CLOSED,
+    INVENTORY_NOT_WRITABLE,
+    LATE_SYNC_REJECTED,
     LOCAL_CSV_EXPORT_CONFLICT,
     LOCAL_CSV_IMPORT_NOT_FOUND,
     LOCAL_CSV_INVENTORY_MISMATCH,
+    LOCAL_CSV_MATERIALIZATION_FAILED,
     LocalCsvImportDisabledError,
     LocalCsvImportError,
 )
 from src.domain.local_csv_import.sources import INGESTION_SOURCE_LOCAL_CSV_IMPORT
+from src.domain.local_csv_import.statuses import (
+    LOCAL_CSV_IMPORT_STATUS_CONFIRMED,
+    LOCAL_CSV_IMPORT_STATUS_PREVIEWED,
+)
 
 # Re-export for routes/tests that import from the use-case module.
 __all__ = [
@@ -52,6 +68,15 @@ from src.domain.local_csv_import.errors import (  # noqa: E402
     LOCAL_CSV_IMPORT_DISABLED,
     LOCAL_CSV_SECONDARY_CONFLICT,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _map_inventory_write_error(exc: InventoryNotWritableError) -> LocalCsvImportError:
+    code = exc.code
+    if code not in {INVENTORY_NOT_WRITABLE, INVENTORY_CLOSED, LATE_SYNC_REJECTED}:
+        code = INVENTORY_NOT_WRITABLE
+    return LocalCsvImportError(code, exc.detail)
 
 
 class PreviewLocalCsvImport:
@@ -75,8 +100,7 @@ class PreviewLocalCsvImport:
     def execute(self, *, inventory_id: str, content: bytes) -> LocalCsvImport:
         if not self._enabled:
             raise LocalCsvImportDisabledError()
-        if self._inventory_repo.get_by_id(inventory_id) is None:
-            raise LocalCsvImportError("INVENTORY_NOT_FOUND", f"Inventory {inventory_id} not found")
+        self._require_writable(inventory_id)
 
         parsed = parse_local_csv(content)
         if parsed.inventory_id != inventory_id:
@@ -100,6 +124,15 @@ class PreviewLocalCsvImport:
             pending_aisle_ids=pending_aisle_ids,
         )
 
+    def _require_writable(self, inventory_id: str) -> None:
+        try:
+            require_inventory_writable(
+                self._inventory_repo.get_by_id(inventory_id),
+                inventory_id=inventory_id,
+            )
+        except InventoryNotWritableError as exc:
+            raise _map_inventory_write_error(exc) from exc
+
     def _preview_parsed(
         self,
         *,
@@ -109,8 +142,7 @@ class PreviewLocalCsvImport:
     ) -> LocalCsvImport:
         if not self._enabled:
             raise LocalCsvImportDisabledError()
-        if self._inventory_repo.get_by_id(inventory_id) is None:
-            raise LocalCsvImportError("INVENTORY_NOT_FOUND", f"Inventory {inventory_id} not found")
+        self._require_writable(inventory_id)
         if parsed.inventory_id != inventory_id:
             raise LocalCsvImportError(
                 LOCAL_CSV_INVENTORY_MISMATCH,
@@ -125,7 +157,10 @@ class PreviewLocalCsvImport:
                     LOCAL_CSV_EXPORT_CONFLICT,
                     "export_id already exists with different import content",
                 )
-            if existing.status == "CONFIRMED" or existing.rejected_rows == 0:
+            if (
+                existing.status == LOCAL_CSV_IMPORT_STATUS_CONFIRMED
+                or existing.rejected_rows == 0
+            ):
                 return existing
             return self._build_and_persist_preview(
                 inventory_id=inventory_id,
@@ -217,7 +252,7 @@ class PreviewLocalCsvImport:
             inventory_id=inventory_id,
             device_id=parsed.device_id,
             exported_at=parsed.exported_at,
-            status="PREVIEWED",
+            status=LOCAL_CSV_IMPORT_STATUS_PREVIEWED,
             content_hash=parsed.content_hash,
             total_rows=len(rows),
             valid_rows=len(rows) - rejected,
@@ -302,9 +337,14 @@ class ConfirmLocalCsvImport:
         result_writer: LocalCsvInventoryResultWriter,
         clock: Clock,
         enabled: bool,
+        inventory_repo: InventoryRepository,
         position_materializer: LocalCsvPositionMaterializer | None = None,
         aisle_repo: AisleRepository | None = None,
         status_reconciler: object | None = None,
+        canonical_position_materializer: ImportCanonicalPositionMaterializer | None = None,
+        materialization_lease_sec: int = 120,
+        materialization_max_attempts: int = 5,
+        owner: str | None = None,
     ) -> None:
         self._import_repo = import_repo
         self._result_writer = result_writer
@@ -313,6 +353,11 @@ class ConfirmLocalCsvImport:
         self._position_materializer = position_materializer
         self._aisle_repo = aisle_repo
         self._status_reconciler = status_reconciler
+        self._inventory_repo = inventory_repo
+        self._canonical_position_materializer = canonical_position_materializer
+        self._materialization_lease_sec = materialization_lease_sec
+        self._materialization_max_attempts = materialization_max_attempts
+        self._owner = (owner or "").strip() or None
 
     def execute(
         self,
@@ -321,7 +366,21 @@ class ConfirmLocalCsvImport:
         export_id: str,
         conflict_policy: str = "SKIP",
         confirmed_by_user_id: str | None = None,
+        owner: str | None = None,
     ) -> tuple[LocalCsvImport, bool]:
+        from src.application.services.import_canonical_materialization_policy import (
+            raise_for_canonical_failures,
+        )
+        from src.domain.local_csv_import.error_codes import (
+            LOCAL_CSV_CANONICAL_MATERIALIZATION_REJECTED,
+            LOCAL_CSV_MATERIALIZATION_EXHAUSTED,
+            LOCAL_CSV_MATERIALIZATION_IN_PROGRESS,
+            LOCAL_CSV_REQUIRES_REVIEW,
+            is_retryable_error_code,
+            normalize_stable_error_code,
+        )
+        from src.observability.metrics.instruments import record_local_csv_import_event
+
         if not self._enabled:
             raise LocalCsvImportDisabledError()
         policy = (conflict_policy or "SKIP").strip().upper()
@@ -330,20 +389,150 @@ class ConfirmLocalCsvImport:
                 "LOCAL_CSV_CONFLICT_POLICY_INVALID",
                 f"conflict_policy must be one of: {', '.join(sorted(CONFLICT_POLICIES))}",
             )
-        confirmed, duplicate = self._import_repo.confirm_import_atomically(
-            inventory_id=inventory_id,
-            export_id=export_id.strip(),
-            conflict_policy=policy,
-            confirmed_by_user_id=confirmed_by_user_id,
-            apply_productive=self._apply_productive,
-            clock_now=self._clock.now,
+        inventory = self._require_writable(inventory_id)
+        claim_owner = (
+            (owner or "").strip()
+            or self._owner
+            or (confirmed_by_user_id or "").strip()
+            or "system-import"
         )
-        results = self._result_writer.list_for_import(confirmed.id)
-        if self._position_materializer is not None and results:
-            self._position_materializer.materialize(results, now=self._clock.now())
-        if results:
-            self._mark_aisles_processed(inventory_id, results)
-        return confirmed, duplicate
+        try:
+            claimed, duplicate = self._import_repo.claim_import_for_materialization(
+                inventory_id=inventory_id,
+                export_id=export_id.strip(),
+                conflict_policy=policy,
+                confirmed_by_user_id=confirmed_by_user_id,
+                apply_productive=self._apply_productive,
+                clock_now=self._clock.now,
+                owner=claim_owner,
+                lease_sec=self._materialization_lease_sec,
+            )
+        except LocalCsvImportError:
+            raise
+        if duplicate and claimed.status == LOCAL_CSV_IMPORT_STATUS_CONFIRMED:
+            return claimed, True
+
+        fencing = int(claimed.fencing_version)
+        self._require_writable(inventory_id)
+
+        try:
+            results = self._result_writer.list_for_import(claimed.id)
+            if self._position_materializer is not None and results:
+                self._position_materializer.materialize(results, now=self._clock.now())
+            if self._canonical_position_materializer is not None and results:
+                client_id = (inventory.client_id or "").strip()
+                if not client_id:
+                    raise LocalCsvImportError(
+                        LOCAL_CSV_MATERIALIZATION_FAILED,
+                        "Inventory client_id is required for import position materialization",
+                    )
+                summary = self._canonical_position_materializer.materialize_from_results(
+                    results,
+                    client_id=client_id,
+                    actor_id=confirmed_by_user_id,
+                )
+                raise_for_canonical_failures(summary)
+            if results:
+                self._mark_aisles_processed(inventory_id, results)
+            confirmed = self._import_repo.finalize_import_confirmation(
+                import_id=claimed.id,
+                clock_now=self._clock.now,
+                confirmed_by_user_id=confirmed_by_user_id,
+                owner=claim_owner,
+                expected_fencing_version=fencing,
+            )
+            record_local_csv_import_event(event="confirmed")
+            return confirmed, False
+        except LocalCsvImportError as exc:
+            code = normalize_stable_error_code(
+                exc.code, fallback=LOCAL_CSV_MATERIALIZATION_FAILED
+            )
+            if code in {
+                INVENTORY_CLOSED,
+                INVENTORY_NOT_WRITABLE,
+                LATE_SYNC_REJECTED,
+                LOCAL_CSV_MATERIALIZATION_IN_PROGRESS,
+            }:
+                # Do not rewrite inventory / lease conflicts as generic materialization failed.
+                if code == LOCAL_CSV_MATERIALIZATION_IN_PROGRESS:
+                    raise LocalCsvImportError(code, str(exc)) from exc
+                self._import_repo.mark_materialization_failed(
+                    import_id=claimed.id,
+                    error_code=code,
+                    clock_now=self._clock.now,
+                    requires_review=False,
+                    owner=claim_owner,
+                    expected_fencing_version=fencing,
+                )
+                raise LocalCsvImportError(code, str(exc)) from exc
+
+            requires_review = code in {
+                LOCAL_CSV_CANONICAL_MATERIALIZATION_REJECTED,
+                LOCAL_CSV_REQUIRES_REVIEW,
+                LOCAL_CSV_MATERIALIZATION_EXHAUSTED,
+            } or (
+                int(claimed.materialization_attempts) >= self._materialization_max_attempts
+                and not is_retryable_error_code(code)
+            )
+            if (
+                int(claimed.materialization_attempts) >= self._materialization_max_attempts
+                and is_retryable_error_code(code)
+            ):
+                requires_review = True
+                code = LOCAL_CSV_MATERIALIZATION_EXHAUSTED
+
+            self._import_repo.mark_materialization_failed(
+                import_id=claimed.id,
+                error_code=code,
+                clock_now=self._clock.now,
+                requires_review=requires_review,
+                owner=claim_owner,
+                expected_fencing_version=fencing,
+            )
+            if requires_review:
+                raise LocalCsvImportError(
+                    LOCAL_CSV_REQUIRES_REVIEW
+                    if code != LOCAL_CSV_MATERIALIZATION_EXHAUSTED
+                    else code,
+                    str(exc),
+                ) from exc
+            raise LocalCsvImportError(code, str(exc)) from exc
+        except InventoryNotWritableError as exc:
+            mapped = _map_inventory_write_error(exc)
+            self._import_repo.mark_materialization_failed(
+                import_id=claimed.id,
+                error_code=mapped.code,
+                clock_now=self._clock.now,
+                owner=claim_owner,
+                expected_fencing_version=fencing,
+            )
+            raise mapped from exc
+        except Exception as exc:
+            logger.exception(
+                "local_csv_import_materialization_failed import_id=%s inventory_id=%s",
+                claimed.id,
+                inventory_id,
+            )
+            self._import_repo.mark_materialization_failed(
+                import_id=claimed.id,
+                error_code=LOCAL_CSV_MATERIALIZATION_FAILED,
+                clock_now=self._clock.now,
+                owner=claim_owner,
+                expected_fencing_version=fencing,
+            )
+            raise LocalCsvImportError(
+                LOCAL_CSV_MATERIALIZATION_FAILED,
+                "Import materialization failed due to an unexpected error",
+            ) from exc
+
+    def _require_writable(self, inventory_id: str):
+        try:
+            return require_inventory_writable(
+                self._inventory_repo.get_by_id(inventory_id),
+                inventory_id=inventory_id,
+            )
+        except InventoryNotWritableError as exc:
+            raise _map_inventory_write_error(exc) from exc
 
     def _mark_aisles_processed(
         self,

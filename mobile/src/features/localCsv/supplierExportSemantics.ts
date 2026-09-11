@@ -139,13 +139,19 @@ export function isDraftExportReady(
   draft: {
     readonly status?: string | null;
     readonly internal_code?: string | null;
+    readonly label_id?: string | null;
     readonly product_results_json?: string | null;
     readonly recognition_profile_snapshot_json?: string | null;
     readonly position_detected?: number | null;
     readonly error_code?: string | null;
+    readonly rejections_json?: string | null;
   } | null | undefined,
 ): boolean {
   if (!draft) {
+    return false;
+  }
+  const status = (draft.status ?? '').toUpperCase();
+  if (status === 'PENDING' || status === 'SCANNING' || status === 'NOT_APPLICABLE') {
     return false;
   }
   if (draft.product_results_json?.trim()) {
@@ -166,15 +172,43 @@ export function isDraftExportReady(
   }
   if (
     Number(draft.position_detected) === 1 ||
-    draft.error_code === 'POSITION_LABEL_DETECTED'
+    draft.error_code === 'POSITION_LABEL_DETECTED' ||
+    draft.error_code === 'POSITION_LABEL_DUPLICATE'
   ) {
     return true;
   }
+  if (draft.rejections_json?.trim()) {
+    try {
+      const parsed = JSON.parse(draft.rejections_json) as unknown[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Session-duplicate / rejected-only photos are settled for ZIP handoff.
+        return true;
+      }
+    } catch {
+      // fall through
+    }
+  }
   const code = (draft.internal_code ?? '').trim();
+  const labelId = (draft.label_id ?? '').trim();
+  // Raw multi-segment payloads need a supplier-aware rescan before export.
+  if (code && isLikelyRawSegmentedPayload(code)) {
+    return false;
+  }
   if (
-    code &&
-    !isLikelyRawSegmentedPayload(code) &&
+    (code || labelId) &&
     (draft.status === 'RESOLVED' || draft.status === 'DETECTED_UNVERIFIED')
+  ) {
+    return true;
+  }
+  // Terminal empty outcomes are settled; export emits non-pending marker rows.
+  if (
+    status === 'RESOLVED' ||
+    status === 'UNRESOLVED' ||
+    status === 'DETECTED_UNVERIFIED' ||
+    status === 'INVALID' ||
+    status === 'AMBIGUOUS' ||
+    status === 'FAILED' ||
+    status === 'FAILED_RETRYABLE'
   ) {
     return true;
   }

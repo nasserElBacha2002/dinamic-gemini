@@ -1,7 +1,11 @@
 /**
  * Offline supplier label recognition — deterministic subset mirroring backend
- * LabelValidationService (MINIMAL / SIMPLE / SEGMENTED).
+ * LabelValidationService / StructuredPayloadExtractor (MINIMAL / SIMPLE / SEGMENTED).
  * GS1 is intentionally NOT implemented in this phase.
+ *
+ * SEGMENTED order (must match backend):
+ * structural trim → split → map → per-field identity normalize →
+ * validate prefix/length/charset on identity field only → quantity/completeness.
  */
 
 export type LocalRecognitionStatus =
@@ -53,7 +57,16 @@ export interface OfflineExtractionConfiguration {
   semantic_type?: string | null;
   deterministic?: OfflineDeterministicRules | null;
   required_fields?: string[];
-  quantity_rules?: { required?: boolean } | null;
+  quantity_rules?: {
+    required?: boolean;
+    expected_presence?: string | null;
+    missing_quantity_action?: string | null;
+    allow_external_fallback?: boolean;
+    minimum?: number | null;
+    maximum?: number | null;
+    allow_negative?: boolean;
+    allow_decimals?: boolean;
+  } | null;
   custom_payload_pattern?: string | null;
 }
 
@@ -108,8 +121,16 @@ function numberOrNull(v: number | null | undefined): number | null {
   return v == null ? null : v;
 }
 
-/** Same order as backend LabelValidationService / StructuredPayloadExtractor. */
+/** Full-payload normalization for SIMPLE identity payloads (backend parity). */
 export function normalizeOfflinePayload(
+  raw: string,
+  rules: OfflineDeterministicRules | null | undefined,
+): string {
+  return normalizeFieldValue(normalizeStructural(raw, rules), rules);
+}
+
+/** Pre-split normalization — preserve delimiter and segment interiors. */
+export function normalizeStructural(
   raw: string,
   rules: OfflineDeterministicRules | null | undefined,
 ): string {
@@ -118,12 +139,25 @@ export function normalizeOfflinePayload(
   if (norm.trim_outer_whitespace !== false) {
     value = value.trim();
   }
-  const caseMode = String(norm.case_normalization ?? 'NONE').toUpperCase();
-  if (caseMode === 'UPPER') value = value.toUpperCase();
-  if (caseMode === 'LOWER') value = value.toLowerCase();
-  if (norm.remove_internal_spaces) value = value.replace(/\s+/g, '');
-  if (norm.remove_hyphens) value = value.replace(/-/g, '');
   return value;
+}
+
+/** Per-field identity normalization after structural mapping. */
+export function normalizeFieldValue(
+  value: string,
+  rules: OfflineDeterministicRules | null | undefined,
+): string {
+  let text = value ?? '';
+  const norm = rules?.normalization ?? {};
+  if (norm.trim_outer_whitespace !== false) {
+    text = text.trim();
+  }
+  if (norm.remove_internal_spaces) text = text.replace(/\s+/g, '');
+  if (norm.remove_hyphens) text = text.replace(/-/g, '');
+  const caseMode = String(norm.case_normalization ?? 'NONE').toUpperCase();
+  if (caseMode === 'UPPER') text = text.toUpperCase();
+  if (caseMode === 'LOWER') text = text.toLowerCase();
+  return text;
 }
 
 function charsetOk(normalized: string, charset: string | null | undefined): boolean {
@@ -139,11 +173,17 @@ function charsetOk(normalized: string, charset: string | null | undefined): bool
   return true;
 }
 
+type ExtractOutcome = {
+  fields: Record<string, string | number | null>;
+  structuralPayload: string;
+  meta: Record<string, string>;
+};
+
 function extractFields(
-  normalized: string,
+  raw: string,
   rules: OfflineDeterministicRules,
   labelKind: 'ITEM' | 'POSITION',
-): Record<string, string | number | null> {
+): ExtractOutcome {
   const structure = String(rules.payload_structure ?? 'SIMPLE').toUpperCase();
   const mappings = rules.field_mappings ?? [];
   const out: Record<string, string | number | null> = {};
@@ -153,33 +193,86 @@ function extractFields(
   }
 
   if (structure === 'SEGMENTED') {
+    const structural = normalizeStructural(raw, rules);
     const delimiter = rules.delimiter ?? '|';
-    const parts = normalized.split(delimiter);
+    const delimiterDetected = structural.includes(delimiter);
+    if (
+      rules.expected_segment_count != null &&
+      Number(rules.expected_segment_count) > 1 &&
+      !delimiterDetected
+    ) {
+      throw Object.assign(new Error('delimiter not found in payload'), {
+        code: 'LABEL_SEGMENT_COUNT_MISMATCH',
+      });
+    }
+    const parts = structural.split(delimiter);
+    if (parts.length > 32) {
+      throw Object.assign(new Error('segment count exceeds limit'), {
+        code: 'LABEL_SEGMENT_COUNT_MISMATCH',
+      });
+    }
     if (
       rules.expected_segment_count != null &&
       parts.length !== Number(rules.expected_segment_count)
     ) {
-      throw Object.assign(new Error('SEGMENT_COUNT_MISMATCH'), {
-        code: 'LABEL_SEGMENT_COUNT_MISMATCH',
-      });
+      throw Object.assign(
+        new Error(
+          `expected ${rules.expected_segment_count} segments, got ${parts.length}`,
+        ),
+        { code: 'LABEL_SEGMENT_COUNT_MISMATCH' },
+      );
     }
     for (const mapping of mappings) {
       if (String(mapping.source).toUpperCase() !== 'SEGMENT') continue;
       const idx = mapping.segment_index;
-      if (idx == null || idx < 0 || idx >= parts.length) continue;
+      if (idx == null || idx < 0 || idx >= parts.length) {
+        throw Object.assign(
+          new Error(`segment index ${String(idx)} out of range`),
+          { code: 'LABEL_SEGMENT_COUNT_MISMATCH' },
+        );
+      }
       const target = String(mapping.target).toLowerCase();
-      const value = parts[idx] ?? '';
+      const segmentValue = parts[idx] ?? '';
+      if (!String(segmentValue).trim()) {
+        throw Object.assign(new Error(`mapped segment for ${target} is empty`), {
+          code: 'LABEL_REQUIRED_FIELD_MISSING',
+        });
+      }
       if (target === 'quantity') {
-        const n = Number.parseInt(value, 10);
-        out.quantity = Number.isFinite(n) ? n : null;
+        const qtyText = String(segmentValue).trim();
+        if (/[.,\s]/.test(qtyText)) {
+          throw Object.assign(new Error('quantity segment is not an integer'), {
+            code: 'LABEL_FIELD_INVALID',
+          });
+        }
+        const n = Number.parseInt(qtyText, 10);
+        if (!Number.isFinite(n)) {
+          throw Object.assign(new Error('quantity segment is not an integer'), {
+            code: 'LABEL_FIELD_INVALID',
+          });
+        }
+        out.quantity = n;
       } else {
-        out[target] = value;
+        out[target] = normalizeFieldValue(segmentValue, rules);
       }
     }
-    return out;
+    return {
+      fields: out,
+      structuralPayload: structural,
+      meta: {
+        payload_structure: 'SEGMENTED',
+        delimiter_detected: delimiterDetected ? 'true' : 'false',
+        segment_count: String(parts.length),
+        mapped_fields: Object.keys(out)
+          .filter((k) => out[k] != null && out[k] !== '')
+          .sort()
+          .join(','),
+      },
+    };
   }
 
-  // SIMPLE
+  // SIMPLE: full identity normalization applies to the whole payload.
+  const normalized = normalizeOfflinePayload(raw, rules);
   for (const mapping of mappings) {
     if (String(mapping.source).toUpperCase() !== 'WHOLE') continue;
     const target = String(mapping.target).toLowerCase();
@@ -194,7 +287,60 @@ function extractFields(
     if (labelKind === 'POSITION') out.position_id = normalized;
     else out.label_id = normalized;
   }
-  return out;
+  return {
+    fields: out,
+    structuralPayload: normalized,
+    meta: {
+      payload_structure: 'SIMPLE',
+      mapped_fields: Object.keys(out)
+        .filter((k) => out[k] != null && out[k] !== '')
+        .sort()
+        .join(','),
+    },
+  };
+}
+
+function identityShapeSubject(
+  labelKind: 'ITEM' | 'POSITION',
+  structure: string,
+  structuralPayload: string,
+  fields: Record<string, string | number | null>,
+): { value: string; field: string } {
+  if (structure === 'SEGMENTED') {
+    if (labelKind === 'ITEM') {
+      const labelId = String(fields.label_id ?? '').trim();
+      if (labelId) return { value: labelId, field: 'label_id' };
+      const sku = String(fields.sku ?? '').trim();
+      if (sku) return { value: sku, field: 'sku' };
+      return { value: '', field: 'label_id' };
+    }
+    const positionId = String(fields.position_id ?? fields.label_id ?? '').trim();
+    return { value: positionId, field: 'position_id' };
+  }
+  return { value: structuralPayload, field: 'payload' };
+}
+
+function quantityRequiredForCompletion(
+  cfg: OfflineExtractionConfiguration,
+): boolean {
+  const rules = cfg.quantity_rules ?? null;
+  if (rules?.required) return true;
+  const presence = String(rules?.expected_presence ?? '').toUpperCase();
+  if (presence === 'ALWAYS') return true;
+  const required = new Set(
+    (cfg.required_fields ?? []).map((f) => String(f).trim().toLowerCase()),
+  );
+  if (required.has('quantity')) return true;
+  const missingAction = String(rules?.missing_quantity_action ?? 'PENDING_MANUAL_REVIEW');
+  if (missingAction === 'RESOLVE_CODE_ONLY') return false;
+  if (presence === 'OPTIONAL' && !rules?.required) {
+    if (missingAction === 'EXTERNAL_FALLBACK') return true;
+    if (rules?.allow_external_fallback) return true;
+    return false;
+  }
+  if (missingAction === 'EXTERNAL_FALLBACK') return true;
+  if (missingAction === 'PENDING_MANUAL_REVIEW') return true;
+  return Boolean(rules?.allow_external_fallback);
 }
 
 export function validateSupplierPayloadOffline(input: {
@@ -221,15 +367,51 @@ export function validateSupplierPayloadOffline(input: {
     });
   }
 
-  const normalized = normalizeOfflinePayload(raw, rules);
+  let extracted: ExtractOutcome;
+  try {
+    extracted = extractFields(raw, rules, input.labelKind);
+  } catch (e) {
+    const code = (e as { code?: string }).code ?? 'TECHNICAL_ERROR';
+    const structural = normalizeStructural(raw, rules);
+    return emptyResult(raw, {
+      status:
+        code === 'LABEL_SEGMENT_COUNT_MISMATCH' ||
+        code === 'LABEL_REQUIRED_FIELD_MISSING' ||
+        code === 'LABEL_FIELD_INVALID'
+          ? 'NOT_APPLICABLE'
+          : 'TECHNICAL_ERROR',
+      errorCode: code,
+      detail: e instanceof Error ? e.message : 'extract failed',
+      labelKind: input.labelKind,
+      normalizedPayload: structural,
+      diagnostics: {
+        payload_structure: structure,
+        validation_error_code: code,
+      },
+      profileSource: 'SUPPLIER',
+      profileId: input.profileId,
+      profileVersion: input.profileVersion,
+      configurationSchemaVersion: cfg.configuration_schema_version ?? null,
+    });
+  }
+
+  const { fields, structuralPayload, meta } = extracted;
+  const subject = identityShapeSubject(
+    input.labelKind,
+    structure,
+    structuralPayload,
+    fields,
+  );
   const diagnostics: Record<string, unknown> = {
-    found: normalized,
+    ...meta,
+    failed_field: subject.field,
+    found: subject.value,
     prefix: {
       expected: rules.expected_prefix ?? null,
       pass: true,
     },
     length: {
-      found: normalized.length,
+      found: subject.value.length,
       exact_expected: rules.exact_length ?? null,
       min: rules.min_length ?? null,
       max: rules.max_length ?? null,
@@ -241,31 +423,17 @@ export function validateSupplierPayloadOffline(input: {
     },
   };
 
-  const prefix = (rules.expected_prefix || '').trim();
-  if (prefix && !normalized.startsWith(prefix)) {
-    (diagnostics.prefix as { pass: boolean }).pass = false;
+  if (!subject.value) {
     return emptyResult(raw, {
-      status: 'NOT_APPLICABLE',
-      errorCode: 'LABEL_PREFIX_MISMATCH',
-      detail: `PREFIX_MISMATCH: expected ${prefix}`,
+      status: 'INVALID',
+      errorCode: 'LABEL_REQUIRED_FIELD_MISSING',
+      detail: `identity field ${subject.field} missing after structured extraction`,
       labelKind: input.labelKind,
-      normalizedPayload: normalized,
-      diagnostics,
-      profileSource: 'SUPPLIER',
-      profileId: input.profileId,
-      profileVersion: input.profileVersion,
-      configurationSchemaVersion: cfg.configuration_schema_version ?? null,
-    });
-  }
-  const suffix = (rules.expected_suffix || '').trim();
-  if (suffix && !normalized.endsWith(suffix)) {
-    return emptyResult(raw, {
-      status: 'NOT_APPLICABLE',
-      errorCode: 'LABEL_SUFFIX_MISMATCH',
-      detail: `suffix mismatch`,
-      labelKind: input.labelKind,
-      normalizedPayload: normalized,
-      diagnostics,
+      normalizedPayload: structuralPayload,
+      diagnostics: {
+        ...diagnostics,
+        validation_error_code: 'LABEL_REQUIRED_FIELD_MISSING',
+      },
       profileSource: 'SUPPLIER',
       profileId: input.profileId,
       profileVersion: input.profileVersion,
@@ -273,16 +441,57 @@ export function validateSupplierPayloadOffline(input: {
     });
   }
 
-  const length = normalized.length;
+  const prefix = (rules.expected_prefix || '').trim();
+  if (prefix && !subject.value.startsWith(prefix)) {
+    (diagnostics.prefix as { pass: boolean }).pass = false;
+    return emptyResult(raw, {
+      status: 'NOT_APPLICABLE',
+      errorCode: 'LABEL_PREFIX_MISMATCH',
+      detail: `PREFIX_MISMATCH on ${subject.field}: expected ${prefix}`,
+      labelKind: input.labelKind,
+      normalizedPayload: structuralPayload,
+      diagnostics: {
+        ...diagnostics,
+        validation_error_code: 'LABEL_PREFIX_MISMATCH',
+      },
+      profileSource: 'SUPPLIER',
+      profileId: input.profileId,
+      profileVersion: input.profileVersion,
+      configurationSchemaVersion: cfg.configuration_schema_version ?? null,
+    });
+  }
+  const suffix = (rules.expected_suffix || '').trim();
+  if (suffix && !subject.value.endsWith(suffix)) {
+    return emptyResult(raw, {
+      status: 'NOT_APPLICABLE',
+      errorCode: 'LABEL_SUFFIX_MISMATCH',
+      detail: `suffix mismatch on ${subject.field}`,
+      labelKind: input.labelKind,
+      normalizedPayload: structuralPayload,
+      diagnostics: {
+        ...diagnostics,
+        validation_error_code: 'LABEL_SUFFIX_MISMATCH',
+      },
+      profileSource: 'SUPPLIER',
+      profileId: input.profileId,
+      profileVersion: input.profileVersion,
+      configurationSchemaVersion: cfg.configuration_schema_version ?? null,
+    });
+  }
+
+  const length = subject.value.length;
   if (rules.exact_length != null && length !== Number(rules.exact_length)) {
     (diagnostics.length as { pass: boolean }).pass = false;
     return emptyResult(raw, {
       status: 'NOT_APPLICABLE',
       errorCode: 'LABEL_LENGTH_MISMATCH',
-      detail: `LENGTH_MISMATCH: expected ${rules.exact_length}, found ${length}`,
+      detail: `LENGTH_MISMATCH on ${subject.field}: expected ${rules.exact_length}, found ${length}`,
       labelKind: input.labelKind,
-      normalizedPayload: normalized,
-      diagnostics,
+      normalizedPayload: structuralPayload,
+      diagnostics: {
+        ...diagnostics,
+        validation_error_code: 'LABEL_LENGTH_MISMATCH',
+      },
       profileSource: 'SUPPLIER',
       profileId: input.profileId,
       profileVersion: input.profileVersion,
@@ -294,10 +503,13 @@ export function validateSupplierPayloadOffline(input: {
     return emptyResult(raw, {
       status: 'NOT_APPLICABLE',
       errorCode: 'LABEL_LENGTH_MISMATCH',
-      detail: `min_length`,
+      detail: `min_length on ${subject.field}`,
       labelKind: input.labelKind,
-      normalizedPayload: normalized,
-      diagnostics,
+      normalizedPayload: structuralPayload,
+      diagnostics: {
+        ...diagnostics,
+        validation_error_code: 'LABEL_LENGTH_MISMATCH',
+      },
       profileSource: 'SUPPLIER',
       profileId: input.profileId,
       profileVersion: input.profileVersion,
@@ -309,10 +521,13 @@ export function validateSupplierPayloadOffline(input: {
     return emptyResult(raw, {
       status: 'NOT_APPLICABLE',
       errorCode: 'LABEL_LENGTH_MISMATCH',
-      detail: `max_length`,
+      detail: `max_length on ${subject.field}`,
       labelKind: input.labelKind,
-      normalizedPayload: normalized,
-      diagnostics,
+      normalizedPayload: structuralPayload,
+      diagnostics: {
+        ...diagnostics,
+        validation_error_code: 'LABEL_LENGTH_MISMATCH',
+      },
       profileSource: 'SUPPLIER',
       profileId: input.profileId,
       profileVersion: input.profileVersion,
@@ -320,34 +535,18 @@ export function validateSupplierPayloadOffline(input: {
     });
   }
 
-  if (!charsetOk(normalized, rules.character_set ?? null)) {
+  if (!charsetOk(subject.value, rules.character_set ?? null)) {
     (diagnostics.charset as { pass: boolean }).pass = false;
     return emptyResult(raw, {
       status: 'NOT_APPLICABLE',
       errorCode: 'LABEL_CHARSET_MISMATCH',
-      detail: 'CHARSET_MISMATCH',
+      detail: `CHARSET_MISMATCH on ${subject.field}`,
       labelKind: input.labelKind,
-      normalizedPayload: normalized,
-      diagnostics,
-      profileSource: 'SUPPLIER',
-      profileId: input.profileId,
-      profileVersion: input.profileVersion,
-      configurationSchemaVersion: cfg.configuration_schema_version ?? null,
-    });
-  }
-
-  let fields: Record<string, string | number | null>;
-  try {
-    fields = extractFields(normalized, rules, input.labelKind);
-  } catch (e) {
-    const code = (e as { code?: string }).code ?? 'TECHNICAL_ERROR';
-    return emptyResult(raw, {
-      status: code === 'LABEL_SEGMENT_COUNT_MISMATCH' ? 'NOT_APPLICABLE' : 'TECHNICAL_ERROR',
-      errorCode: code,
-      detail: e instanceof Error ? e.message : 'extract failed',
-      labelKind: input.labelKind,
-      normalizedPayload: normalized,
-      diagnostics,
+      normalizedPayload: structuralPayload,
+      diagnostics: {
+        ...diagnostics,
+        validation_error_code: 'LABEL_CHARSET_MISMATCH',
+      },
       profileSource: 'SUPPLIER',
       profileId: input.profileId,
       profileVersion: input.profileVersion,
@@ -361,16 +560,78 @@ export function validateSupplierPayloadOffline(input: {
   const isMinimal = String(cfg.recognition_mode ?? '').toUpperCase() === 'MINIMAL';
   if (input.labelKind === 'ITEM') {
     const labelId = (fields.label_id as string | null) ?? null;
-    const sku = (fields.sku as string | null) || (fields.internal_code as string | null) || null;
+    const sku =
+      (fields.sku as string | null) || (fields.internal_code as string | null) || null;
     const quantity: number | null =
       typeof fields.quantity === 'number' ? fields.quantity : null;
+    const qrules = cfg.quantity_rules ?? null;
+    if (quantity != null) {
+      if (quantity < 0 && !qrules?.allow_negative) {
+        return emptyResult(raw, {
+          status: 'INVALID',
+          errorCode: 'LABEL_FIELD_INVALID',
+          detail: 'quantity must not be negative',
+          labelKind: 'ITEM',
+          normalizedPayload: structuralPayload,
+          diagnostics: { ...diagnostics, failed_field: 'quantity' },
+          profileSource: 'SUPPLIER',
+          profileId: input.profileId,
+          profileVersion: input.profileVersion,
+          configurationSchemaVersion: cfg.configuration_schema_version ?? null,
+        });
+      }
+      const minimum = qrules?.minimum ?? 1;
+      const maximum = qrules?.maximum ?? 99_999_999;
+      if (quantity === 0 && Number(minimum) >= 1 && !qrules?.allow_negative) {
+        return emptyResult(raw, {
+          status: 'INVALID',
+          errorCode: 'LABEL_FIELD_INVALID',
+          detail: 'quantity must be a positive integer',
+          labelKind: 'ITEM',
+          normalizedPayload: structuralPayload,
+          diagnostics: { ...diagnostics, failed_field: 'quantity' },
+          profileSource: 'SUPPLIER',
+          profileId: input.profileId,
+          profileVersion: input.profileVersion,
+          configurationSchemaVersion: cfg.configuration_schema_version ?? null,
+        });
+      }
+      if (quantity < Number(minimum)) {
+        return emptyResult(raw, {
+          status: 'INVALID',
+          errorCode: 'LABEL_FIELD_INVALID',
+          detail: `quantity below minimum ${String(minimum)}`,
+          labelKind: 'ITEM',
+          normalizedPayload: structuralPayload,
+          diagnostics: { ...diagnostics, failed_field: 'quantity' },
+          profileSource: 'SUPPLIER',
+          profileId: input.profileId,
+          profileVersion: input.profileVersion,
+          configurationSchemaVersion: cfg.configuration_schema_version ?? null,
+        });
+      }
+      if (quantity > Number(maximum)) {
+        return emptyResult(raw, {
+          status: 'INVALID',
+          errorCode: 'LABEL_FIELD_INVALID',
+          detail: `quantity above maximum ${String(maximum)}`,
+          labelKind: 'ITEM',
+          normalizedPayload: structuralPayload,
+          diagnostics: { ...diagnostics, failed_field: 'quantity' },
+          profileSource: 'SUPPLIER',
+          profileId: input.profileId,
+          profileVersion: input.profileVersion,
+          configurationSchemaVersion: cfg.configuration_schema_version ?? null,
+        });
+      }
+    }
     if (required.has('label_id') && !labelId) {
       return emptyResult(raw, {
         status: 'INVALID',
         errorCode: 'LABEL_REQUIRED_FIELD_MISSING',
         detail: 'label_id required',
         labelKind: 'ITEM',
-        normalizedPayload: normalized,
+        normalizedPayload: structuralPayload,
         diagnostics,
         profileSource: 'SUPPLIER',
         profileId: input.profileId,
@@ -384,7 +645,7 @@ export function validateSupplierPayloadOffline(input: {
         errorCode: 'LABEL_REQUIRED_FIELD_MISSING',
         detail: 'sku required',
         labelKind: 'ITEM',
-        normalizedPayload: normalized,
+        normalizedPayload: structuralPayload,
         diagnostics,
         profileSource: 'SUPPLIER',
         profileId: input.profileId,
@@ -398,7 +659,7 @@ export function validateSupplierPayloadOffline(input: {
         errorCode: 'LABEL_REQUIRED_FIELD_MISSING',
         detail: 'quantity required',
         labelKind: 'ITEM',
-        normalizedPayload: normalized,
+        normalizedPayload: structuralPayload,
         diagnostics,
         profileSource: 'SUPPLIER',
         profileId: input.profileId,
@@ -406,7 +667,7 @@ export function validateSupplierPayloadOffline(input: {
         configurationSchemaVersion: cfg.configuration_schema_version ?? null,
       });
     }
-    // Never invent sku=label_id or quantity=1.
+    // Never invent sku=label_id or quantity=0/1.
     if (isMinimal) {
       /* keep sku/quantity as extracted only */
     }
@@ -416,7 +677,7 @@ export function validateSupplierPayloadOffline(input: {
         errorCode: 'LABEL_REQUIRED_FIELD_MISSING',
         detail: 'sku or label_id missing',
         labelKind: 'ITEM',
-        normalizedPayload: normalized,
+        normalizedPayload: structuralPayload,
         diagnostics,
         profileSource: 'SUPPLIER',
         profileId: input.profileId,
@@ -424,14 +685,41 @@ export function validateSupplierPayloadOffline(input: {
         configurationSchemaVersion: cfg.configuration_schema_version ?? null,
       });
     }
+    const qtyRequired = quantityRequiredForCompletion(cfg);
+    const requiredFields = new Set(
+      (cfg.required_fields ?? ['label_id']).map((f) => String(f).toLowerCase()),
+    );
+    const missingCompletion: string[] = [];
+    if (requiredFields.has('label_id') && !labelId && !sku) {
+      missingCompletion.push('label_id');
+    }
+    if ((requiredFields.has('sku') || requiredFields.has('internal_code')) && !sku && !labelId) {
+      missingCompletion.push('sku');
+    }
+    if (qtyRequired && quantity == null) {
+      missingCompletion.push('quantity');
+    }
+    const identityComplete = Boolean(labelId || sku);
+    const completionComplete = identityComplete && missingCompletion.length === 0;
     return emptyResult(raw, {
       status: 'VALID',
       labelKind: 'ITEM',
-      normalizedPayload: normalized,
+      normalizedPayload: structuralPayload,
       labelId,
       sku,
       quantity,
-      diagnostics: { ...diagnostics, identity_valid: true },
+      diagnostics: {
+        ...diagnostics,
+        identity_valid: identityComplete,
+        identity_complete: identityComplete,
+        completion_complete: completionComplete,
+        persistence_complete: completionComplete,
+        enrichment_complete: completionComplete,
+        missing_completion_fields: missingCompletion,
+        missing_persistence_fields: missingCompletion,
+        quantity_status: quantity == null ? 'MISSING' : 'PRESENT',
+        quantity_source: quantity == null ? null : 'CODE_SCAN',
+      },
       profileSource: 'SUPPLIER',
       profileId: input.profileId,
       profileVersion: input.profileVersion,
@@ -447,7 +735,7 @@ export function validateSupplierPayloadOffline(input: {
       errorCode: 'LABEL_REQUIRED_FIELD_MISSING',
       detail: 'position_id required',
       labelKind: 'POSITION',
-      normalizedPayload: normalized,
+      normalizedPayload: structuralPayload,
       diagnostics,
       profileSource: 'SUPPLIER',
       profileId: input.profileId,
@@ -458,7 +746,7 @@ export function validateSupplierPayloadOffline(input: {
   return emptyResult(raw, {
     status: 'VALID',
     labelKind: 'POSITION',
-    normalizedPayload: normalized,
+    normalizedPayload: structuralPayload,
     positionId,
     pallet: (fields.pallet as string | null) ?? null,
     side: (fields.side as string | null) ?? null,

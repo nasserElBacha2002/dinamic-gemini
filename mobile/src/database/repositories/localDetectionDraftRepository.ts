@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from '../database';
-import { withSqliteBusyRetry } from '../sqliteWriteGate';
+import { runImmediateTransaction, withSqliteBusyRetry } from '../sqliteWriteGate';
 import { createId } from '../../shared/createId';
 
 export type LocalDetectionDraftStatus =
@@ -27,6 +27,15 @@ export type LocalDraftSyncStatus =
   | 'REJECTED'
   | 'CONFLICT'
   | 'FAILED_TERMINAL';
+
+export type LocalPositionSyncState =
+  | 'NOT_APPLICABLE'
+  | 'LOCAL_VALIDATED'
+  | 'QUEUED'
+  | 'SENDING'
+  | 'CONFIRMED'
+  | 'RETRYABLE_FAILURE'
+  | 'REQUIRES_REVIEW';
 
 export interface LocalDetectionDraftRow {
   readonly id: string;
@@ -69,6 +78,14 @@ export interface LocalDetectionDraftRow {
   readonly rejections_json: string | null;
   /** 1 when a DINAMIC_POSITION was applied from this photo. */
   readonly position_detected: number;
+  readonly position_local_recognition_id?: string | null;
+  readonly position_sync_state?: LocalPositionSyncState;
+  readonly position_server_result?: string | null;
+  readonly position_server_error_code?: string | null;
+  readonly position_remote_id?: string | null;
+  readonly position_remote_label_id?: string | null;
+  readonly position_reconciled_at?: string | null;
+  readonly position_reconciliation_revision?: number;
   readonly recognition_profile_snapshot_json?: string | null;
   readonly recognition_context?: string | null;
   readonly detected_at: string | null;
@@ -107,6 +124,8 @@ export class LocalDetectionDraftRepository {
     readonly positionDetected?: boolean | null;
     readonly recognitionProfileSnapshotJson?: string | null;
     readonly recognitionContext?: string | null;
+    readonly activePositionJson?: string | null;
+    readonly positionLocalRecognitionId?: string | null;
   }): Promise<LocalDetectionDraftRow> {
     const now = new Date().toISOString();
     const id = createId();
@@ -123,8 +142,8 @@ export class LocalDetectionDraftRepository {
     const positionDetected = input.positionDetected ? 1 : 0;
     const recognitionProfileSnapshotJson = input.recognitionProfileSnapshotJson ?? null;
     const recognitionContext = input.recognitionContext ?? null;
-    await withSqliteBusyRetry(() =>
-      this.db.runAsync(
+    const persist = async (): Promise<void> => {
+      await this.db.runAsync(
       `INSERT INTO local_detection_drafts (
         id, capture_photo_id, capture_session_id, client_file_id, status,
         raw_value_hash, internal_code, quantity, quantity_status,
@@ -201,8 +220,54 @@ export class LocalDetectionDraftRepository {
       detectedAt,
       now,
       now,
-      ),
-    );
+      );
+      if (input.activePositionJson !== undefined) {
+        await this.db.runAsync(
+          `UPDATE capture_sessions
+           SET active_position_json = ?, updated_at = ?
+           WHERE id = ?
+             AND EXISTS (
+               SELECT 1 FROM local_detection_drafts
+               WHERE capture_photo_id = ?
+                 AND detector_version = ?
+                 AND parser_version = ?
+                 AND prepared_asset_fingerprint = ?
+                 AND scan_generation = ?
+             );`,
+          input.activePositionJson,
+          now,
+          input.captureSessionId,
+          input.capturePhotoId,
+          input.detectorVersion,
+          input.parserVersion,
+          input.preparedAssetFingerprint,
+          generation,
+        );
+      }
+      if (input.positionLocalRecognitionId) {
+        await this.db.runAsync(
+          `UPDATE local_detection_drafts
+           SET position_local_recognition_id = ?,
+               position_sync_state = 'LOCAL_VALIDATED'
+           WHERE capture_photo_id = ?
+             AND detector_version = ?
+             AND parser_version = ?
+             AND prepared_asset_fingerprint = ?
+             AND scan_generation = ?;`,
+          input.positionLocalRecognitionId,
+          input.capturePhotoId,
+          input.detectorVersion,
+          input.parserVersion,
+          input.preparedAssetFingerprint,
+          generation,
+        );
+      }
+    };
+    if (input.activePositionJson !== undefined) {
+      await runImmediateTransaction(this.db, persist);
+    } else {
+      await withSqliteBusyRetry(persist);
+    }
     const row = await this.getByIdempotencyKey(
       input.capturePhotoId,
       input.detectorVersion,
@@ -340,6 +405,10 @@ export class LocalDetectionDraftRepository {
     const result = await this.db.runAsync(
       `UPDATE local_detection_drafts
        SET sync_status = 'PENDING',
+           position_sync_state = CASE
+             WHEN position_local_recognition_id IS NOT NULL THEN 'QUEUED'
+             ELSE position_sync_state
+           END,
            sync_next_retry_at = NULL,
            updated_at = ?
        WHERE capture_photo_id = ?
@@ -375,6 +444,10 @@ export class LocalDetectionDraftRepository {
     const result = await this.db.runAsync(
       `UPDATE local_detection_drafts
        SET sync_status = 'SYNCING',
+           position_sync_state = CASE
+             WHEN position_local_recognition_id IS NOT NULL THEN 'SENDING'
+             ELSE position_sync_state
+           END,
            sync_lease_token = ?,
            sync_lease_expires_at = ?,
            sync_attempt_count = sync_attempt_count + 1,
@@ -433,6 +506,10 @@ export class LocalDetectionDraftRepository {
     const result = await this.db.runAsync(
       `UPDATE local_detection_drafts
        SET sync_status = ?,
+           position_sync_state = CASE
+             WHEN position_local_recognition_id IS NOT NULL THEN 'REQUIRES_REVIEW'
+             ELSE position_sync_state
+           END,
            sync_last_error_code = ?,
            sync_next_retry_at = NULL,
            sync_lease_token = NULL,
@@ -458,6 +535,10 @@ export class LocalDetectionDraftRepository {
     const result = await this.db.runAsync(
       `UPDATE local_detection_drafts
        SET sync_status = 'RETRY_SCHEDULED',
+           position_sync_state = CASE
+             WHEN position_local_recognition_id IS NOT NULL THEN 'RETRYABLE_FAILURE'
+             ELSE position_sync_state
+           END,
            sync_last_error_code = ?,
            sync_next_retry_at = ?,
            sync_lease_token = NULL,
@@ -469,6 +550,138 @@ export class LocalDetectionDraftRepository {
       nowIso,
       draftId,
       leaseToken,
+    );
+    return (result.changes ?? 0) > 0;
+  }
+
+  async reconcilePositionResult(input: {
+    readonly draftId: string;
+    readonly leaseToken: string;
+    readonly localRecognitionId: string;
+    readonly result: string;
+    readonly errorCode: string | null;
+    readonly remotePositionId: string | null;
+    readonly remotePositionLabelId: string | null;
+    readonly reconciledAt: string;
+    readonly revision: number;
+    readonly state: 'CONFIRMED' | 'RETRYABLE_FAILURE' | 'REQUIRES_REVIEW';
+  }): Promise<boolean> {
+    const result = await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET position_sync_state = ?,
+           position_server_result = ?,
+           position_server_error_code = ?,
+           position_remote_id = COALESCE(?, position_remote_id),
+           position_remote_label_id = COALESCE(?, position_remote_label_id),
+           position_reconciled_at = ?,
+           position_reconciliation_revision = ?,
+           updated_at = ?
+       WHERE id = ?
+         AND sync_lease_token = ?
+         AND position_local_recognition_id = ?
+         AND (
+           position_reconciliation_revision < ?
+           OR (
+             position_reconciliation_revision = ?
+             AND position_server_result = 'RETRYABLE_ERROR'
+           )
+         );`,
+      input.state,
+      input.result,
+      input.errorCode,
+      input.remotePositionId,
+      input.remotePositionLabelId,
+      input.reconciledAt,
+      input.revision,
+      input.reconciledAt,
+      input.draftId,
+      input.leaseToken,
+      input.localRecognitionId,
+      input.revision,
+      input.revision,
+    );
+    return (result.changes ?? 0) > 0;
+  }
+
+  async completePositionSyncResult(input: {
+    readonly draftId: string;
+    readonly leaseToken: string;
+    readonly localRecognitionId: string;
+    readonly serverPreliminaryId: string;
+    readonly result: string;
+    readonly errorCode: string | null;
+    readonly remotePositionId: string | null;
+    readonly remotePositionLabelId: string | null;
+    readonly reconciledAt: string;
+    readonly revision: number;
+    readonly outcome: 'SUCCESS' | 'RETRY' | 'REJECTED' | 'CONFLICT' | 'FAILED_TERMINAL';
+    readonly nextRetryAt: string | null;
+  }): Promise<boolean> {
+    const syncStatus =
+      input.outcome === 'SUCCESS'
+        ? 'SYNCED'
+        : input.outcome === 'RETRY'
+          ? 'RETRY_SCHEDULED'
+          : input.outcome === 'CONFLICT'
+            ? 'CONFLICT'
+            : input.outcome === 'FAILED_TERMINAL'
+              ? 'FAILED_TERMINAL'
+              : 'REJECTED';
+    const positionState =
+      input.outcome === 'SUCCESS'
+        ? 'CONFIRMED'
+        : input.outcome === 'RETRY'
+          ? 'RETRYABLE_FAILURE'
+          : 'REQUIRES_REVIEW';
+    const result = await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET sync_status = ?,
+           server_preliminary_id = CASE
+             WHEN ? = 'SYNCED' THEN ? ELSE server_preliminary_id
+           END,
+           synced_at = CASE WHEN ? = 'SYNCED' THEN ? ELSE synced_at END,
+           sync_last_error_code = ?,
+           sync_next_retry_at = ?,
+           sync_lease_token = NULL,
+           sync_lease_expires_at = NULL,
+           position_sync_state = ?,
+           position_server_result = ?,
+           position_server_error_code = ?,
+           position_remote_id = COALESCE(?, position_remote_id),
+           position_remote_label_id = COALESCE(?, position_remote_label_id),
+           position_reconciled_at = ?,
+           position_reconciliation_revision = ?,
+           updated_at = ?
+       WHERE id = ?
+         AND sync_lease_token = ?
+         AND position_local_recognition_id = ?
+         AND (
+           position_reconciliation_revision < ?
+           OR (
+             position_reconciliation_revision = ?
+             AND position_server_result = 'RETRYABLE_ERROR'
+           )
+         );`,
+      syncStatus,
+      syncStatus,
+      input.serverPreliminaryId,
+      syncStatus,
+      input.reconciledAt,
+      input.errorCode,
+      input.nextRetryAt,
+      positionState,
+      input.result,
+      input.errorCode,
+      input.remotePositionId,
+      input.remotePositionLabelId,
+      input.reconciledAt,
+      input.revision,
+      input.reconciledAt,
+      input.draftId,
+      input.leaseToken,
+      input.localRecognitionId,
+      input.revision,
+      input.revision,
     );
     return (result.changes ?? 0) > 0;
   }

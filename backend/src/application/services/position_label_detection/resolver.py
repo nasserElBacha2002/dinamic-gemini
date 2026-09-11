@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.application.ports.client_position_label_repository import ClientPositionLabelRepository
+from src.application.ports.client_position_label_repository import (
+    ClientPositionLabelRepository,
+    PositionLabelIdentifierAmbiguousError,
+    PositionLabelResolutionUnavailableError,
+)
 from src.domain.client_position_label.entities import (
     ClientPositionLabel,
     ClientPositionLabelStatus,
@@ -29,7 +33,19 @@ class PositionLabelResolver:
         public_label_id: str,
         expected_client_id: str,
     ) -> PositionLabelResolveResult:
-        label = self._labels.get_by_public_identifier(public_label_id)
+        try:
+            label = self._labels.get_by_public_identifier(public_label_id)
+        except PositionLabelResolutionUnavailableError:
+            raise
+        except PositionLabelIdentifierAmbiguousError:
+            return PositionLabelResolveResult(
+                detection_status=PositionLabelDetectionStatus.DUPLICATE_POSITION_CODES,
+                detail="canonical position identifier is ambiguous",
+            )
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            raise PositionLabelResolutionUnavailableError(
+                "position label repository unavailable"
+            ) from exc
         if label is None:
             return PositionLabelResolveResult(
                 detection_status=PositionLabelDetectionStatus.LABEL_NOT_FOUND,

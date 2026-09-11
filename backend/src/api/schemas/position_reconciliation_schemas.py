@@ -38,6 +38,7 @@ class ProductPositionAssignmentDto(BaseModel):
     ordered_capture_session_id: str | None = None
     sequence_number: int | None = None
     position_label_id: str | None = None
+    aisle_location_id: str | None = None
     position_name: str | None = None
     source_detection_id: str | None = None
     assignment_status: str
@@ -79,6 +80,7 @@ def assignment_to_dto(row: ProductPositionAssignment) -> ProductPositionAssignme
         ordered_capture_session_id=row.ordered_capture_session_id,
         sequence_number=row.sequence_number,
         position_label_id=row.position_label_id,
+        aisle_location_id=row.aisle_location_id,
         position_name=row.position_name_snapshot,
         source_detection_id=row.source_detection_id,
         assignment_status=row.assignment_status.value,

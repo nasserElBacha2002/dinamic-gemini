@@ -12,7 +12,10 @@ import type { ConnectivityService } from '../../services/connectivity/connectivi
 import { createId } from '../../shared/createId';
 import type { CaptureSessionRow } from '../../database/schema/captureSchema';
 import { mapDraftToPreliminarySyncRequest } from './preliminaryDraftPayloadMapper';
-import type { PreliminaryDetectionApi } from './preliminaryDetectionApi';
+import {
+  parsePositionSyncResultV2,
+  type PreliminaryDetectionApi,
+} from './preliminaryDetectionApi';
 import {
   classifyPreliminarySyncError,
   type PreliminarySyncOutcome,
@@ -53,7 +56,7 @@ export interface PreliminaryDetectionSyncServiceOptions {
 }
 
 /**
- * Syncs local CODE_SCAN drafts as non-authoritative diagnostic evidence.
+ * Syncs local CODE_SCAN drafts and persists server-authoritative V2 position results.
  * Never blocks upload or POST /process.
  * Background WorkManager is intentionally not implemented — JS scheduler only.
  */
@@ -317,8 +320,92 @@ export class PreliminaryDetectionSyncService {
         mapDraftToPreliminarySyncRequest({
           draft,
           assetId: photo.backend_asset_id,
+          positionReferenceV2Enabled:
+            this.options.flags.positionSyncReferenceV2Enabled,
         }),
       );
+      const positionResult = parsePositionSyncResultV2(response.position_result ?? null);
+      if (response.position_result && !positionResult) {
+        await this.options.drafts.completeSyncTerminal(
+          draft.id,
+          leaseToken,
+          'CONFLICT',
+          'POSITION_RESPONSE_V2_INVALID',
+          new Date(this.nowMs()).toISOString(),
+        );
+        return 'conflict';
+      }
+      if (positionResult) {
+        const retryable = positionResult.status === 'RETRYABLE_ERROR';
+        const conflict =
+          positionResult.status === 'REJECTED_CONFLICT' ||
+          positionResult.status === 'REJECTED_DUPLICATE';
+        const invariantViolation = positionResult.status === 'INVARIANT_VIOLATION';
+        const rejected =
+          positionResult.status.startsWith('REJECTED_') && !conflict;
+        const outcome = retryable
+          ? 'RETRY'
+          : conflict
+            ? 'CONFLICT'
+            : invariantViolation
+              ? 'FAILED_TERMINAL'
+              : rejected
+                ? 'REJECTED'
+                : 'SUCCESS';
+        const completed = await this.options.drafts.completePositionSyncResult({
+          draftId: draft.id,
+          leaseToken,
+          localRecognitionId: positionResult.local_recognition_id,
+          serverPreliminaryId: response.server_preliminary_id,
+          result: positionResult.status,
+          errorCode:
+            outcome === 'SUCCESS'
+              ? null
+              : positionResult.error_code ?? positionResult.status,
+          remotePositionId: positionResult.remote_position_id,
+          remotePositionLabelId: positionResult.remote_position_label_id,
+          reconciledAt:
+            positionResult.server_timestamp || new Date(this.nowMs()).toISOString(),
+          revision: positionResult.reconciliation_revision,
+          outcome,
+          nextRetryAt: retryable
+            ? new Date(this.nowMs() + 2_000).toISOString()
+            : null,
+        });
+        if (
+          !completed &&
+          draft.position_local_recognition_id !== positionResult.local_recognition_id
+        ) {
+          emitObservability(this.options.reporter, {
+            name: 'mobile_position_reconciliation_conflict_total',
+            attributes: { draft_id: draft.id },
+          });
+          await this.options.drafts.completeSyncTerminal(
+            draft.id,
+            leaseToken,
+            'CONFLICT',
+            'POSITION_RECOGNITION_ID_MISMATCH',
+            new Date(this.nowMs()).toISOString(),
+          );
+          return 'conflict';
+        }
+        if (!completed) return 'skipped_lease';
+        if (retryable) return 'retry';
+        if (conflict) return 'conflict';
+        if (invariantViolation) return 'failed_terminal';
+        if (rejected) {
+          emitObservability(this.options.reporter, {
+            name: 'mobile_position_sync_rejected_total',
+            attributes: { status: positionResult.status },
+          });
+          return 'rejected';
+        }
+        emitObservability(this.options.reporter, {
+          name: 'mobile_position_sync_accepted_total',
+          attributes: { status: positionResult.status },
+        });
+        return 'synced';
+      }
       const ok = await this.options.drafts.completeSyncSuccess(
         draft.id,
         leaseToken,

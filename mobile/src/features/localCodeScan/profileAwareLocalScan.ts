@@ -20,6 +20,7 @@ export interface ProfileAwareScanOutcome {
   readonly itemProfileMissing: boolean;
   readonly positionProfileMissing: boolean;
   readonly recognitionSnapshot: Record<string, unknown> | null;
+  readonly clientSupplierId: string | null;
 }
 
 export async function runProfileAwareLocalScan(input: {
@@ -40,6 +41,7 @@ export async function runProfileAwareLocalScan(input: {
       itemProfileMissing: false,
       positionProfileMissing: false,
       recognitionSnapshot: null,
+      clientSupplierId: null,
     };
   }
 
@@ -164,5 +166,7 @@ export async function runProfileAwareLocalScan(input: {
     itemProfileMissing,
     positionProfileMissing,
     recognitionSnapshot,
+    clientSupplierId:
+      profiles.item.clientSupplierId ?? profiles.position.clientSupplierId ?? null,
   };
 }

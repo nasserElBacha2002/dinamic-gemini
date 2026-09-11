@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from enum import Enum
 
 from src.application.errors import (
     PositionReconciliationSequenceInvalidError,
     PositionReconciliationSessionMismatchError,
 )
-from src.application.services.position_reconciliation.transitions import (
-    resolve_position_transition,
+from src.application.services.position_reconciliation.position_policy import (
+    evaluate_position_establishment,
 )
 from src.domain.position_reconciliation.entities import (
     AssignmentSource,
@@ -20,11 +19,6 @@ from src.domain.position_reconciliation.entities import (
     PositionDetectionRef,
     PositionTransitionAction,
 )
-
-
-def _value(value: str | Enum) -> str:
-    raw = value.value if isinstance(value, Enum) else value
-    return str(raw).strip().upper()
 
 
 class SequentialPositionReconciler:
@@ -88,34 +82,11 @@ class SequentialPositionReconciler:
                 previous_sequence = sequence
 
             for detection in frame.position_detections:
-                status = _value(detection.detection_status)
-                action = resolve_position_transition(detection.detection_status)
-                signature = _value(detection.signature_status)
-
-                if status == "VALID":
-                    if detection.client_id != expected_client_id:
-                        action = PositionTransitionAction.CLEAR_POSITION
-                        status = "CLIENT_MISMATCH"
-                    elif signature == "INVALID":
-                        action = PositionTransitionAction.CLEAR_POSITION
-                        status = "INVALID_SIGNATURE"
-                    elif not detection.position_label_id:
-                        action = PositionTransitionAction.KEEP_POSITION
-                    elif signature != "VALID":
-                        # VALID row with non-VALID signature is not a resolved unsigned
-                        # acceptance path — do not propagate position from it.
-                        action = PositionTransitionAction.KEEP_POSITION
-                        status = "LEGACY_UNSIGNED_REQUIRES_REVIEW"
-                elif status == "LEGACY_UNSIGNED_REQUIRES_REVIEW":
-                    if detection.client_id != expected_client_id:
-                        action = PositionTransitionAction.CLEAR_POSITION
-                        status = "CLIENT_MISMATCH"
-                    elif not detection.position_label_id:
-                        action = PositionTransitionAction.KEEP_POSITION
-                    else:
-                        # Resolved unsigned label (Phase 3 acceptance) sets position and
-                        # flags the assignment for operator review.
-                        action = PositionTransitionAction.SET_POSITION
+                establishment = evaluate_position_establishment(
+                    detection, expected_client_id=expected_client_id
+                )
+                action = establishment.action
+                status = establishment.reason
 
                 if action is PositionTransitionAction.SET_POSITION:
                     current = detection
@@ -179,6 +150,7 @@ class SequentialPositionReconciler:
                 ordered_capture_session_id=frame.ordered_capture_session_id,
                 sequence_number=frame.sequence_number,
                 position_label_id=current.position_label_id,
+                aisle_location_id=current.aisle_location_id,
                 position_name_snapshot=current.position_name_snapshot,
                 source_detection_id=current.id,
                 assignment_status=AssignmentStatus.ASSIGNED_AUTOMATIC,

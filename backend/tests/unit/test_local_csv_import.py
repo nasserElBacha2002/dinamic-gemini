@@ -145,7 +145,13 @@ def _use_cases() -> tuple[
         )
     )
     import_repo = MemoryLocalCsvImportRepository()
-    writer = MemoryLocalCsvInventoryResultWriter()
+    writer = MemoryLocalCsvInventoryResultWriter(
+        get_import_status=lambda import_id: (
+            None
+            if (rec := import_repo.get_by_id(import_id)) is None
+            else rec.status
+        ),
+    )
     position_repo = MemoryPositionRepository()
     product_repo = MemoryProductRecordRepository()
     preview = PreviewLocalCsvImport(
@@ -160,6 +166,7 @@ def _use_cases() -> tuple[
         result_writer=writer,
         clock=FixedClock(),
         enabled=True,
+        inventory_repo=inventory_repo,
         position_materializer=LocalCsvPositionMaterializer(
             position_repo=position_repo,
             product_record_repo=product_repo,
@@ -180,6 +187,12 @@ def test_parser_accepts_mobile_detection_source() -> None:
     assert parsed.rows[0].detection_source == "LOCAL_CODE_SCAN"
     assert parsed.rows[0].ingestion_source == INGESTION_SOURCE_LOCAL_CSV_IMPORT
     assert parsed.rows[0].errors == ()
+
+
+def test_parser_rejects_position_code_above_canonical_persistence_limit() -> None:
+    parsed = parse_local_csv(_csv_bytes(position_code="P" * 65))
+
+    assert "position_code:position_code_too_long" in parsed.rows[0].errors
 
 
 def test_parser_accepts_legacy_local_csv_import_source_as_pending() -> None:
@@ -216,10 +229,10 @@ def test_formula_cell_is_neutralized_and_reported() -> None:
 
     record = preview.execute(
         inventory_id="inventory-1",
-        content=_csv_bytes(notes="=HYPERLINK(\"https://invalid\")"),
+        content=_csv_bytes(notes='=HYPERLINK("https://invalid")'),
     )
 
-    assert record.rows[0].notes == "'=HYPERLINK(\"https://invalid\")"
+    assert record.rows[0].notes == '\'=HYPERLINK("https://invalid")'
     assert "notes:csv_formula_neutralized" in record.rows[0].validation_warnings
     assert record.rows[0].status == "PREVIEW_VALID"
     assert record.rows[0].detection_source == "LOCAL_CODE_SCAN"

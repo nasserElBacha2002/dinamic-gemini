@@ -68,6 +68,13 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   POSITION_MERGE_STALE_PREVIEW: 'positions.merge_stale_preview',
   POSITION_MERGE_CONFLICT: 'positions.merge_conflict_generic',
   POSITION_MERGE_VALIDATION: 'positions.merge_validation_generic',
+  LOCAL_CSV_CANONICAL_MATERIALIZATION_REJECTED: 'inventory.import_package.errors.canonical_rejected',
+  LOCAL_CSV_REQUIRES_REVIEW: 'inventory.import_package.errors.requires_review',
+  LOCAL_CSV_IMPORT_INVALID_STATUS: 'inventory.import_package.errors.invalid_status',
+  LOCAL_CSV_MATERIALIZATION_FAILED: 'inventory.import_package.errors.materialization_failed',
+  PACKAGE_INVALID_STATUS: 'inventory.import_package.errors.invalid_status',
+  LOCAL_INVENTORY_PACKAGE_INVENTORY_MISMATCH: 'inventory.import_package.errors.inventory_mismatch',
+  LOCAL_CSV_INVENTORY_MISMATCH: 'inventory.import_package.errors.inventory_mismatch',
 };
 
 export function v3StructuredErrorCodeToTranslationKey(code: string): string | null {

@@ -6,6 +6,12 @@ from src.application.errors import (
     ClientPositionLabelConflictError,
     IdempotencyKeyReusedError,
 )
+from src.application.ports.client_position_label_repository import (
+    PositionLabelIdentifierAmbiguousError,
+)
+from src.application.services.position_recognition.normalization import (
+    normalize_position_code,
+)
 from src.domain.client_position_label.entities import (
     ClientPositionLabel,
     ClientPositionLabelArtifact,
@@ -32,10 +38,17 @@ class MemoryClientPositionLabelRepository:
         pub = (public_identifier or "").strip()
         if not pub:
             return None
-        for label in self._labels.values():
-            if label.public_identifier == pub:
-                return label
-        return None
+        canonical = normalize_position_code(pub).normalized_code
+        matches = [
+            label
+            for label in self._labels.values()
+            if normalize_position_code(label.public_identifier).normalized_code == canonical
+        ]
+        if len(matches) > 1:
+            raise PositionLabelIdentifierAmbiguousError(
+                "multiple labels share the canonical public identifier"
+            )
+        return matches[0] if matches else None
 
     def get_by_idempotency_key(
         self, client_id: str, idempotency_key: str
@@ -117,9 +130,7 @@ class MemoryClientPositionLabelRepository:
         search: str | None = None,
     ) -> int:
         return len(
-            self.list_by_client(
-                client_id, status=status, search=search, limit=10_000_000, offset=0
-            )
+            self.list_by_client(client_id, status=status, search=search, limit=10_000_000, offset=0)
         )
 
     def _assert_active_marker_unique(self, label: ClientPositionLabel) -> None:

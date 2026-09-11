@@ -34,14 +34,18 @@ export default function FieldMappingEditor({ value, labelKind, index, onChange, 
         size="small"
         label={t('clients.extraction_profile.mapping_source')}
         value={value.source}
-        onChange={(event) =>
+        onChange={(event) => {
+          const source = event.target.value as DeterministicFieldMapping['source'];
           onChange({
             ...value,
-            source: event.target.value as DeterministicFieldMapping['source'],
-            segment_index: null,
-            application_identifier: null,
-          })
-        }
+            source,
+            // SEGMENT requires an explicit index; UI used to display `index` as a
+            // fallback while leaving segment_index null → API 422 on save.
+            segment_index: source === 'SEGMENT' ? (value.segment_index ?? index) : null,
+            application_identifier:
+              source === 'APPLICATION_IDENTIFIER' ? value.application_identifier : null,
+          });
+        }}
       >
         {['WHOLE', 'SEGMENT', 'APPLICATION_IDENTIFIER'].map((source) => (
           <MenuItem key={source} value={source}>{t(`clients.extraction_profile.mapping_${source.toLowerCase()}`)}</MenuItem>
@@ -55,6 +59,11 @@ export default function FieldMappingEditor({ value, labelKind, index, onChange, 
           label={t('clients.extraction_profile.segment_index')}
           value={value.segment_index ?? index}
           onChange={(event) => onChange({ ...value, segment_index: Number(event.target.value) })}
+          onBlur={() => {
+            if (value.segment_index == null || Number.isNaN(value.segment_index)) {
+              onChange({ ...value, segment_index: index });
+            }
+          }}
         />
       ) : value.source === 'APPLICATION_IDENTIFIER' ? (
         <TextField

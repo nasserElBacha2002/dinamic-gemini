@@ -10,6 +10,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
+from src.observability.metrics.instruments import (
+    POSITION_MATERIALIZATION_TOTAL,
+    PositionMaterializationMetricComponent,
+    PositionMaterializationMetricMode,
+    PositionMaterializationMetricOutcome,
+    PositionMaterializationMetricReason,
+    PositionMaterializationMetricSource,
+    record_position_materialization,
+)
 from src.observability.metrics.registry import (
     MetricsRegistry,
     get_metrics_registry,
@@ -53,12 +62,16 @@ def test_histogram_prometheus_golden_output() -> None:
     for le, val in buckets:
         assert val >= prev
         prev = val
-    count_line = [ln for ln in text.splitlines() if ln.startswith("http_request_duration_seconds_count{")]
+    count_line = [
+        ln for ln in text.splitlines() if ln.startswith("http_request_duration_seconds_count{")
+    ]
     assert len(count_line) == 1
     count = float(count_line[0].rsplit(" ", 1)[-1])
     inf = [v for le, v in buckets if le == "+Inf"][0]
     assert inf == count == 2.0
-    sum_line = [ln for ln in text.splitlines() if ln.startswith("http_request_duration_seconds_sum{")]
+    sum_line = [
+        ln for ln in text.splitlines() if ln.startswith("http_request_duration_seconds_sum{")
+    ]
     assert abs(float(sum_line[0].rsplit(" ", 1)[-1]) - 1.54) < 1e-9
 
 
@@ -70,7 +83,10 @@ def test_series_limit_rejects_without_evicting() -> None:
     reg.inc("demo_total", "demo", {"outcome": "o3"})
     assert reg.get_counter_value("demo_total", {"outcome": "o0"}) == before
     assert reg.series_count("demo_total") == 3
-    assert reg.get_counter_value("observability_series_rejected_total", {"reason_code": "demo_total"}) >= 1
+    assert (
+        reg.get_counter_value("observability_series_rejected_total", {"reason_code": "demo_total"})
+        >= 1
+    )
 
 
 def test_type_conflict_and_public_apis() -> None:
@@ -86,7 +102,7 @@ def test_type_conflict_and_public_apis() -> None:
 
 def test_help_escaping() -> None:
     reg = MetricsRegistry()
-    reg.inc('esc_total', 'help with "quotes" and \\ slash', {})
+    reg.inc("esc_total", 'help with "quotes" and \\ slash', {})
     text = reg.render_prometheus()
     assert 'help with \\"quotes\\" and \\\\ slash' in text
 
@@ -104,7 +120,7 @@ def test_unmatched_route_template() -> None:
     client.get("/does-not-exist-abc")
     client.get("/another-missing-xyz")
     text = get_metrics_registry().render_prometheus()
-    assert '__unmatched__' in text
+    assert "__unmatched__" in text
     assert "/does-not-exist-abc" not in text
 
 
@@ -160,3 +176,67 @@ def test_concurrent_observes() -> None:
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(work, range(100)))
     assert reg.get_counter_value("conc_total", {"outcome": "ok"}) == 100.0
+
+
+def test_position_materialization_counter_has_exact_bounded_labels() -> None:
+    record_position_materialization(
+        component=PositionMaterializationMetricComponent.SERVICE,
+        source=PositionMaterializationMetricSource.CODE_SCAN,
+        mode=PositionMaterializationMetricMode.SUPPLIER,
+        outcome=PositionMaterializationMetricOutcome.CREATED,
+        reason_code=PositionMaterializationMetricReason.NONE,
+    )
+    labels = {
+        "component": "service",
+        "source": "CODE_SCAN",
+        "mode": "SUPPLIER",
+        "outcome": "created",
+        "reason_code": "none",
+    }
+    registry = get_metrics_registry()
+    assert registry.get_counter_value(POSITION_MATERIALIZATION_TOTAL, labels) == 1.0
+    assert (
+        'position_materialization_total{component="service",mode="SUPPLIER",'
+        'outcome="created",reason_code="none",source="CODE_SCAN"} 1.0'
+        in registry.render_prometheus()
+    )
+
+
+def test_materialization_metrics_reject_unknown_and_identifier_labels() -> None:
+    registry = MetricsRegistry()
+    registry.inc("position_materialization_total", "test", {"unexpected": "value"})
+    registry.inc(
+        "position_materialization_total",
+        "test",
+        {"job_id": "job-unique"},
+    )
+    assert registry.series_count("position_materialization_total") == 0
+    text = registry.render_prometheus()
+    assert "job-unique" not in text
+    assert "job_id=" not in text
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    (
+        ("component", "new-stage"),
+        ("mode", "ARBITRARY"),
+        ("outcome", "provider-specific-result"),
+    ),
+)
+def test_vision_candidate_metric_rejects_unknown_bounded_values(
+    label: str,
+    value: str,
+) -> None:
+    registry = MetricsRegistry()
+    labels = {
+        "component": "bridge",
+        "mode": "ITEM",
+        "outcome": "resolved",
+    }
+    labels[label] = value
+
+    registry.inc("vision_candidate_total", "Vision candidate bridge outcomes", labels)
+
+    assert registry.series_count("vision_candidate_total") == 0
+    assert value not in registry.render_prometheus()

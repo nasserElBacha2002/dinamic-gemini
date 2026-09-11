@@ -54,6 +54,29 @@ class LocalCsvImportRepository(Protocol):
         """Insert preview atomically; return existing on same export_id + content_hash."""
         ...
 
+    def claim_import_for_materialization(
+        self,
+        *,
+        inventory_id: str,
+        export_id: str,
+        conflict_policy: str,
+        confirmed_by_user_id: str | None,
+        apply_productive: LocalCsvProductiveApplier,
+        clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int,
+        cursor: SqlCursorLike | None = None,
+    ) -> tuple[LocalCsvImport, bool]:
+        """Atomically claim MATERIALIZING + apply productive staging when needed.
+
+        Renamed semantics of the former ``confirm_import_atomically``: this does
+        **not** mark CONFIRMED. Returns ``(record, already_confirmed)``.
+
+        Raises ``LOCAL_CSV_MATERIALIZATION_IN_PROGRESS`` when another owner holds
+        an active lease.
+        """
+        ...
+
     def confirm_import_atomically(
         self,
         *,
@@ -64,12 +87,75 @@ class LocalCsvImportRepository(Protocol):
         apply_productive: LocalCsvProductiveApplier,
         clock_now: Callable[[], datetime],
         cursor: SqlCursorLike | None = None,
+        owner: str | None = None,
+        lease_sec: int = 120,
     ) -> tuple[LocalCsvImport, bool]:
-        """Lock inventory+export, apply productive rows, mark CONFIRMED in one transaction.
+        """Compatibility alias for ``claim_import_for_materialization``."""
+        ...
 
-        When ``cursor`` is provided, the caller owns the surrounding transaction
-        (no nested commit). ``apply_productive`` receives ``cursor=`` for shared TX writes.
-        """
+    def finalize_import_confirmation_on_cursor(
+        self,
+        cur: SqlCursorLike,
+        *,
+        import_id: str,
+        clock_now: Callable[[], datetime],
+        confirmed_by_user_id: str | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+        require_inventory_writable_on_cursor: Callable[[SqlCursorLike, str], None]
+        | None = None,
+    ) -> LocalCsvImport:
+        """Finalize to CONFIRMED on the caller's cursor (no nested transaction)."""
+        ...
+
+    def finalize_import_confirmation(
+        self,
+        *,
+        import_id: str,
+        clock_now: Callable[[], datetime],
+        confirmed_by_user_id: str | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalCsvImport:
+        """Own a transaction and call ``finalize_import_confirmation_on_cursor``."""
+        ...
+
+    def mark_materialization_failed(
+        self,
+        *,
+        import_id: str,
+        error_code: str,
+        clock_now: Callable[[], datetime],
+        requires_review: bool = False,
+        next_retry_at: datetime | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalCsvImport:
+        """Persist MATERIALIZATION_FAILED or REQUIRES_REVIEW with a stable error code."""
+        ...
+
+    def mark_materialization_failed_on_cursor(
+        self,
+        cur: SqlCursorLike,
+        *,
+        import_id: str,
+        error_code: str,
+        clock_now: Callable[[], datetime],
+        requires_review: bool = False,
+        next_retry_at: datetime | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalCsvImport:
+        """Same as ``mark_materialization_failed`` on the caller's cursor."""
+        ...
+
+    def list_recovery_candidates(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> tuple[LocalCsvImport, ...]:
+        """MATERIALIZING with expired lease or FAILED ready for retry."""
         ...
 
     def save(self, record: LocalCsvImport) -> LocalCsvImport: ...

@@ -499,7 +499,12 @@ def list_aisle_positions_by_position(
         groups = [
             ResultsByPositionGroupResponse(
                 position=(
-                    ResultPositionRefResponse(id=b.position_id, name=b.position_name)
+                    ResultPositionRefResponse(
+                        id=b.position_id,
+                        name=b.position_name,
+                        aisle_location_id=None,
+                        identity_kind=None,
+                    )
                     if b.position_name
                     else None
                 ),

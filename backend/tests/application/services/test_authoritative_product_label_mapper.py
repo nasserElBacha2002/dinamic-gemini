@@ -126,10 +126,8 @@ def test_legacy_without_label_id_missing_quantity_stays_legacy() -> None:
         client_id="client-a",
         issued_resolver=_seed_issued(),
     )
-    assert len(products) == 1
-    assert products[0].validation_status is ProductLabelOutcomeStatus.VALID
-    assert products[0].quantity == 0
-    assert products[0].detail == "legacy_missing_quantity"
+    # Absence ≠ zero: no synthetic quantity=0 product specs.
+    assert products == []
     assert not authoritative_blocks_legacy_persist_fallback(
         _row(label_id=None, quantity=None, quantity_status="MISSING"), products
     )

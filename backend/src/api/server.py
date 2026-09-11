@@ -55,8 +55,12 @@ from src.observability.middleware import ObservabilityMiddleware
 from src.observability.runtime_wiring import (
     configure_metrics_registry_limits,
     refresh_operational_gauges_for_scrape,
+    stop_local_csv_import_recovery_scheduler,
+    stop_position_materialization_recovery_scheduler,
     stop_recovery_scheduler,
+    wire_local_csv_import_recovery_scheduler,
     wire_operational_metrics_collector,
+    wire_position_materialization_recovery_scheduler,
     wire_recovery_scheduler,
 )
 from src.runtime.container.runtime_environment import resolve_runtime_environment
@@ -264,7 +268,8 @@ async def health() -> HealthResponse:
     _sha = (os.environ.get("GIT_SHA") or "").strip() or None
     from src.runtime.app_container import get_app_container
 
-    backend_status = get_app_container().get_repository_backend_status()
+    container = get_app_container()
+    backend_status = container.get_repository_backend_status()
     return HealthResponse(
         ok=True,
         deploy_git_sha=_sha,
@@ -306,7 +311,8 @@ async def ready() -> Response:
         )
     from src.runtime.app_container import get_app_container
 
-    backend_status = get_app_container().get_repository_backend_status()
+    container = get_app_container()
+    backend_status = container.get_repository_backend_status()
     if not backend_status.resolved or not backend_status.healthy:
         return JSONResponse(
             status_code=503,
@@ -315,6 +321,21 @@ async def ready() -> Response:
                 "reason": "REPOSITORY_BACKEND_UNAVAILABLE",
                 "repository_backend_environment": backend_status.environment,
                 "repository_backend_reason_code": backend_status.reason_code,
+            },
+        )
+    from src.infrastructure.persistence.position_materialization_schema_verifier import (
+        SCHEMA_PRECONDITION_ERROR,
+        PositionMaterializationSchemaError,
+    )
+
+    try:
+        container.verify_position_materialization_recovery_schema(force=True)
+    except PositionMaterializationSchemaError:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "reason": SCHEMA_PRECONDITION_ERROR,
             },
         )
     return JSONResponse(status_code=200, content={"ok": True})
@@ -417,6 +438,8 @@ def start_worker() -> None:
     container = get_app_container()
     wire_operational_metrics_collector(container, settings)
     wire_recovery_scheduler(container, settings)
+    wire_position_materialization_recovery_scheduler(container)
+    wire_local_csv_import_recovery_scheduler(container)
 
     if not settings.embedded_worker_enabled:
         logger.info(
@@ -431,4 +454,9 @@ def start_worker() -> None:
 
 @app.on_event("shutdown")
 def stop_observability_runtime() -> None:
+    from src.runtime.app_container import get_app_container
+
     stop_recovery_scheduler()
+    container = get_app_container()
+    stop_position_materialization_recovery_scheduler(container)
+    stop_local_csv_import_recovery_scheduler(container)

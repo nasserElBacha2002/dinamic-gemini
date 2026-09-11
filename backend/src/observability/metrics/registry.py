@@ -39,6 +39,9 @@ _ALLOWED_LABEL_KEYS = frozenset(
         "error_class",
         "failure_code",
         "mode",
+        "source",
+        "channel",
+        "category",
     }
 )
 
@@ -61,6 +64,40 @@ _FORBIDDEN_LABEL_KEYS = frozenset(
 # HTTP method / status_class allowlists (no arbitrary external strings).
 _ALLOWED_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"})
 _ALLOWED_STATUS_CLASS = frozenset({"1xx", "2xx", "3xx", "4xx", "5xx"})
+
+_BOUNDED_METRIC_LABEL_VALUES: dict[str, dict[str, frozenset[str]]] = {
+    "vision_candidate_total": {
+        "component": frozenset({"candidate", "validation", "canonical_position", "bridge"}),
+        "mode": frozenset({"UNKNOWN", "ITEM", "POSITION"}),
+        "outcome": frozenset(
+            {
+                "no_candidate",
+                "raw_evidence_required",
+                "ambiguous",
+                "invalid",
+                "not_applicable",
+                "technical_error",
+                "canonical_rejected",
+                "resolved",
+                "requires_review",
+                "unrecognized",
+            }
+        ),
+    },
+    "position_flexible_divergence_total": {
+        "channel": frozenset({"CODE_SCAN", "VISION", "MOBILE", "IMPORT", "REVIEW"}),
+        "outcome": frozenset(
+            {
+                "SHADOW_DISABLED",
+                "MATCH_ACCEPT",
+                "MATCH_REJECT",
+                "DIVERGENCE_FLEXIBLE_ACCEPTS",
+                "DIVERGENCE_FLEXIBLE_REJECTS",
+            }
+        ),
+        "category": frozenset({"SIGNATURE", "PREEXISTENCE", "OTHER", "NONE"}),
+    },
+}
 
 DEFAULT_MAX_SERIES_PER_METRIC = 500
 SERIES_REJECTED_METRIC = "observability_series_rejected_total"
@@ -113,8 +150,9 @@ def _normalize_label_value(key: str, value: str) -> str:
     return v
 
 
-def _validate_labels(labels: dict[str, str]) -> dict[str, str]:
+def _validate_labels(metric: str, labels: dict[str, str]) -> dict[str, str]:
     out: dict[str, str] = {}
+    bounded_values = _BOUNDED_METRIC_LABEL_VALUES.get(metric, {})
     for key, value in labels.items():
         k = (key or "").strip()
         if not k:
@@ -123,7 +161,11 @@ def _validate_labels(labels: dict[str, str]) -> dict[str, str]:
             raise MetricsError(f"high-cardinality / forbidden label rejected: {k}")
         if k not in _ALLOWED_LABEL_KEYS:
             raise MetricsError(f"label not in allowlist: {k}")
-        out[k] = _normalize_label_value(k, str(value if value is not None else ""))
+        normalized = _normalize_label_value(k, str(value if value is not None else ""))
+        allowed_values = bounded_values.get(k)
+        if allowed_values is not None and normalized not in allowed_values:
+            raise MetricsError(f"value not in bounded allowlist for {metric}.{k}: {normalized}")
+        out[k] = normalized
     return out
 
 
@@ -190,16 +232,24 @@ class MetricsRegistry:
         key: tuple[tuple[str, str], ...] = (("reason_code", metric[:64]),)
         c = self._counters.get(SERIES_REJECTED_METRIC)
         if c is None:
-            self._ensure_kind(SERIES_REJECTED_METRIC, "counter", "Series rejected due to cardinality limit")
-            c = _Counter(name=SERIES_REJECTED_METRIC, help="Series rejected due to cardinality limit")
+            self._ensure_kind(
+                SERIES_REJECTED_METRIC, "counter", "Series rejected due to cardinality limit"
+            )
+            c = _Counter(
+                name=SERIES_REJECTED_METRIC, help="Series rejected due to cardinality limit"
+            )
             self._counters[SERIES_REJECTED_METRIC] = c
         c.values[key] = c.values.get(key, 0.0) + 1.0
         now = time.monotonic()
         if now - _last_reject_log_mono >= 5.0:
             _last_reject_log_mono = now
-            _log.warning("observability_series_rejected metric=%s limit=%s", metric, self._max_series)
+            _log.warning(
+                "observability_series_rejected metric=%s limit=%s", metric, self._max_series
+            )
 
-    def _can_add_series(self, metric: str, store_len: int, key: tuple[tuple[str, str], ...], existing: dict) -> bool:
+    def _can_add_series(
+        self, metric: str, store_len: int, key: tuple[tuple[str, str], ...], existing: dict
+    ) -> bool:
         if key in existing:
             return True
         if store_len >= self._max_series:
@@ -231,22 +281,26 @@ class MetricsRegistry:
             self._histograms[name] = h
         return h
 
-    def inc(self, name: str, help: str, labels: dict[str, str] | None = None, amount: float = 1.0) -> None:
+    def inc(
+        self, name: str, help: str, labels: dict[str, str] | None = None, amount: float = 1.0
+    ) -> None:
         try:
             with self._lock:
                 c = self._get_counter(name, help)
-                key = _labels_key(_validate_labels(labels or {}))
+                key = _labels_key(_validate_labels(name, labels or {}))
                 if not self._can_add_series(name, len(c.values), key, c.values):
                     return
                 c.values[key] = c.values.get(key, 0.0) + amount
         except MetricsError as exc:
             _log.warning("metrics_inc_rejected name=%s error=%s", name, exc)
 
-    def set_gauge(self, name: str, help: str, value: float, labels: dict[str, str] | None = None) -> None:
+    def set_gauge(
+        self, name: str, help: str, value: float, labels: dict[str, str] | None = None
+    ) -> None:
         try:
             with self._lock:
                 g = self._get_gauge(name, help)
-                key = _labels_key(_validate_labels(labels or {}))
+                key = _labels_key(_validate_labels(name, labels or {}))
                 if not self._can_add_series(name, len(g.values), key, g.values):
                     return
                 g.values[key] = float(value)
@@ -263,18 +317,20 @@ class MetricsRegistry:
         try:
             with self._lock:
                 g = self._get_gauge(name, help)
-                key = _labels_key(_validate_labels(labels or {}))
+                key = _labels_key(_validate_labels(name, labels or {}))
                 if not self._can_add_series(name, len(g.values), key, g.values):
                     return
                 g.values[key] = g.values.get(key, 0.0) + amount
         except MetricsError as exc:
             _log.warning("metrics_inc_gauge_rejected name=%s error=%s", name, exc)
 
-    def observe(self, name: str, help: str, value: float, labels: dict[str, str] | None = None) -> None:
+    def observe(
+        self, name: str, help: str, value: float, labels: dict[str, str] | None = None
+    ) -> None:
         try:
             with self._lock:
                 h = self._get_histogram(name, help)
-                key = _labels_key(_validate_labels(labels or {}))
+                key = _labels_key(_validate_labels(name, labels or {}))
                 if not self._can_add_series(name, len(h.values), key, h.values):
                     return
                 n = len(h.buckets)
@@ -302,7 +358,7 @@ class MetricsRegistry:
             c = self._counters.get(name)
             if c is None:
                 return 0.0
-            key = _labels_key(_validate_labels(labels or {}))
+            key = _labels_key(_validate_labels(name, labels or {}))
             return float(c.values.get(key, 0.0))
 
     def series_count(self, name: str | None = None) -> int:
@@ -350,17 +406,17 @@ class MetricsRegistry:
         lines: list[str] = []
         with self._lock:
             for c in sorted(self._counters.values(), key=lambda x: x.name):
-                lines.append(f'# HELP {c.name} {_escape_help(c.help)}')
+                lines.append(f"# HELP {c.name} {_escape_help(c.help)}")
                 lines.append(f"# TYPE {c.name} counter")
                 for labels, value in sorted(c.values.items()):
                     lines.append(f"{c.name}{_fmt_labels(labels)} {value}")
             for g in sorted(self._gauges.values(), key=lambda x: x.name):
-                lines.append(f'# HELP {g.name} {_escape_help(g.help)}')
+                lines.append(f"# HELP {g.name} {_escape_help(g.help)}")
                 lines.append(f"# TYPE {g.name} gauge")
                 for labels, value in sorted(g.values.items()):
                     lines.append(f"{g.name}{_fmt_labels(labels)} {value}")
             for h in sorted(self._histograms.values(), key=lambda x: x.name):
-                lines.append(f'# HELP {h.name} {_escape_help(h.help)}')
+                lines.append(f"# HELP {h.name} {_escape_help(h.help)}")
                 lines.append(f"# TYPE {h.name} histogram")
                 for labels, row in sorted(h.values.items()):
                     n = len(h.buckets)
@@ -374,9 +430,7 @@ class MetricsRegistry:
                     # +Inf must equal count
                     count = row[n + 1]
                     bl_inf = list(dict(labels).items()) + [("le", "+Inf")]
-                    lines.append(
-                        f"{h.name}_bucket{_fmt_labels(tuple(sorted(bl_inf)))} {count}"
-                    )
+                    lines.append(f"{h.name}_bucket{_fmt_labels(tuple(sorted(bl_inf)))} {count}")
                     lines.append(f"{h.name}_sum{_fmt_labels(labels)} {row[n]}")
                     lines.append(f"{h.name}_count{_fmt_labels(labels)} {count}")
         lines.append("")

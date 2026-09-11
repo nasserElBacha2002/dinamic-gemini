@@ -5579,15 +5579,50 @@ BEGIN
         confirmed_by_user_id VARCHAR(128) NULL,
         csv_company_id NVARCHAR(255) NULL,
         csv_client_id NVARCHAR(255) NULL,
+        last_error_code NVARCHAR(64) NULL,
+        materialization_attempts INT NOT NULL
+            CONSTRAINT DF_local_csv_imports_materialization_attempts DEFAULT 0,
+        materialization_owner NVARCHAR(128) NULL,
+        materialization_lease_expires_at DATETIME2 NULL,
+        materialization_started_at DATETIME2 NULL,
+        materialization_last_attempt_at DATETIME2 NULL,
+        materialization_next_retry_at DATETIME2 NULL,
+        fencing_version INT NOT NULL
+            CONSTRAINT DF_local_csv_imports_fencing_version DEFAULT 0,
         created_at DATETIME2 NOT NULL,
         updated_at DATETIME2 NOT NULL,
         CONSTRAINT FK_local_csv_imports_inventory
             FOREIGN KEY (inventory_id) REFERENCES dbo.inventories(id),
         CONSTRAINT UX_local_csv_imports_inventory_export UNIQUE (inventory_id, export_id),
         CONSTRAINT CK_local_csv_imports_status
-            CHECK (status IN ('PREVIEWED', 'CONFIRMED'))
+            CHECK (status IN (
+                'PREVIEWED',
+                'MATERIALIZING',
+                'CONFIRMED',
+                'MATERIALIZATION_FAILED',
+                'REQUIRES_REVIEW'
+            )),
+        CONSTRAINT CK_local_csv_imports_attempts_nonneg
+            CHECK (materialization_attempts >= 0),
+        CONSTRAINT CK_local_csv_imports_lease_owner_pair CHECK (
+            (materialization_owner IS NULL AND materialization_lease_expires_at IS NULL)
+            OR (materialization_owner IS NOT NULL AND materialization_lease_expires_at IS NOT NULL)
+        )
     );
 END;
+GO
+
+-- Fresh installs already include 0109/0110 columns above; keep additive guards for older folds.
+IF COL_LENGTH(N'dbo.local_csv_imports', N'materialization_owner') IS NULL
+    ALTER TABLE dbo.local_csv_imports ADD materialization_owner NVARCHAR(128) NULL;
+GO
+IF COL_LENGTH(N'dbo.local_csv_imports', N'materialization_lease_expires_at') IS NULL
+    ALTER TABLE dbo.local_csv_imports ADD materialization_lease_expires_at DATETIME2 NULL;
+GO
+IF COL_LENGTH(N'dbo.local_csv_imports', N'fencing_version') IS NULL
+    ALTER TABLE dbo.local_csv_imports
+        ADD fencing_version INT NOT NULL
+            CONSTRAINT DF_local_csv_imports_fencing_version DEFAULT 0;
 GO
 
 IF OBJECT_ID(N'dbo.local_csv_import_rows', N'U') IS NULL
@@ -5603,7 +5638,7 @@ BEGIN
         client_file_id NVARCHAR(255) NOT NULL,
         capture_order INT NULL,
         captured_at DATETIME2 NULL,
-        position_code NVARCHAR(255) NOT NULL,
+        position_code NVARCHAR(64) NOT NULL,
         internal_code NVARCHAR(255) NULL,
         quantity INT NULL,
         quantity_status NVARCHAR(64) NOT NULL,
@@ -5771,6 +5806,10 @@ BEGIN
         staging_dir NVARCHAR(1024) NOT NULL,
         confirmed_at DATETIME2 NULL,
         confirmed_by_user_id VARCHAR(128) NULL,
+        materialization_owner NVARCHAR(128) NULL,
+        materialization_lease_expires_at DATETIME2 NULL,
+        fencing_version INT NOT NULL
+            CONSTRAINT DF_local_inventory_packages_fencing_version DEFAULT 0,
         created_at DATETIME2 NOT NULL,
         updated_at DATETIME2 NOT NULL,
         CONSTRAINT FK_local_inventory_packages_inventory
@@ -5780,7 +5819,13 @@ BEGIN
         CONSTRAINT UX_local_inventory_packages_inventory_export
             UNIQUE (inventory_id, export_id),
         CONSTRAINT CK_local_inventory_packages_status
-            CHECK (status IN ('PREVIEWED', 'CONFIRMED'))
+            CHECK (status IN (
+                'PREVIEWED',
+                'MATERIALIZING',
+                'CONFIRMED',
+                'MATERIALIZATION_FAILED',
+                'REQUIRES_REVIEW'
+            ))
     );
 END;
 GO

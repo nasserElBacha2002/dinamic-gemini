@@ -58,6 +58,8 @@ class LocalInventoryPackageRepository(Protocol):
         confirmed_by_user_id: str | None,
         apply_productive: PackageConfirmProductiveApplier,
         clock_now: Callable[[], datetime],
+        owner: str,
+        lease_sec: int = 120,
         stage_evidence: PackageConfirmEvidenceStager | None = None,
     ) -> tuple[LocalInventoryPackage, bool]:
         """Confirm package + CSV under one final SQL transaction.
@@ -67,5 +69,38 @@ class LocalInventoryPackageRepository(Protocol):
         only, then the apply/confirm transaction revalidates under lock.
 
         Lock order on apply: package → csv import.
+
+        Returns MATERIALIZING until ``finalize_package_confirmation`` runs.
         """
+        ...
+
+    def finalize_package_confirmation(
+        self,
+        *,
+        package_id: str,
+        clock_now: Callable[[], datetime],
+        confirmed_by_user_id: str | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalInventoryPackage:
+        """MATERIALIZING → CONFIRMED for package and linked CSV import in one transaction.
+
+        Finalizes the linked CSV import on the same SQL cursor before updating the
+        package header. When the CSV is already CONFIRMED but the package is not,
+        completes the package repair in the same transaction.
+        """
+        ...
+
+    def mark_materialization_failed(
+        self,
+        *,
+        package_id: str,
+        error_code: str,
+        clock_now: Callable[[], datetime],
+        requires_review: bool = False,
+        next_retry_at: datetime | None = None,
+        owner: str | None = None,
+        expected_fencing_version: int | None = None,
+    ) -> LocalInventoryPackage:
+        """Persist failure on package + linked CSV import atomically."""
         ...

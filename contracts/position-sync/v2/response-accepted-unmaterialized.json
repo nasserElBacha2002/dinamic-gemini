@@ -1,0 +1,21 @@
+{
+  "draft_id": "77777777-7777-4777-8777-777777777777",
+  "requested_draft_id": "77777777-7777-4777-8777-777777777777",
+  "server_preliminary_id": "88888888-8888-4888-8888-888888888888",
+  "status": "VALIDATED",
+  "received_at": "2026-09-08T12:00:01Z",
+  "validation_errors": [],
+  "duplicate": false,
+  "position_result": {
+    "contract_version": 2,
+    "local_recognition_id": "local-position-1",
+    "normalized_code": "SUPPLIER-POSITION-A",
+    "remote_position_id": null,
+    "remote_position_label_id": null,
+    "status": "ACCEPTED_UNMATERIALIZED",
+    "error_code": null,
+    "retryable": false,
+    "server_timestamp": "2026-09-08T12:00:01Z",
+    "reconciliation_revision": 1
+  }
+}

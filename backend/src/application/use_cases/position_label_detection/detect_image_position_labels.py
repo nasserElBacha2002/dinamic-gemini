@@ -24,6 +24,14 @@ from src.application.services.position_label_detection.resolver import PositionL
 from src.application.services.position_label_detection.validation_service import (
     PositionLabelValidationService,
 )
+from src.application.services.position_recognition import (
+    CanonicalPositionValidationCommand,
+    CanonicalPositionValidator,
+    compare_position_shadow,
+    record_position_shadow_metric,
+)
+from src.domain.label_validation import CandidateLabel
+from src.domain.label_validation.context import LabelValidationContext
 from src.domain.position_label_detection.entities import (
     DETECTOR_NAME,
     DETECTOR_VERSION,
@@ -33,6 +41,7 @@ from src.domain.position_label_detection.entities import (
     PositionLabelDetectionStatus,
     PositionLabelSignatureStatus,
 )
+from src.domain.position_recognition import PositionRecognitionSource
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +149,7 @@ class ImagePositionDetectionUseCase:
         persistence_enabled: bool,
         max_codes_per_image: int,
         persist_no_label: bool = False,
+        canonical_validator: CanonicalPositionValidator | None = None,
         detector_name: str = DETECTOR_NAME,
         detector_version: str = DETECTOR_VERSION,
     ) -> None:
@@ -154,6 +164,7 @@ class ImagePositionDetectionUseCase:
         self._persistence_enabled = bool(persistence_enabled)
         self._max_codes = max(1, int(max_codes_per_image))
         self._persist_no_label = bool(persist_no_label)
+        self._canonical_validator = canonical_validator
         self._detector_name = detector_name
         self._detector_version = detector_version
 
@@ -398,6 +409,39 @@ class ImagePositionDetectionUseCase:
         *,
         now: datetime,
     ) -> ImagePositionLabelDetection:
+        canonical = None
+        if self._canonical_validator is not None:
+            canonical = self._canonical_validator.validate(
+                CanonicalPositionValidationCommand(
+                    candidate=CandidateLabel(raw_payload=code.raw_value),
+                    source=PositionRecognitionSource.CODE_SCAN,
+                    context=LabelValidationContext(
+                        resolved_profiles=None,
+                        job_id=command.job_id,
+                        client_id=command.client_id,
+                    ),
+                ),
+                evaluate_preexistence=False,
+                record_operational_metrics=False,
+            )
+
+        legacy = self._evaluate_position_code_legacy(command, code, now=now)
+        if canonical is not None:
+            comparison = compare_position_shadow(canonical, legacy.detection_status)
+            legacy.metadata_json = {
+                **(legacy.metadata_json or {}),
+                "canonical_shadow": comparison.to_metadata(),
+            }
+            record_position_shadow_metric(comparison)
+        return legacy
+
+    def _evaluate_position_code_legacy(
+        self,
+        command: ImagePositionDetectionCommand,
+        code: DetectedCode,
+        *,
+        now: datetime,
+    ) -> ImagePositionLabelDetection:
         parsed = self._parser.parse(code.raw_value)
         if parsed.status is PositionLabelDetectionStatus.MISSING_SIGNATURE and parsed.label_id:
             legacy = self._policy.try_accept_unsigned_legacy(
@@ -435,6 +479,78 @@ class ImagePositionDetectionUseCase:
                     detail=legacy.detail,
                     metadata={
                         **legacy.metadata,
+                        **_payload_hierarchy_meta(parsed.payload),
+                    },
+                )
+            flexible = self._policy.try_accept_unsigned_flexible(
+                parsed=parsed,
+                expected_client_id=command.client_id,
+            )
+            if flexible is not None:
+                assert flexible.label is not None
+                label = flexible.label
+                if not _qr_hierarchy_matches_catalog(
+                    parsed.payload, label.canonical_payload or {}
+                ):
+                    logger.info(
+                        "position_label_flexible_unsigned_hierarchy_mismatch client_id=%s "
+                        "job_id=%s asset_id=%s label_id=%s detector_version=%s correlation_id=%s",
+                        command.client_id,
+                        command.job_id,
+                        command.source_asset_id,
+                        label.public_identifier,
+                        self._detector_version,
+                        command.correlation_id,
+                    )
+                    return self._build_row(
+                        command,
+                        now=now,
+                        status=PositionLabelDetectionStatus.INVALID_TYPE,
+                        signature_status=PositionLabelSignatureStatus.MISSING,
+                        payload_hash=parsed.payload_hash,
+                        public_identifier=parsed.label_id,
+                        payload_version=parsed.version,
+                        bounding_box_json=code.bounding_box,
+                        rotation_degrees=code.rotation_degrees,
+                        confidence=code.confidence,
+                        detail="catalog_hierarchy_mismatch",
+                        metadata={
+                            **PositionLabelPolicyService.metadata_for_reject(
+                                signature_status=PositionLabelSignatureStatus.MISSING,
+                                validation_status=PositionLabelDetectionStatus.INVALID_TYPE,
+                            ),
+                            **_payload_hierarchy_meta(parsed.payload),
+                        },
+                    )
+                logger.info(
+                    "position_label_resolved_flexible_unsigned client_id=%s job_id=%s asset_id=%s "
+                    "label_id=%s detection_status=%s policy_decision=%s detector_version=%s "
+                    "correlation_id=%s",
+                    command.client_id,
+                    command.job_id,
+                    command.source_asset_id,
+                    label.public_identifier,
+                    flexible.detection_status.value,
+                    flexible.policy_decision.value,
+                    self._detector_version,
+                    command.correlation_id,
+                )
+                return self._build_row(
+                    command,
+                    now=now,
+                    status=flexible.detection_status,
+                    signature_status=flexible.signature_status,
+                    payload_hash=parsed.payload_hash or label.payload_hash,
+                    public_identifier=label.public_identifier,
+                    position_label_id=label.id,
+                    position_name_snapshot=label.name,
+                    payload_version=parsed.version or label.payload_version,
+                    bounding_box_json=code.bounding_box,
+                    rotation_degrees=code.rotation_degrees,
+                    confidence=code.confidence,
+                    detail=flexible.detail,
+                    metadata={
+                        **flexible.metadata,
                         **_payload_hierarchy_meta(parsed.payload),
                     },
                 )
@@ -562,7 +678,9 @@ class ImagePositionDetectionUseCase:
             )
 
         assert resolved.label is not None
-        if not _qr_hierarchy_matches_catalog(parsed.payload, resolved.label.canonical_payload or {}):
+        if not _qr_hierarchy_matches_catalog(
+            parsed.payload, resolved.label.canonical_payload or {}
+        ):
             logger.info(
                 "position_label_catalog_mismatch client_id=%s job_id=%s asset_id=%s "
                 "label_id=%s detector_version=%s correlation_id=%s",

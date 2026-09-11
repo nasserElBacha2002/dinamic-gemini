@@ -14,6 +14,11 @@ import type { CaptureRepository, CreateCaptureSessionInput, CreateCaptureSession
 import type { CapturePhotoRow, CaptureSessionRow } from '../src/database/schema/captureSchema';
 import type { ForegroundService } from '../src/native/foregroundService';
 import { TimingMarkStore } from '../src/observability/timingMarks';
+import { createActivePositionState } from '../src/core/positionLabelPayload';
+import {
+  clearInMemoryPositionState,
+  getActivePosition,
+} from '../src/features/localCodeScan/activePositionStore';
 
 const image: GalleryImage = {
   assetId: '100',
@@ -905,6 +910,42 @@ describe('CaptureService corrections', () => {
     expect(secondId).not.toBe(firstId);
     expect((await repo.getSession(firstId!))?.status).toBe('paused');
     expect((await repo.getSession(secondId!))?.status).toBe('active');
+  });
+
+  it('restores V2 active position and clears only corrupt persisted state', async () => {
+    const repo = new FakeRepo();
+    const active = createActivePositionState({
+      localRecognitionId: 'local-restore-1',
+      captureSessionId: 'session-1',
+      inventoryId: 'inv-1',
+      aisleLocalId: 'aisle-1',
+      rawCode: 'POS-RESTORE',
+      rawPayload: 'POS-RESTORE',
+      source: 'LOCAL_CODE_SCAN',
+    });
+    repo.sessions.set(
+      'session-1',
+      session({ active_position_json: JSON.stringify(active) }),
+    );
+    clearInMemoryPositionState('session-1');
+    const service = new CaptureService(
+      repo as unknown as CaptureRepository,
+      foreground(),
+      createLogger(() => undefined),
+      {
+        mediaStore: mediaStore(),
+        positionActiveStateRestoreEnabled: true,
+      },
+    );
+
+    await service.loadSession('session-1', false);
+    expect(getActivePosition('session-1')?.normalizedCode).toBe('POS-RESTORE');
+
+    repo.sessions.set('session-1', session({ active_position_json: '{corrupt' }));
+    clearInMemoryPositionState('session-1');
+    await service.loadSession('session-1', false);
+    expect(getActivePosition('session-1')).toBeNull();
+    expect((await repo.getSession('session-1'))?.active_position_json).toBeNull();
   });
 });
 

@@ -21,7 +21,12 @@ import {
   type CaptureFinishStage,
 } from './finishObservability';
 import { CaptureFreezeService } from './captureFreezeService';
-import { resetPositionSession } from '../localCodeScan/activePositionStore';
+import { parseActivePositionStateJson } from '../../core/positionLabelPayload';
+import {
+  clearCurrentPosition,
+  resetPositionSession,
+  restorePositionSession,
+} from '../localCodeScan/activePositionStore';
 
 export type UploadPolicy = 'MANUAL' | 'WHEN_CONNECTED' | 'NOW';
 
@@ -89,6 +94,7 @@ export interface CaptureServiceAdapters {
   readonly finishSafeMediaCheck?: boolean;
   /** Persist freeze watermark on successful finish (default true). */
   readonly sessionFreeze?: boolean;
+  readonly positionActiveStateRestoreEnabled?: boolean;
 }
 
 type Listener = (snapshot: CaptureSnapshot) => void;
@@ -152,6 +158,7 @@ export class CaptureService {
   private readonly finishInstrumentation: boolean;
   private readonly finishSafeMediaCheck: boolean;
   private readonly sessionFreeze: boolean;
+  private readonly positionActiveStateRestoreEnabled: boolean;
   private readonly freezeService: CaptureFreezeService;
   private sqliteBusyCountFinish = 0;
 
@@ -170,6 +177,8 @@ export class CaptureService {
     this.finishInstrumentation = adapters.finishInstrumentation ?? true;
     this.finishSafeMediaCheck = adapters.finishSafeMediaCheck ?? true;
     this.sessionFreeze = adapters.sessionFreeze ?? true;
+    this.positionActiveStateRestoreEnabled =
+      adapters.positionActiveStateRestoreEnabled ?? false;
     this.freezeService = new CaptureFreezeService(repo);
     this.coordinator = createScanCoordinator(() => this.runScanOnce());
   }
@@ -237,6 +246,7 @@ export class CaptureService {
       throw new Error('No se encontró la captura local.');
     }
     this.session = session;
+    await this.restoreActivePosition(session);
     this.photos = await this.repo.listPhotos(session.id);
     this.scanCursor = cursorFromSession(session, 'scan');
     this.floorCursor = cursorFromInitialMarker(session);
@@ -251,6 +261,44 @@ export class CaptureService {
     }
     this.emit();
     return this.getSnapshot();
+  }
+
+  private async restoreActivePosition(session: CaptureSessionRow): Promise<void> {
+    if (!this.positionActiveStateRestoreEnabled) return;
+    clearCurrentPosition(session.id);
+    const json = session.active_position_json;
+    if (!json?.trim()) return;
+    const parsed = parseActivePositionStateJson(json, {
+      captureSessionId: session.id,
+      inventoryId: session.inventory_id,
+      aisleLocalId: session.aisle_id,
+    });
+    if (parsed.ok) {
+      restorePositionSession(parsed.state);
+      if (parsed.migrated) {
+        await this.repo.updateActivePositionJson(session.id, JSON.stringify(parsed.state));
+      }
+      emitObservability(this.observability?.reporter ?? null, {
+        name: 'mobile_position_restored_total',
+        sessionId: session.id,
+        attributes: {
+          schema_version: parsed.state.schemaVersion,
+          migrated: parsed.migrated,
+        },
+      });
+      return;
+    }
+    await this.repo.updateActivePositionJson(session.id, null);
+    this.logger.warn('recovery', {
+      reason: 'active_position_restore_failed',
+      sessionId: session.id,
+      errorCode: parsed.errorCode,
+    });
+    emitObservability(this.observability?.reporter ?? null, {
+      name: 'mobile_position_restore_failed_total',
+      sessionId: session.id,
+      attributes: { error_code: parsed.errorCode },
+    });
   }
 
   /** Deterministic point-in-time read; prefer over subscribe-wrapped promises. */

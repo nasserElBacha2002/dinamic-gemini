@@ -132,15 +132,35 @@ def test_plan_stage_apply_race_marks_duplicate_without_productive_dupes(
 
     def thread_a() -> None:
         try:
-            package_repo.confirm_package_atomically(
+            claimed, _duplicate = package_repo.confirm_package_atomically(
                 inventory_id=inv_id,
                 export_id=export_a,
                 conflict_policy="SKIP",
                 confirmed_by_user_id="user-a",
                 apply_productive=apply_productive,
                 clock_now=clock.now,
+                owner="user-a",
                 stage_evidence=stage_evidence,
             )
+            # confirm_package_atomically leaves MATERIALIZING; finalize like the use case.
+            if claimed.status == "MATERIALIZING" and claimed.csv_import is not None:
+                fencing = int(claimed.csv_import.fencing_version or 0)
+                csv_repo = stack["csv_repo"]
+                assert isinstance(csv_repo, SqlLocalCsvImportRepository)
+                csv_repo.finalize_import_confirmation(
+                    import_id=claimed.csv_import_id,
+                    clock_now=clock.now,
+                    confirmed_by_user_id="user-a",
+                    owner="user-a",
+                    expected_fencing_version=fencing,
+                )
+                package_repo.finalize_package_confirmation(
+                    package_id=claimed.id,
+                    clock_now=clock.now,
+                    confirmed_by_user_id="user-a",
+                    owner="user-a",
+                    expected_fencing_version=fencing,
+                )
         except BaseException as exc:  # noqa: BLE001 — capture for main thread
             errors.append(exc)
 

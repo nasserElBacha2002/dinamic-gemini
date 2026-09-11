@@ -60,12 +60,17 @@ from src.application.services.label_validation import (
     item_profile_source,
     position_profile_source,
 )
+from src.application.services.position_recognition import (
+    CanonicalPositionValidator,
+    PositionFlexibleShadowEvaluator,
+)
 from src.application.services.product_labels.issued_product_label_resolver import (
     IssuedProductLabelResolver,
 )
 from src.domain.assets.entities import SourceAsset
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import (
+    RAW_EVIDENCE_HASH_ALGORITHM,
     ExecutionScope,
     ImageProcessingContext,
     ImageProcessingResult,
@@ -266,6 +271,8 @@ class CodeScanProcessingStrategy:
         position_detection=None,
         issued_label_resolver: IssuedProductLabelResolver | None = None,
         label_validation_service: LabelValidationService | None = None,
+        canonical_position_validator: CanonicalPositionValidator | None = None,
+        flexible_shadow_evaluator: PositionFlexibleShadowEvaluator | None = None,
         position_label_detection_repo=None,
         monotonic_fn: Callable[[], float] | None = None,
     ) -> None:
@@ -279,7 +286,11 @@ class CodeScanProcessingStrategy:
         self._position_detection = position_detection
         self._issued_label_resolver = issued_label_resolver
         self._label_validation = label_validation_service or LabelValidationService()
-        self._classifier = CodeScanLabelClassifier(self._label_validation)
+        self._classifier = CodeScanLabelClassifier(
+            self._label_validation,
+            canonical_position_validator=canonical_position_validator,
+            flexible_shadow_evaluator=flexible_shadow_evaluator,
+        )
         self._position_detection_repo = position_label_detection_repo
         self._monotonic = monotonic_fn or time.monotonic
 
@@ -600,9 +611,7 @@ class CodeScanProcessingStrategy:
             self._metrics.increment("code_scan.scan_incomplete_total")
         if scan_session.partial_timeout:
             self._metrics.increment("code_scan.timeout_partial_total")
-        decode_elapsed_ms = max(
-            0, int((self._monotonic() - decode_budget_started_at) * 1000)
-        )
+        decode_elapsed_ms = max(0, int((self._monotonic() - decode_budget_started_at) * 1000))
         self._publish_asset_event(
             context,
             "code_scan.decode_completed",
@@ -664,12 +673,8 @@ class CodeScanProcessingStrategy:
         duration_ms = int((self._monotonic() - asset_started_at) * 1000)
 
         if use_unified:
-            classification = self._classifier.classify(
-                candidates, context=validation_ctx
-            )
-            self._metrics.increment(
-                "code_scan_candidate_total", amount=len(candidates)
-            )
+            classification = self._classifier.classify(candidates, context=validation_ctx)
+            self._metrics.increment("code_scan_candidate_total", amount=len(candidates))
             if classification.has_ambiguity:
                 self._metrics.increment("code_scan_ambiguous_total")
                 ambiguity_evidence: dict[str, Any] = {
@@ -723,19 +728,11 @@ class CodeScanProcessingStrategy:
                 elif classification.items:
                     item_candidates = list(classification.item_candidates)
                 else:
-                    item_candidates = [
-                        c
-                        for idx, c in enumerate(candidates)
-                        if idx not in claimed
-                    ]
+                    item_candidates = [c for idx, c in enumerate(candidates) if idx not in claimed]
             elif self._position_detection is not None:
                 # DINAMIC POSITION: existing HMAC/catalog path, but only on non-ITEM indexes.
                 item_indexes = {i.detection_index for i in classification.items}
-                position_pool = [
-                    c
-                    for idx, c in enumerate(candidates)
-                    if idx not in item_indexes
-                ]
+                position_pool = [c for idx, c in enumerate(candidates) if idx not in item_indexes]
                 item_candidates, position_meta = self._run_dinamic_position_detection(
                     context=context,
                     asset=asset,
@@ -762,11 +759,13 @@ class CodeScanProcessingStrategy:
         evidence: dict[str, Any] | None = None
 
         if item_source is LabelProfileSource.SUPPLIER and use_unified:
-            product_results, evidence, supplier_fail = self._resolve_supplier_products_from_classification(
-                context=context,
-                validation_ctx=validation_ctx,
-                classification=classification,
-                duration_ms=int((self._monotonic() - asset_started_at) * 1000),
+            product_results, evidence, supplier_fail = (
+                self._resolve_supplier_products_from_classification(
+                    context=context,
+                    validation_ctx=validation_ctx,
+                    classification=classification,
+                    duration_ms=int((self._monotonic() - asset_started_at) * 1000),
+                )
             )
             if supplier_fail is not None:
                 self._finalize_asset_event(context, supplier_fail)
@@ -865,9 +864,7 @@ class CodeScanProcessingStrategy:
         if consolidated.status in (
             CodeConsolidationStatus.RESOLVED,
             CodeConsolidationStatus.RESOLVED_MULTI,
-        ) or (
-            item_source is LabelProfileSource.SUPPLIER and product_results
-        ):
+        ) or (item_source is LabelProfileSource.SUPPLIER and product_results):
             # D1 path: consolidator produced product_results that must pass registry.
             if consolidated.product_results and not product_results:
                 consolidated = type(consolidated)(
@@ -894,15 +891,9 @@ class CodeScanProcessingStrategy:
                     len(detections),
                     counted,
                     [p.label_id for p in product_results if getattr(p, "label_id", None)],
-                    [
-                        r.label_id
-                        for r in consolidated.rejections
-                        if getattr(r, "label_id", None)
-                    ],
+                    [r.label_id for r in consolidated.rejections if getattr(r, "label_id", None)],
                     len(consolidated.rejections)
-                    + _evidence_list_len(
-                        evidence, "product_label_registry_rejections"
-                    ),
+                    + _evidence_list_len(evidence, "product_label_registry_rejections"),
                     scan_session.scan_complete,
                     scan_session.stop_reason.value,
                     (position_meta or {}).get("position_candidate_count"),
@@ -920,9 +911,7 @@ class CodeScanProcessingStrategy:
                     else consolidated.internal_code
                 )
                 primary_qty = (
-                    product_results[0].quantity
-                    if product_results
-                    else consolidated.quantity
+                    product_results[0].quantity if product_results else consolidated.quantity
                 )
                 # Logistic units (SSCC/LPN) are recognized without inventing SKU/qty —
                 # inventory ProductRecord auto-resolve still requires trade-item fields.
@@ -939,6 +928,100 @@ class CodeScanProcessingStrategy:
                 minimal = bool(
                     item_cfg is not None and getattr(item_cfg, "is_minimal", lambda: False)()
                 )
+                qty_rules = getattr(item_cfg, "quantity_rules", None) if item_cfg else None
+                qty_required = bool(getattr(qty_rules, "required", False)) if qty_rules else False
+                allow_external = (
+                    bool(getattr(qty_rules, "allow_external_fallback", False))
+                    if qty_rules
+                    else False
+                )
+                missing_action = getattr(qty_rules, "missing_quantity_action", None)
+                expected_presence = getattr(qty_rules, "expected_presence", None)
+                presence_value = (
+                    getattr(expected_presence, "value", str(expected_presence or ""))
+                    if expected_presence is not None
+                    else ""
+                )
+                action_value = (
+                    getattr(missing_action, "value", None)
+                    if missing_action is not None
+                    else "PENDING_MANUAL_REVIEW"
+                )
+                # OPTIONAL + not required: identity-only codes are complete unless the
+                # profile explicitly asks for Vision enrichment (EXTERNAL_FALLBACK).
+                optional_identity_ok = (
+                    not qty_required
+                    and presence_value.upper() == "OPTIONAL"
+                    and action_value != "EXTERNAL_FALLBACK"
+                    and not allow_external
+                )
+                enrichment_incomplete = primary_qty is None and (
+                    qty_required
+                    or logistic_only
+                    or (
+                        not optional_identity_ok
+                        and missing_action is not None
+                        and action_value != "RESOLVE_CODE_ONLY"
+                    )
+                )
+                # Identity confirmed + missing completion fields must not look fully resolved
+                # when the profile requires quantity (or enrichment). Never invent qty=0.
+                if enrichment_incomplete and primary_code:
+                    if action_value == "EXTERNAL_FALLBACK" or allow_external:
+                        status = ImageResultStatus.PENDING_MANUAL_REVIEW
+                    elif action_value == "UNRECOGNIZED":
+                        status = ImageResultStatus.UNRECOGNIZED
+                    elif action_value == "RESOLVE_CODE_ONLY" and not qty_required:
+                        status = ImageResultStatus.RESOLVED_INTERNAL
+                    else:
+                        status = ImageResultStatus.PENDING_MANUAL_REVIEW
+                    evidence = {
+                        **(evidence or {}),
+                        "identity_valid": True,
+                        "enrichment_complete": False,
+                        "quantity_status": "MISSING",
+                        "quantity_source": None,
+                        "fallback_eligible": bool(allow_external),
+                        "missing_fields": ["quantity"],
+                    }
+                    if logistic_only and not minimal:
+                        evidence["logistic_unit_review"] = True
+                        evidence["limitation"] = (
+                            "LOGISTIC_UNIT_NO_PRODUCT_RECORD: "
+                            "SSCC/LPN recognized; inventory SKU rows not auto-created"
+                        )
+                    elif logistic_only and minimal:
+                        evidence["logistic_unit_identity_only"] = True
+                    result = ImageProcessingResult(
+                        job_id=context.job_id,
+                        asset_id=context.asset_id,
+                        status=status,
+                        processing_mode=mode,
+                        resolved_by=STRATEGY_KEY,
+                        internal_code=primary_code,
+                        quantity=None,
+                        evidence=evidence,
+                        warnings=list(consolidated.warnings) + scan_warnings,
+                        validation_errors=["MISSING_QUANTITY"],
+                        error_code="MISSING_QUANTITY",
+                        execution_scope=ExecutionScope.SINGLE_ASSET,
+                        logical_asset_attempt=False,
+                        processing_duration_ms=duration_ms,
+                        product_results=list(product_results),
+                    )
+                    self._publish_asset_event(
+                        context,
+                        "code_scan.validation_completed",
+                        message="identity confirmed; enrichment incomplete",
+                        metadata={
+                            "status": status.value,
+                            "product_count": counted,
+                            "enrichment_complete": False,
+                        },
+                    )
+                    self._finalize_asset_event(context, result)
+                    return result
+
                 status = (
                     ImageResultStatus.PENDING_MANUAL_REVIEW
                     if logistic_only and not minimal
@@ -959,6 +1042,14 @@ class CodeScanProcessingStrategy:
                         "identity_valid": True,
                         "enrichment_complete": False,
                         "logistic_unit_identity_only": True,
+                    }
+                else:
+                    evidence = {
+                        **(evidence or {}),
+                        "identity_valid": True,
+                        "enrichment_complete": primary_qty is not None,
+                        "quantity_status": "PRESENT" if primary_qty is not None else "MISSING",
+                        "quantity_source": "CODE_SCAN" if primary_qty is not None else None,
                     }
                 result = ImageProcessingResult(
                     job_id=context.job_id,
@@ -1001,9 +1092,7 @@ class CodeScanProcessingStrategy:
             # GLOBAL_EXTERNAL_FALLBACK with a misleading NO_CODE_SYMBOL_FOUND.
             if position_only and position_meta is not None:
                 statuses = position_meta.get("position_statuses") or []
-                position_ok = any(
-                    s in ("VALID", "SIGNATURE_VALIDATION_SKIPPED") for s in statuses
-                )
+                position_ok = any(s in ("VALID", "SIGNATURE_VALIDATION_SKIPPED") for s in statuses)
                 supplier_position_only = (
                     position_meta.get("position_profile_source")
                     == LabelProfileSource.SUPPLIER.value
@@ -1035,20 +1124,34 @@ class CodeScanProcessingStrategy:
                     )
                     self._finalize_asset_event(context, result)
                     return result
-                error_code = (
-                    "POSITION_LABEL_UNRESOLVED"
-                    if not position_ok
-                    else None
+                supplier_position_failed = (
+                    position_meta.get("position_profile_source")
+                    == LabelProfileSource.SUPPLIER.value
+                    and not position_ok
                 )
+                first_position_error = next(
+                    (
+                        s
+                        for s in statuses
+                        if s and s not in ("VALID", "SIGNATURE_VALIDATION_SKIPPED")
+                    ),
+                    None,
+                )
+                if supplier_position_failed and first_position_error:
+                    error_code: str | None = str(first_position_error)
+                    status = ImageResultStatus.PENDING_MANUAL_REVIEW
+                else:
+                    error_code = "POSITION_LABEL_UNRESOLVED" if not position_ok else None
+                    status = (
+                        ImageResultStatus.RESOLVED_INTERNAL
+                        if position_ok
+                        else ImageResultStatus.UNRECOGNIZED
+                    )
                 self._metrics.increment("code_scan.position_only")
                 result = ImageProcessingResult(
                     job_id=context.job_id,
                     asset_id=context.asset_id,
-                    status=(
-                        ImageResultStatus.RESOLVED_INTERNAL
-                        if position_ok
-                        else ImageResultStatus.UNRECOGNIZED
-                    ),
+                    status=status,
                     processing_mode=mode,
                     resolved_by=STRATEGY_KEY,
                     evidence={
@@ -1057,7 +1160,9 @@ class CodeScanProcessingStrategy:
                         **({"position_label_detection": position_meta} if position_meta else {}),
                     },
                     warnings=(
-                        list(consolidated.warnings) + scan_warnings + (["POSITION_LABEL_ONLY"] if position_ok else [])
+                        list(consolidated.warnings)
+                        + scan_warnings
+                        + (["POSITION_LABEL_ONLY"] if position_ok else [])
                     ),
                     error_code=error_code,
                     execution_scope=ExecutionScope.SINGLE_ASSET,
@@ -1093,9 +1198,7 @@ class CodeScanProcessingStrategy:
                     for w in (consolidated.warnings or ())
                 )
             )
-            error_code = (
-                "D1_CANDIDATES_FAILED" if has_d1_rejection else "NO_CODE_SYMBOL_FOUND"
-            )
+            error_code = "D1_CANDIDATES_FAILED" if has_d1_rejection else "NO_CODE_SYMBOL_FOUND"
             result = ImageProcessingResult(
                 job_id=context.job_id,
                 asset_id=context.asset_id,
@@ -1195,10 +1298,7 @@ class CodeScanProcessingStrategy:
         supplier_rejections = [
             r
             for r in classification.rejections
-            if (
-                r.label_kind is LabelKind.ITEM
-                and item_source is LabelProfileSource.SUPPLIER
-            )
+            if (r.label_kind is LabelKind.ITEM and item_source is LabelProfileSource.SUPPLIER)
             or (
                 r.label_kind is LabelKind.POSITION
                 and position_source is LabelProfileSource.SUPPLIER
@@ -1230,9 +1330,7 @@ class CodeScanProcessingStrategy:
                 "code_scan.validation_completed",
                 message="supplier validation rejected payload",
                 metadata={
-                    "label_kind": (
-                        first.label_kind.value if first.label_kind else None
-                    ),
+                    "label_kind": (first.label_kind.value if first.label_kind else None),
                     "error_code": error_code,
                     "profile_validation_executed": True,
                 },
@@ -1243,7 +1341,21 @@ class CodeScanProcessingStrategy:
                 status=ImageResultStatus.PENDING_MANUAL_REVIEW,
                 processing_mode=mode,
                 resolved_by=STRATEGY_KEY,
-                evidence={"profile_validation_executed": True},
+                evidence={
+                    "profile_validation_executed": True,
+                    "supplier_label_rejections": [
+                        {
+                            "validation_status": r.error_code,
+                            "detail": r.detail,
+                            "detection_index": r.detection_index,
+                            "raw_value_sha256": r.raw_payload_hash,
+                            "label_kind": (
+                                r.label_kind.value if r.label_kind is not None else None
+                            ),
+                        }
+                        for r in supplier_rejections
+                    ],
+                },
                 warnings=["SUPPLIER_LABEL_REJECTED"] + scan_warnings,
                 error_code=error_code,
                 execution_scope=ExecutionScope.SINGLE_ASSET,
@@ -1386,9 +1498,7 @@ class CodeScanProcessingStrategy:
                     source_asset_id=context.asset_id,
                     codes=detected_codes,
                     client_image_id=getattr(asset, "upload_client_file_id", None),
-                    ordered_capture_session_id=getattr(
-                        asset, "ordered_capture_session_id", None
-                    ),
+                    ordered_capture_session_id=getattr(asset, "ordered_capture_session_id", None),
                     sequence_number=getattr(asset, "sequence_number", None),
                     correlation_id=context.job_id,
                 )
@@ -1397,18 +1507,12 @@ class CodeScanProcessingStrategy:
             if pos_result.disabled or pos_result.context_invalid:
                 item_candidates = list(candidates)
             else:
-                item_candidates = [
-                    c
-                    for idx, c in enumerate(candidates)
-                    if idx not in pos_indexes
-                ]
+                item_candidates = [c for idx, c in enumerate(candidates) if idx not in pos_indexes]
             if protected_item_indexes:
                 # Classifier already claimed ITEM indexes — keep them for ITEM path.
                 item_by_idx = {idx: c for idx, c in enumerate(candidates)}
                 merged = {
-                    idx: item_by_idx[idx]
-                    for idx in protected_item_indexes
-                    if idx in item_by_idx
+                    idx: item_by_idx[idx] for idx in protected_item_indexes if idx in item_by_idx
                 }
                 for idx, c in enumerate(candidates):
                     if idx not in pos_indexes and idx not in merged:
@@ -1424,9 +1528,7 @@ class CodeScanProcessingStrategy:
             position_meta = {
                 "position_detection_count": len(pos_result.detections),
                 "position_ambiguous": pos_result.ambiguous,
-                "position_statuses": [
-                    d.detection_status.value for d in pos_result.detections
-                ],
+                "position_statuses": [d.detection_status.value for d in pos_result.detections],
                 "position_detection_duration_ms": position_duration_ms,
                 "position_candidate_indexes": list(pos_result.position_candidate_indexes),
                 "position_profile_source": LabelProfileSource.DINAMIC.value,
@@ -1468,9 +1570,7 @@ class CodeScanProcessingStrategy:
         now = datetime.now(timezone.utc)
         client_id = (context.client_id or "").strip() or "unknown"
         profile = (
-            validation_ctx.resolved_profiles.position
-            if validation_ctx.resolved_profiles
-            else None
+            validation_ctx.resolved_profiles.position if validation_ctx.resolved_profiles else None
         )
         for classified in positions:
             label = classified.label
@@ -1486,9 +1586,7 @@ class CodeScanProcessingStrategy:
                     job_id=context.job_id,
                     source_asset_id=context.asset_id,
                     client_image_id=getattr(asset, "upload_client_file_id", None),
-                    ordered_capture_session_id=getattr(
-                        asset, "ordered_capture_session_id", None
-                    ),
+                    ordered_capture_session_id=getattr(asset, "ordered_capture_session_id", None),
                     sequence_number=getattr(asset, "sequence_number", None),
                     position_label_id=None,
                     public_identifier=label.position_id,
@@ -1509,8 +1607,15 @@ class CodeScanProcessingStrategy:
                     created_at=now,
                     updated_at=now,
                     metadata_json={
+                        "raw_payload_length": len(label.raw_payload.encode("utf-8")),
+                        "raw_hash_algorithm": RAW_EVIDENCE_HASH_ALGORITHM,
                         "profile_source": LabelProfileSource.SUPPLIER.value,
                         "label_kind": LabelKind.POSITION.value,
+                        "client_supplier_id": (profile.client_supplier_id if profile else None),
+                        "profile_id": (profile.extraction_profile_id if profile else None),
+                        "profile_version": (
+                            profile.extraction_profile_version if profile else None
+                        ),
                         "extraction_profile_id": (
                             profile.extraction_profile_id if profile else None
                         ),
@@ -1526,13 +1631,14 @@ class CodeScanProcessingStrategy:
             )
 
         for rejection in classification.rejections:
-            if rejection.label_kind is LabelKind.POSITION or (
-                rejection.error_code
-                and (
-                    "DINAMIC" in rejection.error_code
-                    or rejection.error_code
-                    == LabelValidationErrorCode.LABEL_PROFILE_SOURCE_MISMATCH.value
-                )
+            # Only POSITION-kind rejections belong in position detection indexes.
+            # ITEM Dinamic integrity failures must not create a false position-only path.
+            if rejection.label_kind is LabelKind.POSITION:
+                indexes.append(rejection.detection_index)
+                statuses.append(rejection.error_code or "INVALID")
+            elif rejection.error_code in (
+                LabelValidationErrorCode.DINAMIC_POSITION_INVALID.value,
+                LabelValidationErrorCode.LABEL_PROFILE_SOURCE_MISMATCH.value,
             ):
                 indexes.append(rejection.detection_index)
                 statuses.append(rejection.error_code or "INVALID")
@@ -1544,13 +1650,10 @@ class CodeScanProcessingStrategy:
                 detector_version=_SUPPLIER_POSITION_DETECTOR_VERSION,
                 detections=rows,
             )
-            self._metrics.increment(
-                "position_label_detection_valid_total", amount=len(rows)
-            )
+            self._metrics.increment("position_label_detection_valid_total", amount=len(rows))
         elif rows:
             logger.warning(
-                "supplier_position_materialization_skipped_no_repo "
-                "job_id=%s asset_id=%s count=%s",
+                "supplier_position_materialization_skipped_no_repo job_id=%s asset_id=%s count=%s",
                 context.job_id,
                 context.asset_id,
                 len(rows),
@@ -1570,6 +1673,9 @@ class CodeScanProcessingStrategy:
                     "side": p.label.side,
                     "level": p.label.level,
                     "detection_index": p.detection_index,
+                    "client_supplier_id": (profile.client_supplier_id if profile else None),
+                    "profile_id": (profile.extraction_profile_id if profile else None),
+                    "profile_version": (profile.extraction_profile_version if profile else None),
                 }
                 for p in positions
             ],
@@ -1621,18 +1727,14 @@ class CodeScanProcessingStrategy:
                 )
             )
         profile = (
-            validation_ctx.resolved_profiles.item
-            if validation_ctx.resolved_profiles
-            else None
+            validation_ctx.resolved_profiles.item if validation_ctx.resolved_profiles else None
         )
         evidence: dict[str, Any] = {
             "label_profile_source": LabelProfileSource.SUPPLIER.value,
             "label_kind": LabelKind.ITEM.value,
             "recognition_source": RecognitionSource.CODE_SCAN.value,
             "extraction_profile_id": profile.extraction_profile_id if profile else None,
-            "extraction_profile_version": (
-                profile.extraction_profile_version if profile else None
-            ),
+            "extraction_profile_version": (profile.extraction_profile_version if profile else None),
         }
         return products, evidence, None
 
@@ -1804,10 +1906,7 @@ class CodeScanProcessingStrategy:
                 duplicate_detection_count=p.duplicate_detection_count,
                 symbology=p.symbology,
             )
-            if (
-                resolved.status is ProductLabelOutcomeStatus.VALID
-                and resolved.product is not None
-            ):
+            if resolved.status is ProductLabelOutcomeStatus.VALID and resolved.product is not None:
                 products.append(resolved.product)
             else:
                 self._metrics.increment(

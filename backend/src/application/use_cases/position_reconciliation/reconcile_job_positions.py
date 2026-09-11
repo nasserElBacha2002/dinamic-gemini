@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, replace
 from uuid import uuid4
 
@@ -20,6 +21,9 @@ from src.application.ports.image_position_label_detection_repository import (
 )
 from src.application.ports.job_image_coverage_repository import JobImageCoverageRepository
 from src.application.ports.job_source_asset_repository import JobSourceAssetRepository
+from src.application.ports.materialized_position_identity_reader import (
+    MaterializedPositionIdentityReader,
+)
 from src.application.ports.position_reconciliation_repository import (
     PositionReconciliationRepository,
 )
@@ -38,6 +42,9 @@ from src.application.services.position_reconciliation.fingerprint import (
 from src.application.services.position_reconciliation.job_final_item_result_reader import (
     JobFinalItemResultReader,
 )
+from src.application.services.position_reconciliation.position_policy import (
+    can_establish_position,
+)
 from src.application.services.position_reconciliation.readiness import (
     PositionReconciliationReadinessPolicy,
 )
@@ -54,6 +61,9 @@ from src.domain.position_reconciliation.entities import (
     ProductPositionAssignment,
     ReconciliationStatus,
 )
+
+logger = logging.getLogger(__name__)
+POSITION_RECONCILIATION_PUBLISH_FAILED = "POSITION_RECONCILIATION_PUBLISH_FAILED"
 
 
 @dataclass(frozen=True)
@@ -87,6 +97,7 @@ class ReconcileJobPositionsUseCase:
         detection_repo: ImagePositionLabelDetectionRepository,
         reconciliation_repo: PositionReconciliationRepository,
         clock: Clock,
+        materialized_identity_reader: MaterializedPositionIdentityReader | None = None,
         position_repo: PositionRepository | None = None,
         readiness_policy: PositionReconciliationReadinessPolicy | None = None,
         final_item_result_reader: JobFinalItemResultReader | None = None,
@@ -104,6 +115,7 @@ class ReconcileJobPositionsUseCase:
         self._products = product_record_repo
         self._detections = detection_repo
         self._reconciliations = reconciliation_repo
+        self._materialized_identities = materialized_identity_reader
         self._positions = position_repo
         self._clock = clock
         self._readiness = readiness_policy or PositionReconciliationReadinessPolicy()
@@ -152,6 +164,8 @@ class ReconcileJobPositionsUseCase:
         job_id: str,
         aisle_id: str,
         ordered_capture_session_id: str | None,
+        client_id: str,
+        inventory_id: str,
         links,
     ) -> tuple[list[OrderedImageFrame], list]:
         asset_ids = tuple(link.source_asset_id for link in links)
@@ -167,8 +181,25 @@ class ReconcileJobPositionsUseCase:
                 ItemResultRef(result_id=ref.result_id)
             )
         detections = list(self._detections.list_by_job(job_id))
+        identities = (
+            self._materialized_identities.read_by_detection_ids(
+                [row.id for row in detections],
+                client_id=client_id,
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+            )
+            if self._materialized_identities is not None
+            else {}
+        )
         detections_by_asset: dict[str, list[PositionDetectionRef]] = {}
         for detection in detections:
+            identity_loc = (
+                identities[detection.id].aisle_location_id
+                if detection.id in identities
+                else None
+            )
+            meta = detection.metadata_json if isinstance(detection.metadata_json, dict) else {}
+            meta_loc = (meta.get("aisle_location_id") or "").strip() or None
             detections_by_asset.setdefault(detection.source_asset_id, []).append(
                 PositionDetectionRef(
                     id=detection.id,
@@ -176,6 +207,7 @@ class ReconcileJobPositionsUseCase:
                     detection_status=detection.detection_status,
                     signature_status=detection.signature_status,
                     position_label_id=detection.position_label_id,
+                    aisle_location_id=(identity_loc or meta_loc),
                     position_name_snapshot=detection.position_name_snapshot,
                     detector_version=detection.detector_version,
                 )
@@ -184,27 +216,23 @@ class ReconcileJobPositionsUseCase:
         sequence_sources: list[str] = []
         for link in links:
             asset = source_assets.get(link.source_asset_id)
-            sequence_number, sequence_source = self._resolve_sequence_number(
-                asset=asset, link=link
-            )
+            sequence_number, sequence_source = self._resolve_sequence_number(asset=asset, link=link)
             sequence_sources.append(sequence_source)
             frames.append(
                 OrderedImageFrame(
                     source_asset_id=link.source_asset_id,
                     client_image_id=asset.upload_client_file_id if asset else None,
                     ordered_capture_session_id=(
-                        asset.ordered_capture_session_id
-                        if asset
-                        else ordered_capture_session_id
+                        asset.ordered_capture_session_id if asset else ordered_capture_session_id
                     ),
                     sequence_number=sequence_number,
                     item_results=tuple(results_by_asset.get(link.source_asset_id, ())),
-                    position_detections=tuple(
-                        detections_by_asset.get(link.source_asset_id, ())
-                    ),
+                    position_detections=tuple(detections_by_asset.get(link.source_asset_id, ())),
                 )
             )
-        frames = self._normalize_system_upload_frame_order(frames, sequence_sources)
+        frames = self._normalize_system_upload_frame_order(
+            frames, sequence_sources, expected_client_id=client_id
+        )
         return frames, detections
 
     @staticmethod
@@ -228,22 +256,24 @@ class ReconcileJobPositionsUseCase:
         return None, "none"
 
     @staticmethod
-    def _frame_can_establish_position(frame: OrderedImageFrame) -> bool:
-        for detection in frame.position_detections:
-            status = (
-                detection.detection_status.value
-                if hasattr(detection.detection_status, "value")
-                else str(detection.detection_status)
-            ).strip().upper()
-            if status in {"VALID", "LEGACY_UNSIGNED_REQUIRES_REVIEW"} and detection.position_label_id:
-                return True
-        return False
+    def _frame_can_establish_position(
+        frame: OrderedImageFrame, *, expected_client_id: str | None = None
+    ) -> bool:
+        return any(
+            can_establish_position(
+                detection,
+                expected_client_id=expected_client_id or detection.client_id,
+            )
+            for detection in frame.position_detections
+        )
 
     @classmethod
     def _normalize_system_upload_frame_order(
         cls,
         frames: list[OrderedImageFrame],
         sequence_sources: list[str],
+        *,
+        expected_client_id: str | None = None,
     ) -> list[OrderedImageFrame]:
         """For web uploads (position_order only), fix leading items before the first position.
 
@@ -275,7 +305,7 @@ class ReconcileJobPositionsUseCase:
 
         first_pos_idx: int | None = None
         for index, frame in enumerate(ordered):
-            if cls._frame_can_establish_position(frame):
+            if cls._frame_can_establish_position(frame, expected_client_id=expected_client_id):
                 first_pos_idx = index
                 break
         if first_pos_idx is None or first_pos_idx == 0:
@@ -328,6 +358,8 @@ class ReconcileJobPositionsUseCase:
             job_id=command.job_id,
             aisle_id=job.target_id,
             ordered_capture_session_id=job.ordered_capture_session_id,
+            client_id=inventory.client_id,
+            inventory_id=inventory.id,
             links=links,
         )
 
@@ -399,6 +431,7 @@ class ReconcileJobPositionsUseCase:
                 ordered_capture_session_id=decision.ordered_capture_session_id,
                 sequence_number=decision.sequence_number,
                 position_label_id=decision.position_label_id,
+                aisle_location_id=decision.aisle_location_id,
                 position_name_snapshot=decision.position_name_snapshot,
                 source_detection_id=decision.source_detection_id,
                 assignment_status=decision.assignment_status,
@@ -452,6 +485,8 @@ class ReconcileJobPositionsUseCase:
             job_id=command.job_id,
             aisle_id=job.target_id,
             ordered_capture_session_id=publish_job.ordered_capture_session_id,
+            client_id=inventory.client_id,
+            inventory_id=inventory.id,
             links=self._job_assets.list_for_job(command.job_id),
         )
         publish_fingerprint = build_fingerprint_from_frames(
@@ -467,12 +502,34 @@ class ReconcileJobPositionsUseCase:
             raise PositionReconciliationInputChangedError(
                 "Position reconciliation inputs changed before publication"
             )
-        published = self._reconciliations.publish_completed_revision_atomically(
-            reconciliation,
-            assignments,
-            active.id if active else None,
-            expected_input_fingerprint=fingerprint,
-        )
+        try:
+            published = self._reconciliations.publish_completed_revision_atomically(
+                reconciliation,
+                assignments,
+                active.id if active else None,
+                expected_input_fingerprint=fingerprint,
+            )
+        except Exception as publish_error:
+            failed_at = self._clock.now()
+            reconciliation.status = ReconciliationStatus.FAILED
+            reconciliation.failure_code = POSITION_RECONCILIATION_PUBLISH_FAILED
+            reconciliation.completed_at = failed_at
+            reconciliation.updated_at = failed_at
+            reconciliation.is_active = False
+            reconciliation.metadata_json = {"events": ["POSITION_RECONCILIATION_PUBLISH_FAILED"]}
+            try:
+                self._reconciliations.record_failed_attempt(reconciliation)
+            except Exception as record_error:
+                logger.error(
+                    "position_reconciliation.publish_failure_record_failed "
+                    "job_id=%s reconciliation_id=%s primary_error_type=%s "
+                    "record_error_type=%s",
+                    command.job_id,
+                    reconciliation.id,
+                    type(publish_error).__name__,
+                    type(record_error).__name__,
+                )
+            raise
         if published.id != reconciliation.id:
             return ReconcileJobPositionsResult(
                 published,
