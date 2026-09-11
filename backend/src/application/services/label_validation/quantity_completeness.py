@@ -34,7 +34,10 @@ def quantity_completeness_matrix_path() -> Path:
 
 def load_quantity_completeness_matrix() -> dict[str, Any]:
     path = quantity_completeness_matrix_path()
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise TypeError(f"quantity completeness matrix must be an object: {path}")
+    return payload
 
 
 def _enum_value(value: object | None) -> str:

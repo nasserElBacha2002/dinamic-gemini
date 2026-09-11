@@ -18,7 +18,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import cast
+from typing import Protocol, cast
 
 from src.application.errors import (
     ImageAlreadyHasResultsError,
@@ -92,6 +92,13 @@ INTERNAL_OCR_PROVIDER = "internal_ocr"
 INTERNAL_OCR_QTY_SOURCE = "ocr_extracted"
 EXTERNAL_PROVIDER = "external_provider"
 EXTERNAL_QTY_SOURCE = "external_provider"
+
+
+class _LiveSourceAsset(Protocol):
+    storage_path: str
+    storage_key: str | None
+    content_type: str | None
+    file_size_bytes: int | None
 
 
 class PersistSkipReason(str, Enum):
@@ -173,7 +180,7 @@ def _build_automatic_position_bundle(
     inventory_id: str,
     aisle_id: str,
     snap: JobPhotoCoverageImage,
-    live: object | None,
+    live: _LiveSourceAsset | None,
     now,
     needs_review: bool,
     summary: dict,

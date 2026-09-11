@@ -1,25 +1,27 @@
 import { describe, expect, it } from 'vitest';
+import type { DeterministicFieldMapping, ExtractionProfileConfiguration } from '../src/api/types/extractionProfile';
+import { defaultExtractionProfileConfiguration } from '../src/features/clients/utils/defaultExtractionProfileConfiguration';
 import {
   normalizeDeterministicFieldMappings,
   validateDeterministicFieldMappings,
   validateExtractionProfileForSave,
 } from '../src/features/clients/utils/normalizeDeterministicFieldMappings';
-import { defaultExtractionProfileConfiguration } from '../src/features/clients/utils/defaultExtractionProfileConfiguration';
 
-function segmentedConfig() {
+function segmentedConfig(): ExtractionProfileConfiguration {
   const configuration = defaultExtractionProfileConfiguration('ITEM');
+  const field_mappings: DeterministicFieldMapping[] = [
+    { target: 'label_id', source: 'SEGMENT', segment_index: 2, application_identifier: null },
+    { target: 'sku', source: 'SEGMENT', segment_index: 0, application_identifier: null },
+    { target: 'quantity', source: 'SEGMENT', segment_index: 1, application_identifier: null },
+  ];
   return {
     ...configuration,
     deterministic: {
       ...configuration.deterministic!,
-      payload_structure: 'SEGMENTED' as const,
+      payload_structure: 'SEGMENTED',
       delimiter: '|',
       expected_segment_count: 3,
-      field_mappings: [
-        { target: 'label_id', source: 'SEGMENT' as const, segment_index: 2, application_identifier: null },
-        { target: 'sku', source: 'SEGMENT' as const, segment_index: 0, application_identifier: null },
-        { target: 'quantity', source: 'SEGMENT' as const, segment_index: 1, application_identifier: null },
-      ],
+      field_mappings,
     },
   };
 }

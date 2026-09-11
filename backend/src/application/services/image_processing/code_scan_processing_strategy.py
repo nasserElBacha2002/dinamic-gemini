@@ -63,7 +63,6 @@ from src.application.services.label_validation import (
 from src.application.services.label_validation.recognition_completeness import (
     evaluate_recognition_completeness,
 )
-from src.domain.client_supplier.extraction_profile import MissingQuantityAction
 from src.application.services.position_recognition import (
     CanonicalPositionValidator,
     PositionFlexibleShadowEvaluator,
@@ -72,6 +71,7 @@ from src.application.services.product_labels.issued_product_label_resolver impor
     IssuedProductLabelResolver,
 )
 from src.domain.assets.entities import SourceAsset
+from src.domain.client_supplier.extraction_profile import MissingQuantityAction
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import (
     RAW_EVIDENCE_HASH_ALGORITHM,

@@ -8,10 +8,10 @@ export type QuantityKind = 'ITEM' | 'POSITION';
 export interface QuantityCompletenessInput {
   kind: QuantityKind | string;
   required: boolean;
-  expected_presence?: string | null;
-  missing_quantity_action?: string | null;
+  expected_presence?: string | null | undefined;
+  missing_quantity_action?: string | null | undefined;
   allow_external_fallback?: boolean;
-  required_fields?: ReadonlyArray<string> | null;
+  required_fields?: ReadonlyArray<string> | null | undefined;
 }
 
 export interface QuantityCompletenessDecision {

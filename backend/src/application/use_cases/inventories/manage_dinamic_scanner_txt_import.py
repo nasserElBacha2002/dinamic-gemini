@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-
 from typing import Protocol
 
 from src.application.ports.clock import Clock
@@ -29,13 +28,13 @@ from src.application.use_cases.inventories.manage_local_csv_import import (
     PreviewLocalCsvImport,
 )
 from src.domain.aisle.entities import Aisle
-from src.domain.inventory.entities import Inventory
 from src.domain.dinamic_scanner_txt.constants import SCANNER_TXT_PENDING_AISLE_ID
 from src.domain.dinamic_scanner_txt.errors import (
     DinamicScannerTxtImportDisabledError,
     DinamicScannerTxtImportError,
 )
 from src.domain.dinamic_scanner_txt.metadata import DinamicScannerTxtImportMetadata
+from src.domain.inventory.entities import Inventory
 from src.domain.local_csv_import.entities import LocalCsvImport
 from src.domain.local_csv_import.errors import (
     LOCAL_CSV_IMPORT_NOT_FOUND,
@@ -74,10 +73,6 @@ class _InventoryClient(Protocol):
     client_id: str | None
 
 
-class _AisleSupplier(Protocol):
-    client_supplier_id: str | None
-
-
 class PreviewDinamicScannerTxtImport:
     def __init__(
         self,
@@ -108,7 +103,7 @@ class PreviewDinamicScannerTxtImport:
         self,
         *,
         inventory_id: str,
-        aisle: Aisle | _AisleSupplier | None,
+        aisle: Aisle | None,
     ):
         """Resolve effective SUPPLIER profiles for the aisle when available."""
         if self._label_profile_resolver is None or self._extraction_profile_repo is None:

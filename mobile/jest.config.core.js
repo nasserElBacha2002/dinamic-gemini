@@ -43,6 +43,7 @@ module.exports = {
     '<rootDir>/tests/processingService.test.ts',
     '<rootDir>/tests/offlineOperationsPhase9.test.ts',
     '<rootDir>/tests/offlineSupplierLabelValidator.test.ts',
+    '<rootDir>/tests/quantityCompleteness.test.ts',
     '<rootDir>/tests/supplierExportSemantics.test.ts',
     '<rootDir>/tests/localCsvExportPreflight.test.ts',
   ],
