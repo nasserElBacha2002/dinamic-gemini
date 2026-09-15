@@ -11,7 +11,8 @@ from typing import Callable, Optional
 
 from src.config import load_settings
 from src.io.logging import setup_logger
-from src.jobs.job_store import _db_repos, claim_next_job, get_job, update_job
+from src.jobs.claim_cycle import WorkerClaimCycleStatus
+from src.jobs.job_store import _db_repos, claim_next_job_cycle, get_job, update_job
 from src.jobs.models import JobStatus
 from src.jobs.worker_bootstrap import (
     append_worker_bootstrap_event,
@@ -403,8 +404,14 @@ def run_job(base_path: Path, job_id: str, execution_id: str | None = None) -> No
 
 
 def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> None:
-    """Poll shared store and process claimed jobs until stop() returns True."""
+    """Poll shared store and process claimed jobs until stop() returns True.
+
+    Consumes :func:`~src.jobs.job_store.claim_next_job_cycle` directly so
+    ``CLAIM_UNAVAILABLE`` is never collapsed to idle ``None``.
+    """
     idle_sleep_sec = 1.0
+    unavailable_backoff_sec = 2.0
+    unavailable_backoff_max_sec = 5.0
     idle_log_every_sec = 30.0
     last_idle_log_ts = 0.0
     runtime = get_embedded_worker_runtime()
@@ -413,22 +420,43 @@ def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> N
         if stop and stop():
             break
         try:
-            claimed = claim_next_job(base_path)
+            cycle = claim_next_job_cycle(base_path)
         except Exception as exc:
-            logger.exception("Worker claim_next_job raised unexpectedly")
+            logger.exception("Worker claim_next_job_cycle raised unexpectedly")
             runtime.mark_unavailable(
                 REASON_CLAIM_LOOP_EXCEPTION,
                 error_type=type(exc).__name__,
             )
-            time.sleep(idle_sleep_sec)
+            time.sleep(min(unavailable_backoff_sec, unavailable_backoff_max_sec))
             continue
-        if claimed is None:
+
+        if cycle.status is WorkerClaimCycleStatus.CLAIM_UNAVAILABLE:
+            runtime.mark_unavailable(
+                cycle.detail or REASON_CLAIM_LOOP_EXCEPTION,
+                error_type=cycle.error_type,
+            )
+            time.sleep(min(unavailable_backoff_sec, unavailable_backoff_max_sec))
+            continue
+
+        if cycle.status is WorkerClaimCycleStatus.IDLE_HEALTHY:
+            runtime.mark_cycle_ok()
             now = time.monotonic()
             if now - last_idle_log_ts >= idle_log_every_sec:
                 logger.info("Worker poll idle: no queued jobs available")
                 last_idle_log_ts = now
             time.sleep(idle_sleep_sec)
             continue
+
+        # JOB_CLAIMED — invariants guarantee job is present.
+        claimed = cycle.job
+        if claimed is None:
+            runtime.mark_unavailable(
+                REASON_CLAIM_LOOP_EXCEPTION,
+                error_type="InvariantError",
+            )
+            time.sleep(min(unavailable_backoff_sec, unavailable_backoff_max_sec))
+            continue
+        runtime.mark_cycle_ok()
         logger.info(
             "Worker claimed job %s (job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s status=%s)",
             claimed.job_id,

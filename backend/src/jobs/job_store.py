@@ -11,19 +11,63 @@ import json
 import logging
 import os
 import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Any, Optional, cast
 
 from src.config import load_settings
+from src.jobs.claim_cycle import (
+    LegacyBridgeMode,
+    WorkerClaimCycleResult,
+    WorkerClaimCycleStatus,
+    resolve_legacy_bridge_mode,
+)
 from src.jobs.models import JobInput, JobProgress, JobRecord, JobStatus
 from src.jobs.worker_runtime import (
+    REASON_LEGACY_CLAIM_FAILED,
+    REASON_MEMORY_QUEUE_FAILED,
     REASON_REPOSITORIES_NOT_INITIALIZED,
     REASON_V3_JOB_REPOSITORY_UNAVAILABLE,
-    get_embedded_worker_runtime,
 )
 from src.utils.validation import validate_job_id
 
 logger = logging.getLogger(__name__)
+
+# Rate-limit exception traces for claim failures (first + interval).
+_CLAIM_FAIL_LOG_INTERVAL_SEC = 30.0
+_claim_fail_log_lock = threading.Lock()
+_last_claim_fail_log_monotonic = 0.0
+
+# Throttle stale reclaim across polls (thread-safe; does not block recovery after timeout).
+_stale_reclaim_lock = threading.Lock()
+_last_stale_reclaim_monotonic = 0.0
+_DEFAULT_STALE_RECLAIM_INTERVAL_SEC = 5.0
+
+
+def _log_claim_source_failure(message: str, exc: BaseException) -> None:
+    """First failure gets traceback; repeats are rate-limited without full traceback spam."""
+    global _last_claim_fail_log_monotonic
+    with _claim_fail_log_lock:
+        now = time.monotonic()
+        first_or_due = (
+            _last_claim_fail_log_monotonic == 0.0
+            or (now - _last_claim_fail_log_monotonic) >= _CLAIM_FAIL_LOG_INTERVAL_SEC
+        )
+        if first_or_due:
+            _last_claim_fail_log_monotonic = now
+            logger.exception("%s", message)
+        else:
+            logger.error("%s error_type=%s", message, type(exc).__name__)
+
+
+def reset_claim_throttle_for_tests() -> None:
+    """Clear claim/reclaim throttle state between unit tests."""
+    global _last_claim_fail_log_monotonic, _last_stale_reclaim_monotonic
+    with _claim_fail_log_lock:
+        _last_claim_fail_log_monotonic = 0.0
+    with _stale_reclaim_lock:
+        _last_stale_reclaim_monotonic = 0.0
 
 
 def _sqlserver_effective_cs(settings: object) -> str:
@@ -205,13 +249,32 @@ def _try_claim_v3_job(settings: object) -> tuple[bool, Optional[JobRecord]]:
     stale_timeout_sec = int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0)
     reclaim_stale = getattr(v3_repo, "reclaim_stale_running_jobs", None)
     if callable(reclaim_stale) and stale_timeout_sec > 0:
-        reclaimed = int(reclaim_stale(stale_timeout_sec) or 0)
-        if reclaimed > 0:
-            logger.warning(
-                "Reclaimed stale RUNNING v3 jobs before claim: count=%s timeout_sec=%s",
-                reclaimed,
-                stale_timeout_sec,
+        interval = float(
+            getattr(
+                settings,
+                "worker_stale_reclaim_interval_sec",
+                _DEFAULT_STALE_RECLAIM_INTERVAL_SEC,
             )
+            or _DEFAULT_STALE_RECLAIM_INTERVAL_SEC
+        )
+        global _last_stale_reclaim_monotonic
+        should_reclaim = False
+        with _stale_reclaim_lock:
+            now = time.monotonic()
+            if (
+                _last_stale_reclaim_monotonic == 0.0
+                or (now - _last_stale_reclaim_monotonic) >= interval
+            ):
+                _last_stale_reclaim_monotonic = now
+                should_reclaim = True
+        if should_reclaim:
+            reclaimed = int(reclaim_stale(stale_timeout_sec) or 0)
+            if reclaimed > 0:
+                logger.warning(
+                    "Reclaimed stale RUNNING v3 jobs before claim: count=%s timeout_sec=%s",
+                    reclaimed,
+                    stale_timeout_sec,
+                )
     claim_v3 = getattr(v3_repo, "claim_next_queued_job", None)
     if not callable(claim_v3):
         return False, None
@@ -221,81 +284,149 @@ def _try_claim_v3_job(settings: object) -> tuple[bool, Optional[JobRecord]]:
     return True, _job_record_from_v3_claimed(claimed_v3)
 
 
-def claim_next_job(base_path: Path) -> Optional[JobRecord]:
-    """Claim next queued job from DB (preferred) or legacy in-memory queue.
+def claim_next_job_cycle(base_path: Path) -> WorkerClaimCycleResult:
+    """One worker poll with an explicit cycle status (claimed / idle / unavailable).
 
-    Production path: v3 ``inventory_jobs`` via the app-container JobRepository, then
-    optional legacy Stage-8 ``jobs`` table when that bridge is still enabled.
-    An empty v3 queue is a successful idle poll — it must not be treated as
-    "DB repositories unavailable" merely because the legacy bridge is off.
-    Local in-memory queue is used only when SQL mode is disabled.
+    Pure data access: does **not** mutate :class:`~src.jobs.worker_runtime.EmbeddedWorkerRuntime`.
+    ``worker_loop`` interprets the result and applies readiness transitions.
+
+    Contract (SQL mode):
+    - v3 claim with a job → ``JOB_CLAIMED``.
+    - v3 idle + ``LegacyBridgeMode.DISABLED`` → ``IDLE_HEALTHY`` (bridge not consulted).
+    - v3 idle + ``LegacyBridgeMode.DRAIN_REQUIRED`` → consult legacy ``jobs``;
+      failure → ``CLAIM_UNAVAILABLE`` (never idle-healthy).
+    - Missing/broken v3 claim path with SQL required → ``CLAIM_UNAVAILABLE``.
     """
     settings = load_settings()
     sql_mode = bool(
         getattr(settings, "sqlserver_enabled", False) and _sqlserver_effective_cs(settings)
     )
-    runtime = get_embedded_worker_runtime()
+    bridge_mode = resolve_legacy_bridge_mode(settings)
     v3_claim_available = False
+    v3_idle_healthy = False
 
     try:
         v3_claim_available, claimed = _try_claim_v3_job(settings)
         if claimed is not None:
-            runtime.mark_cycle_ok()
-            return claimed
+            return WorkerClaimCycleResult(
+                status=WorkerClaimCycleStatus.JOB_CLAIMED,
+                job=claimed,
+                detail="v3_inventory_jobs",
+            )
+        if v3_claim_available:
+            if sql_mode:
+                v3_idle_healthy = True
+            # Non-SQL mode: continue to in-memory queue even if a v3 repo exists.
     except Exception as exc:
         v3_claim_available = False
         if sql_mode:
-            first_failure = runtime.snapshot().unavailable_reason is None
-            runtime.mark_unavailable(
-                REASON_V3_JOB_REPOSITORY_UNAVAILABLE,
+            _log_claim_source_failure(
+                "v3 DB claim_next_queued_job failed while SQL worker mode is enabled",
+                exc,
+            )
+            return WorkerClaimCycleResult(
+                status=WorkerClaimCycleStatus.CLAIM_UNAVAILABLE,
+                detail=REASON_V3_JOB_REPOSITORY_UNAVAILABLE,
                 error_type=type(exc).__name__,
             )
-            if first_failure:
-                logger.exception(
-                    "v3 DB claim_next_queued_job failed while SQL worker mode is enabled"
+        logger.exception("v3 DB claim_next_queued_job failed while SQL worker mode is enabled")
+
+    # Legacy Stage-8 ``jobs``: only when SQL mode is on and bridge is DRAIN_REQUIRED.
+    if sql_mode and bridge_mode is LegacyBridgeMode.DRAIN_REQUIRED:
+        repos = _db_repos()
+        if repos is None:
+            if v3_idle_healthy:
+                # Bridge required but repos could not be built (misconfig / missing schema).
+                return WorkerClaimCycleResult(
+                    status=WorkerClaimCycleStatus.CLAIM_UNAVAILABLE,
+                    detail=REASON_LEGACY_CLAIM_FAILED,
                 )
         else:
-            logger.exception("v3 DB claim_next_queued_job failed while SQL worker mode is enabled")
+            jobs_repo, _, _ = repos
+            try:
+                data = jobs_repo.claim_next_queued_job()
+                if data is None:
+                    return WorkerClaimCycleResult(
+                        status=WorkerClaimCycleStatus.IDLE_HEALTHY,
+                        detail=(
+                            "v3_idle_legacy_idle" if v3_idle_healthy else "legacy_jobs_idle"
+                        ),
+                    )
+                return WorkerClaimCycleResult(
+                    status=WorkerClaimCycleStatus.JOB_CLAIMED,
+                    job=JobRecord.model_validate(data),
+                    detail="legacy_stage8_jobs",
+                )
+            except Exception as exc:
+                _log_claim_source_failure(
+                    "DB claim_next_queued_job failed while SQL worker mode is enabled",
+                    exc,
+                )
+                return WorkerClaimCycleResult(
+                    status=WorkerClaimCycleStatus.CLAIM_UNAVAILABLE,
+                    detail=REASON_LEGACY_CLAIM_FAILED,
+                    error_type=type(exc).__name__,
+                )
 
-    # Legacy DB source: jobs table (v2 compatibility only). Drain when the bridge is on.
-    repos = _db_repos()
-    if repos is not None:
-        jobs_repo, _, _ = repos
-        try:
-            data = jobs_repo.claim_next_queued_job()
-            runtime.mark_cycle_ok()
-            if data is None:
-                return None
-            return JobRecord.model_validate(data)
-        except Exception:
-            logger.exception("DB claim_next_queued_job failed while SQL worker mode is enabled")
-            return None
-
-    if v3_claim_available and sql_mode:
-        # Idle on the v3 JobRepository. Legacy Stage-8 repos are optional (bridge may be off).
-        runtime.mark_cycle_ok()
-        return None
+    if v3_idle_healthy:
+        return WorkerClaimCycleResult(
+            status=WorkerClaimCycleStatus.IDLE_HEALTHY,
+            detail="v3_inventory_jobs_idle",
+        )
 
     if sql_mode:
-        if runtime.snapshot().unavailable_reason is None:
-            runtime.mark_unavailable(REASON_REPOSITORIES_NOT_INITIALIZED)
-        return None
+        reason = (
+            REASON_V3_JOB_REPOSITORY_UNAVAILABLE
+            if not v3_claim_available
+            else REASON_REPOSITORIES_NOT_INITIALIZED
+        )
+        return WorkerClaimCycleResult(
+            status=WorkerClaimCycleStatus.CLAIM_UNAVAILABLE,
+            detail=reason,
+        )
 
     try:
         from src.jobs.queue import dequeue
 
         job_id = dequeue(timeout=0.1)
         if not job_id:
-            runtime.mark_cycle_ok()
-            return None
+            return WorkerClaimCycleResult(
+                status=WorkerClaimCycleStatus.IDLE_HEALTHY,
+                detail="memory_queue_idle",
+            )
         claimed = get_job(base_path, job_id)
         if claimed is None:
             logger.warning("Dequeued legacy job %s not found in store", job_id)
-        runtime.mark_cycle_ok()
-        return claimed
+            return WorkerClaimCycleResult(
+                status=WorkerClaimCycleStatus.IDLE_HEALTHY,
+                detail="memory_queue_missing_record",
+            )
+        return WorkerClaimCycleResult(
+            status=WorkerClaimCycleStatus.JOB_CLAIMED,
+            job=claimed,
+            detail="memory_queue",
+        )
     except Exception as e:
         logger.warning("Legacy queue claim failed: %s", e)
-        return None
+        return WorkerClaimCycleResult(
+            status=WorkerClaimCycleStatus.CLAIM_UNAVAILABLE,
+            detail=REASON_MEMORY_QUEUE_FAILED,
+            error_type=type(e).__name__,
+        )
+
+
+def claim_next_job(base_path: Path) -> Optional[JobRecord]:
+    """Legacy thin wrapper: return only ``.job`` from :func:`claim_next_job_cycle`.
+
+    **Call sites (as of Stage-1 corrections):** unit tests under ``tests/jobs/``
+    that have not yet migrated to the typed cycle. The primary ``worker_loop``
+    must **not** use this helper — ``CLAIM_UNAVAILABLE`` would otherwise collapse
+    to ``None`` and look like idle.
+
+    **Removal plan:** migrate remaining tests to ``claim_next_job_cycle`` /
+    ``worker_loop``, then delete this wrapper. Do not add new production callers.
+    """
+    return claim_next_job_cycle(base_path).job
 
 
 def update_job(base_path: Path, job_id: str, **updates: object) -> Optional[JobRecord]:

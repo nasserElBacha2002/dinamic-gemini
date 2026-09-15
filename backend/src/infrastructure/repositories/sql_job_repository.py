@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
+import random
+import time
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -55,6 +57,28 @@ logger = logging.getLogger(__name__)
 
 # Max target_ids per SQL ``IN`` clause (parameter-limit safety only — never caps jobs/runs).
 TARGET_ID_BATCH_SIZE = 500
+
+_STALE_RECLAIM_DEADLOCK_MAX_ATTEMPTS = 5
+
+
+def _is_sql_deadlock_or_transient_lock(exc: BaseException) -> bool:
+    """True for SQL Server deadlock (1205) / serialization failure (40001) only."""
+    tokens: list[str] = [str(exc)]
+    args = getattr(exc, "args", ()) or ()
+    for item in args:
+        tokens.append(str(item))
+        if isinstance(item, (tuple, list)):
+            for nested in item:
+                tokens.append(str(nested))
+    blob = " ".join(tokens).lower()
+    if "1205" in blob or "deadlock" in blob:
+        return True
+    if "40001" in blob:
+        return True
+    cause = getattr(exc, "__cause__", None)
+    if cause is not None and cause is not exc:
+        return _is_sql_deadlock_or_transient_lock(cause)
+    return False
 
 
 def _is_ordered_session_version_unique_violation(exc: BaseException) -> bool:
@@ -961,12 +985,60 @@ class SqlJobRepository(JobRepository):
     ) -> StaleReclaimResult:
         if stale_after_seconds <= 0:
             return StaleReclaimResult(won=False, reason="stale_disabled")
+        last_exc: BaseException | None = None
+        for attempt in range(_STALE_RECLAIM_DEADLOCK_MAX_ATTEMPTS):
+            try:
+                return self._try_reclaim_stale_job_and_reconcile_aisle_once(
+                    job_id, now=now, stale_after_seconds=stale_after_seconds
+                )
+            except Exception as exc:
+                last_exc = exc
+                if not _is_sql_deadlock_or_transient_lock(exc):
+                    raise
+                if attempt >= _STALE_RECLAIM_DEADLOCK_MAX_ATTEMPTS - 1:
+                    break
+                backoff = (0.01 * (2**attempt)) + random.uniform(0.0, 0.05)
+                logger.warning(
+                    "event=job_stale_reclaim_deadlock_retry job_id=%s attempt=%s "
+                    "backoff_sec=%.3f error_type=%s",
+                    job_id,
+                    attempt + 1,
+                    backoff,
+                    type(exc).__name__,
+                )
+                time.sleep(backoff)
+        assert last_exc is not None
+        raise last_exc
+
+    def _try_reclaim_stale_job_and_reconcile_aisle_once(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        stale_after_seconds: int,
+    ) -> StaleReclaimResult:
         now_utc = _ensure_utc(now) or datetime.now(timezone.utc)
         status_values = tuple(s.value for s in STALE_RECONCILE_STATUSES)
         aisle_applied = False
         with self._client.begin_transaction() as txn:
             cur = txn.connection.cursor()
             try:
+                # Deterministic lock order: take UPDLOCK on the job row first (by id),
+                # then aisle / related jobs. Selection predicate remains CAS-safe.
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM inventory_jobs WITH (UPDLOCK, ROWLOCK)
+                    WHERE id = ?
+                      AND status IN (?, ?, ?)
+                      AND DATEDIFF(SECOND, COALESCE(last_heartbeat_at, updated_at), ?) >= ?
+                    """,
+                    (job_id, *status_values, now_utc, stale_after_seconds),
+                )
+                if cur.fetchone() is None:
+                    txn.rollback()
+                    return StaleReclaimResult(won=False, reason="cas_lost_or_not_stale")
+
                 cur.execute(
                     """
                     UPDATE inventory_jobs

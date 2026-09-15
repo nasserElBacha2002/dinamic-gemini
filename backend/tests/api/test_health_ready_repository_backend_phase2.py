@@ -254,6 +254,37 @@ def test_ready_503_when_required_embedded_worker_has_no_repositories(
     assert body["detail"] == REASON_REPOSITORIES_NOT_INITIALIZED
 
 
+def test_ready_503_while_embedded_worker_starting_before_first_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.jobs.worker_runtime import REASON_WORKER_STARTING
+
+    _mock_backend_status(
+        monkeypatch,
+        mode="sql",
+        environment="production",
+        resolved=True,
+        healthy=True,
+    )
+    runtime = get_embedded_worker_runtime()
+    runtime.configure(required=True, sql_mode=True)
+    stop = threading.Event()
+
+    def _park() -> None:
+        stop.wait(30)
+
+    thread = threading.Thread(target=_park, daemon=True)
+    runtime.mark_started(thread)
+    thread.start()
+    resp = client.get("/ready")
+    stop.set()
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["reason"] == READY_REASON_JOB_WORKER_UNAVAILABLE
+    assert body["detail"] == REASON_WORKER_STARTING
+
+
 def test_ready_200_when_required_worker_idle_after_recovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

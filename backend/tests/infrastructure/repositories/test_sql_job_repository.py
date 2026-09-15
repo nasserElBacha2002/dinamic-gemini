@@ -266,7 +266,11 @@ def test_try_claim_exception_after_job_update_rolls_back() -> None:
 def test_try_reclaim_stale_updates_finalization_fields_and_commits() -> None:
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc)
     script = [
+        # Pre-lock SELECT (UPDLOCK) — row present
+        {"rows": [SimpleNamespace(id="job-1")]},
+        # CAS UPDATE inventory_jobs
         {"rowcount": 1},
+        # SELECT meta after update
         {
             "rows": [
                 SimpleNamespace(
@@ -277,6 +281,7 @@ def test_try_reclaim_stale_updates_finalization_fields_and_commits() -> None:
                 )
             ]
         },
+        # UPDATE aisles
         {"rowcount": 1},
     ]
     client = _ClaimClient(script)
@@ -294,7 +299,7 @@ def test_try_reclaim_stale_updates_finalization_fields_and_commits() -> None:
     assert result.aisle_transition_applied is True
     assert client.last_txn is not None
     assert client.last_txn.commits == 1
-    job_sql = client.last_txn.connection.cursor_obj.executions[0][0]
+    job_sql = client.last_txn.connection.cursor_obj.executions[1][0]
     assert "failure_code" in job_sql
     assert "finalization_status" in job_sql
     assert "finalization_error_code" in job_sql

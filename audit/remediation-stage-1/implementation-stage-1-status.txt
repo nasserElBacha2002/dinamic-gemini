@@ -1,0 +1,8 @@
+IMPLEMENTED_WITH_LIMITATIONS
+
+Branch: DIN-357
+HEAD: 5927f18207f5b6784e3dacf0e500bf210003b164
+Focused pytest: 39 passed
+Full pytest: 5267 passed / 4 skipped / 3 flaky failed (re-run green)
+SQL concurrent claim: PASSED (test_sql_concurrent_claim_one_winner)
+Ruff/mypy: passed on touched modules
