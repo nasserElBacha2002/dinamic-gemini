@@ -1938,6 +1938,7 @@ def get_aisle_merge_results(
 def export_aisle_results_csv(
     inventory_id: str,
     aisle_id: str,
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
     export_format: str = Query("csv", alias="format", description="Only csv supported."),
     profile: str = Query(
         "legacy",
@@ -2094,6 +2095,7 @@ def promote_aisle_operational_job(
 def export_aisle_benchmark(
     inventory_id: str,
     aisle_id: str,
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
     export_format: str = Query("csv", alias="format", description="Only csv supported."),
     run_job_id: str | None = Query(
         None,

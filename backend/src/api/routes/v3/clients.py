@@ -15,6 +15,7 @@ from src.api.constants.error_wire import (
 )
 from src.api.constants.route_paths import API_V3_CLIENTS_ROUTER_PREFIX
 from src.api.dependencies import (
+    get_access_principal,
     get_activate_supplier_extraction_profile_version_use_case,
     get_activate_supplier_prompt_config_version_use_case,
     get_artifact_storage,
@@ -97,6 +98,7 @@ from src.api.services.v3_stored_artifact_access import (
     resolve_supplier_reference_image_display,
     resolve_supplier_reference_image_file_response,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import (
     DuplicateClientSupplierNameError,
     InvalidClientNameError,
@@ -358,23 +360,32 @@ async def _to_uploaded_supplier_reference_image_files(
 def create_client(
     payload: CreateClientRequest,
     use_case: CreateClientUseCase = Depends(get_create_client_use_case),
+    principal: AccessPrincipal = Depends(get_access_principal),
 ) -> ClientResponse:
     try:
         client = use_case.execute(
-            CreateClientCommand(name=payload.name, status=ClientStatus(payload.status))
+            CreateClientCommand(
+                name=payload.name,
+                status=ClientStatus(payload.status),
+                principal=principal,
+            )
         )
     except InvalidClientNameError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
     return _to_response(client)
 
 
 @router.get("/", response_model=PaginatedClientListResponse)
 def list_clients(
     use_case: ListClientsUseCase = Depends(get_list_clients_use_case),
+    principal: AccessPrincipal = Depends(get_access_principal),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
 ) -> PaginatedClientListResponse:
-    rows = list(use_case.execute())
+    rows = list(use_case.execute(principal))
     total = len(rows)
     start = (page - 1) * page_size
     end = start + page_size
@@ -392,9 +403,10 @@ def list_clients(
 def get_client(
     client_id: str,
     use_case: GetClientUseCase = Depends(get_get_client_use_case),
+    principal: AccessPrincipal = Depends(get_access_principal),
 ) -> ClientResponse:
     try:
-        client = use_case.execute(client_id)
+        client = use_case.execute(client_id, principal)
     except Exception as e:
         reraise_if_mapped(e)
         raise
@@ -406,11 +418,13 @@ def update_client(
     client_id: str,
     payload: UpdateClientRequest,
     use_case: UpdateClientUseCase = Depends(get_update_client_use_case),
+    principal: AccessPrincipal = Depends(get_access_principal),
 ) -> ClientResponse:
     try:
         client = use_case.execute(
             UpdateClientCommand(
                 client_id=client_id,
+                principal=principal,
                 name=payload.name,
                 identification_mode=(
                     payload.identification_mode

@@ -54,6 +54,21 @@ class InventoryRepository(ABC):
         """Return active inventories (exclude soft-deleted). Order is implementation-defined."""
         ...
 
+    def list_for_client(self, client_id: str) -> Sequence[Inventory]:
+        """Active inventories owned by ``client_id`` (exclude soft-deleted).
+
+        Default filters :meth:`list_all`. SQL implementations SHOULD override with a
+        indexed ``WHERE client_id = ?`` query. Empty ``client_id`` → empty sequence.
+        """
+        cid = (client_id or "").strip()
+        if not cid:
+            return []
+        return [
+            inv
+            for inv in self.list_all()
+            if (inv.client_id or "").strip() == cid
+        ]
+
     @abstractmethod
     def compare_and_set_status(
         self,
@@ -84,6 +99,18 @@ class ClientRepository(ABC):
     def list_all(self) -> Sequence[Client]:
         """Return all clients. Order is implementation-defined (SQL impl: created_at DESC)."""
         ...
+
+    def list_for_client(self, client_id: str) -> Sequence[Client]:
+        """Return the single client row for ``client_id`` if present (0 or 1 items).
+
+        Company-scoped list endpoints must use this (or :meth:`get_by_id`) — never
+        :meth:`list_all`. Empty ``client_id`` → empty sequence.
+        """
+        cid = (client_id or "").strip()
+        if not cid:
+            return []
+        client = self.get_by_id(cid)
+        return [client] if client is not None else []
 
     @abstractmethod
     def get_by_ids(self, client_ids: Sequence[str]) -> dict[str, Client]:

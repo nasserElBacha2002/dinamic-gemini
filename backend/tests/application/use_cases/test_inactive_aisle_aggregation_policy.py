@@ -31,6 +31,7 @@ from src.infrastructure.repositories.memory_product_record_repository import (
     MemoryProductRecordRepository,
 )
 from src.infrastructure.services.inventory_metrics_service import InventoryMetricsService
+from tests.support.access_principal_helpers import platform_principal
 
 NOW = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -182,7 +183,7 @@ def test_list_items_pending_active_only_aisles_count_all() -> None:
     _seed_i1(aisle_repo=aisle_repo, pos_repo=pos_repo, inv_repo=inv_repo)
 
     uc = ListInventoryListItemsUseCase(inv_repo, aisle_repo, pos_repo, MemoryClientRepository())
-    rows, total = uc.execute()
+    rows, total = uc.execute(principal=platform_principal())
     assert total == 1
     row = rows[0]
     assert row.aisles_count == 2

@@ -19,6 +19,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
 
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.ports.contracts import InventoryListItem, InventoryTableQuery
 from src.application.ports.repositories import (
     AisleRepository,
@@ -163,10 +164,20 @@ class ListInventoryListItemsUseCase:
         return enriched
 
     def execute(
-        self, query: InventoryTableQuery | None = None
+        self,
+        query: InventoryTableQuery | None = None,
+        *,
+        principal: AccessPrincipal | None = None,
     ) -> tuple[Sequence[InventoryListItem], int]:
         q = query or InventoryTableQuery()
-        invs = list(self._inventory_repo.list_all())
+        if principal is None or principal.is_platform:
+            invs = list(self._inventory_repo.list_all())
+        else:
+            principal_client = (principal.client_id or "").strip() or None
+            if principal_client is None:
+                invs = []
+            else:
+                invs = list(self._inventory_repo.list_for_client(principal_client))
         search = (q.search or "").strip().lower() if q.search else None
         if search:
             invs = [i for i in invs if search in i.name.lower()]

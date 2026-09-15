@@ -11,6 +11,7 @@ from src.api.dependencies import (
     get_list_aisle_code_scans_use_case,
     get_run_aisle_code_scan_use_case,
     get_summarize_aisle_code_scans_use_case,
+    require_inventory_client_scope,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.code_scan_schemas import (
@@ -25,6 +26,7 @@ from src.api.schemas.code_scan_schemas import (
     RunAisleCodeScanResponse,
     SummarizeAisleCodeScansResponse,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import AisleNotFoundError
 from src.application.services.code_scan_run_metadata import warnings_from_run_metadata
 from src.application.use_cases.code_scans.export_aisle_code_scans import ExportAisleCodeScansCommand
@@ -256,6 +258,7 @@ def get_aisle_code_scan_review_signals(
 def export_aisle_code_scans(
     inventory_id: str,
     aisle_id: str,
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
     format: str = Query("csv", alias="format"),
     type: str = Query(..., alias="type", description="detections | unmatched | summary"),
     use_case=Depends(get_export_aisle_code_scans_use_case),

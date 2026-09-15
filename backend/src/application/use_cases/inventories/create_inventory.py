@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 from uuid import uuid4
 
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import ClientNotFoundError
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import ClientRepository, InventoryRepository
@@ -28,6 +29,7 @@ from src.domain.inventory.entities import (
 class CreateInventoryCommand:
     name: str
     client_id: str
+    principal: AccessPrincipal
     processing_mode: InventoryProcessingMode = InventoryProcessingMode.PRODUCTION
 
 
@@ -60,9 +62,19 @@ class CreateInventoryUseCase:
             primary_model_name = snap.model_name
             primary_prompt_key = snap.prompt_key
             primary_prompt_version = snap.prompt_version
-        client_id = command.client_id.strip()
-        if not client_id:
+        requested_client_id = (command.client_id or "").strip()
+        if not requested_client_id:
             raise ValueError("client_id must not be empty")
+        # Never trust body tenant for company-scoped principals.
+        if command.principal.is_platform:
+            client_id = requested_client_id
+        else:
+            principal_client = (command.principal.client_id or "").strip() or None
+            if principal_client is None:
+                raise ClientNotFoundError(f"Client not found: {requested_client_id}")
+            if requested_client_id != principal_client:
+                raise ClientNotFoundError(f"Client not found: {requested_client_id}")
+            client_id = principal_client
         if self._client_repo.get_by_id(client_id) is None:
             raise ClientNotFoundError(f"Client not found: {client_id}")
         inventory = Inventory(

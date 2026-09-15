@@ -62,6 +62,10 @@ class ClientNotFoundError(Exception):
     """Raised when a client does not exist."""
 
 
+class PlatformOnlyOperationError(Exception):
+    """Raised when a company-scoped principal attempts a platform-only operation."""
+
+
 class RepositoryRowMappingError(ValueError):
     """Persisted row violates repository mapping invariants (status/timestamps/etc.)."""
 

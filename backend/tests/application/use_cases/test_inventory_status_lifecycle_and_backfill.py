@@ -33,6 +33,7 @@ from src.infrastructure.repositories.memory_position_repository import MemoryPos
 from src.infrastructure.repositories.memory_review_action_repository import (
     MemoryReviewActionRepository,
 )
+from tests.support.access_principal_helpers import platform_principal
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 
@@ -87,7 +88,11 @@ def test_inventory_aggregate_lifecycle_through_completed() -> None:
         settings_loader=_settings_loader,
     )
     inv = create_inv_uc.execute(
-        CreateInventoryCommand(name="Lifecycle inv", client_id="lifecycle-client")
+        CreateInventoryCommand(
+            name="Lifecycle inv",
+            client_id="lifecycle-client",
+            principal=platform_principal(),
+        )
     )
     assert inv.status == InventoryStatus.DRAFT
     assert reconciler.reconcile(inv.id) is False

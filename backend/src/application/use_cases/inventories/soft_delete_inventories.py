@@ -1,4 +1,4 @@
-"""Bulk soft-delete inventories (logical delete via deleted_at)."""
+"""Bulk soft-delete inventories (logical delete via deleted_at) — atomic tenant scope."""
 
 from __future__ import annotations
 
@@ -46,7 +46,11 @@ def _principal_may_access(inventory: Inventory, principal: AccessPrincipal) -> b
 
 
 class SoftDeleteInventoriesUseCase:
-    """Mark inventories as soft-deleted. Idempotent; does not cascade to children."""
+    """Mark inventories as soft-deleted. Idempotent; does not cascade to children.
+
+    Atomic tenant rule (Stage 2): if any id is missing or not visible to the principal,
+    **no** inventory is modified (prevents partial cross-tenant bulk).
+    """
 
     def __init__(
         self,
@@ -61,29 +65,40 @@ class SoftDeleteInventoriesUseCase:
         if not ids:
             raise ValueError("inventory_ids must not be empty")
 
-        deleted: list[str] = []
-        already: list[str] = []
+        resolved: list[Inventory] = []
         not_found: list[str] = []
-        now = self._clock.now()
-        actor = (command.principal.actor_id or "").strip() or None
-
         for inventory_id in ids:
             inventory = self._inventory_repo.get_by_id(inventory_id)
             if inventory is None or not _principal_may_access(inventory, command.principal):
                 not_found.append(inventory_id)
                 continue
+            resolved.append(inventory)
+
+        if not_found:
+            return SoftDeleteInventoriesResult(
+                deleted_ids=(),
+                already_deleted_ids=(),
+                not_found_ids=tuple(not_found),
+            )
+
+        deleted: list[str] = []
+        already: list[str] = []
+        now = self._clock.now()
+        actor = (command.principal.actor_id or "").strip() or None
+
+        for inventory in resolved:
             if inventory.is_deleted:
-                already.append(inventory_id)
+                already.append(inventory.id)
                 continue
             changed = inventory.mark_deleted(now, deleted_by=actor)
             if not changed:
-                already.append(inventory_id)
+                already.append(inventory.id)
                 continue
             self._inventory_repo.save(inventory)
-            deleted.append(inventory_id)
+            deleted.append(inventory.id)
 
         return SoftDeleteInventoriesResult(
             deleted_ids=tuple(deleted),
             already_deleted_ids=tuple(already),
-            not_found_ids=tuple(not_found),
+            not_found_ids=(),
         )

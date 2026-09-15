@@ -213,3 +213,20 @@ class SqlInventoryRepository(InventoryRepository):
             )
             rows = cur.fetchall()
         return [self._row_to_inventory(row) for row in rows]
+
+    def list_for_client(self, client_id: str) -> Sequence[Inventory]:
+        cid = (client_id or "").strip()
+        if not cid:
+            return []
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                f"""
+                SELECT {_INVENTORY_SELECT_COLUMNS}
+                FROM inventories
+                WHERE deleted_at IS NULL AND client_id = ?
+                ORDER BY created_at DESC
+                """,
+                (cid,),
+            )
+            rows = cur.fetchall()
+        return [self._row_to_inventory(row) for row in rows]

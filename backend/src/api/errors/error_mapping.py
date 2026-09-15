@@ -407,6 +407,7 @@ from src.application.errors import (
     IdempotentJobInconsistencyError,
     ImageAlreadyHasResultsError,
     ImageProcessingRepositoryUnavailableError,
+    PlatformOnlyOperationError,
     ImageResultLockTimeoutError,
     InvalidPersistedIdentificationModeError,
     InvalidProcessingModelError,
@@ -613,6 +614,11 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     IdempotentJobInconsistencyError: _plain_http(500),
     ClientNotFoundError: _structured_fixed(
         404, error_code=CLIENT_NOT_FOUND, detail=HTTP_DETAIL_CLIENT_NOT_FOUND
+    ),
+    PlatformOnlyOperationError: _structured_fixed(
+        403,
+        error_code="PLATFORM_ONLY_OPERATION",
+        detail="This operation requires platform administrator privileges",
     ),
     ClientSupplierNotFoundError: _structured_fixed(
         404,

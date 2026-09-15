@@ -1,0 +1,4136 @@
+diff --git a/audit/remediation-stage-2/00-baseline.md b/audit/remediation-stage-2/00-baseline.md
+new file mode 100644
+index 00000000..6e162a40
+--- /dev/null
++++ b/audit/remediation-stage-2/00-baseline.md
+@@ -0,0 +1,7 @@
++# Stage 2 baseline
++
++- Branch: `DIN-357`
++- Preflight HEAD at start of Stage 2 work: `c779f546e9aa5d6a196f05c5872f295901b7f794`
++- Audited DAST commit (historical): `e3a7c0a2933b50f0dcdcce2c42ea0c1411c4cbda`
++- Confirmed BOLA gaps: clients list/get, inventories list/get, aisle/inventory exports returning 200 cross-tenant for `company_admin`.
++- Working tree was clean before Stage 2 (Stage 1 corrections already committed).
+diff --git a/audit/remediation-stage-2/01-authorization-model-before.md b/audit/remediation-stage-2/01-authorization-model-before.md
+new file mode 100644
+index 00000000..f2a7966d
+--- /dev/null
++++ b/audit/remediation-stage-2/01-authorization-model-before.md
+@@ -0,0 +1,42 @@
++# Authorization model (before → after Stage 2)
++
++## Roles
++
++| Claim / alias | Normalized | Tenant binding |
++|---------------|------------|----------------|
++| `platform_admin` | platform | optional `client_id` (global) |
++| `administrator` | → `platform_admin` | legacy |
++| `company_admin` | company | **required** `client_id` (fail closed if missing) |
++| `operator` / aliases | company-scoped capabilities | required `client_id` |
++
++JWT `client_id` is set at login from env (`ADMIN_CLIENT_ID` / `JAIRO_CLIENT_ID`). Body `client_id` is never trusted as tenant authority.
++
++## Resource ownership
++
++```
++Client (id)
++└── Inventory (client_id)
++    └── Aisle (inventory_id)
++        └── Assets / Jobs / Exports / Captures / …
++```
++
++## Semantics chosen
++
++- **401** — missing/invalid token
++- **403** — authenticated but platform-only operation (e.g. create client)
++- **404** — missing **or** cross-tenant resource (anti-enumeration), consistent with `InventoryAccessPolicy`
++
++## Controls before Stage 2
++
++- `InventoryAccessPolicy` + `require_inventory_client_scope` on ~33 nested inventory routes (CONTROL_VERIFIED)
++- Soft-delete inventories already principal-aware (but partial delete on mixed IDs)
++- Clients CRUD + inventory list/get/patch/metrics + exports: JWT only
++
++## Controls after Stage 2
++
++- `ClientAccessPolicy` for clients list/get/update; create is platform-only
++- Inventory list uses `list_for_client` before pagination/totals
++- Get/patch/metrics inventories require policy
++- Create inventory forces body `client_id` == principal for company admins
++- Soft-delete: if any ID inaccessible → **no** writes
++- Six priority export routes depend on `require_inventory_client_scope` **before** streaming
+diff --git a/audit/remediation-stage-2/02-resource-scope-matrix.md b/audit/remediation-stage-2/02-resource-scope-matrix.md
+new file mode 100644
+index 00000000..b434396f
+--- /dev/null
++++ b/audit/remediation-stage-2/02-resource-scope-matrix.md
+@@ -0,0 +1,29 @@
++# Resource scope matrix (Stage 2)
++
++Semantics: **401** unauthenticated · **403** platform-only denied · **404** missing or cross-tenant (anti-enumeration).
++
++| Operation | platform_admin | company_admin own | company_admin other | company_admin no client_id | no/invalid token |
++|-----------|----------------|-------------------|---------------------|----------------------------|------------------|
++| GET /clients/ | all clients | only own | — | empty list | 401 |
++| POST /clients/ | 201 | 403 | 403 | 403 | 401 |
++| GET /clients/{id} | 200 any | 200 own | 404 | 404 | 401 |
++| PATCH /clients/{id} | 200 any | 200 own | 404 | 404 | 401 |
++| GET /inventories/ | all | scoped list + totals | — | empty | 401 |
++| POST /inventories/ | any client_id | body client_id must match claim | 404/reject | fail closed | 401 |
++| GET /inventories/{id} | 200 | 200 own | 404 | 404 | 401 |
++| PATCH /inventories/{id} | 200 | 200 own | 404 | 404 | 401 |
++| POST bulk-soft-delete | atomic | atomic own only | any foreign id → **no writes** | no writes | 401 |
++| GET …/metrics | 200 | own | 404 | 404 | 401 |
++| GET …/export (+ package/summary) | 200 | own | 404 before stream | 404 | 401 |
++| GET …/aisles/{id}/export (+ benchmark, code-scans) | 200 | own inv | 404 before stream | 404 | 401 |
++
++## Ownership tree
++
++```
++Client.id
++└── Inventory.client_id
++    └── Aisle.inventory_id
++        └── Asset / Job / CaptureSession / Export / Position / Result
++```
++
++Parent authorization alone does not prove child membership; aisle/export routes that use `require_inventory_client_scope` still require aisle→inventory checks in use cases where applicable.
+diff --git a/audit/remediation-stage-2/03-implementation-decisions.md b/audit/remediation-stage-2/03-implementation-decisions.md
+new file mode 100644
+index 00000000..bf6d8e36
+--- /dev/null
++++ b/audit/remediation-stage-2/03-implementation-decisions.md
+@@ -0,0 +1,36 @@
++# Implementation decisions (Stage 2)
++
++## Policies
++
++- Reused `InventoryAccessPolicy` for inventory-rooted resources (404 cross-tenant).
++- Added `ClientAccessPolicy` for clients CRUD (same 404 semantics; create → `PlatformOnlyOperationError` → HTTP 403).
++- Did **not** create a third parallel tenant policy; client policy complements inventory policy.
++
++## HTTP semantics
++
++| Situation | Status |
++|-----------|--------|
++| Missing/invalid token | 401 |
++| Authenticated, platform-only op (create client) | 403 |
++| Missing resource or other tenant | 404 |
++
++## Queries
++
++- `ClientRepository.list_for_client(client_id)` / `InventoryRepository.list_for_client(client_id)` on memory + SQL.
++- Company list paths use scoped list **before** sort/paginate/totals.
++- Platform continues to use global `list_all` / unfiltered inventory listing.
++- Body `client_id` is not trusted as tenant authority for company admins (create inventory forces match).
++
++## Bulk soft-delete
++
++- Resolve + authorize **all** IDs first.
++- If any ID missing or not visible → return `not_found_ids` and **write nothing**.
++- Duplicates deduped deterministically; empty list → `ValueError`.
++
++## Exports
++
++- Six priority export routes depend on `require_inventory_client_scope` **before** use-case execution / streaming.
++
++## Out of scope (explicit)
++
++- Worker SQL (Stage 1), frontend/mobile JWT storage, OpenAPI regen, wholesale fix of all 154 `POTENTIAL_BOLA` candidates.
+diff --git a/audit/remediation-stage-2/04-sql-integration-validation.md b/audit/remediation-stage-2/04-sql-integration-validation.md
+new file mode 100644
+index 00000000..26ed8b87
+--- /dev/null
++++ b/audit/remediation-stage-2/04-sql-integration-validation.md
+@@ -0,0 +1,27 @@
++# SQL integration validation (Stage 2)
++
++## Environment
++
++- Local SQL Server via `tests/support/sql_integration.py` / resolved test connection string.
++- Module: `backend/tests/integration/test_sql_tenant_isolation_stage2.py`.
++
++## Command
++
++```bash
++cd backend
++.venv/bin/python -m pytest -q tests/integration \
++  -k "tenant or authorization or client or inventory or export" \
++  --override-ini='addopts='
++```
++
++## Result
++
++- **31 passed**, 60 deselected (2026-09-15).
++- Covered: two synthetic clients A/B; company principals scoped on list/get clients and inventories; cross-tenant get → `ClientNotFoundError` / `InventoryNotFoundError`; platform sees both; `list_for_client` SQL path.
++
++## Not covered in this SQL module (residual)
++
++- Concurrent request races.
++- Full HTTP export streaming against SQL fixtures.
++- Bulk soft-delete transactional rollback at DB isolation level (use-case atomicity verified in unit/memory tests).
++- Historical NULL `client_id` inventory cleanup (fail-closed documented separately).
+diff --git a/audit/remediation-stage-2/05-dast-regression-results.md b/audit/remediation-stage-2/05-dast-regression-results.md
+new file mode 100644
+index 00000000..930a5cd7
+--- /dev/null
++++ b/audit/remediation-stage-2/05-dast-regression-results.md
+@@ -0,0 +1,25 @@
++# DAST regression results (Stage 2)
++
++## Status: **NOT_RUN** (LOCAL_ISOLATED_ONLY unavailable in this session)
++
++Required environment: `LOCAL_ISOLATED_ONLY` — **not** DEV/production.
++
++## Planned minimum matrix (for follow-up)
++
++| Principal | Target | Expected |
++|-----------|--------|----------|
++| company_admin A | clients/inventories/exports A | 200 |
++| company_admin A | clients/inventories/exports B | 403 or 404 |
++| company_admin B | A resources | 403 or 404 |
++| platform_admin | A and B | 200 |
++| no token / invalid | any | 401 |
++
++Routes: clients list/get/update; inventories list/get/update/metrics; six priority exports; one parent/child cross; bulk-soft-delete on disposable fixtures only.
++
++## Lab substitute already executed
++
++- HTTP unit matrix: `tests/api/test_tenant_isolation_stage2_http.py` (company A scoped; platform global; 401 when auth denied).
++- Application matrix: `tests/application/use_cases/test_tenant_isolation_stage2.py`.
++- SQL: `tests/integration/test_sql_tenant_isolation_stage2.py`.
++
++These **do not** replace formal DAST A/B against a running LOCAL_ISOLATED stack. Stage status therefore cannot be `IMPLEMENTED_AND_VERIFIED`.
+diff --git a/audit/remediation-stage-2/06-test-results.md b/audit/remediation-stage-2/06-test-results.md
+new file mode 100644
+index 00000000..fdb45b48
+--- /dev/null
++++ b/audit/remediation-stage-2/06-test-results.md
+@@ -0,0 +1,55 @@
++# Test results (Stage 2)
++
++## Focused authorization
++
++```bash
++.venv/bin/python -m pytest -q tests/api tests/application \
++  -k "tenant or client_scope or authorization or inventory_access or export" \
++  --override-ini='addopts='
++```
++
++- **98 passed**, 1876 deselected (after code_scans export stub fix).
++
++## SQL integration
++
++```bash
++.venv/bin/python -m pytest -q tests/integration \
++  -k "tenant or authorization or client or inventory or export" \
++  --override-ini='addopts='
++```
++
++- **31 passed**, 60 deselected.
++
++## Lint / types
++
++```bash
++.venv/bin/ruff check src/api/routes/v3 src/application src/domain src/infrastructure \
++  tests/api tests/application tests/integration
++# All checks passed
++
++.venv/bin/mypy src/api/routes/v3 src/application src/domain src/infrastructure
++# Success: no issues found in 894 source files
++```
++
++## Full pytest — first complete run (authoritative)
++
++```bash
++.venv/bin/python -m pytest -q --override-ini='addopts='
++```
++
++- **First complete run:** `2 failed, 5298 passed, 4 skipped` (~91s).
++- Failures: `tests/api/test_error_mapping.py::test_get_inventory_not_found_returns_structured_json` and `::test_structured_api_error_logs_stable_code_at_info` — stubs called `execute(id)` but route now passes `(id, principal)`.
++- Stubs updated to accept principal; those two tests then **passed** in isolation.
++- **Second complete run (after stub fix):** `5300 passed, 4 skipped` (~90s), exit 0.
++- Per Stage 2 rules, the first incomplete-green gate plus missing DAST still block `IMPLEMENTED_AND_VERIFIED`.
++
++## New / updated Stage 2 tests
++
++| File | Role |
++|------|------|
++| `tests/application/use_cases/test_tenant_isolation_stage2.py` | Use-case matrix |
++| `tests/api/test_tenant_isolation_stage2_http.py` | HTTP matrix |
++| `tests/integration/test_sql_tenant_isolation_stage2.py` | SQL A/B |
++| Call-site updates across inventory/client use-case tests | principal required |
++| `tests/api/test_code_scans_routes.py` | inventory repo stub for export Depends |
++| `tests/api/test_error_mapping.py` | principal arity on get-inventory stubs |
+diff --git a/audit/remediation-stage-2/07-limitations-and-residual-risks.md b/audit/remediation-stage-2/07-limitations-and-residual-risks.md
+new file mode 100644
+index 00000000..2254971b
+--- /dev/null
++++ b/audit/remediation-stage-2/07-limitations-and-residual-risks.md
+@@ -0,0 +1,23 @@
++# Limitations and residual risks (Stage 2)
++
++## Status gate
++
++**IMPLEMENTED_WITH_LIMITATIONS** — confirmed families hardened; formal DAST A/B not run; first full pytest not green.
++
++## Residual risks
++
++1. **Nested `/clients/{client_id}/suppliers…` and position-labels** — still largely JWT-auth only; path `client_id` may not go through `ClientAccessPolicy` on every handler. Triaged as `NEEDS_DYNAMIC_VALIDATION` / follow-up stage.
++2. **Many inventory-nested routes** still marked `POTENTIAL_BOLA` in endpoint inventory (aisle CRUD without `require_inventory_client_scope`, revisions, analytics, etc.). Not auto-patched.
++3. **Soft-delete atomicity** is application-level (authorize-all-then-write), not a single SQL `UPDATE … WHERE client_id = @cid` transaction. Concurrent writers could still race; no partial cross-tenant success in the use case path.
++4. **Inventories with NULL `client_id`** — company_admin fail-closed (404); platform still sees them. No automatic tenant assignment.
++5. **`company_admin` without `client_id`** — empty lists / 404 / fail closed; no self-heal.
++6. **Denial logs** include `principal_client_id` plaintext (not hashed) in `ClientAccessPolicy`; inventory policy uses legacy `cross_client_access_denied` event name.
++7. **`ClientAccessPolicy.list_visible`** has a `getattr(…, "list_for_client")` fallback for older fakes — prefer explicit port methods only.
++8. **DAST LOCAL_ISOLATED** not executed this session.
++9. **Parent A + child B** on every nested surface not exhaustively tested; priority exports covered via inventory scope Depends + existing aisle scope helpers where wired.
++
++## Explicitly unchanged
++
++- Stage 1 worker SQL claim path.
++- Frontend / mobile auth storage.
++- OpenAPI regeneration.
+diff --git a/audit/remediation-stage-2/08-candidate-endpoint-triage.md b/audit/remediation-stage-2/08-candidate-endpoint-triage.md
+new file mode 100644
+index 00000000..7b698512
+--- /dev/null
++++ b/audit/remediation-stage-2/08-candidate-endpoint-triage.md
+@@ -0,0 +1,33 @@
++# Candidate endpoint triage (Stage 2)
++
++Classification keys: `VULNERABLE_CONFIRMED` (pre-fix) → post-fix status · `CONTROL_ALREADY_PRESENT` · `CONTROL_IN_USE_CASE` · `PLATFORM_ONLY` · `NOT_APPLICABLE` · `NEEDS_DYNAMIC_VALIDATION`.
++
++Certainty: HIGH / MEDIUM / LOW.
++
++| endpoint | role | resource scope | control anterior | control final | certeza | test asociado |
++|----------|------|----------------|------------------|---------------|---------|---------------|
++| GET /api/v3/clients/ | company_admin | client list | JWT only (listed A+B) | ClientAccessPolicy.list_visible + list_for_client | HIGH | test_tenant_isolation_stage2* |
++| POST /api/v3/clients/ | company_admin | create | JWT only | PLATFORM_ONLY → 403 | HIGH | test_tenant_isolation_stage2_http |
++| GET /api/v3/clients/{id} | company_admin | client | JWT only (cross 200) | ClientAccessPolicy.require_client → 404 | HIGH | test_tenant_isolation_stage2* |
++| PATCH /api/v3/clients/{id} | company_admin | client | JWT only | ClientAccessPolicy.require_client | HIGH | test_tenant_isolation_stage2 (app) |
++| GET /api/v3/inventories/ | company_admin | inventory list | JWT only | list_for_client before page/totals | HIGH | test_tenant_isolation_stage2* |
++| POST /api/v3/inventories/ | company_admin | create | body client_id trusted | force claim match / fail closed | HIGH | test_create_inventory + stage2 |
++| GET /api/v3/inventories/{id} | company_admin | inventory | JWT only (cross 200) | InventoryAccessPolicy in use case | HIGH | test_tenant_isolation_stage2* |
++| PATCH /api/v3/inventories/{id} | company_admin | inventory | JWT only | InventoryAccessPolicy in use case | HIGH | test_update_inventory_name |
++| POST …/bulk-soft-delete | company_admin | multi inventory | partial deletes possible | authorize-all else no writes | HIGH | test_soft_delete / stage2 |
++| GET …/metrics | company_admin | inventory | JWT only | InventoryAccessPolicy | HIGH | test_get_inventory_metrics |
++| GET …/export | company_admin | inventory | JWT only (cross 200) | require_inventory_client_scope before stream | HIGH | test_tenant_isolation_stage2_http |
++| GET …/export/package | company_admin | inventory | JWT only | require_inventory_client_scope | HIGH | Depends wired; HTTP sample via inv export family |
++| GET …/export/summary | company_admin | inventory | JWT only | require_inventory_client_scope | HIGH | Depends wired |
++| GET …/aisles/{id}/export | company_admin | aisle export | JWT only (cross 200) | require_inventory_client_scope | HIGH | Depends + inventory export HTTP |
++| GET …/aisles/{id}/benchmark/export | company_admin | aisle | JWT only | require_inventory_client_scope | HIGH | Depends wired |
++| GET …/aisles/{id}/code-scans/export | company_admin | aisle | JWT only | require_inventory_client_scope | HIGH | test_code_scans_routes export |
++| GET …/aisles/{id}/locations* | any | aisle | CONTROL_VERIFIED | CONTROL_ALREADY_PRESENT | HIGH | existing aisle_locations tests |
++| GET …/aisles/{id}/assets* | any | aisle | CONTROL_VERIFIED | CONTROL_ALREADY_PRESENT | HIGH | existing assets tests |
++| GET /api/v3/clients/{id}/suppliers* | company_admin | nested client | JWT only | NEEDS_DYNAMIC_VALIDATION | MEDIUM | — (out of Stage 2 confirmed set) |
++| GET /api/v3/clients/{id}/position-labels* | company_admin | nested client | JWT only | NEEDS_DYNAMIC_VALIDATION | MEDIUM | — |
++| GET /api/v3/inventories/{id}/aisles (list/create) | company_admin | nested | often no inventory Depends | NEEDS_DYNAMIC_VALIDATION | MEDIUM | — |
++| Analytics /admin/* | varies | global | AUTHORIZATION_UNKNOWN | NEEDS_DYNAMIC_VALIDATION / PLATFORM_ONLY candidate | LOW | — |
++| /auth/* | — | — | NOT_APPLICABLE | NOT_APPLICABLE | HIGH | — |
++
++Remaining ~140 `POTENTIAL_BOLA` inventory rows from september inventory: **not** claimed fixed; follow inventory-rooted Depends adoption in later stages.
+diff --git a/audit/remediation-stage-2/09-handoff.md b/audit/remediation-stage-2/09-handoff.md
+new file mode 100644
+index 00000000..913aea32
+--- /dev/null
++++ b/audit/remediation-stage-2/09-handoff.md
+@@ -0,0 +1,26 @@
++# Handoff — Stage 2 tenant isolation / BOLA
++
++## Stage status
++
++**IMPLEMENTED_WITH_LIMITATIONS**
++
++## Done
++
++- Client + inventory CRUD/list/metrics/bulk-delete tenant enforcement via `ClientAccessPolicy` / `InventoryAccessPolicy`.
++- `list_for_client` on memory + SQL client/inventory repos; lists scoped before pagination.
++- Priority export routes gated by `require_inventory_client_scope` before streaming.
++- Unit, HTTP, and SQL A/B tests added; ruff + mypy scoped green.
++- Audit package under `audit/remediation-stage-2/`.
++
++## Not done / next
++
++1. Run DAST A/B on **LOCAL_ISOLATED_ONLY** using matrix in `05-dast-regression-results.md`.
++2. Ensure a **single** full `pytest` run is green end-to-end (first run had 2 error_mapping stub failures; fixed).
++3. Apply `ClientAccessPolicy` to nested client suppliers / position-labels.
++4. Systematically add `require_inventory_client_scope` (or use-case policy) to remaining aisle-rooted `POTENTIAL_BOLA` routes.
++5. Optional: SQL-level scoped soft-delete; hash client_id in denial logs.
++
++## Do not mix
++
++- Stage 1 worker SQL claim changes.
++- Frontend JWT storage / mobile deps / OpenAPI cosmetic work.
+diff --git a/backend/src/api/errors/error_mapping.py b/backend/src/api/errors/error_mapping.py
+index c709299f..8fc96084 100644
+--- a/backend/src/api/errors/error_mapping.py
++++ b/backend/src/api/errors/error_mapping.py
+@@ -390,40 +390,41 @@ from src.application.errors import (
+     ClientPositionLabelAccessDeniedError,
+     ClientPositionLabelConflictError,
+     ClientPositionLabelNotFoundError,
+     ClientSupplierClientMismatchError,
+     ClientSupplierNotFoundError,
+     ClientSupplierRequiredForAisleError,
+     CodeScanDisabledError,
+     CodeScanExportNoRunError,
+     CodeScanExportUnsupportedFormatError,
+     CodeScanExportUnsupportedTypeError,
+     CodeScanMaxAssetsExceededError,
+     CodeScanScannerUnavailableError,
+     DeprecatedProcessingProviderError,
+     DuplicateAisleCodeError,
+     DurableCommandMissingError,
+     EmptyUploadError,
+     IdempotencyKeyReusedError,
+     IdempotentJobInconsistencyError,
+     ImageAlreadyHasResultsError,
+     ImageProcessingRepositoryUnavailableError,
++    PlatformOnlyOperationError,
+     ImageResultLockTimeoutError,
+     InvalidPersistedIdentificationModeError,
+     InvalidProcessingModelError,
+     InvalidProcessingPromptKeyError,
+     InventoryClientRequiredForAisleError,
+     InventoryClientRequiredForSupplierError,
+     InventoryNotFoundError,
+     JobDoesNotBelongToAisleError,
+     JobNotFoundError,
+     JobPromotionNotAllowedError,
+     ManualResultAlreadyExistsError,
+     ManualResultNotAllowedForAssetTypeError,
+     MergeJobScopeAmbiguousError,
+     NoSourceAssetsForAisleProcessingError,
+     NoSourceAssetsForCodeScanError,
+     OpenCaptureSessionExistsError,
+     OrderedCaptureSealRejectedError,
+     OrderedCaptureSessionConflictError,
+     OrderedCaptureSessionNotFoundError,
+     PhotosJobRequiredError,
+@@ -597,40 +598,45 @@ def _plain_http(status_code: int) -> Callable[[BaseException], HTTPException]:
+     return _map
+ 
+ 
+ def _map_stored_artifact_access(exc: BaseException) -> HTTPException:
+     e = cast(StoredArtifactAccessError, exc)
+     return HTTPException(status_code=e.status_code, detail=e.detail)
+ 
+ 
+ # Ordered dispatch: ``isinstance`` checks run in insertion order (Python 3.7+ ``dict``).
+ # If two registered types stand in a subclass relationship, the **first** entry wins.
+ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HTTPException]] = {
+     StoredArtifactAccessError: _map_stored_artifact_access,
+     InventoryNotFoundError: _structured_fixed(
+         404, error_code=INVENTORY_NOT_FOUND, detail=HTTP_DETAIL_INVENTORY_NOT_FOUND
+     ),
+     InvalidPersistedIdentificationModeError: _plain_http(500),
+     IdempotentJobInconsistencyError: _plain_http(500),
+     ClientNotFoundError: _structured_fixed(
+         404, error_code=CLIENT_NOT_FOUND, detail=HTTP_DETAIL_CLIENT_NOT_FOUND
+     ),
++    PlatformOnlyOperationError: _structured_fixed(
++        403,
++        error_code="PLATFORM_ONLY_OPERATION",
++        detail="This operation requires platform administrator privileges",
++    ),
+     ClientSupplierNotFoundError: _structured_fixed(
+         404,
+         error_code=CLIENT_SUPPLIER_NOT_FOUND,
+         detail=HTTP_DETAIL_CLIENT_SUPPLIER_NOT_FOUND,
+     ),
+     InventoryClientRequiredForSupplierError: _structured_fixed(
+         409,
+         error_code=INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER,
+         detail=HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER,
+     ),
+     ClientSupplierClientMismatchError: _structured_fixed(
+         409,
+         error_code=CLIENT_SUPPLIER_CLIENT_MISMATCH,
+         detail=HTTP_DETAIL_CLIENT_SUPPLIER_CLIENT_MISMATCH,
+     ),
+     ClientSupplierRequiredForAisleError: _structured_fixed(
+         422,
+         error_code=CLIENT_SUPPLIER_REQUIRED_FOR_AISLE,
+         detail=HTTP_DETAIL_CLIENT_SUPPLIER_REQUIRED_FOR_AISLE,
+     ),
+diff --git a/backend/src/api/routes/v3/aisles.py b/backend/src/api/routes/v3/aisles.py
+index f259d1ba..e20e89fb 100644
+--- a/backend/src/api/routes/v3/aisles.py
++++ b/backend/src/api/routes/v3/aisles.py
+@@ -1921,40 +1921,41 @@ def get_aisle_merge_results(
+                     normalized_label_ids=list(r.normalized_label_ids),
+                     review_required=r.review_required,
+                     explanation_summary=r.explanation_summary,
+                     metadata=dict(r.metadata or {}),
+                     created_at=r.created_at.isoformat(),
+                 )
+                 for r in merge_result.records
+             ],
+             result_job_id=merge_result.resolved_job_id,
+             result_context_source=merge_result.result_context_source,
+         )
+     except Exception as e:
+         reraise_if_mapped(e)
+         raise
+ 
+ 
+ @router.get("/{inventory_id}/aisles/{aisle_id}/export")
+ def export_aisle_results_csv(
+     inventory_id: str,
+     aisle_id: str,
++    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
+     export_format: str = Query("csv", alias="format", description="Only csv supported."),
+     profile: str = Query(
+         "legacy",
+         description="Export column profile: legacy (default, unchanged) or business (Spanish headers).",
+     ),
+     technical: bool = Query(
+         False,
+         description="When true, export the technical snapshot CSV (same contract as inventory export).",
+     ),
+     job_id: str | None = Query(
+         None,
+         description=(
+             "Optional inventory job id. Omitted: same resolver as GET …/positions (operational or legacy). "
+             "When set, export that run's slice for this aisle only."
+         ),
+     ),
+     use_case: ExportAisleResultsCsvUseCase = Depends(get_export_aisle_results_csv_use_case),
+     business_use_case: ExportAisleBusinessCsvUseCase = Depends(get_export_aisle_business_csv_use_case),
+ ) -> Response:
+     """Download this aisle's consolidated results CSV — **same columns and slice rules** as GET …/positions.
+@@ -2077,40 +2078,41 @@ def promote_aisle_operational_job(
+ ) -> PromoteOperationalJobResponse:
+     """Set ``aisles.operational_job_id`` to a succeeded process_aisle job; prior runs stay persisted."""
+     try:
+         jid = use_case.execute(
+             PromoteAisleOperationalJobCommand(
+                 inventory_id=inventory_id,
+                 aisle_id=aisle_id,
+                 job_id=body.job_id.strip(),
+             )
+         )
+         return PromoteOperationalJobResponse(aisle_id=aisle_id, operational_job_id=jid)
+     except Exception as e:
+         reraise_if_mapped(e)
+         raise
+ 
+ 
+ @router.get("/{inventory_id}/aisles/{aisle_id}/benchmark/export")
+ def export_aisle_benchmark(
+     inventory_id: str,
+     aisle_id: str,
++    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
+     export_format: str = Query("csv", alias="format", description="Only csv supported."),
+     run_job_id: str | None = Query(
+         None,
+         description="Single-run export: job slice with benchmark metadata columns appended.",
+     ),
+     job_a_id: str | None = Query(None, alias="job_a_id"),
+     job_b_id: str | None = Query(None, alias="job_b_id"),
+     run_exporter: ExportAisleBenchmarkRunCsvUseCase = Depends(
+         get_export_aisle_benchmark_run_csv_use_case
+     ),
+     compare_exporter: ExportAisleBenchmarkCompareCsvUseCase = Depends(
+         get_export_aisle_benchmark_compare_csv_use_case
+     ),
+ ) -> Response:
+     """Benchmark-only CSV (extra columns). Operational aisle export: ``GET …/aisles/{aisle_id}/export``."""
+     if (export_format or "").strip().lower() != "csv":
+         raise HTTPException(status_code=422, detail=HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED)
+     has_run = bool(run_job_id and str(run_job_id).strip())
+     has_pair = bool(job_a_id and str(job_a_id).strip() and job_b_id and str(job_b_id).strip())
+     if has_run == has_pair:
+diff --git a/backend/src/api/routes/v3/clients.py b/backend/src/api/routes/v3/clients.py
+index 0e1672d5..1587c9f0 100644
+--- a/backend/src/api/routes/v3/clients.py
++++ b/backend/src/api/routes/v3/clients.py
+@@ -1,37 +1,38 @@
+ """v3 clients CRUD (Phase A1: create/get/list) and supplier reference images (Phase C2)."""
+ 
+ from __future__ import annotations
+ 
+ import logging
+ from io import BytesIO
+ from typing import cast
+ 
+ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+ from fastapi.responses import Response
+ 
+ from src.api.constants.error_wire import (
+     HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
+     HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+ )
+ from src.api.constants.route_paths import API_V3_CLIENTS_ROUTER_PREFIX
+ from src.api.dependencies import (
++    get_access_principal,
+     get_activate_supplier_extraction_profile_version_use_case,
+     get_activate_supplier_prompt_config_version_use_case,
+     get_artifact_storage,
+     get_clone_supplier_extraction_profile_use_case,
+     get_create_client_supplier_use_case,
+     get_create_client_use_case,
+     get_create_supplier_extraction_profile_version_use_case,
+     get_create_supplier_prompt_config_version_use_case,
+     get_delete_supplier_reference_image_use_case,
+     get_get_active_supplier_extraction_profile_use_case,
+     get_get_active_supplier_prompt_config_use_case,
+     get_get_client_supplier_use_case,
+     get_get_client_use_case,
+     get_get_supplier_extraction_profile_by_version_use_case,
+     get_get_supplier_prompt_config_use_case,
+     get_get_supplier_reference_image_use_case,
+     get_list_client_supplier_label_profiles_use_case,
+     get_list_client_suppliers_use_case,
+     get_list_clients_use_case,
+     get_list_supplier_extraction_profiles_use_case,
+@@ -80,40 +81,41 @@ from src.api.schemas.supplier_extraction_profile_schemas import (
+     TestLabelRecognitionCodeRequest,
+     TestLabelRecognitionCodeResponse,
+ )
+ from src.api.schemas.supplier_prompt_config_schemas import (
+     CreateSupplierPromptConfigRequest,
+     SupplierPromptConfigResponse,
+     SupplierPromptConfigsListResponse,
+ )
+ from src.api.schemas.supplier_reference_image_schemas import (
+     DeleteSupplierReferenceImageResponse,
+     SupplierReferenceImageResponse,
+     SupplierReferenceImagesListResponse,
+     UploadSupplierReferenceImagesResponse,
+ )
+ from src.api.services.identification_mode_response import client_identification_fields
+ from src.api.services.v3_stored_artifact_access import (
+     StoredArtifactAccessError,
+     resolve_supplier_reference_image_display,
+     resolve_supplier_reference_image_file_response,
+ )
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.errors import (
+     DuplicateClientSupplierNameError,
+     InvalidClientNameError,
+     InvalidClientSupplierNameError,
+     SupplierExtractionProfileNotFoundError,
+     SupplierPromptConfigNotFoundError,
+ )
+ from src.application.services.optional_unset import UNSET
+ from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
+ from src.application.use_cases.clients.get_client import GetClientUseCase
+ from src.application.use_cases.clients.list_clients import ListClientsUseCase
+ from src.application.use_cases.clients.update_client import (
+     UpdateClientCommand,
+     UpdateClientUseCase,
+ )
+ from src.application.use_cases.suppliers.create_client_supplier import (
+     CreateClientSupplierCommand,
+     CreateClientSupplierUseCase,
+ )
+ from src.application.use_cases.suppliers.get_client_supplier import GetClientSupplierUseCase
+@@ -341,93 +343,105 @@ async def _to_uploaded_supplier_reference_image_files(
+         result.append(
+             UploadedSupplierReferenceImageFile(
+                 original_filename=(u.filename or "file").strip(),
+                 file_obj=BytesIO(content),
+                 content_type=u.content_type or "application/octet-stream",
+                 size=size,
+                 label=lbl,
+                 description=desc,
+                 label_kind=kind,
+             )
+         )
+     if not result:
+         raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
+     return result
+ 
+ 
+ @router.post("/", response_model=ClientResponse, status_code=201)
+ def create_client(
+     payload: CreateClientRequest,
+     use_case: CreateClientUseCase = Depends(get_create_client_use_case),
++    principal: AccessPrincipal = Depends(get_access_principal),
+ ) -> ClientResponse:
+     try:
+         client = use_case.execute(
+-            CreateClientCommand(name=payload.name, status=ClientStatus(payload.status))
++            CreateClientCommand(
++                name=payload.name,
++                status=ClientStatus(payload.status),
++                principal=principal,
++            )
+         )
+     except InvalidClientNameError as e:
+         raise HTTPException(status_code=422, detail=str(e)) from e
++    except Exception as e:
++        reraise_if_mapped(e)
++        raise
+     return _to_response(client)
+ 
+ 
+ @router.get("/", response_model=PaginatedClientListResponse)
+ def list_clients(
+     use_case: ListClientsUseCase = Depends(get_list_clients_use_case),
++    principal: AccessPrincipal = Depends(get_access_principal),
+     page: int = Query(1, ge=1),
+     page_size: int = Query(25, ge=1, le=200),
+ ) -> PaginatedClientListResponse:
+-    rows = list(use_case.execute())
++    rows = list(use_case.execute(principal))
+     total = len(rows)
+     start = (page - 1) * page_size
+     end = start + page_size
+     window = rows[start:end]
+     return PaginatedClientListResponse(
+         items=[_to_response(item) for item in window],
+         page=page,
+         page_size=page_size,
+         total_items=total,
+         total_pages=compute_total_pages(total, page_size),
+     )
+ 
+ 
+ @router.get("/{client_id}", response_model=ClientResponse)
+ def get_client(
+     client_id: str,
+     use_case: GetClientUseCase = Depends(get_get_client_use_case),
++    principal: AccessPrincipal = Depends(get_access_principal),
+ ) -> ClientResponse:
+     try:
+-        client = use_case.execute(client_id)
++        client = use_case.execute(client_id, principal)
+     except Exception as e:
+         reraise_if_mapped(e)
+         raise
+     return _to_response(client)
+ 
+ 
+ @router.patch("/{client_id}", response_model=ClientResponse)
+ def update_client(
+     client_id: str,
+     payload: UpdateClientRequest,
+     use_case: UpdateClientUseCase = Depends(get_update_client_use_case),
++    principal: AccessPrincipal = Depends(get_access_principal),
+ ) -> ClientResponse:
+     try:
+         client = use_case.execute(
+             UpdateClientCommand(
+                 client_id=client_id,
++                principal=principal,
+                 name=payload.name,
+                 identification_mode=(
+                     payload.identification_mode
+                     if "identification_mode" in payload.model_fields_set
+                     else UNSET
+                 ),
+             )
+         )
+     except Exception as e:
+         reraise_if_mapped(e)
+         raise
+     return _to_response(client)
+ 
+ 
+ @router.post("/{client_id}/suppliers", response_model=ClientSupplierResponse, status_code=201)
+ def create_client_supplier(
+     client_id: str,
+     payload: CreateClientSupplierRequest,
+     use_case: CreateClientSupplierUseCase = Depends(get_create_client_supplier_use_case),
+ ) -> ClientSupplierResponse:
+diff --git a/backend/src/api/routes/v3/code_scans.py b/backend/src/api/routes/v3/code_scans.py
+index 2d7826fb..cafe5e9b 100644
+--- a/backend/src/api/routes/v3/code_scans.py
++++ b/backend/src/api/routes/v3/code_scans.py
+@@ -1,47 +1,49 @@
+ """v3 aisle code scans — QR/barcode auxiliary flow (independent of AI worker)."""
+ 
+ from __future__ import annotations
+ 
+ from fastapi import APIRouter, Depends, Query
+ from starlette.responses import Response
+ 
+ from src.api.dependencies import (
+     get_export_aisle_code_scans_use_case,
+     get_get_aisle_code_scan_review_signals_use_case,
+     get_list_aisle_code_scans_use_case,
+     get_run_aisle_code_scan_use_case,
+     get_summarize_aisle_code_scans_use_case,
++    require_inventory_client_scope,
+ )
+ from src.api.errors import reraise_if_mapped
+ from src.api.schemas.code_scan_schemas import (
+     AisleCodeScanReviewSignalsResponse,
+     CodeScanBoundingBoxResponse,
+     CodeScanDetectionResponse,
+     CodeScanReviewSignalResponse,
+     CodeScanReviewSignalsSummaryResponse,
+     CodeScanRunSummaryResponse,
+     CodeScanSummaryItemResponse,
+     ListAisleCodeScansResponse,
+     RunAisleCodeScanResponse,
+     SummarizeAisleCodeScansResponse,
+ )
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.errors import AisleNotFoundError
+ from src.application.services.code_scan_run_metadata import warnings_from_run_metadata
+ from src.application.use_cases.code_scans.export_aisle_code_scans import ExportAisleCodeScansCommand
+ from src.application.use_cases.code_scans.get_aisle_code_scan_review_signals import (
+     GetAisleCodeScanReviewSignalsCommand,
+ )
+ from src.application.use_cases.code_scans.list_aisle_code_scans import ListAisleCodeScansCommand
+ from src.application.use_cases.code_scans.run_aisle_code_scan import RunAisleCodeScanCommand
+ from src.application.use_cases.code_scans.summarize_aisle_code_scans import (
+     SummarizeAisleCodeScansCommand,
+ )
+ from src.auth.dependencies import get_current_admin
+ from src.auth.schemas import AuthUser
+ from src.domain.code_scans.bounding_box import parse_bounding_box
+ from src.domain.code_scans.entities import CodeScanRun
+ 
+ router = APIRouter()
+ 
+ 
+ def _run_to_summary(run: CodeScanRun, *, warnings: list[str] | None = None) -> CodeScanRunSummaryResponse:
+@@ -239,40 +241,41 @@ def get_aisle_code_scan_review_signals(
+                     severity=s.severity,
+                     message=s.message,
+                     detection_id=s.detection_id,
+                     position_id=s.position_id,
+                     asset_id=s.asset_id,
+                     code_value=s.code_value,
+                     code_type=s.code_type,
+                 )
+                 for s in result.signals
+             ],
+         )
+     except Exception as e:
+         reraise_if_mapped(e)
+         raise
+ 
+ 
+ @router.get("/{inventory_id}/aisles/{aisle_id}/code-scans/export")
+ def export_aisle_code_scans(
+     inventory_id: str,
+     aisle_id: str,
++    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
+     format: str = Query("csv", alias="format"),
+     type: str = Query(..., alias="type", description="detections | unmatched | summary"),
+     use_case=Depends(get_export_aisle_code_scans_use_case),
+ ) -> Response:
+     """Export latest aisle code scan data as a separate CSV report."""
+     try:
+         result = use_case.execute(
+             ExportAisleCodeScansCommand(
+                 inventory_id=inventory_id,
+                 aisle_id=aisle_id,
+                 export_format=format,
+                 export_type=type,
+             )
+         )
+     except Exception as e:
+         reraise_if_mapped(e)
+         raise
+     return Response(
+         content=result.body.encode("utf-8"),
+         media_type="text/csv; charset=utf-8",
+diff --git a/backend/src/api/routes/v3/inventories.py b/backend/src/api/routes/v3/inventories.py
+index 340d77af..ef7a9aa4 100644
+--- a/backend/src/api/routes/v3/inventories.py
++++ b/backend/src/api/routes/v3/inventories.py
+@@ -95,144 +95,149 @@ from src.domain.inventory.entities import Inventory, InventoryProcessingMode
+ from .shared import inventory_list_item_to_response, inventory_to_response
+ 
+ 
+ def _inventory_response(
+     inventory: Inventory,
+     id_query: AisleIdentificationConfigurationQuery,
+ ) -> InventoryResponse:
+     return inventory_to_response(
+         inventory,
+         identification=api_fields_from_configuration(id_query.for_inventory(inventory)),
+     )
+ 
+ 
+ router = APIRouter()
+ 
+ 
+ @router.post("/", response_model=InventoryResponse, status_code=201)
+ def create_inventory(
+     payload: CreateInventoryRequest,
+     use_case: CreateInventoryUseCase = Depends(get_create_inventory_use_case),
++    principal: AccessPrincipal = Depends(get_access_principal),
+     id_query: AisleIdentificationConfigurationQuery = Depends(
+         get_aisle_identification_configuration_query
+     ),
+ ) -> InventoryResponse:
+     """Create a new inventory (v3.0)."""
+     try:
+         mode = InventoryProcessingMode(payload.processing_mode)
+         inventory = use_case.execute(
+             CreateInventoryCommand(
+                 name=payload.name,
+                 processing_mode=mode,
+                 client_id=payload.client_id,
++                principal=principal,
+             )
+         )
+         return _inventory_response(inventory, id_query)
+     except ValueError as e:
+         raise HTTPException(status_code=422, detail=str(e)) from e
+     except ClientNotFoundError as e:
+         reraise_if_mapped(e)
+         raise
+ 
+ 
+ @router.post("/bulk-soft-delete", response_model=SoftDeleteInventoriesResponse)
+ def bulk_soft_delete_inventories(
+     payload: SoftDeleteInventoriesRequest,
+     use_case: SoftDeleteInventoriesUseCase = Depends(get_soft_delete_inventories_use_case),
+     principal: AccessPrincipal = Depends(get_access_principal),
+ ) -> SoftDeleteInventoriesResponse:
+     """Soft-delete one or more inventories (sets deleted_at). Idempotent; no hard delete."""
+     try:
+         result = use_case.execute(
+             SoftDeleteInventoriesCommand(
+                 inventory_ids=tuple(payload.inventory_ids),
+                 principal=principal,
+             )
+         )
+         return SoftDeleteInventoriesResponse(
+             deleted_ids=list(result.deleted_ids),
+             already_deleted_ids=list(result.already_deleted_ids),
+             not_found_ids=list(result.not_found_ids),
+         )
+     except ValueError as e:
+         raise HTTPException(status_code=422, detail=str(e)) from e
+ 
+ 
+ @router.patch("/{inventory_id}", response_model=InventoryResponse)
+ def update_inventory(
+     inventory_id: str,
+     payload: UpdateInventoryRequest,
+     use_case: UpdateInventoryNameUseCase = Depends(get_update_inventory_name_use_case),
++    principal: AccessPrincipal = Depends(get_access_principal),
+     id_query: AisleIdentificationConfigurationQuery = Depends(
+         get_aisle_identification_configuration_query
+     ),
+ ) -> InventoryResponse:
+     """Update inventory name and/or identification mode (v3.0). Returns 404 if not found."""
+     try:
+         inventory = use_case.execute(
+             UpdateInventoryNameCommand(
+                 inventory_id=inventory_id,
++                principal=principal,
+                 name=payload.name if "name" in payload.model_fields_set else None,
+                 identification_mode=(
+                     payload.identification_mode
+                     if "identification_mode" in payload.model_fields_set
+                     else UNSET
+                 ),
+             )
+         )
+         return _inventory_response(inventory, id_query)
+     except ValueError as e:
+         raise HTTPException(status_code=422, detail=str(e)) from e
+     except InventoryNotFoundError as e:
+         reraise_if_mapped(e)
+         raise
+ 
+ 
+ @router.get("/", response_model=PaginatedInventoryListResponse)
+ def list_inventories(
+     use_case: ListInventoryListItemsUseCase = Depends(get_list_inventory_list_items_use_case),
++    principal: AccessPrincipal = Depends(get_access_principal),
+     search: str | None = Query(None, description="Case-insensitive substring on inventory name."),
+     status: str | None = Query(
+         None, description="Exact inventory status (wire value, e.g. draft)."
+     ),
+     sort_by: str = Query(
+         "created_at",
+         description="name | created_at | updated_at | status | last_activity_at | pending_review_count | aisles_count",
+     ),
+     sort_dir: str = Query("desc", description="asc | desc"),
+     page: int = Query(1, ge=1),
+     page_size: int = Query(25, ge=1, le=200),
+ ) -> PaginatedInventoryListResponse:
+     """Inventories table: aggregates per row with search, filter, sort, and pagination (Sprint 1.4).
+ 
+     **Contract:** returns a **paginated object** (`items`, `page`, `page_size`, `total_items`,
+     `total_pages`), not a JSON array. This is an intentional breaking change from the pre–1.4 array body.
+     """
+     q = build_inventory_table_query_from_route_params(
+         search=search,
+         status=status,
+         sort_by=sort_by,
+         sort_dir=sort_dir,
+         page=page,
+         page_size=page_size,
+     )
+-    rows, total = use_case.execute(q)
++    rows, total = use_case.execute(q, principal=principal)
+     ps = q.page_size
+     return PaginatedInventoryListResponse(
+         items=[inventory_list_item_to_response(item) for item in rows],
+         page=q.page,
+         page_size=ps,
+         total_items=total,
+         total_pages=compute_total_pages(total, ps),
+     )
+ 
+ 
+ @router.get("/processing-provider-options", response_model=ProcessingProviderOptionsResponse)
+ def list_processing_provider_options(
+     mode: ProcessingOptionsMode = Query(
+         "test",
+         description=(
+             "test — all configured models per provider; "
+             "production — only production-ready providers with their default model each."
+         ),
+     ),
+ ) -> ProcessingProviderOptionsResponse:
+@@ -252,70 +257,72 @@ def list_processing_provider_options(
+             default_model=row.get("default_model"),
+             production_available=row.get("production_available"),
+             unavailable_reason=row.get("unavailable_reason"),
+             is_default_provider=bool(row.get("is_default_provider")),
+         )
+         for row in payload["providers"]
+     ]
+     return ProcessingProviderOptionsResponse(
+         mode=payload["mode"],
+         default_provider_key=payload["default_provider_key"],
+         default_model_key=payload.get("default_model_key"),
+         default_prompt_key=payload["default_prompt_key"],
+         prompt_profiles=prompt_items,
+         providers=items,
+     )
+ 
+ 
+ @router.get("/{inventory_id}/export/summary")
+ def export_inventory_summary_csv(
+     inventory_id: str,
++    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
+     level: str = Query(
+         "inventory",
+         description="Summary level: inventory (one row) or aisles (one row per aisle).",
+     ),
+     use_case: ExportInventorySummaryCsvUseCase = Depends(get_export_inventory_summary_csv_use_case),
+ ) -> Response:
+     """Download inventory or aisle rollup summary CSV (business columns, additive)."""
+     lvl = (level or "inventory").strip().lower()
+     try:
+         if lvl == "aisles":
+             body, filename = use_case.execute_aisles_summary_csv(inventory_id)
+         elif lvl == "inventory":
+             body, filename = use_case.execute_inventory_summary_csv(inventory_id)
+         else:
+             raise HTTPException(status_code=422, detail="level must be inventory or aisles")
+     except HTTPException:
+         raise
+     except Exception as e:
+         reraise_if_mapped(e)
+         raise
+     return Response(
+         content=body.encode("utf-8"),
+         media_type="text/csv; charset=utf-8",
+         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+     )
+ 
+ 
+ @router.get("/{inventory_id}/export/package")
+ def export_inventory_package_zip(
+     inventory_id: str,
++    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
+     use_case: ExportInventoryPackageZipUseCase = Depends(get_export_inventory_package_zip_use_case),
+ ) -> Response:
+     """Download ZIP with inventory summary, aisles summary, and per-aisle business operational CSVs."""
+     try:
+         zip_bytes, filename = use_case.execute_zip(inventory_id)
+     except Exception as e:
+         reraise_if_mapped(e)
+         raise
+     return Response(
+         content=zip_bytes,
+         media_type="application/zip",
+         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+     )
+ 
+ 
+ @router.get(
+     "/{inventory_id}/recognition-config",
+     response_model=OfflineRecognitionBundleResponse,
+     summary="Offline recognition config bundle for mobile sync",
+ )
+@@ -363,75 +370,78 @@ def get_inventory_recognition_config(
+             OfflineRecognitionProfileDto(
+                 client_supplier_id=p.client_supplier_id,
+                 label_kind=p.label_kind,  # type: ignore[arg-type]
+                 source="SUPPLIER",
+                 profile_id=p.profile_id,
+                 profile_version=p.profile_version,
+                 configuration_schema_version=p.configuration_schema_version,
+                 recognition_mode=p.recognition_mode,
+                 semantic_type=p.semantic_type,
+                 configuration=p.configuration,
+             )
+             for p in bundle.profiles
+         ],
+         bundle_revision=bundle.bundle_revision,
+     )
+ 
+ 
+ @router.get("/{inventory_id}/export")
+ def export_inventory_results(
+     inventory_id: str,
++    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
+     export_format: str = Query(
+         "csv", alias="format", description="Export format (only csv supported)."
+     ),
+     technical: bool = Query(
+         False,
+         description="When true, export the technical snapshot CSV instead of the operational contract CSV.",
+     ),
+     use_case: ExportInventoryResultsUseCase = Depends(get_export_inventory_results_use_case),
+ ) -> Response:
+     """Download consolidated inventory results as CSV (one row per reviewable position after SKU consolidation)."""
+     if (export_format or "").strip().lower() != "csv":
+         raise HTTPException(status_code=422, detail=HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED)
+     try:
+         body = use_case.execute_csv(inventory_id, technical=technical)
+     except Exception as e:
+         reraise_if_mapped(e)
+         raise
+     suffix = "technical" if technical else "results"
+     filename = f"inventory_{inventory_id}_{suffix}.csv"
+     return Response(
+         content=body.encode("utf-8"),
+         media_type="text/csv; charset=utf-8",
+         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+     )
+ 
+ 
+ @router.get("/{inventory_id}", response_model=InventoryResponse)
+ def get_inventory(
+     inventory_id: str,
++    principal: AccessPrincipal = Depends(get_access_principal),
+     use_case: GetInventoryUseCase = Depends(get_get_inventory_use_case),
+     id_query: AisleIdentificationConfigurationQuery = Depends(
+         get_aisle_identification_configuration_query
+     ),
+ ) -> InventoryResponse:
+     """Get a single inventory by id (v3.0). Returns 404 if not found."""
+     try:
+-        inventory = use_case.execute(inventory_id)
++        inventory = use_case.execute(inventory_id, principal)
+         return _inventory_response(inventory, id_query)
+     except InventoryNotFoundError as e:
+         reraise_if_mapped(e)
+         raise
+ 
+ 
+ @router.get("/{inventory_id}/metrics", response_model=InventoryMetricsResponse)
+ def get_inventory_metrics(
+     inventory_id: str,
++    principal: AccessPrincipal = Depends(get_access_principal),
+     use_case: GetInventoryMetricsUseCase = Depends(get_get_inventory_metrics_use_case),
+ ) -> InventoryMetricsResponse:
+     """Get canonical inventory metrics. Returns 404 if inventory not found."""
+     try:
+-        metrics = use_case.execute(inventory_id)
++        metrics = use_case.execute(inventory_id, principal)
+         return InventoryMetricsResponse(**metrics)
+     except InventoryNotFoundError as e:
+         reraise_if_mapped(e)
+         raise
+diff --git a/backend/src/application/errors.py b/backend/src/application/errors.py
+index d4e13e91..a5101cf9 100644
+--- a/backend/src/application/errors.py
++++ b/backend/src/application/errors.py
+@@ -45,40 +45,44 @@ class FencingConfigurationError(RuntimeError):
+     ) -> None:
+         super().__init__(message)
+         self.job_id = job_id
+ 
+ 
+ class DownloadCapacityExceededError(Exception):
+     """Too many concurrent Observability artifact downloads."""
+ 
+     def __init__(self, message: str = "Download capacity exceeded; retry later") -> None:
+         super().__init__(message)
+ 
+ 
+ class InventoryNotFoundError(Exception):
+     """Raised when the parent inventory does not exist."""
+ 
+ 
+ class ClientNotFoundError(Exception):
+     """Raised when a client does not exist."""
+ 
+ 
++class PlatformOnlyOperationError(Exception):
++    """Raised when a company-scoped principal attempts a platform-only operation."""
++
++
+ class RepositoryRowMappingError(ValueError):
+     """Persisted row violates repository mapping invariants (status/timestamps/etc.)."""
+ 
+ 
+ class InvalidClientNameError(Exception):
+     """Raised when client name is missing or invalid."""
+ 
+ 
+ class IdempotentJobInconsistencyError(Exception):
+     """Raised when an idempotency key matched a job id that cannot be loaded."""
+ 
+ 
+ class ClientSupplierNotFoundError(Exception):
+     """Raised when a client supplier does not exist in the scoped client."""
+ 
+ 
+ class InventoryClientRequiredForSupplierError(Exception):
+     """Raised when assigning a supplier to an inventory that has no client association."""
+ 
+ 
+diff --git a/backend/src/application/ports/repositories.py b/backend/src/application/ports/repositories.py
+index b6be9182..d7246dd9 100644
+--- a/backend/src/application/ports/repositories.py
++++ b/backend/src/application/ports/repositories.py
+@@ -37,71 +37,98 @@ class _JobIdFilterUnset:
+ 
+ 
+ JOB_ID_FILTER_UNSET = _JobIdFilterUnset()
+ 
+ LabelJobScope = Union[str, Literal["all"], None]
+ """``job_id`` filter for label/count repositories: ``\"all\"`` = no filter; ``None`` = ``IS NULL``; else equality."""
+ 
+ 
+ class InventoryRepository(ABC):
+     @abstractmethod
+     def save(self, inventory: Inventory) -> None: ...
+ 
+     @abstractmethod
+     def get_by_id(self, inventory_id: str) -> Inventory | None: ...
+ 
+     @abstractmethod
+     def list_all(self) -> Sequence[Inventory]:
+         """Return active inventories (exclude soft-deleted). Order is implementation-defined."""
+         ...
+ 
++    def list_for_client(self, client_id: str) -> Sequence[Inventory]:
++        """Active inventories owned by ``client_id`` (exclude soft-deleted).
++
++        Default filters :meth:`list_all`. SQL implementations SHOULD override with a
++        indexed ``WHERE client_id = ?`` query. Empty ``client_id`` → empty sequence.
++        """
++        cid = (client_id or "").strip()
++        if not cid:
++            return []
++        return [
++            inv
++            for inv in self.list_all()
++            if (inv.client_id or "").strip() == cid
++        ]
++
+     @abstractmethod
+     def compare_and_set_status(
+         self,
+         inventory_id: str,
+         *,
+         expected_current: InventoryStatus,
+         new_status: InventoryStatus,
+         updated_at: datetime,
+         completed_at: datetime | None,
+     ) -> bool:
+         """Atomically set status when current row status equals ``expected_current``.
+ 
+         Returns True if the row was updated. Implementations MUST provide a true
+         compare-and-set (SQL ``UPDATE … WHERE status = ?``, or an in-process lock).
+         There is no non-atomic read/check/save default.
+         """
+         ...
+ 
+ 
+ class ClientRepository(ABC):
+     @abstractmethod
+     def save(self, client: Client) -> None: ...
+ 
+     @abstractmethod
+     def get_by_id(self, client_id: str) -> Client | None: ...
+ 
+     @abstractmethod
+     def list_all(self) -> Sequence[Client]:
+         """Return all clients. Order is implementation-defined (SQL impl: created_at DESC)."""
+         ...
+ 
++    def list_for_client(self, client_id: str) -> Sequence[Client]:
++        """Return the single client row for ``client_id`` if present (0 or 1 items).
++
++        Company-scoped list endpoints must use this (or :meth:`get_by_id`) — never
++        :meth:`list_all`. Empty ``client_id`` → empty sequence.
++        """
++        cid = (client_id or "").strip()
++        if not cid:
++            return []
++        client = self.get_by_id(cid)
++        return [client] if client is not None else []
++
+     @abstractmethod
+     def get_by_ids(self, client_ids: Sequence[str]) -> dict[str, Client]:
+         """Batch load clients by id (dedupe; empty input → empty dict; one query in SQL)."""
+         ...
+ 
+ 
+ class ClientSupplierRepository(ABC):
+     @abstractmethod
+     def save(self, supplier: ClientSupplier) -> None: ...
+ 
+     @abstractmethod
+     def get_by_id(self, supplier_id: str) -> ClientSupplier | None: ...
+ 
+     @abstractmethod
+     def get_by_client_and_name(self, client_id: str, name: str) -> ClientSupplier | None: ...
+ 
+     @abstractmethod
+     def list_by_client(self, client_id: str) -> Sequence[ClientSupplier]:
+         """Return suppliers for one client. Order is implementation-defined (SQL impl: created_at DESC)."""
+         ...
+diff --git a/backend/src/application/services/client_access_policy.py b/backend/src/application/services/client_access_policy.py
+new file mode 100644
+index 00000000..0740d417
+--- /dev/null
++++ b/backend/src/application/services/client_access_policy.py
+@@ -0,0 +1,77 @@
++"""Client tenant access policy (Stage 2).
++
++Complements :class:`~src.application.services.inventory_access_policy.InventoryAccessPolicy`.
++Platform principals may access any client. Company-scoped principals must match
++``principal.client_id``. Cross-tenant / missing client → ``ClientNotFoundError`` (HTTP 404).
++Create-client is platform-only → ``PlatformOnlyOperationError`` (HTTP 403).
++"""
++
++from __future__ import annotations
++
++import logging
++
++from src.application.dto.access_principal import AccessPrincipal
++from src.application.errors import ClientNotFoundError, PlatformOnlyOperationError
++from src.application.ports.repositories import ClientRepository
++from src.domain.client.entities import Client
++
++logger = logging.getLogger(__name__)
++
++
++class ClientAccessPolicy:
++    """Reusable client-id ownership checks for clients CRUD and nested client resources."""
++
++    def __init__(self, client_repo: ClientRepository) -> None:
++        self._client_repo = client_repo
++
++    def require_client(self, client_id: str, principal: AccessPrincipal) -> Client:
++        cid = (client_id or "").strip()
++        client = self._client_repo.get_by_id(cid) if cid else None
++        if client is None:
++            self._log_denied(principal, resource_id=cid or "(empty)")
++            raise ClientNotFoundError(f"Client not found: {cid}")
++        if principal.is_platform:
++            return client
++        principal_client = (principal.client_id or "").strip() or None
++        if principal_client is None or principal_client != cid:
++            self._log_denied(principal, resource_id=cid)
++            raise ClientNotFoundError(f"Client not found: {cid}")
++        return client
++
++    def require_platform(self, principal: AccessPrincipal, *, operation: str) -> None:
++        if principal.is_platform:
++            return
++        logger.info(
++            "event=authorization_denied reason_code=platform_only "
++            "principal_role=%s principal_client_id=%s resource_type=client operation=%s",
++            ",".join(sorted(principal.roles)) if principal.roles else "",
++            principal.client_id,
++            operation,
++        )
++        raise PlatformOnlyOperationError(
++            f"Operation requires platform_admin: {operation}"
++        )
++
++    def list_visible(self, principal: AccessPrincipal) -> list[Client]:
++        if principal.is_platform:
++            return list(self._client_repo.list_all())
++        principal_client = (principal.client_id or "").strip() or None
++        if principal_client is None:
++            return []
++        list_for = getattr(self._client_repo, "list_for_client", None)
++        if callable(list_for):
++            return list(list_for(principal_client))
++        client = self._client_repo.get_by_id(principal_client)
++        return [client] if client is not None else []
++
++    @staticmethod
++    def _log_denied(principal: AccessPrincipal, *, resource_id: str) -> None:
++        if principal.is_platform:
++            return
++        logger.info(
++            "event=authorization_denied reason_code=cross_tenant "
++            "principal_role=%s principal_client_id=%s resource_type=client resource_id=%s",
++            ",".join(sorted(principal.roles)) if principal.roles else "",
++            principal.client_id,
++            resource_id,
++        )
+diff --git a/backend/src/application/use_cases/clients/create_client.py b/backend/src/application/use_cases/clients/create_client.py
+index 12a6f5d1..9f9dbf6b 100644
+--- a/backend/src/application/use_cases/clients/create_client.py
++++ b/backend/src/application/use_cases/clients/create_client.py
+@@ -1,39 +1,43 @@
+-"""CreateClient use case — Phase A1 foundation."""
++"""CreateClient use case — platform-only (Stage 2)."""
+ 
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+ from uuid import uuid4
+ 
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.errors import InvalidClientNameError
+ from src.application.ports.clock import Clock
+ from src.application.ports.repositories import ClientRepository
++from src.application.services.client_access_policy import ClientAccessPolicy
+ from src.domain.client.entities import Client, ClientStatus
+ 
+ 
+ @dataclass
+ class CreateClientCommand:
+     name: str
++    principal: AccessPrincipal
+     status: ClientStatus = ClientStatus.ACTIVE
+ 
+ 
+ class CreateClientUseCase:
+     def __init__(self, client_repo: ClientRepository, clock: Clock) -> None:
+         self._client_repo = client_repo
+         self._clock = clock
++        self._policy = ClientAccessPolicy(client_repo)
+ 
+     def execute(self, command: CreateClientCommand) -> Client:
++        self._policy.require_platform(command.principal, operation="create_client")
+         name = (command.name or "").strip()
+         if not name:
+             raise InvalidClientNameError("Client name is required")
+         now = self._clock.now()
+         client = Client(
+             id=str(uuid4()),
+             name=name,
+             status=command.status,
+             created_at=now,
+             updated_at=now,
+         )
+         self._client_repo.save(client)
+         return client
+-
+diff --git a/backend/src/application/use_cases/clients/get_client.py b/backend/src/application/use_cases/clients/get_client.py
+index 31baa116..3a140870 100644
+--- a/backend/src/application/use_cases/clients/get_client.py
++++ b/backend/src/application/use_cases/clients/get_client.py
+@@ -1,19 +1,16 @@
+-"""GetClient use case — Phase A1 foundation."""
++"""GetClient use case — tenant-scoped (Stage 2)."""
+ 
+ from __future__ import annotations
+ 
+-from src.application.errors import ClientNotFoundError
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.ports.repositories import ClientRepository
++from src.application.services.client_access_policy import ClientAccessPolicy
+ from src.domain.client.entities import Client
+ 
+ 
+ class GetClientUseCase:
+     def __init__(self, client_repo: ClientRepository) -> None:
+-        self._client_repo = client_repo
+-
+-    def execute(self, client_id: str) -> Client:
+-        client = self._client_repo.get_by_id(client_id)
+-        if client is None:
+-            raise ClientNotFoundError(f"Client not found: {client_id}")
+-        return client
++        self._policy = ClientAccessPolicy(client_repo)
+ 
++    def execute(self, client_id: str, principal: AccessPrincipal) -> Client:
++        return self._policy.require_client(client_id, principal)
+diff --git a/backend/src/application/use_cases/clients/list_clients.py b/backend/src/application/use_cases/clients/list_clients.py
+index 7731b5d2..c5b311a2 100644
+--- a/backend/src/application/use_cases/clients/list_clients.py
++++ b/backend/src/application/use_cases/clients/list_clients.py
+@@ -1,17 +1,19 @@
+-"""ListClients use case — Phase A1 foundation."""
++"""ListClients use case — tenant-scoped (Stage 2)."""
+ 
+ from __future__ import annotations
+ 
+ from collections.abc import Sequence
+ 
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.ports.repositories import ClientRepository
++from src.application.services.client_access_policy import ClientAccessPolicy
+ from src.domain.client.entities import Client
+ 
+ 
+ class ListClientsUseCase:
+     def __init__(self, client_repo: ClientRepository) -> None:
+         self._client_repo = client_repo
++        self._policy = ClientAccessPolicy(client_repo)
+ 
+-    def execute(self) -> Sequence[Client]:
+-        return self._client_repo.list_all()
+-
++    def execute(self, principal: AccessPrincipal) -> Sequence[Client]:
++        return self._policy.list_visible(principal)
+diff --git a/backend/src/application/use_cases/clients/update_client.py b/backend/src/application/use_cases/clients/update_client.py
+index 79649bca..cf2699fd 100644
+--- a/backend/src/application/use_cases/clients/update_client.py
++++ b/backend/src/application/use_cases/clients/update_client.py
+@@ -1,58 +1,60 @@
+-"""UpdateClient use case — rename and/or set default identification mode."""
++"""UpdateClient use case — rename and/or set default identification mode (tenant-scoped)."""
+ 
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+ 
+-from src.application.errors import ClientNotFoundError, InvalidClientNameError
++from src.application.dto.access_principal import AccessPrincipal
++from src.application.errors import InvalidClientNameError
+ from src.application.ports.clock import Clock
+ from src.application.ports.repositories import ClientRepository
++from src.application.services.client_access_policy import ClientAccessPolicy
+ from src.application.services.legacy_processing_guard import (
+     reject_legacy_mode_for_new_configuration,
+ )
+ from src.application.services.optional_unset import UNSET, OptionalModeUpdate, UnsetType
+ from src.domain.aisle_identification.modes import AisleIdentificationMode, parse_identification_mode
+ from src.domain.client.entities import Client
+ 
+ _MAX_NAME_LEN = 255
+ 
+ 
+ @dataclass
+ class UpdateClientCommand:
+     client_id: str
++    principal: AccessPrincipal
+     name: str | None = None
+     identification_mode: OptionalModeUpdate = UNSET
+ 
+ 
+ class UpdateClientUseCase:
+     def __init__(self, client_repo: ClientRepository, clock: Clock) -> None:
+         self._client_repo = client_repo
+         self._clock = clock
++        self._policy = ClientAccessPolicy(client_repo)
+ 
+     def execute(self, command: UpdateClientCommand) -> Client:
+         if command.name is None and isinstance(command.identification_mode, UnsetType):
+             raise ValueError("At least one field must be provided")
+ 
+-        client = self._client_repo.get_by_id(command.client_id)
+-        if client is None:
+-            raise ClientNotFoundError(f"Client not found: {command.client_id}")
++        client = self._policy.require_client(command.client_id, command.principal)
+ 
+         changed = False
+         if command.name is not None:
+             name = command.name.strip()
+             if not name:
+                 raise InvalidClientNameError("Client name must not be empty")
+             if len(name) > _MAX_NAME_LEN:
+                 raise InvalidClientNameError(
+                     f"Client name must be at most {_MAX_NAME_LEN} characters"
+                 )
+             if client.name != name:
+                 client.name = name
+                 changed = True
+ 
+         if not isinstance(command.identification_mode, UnsetType):
+             mode: AisleIdentificationMode | None
+             if command.identification_mode is None:
+                 mode = None
+             elif isinstance(command.identification_mode, AisleIdentificationMode):
+                 mode = command.identification_mode
+diff --git a/backend/src/application/use_cases/inventories/create_inventory.py b/backend/src/application/use_cases/inventories/create_inventory.py
+index fc12b185..2bb07136 100644
+--- a/backend/src/application/use_cases/inventories/create_inventory.py
++++ b/backend/src/application/use_cases/inventories/create_inventory.py
+@@ -1,82 +1,94 @@
+ """
+ CreateInventory use case — v3.0 (Backlog HU-2.1).
+ 
+ Creates an inventory with the given name and persists it via InventoryRepository.
+ Depends only on application ports and domain entities.
+ """
+ 
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+ from typing import Any, Callable
+ from uuid import uuid4
+ 
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.errors import ClientNotFoundError
+ from src.application.ports.clock import Clock
+ from src.application.ports.repositories import ClientRepository, InventoryRepository
+ from src.application.services.operational_execution_config_resolver import (
+     OperationalExecutionConfigResolver,
+ )
+ from src.domain.inventory.entities import (
+     Inventory,
+     InventoryProcessingMode,
+     InventoryStatus,
+ )
+ 
+ 
+ @dataclass
+ class CreateInventoryCommand:
+     name: str
+     client_id: str
++    principal: AccessPrincipal
+     processing_mode: InventoryProcessingMode = InventoryProcessingMode.PRODUCTION
+ 
+ 
+ class CreateInventoryUseCase:
+     def __init__(
+         self,
+         inventory_repo: InventoryRepository,
+         client_repo: ClientRepository,
+         clock: Clock,
+         operational_resolver: OperationalExecutionConfigResolver,
+         settings_loader: Callable[[], Any],
+     ) -> None:
+         self._inventory_repo = inventory_repo
+         self._client_repo = client_repo
+         self._clock = clock
+         self._operational_resolver = operational_resolver
+         self._settings_loader = settings_loader
+ 
+     def execute(self, command: CreateInventoryCommand) -> Inventory:
+         now = self._clock.now()
+         mode = command.processing_mode
+         primary_provider_name = None
+         primary_model_name = None
+         primary_prompt_key = None
+         primary_prompt_version = None
+         if mode == InventoryProcessingMode.PRODUCTION:
+             settings = self._settings_loader()
+             snap = self._operational_resolver.resolve(settings)
+             primary_provider_name = snap.provider_name
+             primary_model_name = snap.model_name
+             primary_prompt_key = snap.prompt_key
+             primary_prompt_version = snap.prompt_version
+-        client_id = command.client_id.strip()
+-        if not client_id:
++        requested_client_id = (command.client_id or "").strip()
++        if not requested_client_id:
+             raise ValueError("client_id must not be empty")
++        # Never trust body tenant for company-scoped principals.
++        if command.principal.is_platform:
++            client_id = requested_client_id
++        else:
++            principal_client = (command.principal.client_id or "").strip() or None
++            if principal_client is None:
++                raise ClientNotFoundError(f"Client not found: {requested_client_id}")
++            if requested_client_id != principal_client:
++                raise ClientNotFoundError(f"Client not found: {requested_client_id}")
++            client_id = principal_client
+         if self._client_repo.get_by_id(client_id) is None:
+             raise ClientNotFoundError(f"Client not found: {client_id}")
+         inventory = Inventory(
+             id=str(uuid4()),
+             name=command.name,
+             status=InventoryStatus.DRAFT,
+             created_at=now,
+             updated_at=now,
+             processing_mode=mode,
+             primary_provider_name=primary_provider_name,
+             primary_model_name=primary_model_name,
+             primary_prompt_key=primary_prompt_key,
+             primary_prompt_version=primary_prompt_version,
+             client_id=client_id,
+         )
+         self._inventory_repo.save(inventory)
+         return inventory
+diff --git a/backend/src/application/use_cases/inventories/get_inventory.py b/backend/src/application/use_cases/inventories/get_inventory.py
+index e838c647..bf0a80b8 100644
+--- a/backend/src/application/use_cases/inventories/get_inventory.py
++++ b/backend/src/application/use_cases/inventories/get_inventory.py
+@@ -1,24 +1,21 @@
+ """
+-GetInventory use case — v3.0.
++GetInventory use case — v3.0 (tenant-scoped Stage 2).
+ 
+-Returns a single inventory by id. Raises InventoryNotFoundError if not found.
++Returns a single inventory by id when the principal may access it.
++Raises InventoryNotFoundError if missing, soft-deleted, or cross-tenant.
+ """
+ 
+ from __future__ import annotations
+ 
+-from src.application.errors import InventoryNotFoundError
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.ports.repositories import InventoryRepository
+-from src.application.services.inventory_soft_delete import reject_if_inventory_deleted
++from src.application.services.inventory_access_policy import InventoryAccessPolicy
+ from src.domain.inventory.entities import Inventory
+ 
+ 
+ class GetInventoryUseCase:
+     def __init__(self, inventory_repo: InventoryRepository) -> None:
+-        self._inventory_repo = inventory_repo
++        self._policy = InventoryAccessPolicy(inventory_repo)
+ 
+-    def execute(self, inventory_id: str) -> Inventory:
+-        inv = self._inventory_repo.get_by_id(inventory_id)
+-        if inv is None:
+-            raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
+-        reject_if_inventory_deleted(inv)
+-        return inv
++    def execute(self, inventory_id: str, principal: AccessPrincipal) -> Inventory:
++        return self._policy.require_inventory(inventory_id, principal)
+diff --git a/backend/src/application/use_cases/inventories/get_inventory_metrics.py b/backend/src/application/use_cases/inventories/get_inventory_metrics.py
+index 213e9ecf..43a79535 100644
+--- a/backend/src/application/use_cases/inventories/get_inventory_metrics.py
++++ b/backend/src/application/use_cases/inventories/get_inventory_metrics.py
+@@ -1,31 +1,29 @@
+ """
+-GetInventoryMetrics use case — v3.0 Épica 9.
++GetInventoryMetrics use case — v3.0 Épica 9 (tenant-scoped Stage 2).
+ 
+ Returns canonical inventory metrics per Documento técnico §9.6. Raises
+-InventoryNotFoundError if the inventory does not exist.
++InventoryNotFoundError if the inventory does not exist or is not visible.
+ """
+ 
+ from __future__ import annotations
+ 
+-from src.application.errors import InventoryNotFoundError
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.ports.contracts import InventoryMetricsResult
+ from src.application.ports.repositories import InventoryRepository
+ from src.application.ports.services import MetricsCalculator
+-from src.application.services.inventory_soft_delete import reject_if_inventory_deleted
++from src.application.services.inventory_access_policy import InventoryAccessPolicy
+ 
+ 
+ class GetInventoryMetricsUseCase:
+     def __init__(
+         self,
+         inventory_repo: InventoryRepository,
+         metrics_calculator: MetricsCalculator,
+     ) -> None:
+         self._inventory_repo = inventory_repo
+         self._metrics_calculator = metrics_calculator
++        self._policy = InventoryAccessPolicy(inventory_repo)
+ 
+-    def execute(self, inventory_id: str) -> InventoryMetricsResult:
+-        inv = self._inventory_repo.get_by_id(inventory_id)
+-        if inv is None:
+-            raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
+-        reject_if_inventory_deleted(inv)
++    def execute(self, inventory_id: str, principal: AccessPrincipal) -> InventoryMetricsResult:
++        self._policy.require_inventory(inventory_id, principal)
+         return self._metrics_calculator.calculate_inventory_metrics(inventory_id)
+diff --git a/backend/src/application/use_cases/inventories/list_inventory_list_items.py b/backend/src/application/use_cases/inventories/list_inventory_list_items.py
+index 82b8bd2d..01ac46dd 100644
+--- a/backend/src/application/use_cases/inventories/list_inventory_list_items.py
++++ b/backend/src/application/use_cases/inventories/list_inventory_list_items.py
+@@ -2,40 +2,41 @@
+ List inventories with per-row aggregates for the **screen-ready** inventories table (Sprint 1.2 + 1.4).
+ 
+ **Contract:** Backs ``GET /api/v3/inventories`` with optional search, status filter, sort, and pagination.
+ 
+ **Client names:** Resolved in one batch (``ClientRepository.get_by_ids``) for the current page.
+ 
+ **Performance:**
+ - Entity sorts (``name``, ``created_at``, ``updated_at``, ``status``): filter → sort → paginate,
+   then one ``list_by_inventories`` + one ``list_by_aisles`` for the page only.
+ - Aggregate sorts (``aisles_count``, ``pending_review_count``, ``last_activity_at``): one
+   ``list_by_inventories`` for all filtered inventories + one ``list_by_aisles``, then sort/page.
+ - Client names always batch-resolved once for the returned page.
+ """
+ 
+ from __future__ import annotations
+ 
+ from collections import defaultdict
+ from collections.abc import Sequence
+ from datetime import datetime
+ 
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.ports.contracts import InventoryListItem, InventoryTableQuery
+ from src.application.ports.repositories import (
+     AisleRepository,
+     ClientRepository,
+     InventoryRepository,
+     PositionRepository,
+ )
+ from src.application.services.inventory_aggregation_scope import scope_from_aisles
+ from src.domain.aisle.entities import Aisle
+ from src.domain.inventory.entities import Inventory
+ from src.domain.positions.entities import Position
+ 
+ _ENTITY_SORTS = frozenset({"name", "created_at", "updated_at", "status"})
+ _AGGREGATE_SORTS = frozenset({"aisles_count", "pending_review_count", "last_activity_at"})
+ 
+ 
+ def _max_dt(*values: datetime) -> datetime:
+     return max(values)
+ 
+ 
+@@ -146,44 +147,54 @@ class ListInventoryListItemsUseCase:
+         if not rows:
+             return []
+         client_ids = [r.inventory.client_id for r in rows if r.inventory.client_id]
+         by_id = self._client_repo.get_by_ids(client_ids) if client_ids else {}
+         enriched: list[InventoryListItem] = []
+         for row in rows:
+             cid = row.inventory.client_id
+             name = by_id[cid].name if cid and cid in by_id else None
+             enriched.append(
+                 InventoryListItem(
+                     inventory=row.inventory,
+                     aisles_count=row.aisles_count,
+                     pending_review_count=row.pending_review_count,
+                     last_activity_at=row.last_activity_at,
+                     client_name=name,
+                 )
+             )
+         return enriched
+ 
+     def execute(
+-        self, query: InventoryTableQuery | None = None
++        self,
++        query: InventoryTableQuery | None = None,
++        *,
++        principal: AccessPrincipal | None = None,
+     ) -> tuple[Sequence[InventoryListItem], int]:
+         q = query or InventoryTableQuery()
+-        invs = list(self._inventory_repo.list_all())
++        if principal is None or principal.is_platform:
++            invs = list(self._inventory_repo.list_all())
++        else:
++            principal_client = (principal.client_id or "").strip() or None
++            if principal_client is None:
++                invs = []
++            else:
++                invs = list(self._inventory_repo.list_for_client(principal_client))
+         search = (q.search or "").strip().lower() if q.search else None
+         if search:
+             invs = [i for i in invs if search in i.name.lower()]
+         if q.status is not None and str(q.status).strip():
+             st = str(q.status).strip()
+             invs = [i for i in invs if i.status.value == st]
+ 
+         sort_by = _sort_by_key(q.sort_by)
+         reverse = _normalize_dir(q.sort_dir)
+         page = max(1, q.page)
+         page_size = max(1, min(q.page_size, 200))
+         total = len(invs)
+ 
+         if sort_by in _ENTITY_SORTS:
+             invs.sort(key=lambda i: _inventory_entity_key(i, sort_by), reverse=reverse)
+             start = (page - 1) * page_size
+             page_invs = invs[start : start + page_size]
+             by_inv, by_aisle = self._load_aggregates(page_invs)
+             rows = [
+                 _build_item_from_loaded(
+diff --git a/backend/src/application/use_cases/inventories/soft_delete_inventories.py b/backend/src/application/use_cases/inventories/soft_delete_inventories.py
+index e33a70d5..13460b22 100644
+--- a/backend/src/application/use_cases/inventories/soft_delete_inventories.py
++++ b/backend/src/application/use_cases/inventories/soft_delete_inventories.py
+@@ -1,21 +1,21 @@
+-"""Bulk soft-delete inventories (logical delete via deleted_at)."""
++"""Bulk soft-delete inventories (logical delete via deleted_at) — atomic tenant scope."""
+ 
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+ 
+ from src.application.dto.access_principal import AccessPrincipal
+ from src.application.ports.clock import Clock
+ from src.application.ports.repositories import InventoryRepository
+ from src.domain.inventory.entities import Inventory
+ 
+ 
+ @dataclass(frozen=True)
+ class SoftDeleteInventoriesResult:
+     deleted_ids: tuple[str, ...]
+     already_deleted_ids: tuple[str, ...]
+     not_found_ids: tuple[str, ...]
+ 
+ 
+ @dataclass(frozen=True)
+ class SoftDeleteInventoriesCommand:
+@@ -29,61 +29,76 @@ def _dedupe_preserve_order(ids: tuple[str, ...]) -> list[str]:
+     for raw in ids:
+         inventory_id = (raw or "").strip()
+         if not inventory_id or inventory_id in seen:
+             continue
+         seen.add(inventory_id)
+         out.append(inventory_id)
+     return out
+ 
+ 
+ def _principal_may_access(inventory: Inventory, principal: AccessPrincipal) -> bool:
+     if principal.is_platform:
+         return True
+     principal_client = (principal.client_id or "").strip() or None
+     if principal_client is None:
+         return False
+     inv_client = (inventory.client_id or "").strip() or None
+     return inv_client == principal_client
+ 
+ 
+ class SoftDeleteInventoriesUseCase:
+-    """Mark inventories as soft-deleted. Idempotent; does not cascade to children."""
++    """Mark inventories as soft-deleted. Idempotent; does not cascade to children.
++
++    Atomic tenant rule (Stage 2): if any id is missing or not visible to the principal,
++    **no** inventory is modified (prevents partial cross-tenant bulk).
++    """
+ 
+     def __init__(
+         self,
+         inventory_repo: InventoryRepository,
+         clock: Clock,
+     ) -> None:
+         self._inventory_repo = inventory_repo
+         self._clock = clock
+ 
+     def execute(self, command: SoftDeleteInventoriesCommand) -> SoftDeleteInventoriesResult:
+         ids = _dedupe_preserve_order(command.inventory_ids)
+         if not ids:
+             raise ValueError("inventory_ids must not be empty")
+ 
+-        deleted: list[str] = []
+-        already: list[str] = []
++        resolved: list[Inventory] = []
+         not_found: list[str] = []
+-        now = self._clock.now()
+-        actor = (command.principal.actor_id or "").strip() or None
+-
+         for inventory_id in ids:
+             inventory = self._inventory_repo.get_by_id(inventory_id)
+             if inventory is None or not _principal_may_access(inventory, command.principal):
+                 not_found.append(inventory_id)
+                 continue
++            resolved.append(inventory)
++
++        if not_found:
++            return SoftDeleteInventoriesResult(
++                deleted_ids=(),
++                already_deleted_ids=(),
++                not_found_ids=tuple(not_found),
++            )
++
++        deleted: list[str] = []
++        already: list[str] = []
++        now = self._clock.now()
++        actor = (command.principal.actor_id or "").strip() or None
++
++        for inventory in resolved:
+             if inventory.is_deleted:
+-                already.append(inventory_id)
++                already.append(inventory.id)
+                 continue
+             changed = inventory.mark_deleted(now, deleted_by=actor)
+             if not changed:
+-                already.append(inventory_id)
++                already.append(inventory.id)
+                 continue
+             self._inventory_repo.save(inventory)
+-            deleted.append(inventory_id)
++            deleted.append(inventory.id)
+ 
+         return SoftDeleteInventoriesResult(
+             deleted_ids=tuple(deleted),
+             already_deleted_ids=tuple(already),
+-            not_found_ids=tuple(not_found),
++            not_found_ids=(),
+         )
+diff --git a/backend/src/application/use_cases/inventories/update_inventory_name.py b/backend/src/application/use_cases/inventories/update_inventory_name.py
+index cdbed7e9..13b87c57 100644
+--- a/backend/src/application/use_cases/inventories/update_inventory_name.py
++++ b/backend/src/application/use_cases/inventories/update_inventory_name.py
+@@ -1,68 +1,67 @@
+-"""Update inventory (name and/or identification mode override)."""
++"""Update inventory (name and/or identification mode override) — tenant-scoped."""
+ 
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+ 
+-from src.application.errors import InventoryNotFoundError
++from src.application.dto.access_principal import AccessPrincipal
+ from src.application.ports.clock import Clock
+ from src.application.ports.repositories import InventoryRepository
+-from src.application.services.inventory_soft_delete import reject_if_inventory_deleted
++from src.application.services.inventory_access_policy import InventoryAccessPolicy
+ from src.application.services.legacy_processing_guard import (
+     reject_legacy_mode_for_new_configuration,
+ )
+ from src.application.services.optional_unset import UNSET, OptionalModeUpdate, UnsetType
+ from src.domain.aisle_identification.modes import AisleIdentificationMode, parse_identification_mode
+ from src.domain.inventory.entities import Inventory
+ 
+ _MAX_INVENTORY_NAME_LEN = 255
+ 
+ 
+ @dataclass
+ class UpdateInventoryCommand:
+     inventory_id: str
++    principal: AccessPrincipal
+     name: str | None = None
+     identification_mode: OptionalModeUpdate = UNSET
+ 
+ 
+ # Backward-compatible alias for DI / existing imports.
+ UpdateInventoryNameCommand = UpdateInventoryCommand
+ 
+ 
+ class UpdateInventoryUseCase:
+     def __init__(
+         self,
+         inventory_repo: InventoryRepository,
+         clock: Clock,
+     ) -> None:
+         self._inventory_repo = inventory_repo
+         self._clock = clock
++        self._policy = InventoryAccessPolicy(inventory_repo)
+ 
+     def execute(self, command: UpdateInventoryCommand) -> Inventory:
+         if command.name is None and isinstance(command.identification_mode, UnsetType):
+             raise ValueError("At least one field must be provided")
+ 
+-        inventory = self._inventory_repo.get_by_id(command.inventory_id)
+-        if inventory is None:
+-            raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
+-        reject_if_inventory_deleted(inventory)
++        inventory = self._policy.require_inventory(command.inventory_id, command.principal)
+ 
+         changed = False
+         if command.name is not None:
+             name = command.name.strip()
+             if not name:
+                 raise ValueError("Inventory name must not be empty")
+             if len(name) > _MAX_INVENTORY_NAME_LEN:
+                 raise ValueError(
+                     f"Inventory name must be at most {_MAX_INVENTORY_NAME_LEN} characters"
+                 )
+             if inventory.name != name:
+                 inventory.name = name
+                 changed = True
+ 
+         if not isinstance(command.identification_mode, UnsetType):
+             mode: AisleIdentificationMode | None
+             if command.identification_mode is None:
+                 mode = None
+             elif isinstance(command.identification_mode, AisleIdentificationMode):
+                 mode = command.identification_mode
+diff --git a/backend/src/infrastructure/repositories/memory_client_repository.py b/backend/src/infrastructure/repositories/memory_client_repository.py
+index 741981fe..1a0feae3 100644
+--- a/backend/src/infrastructure/repositories/memory_client_repository.py
++++ b/backend/src/infrastructure/repositories/memory_client_repository.py
+@@ -4,25 +4,32 @@ from __future__ import annotations
+ 
+ from collections.abc import Sequence
+ 
+ from src.application.ports.repositories import ClientRepository
+ from src.domain.client.entities import Client
+ 
+ 
+ class MemoryClientRepository(ClientRepository):
+     def __init__(self) -> None:
+         self._store: dict[str, Client] = {}
+ 
+     def save(self, client: Client) -> None:
+         self._store[client.id] = client
+ 
+     def get_by_id(self, client_id: str) -> Client | None:
+         return self._store.get(client_id)
+ 
+     def list_all(self) -> Sequence[Client]:
+         return sorted(self._store.values(), key=lambda c: c.created_at, reverse=True)
+ 
++    def list_for_client(self, client_id: str) -> Sequence[Client]:
++        cid = (client_id or "").strip()
++        if not cid:
++            return []
++        client = self._store.get(cid)
++        return [client] if client is not None else []
++
+     def get_by_ids(self, client_ids: Sequence[str]) -> dict[str, Client]:
+         uniq = {cid for cid in client_ids if cid}
+         if not uniq:
+             return {}
+         return {cid: self._store[cid] for cid in uniq if cid in self._store}
+diff --git a/backend/src/infrastructure/repositories/memory_inventory_repository.py b/backend/src/infrastructure/repositories/memory_inventory_repository.py
+index b4d0831b..e9b1bd0c 100644
+--- a/backend/src/infrastructure/repositories/memory_inventory_repository.py
++++ b/backend/src/infrastructure/repositories/memory_inventory_repository.py
+@@ -12,40 +12,52 @@ from collections.abc import Sequence
+ from datetime import datetime
+ 
+ from src.application.ports.repositories import InventoryRepository
+ from src.domain.inventory.entities import Inventory, InventoryStatus
+ 
+ 
+ class MemoryInventoryRepository(InventoryRepository):
+     def __init__(self) -> None:
+         self._store: dict[str, Inventory] = {}
+         self._lock = threading.Lock()
+ 
+     def save(self, inventory: Inventory) -> None:
+         with self._lock:
+             self._store[inventory.id] = inventory
+ 
+     def get_by_id(self, inventory_id: str) -> Inventory | None:
+         with self._lock:
+             return self._store.get(inventory_id)
+ 
+     def list_all(self) -> Sequence[Inventory]:
++        """Return active inventories (exclude soft-deleted). Order is implementation-defined."""
+         with self._lock:
+             return [inv for inv in self._store.values() if not inv.is_deleted]
+ 
++    def list_for_client(self, client_id: str) -> Sequence[Inventory]:
++        cid = (client_id or "").strip()
++        if not cid:
++            return []
++        with self._lock:
++            return [
++                inv
++                for inv in self._store.values()
++                if not inv.is_deleted and (inv.client_id or "").strip() == cid
++            ]
++
+     def compare_and_set_status(
+         self,
+         inventory_id: str,
+         *,
+         expected_current: InventoryStatus,
+         new_status: InventoryStatus,
+         updated_at: datetime,
+         completed_at: datetime | None,
+     ) -> bool:
+         with self._lock:
+             inv = self._store.get(inventory_id)
+             if inv is None or inv.status != expected_current:
+                 return False
+             inv.status = new_status
+             inv.updated_at = updated_at
+             inv.completed_at = completed_at
+             return True
+diff --git a/backend/src/infrastructure/repositories/sql_client_repository.py b/backend/src/infrastructure/repositories/sql_client_repository.py
+index 9493c9d3..d912a1dc 100644
+--- a/backend/src/infrastructure/repositories/sql_client_repository.py
++++ b/backend/src/infrastructure/repositories/sql_client_repository.py
+@@ -79,37 +79,44 @@ class SqlClientRepository(ClientRepository):
+                 """,
+                 (client_id,),
+             )
+             row = cur.fetchone()
+         if not row:
+             return None
+         return _client_from_row(row)
+ 
+     def list_all(self) -> Sequence[Client]:
+         with self._client.cursor() as cur:
+             cur.execute(
+                 """
+                 SELECT id, name, status, created_at, updated_at, default_identification_mode
+                 FROM clients
+                 ORDER BY created_at DESC
+                 """
+             )
+             rows = cur.fetchall()
+         return [_client_from_row(row) for row in rows]
+ 
++    def list_for_client(self, client_id: str) -> Sequence[Client]:
++        cid = (client_id or "").strip()
++        if not cid:
++            return []
++        client = self.get_by_id(cid)
++        return [client] if client is not None else []
++
+     def get_by_ids(self, client_ids: Sequence[str]) -> dict[str, Client]:
+         uniq = list({cid for cid in client_ids if cid})
+         if not uniq:
+             return {}
+         placeholders = ",".join("?" * len(uniq))
+         with self._client.cursor() as cur:
+             cur.execute(
+                 f"""
+                 SELECT id, name, status, created_at, updated_at, default_identification_mode
+                 FROM clients
+                 WHERE id IN ({placeholders})
+                 """,
+                 tuple(uniq),
+             )
+             rows = cur.fetchall()
+         return {row.id: _client_from_row(row) for row in rows}
+ 
+diff --git a/backend/src/infrastructure/repositories/sql_inventory_repository.py b/backend/src/infrastructure/repositories/sql_inventory_repository.py
+index e3b47ddb..234970ad 100644
+--- a/backend/src/infrastructure/repositories/sql_inventory_repository.py
++++ b/backend/src/infrastructure/repositories/sql_inventory_repository.py
+@@ -196,20 +196,37 @@ class SqlInventoryRepository(InventoryRepository):
+                 (inventory_id,),
+             )
+             row = cur.fetchone()
+         if not row:
+             return None
+         return self._row_to_inventory(row)
+ 
+     def list_all(self) -> Sequence[Inventory]:
+         """Return active inventories (deleted_at IS NULL); order is created_at DESC."""
+         with sql_repository_cursor(self._client, connection=self._connection) as cur:
+             cur.execute(
+                 f"""
+                 SELECT {_INVENTORY_SELECT_COLUMNS}
+                 FROM inventories
+                 WHERE deleted_at IS NULL
+                 ORDER BY created_at DESC
+                 """
+             )
+             rows = cur.fetchall()
+         return [self._row_to_inventory(row) for row in rows]
++
++    def list_for_client(self, client_id: str) -> Sequence[Inventory]:
++        cid = (client_id or "").strip()
++        if not cid:
++            return []
++        with sql_repository_cursor(self._client, connection=self._connection) as cur:
++            cur.execute(
++                f"""
++                SELECT {_INVENTORY_SELECT_COLUMNS}
++                FROM inventories
++                WHERE deleted_at IS NULL AND client_id = ?
++                ORDER BY created_at DESC
++                """,
++                (cid,),
++            )
++            rows = cur.fetchall()
++        return [self._row_to_inventory(row) for row in rows]
+diff --git a/backend/tests/api/test_code_scans_routes.py b/backend/tests/api/test_code_scans_routes.py
+index e4a44bb8..b438effc 100644
+--- a/backend/tests/api/test_code_scans_routes.py
++++ b/backend/tests/api/test_code_scans_routes.py
+@@ -1,32 +1,33 @@
+ """API tests for aisle code scan routes (Phase 1)."""
+ 
+ from __future__ import annotations
+ 
+ from datetime import datetime, timezone
+ 
+ from fastapi.testclient import TestClient
+ 
+ from src.api.dependencies import (
+     get_code_scanner,
+     get_export_aisle_code_scans_use_case,
+     get_get_aisle_code_scan_review_signals_use_case,
++    get_inventory_repo,
+     get_list_aisle_code_scans_use_case,
+     get_run_aisle_code_scan_use_case,
+     get_summarize_aisle_code_scans_use_case,
+ )
+ from src.api.errors import mapped_http_exception
+ from src.api.errors.structured_api_http import CODE_SCAN_SCANNER_UNAVAILABLE
+ from src.api.server import app
+ from src.application.errors import (
+     AisleNotFoundError,
+     CodeScanExportNoRunError,
+     CodeScanScannerUnavailableError,
+     NoSourceAssetsForCodeScanError,
+ )
+ from src.application.ports.code_scan_repository import CodeScanSummaryItem
+ from src.application.services.code_scan_review_signals import (
+     CodeScanReviewSignal,
+     summarize_signals,
+ )
+ from src.application.use_cases.code_scans.export_aisle_code_scans import (
+     ExportAisleCodeScansCommand,
+@@ -41,40 +42,41 @@ from src.application.use_cases.code_scans.list_aisle_code_scans import (
+     ListAisleCodeScansResult,
+ )
+ from src.application.use_cases.code_scans.run_aisle_code_scan import (
+     RunAisleCodeScanCommand,
+     RunAisleCodeScanResult,
+ )
+ from src.application.use_cases.code_scans.summarize_aisle_code_scans import (
+     SummarizeAisleCodeScansCommand,
+     SummarizeAisleCodeScansResult,
+ )
+ from src.auth.dependencies import get_current_admin
+ from src.auth.schemas import AuthUser
+ from src.domain.code_scans.entities import (
+     CodeScanDetection,
+     CodeScanDetectionStatus,
+     CodeScanRun,
+     CodeScanRunStatus,
+     CodeType,
+ )
+ from src.domain.code_scans.matching import CodeScanMatchStatus
++from src.domain.inventory.entities import Inventory, InventoryStatus
+ 
+ 
+ def _fake_admin() -> AuthUser:
+     return AuthUser(id="admin", username="admin", role="administrator")
+ 
+ 
+ def test_post_run_passes_created_by_from_admin() -> None:
+     captured: list[RunAisleCodeScanCommand] = []
+ 
+     class StubRun:
+         def execute(self, cmd: RunAisleCodeScanCommand) -> RunAisleCodeScanResult:
+             captured.append(cmd)
+             now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+             return RunAisleCodeScanResult(
+                 run_id="run-1",
+                 status=CodeScanRunStatus.COMPLETED,
+                 total_assets=0,
+                 processed_assets=0,
+                 failed_assets=0,
+                 total_codes_found=0,
+@@ -351,52 +353,82 @@ def test_get_review_signals_ok() -> None:
+     app.dependency_overrides[get_get_aisle_code_scan_review_signals_use_case] = (
+         lambda: StubSignals()
+     )
+     try:
+         client = TestClient(app)
+         resp = client.get("/api/v3/inventories/inv1/aisles/a1/code-scans/review-signals")
+         assert resp.status_code == 200
+         data = resp.json()
+         assert data["latest_run"]["id"] == "run-1"
+         assert len(data["signals"]) == 1
+         assert data["signals"][0]["type"] == "code_no_match"
+     finally:
+         app.dependency_overrides.clear()
+ 
+ 
+ def test_export_csv_no_run_404() -> None:
+     class StubExport:
+         def execute(self, _cmd: ExportAisleCodeScansCommand) -> ExportAisleCodeScansResult:
+             raise CodeScanExportNoRunError("no run")
+ 
++    now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
++    inv = Inventory(
++        id="inv1",
++        name="I",
++        status=InventoryStatus.DRAFT,
++        created_at=now,
++        updated_at=now,
++        client_id="client-a",
++    )
++
++    class StubInvRepo:
++        def get_by_id(self, inventory_id: str):
++            return inv if inventory_id == "inv1" else None
++
+     app.dependency_overrides[get_current_admin] = _fake_admin
++    app.dependency_overrides[get_inventory_repo] = lambda: StubInvRepo()
+     app.dependency_overrides[get_export_aisle_code_scans_use_case] = lambda: StubExport()
+     try:
+         client = TestClient(app)
+         resp = client.get(
+             "/api/v3/inventories/inv1/aisles/a1/code-scans/export?format=csv&type=detections"
+         )
+         assert resp.status_code == 404
+     finally:
+         app.dependency_overrides.clear()
+ 
+ 
+ def test_export_csv_ok() -> None:
+     class StubExport:
+         def execute(self, _cmd: ExportAisleCodeScansCommand) -> ExportAisleCodeScansResult:
+             return ExportAisleCodeScansResult(
+                 filename="code-scans-inv1-a1-detections.csv",
+                 body="\ufeffinventory_id,aisle_id\ninv1,a1\n",
+             )
+ 
++    now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
++    inv = Inventory(
++        id="inv1",
++        name="I",
++        status=InventoryStatus.DRAFT,
++        created_at=now,
++        updated_at=now,
++        client_id="client-a",
++    )
++
++    class StubInvRepo:
++        def get_by_id(self, inventory_id: str):
++            return inv if inventory_id == "inv1" else None
++
+     app.dependency_overrides[get_current_admin] = _fake_admin
++    app.dependency_overrides[get_inventory_repo] = lambda: StubInvRepo()
+     app.dependency_overrides[get_export_aisle_code_scans_use_case] = lambda: StubExport()
+     try:
+         client = TestClient(app)
+         resp = client.get(
+             "/api/v3/inventories/inv1/aisles/a1/code-scans/export?format=csv&type=detections"
+         )
+         assert resp.status_code == 200
+         assert "text/csv" in resp.headers.get("content-type", "")
+         assert "code-scans" in resp.headers.get("content-disposition", "")
+     finally:
+         app.dependency_overrides.clear()
+diff --git a/backend/tests/api/test_error_mapping.py b/backend/tests/api/test_error_mapping.py
+index 722e3630..1593be4f 100644
+--- a/backend/tests/api/test_error_mapping.py
++++ b/backend/tests/api/test_error_mapping.py
+@@ -554,59 +554,59 @@ def test_real_app_global_handler_does_not_echo_internal_error() -> None:
+     class _BadInventoryUseCase:
+         def execute(self, *_args: object, **_kwargs: object) -> None:
+             raise RuntimeError("INTERNAL_LEAK_TOKEN_123")
+ 
+     app.dependency_overrides[get_get_inventory_use_case] = lambda: _BadInventoryUseCase()
+     try:
+         r = TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/any-id")
+         assert r.status_code == 500
+         assert "INTERNAL_LEAK" not in r.text
+         body = r.json()
+         assert body.get("detail") == "An unexpected error occurred."
+         assert body.get("code") == INTERNAL_SERVER_ERROR
+     finally:
+         app.dependency_overrides.pop(get_get_inventory_use_case, None)
+ 
+ 
+ def test_get_inventory_not_found_returns_structured_json() -> None:
+     """Integration: stable not-found through app exception handler."""
+ 
+     class _MissingInventory:
+-        def execute(self, _inventory_id: str):
++        def execute(self, _inventory_id: str, _principal=None):
+             raise InventoryNotFoundError()
+ 
+     app.dependency_overrides[get_get_inventory_use_case] = lambda: _MissingInventory()
+     try:
+         r = TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/any-id")
+         assert r.status_code == 404
+         assert r.json() == {"code": INVENTORY_NOT_FOUND, "detail": "Inventory not found"}
+     finally:
+         app.dependency_overrides.pop(get_get_inventory_use_case, None)
+ 
+ 
+ def test_structured_api_error_logs_stable_code_at_info(
+     caplog: pytest.LogCaptureFixture,
+ ) -> None:
+     """Observability: ``src.api.server`` logs stable ``error_code`` for structured v3 errors."""
+ 
+     class _MissingInventory:
+-        def execute(self, _inventory_id: str):
++        def execute(self, _inventory_id: str, _principal=None):
+             raise InventoryNotFoundError()
+ 
+     app.dependency_overrides[get_get_inventory_use_case] = lambda: _MissingInventory()
+     try:
+         import logging
+ 
+         caplog.set_level(logging.INFO, logger="src.api.server")
+         TestClient(app, raise_server_exceptions=False).get("/api/v3/inventories/any-id")
+         joined = " ".join(rec.getMessage() for rec in caplog.records)
+         assert "v3_structured_api_error" in joined
+         assert INVENTORY_NOT_FOUND in joined
+     finally:
+         app.dependency_overrides.pop(get_get_inventory_use_case, None)
+ 
+ 
+ def test_get_aisle_status_aisle_not_found_returns_structured_json() -> None:
+     """Integration: Category A aisle not-found via ``reraise_if_mapped`` on a real v3 route."""
+ 
+     class _MissingAisle:
+         def execute(self, inventory_id: str, aisle_id: str) -> None:
+diff --git a/backend/tests/api/test_tenant_isolation_stage2_http.py b/backend/tests/api/test_tenant_isolation_stage2_http.py
+new file mode 100644
+index 00000000..b1565a40
+--- /dev/null
++++ b/backend/tests/api/test_tenant_isolation_stage2_http.py
+@@ -0,0 +1,149 @@
++"""HTTP Stage 2 — company_admin cannot cross tenants on clients/inventories/exports."""
++
++from __future__ import annotations
++
++from datetime import datetime, timezone
++
++from fastapi.testclient import TestClient
++
++from src.api.dependencies import (
++    get_aisle_repo,
++    get_client_repo,
++    get_inventory_repo,
++    get_position_repo,
++)
++from src.api.server import app
++from src.auth.dependencies import get_current_admin
++from src.auth.schemas import AuthUser
++from src.domain.client.entities import Client, ClientStatus
++from src.domain.inventory.entities import Inventory, InventoryStatus
++from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
++from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
++from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
++from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
++
++client = TestClient(app)
++
++
++def _seed() -> tuple[MemoryClientRepository, MemoryInventoryRepository]:
++    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
++    clients = MemoryClientRepository()
++    inventories = MemoryInventoryRepository()
++    for cid, name in (("client-a", "A"), ("client-b", "B")):
++        clients.save(
++            Client(
++                id=cid,
++                name=name,
++                status=ClientStatus.ACTIVE,
++                created_at=now,
++                updated_at=now,
++            )
++        )
++    for iid, cid in (("inv-a", "client-a"), ("inv-b", "client-b")):
++        inventories.save(
++            Inventory(
++                id=iid,
++                name=iid,
++                status=InventoryStatus.DRAFT,
++                created_at=now,
++                updated_at=now,
++                client_id=cid,
++            )
++        )
++    return clients, inventories
++
++
++def _as_company(client_id: str) -> None:
++    app.dependency_overrides[get_current_admin] = lambda: AuthUser(
++        id="u",
++        username="co",
++        role="company_admin",
++        client_id=client_id,
++    )
++
++
++def _as_platform() -> None:
++    app.dependency_overrides[get_current_admin] = lambda: AuthUser(
++        id="p",
++        username="plat",
++        role="platform_admin",
++    )
++
++
++def _clear() -> None:
++    app.dependency_overrides.pop(get_current_admin, None)
++    app.dependency_overrides.pop(get_client_repo, None)
++    app.dependency_overrides.pop(get_inventory_repo, None)
++    app.dependency_overrides.pop(get_aisle_repo, None)
++    app.dependency_overrides.pop(get_position_repo, None)
++
++
++def _wire_repos(
++    clients: MemoryClientRepository, inventories: MemoryInventoryRepository
++) -> None:
++    app.dependency_overrides[get_client_repo] = lambda: clients
++    app.dependency_overrides[get_inventory_repo] = lambda: inventories
++    app.dependency_overrides[get_aisle_repo] = lambda: MemoryAisleRepository()
++    app.dependency_overrides[get_position_repo] = lambda: MemoryPositionRepository()
++
++
++def test_http_company_a_clients_and_inventories_scoped() -> None:
++    clients, inventories = _seed()
++    _wire_repos(clients, inventories)
++    try:
++        _as_company("client-a")
++        listed = client.get("/api/v3/clients/")
++        assert listed.status_code == 200
++        ids = [row["id"] for row in listed.json()["items"]]
++        assert ids == ["client-a"]
++
++        assert client.get("/api/v3/clients/client-a").status_code == 200
++        assert client.get("/api/v3/clients/client-b").status_code == 404
++
++        inv_list = client.get("/api/v3/inventories/")
++        assert inv_list.status_code == 200
++        inv_ids = [row["id"] for row in inv_list.json()["items"]]
++        assert inv_ids == ["inv-a"]
++        assert inv_list.json()["total_items"] == 1
++
++        assert client.get("/api/v3/inventories/inv-a").status_code == 200
++        assert client.get("/api/v3/inventories/inv-b").status_code == 404
++        assert client.get("/api/v3/inventories/inv-b/export").status_code == 404
++        assert client.post(
++            "/api/v3/clients/", json={"name": "Nope", "status": "active"}
++        ).status_code == 403
++    finally:
++        _clear()
++
++
++def test_http_platform_sees_both() -> None:
++    clients, inventories = _seed()
++    _wire_repos(clients, inventories)
++    try:
++        _as_platform()
++        listed = client.get("/api/v3/clients/")
++        assert {row["id"] for row in listed.json()["items"]} == {"client-a", "client-b"}
++        inv_list = client.get("/api/v3/inventories/")
++        assert {row["id"] for row in inv_list.json()["items"]} == {"inv-a", "inv-b"}
++        assert client.get("/api/v3/inventories/inv-b").status_code == 200
++    finally:
++        _clear()
++
++
++def test_http_missing_bearer_rejected_when_override_cleared() -> None:
++    """With no admin override, missing Authorization must not succeed as company scope."""
++    _clear()
++    # Ensure dependency is the real one (other modules may leave overrides).
++    app.dependency_overrides.pop(get_current_admin, None)
++
++    def _deny():
++        from fastapi import HTTPException
++
++        raise HTTPException(status_code=401, detail="Not authenticated")
++
++    app.dependency_overrides[get_current_admin] = _deny
++    try:
++        resp = client.get("/api/v3/clients/")
++        assert resp.status_code == 401
++    finally:
++        _clear()
+diff --git a/backend/tests/application/use_cases/test_create_client.py b/backend/tests/application/use_cases/test_create_client.py
+index cfce1c46..052f9034 100644
+--- a/backend/tests/application/use_cases/test_create_client.py
++++ b/backend/tests/application/use_cases/test_create_client.py
+@@ -1,59 +1,62 @@
+ """Tests for CreateClientUseCase."""
+ 
+ from __future__ import annotations
+ 
+ from datetime import datetime, timezone
+ 
+ import pytest
+ 
+ from src.application.errors import InvalidClientNameError
+ from src.application.ports.repositories import ClientRepository
+ from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
+ from src.domain.client.entities import Client, ClientStatus
++from tests.support.access_principal_helpers import platform_principal
+ from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
+ 
+ 
+ class FixedClock:
+     def __init__(self, now: datetime) -> None:
+         self._now = now
+ 
+     def now(self) -> datetime:
+         return self._now
+ 
+ 
+ class StubClientRepo(ClientRepositoryBatchMixin, ClientRepository):
+     def __init__(self) -> None:
+         self._store: dict[str, Client] = {}
+ 
+     def save(self, client: Client) -> None:
+         self._store[client.id] = client
+ 
+     def get_by_id(self, client_id: str) -> Client | None:
+         return self._store.get(client_id)
+ 
+     def list_all(self):
+         return list(self._store.values())
+ 
+ 
+ def test_create_client_success() -> None:
+     repo = StubClientRepo()
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     use_case = CreateClientUseCase(client_repo=repo, clock=FixedClock(now))
+ 
+-    result = use_case.execute(CreateClientCommand(name="Retail A"))
++    result = use_case.execute(
++        CreateClientCommand(name="Retail A", principal=platform_principal())
++    )
+ 
+     assert result.name == "Retail A"
+     assert result.status == ClientStatus.ACTIVE
+     assert result.created_at == now
+     assert result.updated_at == now
+     assert repo.get_by_id(result.id) == result
+ 
+ 
+ def test_create_client_validation_failure_when_trimmed_name_empty() -> None:
+     repo = StubClientRepo()
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     use_case = CreateClientUseCase(client_repo=repo, clock=FixedClock(now))
+ 
+     with pytest.raises(InvalidClientNameError, match="Client name is required"):
+-        use_case.execute(CreateClientCommand(name="   "))
++        use_case.execute(CreateClientCommand(name="   ", principal=platform_principal()))
+ 
+diff --git a/backend/tests/application/use_cases/test_create_inventory.py b/backend/tests/application/use_cases/test_create_inventory.py
+index 55e084ea..5231e5af 100644
+--- a/backend/tests/application/use_cases/test_create_inventory.py
++++ b/backend/tests/application/use_cases/test_create_inventory.py
+@@ -1,40 +1,41 @@
+ """Tests for CreateInventoryUseCase."""
+ 
+ from __future__ import annotations
+ 
+ from datetime import datetime, timezone
+ from typing import Any
+ 
+ import pytest
+ 
+ from src.application.errors import ClientNotFoundError
+ from src.application.ports.repositories import ClientRepository, InventoryRepository
+ from src.application.services.operational_execution_config_resolver import (
+     OperationalPrimaryExecutionConfig,
+ )
+ from src.application.use_cases.inventories.create_inventory import (
+     CreateInventoryCommand,
+     CreateInventoryUseCase,
+ )
+ from src.domain.client.entities import Client, ClientStatus
+ from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
++from tests.support.access_principal_helpers import platform_principal
+ from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
+ from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
+ from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
+ 
+ 
+ class FixedClock:
+     def __init__(self, now: datetime) -> None:
+         self._now = now
+ 
+     def now(self) -> datetime:
+         return self._now
+ 
+ 
+ class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
+     def __init__(self) -> None:
+         self._store: dict[str, Inventory] = {}
+ 
+     def save(self, inventory: Inventory) -> None:
+         self._store[inventory.id] = inventory
+ 
+@@ -80,115 +81,140 @@ def _active_client(now: datetime, client_id: str = "client-1") -> Client:
+         name="Retail A",
+         status=ClientStatus.ACTIVE,
+         created_at=now,
+         updated_at=now,
+     )
+ 
+ 
+ def test_create_inventory_production_snapshots_operational_config() -> None:
+     repo = StubInventoryRepo()
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     clock = FixedClock(now)
+     client = _active_client(now)
+     use_case = CreateInventoryUseCase(
+         inventory_repo=repo,
+         client_repo=StubClientRepo([client]),
+         clock=clock,
+         operational_resolver=StubOperationalResolver(),
+         settings_loader=_dummy_settings,
+     )
+ 
+-    result = use_case.execute(CreateInventoryCommand(name="Warehouse A", client_id=client.id))
++    result = use_case.execute(
++        CreateInventoryCommand(
++            name="Warehouse A",
++            client_id=client.id,
++            principal=platform_principal(),
++        )
++    )
+ 
+     assert result.name == "Warehouse A"
+     assert result.status == InventoryStatus.DRAFT
+     assert result.processing_mode == InventoryProcessingMode.PRODUCTION
+     assert result.primary_provider_name == STUB_PRIMARY_PROVIDER
+     assert result.primary_model_name == STUB_PRIMARY_MODEL
+     assert result.primary_prompt_key == "global_v21"
+     assert result.created_at == now
+     assert result.updated_at == now
+     assert result.client_id == client.id
+     assert repo.get_by_id(result.id) == result
+     assert len(repo.list_all()) == 1
+ 
+ 
+ def test_create_inventory_test_leaves_primary_fields_null() -> None:
+     repo = StubInventoryRepo()
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     clock = FixedClock(now)
+     client = _active_client(now, client_id="c-test")
+     use_case = CreateInventoryUseCase(
+         inventory_repo=repo,
+         client_repo=StubClientRepo([client]),
+         clock=clock,
+         operational_resolver=StubOperationalResolver(),
+         settings_loader=_dummy_settings,
+     )
+ 
+     result = use_case.execute(
+         CreateInventoryCommand(
+             name="Lab",
+             processing_mode=InventoryProcessingMode.TEST,
+             client_id=client.id,
++            principal=platform_principal(),
+         )
+     )
+ 
+     assert result.processing_mode == InventoryProcessingMode.TEST
+     assert result.primary_provider_name is None
+     assert result.primary_model_name is None
+     assert result.primary_prompt_key is None
+     assert result.primary_prompt_version is None
+     assert result.client_id == client.id
+ 
+ 
+ def test_create_inventory_with_blank_client_id_after_strip_raises_value_error() -> None:
+     repo = StubInventoryRepo()
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     use_case = CreateInventoryUseCase(
+         inventory_repo=repo,
+         client_repo=StubClientRepo(),
+         clock=FixedClock(now),
+         operational_resolver=StubOperationalResolver(),
+         settings_loader=_dummy_settings,
+     )
+ 
+     with pytest.raises(ValueError, match="client_id must not be empty"):
+-        use_case.execute(CreateInventoryCommand(name="Warehouse B", client_id="   "))
++        use_case.execute(
++            CreateInventoryCommand(
++                name="Warehouse B",
++                client_id="   ",
++                principal=platform_principal(),
++            )
++        )
+ 
+ 
+ def test_create_inventory_with_valid_client_id_persists_association() -> None:
+     repo = StubInventoryRepo()
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     client = Client(
+         id="client-1",
+         name="Retail A",
+         status=ClientStatus.ACTIVE,
+         created_at=now,
+         updated_at=now,
+     )
+     use_case = CreateInventoryUseCase(
+         inventory_repo=repo,
+         client_repo=StubClientRepo([client]),
+         clock=FixedClock(now),
+         operational_resolver=StubOperationalResolver(),
+         settings_loader=_dummy_settings,
+     )
+ 
+-    result = use_case.execute(CreateInventoryCommand(name="Warehouse C", client_id="client-1"))
++    result = use_case.execute(
++        CreateInventoryCommand(
++            name="Warehouse C",
++            client_id="client-1",
++            principal=platform_principal(),
++        )
++    )
+     assert result.client_id == "client-1"
+     assert repo.get_by_id(result.id) == result
+ 
+ 
+ def test_create_inventory_with_invalid_client_id_raises_client_not_found() -> None:
+     repo = StubInventoryRepo()
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     use_case = CreateInventoryUseCase(
+         inventory_repo=repo,
+         client_repo=StubClientRepo(),
+         clock=FixedClock(now),
+         operational_resolver=StubOperationalResolver(),
+         settings_loader=_dummy_settings,
+     )
+ 
+     with pytest.raises(ClientNotFoundError):
+-        use_case.execute(CreateInventoryCommand(name="Warehouse D", client_id="missing-client"))
++        use_case.execute(
++            CreateInventoryCommand(
++                name="Warehouse D",
++                client_id="missing-client",
++                principal=platform_principal(),
++            )
++        )
+diff --git a/backend/tests/application/use_cases/test_get_client.py b/backend/tests/application/use_cases/test_get_client.py
+index 838c9ee3..490a8a4e 100644
+--- a/backend/tests/application/use_cases/test_get_client.py
++++ b/backend/tests/application/use_cases/test_get_client.py
+@@ -1,55 +1,56 @@
+ """Tests for GetClientUseCase."""
+ 
+ from __future__ import annotations
+ 
+ from datetime import datetime, timezone
+ 
+ import pytest
+ 
+ from src.application.errors import ClientNotFoundError
+ from src.application.ports.repositories import ClientRepository
+ from src.application.use_cases.clients.get_client import GetClientUseCase
+ from src.domain.client.entities import Client, ClientStatus
++from tests.support.access_principal_helpers import platform_principal
+ from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
+ 
+ 
+ class StubClientRepo(ClientRepositoryBatchMixin, ClientRepository):
+     def __init__(self) -> None:
+         self._store: dict[str, Client] = {}
+ 
+     def save(self, client: Client) -> None:
+         self._store[client.id] = client
+ 
+     def get_by_id(self, client_id: str) -> Client | None:
+         return self._store.get(client_id)
+ 
+     def list_all(self):
+         return list(self._store.values())
+ 
+ 
+ def test_get_client_returns_entity_when_found() -> None:
+     repo = StubClientRepo()
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     client = Client(
+         id="client-1",
+         name="Retail A",
+         status=ClientStatus.ACTIVE,
+         created_at=now,
+         updated_at=now,
+     )
+     repo.save(client)
+     use_case = GetClientUseCase(client_repo=repo)
+ 
+-    result = use_case.execute("client-1")
++    result = use_case.execute("client-1", platform_principal())
+ 
+     assert result.id == "client-1"
+     assert result.name == "Retail A"
+ 
+ 
+ def test_get_client_raises_when_not_found() -> None:
+     repo = StubClientRepo()
+     use_case = GetClientUseCase(client_repo=repo)
+ 
+     with pytest.raises(ClientNotFoundError):
+-        use_case.execute("missing")
++        use_case.execute("missing", platform_principal())
+ 
+diff --git a/backend/tests/application/use_cases/test_get_inventory.py b/backend/tests/application/use_cases/test_get_inventory.py
+index 0722a2bf..d627956c 100644
+--- a/backend/tests/application/use_cases/test_get_inventory.py
++++ b/backend/tests/application/use_cases/test_get_inventory.py
+@@ -1,55 +1,56 @@
+ """Tests for GetInventoryUseCase."""
+ 
+ from __future__ import annotations
+ 
+ from collections.abc import Sequence
+ from datetime import datetime, timezone
+ 
+ import pytest
+ 
+ from src.application.errors import InventoryNotFoundError
+ from src.application.ports.repositories import InventoryRepository
+ from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
+ from src.domain.inventory.entities import Inventory, InventoryStatus
++from tests.support.access_principal_helpers import platform_principal
+ from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
+ 
+ 
+ class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
+     def __init__(self) -> None:
+         self._store: dict[str, Inventory] = {}
+ 
+     def save(self, inventory: Inventory) -> None:
+         self._store[inventory.id] = inventory
+ 
+     def get_by_id(self, inventory_id: str) -> Inventory | None:
+         return self._store.get(inventory_id)
+ 
+     def list_all(self) -> Sequence[Inventory]:
+         return list(self._store.values())
+ 
+ 
+ def test_get_inventory_returns_entity_when_found() -> None:
+     repo = StubInventoryRepo()
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory(
+         id="inv-1",
+         name="Test",
+         status=InventoryStatus.DRAFT,
+         created_at=now,
+         updated_at=now,
+     )
+     repo.save(inv)
+ 
+     use_case = GetInventoryUseCase(inventory_repo=repo)
+-    result = use_case.execute("inv-1")
++    result = use_case.execute("inv-1", platform_principal())
+ 
+     assert result is not None
+     assert result.id == "inv-1"
+     assert result.name == "Test"
+ 
+ 
+ def test_get_inventory_raises_when_not_found() -> None:
+     repo = StubInventoryRepo()
+     use_case = GetInventoryUseCase(inventory_repo=repo)
+     with pytest.raises(InventoryNotFoundError):
+-        use_case.execute("nonexistent")
++        use_case.execute("nonexistent", platform_principal())
+diff --git a/backend/tests/application/use_cases/test_get_inventory_metrics.py b/backend/tests/application/use_cases/test_get_inventory_metrics.py
+index 9b8ed61e..b57b542b 100644
+--- a/backend/tests/application/use_cases/test_get_inventory_metrics.py
++++ b/backend/tests/application/use_cases/test_get_inventory_metrics.py
+@@ -1,35 +1,36 @@
+ """Tests for GetInventoryMetricsUseCase — Épica 9."""
+ 
+ from __future__ import annotations
+ 
+ from collections.abc import Sequence
+ from datetime import datetime, timezone
+ 
+ import pytest
+ 
+ from src.application.errors import InventoryNotFoundError
+ from src.application.ports.contracts import InventoryMetricsResult
+ from src.application.ports.repositories import InventoryRepository
+ from src.application.ports.services import MetricsCalculator
+ from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
+ from src.domain.inventory.entities import Inventory, InventoryStatus
++from tests.support.access_principal_helpers import platform_principal
+ from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
+ 
+ 
+ class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
+     def __init__(self, inventories: list[Inventory]) -> None:
+         self._store = {inv.id: inv for inv in inventories}
+ 
+     def save(self, inventory: Inventory) -> None:
+         self._store[inventory.id] = inventory
+ 
+     def get_by_id(self, inventory_id: str) -> Inventory | None:
+         return self._store.get(inventory_id)
+ 
+     def list_all(self) -> Sequence[Inventory]:
+         return list(self._store.values())
+ 
+ 
+ class StubMetricsCalculator(MetricsCalculator):
+     def __init__(self, result: InventoryMetricsResult) -> None:
+         self._result = result
+@@ -38,36 +39,36 @@ class StubMetricsCalculator(MetricsCalculator):
+         return self._result
+ 
+ 
+ def test_get_metrics_returns_calculator_result_when_inventory_exists() -> None:
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory("inv-1", "WH", InventoryStatus.DRAFT, now, now)
+     inv_repo = StubInventoryRepo([inv])
+     metrics = InventoryMetricsResult(
+         total_positions=10,
+         total_reviewed_positions=8,
+         auto_accepted_positions=5,
+         corrected_positions=2,
+         deleted_positions=1,
+         success_rate=62.5,
+         correction_rate=25.0,
+         deletion_rate=12.5,
+     )
+     calculator = StubMetricsCalculator(metrics)
+     use_case = GetInventoryMetricsUseCase(inventory_repo=inv_repo, metrics_calculator=calculator)
+ 
+-    result = use_case.execute("inv-1")
++    result = use_case.execute("inv-1", platform_principal())
+ 
+     assert result["total_positions"] == 10
+     assert result["total_reviewed_positions"] == 8
+     assert result["success_rate"] == 62.5
+ 
+ 
+ def test_get_metrics_raises_when_inventory_not_found() -> None:
+     inv_repo = StubInventoryRepo([])
+     calculator = StubMetricsCalculator(
+         InventoryMetricsResult(total_positions=0, total_reviewed_positions=0)
+     )
+     use_case = GetInventoryMetricsUseCase(inventory_repo=inv_repo, metrics_calculator=calculator)
+ 
+     with pytest.raises(InventoryNotFoundError):
+-        use_case.execute("nonexistent")
++        use_case.execute("nonexistent", platform_principal())
+diff --git a/backend/tests/application/use_cases/test_inactive_aisle_aggregation_policy.py b/backend/tests/application/use_cases/test_inactive_aisle_aggregation_policy.py
+index 51f8ea84..37c670b0 100644
+--- a/backend/tests/application/use_cases/test_inactive_aisle_aggregation_policy.py
++++ b/backend/tests/application/use_cases/test_inactive_aisle_aggregation_policy.py
+@@ -14,40 +14,41 @@ from src.application.ports.contracts import PositionListQuery
+ from src.application.ports.repositories import AisleRepository, PositionRepository
+ from src.application.services.export_inventory_collector import ExportInventoryCollector
+ from src.application.services.inventory_aggregation_scope import scope_from_aisles
+ from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+ from src.application.services.result_context_resolver import ResultContextResolver
+ from src.application.use_cases.inventories.list_inventory_list_items import (
+     ListInventoryListItemsUseCase,
+ )
+ from src.domain.aisle.entities import Aisle, AisleStatus
+ from src.domain.inventory.entities import Inventory, InventoryStatus
+ from src.domain.positions.entities import Position, PositionStatus
+ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+ from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
+ from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+ from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+ from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+ from src.infrastructure.repositories.memory_product_record_repository import (
+     MemoryProductRecordRepository,
+ )
+ from src.infrastructure.services.inventory_metrics_service import InventoryMetricsService
++from tests.support.access_principal_helpers import platform_principal
+ 
+ NOW = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+ 
+ 
+ class FixedClock:
+     def __init__(self, now: datetime) -> None:
+         self._now = now
+ 
+     def now(self) -> datetime:
+         return self._now
+ 
+ 
+ def _inventory() -> Inventory:
+     return Inventory(
+         id="I1",
+         name="Inv 1",
+         status=InventoryStatus.IN_REVIEW,
+         created_at=NOW,
+         updated_at=NOW,
+     )
+@@ -165,41 +166,41 @@ def test_export_collector_operational_only_filters_inactive() -> None:
+         pos_repo,
+         prod_repo,
+         ResultContextResolver(job_repo, pos_repo),
+     )
+     ops = collector.collect_inventory("I1", operational_only=True)
+     assert [a.id for a in ops.aisles_in_order] == ["A"]
+     assert len(ops.aisle_bundles) == 1
+ 
+     all_data = collector.collect_inventory("I1", operational_only=False)
+     assert {a.id for a in all_data.aisles_in_order} == {"A", "B"}
+     assert len(all_data.aisle_bundles) == 2
+ 
+ 
+ def test_list_items_pending_active_only_aisles_count_all() -> None:
+     inv_repo = MemoryInventoryRepository()
+     aisle_repo = MemoryAisleRepository()
+     pos_repo = MemoryPositionRepository()
+     _seed_i1(aisle_repo=aisle_repo, pos_repo=pos_repo, inv_repo=inv_repo)
+ 
+     uc = ListInventoryListItemsUseCase(inv_repo, aisle_repo, pos_repo, MemoryClientRepository())
+-    rows, total = uc.execute()
++    rows, total = uc.execute(principal=platform_principal())
+     assert total == 1
+     row = rows[0]
+     assert row.aisles_count == 2
+     # Pending on inactive B must not count.
+     assert row.pending_review_count == 0
+ 
+ 
+ class StubAisleRepo(AisleRepository):
+     """Minimal stub used by metrics tests; defaults is_active=True on entities."""
+ 
+     def __init__(self, aisles: list[Aisle]) -> None:
+         self._aisles = aisles
+ 
+     def save(self, aisle: Aisle) -> None:
+         raise NotImplementedError
+ 
+     def get_by_id(self, aisle_id: str) -> Aisle | None:
+         for a in self._aisles:
+             if a.id == aisle_id:
+                 return a
+diff --git a/backend/tests/application/use_cases/test_inventory_status_lifecycle_and_backfill.py b/backend/tests/application/use_cases/test_inventory_status_lifecycle_and_backfill.py
+index 8c7df629..f9a8be1f 100644
+--- a/backend/tests/application/use_cases/test_inventory_status_lifecycle_and_backfill.py
++++ b/backend/tests/application/use_cases/test_inventory_status_lifecycle_and_backfill.py
+@@ -16,40 +16,41 @@ from src.application.use_cases.inventories.backfill_inventory_statuses import (
+ from src.application.use_cases.inventories.create_inventory import (
+     CreateInventoryCommand,
+     CreateInventoryUseCase,
+ )
+ from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
+ from src.domain.aisle.entities import Aisle, AisleStatus
+ from src.domain.client.entities import Client, ClientStatus
+ from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
+ from src.domain.inventory.entities import Inventory, InventoryStatus
+ from src.domain.positions.entities import Position, PositionStatus
+ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+ from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
+ from src.infrastructure.repositories.memory_client_supplier_repository import (
+     MemoryClientSupplierRepository,
+ )
+ from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+ from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+ from src.infrastructure.repositories.memory_review_action_repository import (
+     MemoryReviewActionRepository,
+ )
++from tests.support.access_principal_helpers import platform_principal
+ from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
+ 
+ 
+ class FixedClock:
+     def __init__(self, now: datetime) -> None:
+         self._now = now
+ 
+     def now(self) -> datetime:
+         return self._now
+ 
+ 
+ class _StubOperationalResolver:
+     def resolve(self, settings: object) -> OperationalPrimaryExecutionConfig:
+         _ = settings
+         return OperationalPrimaryExecutionConfig(
+             provider_name=STUB_PRIMARY_PROVIDER,
+             model_name=STUB_PRIMARY_MODEL,
+             prompt_key="global_v21",
+             prompt_version=None,
+         )
+@@ -70,41 +71,45 @@ def test_inventory_aggregate_lifecycle_through_completed() -> None:
+     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+ 
+     client_repo = MemoryClientRepository()
+     client_repo.save(
+         Client(
+             id="lifecycle-client",
+             name="Lifecycle Client",
+             status=ClientStatus.ACTIVE,
+             created_at=now,
+             updated_at=now,
+         )
+     )
+     create_inv_uc = CreateInventoryUseCase(
+         inv_repo,
+         client_repo,
+         clock,
+         operational_resolver=_StubOperationalResolver(),
+         settings_loader=_settings_loader,
+     )
+     inv = create_inv_uc.execute(
+-        CreateInventoryCommand(name="Lifecycle inv", client_id="lifecycle-client")
++        CreateInventoryCommand(
++            name="Lifecycle inv",
++            client_id="lifecycle-client",
++            principal=platform_principal(),
++        )
+     )
+     assert inv.status == InventoryStatus.DRAFT
+     assert reconciler.reconcile(inv.id) is False
+ 
+     supplier_repo = MemoryClientSupplierRepository()
+     supplier_repo.save(
+         ClientSupplier(
+             id="lifecycle-supplier",
+             client_id="lifecycle-client",
+             name="Lifecycle Supplier",
+             status=ClientSupplierStatus.ACTIVE,
+             created_at=now,
+             updated_at=now,
+         )
+     )
+     create_aisle_uc = CreateAisleUseCase(
+         inv_repo,
+         aisle_repo,
+         supplier_repo,
+         clock,
+diff --git a/backend/tests/application/use_cases/test_list_clients.py b/backend/tests/application/use_cases/test_list_clients.py
+index eb27b416..a51e4c91 100644
+--- a/backend/tests/application/use_cases/test_list_clients.py
++++ b/backend/tests/application/use_cases/test_list_clients.py
+@@ -1,38 +1,39 @@
+ """Tests for ListClientsUseCase."""
+ 
+ from __future__ import annotations
+ 
+ from datetime import datetime, timezone
+ 
+ from src.application.ports.repositories import ClientRepository
+ from src.application.use_cases.clients.list_clients import ListClientsUseCase
+ from src.domain.client.entities import Client, ClientStatus
++from tests.support.access_principal_helpers import platform_principal
+ from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
+ 
+ 
+ class StubClientRepo(ClientRepositoryBatchMixin, ClientRepository):
+     def __init__(self, clients: list[Client]) -> None:
+         self._store = {c.id: c for c in clients}
+ 
+     def save(self, client: Client) -> None:
+         self._store[client.id] = client
+ 
+     def get_by_id(self, client_id: str) -> Client | None:
+         return self._store.get(client_id)
+ 
+     def list_all(self):
+         return list(self._store.values())
+ 
+ 
+ def test_list_clients_returns_all() -> None:
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     c1 = Client("c1", "A", ClientStatus.ACTIVE, now, now)
+     c2 = Client("c2", "B", ClientStatus.INACTIVE, now, now)
+     repo = StubClientRepo([c1, c2])
+     use_case = ListClientsUseCase(client_repo=repo)
+ 
+-    result = use_case.execute()
++    result = use_case.execute(platform_principal())
+ 
+     assert len(result) == 2
+     assert {c.id for c in result} == {"c1", "c2"}
+ 
+diff --git a/backend/tests/application/use_cases/test_list_inventory_list_items.py b/backend/tests/application/use_cases/test_list_inventory_list_items.py
+index 5e6fd5ab..9f524601 100644
+--- a/backend/tests/application/use_cases/test_list_inventory_list_items.py
++++ b/backend/tests/application/use_cases/test_list_inventory_list_items.py
+@@ -1,36 +1,37 @@
+ """Tests for ListInventoryListItemsUseCase (aggregates + client names + query budget)."""
+ 
+ from datetime import datetime, timezone
+ 
+ from src.application.ports.contracts import InventoryListItem, InventoryTableQuery
+ from src.application.use_cases.inventories.list_inventory_list_items import (
+     ListInventoryListItemsUseCase,
+ )
+ from src.domain.aisle.entities import Aisle, AisleStatus
+ from src.domain.client.entities import Client, ClientStatus
+ from src.domain.inventory.entities import Inventory, InventoryStatus
+ from src.domain.positions.entities import Position, PositionStatus
+ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+ from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
+ from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+ from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
++from tests.support.access_principal_helpers import platform_principal
+ 
+ UTC = timezone.utc
+ 
+ T0 = datetime(2025, 1, 1, 10, 0, 0, tzinfo=UTC)
+ T1 = datetime(2025, 1, 1, 11, 0, 0, tzinfo=UTC)
+ T2 = datetime(2025, 1, 2, 12, 0, 0, tzinfo=UTC)
+ T3 = datetime(2025, 1, 2, 15, 0, 0, tzinfo=UTC)
+ T4 = datetime(2025, 1, 3, 20, 0, 0, tzinfo=UTC)
+ 
+ 
+ def _inv(
+     id_: str,
+     name: str = "N",
+     *,
+     created_at: datetime = T0,
+     updated_at: datetime = T1,
+     client_id: str | None = None,
+ ) -> Inventory:
+     return Inventory(
+         id=id_,
+@@ -79,161 +80,165 @@ def _uc(
+     pos_repo=None,
+     client_repo=None,
+ ) -> ListInventoryListItemsUseCase:
+     return ListInventoryListItemsUseCase(
+         inventory_repo=inv_repo or MemoryInventoryRepository(),
+         aisle_repo=aisle_repo or MemoryAisleRepository(),
+         position_repo=pos_repo or MemoryPositionRepository(),
+         client_repo=client_repo or MemoryClientRepository(),
+     )
+ 
+ 
+ def test_list_items_includes_counts_and_pending() -> None:
+     inv_repo = MemoryInventoryRepository()
+     aisle_repo = MemoryAisleRepository()
+     pos_repo = MemoryPositionRepository()
+     inv_repo.save(_inv("inv-1"))
+     aisle_repo.save(_aisle("aisle-1", "inv-1"))
+     pos_repo.save(_pos("p1", "aisle-1", needs_review=True))
+     pos_repo.save(_pos("p2", "aisle-1", needs_review=False))
+ 
+-    out, total = _uc(inv_repo, aisle_repo, pos_repo).execute()
++    out, total = _uc(inv_repo, aisle_repo, pos_repo).execute(principal=platform_principal())
+     assert total == 1
+     assert len(out) == 1
+     row = out[0]
+     assert isinstance(row, InventoryListItem)
+     assert row.inventory.id == "inv-1"
+     assert row.aisles_count == 1
+     assert row.pending_review_count == 1
+ 
+ 
+ def test_inventory_with_no_aisles_zero_counts_and_last_activity_from_inventory_only() -> None:
+     inv_repo = MemoryInventoryRepository()
+     created = datetime(2025, 6, 1, 8, 0, 0, tzinfo=UTC)
+     updated = datetime(2025, 6, 1, 9, 0, 0, tzinfo=UTC)
+     inv_repo.save(_inv("inv-empty", created_at=created, updated_at=updated))
+-    row = _uc(inv_repo).execute()[0][0]
++    row = _uc(inv_repo).execute(principal=platform_principal())[0][0]
+     assert row.aisles_count == 0
+     assert row.pending_review_count == 0
+     assert row.last_activity_at == updated
+ 
+ 
+ def test_last_activity_uses_max_across_inventory_aisle_position() -> None:
+     inv_repo = MemoryInventoryRepository()
+     aisle_repo = MemoryAisleRepository()
+     pos_repo = MemoryPositionRepository()
+     inv_repo.save(
+         _inv(
+             "inv-max",
+             created_at=datetime(2025, 3, 1, 8, 0, 0, tzinfo=UTC),
+             updated_at=datetime(2025, 3, 1, 9, 0, 0, tzinfo=UTC),
+         )
+     )
+     aisle_repo.save(
+         _aisle(
+             "aisle-max",
+             "inv-max",
+             created_at=datetime(2025, 3, 1, 10, 0, 0, tzinfo=UTC),
+             updated_at=datetime(2025, 3, 1, 14, 0, 0, tzinfo=UTC),
+         )
+     )
+     pos_repo.save(
+         _pos(
+             "p-max",
+             "aisle-max",
+             needs_review=False,
+             created_at=datetime(2025, 3, 1, 15, 0, 0, tzinfo=UTC),
+             updated_at=datetime(2025, 3, 1, 21, 0, 0, tzinfo=UTC),
+         )
+     )
+-    row = _uc(inv_repo, aisle_repo, pos_repo).execute()[0][0]
++    row = _uc(inv_repo, aisle_repo, pos_repo).execute(principal=platform_principal())[0][0]
+     assert row.last_activity_at == datetime(2025, 3, 1, 21, 0, 0, tzinfo=UTC)
+ 
+ 
+ def test_list_items_empty_repos() -> None:
+-    items, total = _uc().execute()
++    items, total = _uc().execute(principal=platform_principal())
+     assert items == [] and total == 0
+ 
+ 
+ def test_list_items_resolves_client_name_null_and_missing_client() -> None:
+     inv_repo = MemoryInventoryRepository()
+     client_repo = MemoryClientRepository()
+     client_repo.save(
+         Client(
+             id="c-1",
+             name="Cliente Ejemplo",
+             status=ClientStatus.ACTIVE,
+             created_at=T0,
+             updated_at=T0,
+         )
+     )
+     inv_repo.save(_inv("inv-1", "With Client", client_id="c-1"))
+     inv_repo.save(_inv("inv-2", "Legacy", client_id=None))
+     inv_repo.save(_inv("inv-3", "Orphan", client_id="missing-client"))
+ 
+     calls = {"n": 0}
+     original = client_repo.get_by_ids
+ 
+     def counting_get_by_ids(ids):
+         calls["n"] += 1
+         return original(ids)
+ 
+     client_repo.get_by_ids = counting_get_by_ids  # type: ignore[method-assign]
+ 
+-    rows, total = _uc(inv_repo=inv_repo, client_repo=client_repo).execute()
++    rows, total = _uc(inv_repo=inv_repo, client_repo=client_repo).execute(
++        principal=platform_principal()
++    )
+     assert total == 3
+     by_id = {r.inventory.id: r for r in rows}
+     assert by_id["inv-1"].client_name == "Cliente Ejemplo"
+     assert by_id["inv-2"].client_name is None
+     assert by_id["inv-3"].client_name is None
+     assert calls["n"] == 1
+ 
+ 
+ def test_entity_sort_paginates_before_aggregate_load_single_batch() -> None:
+     inv_repo = MemoryInventoryRepository()
+     aisle_repo = MemoryAisleRepository()
+     for i in range(5):
+         inv_repo.save(_inv(f"inv-{i}", name=f"Inv {i}", client_id=None))
+         aisle_repo.save(_aisle(f"a-{i}", f"inv-{i}"))
+ 
+     calls = {"list_by_inventories": 0}
+     original = aisle_repo.list_by_inventories
+ 
+     def counting(ids):
+         calls["list_by_inventories"] += 1
+         return original(ids)
+ 
+     aisle_repo.list_by_inventories = counting  # type: ignore[method-assign]
+ 
+     rows, total = _uc(inv_repo=inv_repo, aisle_repo=aisle_repo).execute(
+-        InventoryTableQuery(sort_by="name", sort_dir="asc", page=2, page_size=2)
++        InventoryTableQuery(sort_by="name", sort_dir="asc", page=2, page_size=2),
++        principal=platform_principal(),
+     )
+     assert total == 5
+     assert len(rows) == 2
+     assert calls["list_by_inventories"] == 1
+     assert {r.inventory.id for r in rows} == {"inv-2", "inv-3"}
+ 
+ 
+ def test_aggregate_sort_uses_one_list_by_inventories_call() -> None:
+     inv_repo = MemoryInventoryRepository()
+     aisle_repo = MemoryAisleRepository()
+     inv_repo.save(_inv("inv-a", "A"))
+     inv_repo.save(_inv("inv-b", "B"))
+     aisle_repo.save(_aisle("a1", "inv-b"))
+     aisle_repo.save(_aisle("a2", "inv-b"))
+ 
+     calls = {"n": 0}
+     original = aisle_repo.list_by_inventories
+ 
+     def counting(ids):
+         calls["n"] += 1
+         return original(ids)
+ 
+     aisle_repo.list_by_inventories = counting  # type: ignore[method-assign]
+ 
+     rows, total = _uc(inv_repo=inv_repo, aisle_repo=aisle_repo).execute(
+-        InventoryTableQuery(sort_by="aisles_count", sort_dir="desc", page=1, page_size=10)
++        InventoryTableQuery(sort_by="aisles_count", sort_dir="desc", page=1, page_size=10),
++        principal=platform_principal(),
+     )
+     assert total == 2
+     assert rows[0].inventory.id == "inv-b"
+     assert rows[0].aisles_count == 2
+     assert calls["n"] == 1
+diff --git a/backend/tests/application/use_cases/test_soft_delete_inventories.py b/backend/tests/application/use_cases/test_soft_delete_inventories.py
+index c124e8ce..d14b93e6 100644
+--- a/backend/tests/application/use_cases/test_soft_delete_inventories.py
++++ b/backend/tests/application/use_cases/test_soft_delete_inventories.py
+@@ -157,41 +157,41 @@ def test_soft_delete_other_client_scope(
+ 
+ def test_list_excludes_deleted(repo: MemoryInventoryRepository, clock: FixedClock) -> None:
+     repo.save(_inv("alive"))
+     repo.save(_inv("gone"))
+     SoftDeleteInventoriesUseCase(repo, clock).execute(
+         SoftDeleteInventoriesCommand(inventory_ids=("gone",), principal=_platform())
+     )
+     assert [i.id for i in repo.list_all()] == ["alive"]
+ 
+ 
+ def test_get_inventory_treats_deleted_as_not_found(
+     repo: MemoryInventoryRepository, clock: FixedClock
+ ) -> None:
+     repo.save(_inv("i1"))
+     SoftDeleteInventoriesUseCase(repo, clock).execute(
+         SoftDeleteInventoriesCommand(inventory_ids=("i1",), principal=_platform())
+     )
+     from src.application.errors import InventoryNotFoundError
+ 
+     with pytest.raises(InventoryNotFoundError):
+-        GetInventoryUseCase(repo).execute("i1")
++        GetInventoryUseCase(repo).execute("i1", _platform())
+     # Raw repo still holds the row (no physical delete).
+     assert repo.get_by_id("i1") is not None
+     assert repo.get_by_id("i1").is_deleted  # type: ignore[union-attr]
+ 
+ 
+ def test_soft_delete_preserves_related_entities_in_store(
+     repo: MemoryInventoryRepository, clock: FixedClock
+ ) -> None:
+     """Soft delete only touches inventory row; dependents are not cascaded here."""
+     repo.save(_inv("i1"))
+     SoftDeleteInventoriesUseCase(repo, clock).execute(
+         SoftDeleteInventoriesCommand(inventory_ids=("i1",), principal=_platform())
+     )
+     # Inventory still loadable from storage for in-flight workers.
+     assert isinstance(repo.get_by_id("i1"), Inventory)
+ 
+ 
+ class StubListAllNoFilter(ExplicitInventoryCompareAndSet, InventoryRepository):
+     """Legacy-style stub that does not filter deleted (ensures use-case still works)."""
+ 
+diff --git a/backend/tests/application/use_cases/test_tenant_isolation_stage2.py b/backend/tests/application/use_cases/test_tenant_isolation_stage2.py
+new file mode 100644
+index 00000000..ac96c23c
+--- /dev/null
++++ b/backend/tests/application/use_cases/test_tenant_isolation_stage2.py
+@@ -0,0 +1,218 @@
++"""Stage 2 — tenant isolation matrix for clients / inventories / bulk (unit)."""
++
++from __future__ import annotations
++
++from datetime import datetime, timezone
++
++import pytest
++
++from src.application.errors import (
++    ClientNotFoundError,
++    InventoryNotFoundError,
++    PlatformOnlyOperationError,
++)
++from src.application.services.operational_execution_config_resolver import (
++    OperationalPrimaryExecutionConfig,
++)
++from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
++from src.application.use_cases.clients.get_client import GetClientUseCase
++from src.application.use_cases.clients.list_clients import ListClientsUseCase
++from src.application.use_cases.clients.update_client import UpdateClientCommand, UpdateClientUseCase
++from src.application.use_cases.inventories.create_inventory import (
++    CreateInventoryCommand,
++    CreateInventoryUseCase,
++)
++from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
++from src.application.use_cases.inventories.list_inventory_list_items import (
++    ListInventoryListItemsUseCase,
++)
++from src.application.use_cases.inventories.soft_delete_inventories import (
++    SoftDeleteInventoriesCommand,
++    SoftDeleteInventoriesUseCase,
++)
++from src.domain.client.entities import Client, ClientStatus
++from src.domain.inventory.entities import Inventory, InventoryStatus
++from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
++from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
++from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
++from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
++from tests.support.access_principal_helpers import company_principal, platform_principal
++from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
++
++
++class _FixedClock:
++    def __init__(self) -> None:
++        self._now = datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
++
++    def now(self) -> datetime:
++        return self._now
++
++
++class _StubOperational:
++    def resolve(self, settings):
++        _ = settings
++        return OperationalPrimaryExecutionConfig(
++            provider_name=STUB_PRIMARY_PROVIDER,
++            model_name=STUB_PRIMARY_MODEL,
++            prompt_key="global_v21",
++            prompt_version=None,
++        )
++
++
++@pytest.fixture
++def clients_ab() -> MemoryClientRepository:
++    repo = MemoryClientRepository()
++    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
++    for cid, name in (("client-a", "A"), ("client-b", "B")):
++        repo.save(
++            Client(
++                id=cid,
++                name=name,
++                status=ClientStatus.ACTIVE,
++                created_at=now,
++                updated_at=now,
++            )
++        )
++    return repo
++
++
++@pytest.fixture
++def inventories_ab(clients_ab: MemoryClientRepository) -> MemoryInventoryRepository:
++    _ = clients_ab
++    repo = MemoryInventoryRepository()
++    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
++    for iid, cid in (("inv-a", "client-a"), ("inv-b", "client-b")):
++        repo.save(
++            Inventory(
++                id=iid,
++                name=iid,
++                status=InventoryStatus.DRAFT,
++                created_at=now,
++                updated_at=now,
++                client_id=cid,
++            )
++        )
++    return repo
++
++
++def test_company_a_gets_own_client_not_b(clients_ab: MemoryClientRepository) -> None:
++    uc = GetClientUseCase(clients_ab)
++    assert uc.execute("client-a", company_principal("client-a")).id == "client-a"
++    with pytest.raises(ClientNotFoundError):
++        uc.execute("client-b", company_principal("client-a"))
++
++
++def test_company_b_cannot_get_a(clients_ab: MemoryClientRepository) -> None:
++    with pytest.raises(ClientNotFoundError):
++        GetClientUseCase(clients_ab).execute("client-a", company_principal("client-b"))
++
++
++def test_company_a_lists_only_a(clients_ab: MemoryClientRepository) -> None:
++    rows = ListClientsUseCase(clients_ab).execute(company_principal("client-a"))
++    assert [c.id for c in rows] == ["client-a"]
++
++
++def test_platform_lists_a_and_b(clients_ab: MemoryClientRepository) -> None:
++    rows = ListClientsUseCase(clients_ab).execute(platform_principal())
++    assert {c.id for c in rows} == {"client-a", "client-b"}
++
++
++def test_company_cannot_create_client(clients_ab: MemoryClientRepository) -> None:
++    uc = CreateClientUseCase(clients_ab, _FixedClock())
++    with pytest.raises(PlatformOnlyOperationError):
++        uc.execute(
++            CreateClientCommand(name="X", principal=company_principal("client-a"))
++        )
++
++
++def test_platform_can_create_client(clients_ab: MemoryClientRepository) -> None:
++    uc = CreateClientUseCase(clients_ab, _FixedClock())
++    created = uc.execute(
++        CreateClientCommand(name="New Co", principal=platform_principal())
++    )
++    assert created.name == "New Co"
++
++
++def test_company_cannot_update_other_client(clients_ab: MemoryClientRepository) -> None:
++    uc = UpdateClientUseCase(clients_ab, _FixedClock())
++    with pytest.raises(ClientNotFoundError):
++        uc.execute(
++            UpdateClientCommand(
++                client_id="client-b",
++                principal=company_principal("client-a"),
++                name="Hacked",
++            )
++        )
++    assert clients_ab.get_by_id("client-b").name == "B"  # type: ignore[union-attr]
++
++
++def test_company_a_inventory_scope(inventories_ab: MemoryInventoryRepository) -> None:
++    uc = GetInventoryUseCase(inventories_ab)
++    assert uc.execute("inv-a", company_principal("client-a")).id == "inv-a"
++    with pytest.raises(InventoryNotFoundError):
++        uc.execute("inv-b", company_principal("client-a"))
++
++
++def test_company_a_lists_only_own_inventories(
++    inventories_ab: MemoryInventoryRepository, clients_ab: MemoryClientRepository
++) -> None:
++    uc = ListInventoryListItemsUseCase(
++        inventories_ab,
++        MemoryAisleRepository(),
++        MemoryPositionRepository(),
++        clients_ab,
++    )
++    rows, total = uc.execute(principal=company_principal("client-a"))
++    assert total == 1
++    assert rows[0].inventory.id == "inv-a"
++
++
++def test_company_cannot_create_inventory_for_other_client(
++    inventories_ab: MemoryInventoryRepository, clients_ab: MemoryClientRepository
++) -> None:
++    uc = CreateInventoryUseCase(
++        inventories_ab,
++        clients_ab,
++        _FixedClock(),
++        _StubOperational(),
++        lambda: object(),
++    )
++    with pytest.raises(ClientNotFoundError):
++        uc.execute(
++            CreateInventoryCommand(
++                name="X",
++                client_id="client-b",
++                principal=company_principal("client-a"),
++            )
++        )
++
++
++def test_bulk_mixed_tenant_modifies_nothing(
++    inventories_ab: MemoryInventoryRepository,
++) -> None:
++    uc = SoftDeleteInventoriesUseCase(inventories_ab, _FixedClock())
++    result = uc.execute(
++        SoftDeleteInventoriesCommand(
++            inventory_ids=("inv-a", "inv-b"),
++            principal=company_principal("client-a"),
++        )
++    )
++    assert result.deleted_ids == ()
++    assert "inv-b" in result.not_found_ids
++    assert inventories_ab.get_by_id("inv-a").deleted_at is None  # type: ignore[union-attr]
++    assert inventories_ab.get_by_id("inv-b").deleted_at is None  # type: ignore[union-attr]
++
++
++def test_company_without_client_id_fail_closed(
++    inventories_ab: MemoryInventoryRepository,
++) -> None:
++    from src.application.dto.access_principal import AccessPrincipal
++
++    principal = AccessPrincipal(
++        actor_id="u",
++        client_id=None,
++        roles=frozenset({"company_admin"}),
++        is_platform=False,
++    )
++    with pytest.raises(InventoryNotFoundError):
++        GetInventoryUseCase(inventories_ab).execute("inv-a", principal)
+diff --git a/backend/tests/application/use_cases/test_update_inventory_name.py b/backend/tests/application/use_cases/test_update_inventory_name.py
+index 737432a4..07e115fb 100644
+--- a/backend/tests/application/use_cases/test_update_inventory_name.py
++++ b/backend/tests/application/use_cases/test_update_inventory_name.py
+@@ -1,176 +1,232 @@
+ """Tests for UpdateInventoryNameUseCase."""
+ 
+ from __future__ import annotations
+ 
+ from collections.abc import Sequence
+ from datetime import datetime, timezone
+ 
+ import pytest
+ 
+ from src.application.errors import InventoryNotFoundError
+ from src.application.ports.repositories import InventoryRepository
+ from src.application.services.optional_unset import UNSET
+ from src.application.use_cases.inventories.update_inventory_name import (
+     UpdateInventoryNameCommand,
+     UpdateInventoryNameUseCase,
+ )
+ from src.domain.aisle_identification.modes import AisleIdentificationMode
+ from src.domain.inventory.entities import Inventory, InventoryStatus
++from tests.support.access_principal_helpers import platform_principal
+ from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
+ 
+ 
+ class FixedClock:
+     def __init__(self, now: datetime) -> None:
+         self._now = now
+ 
+     def now(self) -> datetime:
+         return self._now
+ 
+ 
+ class StubInventoryRepo(ExplicitInventoryCompareAndSet, InventoryRepository):
+     def __init__(self, inventories: list[Inventory] | None = None) -> None:
+         self._store = {i.id: i for i in (inventories or [])}
+         self.save_calls = 0
+ 
+     def save(self, inventory: Inventory) -> None:
+         self.save_calls += 1
+         self._store[inventory.id] = inventory
+ 
+     def get_by_id(self, inventory_id: str) -> Inventory | None:
+         return self._store.get(inventory_id)
+ 
+     def list_all(self) -> Sequence[Inventory]:
+         return list(self._store.values())
+ 
+ 
+ def test_update_inventory_name_success() -> None:
+     created = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     now = datetime(2025, 3, 7, 8, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory(
+         id="inv-1",
+         name="Old Name",
+         status=InventoryStatus.DRAFT,
+         created_at=created,
+         updated_at=created,
+     )
+     repo = StubInventoryRepo([inv])
+     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+ 
+-    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name="  New Name  "))
++    result = uc.execute(
++        UpdateInventoryNameCommand(
++            inventory_id="inv-1",
++            principal=platform_principal(),
++            name="  New Name  ",
++        )
++    )
+ 
+     assert result.name == "New Name"
+     assert result.updated_at == now
+     assert repo.save_calls == 1
+ 
+ 
+ def test_update_inventory_name_rejects_empty() -> None:
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now)
+     repo = StubInventoryRepo([inv])
+     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+ 
+     with pytest.raises(ValueError, match="must not be empty"):
+-        uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name="   "))
++        uc.execute(
++            UpdateInventoryNameCommand(
++                inventory_id="inv-1",
++                principal=platform_principal(),
++                name="   ",
++            )
++        )
+     assert repo.save_calls == 0
+ 
+ 
+ def test_update_inventory_name_noop_when_unchanged() -> None:
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now)
+     repo = StubInventoryRepo([inv])
+     later = datetime(2025, 3, 8, 1, 0, 0, tzinfo=timezone.utc)
+     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(later))
+ 
+-    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name="  Warehouse  "))
++    result = uc.execute(
++        UpdateInventoryNameCommand(
++            inventory_id="inv-1",
++            principal=platform_principal(),
++            name="  Warehouse  ",
++        )
++    )
+ 
+     assert result.name == "Warehouse"
+     assert result.updated_at == now
+     assert repo.save_calls == 0
+ 
+ 
+ def test_update_inventory_name_not_found() -> None:
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     uc = UpdateInventoryNameUseCase(inventory_repo=StubInventoryRepo(), clock=FixedClock(now))
+ 
+     with pytest.raises(InventoryNotFoundError):
+-        uc.execute(UpdateInventoryNameCommand(inventory_id="missing", name="X"))
++        uc.execute(
++            UpdateInventoryNameCommand(
++                inventory_id="missing",
++                principal=platform_principal(),
++                name="X",
++            )
++        )
+ 
+ 
+ def test_update_inventory_partial_patch_identification_mode_only_leaves_name_unchanged() -> None:
+     """Partial PATCH: omitting ``name`` must not require it (identification_mode alone is enough)."""
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now)
+     repo = StubInventoryRepo([inv])
+ 
+     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+     result = uc.execute(
+         UpdateInventoryNameCommand(
+-            inventory_id="inv-1", name=None, identification_mode=AisleIdentificationMode.CODE_SCAN
++            inventory_id="inv-1",
++            principal=platform_principal(),
++            name=None,
++            identification_mode=AisleIdentificationMode.CODE_SCAN,
+         )
+     )
+ 
+     assert result.name == "Warehouse"
+     assert result.identification_mode == AisleIdentificationMode.CODE_SCAN
+     assert repo.save_calls == 1
+ 
+ 
+ def test_update_inventory_partial_patch_explicit_null_clears_identification_mode() -> None:
+     """Explicit ``identification_mode=None`` clears the inventory override (inherit from client)."""
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory(
+         "inv-1",
+         "Warehouse",
+         InventoryStatus.DRAFT,
+         now,
+         now,
+         identification_mode=AisleIdentificationMode.INTERNAL_OCR,
+     )
+     repo = StubInventoryRepo([inv])
+ 
+     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+-    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name=None, identification_mode=None))
++    result = uc.execute(
++        UpdateInventoryNameCommand(
++            inventory_id="inv-1",
++            principal=platform_principal(),
++            name=None,
++            identification_mode=None,
++        )
++    )
+ 
+     assert result.identification_mode is None
+     assert repo.save_calls == 1
+ 
+ 
+ def test_update_inventory_partial_patch_unset_identification_mode_is_noop_field() -> None:
+     """Default ``UNSET`` identification_mode leaves the stored override untouched."""
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory(
+         "inv-1",
+         "Warehouse",
+         InventoryStatus.DRAFT,
+         now,
+         now,
+         identification_mode=AisleIdentificationMode.INTERNAL_OCR,
+     )
+     repo = StubInventoryRepo([inv])
+ 
+     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+-    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name="New Warehouse"))
++    result = uc.execute(
++        UpdateInventoryNameCommand(
++            inventory_id="inv-1",
++            principal=platform_principal(),
++            name="New Warehouse",
++        )
++    )
+ 
+     assert result.identification_mode == AisleIdentificationMode.INTERNAL_OCR
+-    assert UpdateInventoryNameCommand(inventory_id="inv-1", name="x").identification_mode is UNSET
++    assert (
++        UpdateInventoryNameCommand(
++            inventory_id="inv-1",
++            principal=platform_principal(),
++            name="x",
++        ).identification_mode
++        is UNSET
++    )
+ 
+ 
+ def test_update_inventory_partial_patch_requires_at_least_one_field() -> None:
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now)
+     repo = StubInventoryRepo([inv])
+     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+ 
+     with pytest.raises(ValueError, match="At least one field must be provided"):
+-        uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1"))
++        uc.execute(
++            UpdateInventoryNameCommand(inventory_id="inv-1", principal=platform_principal())
++        )
+     assert repo.save_calls == 0
+ 
+ 
+ def test_update_inventory_partial_patch_invalid_identification_mode_raises() -> None:
+     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+     inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now)
+     repo = StubInventoryRepo([inv])
+     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+ 
+     with pytest.raises(ValueError, match="Invalid identification_mode"):
+-        uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", identification_mode="AUTO"))
++        uc.execute(
++            UpdateInventoryNameCommand(
++                inventory_id="inv-1",
++                principal=platform_principal(),
++                identification_mode="AUTO",
++            )
++        )
+     assert repo.save_calls == 0
+diff --git a/backend/tests/integration/test_sql_tenant_isolation_stage2.py b/backend/tests/integration/test_sql_tenant_isolation_stage2.py
+new file mode 100644
+index 00000000..e87a4fa5
+--- /dev/null
++++ b/backend/tests/integration/test_sql_tenant_isolation_stage2.py
+@@ -0,0 +1,103 @@
++"""SQL Stage 2 — tenant list/get isolation for clients and inventories.
++
++Skipped when SQL Server is unavailable.
++"""
++
++from __future__ import annotations
++
++import uuid
++from datetime import datetime, timezone
++
++import pytest
++
++from src.application.errors import ClientNotFoundError, InventoryNotFoundError
++from src.application.use_cases.clients.get_client import GetClientUseCase
++from src.application.use_cases.clients.list_clients import ListClientsUseCase
++from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
++from src.domain.client.entities import Client, ClientStatus
++from src.domain.inventory.entities import Inventory, InventoryStatus
++from src.infrastructure.repositories.sql_client_repository import SqlClientRepository
++from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
++from tests.support.access_principal_helpers import company_principal, platform_principal
++from tests.support.sql_integration import sql_server_client_or_skip
++from tests.support.sqlserver_test_connection import resolved_sqlserver_connection_string_for_tests
++
++pytestmark = pytest.mark.integration
++
++
++@pytest.fixture(scope="module")
++def sql_client():
++    return sql_server_client_or_skip(resolved_sqlserver_connection_string_for_tests())
++
++
++def _now() -> datetime:
++    return datetime.now(timezone.utc)
++
++
++def test_sql_tenant_clients_and_inventories_scoped(sql_client) -> None:
++    suffix = uuid.uuid4().hex[:10]
++    client_a = f"cli-a-{suffix}"
++    client_b = f"cli-b-{suffix}"
++    inv_a = f"inv-a-{suffix}"
++    inv_b = f"inv-b-{suffix}"
++    now = _now()
++
++    clients = SqlClientRepository(sql_client)
++    inventories = SqlInventoryRepository(sql_client)
++    clients.save(
++        Client(
++            id=client_a,
++            name=f"A-{suffix}",
++            status=ClientStatus.ACTIVE,
++            created_at=now,
++            updated_at=now,
++        )
++    )
++    clients.save(
++        Client(
++            id=client_b,
++            name=f"B-{suffix}",
++            status=ClientStatus.ACTIVE,
++            created_at=now,
++            updated_at=now,
++        )
++    )
++    inventories.save(
++        Inventory(
++            id=inv_a,
++            name=f"IA-{suffix}",
++            status=InventoryStatus.DRAFT,
++            created_at=now,
++            updated_at=now,
++            client_id=client_a,
++        )
++    )
++    inventories.save(
++        Inventory(
++            id=inv_b,
++            name=f"IB-{suffix}",
++            status=InventoryStatus.DRAFT,
++            created_at=now,
++            updated_at=now,
++            client_id=client_b,
++        )
++    )
++
++    listed_a = ListClientsUseCase(clients).execute(company_principal(client_a))
++    assert [c.id for c in listed_a] == [client_a]
++
++    assert GetClientUseCase(clients).execute(client_a, company_principal(client_a)).id == client_a
++    with pytest.raises(ClientNotFoundError):
++        GetClientUseCase(clients).execute(client_b, company_principal(client_a))
++
++    scoped = inventories.list_for_client(client_a)
++    assert {i.id for i in scoped} == {inv_a}
++
++    assert GetInventoryUseCase(inventories).execute(
++        inv_a, company_principal(client_a)
++    ).id == inv_a
++    with pytest.raises(InventoryNotFoundError):
++        GetInventoryUseCase(inventories).execute(inv_b, company_principal(client_a))
++
++    plat_clients = ListClientsUseCase(clients).execute(platform_principal())
++    assert {client_a, client_b}.issubset({c.id for c in plat_clients})

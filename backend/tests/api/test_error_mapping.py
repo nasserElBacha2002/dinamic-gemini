@@ -571,7 +571,7 @@ def test_get_inventory_not_found_returns_structured_json() -> None:
     """Integration: stable not-found through app exception handler."""
 
     class _MissingInventory:
-        def execute(self, _inventory_id: str):
+        def execute(self, _inventory_id: str, _principal=None):
             raise InventoryNotFoundError()
 
     app.dependency_overrides[get_get_inventory_use_case] = lambda: _MissingInventory()
@@ -589,7 +589,7 @@ def test_structured_api_error_logs_stable_code_at_info(
     """Observability: ``src.api.server`` logs stable ``error_code`` for structured v3 errors."""
 
     class _MissingInventory:
-        def execute(self, _inventory_id: str):
+        def execute(self, _inventory_id: str, _principal=None):
             raise InventoryNotFoundError()
 
     app.dependency_overrides[get_get_inventory_use_case] = lambda: _MissingInventory()

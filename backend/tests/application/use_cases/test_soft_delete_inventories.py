@@ -174,7 +174,7 @@ def test_get_inventory_treats_deleted_as_not_found(
     from src.application.errors import InventoryNotFoundError
 
     with pytest.raises(InventoryNotFoundError):
-        GetInventoryUseCase(repo).execute("i1")
+        GetInventoryUseCase(repo).execute("i1", _platform())
     # Raw repo still holds the row (no physical delete).
     assert repo.get_by_id("i1") is not None
     assert repo.get_by_id("i1").is_deleted  # type: ignore[union-attr]

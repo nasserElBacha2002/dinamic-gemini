@@ -29,8 +29,20 @@ class MemoryInventoryRepository(InventoryRepository):
             return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
+        """Return active inventories (exclude soft-deleted). Order is implementation-defined."""
         with self._lock:
             return [inv for inv in self._store.values() if not inv.is_deleted]
+
+    def list_for_client(self, client_id: str) -> Sequence[Inventory]:
+        cid = (client_id or "").strip()
+        if not cid:
+            return []
+        with self._lock:
+            return [
+                inv
+                for inv in self._store.values()
+                if not inv.is_deleted and (inv.client_id or "").strip() == cid
+            ]
 
     def compare_and_set_status(
         self,

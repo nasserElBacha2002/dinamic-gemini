@@ -21,6 +21,13 @@ class MemoryClientRepository(ClientRepository):
     def list_all(self) -> Sequence[Client]:
         return sorted(self._store.values(), key=lambda c: c.created_at, reverse=True)
 
+    def list_for_client(self, client_id: str) -> Sequence[Client]:
+        cid = (client_id or "").strip()
+        if not cid:
+            return []
+        client = self._store.get(cid)
+        return [client] if client is not None else []
+
     def get_by_ids(self, client_ids: Sequence[str]) -> dict[str, Client]:
         uniq = {cid for cid in client_ids if cid}
         if not uniq:
