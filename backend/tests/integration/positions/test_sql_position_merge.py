@@ -321,16 +321,24 @@ def test_sql_concurrent_overlapping_sets(sql_client, _require_merge_columns) -> 
     t1.join()
     t2.join()
     assert len(results) + len(errors) == 2
-    assert len(results) >= 1
     assert all(
         isinstance(e, (PositionMergeConflictError, PositionMergeStalePreviewError)) for e in errors
     )
     all_rows = list(pos_repo.list_all_by_aisles([aisle_id]))
     by_id = {p.id: p for p in all_rows}
     operational = list(pos_repo.list_by_aisles([aisle_id]))
-    # One merge wins → 2 operational (survivor + untouched); both serialize → 1 operational.
-    assert len(operational) in (1, 2)
-    assert len(results) == 1 or len(operational) == 1
+
+    # Overlapping sets may both succeed when serialized (P1+P2 then survivor+P3),
+    # one may win, or both may lose to conflict/deadlock→conflict. Durable qty conserved.
+    if len(results) == 0:
+        assert len(operational) == 3
+        assert not any(p.is_merged_source for p in all_rows)
+    elif len(results) == 1:
+        assert len(operational) in (1, 2)
+    else:
+        assert len(results) == 2
+        # Serial composition collapses to a single operational survivor.
+        assert len(operational) == 1
 
     def _ultimate(pid: str) -> str:
         seen: set[str] = set()

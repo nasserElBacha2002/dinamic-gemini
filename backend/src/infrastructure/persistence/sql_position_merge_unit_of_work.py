@@ -73,6 +73,13 @@ class SqlPositionMergeUnitOfWork:
         self._tx = self._client.begin_transaction()
         self._tx.__enter__()
         conn = self._tx.connection
+        # Serialize overlapping merge sets in the same aisle (prevents dual-success races
+        # under READ COMMITTED when UPDLOCK sets only partially overlap).
+        iso = conn.cursor()
+        try:
+            iso.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        finally:
+            iso.close()
         position_repo = SqlPositionRepository(self._client, connection=conn)
         aisle_repo = SqlAisleRepository(self._client, connection=conn)
         inventory_repo = SqlInventoryRepository(self._client, connection=conn)

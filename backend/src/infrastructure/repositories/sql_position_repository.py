@@ -264,7 +264,7 @@ class SqlPositionRepository(PositionRepository):
                 SELECT id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id,
                        created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code,
                        job_id, creation_source, merged_into_position_id, merged_at
-                FROM positions WITH (UPDLOCK, ROWLOCK)
+                FROM positions WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 WHERE id IN ({placeholders})
                 ORDER BY id ASC
                 """,  # nosec B608
@@ -272,6 +272,22 @@ class SqlPositionRepository(PositionRepository):
             )
             rows = cur.fetchall()
         return [_row_to_position(row) for row in rows]
+
+    def lock_aisle_for_merge(self, aisle_id: str) -> None:
+        """Serialize operator merges within one aisle (UPDLOCK aisle row until txn end)."""
+        aid = (aisle_id or "").strip()
+        if not aid:
+            return
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                """
+                SELECT id
+                FROM aisles WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+                WHERE id = ?
+                """,
+                (aid,),
+            )
+            cur.fetchone()
 
     def list_by_aisle(
         self,

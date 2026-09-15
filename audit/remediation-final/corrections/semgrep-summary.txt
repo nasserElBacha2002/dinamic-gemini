@@ -1,0 +1,139 @@
+1.172.0
+HTTPSConnectionPool(host='semgrep.dev', port=443): Max retries exceeded with url: /c/p/python (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/urllib3/connectionpool.py", line 774, in urlopen
+    self._prepare_proxy(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/urllib3/connectionpool.py", line 1055, in _prepare_proxy
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/urllib3/connection.py", line 776, in connect
+    self._tunnel()
+    ~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/client.py", line 1010, in _tunnel
+    raise OSError(f"Tunnel connection failed: {code} {message.strip()}")
+OSError: Tunnel connection failed: 403 Forbidden
+
+The above exception was the direct cause of the following exception:
+
+urllib3.exceptions.ProxyError: ('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden'))
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/requests/adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/urllib3/connectionpool.py", line 872, in urlopen
+    return self.urlopen(
+           ~~~~~~~~~~~~^
+        method,
+        ^^^^^^^
+    ...<13 lines>...
+        **response_kw,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/urllib3/connectionpool.py", line 872, in urlopen
+    return self.urlopen(
+           ~~~~~~~~~~~~^
+        method,
+        ^^^^^^^
+    ...<13 lines>...
+        **response_kw,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/urllib3/connectionpool.py", line 872, in urlopen
+    return self.urlopen(
+           ~~~~~~~~~~~~^
+        method,
+        ^^^^^^^
+    ...<13 lines>...
+        **response_kw,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/urllib3/connectionpool.py", line 842, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/urllib3/util/retry.py", line 543, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='semgrep.dev', port=443): Max retries exceeded with url: /c/p/python (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/commands/wrapper.py", line 49, in wrapper
+    func(*args, **kwargs)
+    ~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/commands/scan.py", line 1124, in scan
+    ) = semgrep.run_scan.run_scan(
+        ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dump_command_for_core=dump_command_for_core,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<54 lines>...
+        x_mem_policy=x_mem_policy,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/telemetry.py", line 468, in inner
+    return f(*args, **kwargs)
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/simple_profiling.py", line 100, in wrapper
+    result = func(*args, **kwargs)
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/run_scan.py", line 1392, in run_scan
+    configs_obj, config_errors = Config.from_config_list(
+                                 ~~~~~~~~~~~~~~~~~~~~~~~^
+        config_strs or [],
+        ^^^^^^^^^^^^^^^^^^
+        project_url,
+        ^^^^^^^^^^^^
+        validation_mode=validation_mode,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/telemetry.py", line 468, in inner
+    return f(*args, **kwargs)
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/config_resolver.py", line 692, in from_config_list
+    resolved_config, config_errors, missed = resolve_config(
+                                             ~~~~~~~~~~~~~~^
+        config,
+        ^^^^^^^
+    ...<2 lines>...
+        validation_mode=validation_mode,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/telemetry.py", line 468, in inner
+    return f(*args, **kwargs)
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/config_resolver.py", line 573, in resolve_config
+    config_loader.load_config(),
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/config_resolver.py", line 195, in load_config
+    return [self._download_config()]
+            ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/config_resolver.py", line 206, in _download_config
+    return self._download_config_from_url(self._config_path)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/config_resolver.py", line 226, in _download_config_from_url
+    resp = app_session.get(url, headers={"Accept": "application/json"})
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/requests/sessions.py", line 671, in get
+    return self.request("GET", url, params=params, **kwargs)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/telemetry.py", line 468, in inner
+    return f(*args, **kwargs)
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/semgrep/app/session.py", line 223, in request
+    response = super().request(*args, **kwargs)
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/requests/sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/requests/sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "/opt/homebrew/Cellar/semgrep/1.172.0/libexec/lib/python3.14/site-packages/requests/adapters.py", line 723, in send
+    raise ProxyError(e, request=request)
+requests.exceptions.ProxyError: HTTPSConnectionPool(host='semgrep.dev', port=443): Max retries exceeded with url: /c/p/python (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+EXIT:0

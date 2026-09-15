@@ -1,0 +1,10 @@
+rules:
+  - id: local-python-sql-injection
+    languages: [python]
+    severity: WARNING
+    message: Possible SQL string formatting
+    patterns:
+      - pattern-either:
+          - pattern: cursor.execute(f"...{...}...")
+          - pattern: $CUR.execute("..." % ...)
+          - pattern: $CUR.execute("...".format(...))

@@ -1,0 +1,179 @@
+RUN_1:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='92889658-5c55-4fcc-9166-dabc8d9745f0', merged_quantity=4, source_ids=('928896...=6, source_ids=('92889658-5c55-4fcc-9166-dabc8d9745f0', '93d2eb42-03bf-4579-8b5e-14b5ea64914f'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=14d72960-db31-4f37-99ed-80a987d0464c action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=14d72960-db31-4f37-99ed-80a987d0464c action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.96s
+RUN_2:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='277b2c36-4222-40a8-a100-4b372b85816b', merged_quantity=4, source_ids=('277b2c...=6, source_ids=('277b2c36-4222-40a8-a100-4b372b85816b', '99b421d3-d7ae-4539-b44d-cbf5b6bded5b'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=39e35608-63fe-4c3e-86cf-847c2bfbd5d1 action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=39e35608-63fe-4c3e-86cf-847c2bfbd5d1 action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.53s
+RUN_3:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='3cd28345-b782-4cb7-afd2-9aa2d921525f', merged_quantity=4, source_ids=('3cd283...=6, source_ids=('3cd28345-b782-4cb7-afd2-9aa2d921525f', '50513bfd-d268-41af-8d2e-2a85100b21c5'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=e75dce01-16fd-4b06-be47-5fbaf4060560 action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=e75dce01-16fd-4b06-be47-5fbaf4060560 action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.87s
+RUN_4:0
+RUN_5:0
+RUN_6:0
+RUN_7:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='4ac120a3-6449-4509-ab7b-709cd9825c22', merged_quantity=4, source_ids=('4ac120...=6, source_ids=('19ce23fa-0d4f-427c-a963-11c93d99e7ba', '4ac120a3-6449-4509-ab7b-709cd9825c22'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=8e0d603a-0bd6-4aaa-8d61-fbae01322d38 action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=8e0d603a-0bd6-4aaa-8d61-fbae01322d38 action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.52s
+RUN_8:0
+RUN_9:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='3b5cd370-2bd4-452b-9fe8-bac8bd52a1c8', merged_quantity=4, source_ids=('3b5cd3...=6, source_ids=('3b5cd370-2bd4-452b-9fe8-bac8bd52a1c8', 'd316791d-3ed0-4998-9d64-11f2a1df06b6'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=057735cd-f3e0-476d-928f-738896ec5736 action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=057735cd-f3e0-476d-928f-738896ec5736 action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.46s
+RUN_10:0
+RUN_11:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='5c8203c9-7905-418c-aa9e-205420f63f8a', merged_quantity=4, source_ids=('5c8203...=6, source_ids=('5c8203c9-7905-418c-aa9e-205420f63f8a', 'dfa64bf6-acbf-47d0-86f7-e8943e033d7a'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=f022e864-335d-4c58-9c20-12f19d11c52a action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=f022e864-335d-4c58-9c20-12f19d11c52a action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.91s
+RUN_12:0
+RUN_13:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='0915cb14-917e-4b86-84ab-adbdd91ba349', merged_quantity=4, source_ids=('0915cb...=6, source_ids=('0915cb14-917e-4b86-84ab-adbdd91ba349', 'fa1e6446-817a-4f92-ae57-a3e8cd0b245b'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=ea34e649-4763-4351-b5cb-30f9bd5e69ca action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=ea34e649-4763-4351-b5cb-30f9bd5e69ca action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.55s
+RUN_14:0
+RUN_15:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='7e852e7e-58de-43da-b7fd-0a7deab193d3', merged_quantity=4, source_ids=('7e852e...=6, source_ids=('7e852e7e-58de-43da-b7fd-0a7deab193d3', 'a3c49802-e654-45c7-889a-977711410917'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=8355cfff-482d-493a-a6ed-b79de2108302 action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=8355cfff-482d-493a-a6ed-b79de2108302 action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.76s
+RUN_16:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='96dfaa7d-4567-4af8-8cca-9fa6b65cd71e', merged_quantity=4, source_ids=('96dfaa...=6, source_ids=('55bc672f-676f-4634-b159-a2532e86e95a', '96dfaa7d-4567-4af8-8cca-9fa6b65cd71e'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=c8d9a0c5-a53f-4772-80aa-8f5cc90034cb action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=c8d9a0c5-a53f-4772-80aa-8f5cc90034cb action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.69s
+RUN_17:0
+RUN_18:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='0c12c7d1-0254-4c7c-8338-b3c60925ce9f', merged_quantity=4, source_ids=('0c12c7...=6, source_ids=('0c12c7d1-0254-4c7c-8338-b3c60925ce9f', 'a5d25747-7c11-4f61-ae2f-9704dfc2baaf'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=7e22133d-3d74-4aca-a6dc-e3e4960143f2 action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=7e22133d-3d74-4aca-a6dc-e3e4960143f2 action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.77s
+RUN_19:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='b38e9258-fbdf-4ff6-abfd-5d6cef313d05', merged_quantity=4, source_ids=('b38e92...=6, source_ids=('5fd91763-12d1-48b4-82a3-f116b26ad618', 'b38e9258-fbdf-4ff6-abfd-5d6cef313d05'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=fb7e4929-bf39-4ea8-9cd2-77bc33bdf9d5 action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=fb7e4929-bf39-4ea8-9cd2-77bc33bdf9d5 action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.76s
+RUN_20:0
+RUN_21:0
+RUN_22:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='11710a47-0222-437f-a05f-f920a6c33074', merged_quantity=4, source_ids=('11710a...=6, source_ids=('11710a47-0222-437f-a05f-f920a6c33074', '79e1df54-3c11-47a4-96a8-a1f28a758094'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=d47f133d-3b3e-4f0d-abc4-d09464e1471a action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=d47f133d-3b3e-4f0d-abc4-d09464e1471a action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.66s
+RUN_23:0
+RUN_24:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='7268622d-247d-4201-a169-a3ef1a129c61', merged_quantity=4, source_ids=('726862...=6, source_ids=('7268622d-247d-4201-a169-a3ef1a129c61', '7b6fce43-0428-4ad4-8803-af7dda36681f'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=58fc1256-9dae-4a1b-bedf-e8697f21f208 action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=58fc1256-9dae-4a1b-bedf-e8697f21f208 action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 1.07s
+RUN_25:1
+F                                                                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert 2 <= 1
+     +  where 2 = len([PositionMergeConfirmResult(survivor_id='4a12fddc-3c3b-41c8-a1bb-177169283f9f', merged_quantity=4, source_ids=('4a12fd...=6, source_ids=('44a88060-fc4d-430f-8727-9b99c20bdd7f', '4a12fddc-3c3b-41c8-a1bb-177169283f9f'), already_merged=False)])
+------------------------------ Captured log call -------------------------------
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=ea41a441-284d-49af-9e55-6eeb4dbd1b8b action=detected stored_status=draft expected_status=in_review reason=AISLE_PROCESSED_OR_IN_REVIEW attempt=1
+WARNING  src.application.services.inventory_status_reconciler:inventory_status_reconciler.py:169 status_reconcile entity_type=inventory entity_id=ea41a441-284d-49af-9e55-6eeb4dbd1b8b action=detected stored_status=in_review expected_status=completed reason=ALL_AISLES_COMPLETED attempt=1
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/positions/test_sql_position_merge.py:324: AssertionError: assert 2 <= 1
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.52s

@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.application.errors import ClientNotFoundError, InventoryNotFoundError
+from src.application.errors import (
+    ClientNotFoundError,
+    InventoryNotFoundError,
+    InventorySoftDeleteConsistencyError,
+)
 from src.application.use_cases.clients.get_client import GetClientUseCase
 from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
@@ -18,6 +22,7 @@ from src.application.use_cases.inventories.soft_delete_inventories import (
 )
 from src.domain.client.entities import Client, ClientStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.infrastructure.database import sql_transaction as sql_txn_mod
 from src.infrastructure.repositories.sql_client_repository import SqlClientRepository
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from tests.support.access_principal_helpers import company_principal, platform_principal
@@ -226,7 +231,7 @@ def test_sql_soft_delete_mixed_ids_atomic(sql_client) -> None:
 
 
 def test_sql_soft_delete_induced_failure_rolls_back(sql_client) -> None:
-    """Fail after first UPDATE OUTPUT → standalone txn rolls back; zero durable deletes."""
+    """Fail during second UPDATE → standalone txn rolls back; zero durable deletes."""
     suffix = uuid.uuid4().hex[:10]
     client_a = f"cli-a-{suffix}"
     inv_1 = f"inv-1-{suffix}"
@@ -237,13 +242,38 @@ def test_sql_soft_delete_induced_failure_rolls_back(sql_client) -> None:
 
     clients = SqlClientRepository(sql_client)
     base = SqlInventoryRepository(sql_client)
+    update_count = {"n": 0}
+    real_cursor_cm = sql_txn_mod.sql_repository_cursor
 
-    class FlakyRepo(SqlInventoryRepository):
-        def _soft_delete_many_on_connection(self, connection, ids, **kwargs):  # type: ignore[no-untyped-def]
-            super()._soft_delete_many_on_connection(connection, ids, **kwargs)
-            # After parent wrote both, simulate mid-flight failure before commit by raising
-            # only when called from standalone (connection owned by txn we will abort).
-            raise RuntimeError("induced failure after updates")
+    class _FailSecondUpdateCursor:
+        def __init__(self, inner: object) -> None:
+            self._inner = inner
+
+        def execute(self, sql: str, params: object = None) -> object:
+            text = (sql or "").lstrip().upper()
+            if text.startswith("UPDATE"):
+                update_count["n"] += 1
+                if update_count["n"] == 2:
+                    raise RuntimeError("induced failure on second UPDATE")
+            if params is None:
+                return self._inner.execute(sql)  # type: ignore[attr-defined]
+            return self._inner.execute(sql, params)  # type: ignore[attr-defined]
+
+        def fetchall(self) -> object:
+            return self._inner.fetchall()  # type: ignore[attr-defined]
+
+        def close(self) -> None:
+            self._inner.close()  # type: ignore[attr-defined]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._inner, name)
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _wrapped_cursor(client, *, connection=None):  # type: ignore[no-untyped-def]
+        with real_cursor_cm(client, connection=connection) as cur:
+            yield _FailSecondUpdateCursor(cur)
 
     try:
         clients.save(
@@ -267,16 +297,225 @@ def test_sql_soft_delete_induced_failure_rolls_back(sql_client) -> None:
                 )
             )
 
-        flaky = FlakyRepo(sql_client)
-        with pytest.raises(RuntimeError, match="induced failure"):
-            flaky.soft_delete_many_for_scope(
-                [inv_1, inv_2],
-                allow_all_clients=False,
-                client_id=client_a,
-                deleted_at=now,
-                deleted_by="tester",
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(sql_txn_mod, "sql_repository_cursor", _wrapped_cursor)
+        # Repo module bound the symbol at import time — patch there too.
+        import src.infrastructure.repositories.sql_inventory_repository as inv_mod
+
+        monkey.setattr(inv_mod, "sql_repository_cursor", _wrapped_cursor)
+        try:
+            with pytest.raises(RuntimeError, match="induced failure on second UPDATE"):
+                base.soft_delete_many_for_scope(
+                    [inv_1, inv_2],
+                    allow_all_clients=False,
+                    client_id=client_a,
+                    deleted_at=now,
+                    deleted_by="tester",
+                )
+        finally:
+            monkey.undo()
+
+        assert update_count["n"] == 2
+        for iid in (inv_1, inv_2):
+            row = base.get_by_id(iid)
+            assert row is not None
+            assert row.deleted_at is None
+    finally:
+        _cleanup(sql_client, client_ids=client_ids, inventory_ids=inventory_ids)
+        _assert_gone(sql_client, client_ids=client_ids, inventory_ids=inventory_ids)
+
+
+def test_sql_soft_delete_uow_second_update_failure_rolls_back(sql_client) -> None:
+    """UoW path: exception mid-batch propagates; owner rollback leaves zero deletes."""
+    suffix = uuid.uuid4().hex[:10]
+    client_a = f"cli-a-{suffix}"
+    inv_1 = f"inv-u1f-{suffix}"
+    inv_2 = f"inv-u2f-{suffix}"
+    now = _now()
+    client_ids = [client_a]
+    inventory_ids = [inv_1, inv_2]
+    clients = SqlClientRepository(sql_client)
+    standalone = SqlInventoryRepository(sql_client)
+    update_count = {"n": 0}
+    real_cursor_cm = sql_txn_mod.sql_repository_cursor
+
+    class _FailSecondUpdateCursor:
+        def __init__(self, inner: object) -> None:
+            self._inner = inner
+
+        def execute(self, sql: str, params: object = None) -> object:
+            text = (sql or "").lstrip().upper()
+            if text.startswith("UPDATE"):
+                update_count["n"] += 1
+                if update_count["n"] == 2:
+                    raise RuntimeError("induced failure on second UPDATE")
+            if params is None:
+                return self._inner.execute(sql)  # type: ignore[attr-defined]
+            return self._inner.execute(sql, params)  # type: ignore[attr-defined]
+
+        def fetchall(self) -> object:
+            return self._inner.fetchall()  # type: ignore[attr-defined]
+
+        def close(self) -> None:
+            self._inner.close()  # type: ignore[attr-defined]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._inner, name)
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _wrapped_cursor(client, *, connection=None):  # type: ignore[no-untyped-def]
+        with real_cursor_cm(client, connection=connection) as cur:
+            yield _FailSecondUpdateCursor(cur)
+
+    try:
+        clients.save(
+            Client(
+                id=client_a,
+                name=f"A-{suffix}",
+                status=ClientStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        for iid in (inv_1, inv_2):
+            standalone.save(
+                Inventory(
+                    id=iid,
+                    name=iid,
+                    status=InventoryStatus.DRAFT,
+                    created_at=now,
+                    updated_at=now,
+                    client_id=client_a,
+                )
             )
 
+        monkey = pytest.MonkeyPatch()
+        import src.infrastructure.repositories.sql_inventory_repository as inv_mod
+
+        monkey.setattr(inv_mod, "sql_repository_cursor", _wrapped_cursor)
+        try:
+            with sql_client.begin_transaction() as txn:
+                scoped = SqlInventoryRepository(sql_client, connection=txn.connection)
+                with pytest.raises(RuntimeError, match="induced failure on second UPDATE"):
+                    scoped.soft_delete_many_for_scope(
+                        [inv_1, inv_2],
+                        allow_all_clients=False,
+                        client_id=client_a,
+                        deleted_at=now,
+                        deleted_by="uow",
+                    )
+                txn.rollback()
+        finally:
+            monkey.undo()
+
+        assert update_count["n"] == 2
+        assert standalone.get_by_id(inv_1).deleted_at is None  # type: ignore[union-attr]
+        assert standalone.get_by_id(inv_2).deleted_at is None  # type: ignore[union-attr]
+    finally:
+        _cleanup(sql_client, client_ids=client_ids, inventory_ids=inventory_ids)
+        _assert_gone(sql_client, client_ids=client_ids, inventory_ids=inventory_ids)
+
+
+def test_sql_soft_delete_empty_output_while_active_raises(sql_client) -> None:
+    """First UPDATE succeeds; second has empty OUTPUT while active → raise + full rollback."""
+    suffix = uuid.uuid4().hex[:10]
+    client_a = f"cli-a-{suffix}"
+    inv_1 = f"inv-out1-{suffix}"
+    inv_2 = f"inv-out2-{suffix}"
+    now = _now()
+    client_ids = [client_a]
+    inventory_ids = [inv_1, inv_2]
+    clients = SqlClientRepository(sql_client)
+    base = SqlInventoryRepository(sql_client)
+    real_cursor_cm = sql_txn_mod.sql_repository_cursor
+    update_n = {"n": 0}
+
+    class _AnomalyOnSecondOutputCursor:
+        def __init__(self, inner: object) -> None:
+            self._inner = inner
+            self._mode: str | None = None
+
+        def execute(self, sql: str, params: object = None) -> object:
+            text = (sql or "").lstrip().upper()
+            if text.startswith("UPDATE") and "OUTPUT" in text:
+                update_n["n"] += 1
+                if update_n["n"] == 1:
+                    self._mode = "real"
+                    if params is None:
+                        return self._inner.execute(sql)  # type: ignore[attr-defined]
+                    return self._inner.execute(sql, params)  # type: ignore[attr-defined]
+                # Second UPDATE: skip write; empty OUTPUT while row remains active.
+                self._mode = "anomaly"
+                return None
+            self._mode = None
+            if params is None:
+                return self._inner.execute(sql)  # type: ignore[attr-defined]
+            return self._inner.execute(sql, params)  # type: ignore[attr-defined]
+
+        def fetchall(self) -> object:
+            if self._mode == "anomaly":
+                self._mode = None
+                return []
+            self._mode = None
+            return self._inner.fetchall()  # type: ignore[attr-defined]
+
+        def close(self) -> None:
+            self._inner.close()  # type: ignore[attr-defined]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._inner, name)
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _wrapped_cursor(client, *, connection=None):  # type: ignore[no-untyped-def]
+        with real_cursor_cm(client, connection=connection) as cur:
+            yield _AnomalyOnSecondOutputCursor(cur)
+
+    try:
+        clients.save(
+            Client(
+                id=client_a,
+                name=f"A-{suffix}",
+                status=ClientStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        for iid in (inv_1, inv_2):
+            base.save(
+                Inventory(
+                    id=iid,
+                    name=iid,
+                    status=InventoryStatus.DRAFT,
+                    created_at=now,
+                    updated_at=now,
+                    client_id=client_a,
+                )
+            )
+
+        monkey = pytest.MonkeyPatch()
+        import src.infrastructure.repositories.sql_inventory_repository as inv_mod
+
+        monkey.setattr(inv_mod, "sql_repository_cursor", _wrapped_cursor)
+        try:
+            with pytest.raises(InventorySoftDeleteConsistencyError) as ei:
+                base.soft_delete_many_for_scope(
+                    [inv_1, inv_2],
+                    allow_all_clients=False,
+                    client_id=client_a,
+                    deleted_at=now,
+                    deleted_by="tester",
+                )
+            assert ei.value.error_code == "INVENTORY_SOFT_DELETE_CONSISTENCY"
+            assert inv_1 not in str(ei.value)
+            assert inv_2 not in str(ei.value)
+        finally:
+            monkey.undo()
+
+        assert update_n["n"] == 2
         for iid in (inv_1, inv_2):
             row = base.get_by_id(iid)
             assert row is not None

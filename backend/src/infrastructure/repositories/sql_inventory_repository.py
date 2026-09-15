@@ -15,6 +15,7 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
+from src.application.errors import InventorySoftDeleteConsistencyError
 from src.application.ports.repositories import InventoryRepository
 from src.database.sqlserver import SqlServerClient, now_utc
 from src.domain.aisle_identification.modes import optional_config_identification_mode
@@ -375,6 +376,7 @@ class SqlInventoryRepository(InventoryRepository):
                 if refreshed is not None and refreshed.is_deleted:
                     already.append(inventory.id)
                 else:
-                    # Unexpected: no OUTPUT and still active → abort as not_found.
-                    return (), (), (inventory.id,)
+                    # Write phase already started (prevalidation passed). Never return a
+                    # normal not_found tuple here — UoW would otherwise commit prior UPDATEs.
+                    raise InventorySoftDeleteConsistencyError()
         return tuple(deleted), tuple(already), ()

@@ -1,2 +1,3 @@
-# Ignore synthetic example credential placeholders (not production secrets).
-secrets/gcp-service-account.json.example
+# Fingerprints only (gitleaks ≥8.30). Path allowlists live in .gitleaks.toml.
+# Previously this file listed secrets/gcp-service-account.json.example as a
+# fingerprint, which produced "Invalid .gitleaksignore entry" warnings.

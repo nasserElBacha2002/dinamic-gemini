@@ -1,12 +1,10 @@
-# Final residual risks
+# Final residual risks (post-corrections)
 
-1. **Endpoint AuthZ coverage beyond Stage 2** — many nested/export/processing routes still rely on inventory/aisle parent checks inconsistently; expand matrix gradually.
-2. **DAST not executed** — `LOCAL_ISOLATED_ONLY` lab was not attested (SQL/API not proven healthy in this session). Marked `BLOCKED_BY_ENVIRONMENT`, not PASS.
-3. **Refresh token store (SEC-003)** — in-memory only; multi-worker deployments remain incorrect for logout/refresh unless sticky sessions.
-4. **Mobile/FE dependency advisories** — accepted with expiry in `security-exceptions.json`; renew or upgrade before 2026-12-15.
-5. **Quality gate Gitleaks via Docker (OPS-001)** — exit 126; host scan path reports findings needing manual classification.
-6. **Extreme complexity deferred** — `CodeScanProcessingStrategy.process`, `StartAisleProcessingUseCase.execute`, `GlobalExternalFallbackCoordinator.process_after_internal_pass` left intact to avoid behavioral regressions.
-7. **Intermittent SQL concurrent merge flake** — `test_sql_concurrent_overlapping_sets` failed once then passed twice; full suite green on final run but flake remains.
-8. **Worker dual-write / legacy bridge** — Stage-8 FS+DB paths and optional legacy claim still present; documented as active compatibility, not removed.
-9. **Gemini/Anthropic broad Exception at transport boundary** — narrowed for programming errors (Gemini); Anthropic still classifies from Exception.
-10. **OpenAPI/docs defaults (SEC-005)** — production hardening is config/ops, not code-changed here.
+1. **`REMEDIATION_PARTIALLY_COMPLETED`** — quality gate may still FAIL on Gitleaks Docker tooling; DAST not run; Semgrep registry ruleset not downloadable in this environment (local ruleset executed instead).
+2. **Tenant surface beyond Stage 2** — jobs/artifacts/revisions/results/overrides/reprocess/analytics lack full dynamic AuthZ proof (~140 routes). See `final-tenant-coverage-matrix.md`.
+3. **TEST-002** remains `PARTIALLY_IMPLEMENTED_PENDING_DAST`.
+4. **Local `secrets/*.json`** — gitignored service-account file may exist on disk; never commit; rotate if ever leaked.
+5. **SEC-003/004/005** deferred or accepted as before.
+6. **Complexity / code smells** deferred (not fixed this close-out).
+7. **npm mobile highs** accepted via `security-exceptions.json` until 2026-12-15.
+8. Merge concurrency hardening (aisle UPDLOCK, SERIALIZABLE, deadlock→conflict) reduces races; remaining deadlocks surface as `PositionMergeConflictError` (retryable by client).

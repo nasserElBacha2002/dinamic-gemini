@@ -38,6 +38,7 @@ from src.application.services.position_operator_merge import (
     normalize_result_ids,
     plan_position_merge,
 )
+from src.application.services.sql_contention_classifier import is_transient_sql_contention
 from src.application.use_cases.shared.review_validation import storage_job_id_for_review_audit
 from src.domain.positions.entities import Position, PositionReviewResolution
 from src.domain.products.entities import ProductRecord
@@ -315,20 +316,33 @@ class ConfirmMergePositionsUseCase:
         normalized = _validate_request_ids(result_ids)
 
         if self._uow_factory is not None:
-            with self._uow_factory() as uow:
-                uow.bind_lifecycle_scope(inventory_id=inventory_id, aisle_id=aisle_id)
-                result = self._confirm_inside_transaction(
-                    inventory_id=inventory_id,
-                    aisle_id=aisle_id,
-                    raw_ids=normalized,
-                    preview_token=token,
-                    principal=principal,
-                    position_repo=uow.repositories.position_repo,
-                    product_record_repo=uow.repositories.product_record_repo,
-                    review_repo=uow.repositories.review_repo,
-                )
-                uow.commit()
-                return result
+            try:
+                with self._uow_factory() as uow:
+                    uow.bind_lifecycle_scope(inventory_id=inventory_id, aisle_id=aisle_id)
+                    result = self._confirm_inside_transaction(
+                        inventory_id=inventory_id,
+                        aisle_id=aisle_id,
+                        raw_ids=normalized,
+                        preview_token=token,
+                        principal=principal,
+                        position_repo=uow.repositories.position_repo,
+                        product_record_repo=uow.repositories.product_record_repo,
+                        review_repo=uow.repositories.review_repo,
+                    )
+                    uow.commit()
+                    return result
+            except PositionMergeConflictError:
+                raise
+            except PositionMergeStalePreviewError:
+                raise
+            except PositionMergeValidationError:
+                raise
+            except Exception as exc:
+                if is_transient_sql_contention(exc):
+                    raise PositionMergeConflictError(
+                        "Position merge lost a concurrent lock contention; retry preview/confirm"
+                    ) from exc
+                raise
 
         result = self._confirm_inside_transaction(
             inventory_id=inventory_id,
@@ -362,6 +376,9 @@ class ConfirmMergePositionsUseCase:
             position_repo=position_repo,
             product_record_repo=product_record_repo,
         )
+        lock_aisle = getattr(position_repo, "lock_aisle_for_merge", None)
+        if callable(lock_aisle):
+            lock_aisle(aisle_id)
         # Lock selected rows (SQL UPDLOCK); memory = plain batch get.
         loaded = position_repo.get_by_ids_for_update(position_ids)
         by_id = {p.id: p for p in loaded}
