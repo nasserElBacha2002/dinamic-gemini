@@ -70,6 +70,28 @@ class InventoryRepository(ABC):
         ]
 
     @abstractmethod
+    def soft_delete_many_for_scope(
+        self,
+        inventory_ids: Sequence[str],
+        *,
+        allow_all_clients: bool,
+        client_id: str | None,
+        deleted_at: datetime,
+        deleted_by: str | None,
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        """Atomically soft-delete inventories visible under the given tenant scope.
+
+        Returns ``(deleted_ids, already_deleted_ids, not_found_ids)``.
+
+        Contract (no non-transactional ABC default):
+        - If any id is missing or out of scope → **zero** modifications and those ids
+          in ``not_found_ids``.
+        - Implementations MUST be atomic for their storage (process lock or SQL txn).
+        - When ``allow_all_clients`` is False, ``client_id`` must be a non-empty tenant id.
+        """
+        ...
+
+    @abstractmethod
     def compare_and_set_status(
         self,
         inventory_id: str,

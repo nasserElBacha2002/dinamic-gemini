@@ -3,6 +3,8 @@ CreateInventory use case — v3.0 (Backlog HU-2.1).
 
 Creates an inventory with the given name and persists it via InventoryRepository.
 Depends only on application ports and domain entities.
+
+Authorization and tenant checks run **before** expensive processing-config resolution.
 """
 
 from __future__ import annotations
@@ -49,19 +51,6 @@ class CreateInventoryUseCase:
         self._settings_loader = settings_loader
 
     def execute(self, command: CreateInventoryCommand) -> Inventory:
-        now = self._clock.now()
-        mode = command.processing_mode
-        primary_provider_name = None
-        primary_model_name = None
-        primary_prompt_key = None
-        primary_prompt_version = None
-        if mode == InventoryProcessingMode.PRODUCTION:
-            settings = self._settings_loader()
-            snap = self._operational_resolver.resolve(settings)
-            primary_provider_name = snap.provider_name
-            primary_model_name = snap.model_name
-            primary_prompt_key = snap.prompt_key
-            primary_prompt_version = snap.prompt_version
         requested_client_id = (command.client_id or "").strip()
         if not requested_client_id:
             raise ValueError("client_id must not be empty")
@@ -77,6 +66,21 @@ class CreateInventoryUseCase:
             client_id = principal_client
         if self._client_repo.get_by_id(client_id) is None:
             raise ClientNotFoundError(f"Client not found: {client_id}")
+
+        now = self._clock.now()
+        mode = command.processing_mode
+        primary_provider_name = None
+        primary_model_name = None
+        primary_prompt_key = None
+        primary_prompt_version = None
+        if mode == InventoryProcessingMode.PRODUCTION:
+            settings = self._settings_loader()
+            snap = self._operational_resolver.resolve(settings)
+            primary_provider_name = snap.provider_name
+            primary_model_name = snap.model_name
+            primary_prompt_key = snap.prompt_key
+            primary_prompt_version = snap.prompt_version
+
         inventory = Inventory(
             id=str(uuid4()),
             name=command.name,

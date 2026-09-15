@@ -325,6 +325,24 @@ def require_inventory_client_scope(
     return principal
 
 
+def require_client_scope(
+    client_id: str,
+    client_repo: ClientRepository = Depends(get_client_repo),
+    user: AuthUser = Depends(get_current_admin),
+) -> AccessPrincipal:
+    """FastAPI dependency: enforce actor→client; return AccessPrincipal (404 cross-tenant)."""
+    from src.api.errors import reraise_if_mapped
+    from src.application.services.client_access_policy import ClientAccessPolicy
+
+    principal = access_principal_from_auth_user(user)
+    try:
+        ClientAccessPolicy(client_repo).require_client(client_id, principal)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return principal
+
+
 def get_access_principal(
     user: AuthUser = Depends(get_current_admin),
 ) -> AccessPrincipal:

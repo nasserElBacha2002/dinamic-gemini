@@ -167,10 +167,10 @@ class ListInventoryListItemsUseCase:
         self,
         query: InventoryTableQuery | None = None,
         *,
-        principal: AccessPrincipal | None = None,
+        principal: AccessPrincipal,
     ) -> tuple[Sequence[InventoryListItem], int]:
         q = query or InventoryTableQuery()
-        if principal is None or principal.is_platform:
+        if principal.is_platform:
             invs = list(self._inventory_repo.list_all())
         else:
             principal_client = (principal.client_id or "").strip() or None

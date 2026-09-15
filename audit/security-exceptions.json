@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "exceptions": [
+    {
+      "finding_id": "SEC-006",
+      "severity": "high",
+      "component": "mobile/npm",
+      "reason": "Expo/toolchain transitive advisories (tar/uuid); not product runtime path for inventory API. Tracked for upgrade cadence.",
+      "reachability": "toolchain",
+      "mitigation": "Keep npm audit in gate; upgrade Expo when non-breaking; do not force-install major bumps without app QA.",
+      "owner": "platform",
+      "ticket": "DIN-357-residual",
+      "created_at": "2026-09-15",
+      "expires_at": "2026-12-15"
+    },
+    {
+      "finding_id": "SEC-007",
+      "severity": "moderate",
+      "component": "frontend/npm",
+      "reason": "vitest/@vitest/mocker path traversal is a devDependency-only advisory.",
+      "reachability": "dev_only",
+      "mitigation": "Upgrade vitest when compatible; not shipped to production browsers.",
+      "owner": "platform",
+      "ticket": "DIN-357-residual",
+      "created_at": "2026-09-15",
+      "expires_at": "2026-12-15"
+    }
+  ]
+}

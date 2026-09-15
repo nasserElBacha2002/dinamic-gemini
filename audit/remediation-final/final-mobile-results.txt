@@ -1,0 +1,73 @@
+=== mobile lint/typecheck/test/audit ===
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+> dinamic-inventory-mobile@0.3.0 lint
+> eslint . --ext .ts,.tsx --max-warnings 0
+
+LINT:0
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+> dinamic-inventory-mobile@0.3.0 typecheck
+> tsc --noEmit
+
+TC:0
+    ✓ creates capture_sessions and capture_photos with required constraints and indexes
+    ✓ adds v2 stability metrics without editing migration 1 destructively (1 ms)
+    ✓ adds v33 catalog projection version without rewriting catalog data
+    ✓ adds v3/v4 upload and processing fields without rewriting v1 (1 ms)
+    ✓ adds v5 observability_events table with indexes
+    ✓ adds v6 preparation_processing_mode with UNKNOWN default
+    ✓ adds v7 upload worker lease columns
+    ✓ adds v8 local_detection_drafts with idempotency unique key (1 ms)
+    ✓ adds v9 draft harden without raw_value_preview and with FK cascade
+    ✓ adds v17/v18 offline_operations ledger and claim lease columns (3 ms)
+    ✓ adds v19 ordered capture sequence_number and backend session id
+    ✓ adds v20 process attempt identity columns on capture_sessions
+    ✓ adds v21 capture freeze watermark columns (1 ms)
+    ✓ adds v22 local_csv_exports table
+    ✓ adds v24 session active_position_json and draft position_snapshot_json
+    ✓ adds v25 draft multi-product columns
+    ✓ adds v26 draft rejections_json
+    ✓ adds v27 confirmed_local_results label_id
+    ✓ adds v28 offline recognition profile tables
+    ✓ adds v29 local catalog tables
+    ✓ adds v30 catalog sync meta status columns
+    ✓ adds v31 local aisle origin and sync metadata
+    ✓ adds v32 offline supplier recognition config table
+
+Test Suites: 1 passed, 1 total
+Tests:       24 passed, 24 total
+Snapshots:   0 total
+Time:        0.835 s, estimated 1 s
+Ran all test suites.
+TEST:0
+  cacache  14.0.0 - 18.0.4
+  Depends on vulnerable versions of tar
+  node_modules/cacache
+
+uuid  <11.1.1
+Severity: moderate
+uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided - https://github.com/advisories/GHSA-w5hq-g745-h8pq
+fix available via `npm audit fix --force`
+Will install expo@57.0.23, which is a breaking change
+node_modules/uuid
+node_modules/xcode/node_modules/uuid
+  @expo/bunyan  >=3.0.0
+  Depends on vulnerable versions of uuid
+  node_modules/@expo/bunyan
+    @expo/rudder-sdk-node  *
+    Depends on vulnerable versions of @expo/bunyan
+    Depends on vulnerable versions of uuid
+    node_modules/@expo/rudder-sdk-node
+  xcode  >=0.9.2
+  Depends on vulnerable versions of uuid
+  node_modules/xcode
+
+40 vulnerabilities (2 low, 24 moderate, 13 high, 1 critical)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+AUDIT:1

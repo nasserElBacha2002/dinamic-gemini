@@ -1,0 +1,2 @@
+Success: no issues found in 1228 source files
+MYPY:0

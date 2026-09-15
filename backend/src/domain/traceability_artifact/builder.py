@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from src.domain.execution_image_manifest import ExecutionImageManifest
+from src.domain.execution_image_manifest import (
+    PROVIDER_IMAGE_MANIFEST_ORDER_KEY,
+    ExecutionImageManifest,
+)
 from src.domain.result_evidence.entities import ResultEvidenceRecord, ResultEvidenceRole
 from src.domain.result_evidence.mapper import compute_structural_has_valid_evidence
 from src.domain.traceability import TraceabilityStatus, normalize_traceability_status
 from src.domain.traceability_artifact.canonical_json import sha256_canonical_json
-from src.pipeline.services.provider_execution_request import PROVIDER_IMAGE_MANIFEST_ORDER_KEY
 
 TRACEABILITY_MANIFEST_SCHEMA_VERSION = "phase-4.7.traceability_manifest.v1"
 TRACEABILITY_MANIFEST_HASH_EXCLUDES = ("artifact_created_at",)

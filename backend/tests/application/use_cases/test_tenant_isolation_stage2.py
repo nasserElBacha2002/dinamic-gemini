@@ -216,3 +216,68 @@ def test_company_without_client_id_fail_closed(
     )
     with pytest.raises(InventoryNotFoundError):
         GetInventoryUseCase(inventories_ab).execute("inv-a", principal)
+
+
+def test_list_inventories_requires_principal_kwarg(
+    inventories_ab: MemoryInventoryRepository, clients_ab: MemoryClientRepository
+) -> None:
+    uc = ListInventoryListItemsUseCase(
+        inventories_ab,
+        MemoryAisleRepository(),
+        MemoryPositionRepository(),
+        clients_ab,
+    )
+    with pytest.raises(TypeError):
+        uc.execute()  # type: ignore[call-arg]
+
+
+def test_create_inventory_rejects_before_resolver(
+    inventories_ab: MemoryInventoryRepository, clients_ab: MemoryClientRepository
+) -> None:
+    calls: list[str] = []
+
+    class SpyResolver:
+        def resolve(self, _settings: object) -> object:
+            calls.append("resolve")
+
+            class Snap:
+                provider_name = "p"
+                model_name = "m"
+                prompt_key = "k"
+                prompt_version = "1"
+
+            return Snap()
+
+    uc = CreateInventoryUseCase(
+        inventories_ab,
+        clients_ab,
+        _FixedClock(),
+        SpyResolver(),  # type: ignore[arg-type]
+        lambda: object(),
+    )
+    with pytest.raises(ClientNotFoundError):
+        uc.execute(
+            CreateInventoryCommand(
+                name="X",
+                client_id="client-b",
+                principal=company_principal("client-a"),
+            )
+        )
+    assert calls == []
+
+
+def test_client_policy_denial_logs_omit_raw_ids(
+    clients_ab: MemoryClientRepository, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    from src.application.services.client_access_policy import ClientAccessPolicy
+
+    caplog.set_level(logging.INFO)
+    policy = ClientAccessPolicy(clients_ab)
+    with pytest.raises(ClientNotFoundError):
+        policy.require_client("client-b", company_principal("client-a"))
+    joined = " ".join(r.getMessage() for r in caplog.records)
+    assert "event=authorization_denied" in joined
+    assert "client-b" not in joined
+    assert "client-a" not in joined

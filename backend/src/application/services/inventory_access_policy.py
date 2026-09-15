@@ -45,28 +45,29 @@ class InventoryAccessPolicy:
     def require_inventory(self, inventory_id: str, principal: AccessPrincipal) -> Inventory:
         inventory = self._inventory_repo.get_by_id(inventory_id)
         if inventory is None:
-            self._log_denied(principal, resource_type="inventory", resource_id=inventory_id)
+            self._log_denied(principal, resource_type="inventory", reason_code="not_found")
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
         try:
             reject_if_inventory_deleted(inventory)
         except InventoryNotFoundError:
-            self._log_denied(principal, resource_type="inventory", resource_id=inventory_id)
+            self._log_denied(principal, resource_type="inventory", reason_code="deleted")
             raise
         if principal.is_platform:
             return inventory
         principal_client = (principal.client_id or "").strip() or None
         if principal_client is None:
-            self._log_denied(principal, resource_type="inventory", resource_id=inventory_id)
+            self._log_denied(
+                principal, resource_type="inventory", reason_code="missing_principal_client"
+            )
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
         inv_client = (inventory.client_id or "").strip() or None
         if inv_client != principal_client:
-            self._log_denied(principal, resource_type="inventory", resource_id=inventory_id)
+            self._log_denied(principal, resource_type="inventory", reason_code="cross_tenant")
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
         if self._log_authorized:
             logger.info(
-                "event=inventory_access_authorized inventory_id=%s actor_client_id=%s",
-                inventory_id,
-                principal.client_id,
+                "event=inventory_access_authorized resource_type=inventory principal_role=%s",
+                ",".join(sorted(principal.roles)) if principal.roles else "",
             )
         return inventory
 
@@ -100,15 +101,21 @@ class InventoryAccessPolicy:
             raise CaptureSessionNotFoundError(f"Capture session not found: {session_id}")
         session = self._capture_session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
-            self._log_denied(principal, resource_type="capture_session", resource_id=session_id)
+            self._log_denied(
+                principal, resource_type="capture_session", reason_code="not_found"
+            )
             raise CaptureSessionNotFoundError(f"Capture session not found: {session_id}")
         if session.inventory_id != inventory_id:
-            self._log_denied(principal, resource_type="capture_session", resource_id=session_id)
+            self._log_denied(
+                principal, resource_type="capture_session", reason_code="parent_mismatch"
+            )
             raise CaptureSessionNotFoundError(f"Capture session not found: {session_id}")
         if aisle_id is not None:
             aisle = self.require_aisle(inventory_id, aisle_id, principal)
             if session.aisle_id is not None and session.aisle_id != aisle.id:
-                self._log_denied(principal, resource_type="capture_session", resource_id=session_id)
+                self._log_denied(
+                    principal, resource_type="capture_session", reason_code="parent_mismatch"
+                )
                 raise CaptureSessionNotFoundError(f"Capture session not found: {session_id}")
         if session.closed_at is not None or session.status in (
             CaptureSessionStatus.CANCELLED,
@@ -124,13 +131,16 @@ class InventoryAccessPolicy:
 
     @staticmethod
     def _log_denied(
-        principal: AccessPrincipal, *, resource_type: str, resource_id: str
+        principal: AccessPrincipal,
+        *,
+        resource_type: str,
+        reason_code: str,
     ) -> None:
-        if principal.is_platform:
-            return
         logger.info(
-            "event=cross_client_access_denied actor_client_id=%s resource_type=%s resource_id=%s",
-            principal.client_id,
+            "event=authorization_denied reason_code=%s principal_role=%s resource_type=%s "
+            "operation=require_%s",
+            reason_code,
+            ",".join(sorted(principal.roles)) if principal.roles else "",
             resource_type,
-            resource_id,
+            resource_type,
         )

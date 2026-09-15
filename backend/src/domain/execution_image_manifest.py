@@ -15,6 +15,9 @@ from typing import Any
 MANIFEST_VERSION = 1
 COMPOSITION_KEY_EXECUTION_IMAGE_MANIFEST = "execution_image_manifest"
 
+# Ordered list of manifest_entry_id values actually sent to the provider (run_metadata key).
+PROVIDER_IMAGE_MANIFEST_ORDER_KEY = "provider_image_manifest_order"
+
 # Canonical provider-return field for evidence (model-facing manifest entry ID).
 EVIDENCE_RETURN_IDENTIFIER_FIELD = "manifest_entry_id"
 # Compatibility-only legacy field accepted from model responses when manifest_entry_id absent.

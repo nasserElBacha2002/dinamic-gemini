@@ -1,4 +1,4 @@
-"""Bulk soft-delete inventories (logical delete via deleted_at) — atomic tenant scope."""
+"""Bulk soft-delete inventories (logical delete via deleted_at) — transactional tenant scope."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from src.application.dto.access_principal import AccessPrincipal
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import InventoryRepository
-from src.domain.inventory.entities import Inventory
+
+# Keep below SQL Server parameter limits (~2100) with headroom for UPDATE binds.
+MAX_SOFT_DELETE_INVENTORY_IDS = 100
 
 
 @dataclass(frozen=True)
@@ -35,21 +37,12 @@ def _dedupe_preserve_order(ids: tuple[str, ...]) -> list[str]:
     return out
 
 
-def _principal_may_access(inventory: Inventory, principal: AccessPrincipal) -> bool:
-    if principal.is_platform:
-        return True
-    principal_client = (principal.client_id or "").strip() or None
-    if principal_client is None:
-        return False
-    inv_client = (inventory.client_id or "").strip() or None
-    return inv_client == principal_client
-
-
 class SoftDeleteInventoriesUseCase:
     """Mark inventories as soft-deleted. Idempotent; does not cascade to children.
 
-    Atomic tenant rule (Stage 2): if any id is missing or not visible to the principal,
-    **no** inventory is modified (prevents partial cross-tenant bulk).
+    Atomic tenant rule: repository ``soft_delete_many_for_scope`` runs authorize-all +
+    writes in one unit of work (SQL transaction or memory lock). Any inaccessible id
+    yields zero modifications.
     """
 
     def __init__(
@@ -64,41 +57,32 @@ class SoftDeleteInventoriesUseCase:
         ids = _dedupe_preserve_order(command.inventory_ids)
         if not ids:
             raise ValueError("inventory_ids must not be empty")
-
-        resolved: list[Inventory] = []
-        not_found: list[str] = []
-        for inventory_id in ids:
-            inventory = self._inventory_repo.get_by_id(inventory_id)
-            if inventory is None or not _principal_may_access(inventory, command.principal):
-                not_found.append(inventory_id)
-                continue
-            resolved.append(inventory)
-
-        if not_found:
-            return SoftDeleteInventoriesResult(
-                deleted_ids=(),
-                already_deleted_ids=(),
-                not_found_ids=tuple(not_found),
+        if len(ids) > MAX_SOFT_DELETE_INVENTORY_IDS:
+            raise ValueError(
+                f"inventory_ids must contain at most {MAX_SOFT_DELETE_INVENTORY_IDS} items"
             )
 
-        deleted: list[str] = []
-        already: list[str] = []
-        now = self._clock.now()
-        actor = (command.principal.actor_id or "").strip() or None
+        principal = command.principal
+        allow_all = principal.is_platform
+        scope_client: str | None = None
+        if not allow_all:
+            scope_client = (principal.client_id or "").strip() or None
+            if scope_client is None:
+                return SoftDeleteInventoriesResult(
+                    deleted_ids=(),
+                    already_deleted_ids=(),
+                    not_found_ids=tuple(ids),
+                )
 
-        for inventory in resolved:
-            if inventory.is_deleted:
-                already.append(inventory.id)
-                continue
-            changed = inventory.mark_deleted(now, deleted_by=actor)
-            if not changed:
-                already.append(inventory.id)
-                continue
-            self._inventory_repo.save(inventory)
-            deleted.append(inventory.id)
-
+        deleted, already, not_found = self._inventory_repo.soft_delete_many_for_scope(
+            ids,
+            allow_all_clients=allow_all,
+            client_id=scope_client,
+            deleted_at=self._clock.now(),
+            deleted_by=(principal.actor_id or "").strip() or None,
+        )
         return SoftDeleteInventoriesResult(
-            deleted_ids=tuple(deleted),
-            already_deleted_ids=tuple(already),
-            not_found_ids=(),
+            deleted_ids=deleted,
+            already_deleted_ids=already,
+            not_found_ids=not_found,
         )

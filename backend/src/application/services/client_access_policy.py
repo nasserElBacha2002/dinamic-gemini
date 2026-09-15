@@ -1,9 +1,11 @@
-"""Client tenant access policy (Stage 2).
+"""Client tenant access policy (Stage 2 corrections).
 
 Complements :class:`~src.application.services.inventory_access_policy.InventoryAccessPolicy`.
 Platform principals may access any client. Company-scoped principals must match
 ``principal.client_id``. Cross-tenant / missing client → ``ClientNotFoundError`` (HTTP 404).
 Create-client is platform-only → ``PlatformOnlyOperationError`` (HTTP 403).
+
+Denial logs never include raw client/resource IDs or JWT material.
 """
 
 from __future__ import annotations
@@ -28,26 +30,25 @@ class ClientAccessPolicy:
         cid = (client_id or "").strip()
         client = self._client_repo.get_by_id(cid) if cid else None
         if client is None:
-            self._log_denied(principal, resource_id=cid or "(empty)")
+            self._log_denied(principal, reason_code="not_found", operation="require_client")
             raise ClientNotFoundError(f"Client not found: {cid}")
         if principal.is_platform:
             return client
         principal_client = (principal.client_id or "").strip() or None
-        if principal_client is None or principal_client != cid:
-            self._log_denied(principal, resource_id=cid)
+        if principal_client is None:
+            self._log_denied(
+                principal, reason_code="missing_principal_client", operation="require_client"
+            )
+            raise ClientNotFoundError(f"Client not found: {cid}")
+        if principal_client != cid:
+            self._log_denied(principal, reason_code="cross_tenant", operation="require_client")
             raise ClientNotFoundError(f"Client not found: {cid}")
         return client
 
     def require_platform(self, principal: AccessPrincipal, *, operation: str) -> None:
         if principal.is_platform:
             return
-        logger.info(
-            "event=authorization_denied reason_code=platform_only "
-            "principal_role=%s principal_client_id=%s resource_type=client operation=%s",
-            ",".join(sorted(principal.roles)) if principal.roles else "",
-            principal.client_id,
-            operation,
-        )
+        self._log_denied(principal, reason_code="platform_only", operation=operation)
         raise PlatformOnlyOperationError(
             f"Operation requires platform_admin: {operation}"
         )
@@ -58,20 +59,19 @@ class ClientAccessPolicy:
         principal_client = (principal.client_id or "").strip() or None
         if principal_client is None:
             return []
-        list_for = getattr(self._client_repo, "list_for_client", None)
-        if callable(list_for):
-            return list(list_for(principal_client))
-        client = self._client_repo.get_by_id(principal_client)
-        return [client] if client is not None else []
+        return list(self._client_repo.list_for_client(principal_client))
 
     @staticmethod
-    def _log_denied(principal: AccessPrincipal, *, resource_id: str) -> None:
-        if principal.is_platform:
-            return
+    def _log_denied(
+        principal: AccessPrincipal,
+        *,
+        reason_code: str,
+        operation: str,
+    ) -> None:
         logger.info(
-            "event=authorization_denied reason_code=cross_tenant "
-            "principal_role=%s principal_client_id=%s resource_type=client resource_id=%s",
+            "event=authorization_denied reason_code=%s principal_role=%s "
+            "resource_type=client operation=%s",
+            reason_code,
             ",".join(sorted(principal.roles)) if principal.roles else "",
-            principal.client_id,
-            resource_id,
+            operation,
         )

@@ -1,0 +1,147 @@
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+> dinamic-inventory-mobile@0.3.0 test
+> npm run test:core && npm run test:services && npm run test:integration --runInBand
+
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+> dinamic-inventory-mobile@0.3.0 test:core
+> jest --config jest.config.core.js --watchman=false
+
+PASS tests/positionLabelPayload.test.ts (5.547 s)
+PASS tests/localCsvExportPreflight.test.ts (5.752 s)
+PASS tests/observabilityPhase0.test.ts
+PASS tests/processingService.test.ts (5.84 s)
+PASS tests/databaseMigrations.test.ts (5.845 s)
+PASS tests/offlineOperationsPhase9.test.ts (5.898 s)
+PASS tests/offlineSupplierLabelValidator.test.ts
+PASS tests/uploadPhase1Policies.test.ts (5.925 s)
+PASS tests/mobileMultiLabelPhysical.test.ts
+PASS tests/incrementalScan.test.ts
+PASS tests/supplierExportSemantics.test.ts
+PASS tests/databaseCorruption.test.ts
+PASS tests/productLabelChecksumVectors.test.ts
+PASS tests/localCsvAndReconcilePhase346.test.ts (6.073 s)
+PASS tests/detectionStability.integration.test.ts
+PASS tests/productLabelMultiConsolidator.test.ts
+PASS tests/canExportSession.test.ts
+PASS tests/photoDetection.test.ts
+PASS tests/fase3CorrectionsCore.test.ts
+PASS tests/fase2UploadCore.test.ts (6.254 s)
+PASS tests/featureFlags.test.ts
+PASS tests/scanCoordinator.test.ts
+PASS tests/strictMultilabelCodeScan.test.ts (6.285 s)
+PASS tests/labelPayloadContracts.test.ts
+PASS tests/logging.test.ts
+PASS tests/imageFilter.test.ts
+PASS tests/fase3HardeningCore.test.ts
+PASS tests/processingState.test.ts
+PASS tests/stability.test.ts
+PASS tests/quantityCompleteness.test.ts
+PASS tests/uploadLeasePhase2.test.ts
+PASS tests/compositeCursor.test.ts
+PASS tests/captureState.test.ts
+PASS tests/captureSequence.test.ts
+PASS tests/processingReadiness.test.ts
+PASS tests/catalogRevision.test.ts
+PASS tests/localAisleWork.test.ts
+
+Test Suites: 37 passed, 37 total
+Tests:       377 passed, 377 total
+Snapshots:   0 total
+Time:        7.218 s
+Ran all test suites.
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+> dinamic-inventory-mobile@0.3.0 test:services
+> jest --config jest.config.services.js --watchman=false
+
+PASS tests/UploadsScreen.test.ts (5.257 s)
+PASS tests/mobileCaptureBugFixes.source.test.ts
+PASS tests/localAislePhase3.test.ts (5.591 s)
+PASS tests/processingService.test.ts (5.804 s)
+PASS tests/localCsvExportCodeScanGate.test.ts
+PASS tests/localCodeScanStrategy.test.ts (5.928 s)
+PASS tests/preliminaryReconciliationPhase5.test.ts (5.971 s)
+PASS tests/preliminaryDetectionSyncService.test.ts
+PASS tests/catalogSyncCorrections.test.ts (6.021 s)
+PASS tests/uploadQueuePhase1Corrections.test.ts (6.035 s)
+PASS tests/captureService.test.ts
+PASS tests/operationalFlow.test.ts (6.023 s)
+PASS tests/orderedCapturePhase1.test.ts
+PASS tests/catalogSyncService.test.ts (6.043 s)
+PASS tests/catalogColdStart.test.ts
+PASS tests/localScanUi.test.ts
+PASS tests/mediaStoreAccessMediaLocation.test.ts
+PASS tests/authoritativeLocalResultSyncService.test.ts
+PASS tests/aisleRevisionService.test.ts
+PASS tests/preliminarySyncDoesNotBlockProcess.test.ts
+PASS tests/apiClient.test.ts
+PASS tests/positionSyncV2Contract.test.ts
+PASS tests/fase10ProductionHardening.test.ts
+PASS tests/confirmLocalResult.test.ts
+PASS tests/authoritativeAisleReadiness.test.ts
+PASS tests/aisleProcessDialogHelpers.test.ts
+PASS tests/resolveAppConfig.test.ts
+PASS tests/aisleService.test.ts
+PASS tests/selectionRules.test.ts
+PASS tests/offlineRecognitionSync.test.ts
+PASS tests/serverReprocessService.test.ts
+PASS tests/inventoryService.test.ts
+PASS tests/offlineAislePackageSchema.test.ts
+PASS tests/aisleCreationRules.test.ts
+PASS tests/runLocalCsvExport.test.ts
+PASS tests/describeProcessButtonBlock.test.ts
+PASS tests/appBootstrapLifecycle.test.ts
+PASS tests/processingMode.test.ts
+PASS tests/positioningOperationalApi.test.ts
+PASS tests/authService.test.ts
+PASS tests/offlineIdentityOnlyAndPerKind.test.ts
+PASS tests/catalogReadiness.test.ts
+PASS tests/clientPositionLabelsContract.test.ts
+PASS tests/ProcessAisleConfirmModal.test.ts
+
+Test Suites: 44 passed, 44 total
+Tests:       333 passed, 333 total
+Snapshots:   0 total
+Time:        6.94 s, estimated 12 s
+Ran all test suites.
+npm warn Unknown cli config "--runInBand". This will stop working in the next major version of npm.
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+> dinamic-inventory-mobile@0.3.0 test:integration
+> jest --config jest.config.integration.js --watchman=false
+
+PASS tests/databaseMigrations.test.ts
+  SQLite migrations
+    ✓ keeps migration versions unique and strictly ordered (8 ms)
+    ✓ creates capture_sessions and capture_photos with required constraints and indexes
+    ✓ adds v2 stability metrics without editing migration 1 destructively (1 ms)
+    ✓ adds v33 catalog projection version without rewriting catalog data
+    ✓ adds v3/v4 upload and processing fields without rewriting v1 (1 ms)
+    ✓ adds v5 observability_events table with indexes
+    ✓ adds v6 preparation_processing_mode with UNKNOWN default
+    ✓ adds v7 upload worker lease columns
+    ✓ adds v8 local_detection_drafts with idempotency unique key (1 ms)
+    ✓ adds v9 draft harden without raw_value_preview and with FK cascade
+    ✓ adds v17/v18 offline_operations ledger and claim lease columns (3 ms)
+    ✓ adds v19 ordered capture sequence_number and backend session id
+    ✓ adds v20 process attempt identity columns on capture_sessions
+    ✓ adds v21 capture freeze watermark columns (1 ms)
+    ✓ adds v22 local_csv_exports table
+    ✓ adds v24 session active_position_json and draft position_snapshot_json
+    ✓ adds v25 draft multi-product columns
+    ✓ adds v26 draft rejections_json
+    ✓ adds v27 confirmed_local_results label_id
+    ✓ adds v28 offline recognition profile tables
+    ✓ adds v29 local catalog tables
+    ✓ adds v30 catalog sync meta status columns
+    ✓ adds v31 local aisle origin and sync metadata
+    ✓ adds v32 offline supplier recognition config table
+
+Test Suites: 1 passed, 1 total
+Tests:       24 passed, 24 total
+Snapshots:   0 total
+Time:        0.835 s, estimated 1 s
+Ran all test suites.
+TEST:0

@@ -63,8 +63,33 @@ CRITICAL_ZERO_AFTER_CLEANUP: frozenset[str] = frozenset(
     table_full_name(s, t) for s, t in TABLES_FOR_REPORT
 )
 
+# Closed allowlist for interpolated schema/table identifiers (Bandit B608).
+# Includes report tables plus FK-order delete targets used only by cleanup tooling.
+_ALLOWED_CLEANUP_TABLES: frozenset[tuple[str, str]] = frozenset(
+    list(TABLES_FOR_REPORT)
+    + [
+        ("dbo", "position_manual_image_coverage"),
+        ("dbo", "position_versions"),
+        ("dbo", "authoritative_local_code_scan_results"),
+        ("dbo", "mobile_preliminary_detections"),
+        ("dbo", "preliminary_detection_reconciliations"),
+        ("dbo", "local_csv_productive_results"),
+        ("dbo", "local_inventory_package_photos"),
+        ("dbo", "local_inventory_packages"),
+        ("dbo", "local_csv_import_rows"),
+        ("dbo", "local_csv_imports"),
+        ("dbo", "inventory_counted_product_labels"),
+    ]
+)
+
+
+def _require_allowlisted_table(schema: str, table: str) -> None:
+    if (schema, table) not in _ALLOWED_CLEANUP_TABLES:
+        raise ValueError(f"Refusing SQL identifier outside cleanup allowlist: {schema}.{table}")
+
 
 def count_if_exists(cur: Any, schema: str, table: str) -> int:
+    _require_allowlisted_table(schema, table)
     cur.execute(
         """
         SELECT COUNT_BIG(*)
@@ -92,6 +117,7 @@ def collect_table_counts(cur: Any) -> dict[str, int]:
 
 
 def exec_if_table(cur: Any, schema: str, table: str, sql_body: str) -> None:
+    _require_allowlisted_table(schema, table)
     cur.execute(
         f"""
         IF OBJECT_ID(N'[{schema}].[{table}]', N'U') IS NOT NULL

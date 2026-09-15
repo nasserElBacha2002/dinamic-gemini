@@ -131,18 +131,15 @@ def test_http_platform_sees_both() -> None:
 
 
 def test_http_missing_bearer_rejected_when_override_cleared() -> None:
-    """With no admin override, missing Authorization must not succeed as company scope."""
+    """Wiring note: real JWT 401 coverage lives in test_tenant_isolation_stage2_jwt_http.
+
+    This test only asserts that clearing the API conftest admin override leaves the
+    route protected (no silent anonymous access).
+    """
     _clear()
-    # Ensure dependency is the real one (other modules may leave overrides).
     app.dependency_overrides.pop(get_current_admin, None)
-
-    def _deny():
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    app.dependency_overrides[get_current_admin] = _deny
     try:
+        # Without override, TestClient hits real auth → 401 without bearer.
         resp = client.get("/api/v3/clients/")
         assert resp.status_code == 401
     finally:

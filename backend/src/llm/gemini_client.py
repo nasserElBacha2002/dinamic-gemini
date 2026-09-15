@@ -192,6 +192,9 @@ class GeminiClient:
                 self.last_response_usage = self._extract_usage(response)
                 return response.text or "{}"
             except Exception as e:
+                # Do not retry programming / contract errors as transient API failures.
+                if isinstance(e, (TypeError, ValueError, AttributeError, AssertionError)):
+                    raise
                 last_error = str(e)
                 if "429" in str(e) or "rate limit" in str(e).lower():
                     time.sleep(self.retry_delay * (2**attempt))
@@ -248,6 +251,8 @@ class GeminiClient:
                 self.last_response_usage = self._extract_usage(response)
                 return response.text or "{}"
             except Exception as e:
+                if isinstance(e, (TypeError, ValueError, AttributeError, AssertionError)):
+                    raise
                 last_error = str(e)
                 if "429" in str(e) or "rate limit" in str(e).lower():
                     time.sleep(self.retry_delay * (2**attempt))

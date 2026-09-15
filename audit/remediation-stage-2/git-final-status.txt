@@ -1,0 +1,28 @@
+BRANCH=DIN-357
+HEAD=f6ad26c29e749238a5017a05f9cf0df24f3c08a2
+DATE_UTC=2026-09-15T16:37:00Z
+ A audit/remediation-stage-2/full-pytest-results.txt
+ A audit/remediation-stage-2/git-final-status.txt
+ A audit/remediation-stage-2/implementation-corrections-decisions.md
+ A audit/remediation-stage-2/lint-results.txt
+ A audit/remediation-stage-2/mypy-results.txt
+ A audit/remediation-stage-2/sql-atomicity-results.txt
+ A audit/remediation-stage-2/tenant-endpoint-final-matrix.md
+ M backend/src/api/dependencies.py
+ M backend/src/api/routes/v3/aisles.py
+ M backend/src/api/routes/v3/client_position_labels.py
+ M backend/src/api/routes/v3/client_product_labels.py
+ M backend/src/api/routes/v3/clients.py
+ M backend/src/application/ports/repositories.py
+ M backend/src/application/services/client_access_policy.py
+ M backend/src/application/services/inventory_access_policy.py
+ M backend/src/application/use_cases/inventories/create_inventory.py
+ M backend/src/application/use_cases/inventories/list_inventory_list_items.py
+ M backend/src/application/use_cases/inventories/soft_delete_inventories.py
+ M backend/src/infrastructure/repositories/memory_inventory_repository.py
+ M backend/src/infrastructure/repositories/sql_inventory_repository.py
+ M backend/tests/api/test_error_mapping.py
+ M backend/tests/api/test_tenant_isolation_stage2_http.py
+ A backend/tests/api/test_tenant_isolation_stage2_jwt_http.py
+ M backend/tests/application/use_cases/test_tenant_isolation_stage2.py
+ M backend/tests/integration/test_sql_tenant_isolation_stage2.py

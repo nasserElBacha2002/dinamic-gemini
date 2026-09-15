@@ -93,6 +93,23 @@ class _InventoryReadProxyClearClient(InventoryRepository):
             completed_at=completed_at,
         )
 
+    def soft_delete_many_for_scope(
+        self,
+        inventory_ids: Sequence[str],
+        *,
+        allow_all_clients: bool,
+        client_id: str | None,
+        deleted_at: datetime,
+        deleted_by: str | None,
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        return self._inner.soft_delete_many_for_scope(
+            inventory_ids,
+            allow_all_clients=allow_all_clients,
+            client_id=client_id,
+            deleted_at=deleted_at,
+            deleted_by=deleted_by,
+        )
+
 
 def _pinv(name: str, **kwargs: Any):
     """Create inventory via API; default test mode unless a case exercises production."""

@@ -44,6 +44,7 @@ from src.api.dependencies import (
     get_update_client_use_case,
     get_upload_supplier_reference_images_use_case,
     get_upsert_client_supplier_label_profile_use_case,
+    require_client_scope,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
@@ -403,7 +404,7 @@ def list_clients(
 def get_client(
     client_id: str,
     use_case: GetClientUseCase = Depends(get_get_client_use_case),
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
 ) -> ClientResponse:
     try:
         client = use_case.execute(client_id, principal)
@@ -418,7 +419,7 @@ def update_client(
     client_id: str,
     payload: UpdateClientRequest,
     use_case: UpdateClientUseCase = Depends(get_update_client_use_case),
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
 ) -> ClientResponse:
     try:
         client = use_case.execute(
@@ -444,6 +445,7 @@ def create_client_supplier(
     client_id: str,
     payload: CreateClientSupplierRequest,
     use_case: CreateClientSupplierUseCase = Depends(get_create_client_supplier_use_case),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> ClientSupplierResponse:
     try:
         supplier = use_case.execute(
@@ -469,6 +471,7 @@ def list_client_suppliers(
     use_case: ListClientSuppliersUseCase = Depends(get_list_client_suppliers_use_case),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> PaginatedClientSupplierListResponse:
     try:
         rows = list(use_case.execute(client_id))
@@ -493,6 +496,7 @@ def get_client_supplier(
     client_id: str,
     supplier_id: str,
     use_case: GetClientSupplierUseCase = Depends(get_get_client_supplier_use_case),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> ClientSupplierResponse:
     try:
         supplier = use_case.execute(client_id, supplier_id)
@@ -512,6 +516,7 @@ def list_supplier_reference_images(
     use_case: ListSupplierReferenceImagesUseCase = Depends(
         get_list_supplier_reference_images_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierReferenceImagesListResponse:
     try:
         refs = use_case.execute(client_id, supplier_id)
@@ -558,6 +563,7 @@ async def upload_supplier_reference_images(
     use_case: UploadSupplierReferenceImagesUseCase = Depends(
         get_upload_supplier_reference_images_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> UploadSupplierReferenceImagesResponse:
     uploaded = await _to_uploaded_supplier_reference_image_files(
         files, label=label, description=description, label_kind=label_kind
@@ -583,6 +589,7 @@ def delete_supplier_reference_image(
     use_case: DeleteSupplierReferenceImageUseCase = Depends(
         get_delete_supplier_reference_image_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> DeleteSupplierReferenceImageResponse:
     try:
         use_case.execute(client_id, supplier_id, image_id)
@@ -622,6 +629,7 @@ def get_supplier_reference_image_display_url(
         get_get_supplier_reference_image_use_case
     ),
     artifact_storage=Depends(get_artifact_storage),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SourceAssetImageDisplayUrlResponse:
     """Return how to display a supplier reference image: presigned URL or authenticated GET on ``.../file``."""
     try:
@@ -655,6 +663,7 @@ def get_supplier_reference_image_file(
         get_get_supplier_reference_image_use_case
     ),
     artifact_storage=Depends(get_artifact_storage),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> Response:
     try:
         image = use_case.execute(client_id, supplier_id, image_id)
@@ -690,6 +699,7 @@ def list_supplier_prompt_configs(
     provider_name: str | None = Query(None),
     model_name: str | None = Query(None),
     use_case: ListSupplierPromptConfigsUseCase = Depends(get_list_supplier_prompt_configs_use_case),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierPromptConfigsListResponse:
     try:
         rows = use_case.execute(
@@ -721,6 +731,7 @@ def create_supplier_prompt_config(
     use_case: CreateSupplierPromptConfigVersionUseCase = Depends(
         get_create_supplier_prompt_config_version_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierPromptConfigResponse:
     try:
         created = use_case.execute(
@@ -751,6 +762,7 @@ def get_active_supplier_prompt_config(
     use_case: GetActiveSupplierPromptConfigUseCase = Depends(
         get_get_active_supplier_prompt_config_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierPromptConfigResponse:
     try:
         active = use_case.execute(
@@ -780,6 +792,7 @@ def get_supplier_prompt_config(
     supplier_id: str,
     config_id: str,
     use_case: GetSupplierPromptConfigUseCase = Depends(get_get_supplier_prompt_config_use_case),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierPromptConfigResponse:
     try:
         row = use_case.execute(
@@ -804,6 +817,7 @@ def activate_supplier_prompt_config(
     use_case: ActivateSupplierPromptConfigVersionUseCase = Depends(
         get_activate_supplier_prompt_config_version_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierPromptConfigResponse:
     try:
         activated = use_case.execute(
@@ -827,6 +841,7 @@ def list_supplier_extraction_profiles(
     use_case: ListSupplierExtractionProfilesUseCase = Depends(
         get_list_supplier_extraction_profiles_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierExtractionProfilesListResponse:
     try:
         rows = use_case.execute(
@@ -854,6 +869,7 @@ def create_supplier_extraction_profile(
     use_case: CreateSupplierExtractionProfileVersionUseCase = Depends(
         get_create_supplier_extraction_profile_version_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierExtractionProfileResponse:
     try:
         created = use_case.execute(
@@ -890,6 +906,7 @@ def get_active_supplier_extraction_profile(
     use_case: GetActiveSupplierExtractionProfileUseCase = Depends(
         get_get_active_supplier_extraction_profile_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierExtractionProfileResponse:
     try:
         active = use_case.execute(
@@ -918,6 +935,7 @@ def get_supplier_extraction_profile_by_version(
     use_case: GetSupplierExtractionProfileByVersionUseCase = Depends(
         get_get_supplier_extraction_profile_by_version_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierExtractionProfileResponse:
     try:
         row = use_case.execute(
@@ -945,6 +963,7 @@ def clone_supplier_extraction_profile(
     use_case: CloneSupplierExtractionProfileUseCase = Depends(
         get_clone_supplier_extraction_profile_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierExtractionProfileResponse:
     try:
         cloned = use_case.execute(
@@ -969,6 +988,7 @@ def test_supplier_extraction_profile(
     supplier_id: str,
     payload: TestExtractionProfileRequest,
     get_supplier: GetClientSupplierUseCase = Depends(get_get_client_supplier_use_case),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> TestExtractionProfileResponse:
     """Diagnostic OCR/profile dry-run — never creates positions."""
     import base64
@@ -1015,6 +1035,7 @@ def test_supplier_label_recognition_code(
     use_case: LabelRecognitionCodeTesterUseCase = Depends(
         get_test_label_recognition_code_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> TestLabelRecognitionCodeResponse:
     """Non-persistent structured payload / GS1 dry-run — never mutates inventory."""
     if payload.configuration is None and not payload.profile_id:
@@ -1060,6 +1081,7 @@ def activate_supplier_extraction_profile(
     use_case: ActivateSupplierExtractionProfileVersionUseCase = Depends(
         get_activate_supplier_extraction_profile_version_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierExtractionProfileResponse:
     body = payload or ActivateSupplierExtractionProfileRequest()
     row_version = body.expected_row_version if body.expected_row_version is not None else expected_row_version
@@ -1093,6 +1115,7 @@ def list_supplier_reference_annotations(
     use_case: ListSupplierReferenceAnnotationsUseCase = Depends(
         get_list_supplier_reference_annotations_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierReferenceAnnotationsListResponse:
     try:
         rows = use_case.execute(
@@ -1122,6 +1145,7 @@ def replace_supplier_reference_annotations(
     use_case: ReplaceSupplierReferenceAnnotationsUseCase = Depends(
         get_replace_supplier_reference_annotations_use_case
     ),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> SupplierReferenceAnnotationsListResponse:
     try:
         rows = use_case.execute(
@@ -1149,6 +1173,7 @@ def list_client_supplier_label_profiles(
     client_id: str,
     supplier_id: str,
     use_case=Depends(get_list_client_supplier_label_profiles_use_case),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> list[ClientSupplierLabelProfileResponse]:
     try:
         rows = use_case.execute(
@@ -1180,6 +1205,7 @@ def upsert_client_supplier_label_profile(
     label_kind: str,
     payload: UpsertClientSupplierLabelProfileRequest,
     use_case=Depends(get_upsert_client_supplier_label_profile_use_case),
+    _principal: AccessPrincipal = Depends(require_client_scope),
 ) -> ClientSupplierLabelProfileResponse:
     try:
         row = use_case.execute(

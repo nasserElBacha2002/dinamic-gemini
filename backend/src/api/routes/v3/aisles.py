@@ -385,6 +385,7 @@ def create_aisle(
     id_query: AisleIdentificationConfigurationQuery = Depends(
         get_aisle_identification_configuration_query
     ),
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> AisleResponse:
     """Create an aisle in an inventory (v3.0). Returns 404 if inventory not found, 409 if code duplicate."""
     try:
@@ -420,6 +421,7 @@ def update_aisle_code(
     id_query: AisleIdentificationConfigurationQuery = Depends(
         get_aisle_identification_configuration_query
     ),
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> AisleResponse:
     """Update aisle code and/or identification mode. Returns 404 if missing, 409 if code duplicate."""
     try:
@@ -468,6 +470,7 @@ def deactivate_aisle(
     id_query: AisleIdentificationConfigurationQuery = Depends(
         get_aisle_identification_configuration_query
     ),
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> AisleResponse:
     """Soft-deactivate an aisle. Blocked while an active process job exists (409)."""
     try:
@@ -491,6 +494,7 @@ def activate_aisle(
     id_query: AisleIdentificationConfigurationQuery = Depends(
         get_aisle_identification_configuration_query
     ),
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> AisleResponse:
     """Re-activate a soft-deactivated aisle."""
     try:
@@ -525,6 +529,7 @@ def list_aisles(
     sort_dir: str = Query("asc", description="asc | desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> PaginatedAisleListResponse:
     """List aisles for an inventory with rollups, optional search/filter/sort/pagination (Sprint 1.4).
 
@@ -635,6 +640,7 @@ def get_aisle_status(
     id_query: AisleIdentificationConfigurationQuery = Depends(
         get_aisle_identification_configuration_query
     ),
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
 ) -> AisleStatusResponse:
     try:
         result = use_case.execute(inventory_id, aisle_id)
