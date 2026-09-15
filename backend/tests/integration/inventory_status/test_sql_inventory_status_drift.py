@@ -67,6 +67,23 @@ class BarrierInventoryRepository(InventoryRepository):
     def list_all(self) -> Sequence[Inventory]:
         return self._inner.list_all()
 
+    def soft_delete_many_for_scope(
+        self,
+        inventory_ids: Sequence[str],
+        *,
+        allow_all_clients: bool,
+        client_id: str | None,
+        deleted_at: datetime,
+        deleted_by: str | None,
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        return self._inner.soft_delete_many_for_scope(
+            inventory_ids,
+            allow_all_clients=allow_all_clients,
+            client_id=client_id,
+            deleted_at=deleted_at,
+            deleted_by=deleted_by,
+        )
+
     def compare_and_set_status(
         self,
         inventory_id: str,

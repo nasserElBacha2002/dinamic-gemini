@@ -10,6 +10,7 @@ from src.api.dependencies import (
     get_code_scanner,
     get_export_aisle_code_scans_use_case,
     get_get_aisle_code_scan_review_signals_use_case,
+    get_inventory_repo,
     get_list_aisle_code_scans_use_case,
     get_run_aisle_code_scan_use_case,
     get_summarize_aisle_code_scans_use_case,
@@ -58,6 +59,7 @@ from src.domain.code_scans.entities import (
     CodeType,
 )
 from src.domain.code_scans.matching import CodeScanMatchStatus
+from src.domain.inventory.entities import Inventory, InventoryStatus
 
 
 def _fake_admin() -> AuthUser:
@@ -368,7 +370,22 @@ def test_export_csv_no_run_404() -> None:
         def execute(self, _cmd: ExportAisleCodeScansCommand) -> ExportAisleCodeScansResult:
             raise CodeScanExportNoRunError("no run")
 
+    now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory(
+        id="inv1",
+        name="I",
+        status=InventoryStatus.DRAFT,
+        created_at=now,
+        updated_at=now,
+        client_id="client-a",
+    )
+
+    class StubInvRepo:
+        def get_by_id(self, inventory_id: str):
+            return inv if inventory_id == "inv1" else None
+
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: StubInvRepo()
     app.dependency_overrides[get_export_aisle_code_scans_use_case] = lambda: StubExport()
     try:
         client = TestClient(app)
@@ -388,7 +405,22 @@ def test_export_csv_ok() -> None:
                 body="\ufeffinventory_id,aisle_id\ninv1,a1\n",
             )
 
+    now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory(
+        id="inv1",
+        name="I",
+        status=InventoryStatus.DRAFT,
+        created_at=now,
+        updated_at=now,
+        client_id="client-a",
+    )
+
+    class StubInvRepo:
+        def get_by_id(self, inventory_id: str):
+            return inv if inventory_id == "inv1" else None
+
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_inventory_repo] = lambda: StubInvRepo()
     app.dependency_overrides[get_export_aisle_code_scans_use_case] = lambda: StubExport()
     try:
         client = TestClient(app)

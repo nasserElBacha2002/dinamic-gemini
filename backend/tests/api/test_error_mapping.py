@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -20,6 +22,7 @@ from src.api.dependencies import (
     get_get_aisle_processing_status_use_case,
     get_get_inventory_use_case,
     get_get_position_detail_use_case,
+    get_inventory_repo,
     get_promote_aisle_operational_job_use_case,
     get_resolve_aisle_job_for_inventory_read_use_case,
     get_start_aisle_processing_use_case,
@@ -94,6 +97,7 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
+from src.domain.inventory.entities import Inventory, InventoryStatus
 
 
 def test_mapped_provider_incompatible_with_job_returns_structured_422() -> None:
@@ -571,7 +575,7 @@ def test_get_inventory_not_found_returns_structured_json() -> None:
     """Integration: stable not-found through app exception handler."""
 
     class _MissingInventory:
-        def execute(self, _inventory_id: str):
+        def execute(self, _inventory_id: str, _principal=None):
             raise InventoryNotFoundError()
 
     app.dependency_overrides[get_get_inventory_use_case] = lambda: _MissingInventory()
@@ -589,7 +593,7 @@ def test_structured_api_error_logs_stable_code_at_info(
     """Observability: ``src.api.server`` logs stable ``error_code`` for structured v3 errors."""
 
     class _MissingInventory:
-        def execute(self, _inventory_id: str):
+        def execute(self, _inventory_id: str, _principal=None):
             raise InventoryNotFoundError()
 
     app.dependency_overrides[get_get_inventory_use_case] = lambda: _MissingInventory()
@@ -605,13 +609,92 @@ def test_structured_api_error_logs_stable_code_at_info(
         app.dependency_overrides.pop(get_get_inventory_use_case, None)
 
 
+def test_get_aisle_status_inventory_missing_returns_inventory_not_found() -> None:
+    """Scope Depends runs first: missing inventory → INVENTORY_NOT_FOUND (not aisle)."""
+
+    class StubInvRepo:
+        def get_by_id(self, inventory_id: str):
+            return None
+
+    class _ShouldNotRun:
+        def execute(self, *_a, **_k):
+            raise AssertionError("use case must not run when inventory is missing")
+
+    app.dependency_overrides[get_inventory_repo] = lambda: StubInvRepo()
+    app.dependency_overrides[get_get_aisle_processing_status_use_case] = lambda: _ShouldNotRun()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/api/v3/inventories/missing-inv/aisles/aisle-1/status"
+        )
+        assert r.status_code == 404
+        assert r.json()["code"] == INVENTORY_NOT_FOUND
+    finally:
+        app.dependency_overrides.pop(get_get_aisle_processing_status_use_case, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+
+
+def test_get_aisle_status_cross_tenant_inventory_404_before_use_case() -> None:
+    """Company A cannot reach aisle status on inventory B — 404 before use case."""
+    from src.auth.dependencies import get_current_admin
+    from src.auth.schemas import AuthUser
+
+    now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+    inv_b = Inventory(
+        id="inv-b",
+        name="B",
+        status=InventoryStatus.DRAFT,
+        created_at=now,
+        updated_at=now,
+        client_id="client-b",
+    )
+
+    class StubInvRepo:
+        def get_by_id(self, inventory_id: str):
+            return inv_b if inventory_id == "inv-b" else None
+
+    class _ShouldNotRun:
+        def execute(self, *_a, **_k):
+            raise AssertionError("use case must not run for cross-tenant inventory")
+
+    app.dependency_overrides[get_current_admin] = lambda: AuthUser(
+        id="u", username="co", role="company_admin", client_id="client-a"
+    )
+    app.dependency_overrides[get_inventory_repo] = lambda: StubInvRepo()
+    app.dependency_overrides[get_get_aisle_processing_status_use_case] = lambda: _ShouldNotRun()
+    try:
+        r = TestClient(app, raise_server_exceptions=False).get(
+            "/api/v3/inventories/inv-b/aisles/aisle-1/status"
+        )
+        assert r.status_code == 404
+        assert r.json()["code"] == INVENTORY_NOT_FOUND
+    finally:
+        app.dependency_overrides.pop(get_get_aisle_processing_status_use_case, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
+        app.dependency_overrides.pop(get_current_admin, None)
+
+
 def test_get_aisle_status_aisle_not_found_returns_structured_json() -> None:
-    """Integration: Category A aisle not-found via ``reraise_if_mapped`` on a real v3 route."""
+    """Authorized inventory + missing aisle → AISLE_NOT_FOUND."""
 
     class _MissingAisle:
         def execute(self, inventory_id: str, aisle_id: str) -> None:
             raise AisleNotFoundError()
 
+    now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory(
+        id="inv-1",
+        name="I",
+        status=InventoryStatus.DRAFT,
+        created_at=now,
+        updated_at=now,
+        client_id="client-a",
+    )
+
+    class StubInvRepo:
+        def get_by_id(self, inventory_id: str):
+            return inv if inventory_id == "inv-1" else None
+
+    app.dependency_overrides[get_inventory_repo] = lambda: StubInvRepo()
     app.dependency_overrides[get_get_aisle_processing_status_use_case] = lambda: _MissingAisle()
     try:
         r = TestClient(app, raise_server_exceptions=False).get(
@@ -624,6 +707,7 @@ def test_get_aisle_status_aisle_not_found_returns_structured_json() -> None:
         }
     finally:
         app.dependency_overrides.pop(get_get_aisle_processing_status_use_case, None)
+        app.dependency_overrides.pop(get_inventory_repo, None)
 
 
 def test_get_position_detail_position_not_found_returns_structured_json() -> None:

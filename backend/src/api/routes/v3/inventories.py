@@ -112,6 +112,7 @@ router = APIRouter()
 def create_inventory(
     payload: CreateInventoryRequest,
     use_case: CreateInventoryUseCase = Depends(get_create_inventory_use_case),
+    principal: AccessPrincipal = Depends(get_access_principal),
     id_query: AisleIdentificationConfigurationQuery = Depends(
         get_aisle_identification_configuration_query
     ),
@@ -124,6 +125,7 @@ def create_inventory(
                 name=payload.name,
                 processing_mode=mode,
                 client_id=payload.client_id,
+                principal=principal,
             )
         )
         return _inventory_response(inventory, id_query)
@@ -162,6 +164,7 @@ def update_inventory(
     inventory_id: str,
     payload: UpdateInventoryRequest,
     use_case: UpdateInventoryNameUseCase = Depends(get_update_inventory_name_use_case),
+    principal: AccessPrincipal = Depends(get_access_principal),
     id_query: AisleIdentificationConfigurationQuery = Depends(
         get_aisle_identification_configuration_query
     ),
@@ -171,6 +174,7 @@ def update_inventory(
         inventory = use_case.execute(
             UpdateInventoryNameCommand(
                 inventory_id=inventory_id,
+                principal=principal,
                 name=payload.name if "name" in payload.model_fields_set else None,
                 identification_mode=(
                     payload.identification_mode
@@ -190,6 +194,7 @@ def update_inventory(
 @router.get("/", response_model=PaginatedInventoryListResponse)
 def list_inventories(
     use_case: ListInventoryListItemsUseCase = Depends(get_list_inventory_list_items_use_case),
+    principal: AccessPrincipal = Depends(get_access_principal),
     search: str | None = Query(None, description="Case-insensitive substring on inventory name."),
     status: str | None = Query(
         None, description="Exact inventory status (wire value, e.g. draft)."
@@ -215,7 +220,7 @@ def list_inventories(
         page=page,
         page_size=page_size,
     )
-    rows, total = use_case.execute(q)
+    rows, total = use_case.execute(q, principal=principal)
     ps = q.page_size
     return PaginatedInventoryListResponse(
         items=[inventory_list_item_to_response(item) for item in rows],
@@ -269,6 +274,7 @@ def list_processing_provider_options(
 @router.get("/{inventory_id}/export/summary")
 def export_inventory_summary_csv(
     inventory_id: str,
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
     level: str = Query(
         "inventory",
         description="Summary level: inventory (one row) or aisles (one row per aisle).",
@@ -299,6 +305,7 @@ def export_inventory_summary_csv(
 @router.get("/{inventory_id}/export/package")
 def export_inventory_package_zip(
     inventory_id: str,
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
     use_case: ExportInventoryPackageZipUseCase = Depends(get_export_inventory_package_zip_use_case),
 ) -> Response:
     """Download ZIP with inventory summary, aisles summary, and per-aisle business operational CSVs."""
@@ -380,6 +387,7 @@ def get_inventory_recognition_config(
 @router.get("/{inventory_id}/export")
 def export_inventory_results(
     inventory_id: str,
+    _principal: AccessPrincipal = Depends(require_inventory_client_scope),
     export_format: str = Query(
         "csv", alias="format", description="Export format (only csv supported)."
     ),
@@ -409,6 +417,7 @@ def export_inventory_results(
 @router.get("/{inventory_id}", response_model=InventoryResponse)
 def get_inventory(
     inventory_id: str,
+    principal: AccessPrincipal = Depends(get_access_principal),
     use_case: GetInventoryUseCase = Depends(get_get_inventory_use_case),
     id_query: AisleIdentificationConfigurationQuery = Depends(
         get_aisle_identification_configuration_query
@@ -416,7 +425,7 @@ def get_inventory(
 ) -> InventoryResponse:
     """Get a single inventory by id (v3.0). Returns 404 if not found."""
     try:
-        inventory = use_case.execute(inventory_id)
+        inventory = use_case.execute(inventory_id, principal)
         return _inventory_response(inventory, id_query)
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
@@ -426,11 +435,12 @@ def get_inventory(
 @router.get("/{inventory_id}/metrics", response_model=InventoryMetricsResponse)
 def get_inventory_metrics(
     inventory_id: str,
+    principal: AccessPrincipal = Depends(get_access_principal),
     use_case: GetInventoryMetricsUseCase = Depends(get_get_inventory_metrics_use_case),
 ) -> InventoryMetricsResponse:
     """Get canonical inventory metrics. Returns 404 if inventory not found."""
     try:
-        metrics = use_case.execute(inventory_id)
+        metrics = use_case.execute(inventory_id, principal)
         return InventoryMetricsResponse(**metrics)
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)

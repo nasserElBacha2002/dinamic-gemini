@@ -1,17 +1,17 @@
 """
-GetInventoryMetrics use case — v3.0 Épica 9.
+GetInventoryMetrics use case — v3.0 Épica 9 (tenant-scoped Stage 2).
 
 Returns canonical inventory metrics per Documento técnico §9.6. Raises
-InventoryNotFoundError if the inventory does not exist.
+InventoryNotFoundError if the inventory does not exist or is not visible.
 """
 
 from __future__ import annotations
 
-from src.application.errors import InventoryNotFoundError
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.ports.contracts import InventoryMetricsResult
 from src.application.ports.repositories import InventoryRepository
 from src.application.ports.services import MetricsCalculator
-from src.application.services.inventory_soft_delete import reject_if_inventory_deleted
+from src.application.services.inventory_access_policy import InventoryAccessPolicy
 
 
 class GetInventoryMetricsUseCase:
@@ -22,10 +22,8 @@ class GetInventoryMetricsUseCase:
     ) -> None:
         self._inventory_repo = inventory_repo
         self._metrics_calculator = metrics_calculator
+        self._policy = InventoryAccessPolicy(inventory_repo)
 
-    def execute(self, inventory_id: str) -> InventoryMetricsResult:
-        inv = self._inventory_repo.get_by_id(inventory_id)
-        if inv is None:
-            raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
-        reject_if_inventory_deleted(inv)
+    def execute(self, inventory_id: str, principal: AccessPrincipal) -> InventoryMetricsResult:
+        self._policy.require_inventory(inventory_id, principal)
         return self._metrics_calculator.calculate_inventory_metrics(inventory_id)

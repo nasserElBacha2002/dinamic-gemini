@@ -1,12 +1,14 @@
-"""UpdateClient use case — rename and/or set default identification mode."""
+"""UpdateClient use case — rename and/or set default identification mode (tenant-scoped)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.application.errors import ClientNotFoundError, InvalidClientNameError
+from src.application.dto.access_principal import AccessPrincipal
+from src.application.errors import InvalidClientNameError
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import ClientRepository
+from src.application.services.client_access_policy import ClientAccessPolicy
 from src.application.services.legacy_processing_guard import (
     reject_legacy_mode_for_new_configuration,
 )
@@ -20,6 +22,7 @@ _MAX_NAME_LEN = 255
 @dataclass
 class UpdateClientCommand:
     client_id: str
+    principal: AccessPrincipal
     name: str | None = None
     identification_mode: OptionalModeUpdate = UNSET
 
@@ -28,14 +31,13 @@ class UpdateClientUseCase:
     def __init__(self, client_repo: ClientRepository, clock: Clock) -> None:
         self._client_repo = client_repo
         self._clock = clock
+        self._policy = ClientAccessPolicy(client_repo)
 
     def execute(self, command: UpdateClientCommand) -> Client:
         if command.name is None and isinstance(command.identification_mode, UnsetType):
             raise ValueError("At least one field must be provided")
 
-        client = self._client_repo.get_by_id(command.client_id)
-        if client is None:
-            raise ClientNotFoundError(f"Client not found: {command.client_id}")
+        client = self._policy.require_client(command.client_id, command.principal)
 
         changed = False
         if command.name is not None:

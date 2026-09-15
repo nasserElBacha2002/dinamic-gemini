@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
+from pydantic import ValidationError
+
+from src.application.schemas.llm_cost_snapshot import LlmCostSnapshotResponse
 from src.application.use_cases.shared.benchmark_compare_support import (
     sanitize_llm_cost_snapshot_for_compare,
 )
@@ -25,6 +27,6 @@ def llm_cost_snapshot_public_dict(result_json: dict[str, Any] | None) -> dict[st
     sanitized: dict[str, object] = sanitize_llm_cost_snapshot_for_compare(raw)
     try:
         validated = LlmCostSnapshotResponse.model_validate(sanitized)
-    except Exception:
+    except ValidationError:
         return None
     return validated.model_dump(mode="json")

@@ -18,6 +18,7 @@ from src.application.use_cases.inventories.create_inventory import (
 )
 from src.domain.client.entities import Client, ClientStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
+from tests.support.access_principal_helpers import platform_principal
 from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
 from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
@@ -97,7 +98,13 @@ def test_create_inventory_production_snapshots_operational_config() -> None:
         settings_loader=_dummy_settings,
     )
 
-    result = use_case.execute(CreateInventoryCommand(name="Warehouse A", client_id=client.id))
+    result = use_case.execute(
+        CreateInventoryCommand(
+            name="Warehouse A",
+            client_id=client.id,
+            principal=platform_principal(),
+        )
+    )
 
     assert result.name == "Warehouse A"
     assert result.status == InventoryStatus.DRAFT
@@ -130,6 +137,7 @@ def test_create_inventory_test_leaves_primary_fields_null() -> None:
             name="Lab",
             processing_mode=InventoryProcessingMode.TEST,
             client_id=client.id,
+            principal=platform_principal(),
         )
     )
 
@@ -153,7 +161,13 @@ def test_create_inventory_with_blank_client_id_after_strip_raises_value_error() 
     )
 
     with pytest.raises(ValueError, match="client_id must not be empty"):
-        use_case.execute(CreateInventoryCommand(name="Warehouse B", client_id="   "))
+        use_case.execute(
+            CreateInventoryCommand(
+                name="Warehouse B",
+                client_id="   ",
+                principal=platform_principal(),
+            )
+        )
 
 
 def test_create_inventory_with_valid_client_id_persists_association() -> None:
@@ -174,7 +188,13 @@ def test_create_inventory_with_valid_client_id_persists_association() -> None:
         settings_loader=_dummy_settings,
     )
 
-    result = use_case.execute(CreateInventoryCommand(name="Warehouse C", client_id="client-1"))
+    result = use_case.execute(
+        CreateInventoryCommand(
+            name="Warehouse C",
+            client_id="client-1",
+            principal=platform_principal(),
+        )
+    )
     assert result.client_id == "client-1"
     assert repo.get_by_id(result.id) == result
 
@@ -191,4 +211,10 @@ def test_create_inventory_with_invalid_client_id_raises_client_not_found() -> No
     )
 
     with pytest.raises(ClientNotFoundError):
-        use_case.execute(CreateInventoryCommand(name="Warehouse D", client_id="missing-client"))
+        use_case.execute(
+            CreateInventoryCommand(
+                name="Warehouse D",
+                client_id="missing-client",
+                principal=platform_principal(),
+            )
+        )

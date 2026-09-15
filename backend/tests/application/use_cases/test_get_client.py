@@ -10,6 +10,7 @@ from src.application.errors import ClientNotFoundError
 from src.application.ports.repositories import ClientRepository
 from src.application.use_cases.clients.get_client import GetClientUseCase
 from src.domain.client.entities import Client, ClientStatus
+from tests.support.access_principal_helpers import platform_principal
 from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
 
 
@@ -40,7 +41,7 @@ def test_get_client_returns_entity_when_found() -> None:
     repo.save(client)
     use_case = GetClientUseCase(client_repo=repo)
 
-    result = use_case.execute("client-1")
+    result = use_case.execute("client-1", platform_principal())
 
     assert result.id == "client-1"
     assert result.name == "Retail A"
@@ -51,5 +52,5 @@ def test_get_client_raises_when_not_found() -> None:
     use_case = GetClientUseCase(client_repo=repo)
 
     with pytest.raises(ClientNotFoundError):
-        use_case.execute("missing")
+        use_case.execute("missing", platform_principal())
 

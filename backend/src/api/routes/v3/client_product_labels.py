@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from src.api.dependencies import get_access_principal, get_client_repo, get_clock
+from src.api.dependencies import get_client_repo, get_clock, require_client_scope
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.product_label_schemas import (
     IssuedProductLabelResponse,
@@ -56,7 +56,7 @@ def issue_product_labels(
     body: IssueProductLabelsRequest,
     use_case: IssueProductLabelsUseCase = Depends(get_issue_product_labels_use_case),
     user: AuthUser = Depends(get_current_admin),
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
 ) -> IssueProductLabelsResponse:
     try:
         result = use_case.execute(

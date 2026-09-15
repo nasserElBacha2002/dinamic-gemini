@@ -1,0 +1,62 @@
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+ERROR tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed, 1 error in 1.65s
+RUN_1:0
+=========================== short test summary info ============================
+FAILED tests/integration/positions/test_sql_position_merge.py::test_sql_concurrent_overlapping_sets
+1 failed in 0.98s
+RUN_2:0
+.                                                                        [100%]
+1 passed in 1.08s
+RUN_3:0
+.                                                                        [100%]
+1 passed in 0.76s
+RUN_4:0
+.                                                                        [100%]
+1 passed in 0.70s
+RUN_5:0
+.                                                                        [100%]
+1 passed in 0.77s
+RUN_6:0
+.                                                                        [100%]
+1 passed in 0.83s
+RUN_7:0
+.                                                                        [100%]
+1 passed in 0.87s
+RUN_8:0
+.                                                                        [100%]
+1 passed in 0.63s
+RUN_9:0
+.                                                                        [100%]
+1 passed in 1.08s
+RUN_10:0
+.                                                                        [100%]
+1 passed in 1.86s
+RUN_11:0
+.                                                                        [100%]
+1 passed in 0.74s
+RUN_12:0
+.                                                                        [100%]
+1 passed in 0.78s
+RUN_13:0
+.                                                                        [100%]
+1 passed in 0.75s
+RUN_14:0
+.                                                                        [100%]
+1 passed in 0.68s
+RUN_15:0
+.                                                                        [100%]
+1 passed in 0.67s
+RUN_16:0
+.                                                                        [100%]
+1 passed in 0.73s
+RUN_17:0
+.                                                                        [100%]
+1 passed in 1.66s
+RUN_18:0
+.                                                                        [100%]
+1 passed in 0.88s
+RUN_19:0
+.                                                                        [100%]
+1 passed in 1.12s
+RUN_20:0

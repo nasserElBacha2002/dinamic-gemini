@@ -10,6 +10,7 @@ from src.application.errors import InvalidClientNameError
 from src.application.ports.repositories import ClientRepository
 from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
 from src.domain.client.entities import Client, ClientStatus
+from tests.support.access_principal_helpers import platform_principal
 from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
 
 
@@ -40,7 +41,9 @@ def test_create_client_success() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     use_case = CreateClientUseCase(client_repo=repo, clock=FixedClock(now))
 
-    result = use_case.execute(CreateClientCommand(name="Retail A"))
+    result = use_case.execute(
+        CreateClientCommand(name="Retail A", principal=platform_principal())
+    )
 
     assert result.name == "Retail A"
     assert result.status == ClientStatus.ACTIVE
@@ -55,5 +58,5 @@ def test_create_client_validation_failure_when_trimmed_name_empty() -> None:
     use_case = CreateClientUseCase(client_repo=repo, clock=FixedClock(now))
 
     with pytest.raises(InvalidClientNameError, match="Client name is required"):
-        use_case.execute(CreateClientCommand(name="   "))
+        use_case.execute(CreateClientCommand(name="   ", principal=platform_principal()))
 

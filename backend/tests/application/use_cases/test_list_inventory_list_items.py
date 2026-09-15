@@ -14,6 +14,7 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from tests.support.access_principal_helpers import platform_principal
 
 UTC = timezone.utc
 
@@ -96,7 +97,7 @@ def test_list_items_includes_counts_and_pending() -> None:
     pos_repo.save(_pos("p1", "aisle-1", needs_review=True))
     pos_repo.save(_pos("p2", "aisle-1", needs_review=False))
 
-    out, total = _uc(inv_repo, aisle_repo, pos_repo).execute()
+    out, total = _uc(inv_repo, aisle_repo, pos_repo).execute(principal=platform_principal())
     assert total == 1
     assert len(out) == 1
     row = out[0]
@@ -111,7 +112,7 @@ def test_inventory_with_no_aisles_zero_counts_and_last_activity_from_inventory_o
     created = datetime(2025, 6, 1, 8, 0, 0, tzinfo=UTC)
     updated = datetime(2025, 6, 1, 9, 0, 0, tzinfo=UTC)
     inv_repo.save(_inv("inv-empty", created_at=created, updated_at=updated))
-    row = _uc(inv_repo).execute()[0][0]
+    row = _uc(inv_repo).execute(principal=platform_principal())[0][0]
     assert row.aisles_count == 0
     assert row.pending_review_count == 0
     assert row.last_activity_at == updated
@@ -145,12 +146,12 @@ def test_last_activity_uses_max_across_inventory_aisle_position() -> None:
             updated_at=datetime(2025, 3, 1, 21, 0, 0, tzinfo=UTC),
         )
     )
-    row = _uc(inv_repo, aisle_repo, pos_repo).execute()[0][0]
+    row = _uc(inv_repo, aisle_repo, pos_repo).execute(principal=platform_principal())[0][0]
     assert row.last_activity_at == datetime(2025, 3, 1, 21, 0, 0, tzinfo=UTC)
 
 
 def test_list_items_empty_repos() -> None:
-    items, total = _uc().execute()
+    items, total = _uc().execute(principal=platform_principal())
     assert items == [] and total == 0
 
 
@@ -179,7 +180,9 @@ def test_list_items_resolves_client_name_null_and_missing_client() -> None:
 
     client_repo.get_by_ids = counting_get_by_ids  # type: ignore[method-assign]
 
-    rows, total = _uc(inv_repo=inv_repo, client_repo=client_repo).execute()
+    rows, total = _uc(inv_repo=inv_repo, client_repo=client_repo).execute(
+        principal=platform_principal()
+    )
     assert total == 3
     by_id = {r.inventory.id: r for r in rows}
     assert by_id["inv-1"].client_name == "Cliente Ejemplo"
@@ -205,7 +208,8 @@ def test_entity_sort_paginates_before_aggregate_load_single_batch() -> None:
     aisle_repo.list_by_inventories = counting  # type: ignore[method-assign]
 
     rows, total = _uc(inv_repo=inv_repo, aisle_repo=aisle_repo).execute(
-        InventoryTableQuery(sort_by="name", sort_dir="asc", page=2, page_size=2)
+        InventoryTableQuery(sort_by="name", sort_dir="asc", page=2, page_size=2),
+        principal=platform_principal(),
     )
     assert total == 5
     assert len(rows) == 2
@@ -231,7 +235,8 @@ def test_aggregate_sort_uses_one_list_by_inventories_call() -> None:
     aisle_repo.list_by_inventories = counting  # type: ignore[method-assign]
 
     rows, total = _uc(inv_repo=inv_repo, aisle_repo=aisle_repo).execute(
-        InventoryTableQuery(sort_by="aisles_count", sort_dir="desc", page=1, page_size=10)
+        InventoryTableQuery(sort_by="aisles_count", sort_dir="desc", page=1, page_size=10),
+        principal=platform_principal(),
     )
     assert total == 2
     assert rows[0].inventory.id == "inv-b"

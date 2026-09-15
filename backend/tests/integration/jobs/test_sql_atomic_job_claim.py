@@ -138,50 +138,59 @@ def test_sql_concurrent_claim_one_winner(
 
 
 def test_sql_stale_reclaim_one_winner(sql_client, _require_claim_owner_column) -> None:
-    job_repo, aisle_repo, job_id, aisle_id = _seed_job_aisle(
-        sql_client, job_status=JobStatus.RUNNING
-    )
-    old = _now() - timedelta(hours=2)
-    job = job_repo.get_by_id(job_id)
-    assert job is not None
-    job.last_heartbeat_at = old
-    job.updated_at = old
-    job.claim_owner_id = "owner-stale"
-    job_repo.save(job)
-    aisle = aisle_repo.get_by_id(aisle_id)
-    assert aisle is not None
-    aisle.status = AisleStatus.PROCESSING
-    aisle.updated_at = old
-    aisle_repo.save(aisle)
-
-    barrier = threading.Barrier(2)
-    wins: list[bool] = []
-    lock = threading.Lock()
-    now = _now()
-
-    def recovery() -> None:
-        local = SqlJobRepository(sql_client)
-        barrier.wait()
-        result = local.try_reclaim_stale_job_and_reconcile_aisle(
-            job_id, now=now, stale_after_seconds=60
+    """Two concurrent reclaimers: exactly one wins. Repeat to catch intermittent deadlocks."""
+    iterations = 5
+    for i in range(iterations):
+        job_repo, aisle_repo, job_id, aisle_id = _seed_job_aisle(
+            sql_client, job_status=JobStatus.RUNNING
         )
-        with lock:
-            wins.append(result.won)
+        old = _now() - timedelta(hours=2)
+        job = job_repo.get_by_id(job_id)
+        assert job is not None
+        job.last_heartbeat_at = old
+        job.updated_at = old
+        job.claim_owner_id = "owner-stale"
+        job_repo.save(job)
+        aisle = aisle_repo.get_by_id(aisle_id)
+        assert aisle is not None
+        aisle.status = AisleStatus.PROCESSING
+        aisle.updated_at = old
+        aisle_repo.save(aisle)
 
-    threads = [threading.Thread(target=recovery) for _ in range(2)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+        barrier = threading.Barrier(2)
+        wins: list[bool] = []
+        lock = threading.Lock()
+        errors: list[BaseException] = []
+        now = _now()
 
-    assert wins.count(True) == 1
-    assert wins.count(False) == 1
-    refreshed = job_repo.get_by_id(job_id)
-    assert refreshed is not None
-    assert refreshed.status == JobStatus.FAILED
-    aisle2 = aisle_repo.get_by_id(aisle_id)
-    assert aisle2 is not None
-    assert aisle2.status == AisleStatus.FAILED
+        def recovery() -> None:
+            local = SqlJobRepository(sql_client)
+            barrier.wait()
+            try:
+                result = local.try_reclaim_stale_job_and_reconcile_aisle(
+                    job_id, now=now, stale_after_seconds=60
+                )
+                with lock:
+                    wins.append(result.won)
+            except BaseException as exc:  # noqa: BLE001 — collect for assertion
+                with lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=recovery) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"iteration={i} unexpected errors={errors!r}"
+        assert wins.count(True) == 1, f"iteration={i} wins={wins}"
+        assert wins.count(False) == 1, f"iteration={i} wins={wins}"
+        refreshed = job_repo.get_by_id(job_id)
+        assert refreshed is not None
+        assert refreshed.status == JobStatus.FAILED
+        aisle2 = aisle_repo.get_by_id(aisle_id)
+        assert aisle2 is not None
+        assert aisle2.status == AisleStatus.FAILED
 
 
 def test_sql_claim_rollback_on_invalid_aisle(

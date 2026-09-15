@@ -54,6 +54,43 @@ class InventoryRepository(ABC):
         """Return active inventories (exclude soft-deleted). Order is implementation-defined."""
         ...
 
+    def list_for_client(self, client_id: str) -> Sequence[Inventory]:
+        """Active inventories owned by ``client_id`` (exclude soft-deleted).
+
+        Default filters :meth:`list_all`. SQL implementations SHOULD override with a
+        indexed ``WHERE client_id = ?`` query. Empty ``client_id`` → empty sequence.
+        """
+        cid = (client_id or "").strip()
+        if not cid:
+            return []
+        return [
+            inv
+            for inv in self.list_all()
+            if (inv.client_id or "").strip() == cid
+        ]
+
+    @abstractmethod
+    def soft_delete_many_for_scope(
+        self,
+        inventory_ids: Sequence[str],
+        *,
+        allow_all_clients: bool,
+        client_id: str | None,
+        deleted_at: datetime,
+        deleted_by: str | None,
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        """Atomically soft-delete inventories visible under the given tenant scope.
+
+        Returns ``(deleted_ids, already_deleted_ids, not_found_ids)``.
+
+        Contract (no non-transactional ABC default):
+        - If any id is missing or out of scope → **zero** modifications and those ids
+          in ``not_found_ids``.
+        - Implementations MUST be atomic for their storage (process lock or SQL txn).
+        - When ``allow_all_clients`` is False, ``client_id`` must be a non-empty tenant id.
+        """
+        ...
+
     @abstractmethod
     def compare_and_set_status(
         self,
@@ -84,6 +121,18 @@ class ClientRepository(ABC):
     def list_all(self) -> Sequence[Client]:
         """Return all clients. Order is implementation-defined (SQL impl: created_at DESC)."""
         ...
+
+    def list_for_client(self, client_id: str) -> Sequence[Client]:
+        """Return the single client row for ``client_id`` if present (0 or 1 items).
+
+        Company-scoped list endpoints must use this (or :meth:`get_by_id`) — never
+        :meth:`list_all`. Empty ``client_id`` → empty sequence.
+        """
+        cid = (client_id or "").strip()
+        if not cid:
+            return []
+        client = self.get_by_id(cid)
+        return [client] if client is not None else []
 
     @abstractmethod
     def get_by_ids(self, client_ids: Sequence[str]) -> dict[str, Client]:

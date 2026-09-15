@@ -11,6 +11,7 @@ from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import InventoryRepository
 from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.access_principal_helpers import platform_principal
 from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
@@ -41,7 +42,7 @@ def test_get_inventory_returns_entity_when_found() -> None:
     repo.save(inv)
 
     use_case = GetInventoryUseCase(inventory_repo=repo)
-    result = use_case.execute("inv-1")
+    result = use_case.execute("inv-1", platform_principal())
 
     assert result is not None
     assert result.id == "inv-1"
@@ -52,4 +53,4 @@ def test_get_inventory_raises_when_not_found() -> None:
     repo = StubInventoryRepo()
     use_case = GetInventoryUseCase(inventory_repo=repo)
     with pytest.raises(InventoryNotFoundError):
-        use_case.execute("nonexistent")
+        use_case.execute("nonexistent", platform_principal())

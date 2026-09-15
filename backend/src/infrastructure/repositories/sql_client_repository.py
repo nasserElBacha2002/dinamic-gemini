@@ -96,6 +96,13 @@ class SqlClientRepository(ClientRepository):
             rows = cur.fetchall()
         return [_client_from_row(row) for row in rows]
 
+    def list_for_client(self, client_id: str) -> Sequence[Client]:
+        cid = (client_id or "").strip()
+        if not cid:
+            return []
+        client = self.get_by_id(cid)
+        return [client] if client is not None else []
+
     def get_by_ids(self, client_ids: Sequence[str]) -> dict[str, Client]:
         uniq = list({cid for cid in client_ids if cid})
         if not uniq:

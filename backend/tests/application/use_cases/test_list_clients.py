@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import ClientRepository
 from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.domain.client.entities import Client, ClientStatus
+from tests.support.access_principal_helpers import platform_principal
 from tests.support.client_repository_stubs import ClientRepositoryBatchMixin
 
 
@@ -31,7 +32,7 @@ def test_list_clients_returns_all() -> None:
     repo = StubClientRepo([c1, c2])
     use_case = ListClientsUseCase(client_repo=repo)
 
-    result = use_case.execute()
+    result = use_case.execute(platform_principal())
 
     assert len(result) == 2
     assert {c.id for c in result} == {"c1", "c2"}

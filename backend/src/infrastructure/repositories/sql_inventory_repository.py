@@ -15,6 +15,7 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
+from src.application.errors import InventorySoftDeleteConsistencyError
 from src.application.ports.repositories import InventoryRepository
 from src.database.sqlserver import SqlServerClient, now_utc
 from src.domain.aisle_identification.modes import optional_config_identification_mode
@@ -213,3 +214,169 @@ class SqlInventoryRepository(InventoryRepository):
             )
             rows = cur.fetchall()
         return [self._row_to_inventory(row) for row in rows]
+
+    def list_for_client(self, client_id: str) -> Sequence[Inventory]:
+        cid = (client_id or "").strip()
+        if not cid:
+            return []
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                f"""
+                SELECT {_INVENTORY_SELECT_COLUMNS}
+                FROM inventories
+                WHERE deleted_at IS NULL AND client_id = ?
+                ORDER BY created_at DESC
+                """,
+                (cid,),
+            )
+            rows = cur.fetchall()
+        return [self._row_to_inventory(row) for row in rows]
+
+    def soft_delete_many_for_scope(
+        self,
+        inventory_ids: Sequence[str],
+        *,
+        allow_all_clients: bool,
+        client_id: str | None,
+        deleted_at: datetime,
+        deleted_by: str | None,
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        """SQL soft-delete under one algorithm for standalone txn and UoW connection.
+
+        Standalone (``_connection is None``): opens ``begin_transaction``, commits on
+        success, rolls back on not_found / exception.
+        UoW (``_connection`` set): uses the provided connection; **does not** commit or
+        rollback — the external unit of work owns the outcome.
+        """
+        ids = [(i or "").strip() for i in inventory_ids if (i or "").strip()]
+        if not ids:
+            return (), (), ()
+        if not allow_all_clients:
+            cid = (client_id or "").strip()
+            if not cid:
+                return (), (), tuple(ids)
+
+        if self._connection is not None:
+            return self._soft_delete_many_on_connection(
+                self._connection,
+                ids,
+                allow_all_clients=allow_all_clients,
+                client_id=client_id,
+                deleted_at=deleted_at,
+                deleted_by=deleted_by,
+            )
+
+        with self._client.begin_transaction() as txn:
+            try:
+                result = self._soft_delete_many_on_connection(
+                    txn.connection,
+                    ids,
+                    allow_all_clients=allow_all_clients,
+                    client_id=client_id,
+                    deleted_at=deleted_at,
+                    deleted_by=deleted_by,
+                )
+                _deleted, _already, not_found = result
+                if not_found:
+                    txn.rollback()
+                    return result
+                txn.commit()
+                return result
+            except Exception:
+                txn.rollback()
+                raise
+
+    def _soft_delete_many_on_connection(
+        self,
+        connection: object,
+        ids: list[str],
+        *,
+        allow_all_clients: bool,
+        client_id: str | None,
+        deleted_at: datetime,
+        deleted_by: str | None,
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        deleted_at_utc = _ensure_utc(deleted_at)
+        scope_cid = (client_id or "").strip() if not allow_all_clients else None
+
+        with sql_repository_cursor(self._client, connection=connection) as cur:
+            placeholders = ",".join("?" for _ in ids)
+            cur.execute(
+                f"""
+                SELECT {_INVENTORY_SELECT_COLUMNS}
+                FROM inventories WITH (UPDLOCK, ROWLOCK)
+                WHERE id IN ({placeholders})
+                """,
+                tuple(ids),
+            )
+            rows = cur.fetchall()
+        by_id = {str(r.id): self._row_to_inventory(r) for r in rows}  # type: ignore[attr-defined]
+
+        resolved: list[Inventory] = []
+        not_found: list[str] = []
+        for inventory_id in ids:
+            inventory = by_id.get(inventory_id)
+            if inventory is None:
+                not_found.append(inventory_id)
+                continue
+            if scope_cid is not None:
+                inv_client = (inventory.client_id or "").strip() or None
+                if inv_client != scope_cid:
+                    not_found.append(inventory_id)
+                    continue
+            resolved.append(inventory)
+
+        if not_found:
+            return (), (), tuple(not_found)
+
+        deleted: list[str] = []
+        already: list[str] = []
+        for inventory in resolved:
+            if inventory.is_deleted:
+                already.append(inventory.id)
+                continue
+            if allow_all_clients:
+                sql = """
+                    UPDATE inventories
+                    SET deleted_at = ?, deleted_by = ?, updated_at = ?
+                    OUTPUT inserted.id
+                    WHERE id = ? AND deleted_at IS NULL
+                    """
+                params: tuple[object, ...] = (
+                    deleted_at_utc,
+                    deleted_by,
+                    deleted_at_utc,
+                    inventory.id,
+                )
+            else:
+                sql = """
+                    UPDATE inventories
+                    SET deleted_at = ?, deleted_by = ?, updated_at = ?
+                    OUTPUT inserted.id
+                    WHERE id = ? AND deleted_at IS NULL AND client_id = ?
+                    """
+                params = (
+                    deleted_at_utc,
+                    deleted_by,
+                    deleted_at_utc,
+                    inventory.id,
+                    scope_cid,
+                )
+            with sql_repository_cursor(self._client, connection=connection) as cur:
+                cur.execute(sql, params)
+                out_rows = cur.fetchall()
+            out_ids = {str(r[0]) for r in out_rows} if out_rows else set()
+            if inventory.id in out_ids:
+                deleted.append(inventory.id)
+            else:
+                # Concurrent delete won the race → already deleted for this id.
+                refreshed = self.__class__(self._client, connection=connection).get_by_id(
+                    inventory.id
+                )
+                if refreshed is not None and refreshed.is_deleted:
+                    already.append(inventory.id)
+                else:
+                    # Write phase already started (prevalidation passed). Never return a
+                    # normal not_found tuple here — UoW would otherwise commit prior UPDATEs.
+                    raise InventorySoftDeleteConsistencyError()
+        return tuple(deleted), tuple(already), ()

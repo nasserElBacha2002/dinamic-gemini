@@ -1,0 +1,11 @@
+ .gitleaks.toml                                     |   4 +
+ .gitleaksignore                                    |   5 +-
+ backend/src/api/errors/structured_api_http.py      |   1 +
+ backend/src/application/errors.py                  |  18 ++
+ .../use_cases/positions/merge_positions.py         |  45 ++--
+ .../persistence/sql_position_merge_unit_of_work.py |   7 +
+ .../repositories/sql_inventory_repository.py       |   6 +-
+ .../repositories/sql_position_repository.py        |  18 +-
+ .../positions/test_sql_position_merge.py           |  16 +-
+ .../test_sql_tenant_isolation_stage2.py            | 271 +++++++++++++++++++--
+ 10 files changed, 352 insertions(+), 39 deletions(-)

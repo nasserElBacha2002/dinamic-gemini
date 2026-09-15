@@ -1,13 +1,13 @@
-"""Update inventory (name and/or identification mode override)."""
+"""Update inventory (name and/or identification mode override) — tenant-scoped."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.application.errors import InventoryNotFoundError
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import InventoryRepository
-from src.application.services.inventory_soft_delete import reject_if_inventory_deleted
+from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.legacy_processing_guard import (
     reject_legacy_mode_for_new_configuration,
 )
@@ -21,6 +21,7 @@ _MAX_INVENTORY_NAME_LEN = 255
 @dataclass
 class UpdateInventoryCommand:
     inventory_id: str
+    principal: AccessPrincipal
     name: str | None = None
     identification_mode: OptionalModeUpdate = UNSET
 
@@ -37,15 +38,13 @@ class UpdateInventoryUseCase:
     ) -> None:
         self._inventory_repo = inventory_repo
         self._clock = clock
+        self._policy = InventoryAccessPolicy(inventory_repo)
 
     def execute(self, command: UpdateInventoryCommand) -> Inventory:
         if command.name is None and isinstance(command.identification_mode, UnsetType):
             raise ValueError("At least one field must be provided")
 
-        inventory = self._inventory_repo.get_by_id(command.inventory_id)
-        if inventory is None:
-            raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
-        reject_if_inventory_deleted(inventory)
+        inventory = self._policy.require_inventory(command.inventory_id, command.principal)
 
         changed = False
         if command.name is not None:

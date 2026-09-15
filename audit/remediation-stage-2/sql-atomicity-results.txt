@@ -1,0 +1,27 @@
+DATE_UTC=2026-09-15T16:37:00Z
+=== sql integration tenant/soft_delete ===
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4599
+.venv/lib/python3.13/site-packages/fastapi/applications.py:4599
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/.venv/lib/python3.13/site-packages/fastapi/applications.py:4599: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+src/api/server.py:515
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/server.py:515: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+32 passed, 60 deselected, 5 warnings in 9.63s

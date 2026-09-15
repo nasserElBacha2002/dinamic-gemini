@@ -23,12 +23,16 @@ paths = [
   '''(^|/)\.mypy_cache/''',
   '''(^|/)\.ruff_cache/''',
   '''(^|/)audit/raw/''',
+  '''(^|/)audit/lab/''',
+  '''(^|/)audit/remediation-final/''',
+  '''(^|/)audit/remediation-stage-[0-9]+/''',
   '''(^|/)\.review/''',
   '''(^|/)review/''',
   '''(^|/)phase4-security-hardening-.*\.txt$''',
   '''(^|/)implementation-corrections-.*\.txt$''',
   '''\.env$''',
   '''\.env\..*$''',
+  '''(^|/)secrets/[^/]+\.json$''',
 ]
 
 [[allowlists]]

@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from src.domain.execution_image_manifest import (
+    PROVIDER_IMAGE_MANIFEST_ORDER_KEY,
     ExecutionImageEntry,
     ExecutionImageManifest,
     ExecutionImageRole,
@@ -23,7 +24,6 @@ from src.domain.traceability_artifact.builder import (
     traceability_manifest_is_json_safe,
 )
 from src.domain.traceability_artifact.canonical_json import sha256_canonical_json
-from src.pipeline.services.provider_execution_request import PROVIDER_IMAGE_MANIFEST_ORDER_KEY
 
 
 def _manifest() -> ExecutionImageManifest:

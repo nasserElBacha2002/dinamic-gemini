@@ -694,6 +694,17 @@ class ApiRuntimeSettings(BaseModel):
             "before claim. Set 0 to disable reclaim. Env: WORKER_STALE_RUNNING_TIMEOUT_SEC."
         ),
     )
+    worker_stale_reclaim_interval_sec: float = Field(
+        default_factory=lambda: float(
+            os.getenv("WORKER_STALE_RECLAIM_INTERVAL_SEC", "5") or "5"
+        ),
+        ge=0.0,
+        le=3600.0,
+        description=(
+            "Minimum seconds between stale-reclaim attempts on the claim path (reduces "
+            "lock contention). 0 runs reclaim every poll. Env: WORKER_STALE_RECLAIM_INTERVAL_SEC."
+        ),
+    )
     job_lease_duration_sec: int = Field(
         default_factory=lambda: int(os.getenv("JOB_LEASE_DURATION_SEC", "60")),
         ge=10,
@@ -2597,9 +2608,13 @@ class DatabasePersistenceSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "When true, ``job_store._db_repos()`` returns None (no legacy SQL repo materialization); "
-            "FS and in-memory queue fallbacks apply. Stronger than ``legacy_stage8_sql_writes_disabled``. "
-            "Default false. Env: LEGACY_STAGE8_SQL_BRIDGE_DISABLED."
+            "When true, legacy Stage-8 SQL bridge mode is DISABLED "
+            "(``job_store._db_repos()`` is never consulted on the claim path). "
+            "When false (default), mode is DRAIN_REQUIRED: the ``jobs`` table must be "
+            "available; bridge failures yield CLAIM_UNAVAILABLE (not idle-healthy). "
+            "Env: LEGACY_STAGE8_SQL_BRIDGE_DISABLED. Prefer setting true in v3-only "
+            "deployments; removal of the bridge is planned once no legacy producers remain "
+            "(retire after dedicated cutover ticket, not an indefinite alias)."
         ),
     )
 

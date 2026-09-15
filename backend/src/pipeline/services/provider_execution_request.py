@@ -13,6 +13,7 @@ from types import MappingProxyType
 from typing import Any
 
 from src.domain.execution_image_manifest import (
+    PROVIDER_IMAGE_MANIFEST_ORDER_KEY,  # noqa: F401 — re-exported for pipeline callers
     ExecutionImageManifest,
     ExecutionImageManifestError,
     ExecutionImageRole,
@@ -27,7 +28,6 @@ from src.pipeline.services.provider_execution_errors import (
 )
 
 PROVIDER_EXECUTION_REQUEST_METADATA_KEY = "provider_execution_request"
-PROVIDER_IMAGE_MANIFEST_ORDER_KEY = "provider_image_manifest_order"
 LLM_METADATA_KEY_CANONICAL_PROVIDER_PAYLOAD_REQUIRED = "canonical_provider_payload_required"
 LLM_METADATA_KEY_IMAGE_EXECUTION_CONTRACT = "image_execution_contract"
 

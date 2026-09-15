@@ -1,0 +1,11 @@
+
+    ○
+    │╲
+    │ ○
+    ○ ░
+    ░    gitleaks
+
+2:24PM WRN Invalid .gitleaksignore entry fingerprint=secrets/gcp-service-account.json.example
+2:24PM WRN Invalid .gitleaksignore entry fingerprint=secrets/gcp-service-account.json.example
+2:25PM INF scanned ~100110979 bytes (100.11 MB) in 10.9s
+2:25PM WRN leaks found: 14

@@ -68,7 +68,11 @@ class SoftDeleteInventoriesRequest(BaseModel):
     inventory_ids: list[str] = Field(
         ...,
         min_length=1,
-        description="Inventory ids to soft-delete. Duplicates are ignored.",
+        max_length=100,
+        description=(
+            "Inventory ids to soft-delete (max 100). Duplicates are ignored. "
+            "Oversized lists are rejected (422); never truncated."
+        ),
     )
 
 

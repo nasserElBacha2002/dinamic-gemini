@@ -13,6 +13,7 @@ from src.application.ports.repositories import InventoryRepository
 from src.application.ports.services import MetricsCalculator
 from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.access_principal_helpers import platform_principal
 from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
@@ -55,7 +56,7 @@ def test_get_metrics_returns_calculator_result_when_inventory_exists() -> None:
     calculator = StubMetricsCalculator(metrics)
     use_case = GetInventoryMetricsUseCase(inventory_repo=inv_repo, metrics_calculator=calculator)
 
-    result = use_case.execute("inv-1")
+    result = use_case.execute("inv-1", platform_principal())
 
     assert result["total_positions"] == 10
     assert result["total_reviewed_positions"] == 8
@@ -70,4 +71,4 @@ def test_get_metrics_raises_when_inventory_not_found() -> None:
     use_case = GetInventoryMetricsUseCase(inventory_repo=inv_repo, metrics_calculator=calculator)
 
     with pytest.raises(InventoryNotFoundError):
-        use_case.execute("nonexistent")
+        use_case.execute("nonexistent", platform_principal())

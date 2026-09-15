@@ -16,6 +16,7 @@ from src.application.use_cases.inventories.update_inventory_name import (
 )
 from src.domain.aisle_identification.modes import AisleIdentificationMode
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from tests.support.access_principal_helpers import platform_principal
 from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
 
 
@@ -56,7 +57,13 @@ def test_update_inventory_name_success() -> None:
     repo = StubInventoryRepo([inv])
     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
 
-    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name="  New Name  "))
+    result = uc.execute(
+        UpdateInventoryNameCommand(
+            inventory_id="inv-1",
+            principal=platform_principal(),
+            name="  New Name  ",
+        )
+    )
 
     assert result.name == "New Name"
     assert result.updated_at == now
@@ -70,7 +77,13 @@ def test_update_inventory_name_rejects_empty() -> None:
     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
 
     with pytest.raises(ValueError, match="must not be empty"):
-        uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name="   "))
+        uc.execute(
+            UpdateInventoryNameCommand(
+                inventory_id="inv-1",
+                principal=platform_principal(),
+                name="   ",
+            )
+        )
     assert repo.save_calls == 0
 
 
@@ -81,7 +94,13 @@ def test_update_inventory_name_noop_when_unchanged() -> None:
     later = datetime(2025, 3, 8, 1, 0, 0, tzinfo=timezone.utc)
     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(later))
 
-    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name="  Warehouse  "))
+    result = uc.execute(
+        UpdateInventoryNameCommand(
+            inventory_id="inv-1",
+            principal=platform_principal(),
+            name="  Warehouse  ",
+        )
+    )
 
     assert result.name == "Warehouse"
     assert result.updated_at == now
@@ -93,7 +112,13 @@ def test_update_inventory_name_not_found() -> None:
     uc = UpdateInventoryNameUseCase(inventory_repo=StubInventoryRepo(), clock=FixedClock(now))
 
     with pytest.raises(InventoryNotFoundError):
-        uc.execute(UpdateInventoryNameCommand(inventory_id="missing", name="X"))
+        uc.execute(
+            UpdateInventoryNameCommand(
+                inventory_id="missing",
+                principal=platform_principal(),
+                name="X",
+            )
+        )
 
 
 def test_update_inventory_partial_patch_identification_mode_only_leaves_name_unchanged() -> None:
@@ -105,7 +130,10 @@ def test_update_inventory_partial_patch_identification_mode_only_leaves_name_unc
     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
     result = uc.execute(
         UpdateInventoryNameCommand(
-            inventory_id="inv-1", name=None, identification_mode=AisleIdentificationMode.CODE_SCAN
+            inventory_id="inv-1",
+            principal=platform_principal(),
+            name=None,
+            identification_mode=AisleIdentificationMode.CODE_SCAN,
         )
     )
 
@@ -128,7 +156,14 @@ def test_update_inventory_partial_patch_explicit_null_clears_identification_mode
     repo = StubInventoryRepo([inv])
 
     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
-    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name=None, identification_mode=None))
+    result = uc.execute(
+        UpdateInventoryNameCommand(
+            inventory_id="inv-1",
+            principal=platform_principal(),
+            name=None,
+            identification_mode=None,
+        )
+    )
 
     assert result.identification_mode is None
     assert repo.save_calls == 1
@@ -148,10 +183,23 @@ def test_update_inventory_partial_patch_unset_identification_mode_is_noop_field(
     repo = StubInventoryRepo([inv])
 
     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
-    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name="New Warehouse"))
+    result = uc.execute(
+        UpdateInventoryNameCommand(
+            inventory_id="inv-1",
+            principal=platform_principal(),
+            name="New Warehouse",
+        )
+    )
 
     assert result.identification_mode == AisleIdentificationMode.INTERNAL_OCR
-    assert UpdateInventoryNameCommand(inventory_id="inv-1", name="x").identification_mode is UNSET
+    assert (
+        UpdateInventoryNameCommand(
+            inventory_id="inv-1",
+            principal=platform_principal(),
+            name="x",
+        ).identification_mode
+        is UNSET
+    )
 
 
 def test_update_inventory_partial_patch_requires_at_least_one_field() -> None:
@@ -161,7 +209,9 @@ def test_update_inventory_partial_patch_requires_at_least_one_field() -> None:
     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
 
     with pytest.raises(ValueError, match="At least one field must be provided"):
-        uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1"))
+        uc.execute(
+            UpdateInventoryNameCommand(inventory_id="inv-1", principal=platform_principal())
+        )
     assert repo.save_calls == 0
 
 
@@ -172,5 +222,11 @@ def test_update_inventory_partial_patch_invalid_identification_mode_raises() -> 
     uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
 
     with pytest.raises(ValueError, match="Invalid identification_mode"):
-        uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", identification_mode="AUTO"))
+        uc.execute(
+            UpdateInventoryNameCommand(
+                inventory_id="inv-1",
+                principal=platform_principal(),
+                identification_mode="AUTO",
+            )
+        )
     assert repo.save_calls == 0

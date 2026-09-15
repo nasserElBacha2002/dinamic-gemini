@@ -1,0 +1,798 @@
+diff --git a/backend/src/jobs/claim_cycle.py b/backend/src/jobs/claim_cycle.py
+new file mode 100644
+index 00000000..a22018d1
+--- /dev/null
++++ b/backend/src/jobs/claim_cycle.py
+@@ -0,0 +1,37 @@
++"""Worker poll claim-cycle outcomes (embedded / dedicated worker).
++
++Distinct from :mod:`src.domain.jobs.claim` (STARTING→RUNNING ownership CAS).
++This module describes one **queue poll** against v3 ``inventory_jobs`` and the
++optional legacy Stage-8 ``jobs`` bridge.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from enum import Enum
++from typing import TYPE_CHECKING
++
++if TYPE_CHECKING:
++    from src.jobs.models import JobRecord
++
++
++class WorkerClaimCycleStatus(str, Enum):
++    """Explicit poll outcomes — never conflate empty queue with claim failure."""
++
++    JOB_CLAIMED = "JOB_CLAIMED"
++    IDLE_HEALTHY = "IDLE_HEALTHY"
++    CLAIM_UNAVAILABLE = "CLAIM_UNAVAILABLE"
++
++
++@dataclass(frozen=True)
++class WorkerClaimCycleResult:
++    status: WorkerClaimCycleStatus
++    job: JobRecord | None = None
++    detail: str | None = None
++
++    @property
++    def is_healthy(self) -> bool:
++        return self.status in (
++            WorkerClaimCycleStatus.JOB_CLAIMED,
++            WorkerClaimCycleStatus.IDLE_HEALTHY,
++        )
+diff --git a/backend/src/jobs/job_store.py b/backend/src/jobs/job_store.py
+index 4061f825..666067a3 100644
+--- a/backend/src/jobs/job_store.py
++++ b/backend/src/jobs/job_store.py
+@@ -1,37 +1,38 @@
+ """Stage 7 — Persist and load job records under output/<job_id>/.
+ Stage 8 — When SQL Server enabled, DB is source of truth; FS kept for artifacts and optional job.json.
+ 
+ **Legacy SQL bridge:** when SQL Server is enabled, this module instantiates
+ ``JobsRepository`` / ``PalletResultsRepository`` / ``JobEventsRepository`` from
+ ``src.database.repository`` (tables ``jobs``, ``pallet_results``, ``job_events``).
+ That path is not the v3 ``inventory_jobs`` model; access is logged under logger ``dinamic.legacy_sql``.
+ """
+ 
+ import json
+ import logging
+ import os
+ import tempfile
+ from pathlib import Path
+ from typing import Any, Optional, cast
+ 
+ from src.config import load_settings
++from src.jobs.claim_cycle import WorkerClaimCycleResult, WorkerClaimCycleStatus
+ from src.jobs.models import JobInput, JobProgress, JobRecord, JobStatus
+ from src.jobs.worker_runtime import (
+     REASON_REPOSITORIES_NOT_INITIALIZED,
+     REASON_V3_JOB_REPOSITORY_UNAVAILABLE,
+     get_embedded_worker_runtime,
+ )
+ from src.utils.validation import validate_job_id
+ 
+ logger = logging.getLogger(__name__)
+ 
+ 
+ def _sqlserver_effective_cs(settings: object) -> str:
+     """Compatibility shim: real :class:`~src.config.AppSettings` exposes ``sqlserver_effective_connection_string`` as a property; some tests use ``types.SimpleNamespace`` with only ``sqlserver_connection_string`` set."""
+     eff = getattr(settings, "sqlserver_effective_connection_string", None)
+     if eff is not None:
+         return str(eff).strip()
+     return (getattr(settings, "sqlserver_connection_string", "") or "").strip()
+ 
+ 
+ def _db_repos() -> Optional[tuple[Any, Any, Any]]:
+@@ -204,115 +205,182 @@ def _try_claim_v3_job(settings: object) -> tuple[bool, Optional[JobRecord]]:
+     v3_repo = get_job_repo()
+     stale_timeout_sec = int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0)
+     reclaim_stale = getattr(v3_repo, "reclaim_stale_running_jobs", None)
+     if callable(reclaim_stale) and stale_timeout_sec > 0:
+         reclaimed = int(reclaim_stale(stale_timeout_sec) or 0)
+         if reclaimed > 0:
+             logger.warning(
+                 "Reclaimed stale RUNNING v3 jobs before claim: count=%s timeout_sec=%s",
+                 reclaimed,
+                 stale_timeout_sec,
+             )
+     claim_v3 = getattr(v3_repo, "claim_next_queued_job", None)
+     if not callable(claim_v3):
+         return False, None
+     claimed_v3 = claim_v3()
+     if claimed_v3 is None:
+         return True, None
+     return True, _job_record_from_v3_claimed(claimed_v3)
+ 
+ 
+-def claim_next_job(base_path: Path) -> Optional[JobRecord]:
+-    """Claim next queued job from DB (preferred) or legacy in-memory queue.
++def claim_next_job_cycle(base_path: Path) -> WorkerClaimCycleResult:
++    """One worker poll with an explicit cycle status (claimed / idle / unavailable).
+ 
+-    Production path: v3 ``inventory_jobs`` via the app-container JobRepository, then
+-    optional legacy Stage-8 ``jobs`` table when that bridge is still enabled.
+-    An empty v3 queue is a successful idle poll — it must not be treated as
+-    "DB repositories unavailable" merely because the legacy bridge is off.
+-    Local in-memory queue is used only when SQL mode is disabled.
++    Contract (SQL mode):
++    - v3 ``claim_next_queued_job() is None`` → ``IDLE_HEALTHY`` (empty queue).
++      Do **not** require the Stage-8 ``jobs`` bridge; absence of that table is not a
++      feature flag and must not surface as claim failure.
++    - Optional legacy bridge runs only when ``_db_repos()`` can be built (explicitly
++      enabled and schema-compatible). Failure of an optional legacy drain after a
++      healthy v3 idle does not convert the cycle into ``CLAIM_UNAVAILABLE``.
++    - Missing/broken v3 claim path with SQL required → ``CLAIM_UNAVAILABLE``.
+     """
+     settings = load_settings()
+     sql_mode = bool(
+         getattr(settings, "sqlserver_enabled", False) and _sqlserver_effective_cs(settings)
+     )
+     runtime = get_embedded_worker_runtime()
+     v3_claim_available = False
++    v3_idle_healthy = False
+ 
+     try:
+         v3_claim_available, claimed = _try_claim_v3_job(settings)
+         if claimed is not None:
+             runtime.mark_cycle_ok()
+-            return claimed
++            return WorkerClaimCycleResult(
++                status=WorkerClaimCycleStatus.JOB_CLAIMED,
++                job=claimed,
++                detail="v3_inventory_jobs",
++            )
++        if v3_claim_available:
++            if sql_mode:
++                # Empty v3 queue is a successful idle poll — mark healthy before any
++                # optional legacy drain so bridge errors cannot erase this outcome.
++                runtime.mark_cycle_ok()
++                v3_idle_healthy = True
++            # Non-SQL mode: continue to in-memory queue even if a v3 repo exists.
+     except Exception as exc:
+         v3_claim_available = False
+         if sql_mode:
+             first_failure = runtime.snapshot().unavailable_reason is None
+             runtime.mark_unavailable(
+                 REASON_V3_JOB_REPOSITORY_UNAVAILABLE,
+                 error_type=type(exc).__name__,
+             )
+             if first_failure:
+                 logger.exception(
+                     "v3 DB claim_next_queued_job failed while SQL worker mode is enabled"
+                 )
+         else:
+             logger.exception("v3 DB claim_next_queued_job failed while SQL worker mode is enabled")
+ 
+-    # Legacy DB source: jobs table (v2 compatibility only). Drain when the bridge is on.
+-    repos = _db_repos()
++    # Legacy Stage-8 ``jobs`` table: consult only when SQL mode is on and the
++    # bridge is explicitly enabled (do not call ``_db_repos`` as a probe).
++    repos: Optional[tuple[Any, Any, Any]] = None
++    legacy_bridge_disabled = bool(
++        getattr(settings, "legacy_stage8_sql_bridge_disabled", False)
++    )
++    if sql_mode and not legacy_bridge_disabled:
++        repos = _db_repos()
+     if repos is not None:
+         jobs_repo, _, _ = repos
+         try:
+             data = jobs_repo.claim_next_queued_job()
+-            runtime.mark_cycle_ok()
+             if data is None:
+-                return None
+-            return JobRecord.model_validate(data)
++                if not v3_idle_healthy:
++                    runtime.mark_cycle_ok()
++                return WorkerClaimCycleResult(
++                    status=WorkerClaimCycleStatus.IDLE_HEALTHY,
++                    detail="legacy_jobs_idle" if not v3_idle_healthy else "v3_idle_legacy_idle",
++                )
++            runtime.mark_cycle_ok()
++            return WorkerClaimCycleResult(
++                status=WorkerClaimCycleStatus.JOB_CLAIMED,
++                job=JobRecord.model_validate(data),
++                detail="legacy_stage8_jobs",
++            )
+         except Exception:
+             logger.exception("DB claim_next_queued_job failed while SQL worker mode is enabled")
+-            return None
++            if v3_idle_healthy:
++                return WorkerClaimCycleResult(
++                    status=WorkerClaimCycleStatus.IDLE_HEALTHY,
++                    detail="v3_idle_legacy_drain_failed",
++                )
++            return WorkerClaimCycleResult(
++                status=WorkerClaimCycleStatus.CLAIM_UNAVAILABLE,
++                detail="legacy_claim_failed",
++            )
+ 
+-    if v3_claim_available and sql_mode:
+-        # Idle on the v3 JobRepository. Legacy Stage-8 repos are optional (bridge may be off).
+-        runtime.mark_cycle_ok()
+-        return None
++    if v3_idle_healthy:
++        return WorkerClaimCycleResult(
++            status=WorkerClaimCycleStatus.IDLE_HEALTHY,
++            detail="v3_inventory_jobs_idle",
++        )
+ 
+     if sql_mode:
+         if runtime.snapshot().unavailable_reason is None:
+             runtime.mark_unavailable(REASON_REPOSITORIES_NOT_INITIALIZED)
+-        return None
++        reason = runtime.snapshot().unavailable_reason or REASON_REPOSITORIES_NOT_INITIALIZED
++        return WorkerClaimCycleResult(
++            status=WorkerClaimCycleStatus.CLAIM_UNAVAILABLE,
++            detail=reason,
++        )
+ 
+     try:
+         from src.jobs.queue import dequeue
+ 
+         job_id = dequeue(timeout=0.1)
+         if not job_id:
+             runtime.mark_cycle_ok()
+-            return None
++            return WorkerClaimCycleResult(
++                status=WorkerClaimCycleStatus.IDLE_HEALTHY,
++                detail="memory_queue_idle",
++            )
+         claimed = get_job(base_path, job_id)
+         if claimed is None:
+             logger.warning("Dequeued legacy job %s not found in store", job_id)
+         runtime.mark_cycle_ok()
+-        return claimed
++        if claimed is None:
++            return WorkerClaimCycleResult(
++                status=WorkerClaimCycleStatus.IDLE_HEALTHY,
++                detail="memory_queue_missing_record",
++            )
++        return WorkerClaimCycleResult(
++            status=WorkerClaimCycleStatus.JOB_CLAIMED,
++            job=claimed,
++            detail="memory_queue",
++        )
+     except Exception as e:
+         logger.warning("Legacy queue claim failed: %s", e)
+-        return None
++        return WorkerClaimCycleResult(
++            status=WorkerClaimCycleStatus.CLAIM_UNAVAILABLE,
++            detail="memory_queue_failed",
++        )
++
++
++def claim_next_job(base_path: Path) -> Optional[JobRecord]:
++    """Claim next queued job from DB (preferred) or legacy in-memory queue.
++
++    Thin wrapper over :func:`claim_next_job_cycle` for callers that only need the
++    optional :class:`~src.jobs.models.JobRecord`.
++    """
++    return claim_next_job_cycle(base_path).job
+ 
+ 
+ def update_job(base_path: Path, job_id: str, **updates: object) -> Optional[JobRecord]:
+     """Update job record; when DB enabled, push status/progress/error to DB (output paths and metrics are written by the worker via set_job_outputs, not here). Then persist to FS. Returns updated record or None."""
+     job_id = validate_job_id(job_id)
+     record = get_job(base_path, job_id)
+     if record is None:
+         return None
+     from datetime import datetime
+ 
+     data = record.model_dump()
+     for k, v in updates.items():
+         if k in JobRecord.model_fields:
+             data[k] = v
+     data["updated_at"] = datetime.utcnow().isoformat() + "Z"
+     updated = JobRecord.model_validate(data)
+ 
+     repos = _db_repos()
+     if repos is not None:
+         jobs_repo, _, _ = repos
+diff --git a/backend/src/jobs/worker_runtime.py b/backend/src/jobs/worker_runtime.py
+index 9a1e0a28..b6f83f23 100644
+--- a/backend/src/jobs/worker_runtime.py
++++ b/backend/src/jobs/worker_runtime.py
+@@ -19,152 +19,186 @@ REASON_WORKER_NOT_STARTED = "worker_not_started"
+ REASON_WORKER_TERMINATED = "worker_terminated"
+ REASON_REPOSITORY_INIT_FAILED = "repository_init_failed"
+ REASON_CLAIM_LOOP_EXCEPTION = "claim_loop_exception"
+ 
+ READY_REASON_JOB_WORKER_UNAVAILABLE = "JOB_WORKER_UNAVAILABLE"
+ 
+ _UNAVAILABLE_LOG_INTERVAL_SEC = 30.0
+ 
+ 
+ @dataclass(frozen=True)
+ class WorkerRuntimeSnapshot:
+     required: bool
+     sql_mode: bool
+     started: bool
+     thread_alive: bool
+     stopping: bool
+     unavailable_reason: str | None
+     last_success_monotonic: float | None
+     init_error_type: str | None
+     unavailable_since_monotonic: float | None
++    recovery_count: int = 0
++    unexpected_termination_count: int = 0
++    worker_available: bool = True
+ 
+ 
+ class EmbeddedWorkerRuntime:
+     """Thread-safe singleton state for the in-process (embedded) worker."""
+ 
+     def __init__(self) -> None:
+         self._lock = threading.Lock()
+         self._stop = threading.Event()
+         self._thread: threading.Thread | None = None
+         self._required = False
+         self._sql_mode = False
+         self._started = False
+         self._unavailable_reason: str | None = None
+         self._unavailable_since: float | None = None
+         self._last_unavail_log_monotonic = 0.0
+         self._last_success_monotonic: float | None = None
+         self._init_error_type: str | None = None
++        self._recovery_count = 0
++        self._unexpected_termination_count = 0
+ 
+     def reset_for_tests(self) -> None:
+         """Clear process state between unit tests. Does not join a live thread."""
+         with self._lock:
+             self._stop = threading.Event()
+             self._thread = None
+             self._required = False
+             self._sql_mode = False
+             self._started = False
+             self._unavailable_reason = None
+             self._unavailable_since = None
+             self._last_unavail_log_monotonic = 0.0
+             self._last_success_monotonic = None
+             self._init_error_type = None
++            self._recovery_count = 0
++            self._unexpected_termination_count = 0
+ 
+     def configure(self, *, required: bool, sql_mode: bool) -> None:
+         with self._lock:
+             self._required = required
+             self._sql_mode = sql_mode
+ 
+     def should_stop(self) -> bool:
+         return self._stop.is_set()
+ 
+     def request_stop(self) -> None:
+         self._stop.set()
+ 
+     def is_thread_alive(self) -> bool:
+         with self._lock:
+             return self._thread is not None and self._thread.is_alive()
+ 
+     def mark_started(self, thread: threading.Thread) -> None:
+         with self._lock:
+             self._thread = thread
+             self._started = True
+             self._stop.clear()
+ 
+     def join(self, timeout_sec: float) -> None:
+         thread: threading.Thread | None
+         with self._lock:
+             thread = self._thread
+         if thread is not None and thread.is_alive():
+             thread.join(timeout=timeout_sec)
+ 
+     def mark_thread_finished(self, *, unexpected: bool) -> None:
+         if unexpected and not self._stop.is_set():
++            with self._lock:
++                self._unexpected_termination_count += 1
+             self.mark_unavailable(REASON_WORKER_TERMINATED)
+ 
+     def mark_cycle_ok(self) -> None:
+         recovered_downtime: float | None = None
+         with self._lock:
+             now = time.monotonic()
+             if self._unavailable_reason is not None and self._unavailable_since is not None:
+                 recovered_downtime = now - self._unavailable_since
++                self._recovery_count += 1
+             self._unavailable_reason = None
+             self._unavailable_since = None
+             self._init_error_type = None
+             self._last_success_monotonic = now
+         if recovered_downtime is not None:
+             logger.info(
+                 "job_worker_recovered downtime_seconds=%.3f",
+                 recovered_downtime,
+             )
+ 
+     def mark_unavailable(self, reason: str, *, error_type: str | None = None) -> None:
+         should_log = False
+         with self._lock:
+             now = time.monotonic()
+             first = self._unavailable_reason is None
+             self._unavailable_reason = reason
+             if self._unavailable_since is None:
+                 self._unavailable_since = now
+             if error_type:
+                 self._init_error_type = error_type
+             if first or (now - self._last_unavail_log_monotonic) >= _UNAVAILABLE_LOG_INTERVAL_SEC:
+                 self._last_unavail_log_monotonic = now
+                 should_log = True
+         if should_log:
+             extra = f" error_type={error_type}" if error_type else ""
+             logger.error("job_worker_unavailable reason=%s%s", reason, extra)
+ 
+     def snapshot(self) -> WorkerRuntimeSnapshot:
+         with self._lock:
+             thread = self._thread
++            unavailable = self._unavailable_reason
++            thread_alive = thread is not None and thread.is_alive()
++            stopping = self._stop.is_set()
++            available = unavailable is None and (
++                not self._required or (self._started and (thread_alive or stopping))
++            )
+             return WorkerRuntimeSnapshot(
+                 required=self._required,
+                 sql_mode=self._sql_mode,
+                 started=self._started,
+-                thread_alive=thread is not None and thread.is_alive(),
+-                stopping=self._stop.is_set(),
+-                unavailable_reason=self._unavailable_reason,
++                thread_alive=thread_alive,
++                stopping=stopping,
++                unavailable_reason=unavailable,
+                 last_success_monotonic=self._last_success_monotonic,
+                 init_error_type=self._init_error_type,
+                 unavailable_since_monotonic=self._unavailable_since,
++                recovery_count=self._recovery_count,
++                unexpected_termination_count=self._unexpected_termination_count,
++                worker_available=available,
+             )
+ 
++    def observability_dict(self) -> dict[str, object]:
++        """Non-secret snapshot suitable for metrics/logs."""
++        snap = self.snapshot()
++        return {
++            "worker_available": snap.worker_available,
++            "worker_unavailable_reason": snap.unavailable_reason,
++            "last_success": snap.last_success_monotonic,
++            "recovery_count": snap.recovery_count,
++            "unexpected_termination_count": snap.unexpected_termination_count,
++            "required": snap.required,
++            "sql_mode": snap.sql_mode,
++            "thread_alive": snap.thread_alive,
++            "stopping": snap.stopping,
++        }
++
+     def readiness_problem(self) -> tuple[str, str] | None:
+         """Return ``(reason_code, detail)`` when embedded worker is required but not operable."""
+         snap = self.snapshot()
+         if not snap.required:
+             return None
+         if not snap.started:
+             return (READY_REASON_JOB_WORKER_UNAVAILABLE, REASON_WORKER_NOT_STARTED)
+         if not snap.thread_alive and not snap.stopping:
+             return (READY_REASON_JOB_WORKER_UNAVAILABLE, REASON_WORKER_TERMINATED)
+         if snap.unavailable_reason:
+             return (READY_REASON_JOB_WORKER_UNAVAILABLE, snap.unavailable_reason)
+         return None
+ 
+ 
+ _RUNTIME = EmbeddedWorkerRuntime()
+ 
+ 
+ def get_embedded_worker_runtime() -> EmbeddedWorkerRuntime:
+     return _RUNTIME
+ 
+diff --git a/backend/tests/jobs/test_worker_db_claim.py b/backend/tests/jobs/test_worker_db_claim.py
+index 9272b9b4..6d479b52 100644
+--- a/backend/tests/jobs/test_worker_db_claim.py
++++ b/backend/tests/jobs/test_worker_db_claim.py
+@@ -38,41 +38,54 @@ def _make_job(job_id: str, status: JobStatus = JobStatus.QUEUED) -> JobRecord:
+ 
+ 
+ def test_claim_next_job_prefers_db_claim(monkeypatch) -> None:
+     class FakeJobsRepo:
+         def claim_next_queued_job(self):
+             return {
+                 "job_id": "job-db-1",
+                 "input": {
+                     "video_path": "/tmp/video.mp4",
+                     "mode": "hybrid",
+                     "confidence_threshold": 0.7,
+                 },
+                 "status": "running",
+                 "progress": {"stage": "claimed", "percent": 1},
+                 "output": None,
+                 "error": None,
+                 "created_at": "2026-01-01T00:00:00Z",
+                 "updated_at": "2026-01-01T00:00:01Z",
+             }
+ 
++    def _boom_v3() -> None:
++        raise RuntimeError("no v3 in this legacy-prefer unit test")
++
++    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", _boom_v3)
+     monkeypatch.setattr(job_store, "_db_repos", lambda: (FakeJobsRepo(), None, None))
++    monkeypatch.setattr(
++        job_store,
++        "load_settings",
++        lambda: SimpleNamespace(
++            sqlserver_enabled=True,
++            sqlserver_connection_string="Driver=ok",
++            legacy_stage8_sql_bridge_disabled=False,
++        ),
++    )
+ 
+     claimed = job_store.claim_next_job(Path("output"))
+     assert claimed is not None
+     assert claimed.job_id == "job-db-1"
+     assert claimed.status == JobStatus.RUNNING
+     assert claimed.progress.percent == 1
+ 
+ 
+ def test_claim_next_job_prefers_v3_inventory_jobs_claim(monkeypatch) -> None:
+     v3_claimed = V3Job(
+         id="v3-job-1",
+         target_type="aisle",
+         target_id="a-1",
+         job_type="process_aisle",
+         status=V3JobStatus.RUNNING,
+         payload_json={"aisle_id": "a-1"},
+         created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+         updated_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
+     )
+ 
+@@ -157,45 +170,53 @@ def test_worker_loop_uses_claim_next_job(monkeypatch) -> None:
+     def fake_run_job(_base: Path, job_id: str) -> None:
+         processed.append(job_id)
+ 
+     def fake_stop() -> bool:
+         stop_state["calls"] += 1
+         return stop_state["calls"] > 3
+ 
+     monkeypatch.setattr("src.jobs.worker.claim_next_job", fake_claim_next_job)
+     monkeypatch.setattr("src.jobs.worker.run_job", fake_run_job)
+     monkeypatch.setattr("src.jobs.worker.time.sleep", lambda _s: None)
+ 
+     worker_loop(Path("output"), stop=fake_stop)
+     assert processed == ["job-a"]
+ 
+ 
+ def test_claim_next_job_logs_exception_when_db_claim_fails(monkeypatch, caplog) -> None:
+     class FailingJobsRepo:
+         def claim_next_queued_job(self):
+             raise RuntimeError("db claim boom")
+ 
++    def _boom_v3() -> None:
++        raise RuntimeError("no v3")
++
++    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", _boom_v3)
+     monkeypatch.setattr(job_store, "_db_repos", lambda: (FailingJobsRepo(), None, None))
+     monkeypatch.setattr(
+         job_store,
+         "load_settings",
+-        lambda: SimpleNamespace(sqlserver_enabled=True, sqlserver_connection_string="Driver=ok"),
++        lambda: SimpleNamespace(
++            sqlserver_enabled=True,
++            sqlserver_connection_string="Driver=ok",
++            legacy_stage8_sql_bridge_disabled=False,
++        ),
+     )
+     with caplog.at_level(logging.ERROR):
+         claimed = job_store.claim_next_job(Path("output"))
+ 
+     assert claimed is None
+     assert "DB claim_next_queued_job failed while SQL worker mode is enabled" in caplog.text
+ 
+ 
+ def test_claim_next_job_logs_error_when_sql_mode_configured_but_repos_unavailable(
+     monkeypatch, caplog
+ ) -> None:
+     def _boom_v3_repo() -> None:
+         raise RuntimeError("v3 repo missing")
+ 
+     monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", _boom_v3_repo)
+     monkeypatch.setattr(job_store, "_db_repos", lambda: None)
+     monkeypatch.setattr(
+         job_store,
+         "load_settings",
+         lambda: SimpleNamespace(sqlserver_enabled=True, sqlserver_connection_string="Driver=ok"),
+@@ -267,20 +288,123 @@ def test_claim_next_job_recovers_and_logs_once_after_unavailable(monkeypatch, ca
+             if state["fail"]:
+                 raise RuntimeError("transient")
+             return None
+ 
+     monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: FlipV3Repo())
+     monkeypatch.setattr(job_store, "_db_repos", lambda: None)
+     monkeypatch.setattr(
+         job_store,
+         "load_settings",
+         lambda: SimpleNamespace(sqlserver_enabled=True, sqlserver_connection_string="Driver=ok"),
+     )
+     with caplog.at_level(logging.INFO):
+         assert job_store.claim_next_job(Path("output")) is None
+         assert get_embedded_worker_runtime().snapshot().unavailable_reason == "v3_job_repository_unavailable"
+         state["fail"] = False
+         assert job_store.claim_next_job(Path("output")) is None
+ 
+     assert "job_worker_unavailable reason=v3_job_repository_unavailable" in caplog.text
+     assert "job_worker_recovered" in caplog.text
+     assert get_embedded_worker_runtime().snapshot().unavailable_reason is None
++    assert get_embedded_worker_runtime().snapshot().recovery_count == 1
++
++
++def test_claim_cycle_v3_idle_does_not_invoke_db_repos_when_legacy_disabled(monkeypatch) -> None:
++    from src.jobs.claim_cycle import WorkerClaimCycleStatus
++
++    class IdleV3Repo:
++        def claim_next_queued_job(self):
++            return None
++
++    calls = {"n": 0}
++
++    def _db_repos_should_not_run() -> None:
++        calls["n"] += 1
++        raise AssertionError("_db_repos must not be called when legacy bridge is disabled")
++
++    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: IdleV3Repo())
++    monkeypatch.setattr(job_store, "_db_repos", _db_repos_should_not_run)
++    monkeypatch.setattr(
++        job_store,
++        "load_settings",
++        lambda: SimpleNamespace(
++            sqlserver_enabled=True,
++            sqlserver_connection_string="Driver=ok",
++            legacy_stage8_sql_bridge_disabled=True,
++        ),
++    )
++    result = job_store.claim_next_job_cycle(Path("output"))
++    assert result.status == WorkerClaimCycleStatus.IDLE_HEALTHY
++    assert result.job is None
++    assert calls["n"] == 0
++
++
++def test_claim_cycle_v3_idle_stays_healthy_when_legacy_drain_fails(monkeypatch, caplog) -> None:
++    from src.jobs.claim_cycle import WorkerClaimCycleStatus
++
++    class IdleV3Repo:
++        def claim_next_queued_job(self):
++            return None
++
++    class BoomLegacy:
++        def claim_next_queued_job(self):
++            raise RuntimeError("Invalid object name 'jobs'")
++
++    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: IdleV3Repo())
++    monkeypatch.setattr(job_store, "_db_repos", lambda: (BoomLegacy(), None, None))
++    monkeypatch.setattr(
++        job_store,
++        "load_settings",
++        lambda: SimpleNamespace(
++            sqlserver_enabled=True,
++            sqlserver_connection_string="Driver=ok",
++            legacy_stage8_sql_bridge_disabled=False,
++        ),
++    )
++    with caplog.at_level(logging.ERROR):
++        result = job_store.claim_next_job_cycle(Path("output"))
++
++    assert result.status == WorkerClaimCycleStatus.IDLE_HEALTHY
++    assert result.detail == "v3_idle_legacy_drain_failed"
++    assert get_embedded_worker_runtime().snapshot().unavailable_reason is None
++    assert "job_worker_unavailable" not in caplog.text
++
++
++def test_claim_cycle_v3_job_skips_legacy(monkeypatch) -> None:
++    from src.jobs.claim_cycle import WorkerClaimCycleStatus
++
++    v3_claimed = V3Job(
++        id="v3-only",
++        target_type="aisle",
++        target_id="a-1",
++        job_type="process_aisle",
++        status=V3JobStatus.RUNNING,
++        payload_json={},
++        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
++        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
++    )
++
++    class FakeV3Repo:
++        def claim_next_queued_job(self):
++            return v3_claimed
++
++    calls = {"n": 0}
++
++    def _count_db_repos():
++        calls["n"] += 1
++        return None
++
++    monkeypatch.setattr("src.runtime.v3_deps.get_job_repo", lambda: FakeV3Repo())
++    monkeypatch.setattr(job_store, "_db_repos", _count_db_repos)
++    monkeypatch.setattr(
++        job_store,
++        "load_settings",
++        lambda: SimpleNamespace(
++            sqlserver_enabled=True,
++            sqlserver_connection_string="Driver=ok",
++            legacy_stage8_sql_bridge_disabled=False,
++        ),
++    )
++    result = job_store.claim_next_job_cycle(Path("output"))
++    assert result.status == WorkerClaimCycleStatus.JOB_CLAIMED
++    assert result.job is not None and result.job.job_id == "v3-only"
++    assert calls["n"] == 0
+diff --git a/backend/tests/jobs/test_worker_runtime.py b/backend/tests/jobs/test_worker_runtime.py
+index 3a6161fe..98bf7f90 100644
+--- a/backend/tests/jobs/test_worker_runtime.py
++++ b/backend/tests/jobs/test_worker_runtime.py
+@@ -75,20 +75,70 @@ def test_start_is_idempotent_and_shutdown_stops_loop(monkeypatch) -> None:
+         target=lambda: worker_loop(Path("output"), stop=runtime.should_stop),
+         daemon=True,
+         name="t1",
+     )
+     runtime.mark_started(t1)
+     t1.start()
+     assert runtime.is_thread_alive()
+     assert runtime.is_thread_alive()  # second observe, no second thread
+     runtime.request_stop()
+     runtime.join(timeout_sec=3.0)
+     assert not t1.is_alive()
+ 
+ 
+ def test_isolated_runtime_instances_do_not_share_stop_event() -> None:
+     a = EmbeddedWorkerRuntime()
+     b = EmbeddedWorkerRuntime()
+     a.request_stop()
+     assert a.should_stop()
+     assert not b.should_stop()
+     time.sleep(0.01)
++
++
++def test_readiness_problem_while_stopping_does_not_report_terminated() -> None:
++    reset_embedded_worker_runtime_for_tests()
++    runtime = get_embedded_worker_runtime()
++    runtime.configure(required=True, sql_mode=True)
++
++    def _block() -> None:
++        while not runtime.should_stop():
++            time.sleep(0.01)
++
++    thread = threading.Thread(target=_block, daemon=True)
++    runtime.mark_started(thread)
++    thread.start()
++    runtime.request_stop()
++    # Thread may still be alive or already exiting; stopping flag must suppress false alarm.
++    problem = runtime.readiness_problem()
++    assert problem is None or problem[1] != REASON_WORKER_TERMINATED
++    runtime.join(timeout_sec=2.0)
++
++
++def test_unexpected_loop_exception_marks_unavailable(monkeypatch) -> None:
++    reset_embedded_worker_runtime_for_tests()
++    runtime = get_embedded_worker_runtime()
++    runtime.configure(required=True, sql_mode=True)
++    stop_state = {"n": 0}
++
++    def boom_claim(_base: Path):
++        raise RuntimeError("boom")
++
++    def stop_after() -> bool:
++        stop_state["n"] += 1
++        return stop_state["n"] > 1
++
++    monkeypatch.setattr("src.jobs.worker.claim_next_job", boom_claim)
++    monkeypatch.setattr("src.jobs.worker.time.sleep", lambda _s: None)
++    worker_loop(Path("output"), stop=stop_after)
++    assert runtime.snapshot().unavailable_reason == "claim_loop_exception"
++    assert runtime.readiness_problem() is not None
++
++
++def test_observability_dict_exposes_counters() -> None:
++    reset_embedded_worker_runtime_for_tests()
++    runtime = get_embedded_worker_runtime()
++    runtime.mark_unavailable(REASON_REPOSITORIES_NOT_INITIALIZED)
++    runtime.mark_cycle_ok()
++    obs = runtime.observability_dict()
++    assert obs["recovery_count"] == 1
++    assert obs["worker_unavailable_reason"] is None
++    assert obs["worker_available"] is True

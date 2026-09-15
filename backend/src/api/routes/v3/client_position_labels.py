@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Header, Query, Response, status
 from fastapi.responses import Response as FastAPIResponse
 
-from src.api.dependencies import get_access_principal, get_client_repo, get_clock
+from src.api.dependencies import get_client_repo, get_clock, require_client_scope
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.client_position_label_schemas import (
     ClientPositionLabelArtifactResponse,
@@ -181,7 +181,7 @@ def list_client_position_labels(
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
     use_case: ListClientPositionLabelsUseCase = Depends(get_list_client_position_labels_use_case),
 ) -> ClientPositionLabelListResponse:
     try:
@@ -217,7 +217,7 @@ def list_client_position_labels(
 def create_client_position_label(
     client_id: str,
     body: CreateClientPositionLabelRequest,
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
     use_case: CreateClientPositionLabelUseCase = Depends(
         get_create_client_position_label_use_case
     ),
@@ -253,7 +253,7 @@ def create_client_position_label(
 def create_client_position_marker_set(
     client_id: str,
     body: CreateClientPositionMarkerSetRequest,
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
     use_case: CreateClientPositionMarkerSetUseCase = Depends(
         get_create_client_position_marker_set_use_case
     ),
@@ -288,7 +288,7 @@ def create_client_position_marker_set(
 def get_client_position_label(
     client_id: str,
     label_id: str,
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
     use_case: GetClientPositionLabelUseCase = Depends(get_get_client_position_label_use_case),
 ) -> ClientPositionLabelResponse:
     try:
@@ -312,7 +312,7 @@ def update_client_position_label(
     client_id: str,
     label_id: str,
     body: UpdateClientPositionLabelRequest,
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
     use_case: UpdateClientPositionLabelMetadataUseCase = Depends(
         get_update_client_position_label_use_case
     ),
@@ -342,7 +342,7 @@ def invalidate_client_position_label(
     client_id: str,
     label_id: str,
     body: InvalidateClientPositionLabelRequest | None = None,
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
     use_case: InvalidateClientPositionLabelUseCase = Depends(
         get_invalidate_client_position_label_use_case
     ),
@@ -371,7 +371,7 @@ def render_client_position_label(
     client_id: str,
     label_id: str,
     body: RenderClientPositionLabelRequest | None = None,
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
     use_case: RenderClientPositionLabelUseCase = Depends(
         get_render_client_position_label_use_case
     ),
@@ -445,7 +445,7 @@ def preview_client_position_label(
     label_id: str,
     format: str = Query(default="PNG"),
     preset: str = Query(default="MM_100x100"),
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
     use_case: DownloadClientPositionLabelUseCase = Depends(
         get_download_client_position_label_use_case
     ),
@@ -467,7 +467,7 @@ def download_client_position_label(
     label_id: str,
     format: str = Query(default="PDF"),
     preset: str = Query(default="MM_100x100"),
-    principal: AccessPrincipal = Depends(get_access_principal),
+    principal: AccessPrincipal = Depends(require_client_scope),
     use_case: DownloadClientPositionLabelUseCase = Depends(
         get_download_client_position_label_use_case
     ),

@@ -197,21 +197,8 @@ GO
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'client_id')
     ALTER TABLE inventories ADD client_id VARCHAR(36) NULL;
 GO
-IF NOT EXISTS (
-    SELECT * FROM sys.foreign_keys WHERE name = 'FK_inventories_client'
-)
-BEGIN
-    ALTER TABLE inventories
-    ADD CONSTRAINT FK_inventories_client
-    FOREIGN KEY (client_id) REFERENCES clients(id);
-END;
-GO
-IF NOT EXISTS (
-    SELECT * FROM sys.indexes WHERE name = 'IX_inventories_client_id' AND object_id = OBJECT_ID('inventories')
-)
-    CREATE INDEX IX_inventories_client_id ON inventories(client_id);
-GO
 
+-- Clients must exist before FK_inventories_client (clean-install / lab bootstrap).
 -- Phase A1 — Clients foundation (mirror migrations/versions/0024_clients_foundation.sql).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'clients')
 BEGIN
@@ -248,6 +235,23 @@ IF NOT EXISTS (
         OR default_identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM')
     );
 GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.foreign_keys WHERE name = 'FK_inventories_client'
+)
+BEGIN
+    ALTER TABLE inventories
+    ADD CONSTRAINT FK_inventories_client
+    FOREIGN KEY (client_id) REFERENCES clients(id);
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes WHERE name = 'IX_inventories_client_id' AND object_id = OBJECT_ID('inventories')
+)
+    CREATE INDEX IX_inventories_client_id ON inventories(client_id);
+GO
+
+-- (clients foundation DDL moved above FK_inventories_client for clean installs)
 
 -- Phase A2 — Client suppliers foundation (mirror migrations/versions/0025_client_suppliers_foundation.sql).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'client_suppliers')
@@ -548,15 +552,7 @@ BEGIN
     WHERE capture_session_item_id IS NOT NULL;
 END;
 GO
-IF NOT EXISTS (
-    SELECT * FROM sys.foreign_keys WHERE name = 'FK_source_assets_capture_session_item'
-)
-BEGIN
-    ALTER TABLE source_assets
-    ADD CONSTRAINT FK_source_assets_capture_session_item
-    FOREIGN KEY (capture_session_item_id) REFERENCES capture_session_items(id);
-END;
-GO
+-- FK_source_assets_capture_session_item deferred until capture_session_items exists (clean install).
 
 -- Phase 1 positioning foundation (mirror 0074 + 0075) — ordered capture + aisle locations.
 -- Single block only; do not duplicate Phase 1 positioning DDL elsewhere in this file.
@@ -1100,9 +1096,8 @@ BEGIN
         CONSTRAINT FK_manual_coverage_position FOREIGN KEY (position_id) REFERENCES positions(id),
         CONSTRAINT FK_manual_coverage_job FOREIGN KEY (job_id) REFERENCES inventory_jobs(id),
         CONSTRAINT FK_manual_coverage_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
-        CONSTRAINT FK_manual_coverage_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
-        CONSTRAINT FK_manual_coverage_job_source_asset
-            FOREIGN KEY (job_source_asset_id) REFERENCES job_source_assets(id)
+        CONSTRAINT FK_manual_coverage_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id)
+        -- FK_manual_coverage_job_source_asset deferred until job_source_assets exists (clean install)
     );
     CREATE UNIQUE NONCLUSTERED INDEX UQ_manual_coverage_job_source_asset
         ON position_manual_image_coverage(job_source_asset_id);
@@ -1502,6 +1497,19 @@ BEGIN
     CREATE UNIQUE NONCLUSTERED INDEX UQ_capture_session_items_session_content_hash
         ON capture_session_items(session_id, content_hash)
         WHERE content_hash IS NOT NULL;
+END;
+GO
+
+-- Deferred from source_assets block (clean-install ordering).
+IF OBJECT_ID('dbo.source_assets', 'U') IS NOT NULL
+   AND OBJECT_ID('dbo.capture_session_items', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT * FROM sys.foreign_keys WHERE name = 'FK_source_assets_capture_session_item'
+   )
+BEGIN
+    ALTER TABLE source_assets
+    ADD CONSTRAINT FK_source_assets_capture_session_item
+    FOREIGN KEY (capture_session_item_id) REFERENCES capture_session_items(id);
 END;
 GO
 
@@ -2845,6 +2853,19 @@ IF NOT EXISTS (
 )
     CREATE UNIQUE NONCLUSTERED INDEX UQ_job_source_assets_job_asset_role
         ON job_source_assets(job_id, source_asset_id, asset_role);
+GO
+
+-- Deferred from position_manual_image_coverage create (clean-install ordering).
+IF OBJECT_ID('dbo.position_manual_image_coverage', 'U') IS NOT NULL
+   AND OBJECT_ID('dbo.job_source_assets', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT * FROM sys.foreign_keys WHERE name = 'FK_manual_coverage_job_source_asset'
+   )
+BEGIN
+    ALTER TABLE position_manual_image_coverage
+    ADD CONSTRAINT FK_manual_coverage_job_source_asset
+        FOREIGN KEY (job_source_asset_id) REFERENCES job_source_assets(id);
+END;
 GO
 GO
 

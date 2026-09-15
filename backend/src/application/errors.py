@@ -62,8 +62,30 @@ class ClientNotFoundError(Exception):
     """Raised when a client does not exist."""
 
 
+class PlatformOnlyOperationError(Exception):
+    """Raised when a company-scoped principal attempts a platform-only operation."""
+
+
 class RepositoryRowMappingError(ValueError):
     """Persisted row violates repository mapping invariants (status/timestamps/etc.)."""
+
+
+class InventorySoftDeleteConsistencyError(RuntimeError):
+    """Soft-delete wrote rows then observed an inconsistent UPDATE/OUTPUT outcome.
+
+    Must abort the transaction (standalone rollback or UoW propagation). Does not
+    embed inventory ids — safe for logs and HTTP mapping without ID leakage.
+    """
+
+    error_code = "INVENTORY_SOFT_DELETE_CONSISTENCY"
+
+    def __init__(
+        self,
+        message: str = (
+            "Inventory soft-delete consistency failure after write; transaction must abort"
+        ),
+    ) -> None:
+        super().__init__(message)
 
 
 class InvalidClientNameError(Exception):
