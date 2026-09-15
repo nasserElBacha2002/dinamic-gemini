@@ -1,0 +1,40 @@
+# Disposable Phase 4B lab — SQL Server only (local loopback).
+# NEVER use for DEV / staging / production.
+#
+# API preferred on host (uvicorn) for simpler ODBC on macOS:
+#   see audit/lab/README.md
+#
+# Usage:
+#   docker compose -f audit/lab/docker-compose.lab.yml --env-file audit/lab/.env.lab up -d
+
+name: dinamic-gemini-lab
+
+services:
+  lab-sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: dinamic-gemini-lab-sql
+    ports:
+      # Host already uses 1433/1435 — disposable lab on 14333, loopback only.
+      - "127.0.0.1:14333:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Lab_Only_ChangeMe_123}
+    volumes:
+      - lab_sql_data:/var/opt/mssql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/mssql-tools18/bin/sqlcmd -S 127.0.0.1 -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" || /opt/mssql-tools/bin/sqlcmd -S 127.0.0.1 -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 40s
+    restart: "no"
+
+volumes:
+  lab_sql_data:
+    name: dinamic-gemini-lab-sql-data

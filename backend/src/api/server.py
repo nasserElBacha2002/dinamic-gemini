@@ -23,6 +23,8 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_UNEXPECTED_ERROR,
 )
 from src.api.errors.structured_api_http import INTERNAL_SERVER_ERROR, StructuredApiHttpError
+from src.api.routes.lab_attestation import lab_attestation_enabled
+from src.api.routes.lab_attestation import router as lab_attestation_router
 from src.api.routes.v3 import router as v3_router
 from src.api.routes.v3.admin_ai_config import router as v3_admin_ai_config_router
 from src.api.routes.v3.admin_finalization_recovery import (
@@ -166,6 +168,11 @@ app.include_router(auth_router)
 app.include_router(v3_admin_ai_config_router)
 app.include_router(v3_admin_storage_router)
 app.include_router(v3_admin_finalization_recovery_router)
+
+# Disposable Phase 4B lab attestation — LOCAL/TEST only, never production-like.
+if lab_attestation_enabled():
+    app.include_router(lab_attestation_router)
+    logger.info("Lab attestation routes mounted (LAB_DISPOSABLE_ENABLED + local/test)")
 
 
 @app.exception_handler(AuthHttpError)
