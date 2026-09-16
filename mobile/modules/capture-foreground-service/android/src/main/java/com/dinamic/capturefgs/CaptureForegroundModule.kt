@@ -130,5 +130,24 @@ class CaptureForegroundModule : Module() {
         LocalBarcodeDetector.detect(context, uri, formatsCsv)
       }
     }
+
+    /**
+     * Append Base64-decoded bytes to an absolute filesystem path (ZIP streaming).
+     * Expo FileSystem cannot append without rewriting the whole file.
+     */
+    AsyncFunction("appendBase64File") { absolutePath: String, base64: String ->
+      val file = java.io.File(absolutePath)
+      file.parentFile?.mkdirs()
+      val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
+      java.io.FileOutputStream(file, true).use { out ->
+        out.write(bytes)
+      }
+    }
+
+    AsyncFunction("truncateFile") { absolutePath: String ->
+      val file = java.io.File(absolutePath)
+      file.parentFile?.mkdirs()
+      java.io.FileOutputStream(file, false).use { /* truncate */ }
+    }
   }
 }

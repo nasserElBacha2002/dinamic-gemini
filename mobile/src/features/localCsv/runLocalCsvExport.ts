@@ -78,6 +78,7 @@ export function mapLocalCsvExportError(error: unknown): LocalCsvExportUserError 
     raw.startsWith('PACKAGE_EXPORT_SESSION_MISSING:') ||
     raw.startsWith('PACKAGE_EXPORT_DUPLICATE_FILE_NAME:') ||
     raw.startsWith('PACKAGE_EXPORT_FALLBACK_FORBIDDEN:') ||
+    raw.startsWith('PACKAGE_EXPORT_TOO_LARGE:') ||
     raw.startsWith('PACKAGE_VALIDATION_FAILED:')
   ) {
     return { kind: 'generic', message: raw };

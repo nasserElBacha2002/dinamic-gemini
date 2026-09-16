@@ -1,43 +1,40 @@
 /**
- * Bounded-memory ZIP builder for local aisle export.
+ * Bounded-memory ZIP builder for local aisle export (Phase 5).
  *
- * Reads one entry at a time (caller supplies getBytes). Uses fflate STORE (ZipPassThrough).
+ * Previous fflate Zip path accumulated all ZIP chunks then Base64-encoded the full archive.
+ * writeStoreZipAtomic now delegates to writeBoundedStoreZip (STORE + append sink).
  *
- * TECHNICAL LIMITATION (Expo SDK 51 / expo-file-system ~17):
- * There is no supported API to append raw binary chunks to a file without Base64.
- * Therefore the final ZIP bytes are still held in memory once, then written via Base64.
- * Peak memory ≈ max(single entry) + final ZIP size (+ Base64 during write), NOT
- * sum(all photo buffers) + ZIP + Base64 simultaneously.
- *
- * True disk-streaming ZIP write requires a native module or Expo FS upgrade — documented
- * in incremental-zip-implementation-report.md; not faked here.
+ * TECHNICAL NOTE (Expo SDK 51):
+ * Disk append uses CaptureForegroundService.appendBase64File on Android, or Node fs in tests.
+ * Peak ≈ one photo Uint8Array + framing + Base64 encode of ≤256 KiB append chunks — not Σ(photos)+ZIP.
  */
-import { Zip, ZipPassThrough } from 'fflate';
+
 import * as FileSystem from 'expo-file-system';
 
-import { sha256BytesHex } from '../../core/payloadFingerprint';
+import {
+  writeBoundedStoreZip,
+  ZipWriteError,
+  type BoundedZipEntry,
+  type ZipWriteProgress,
+  type ZipWriteResult,
+} from './boundedZipWriter';
+
+export type { BoundedZipEntry, ZipWriteProgress, ZipWriteResult };
+export { ZipWriteError, writeBoundedStoreZip } from './boundedZipWriter';
 
 export interface StreamingZipEntry {
   readonly path: string;
   readonly getBytes: () => Promise<Uint8Array> | Uint8Array;
+  /** Required — avoids a probe read that would retain bytes. */
+  readonly sizeBytes: number;
+  readonly expectedSha256?: string;
 }
 
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  // Chunked to avoid call-stack / argument limits on large arrays.
-  const CHUNK = 0x8000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    const slice = bytes.subarray(i, i + CHUNK);
-    binary += String.fromCharCode(...slice);
-  }
-  // btoa available in RN hermes / jest with polyfill; fallback Buffer in node tests.
-  if (typeof btoa === 'function') {
-    return btoa(binary);
-  }
-  return Buffer.from(bytes).toString('base64');
-}
-
-export async function buildStoreZipBytes(entries: readonly StreamingZipEntry[]): Promise<Uint8Array> {
+/** @deprecated Prefer writeStoreZipAtomic / writeBoundedStoreZip — in-memory only for tiny probes. */
+export async function buildStoreZipBytes(
+  entries: readonly Omit<StreamingZipEntry, 'sizeBytes'>[],
+): Promise<Uint8Array> {
+  const { Zip, ZipPassThrough } = await import('fflate');
   return new Promise((resolve, reject) => {
     const chunks: Uint8Array[] = [];
     let total = 0;
@@ -60,7 +57,6 @@ export async function buildStoreZipBytes(entries: readonly StreamingZipEntry[]):
         resolve(out);
       }
     });
-
     void (async () => {
       try {
         for (const entry of entries) {
@@ -68,7 +64,6 @@ export async function buildStoreZipBytes(entries: readonly StreamingZipEntry[]):
           const file = new ZipPassThrough(entry.path);
           zip.add(file);
           file.push(bytes, true);
-          // bytes eligible for GC after push; do not retain references
         }
         zip.end();
       } catch (error) {
@@ -79,40 +74,52 @@ export async function buildStoreZipBytes(entries: readonly StreamingZipEntry[]):
 }
 
 /**
- * Build STORE ZIP and publish atomically via tmp + move.
- * Reports progress as entries completed (0..entries.length).
+ * Build STORE ZIP with bounded memory and publish atomically via tmp + move.
  */
 export async function writeStoreZipAtomic(input: {
   readonly entries: readonly StreamingZipEntry[];
   readonly targetUri: string;
   readonly onProgress?: (done: number, total: number) => void;
-}): Promise<{ readonly byteLength: number; readonly sha256: string }> {
-  const total = input.entries.length;
-  let done = 0;
-  const wrapped: StreamingZipEntry[] = input.entries.map((e) => ({
-    path: e.path,
-    getBytes: async () => {
-      const bytes = await e.getBytes();
-      done += 1;
-      input.onProgress?.(done, total);
-      return bytes;
-    },
-  }));
-
-  const zipped = await buildStoreZipBytes(wrapped);
+  readonly onZipProgress?: (progress: ZipWriteProgress) => void;
+  readonly signal?: AbortSignal;
+  readonly maxTotalBytes?: number;
+}): Promise<ZipWriteResult> {
   const dir = input.targetUri.replace(/\/[^/]+$/, '/');
   await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
   const tmpUri = `${input.targetUri}.tmp.${Date.now()}`;
-  const b64 = uint8ArrayToBase64(zipped);
+
+  const bounded: BoundedZipEntry[] = [];
+  for (const e of input.entries) {
+    if (e.sizeBytes == null || e.sizeBytes < 0 || !Number.isFinite(e.sizeBytes)) {
+      throw new ZipWriteError('ZIP_VALIDATION_FAILED', `missing sizeBytes for ${e.path}`);
+    }
+    const entry: BoundedZipEntry = {
+      path: e.path,
+      sizeBytes: e.sizeBytes,
+      getBytes: e.getBytes,
+      ...(e.expectedSha256 ? { expectedSha256: e.expectedSha256 } : {}),
+    };
+    bounded.push(entry);
+  }
+
   try {
-    await FileSystem.writeAsStringAsync(tmpUri, b64, {
-      encoding: FileSystem.EncodingType.Base64,
+    const written = await writeBoundedStoreZip({
+      targetUri: tmpUri,
+      entries: bounded,
+      ...(input.signal ? { signal: input.signal } : {}),
+      ...(input.maxTotalBytes != null ? { maxTotalBytes: input.maxTotalBytes } : {}),
+      onProgress: (p) => {
+        input.onZipProgress?.(p);
+        if (input.onProgress && (p.stage === 'WRITING_ENTRIES' || p.stage === 'PREPARING')) {
+          input.onProgress(p.completedEntries, p.totalEntries);
+        }
+      },
     });
     await FileSystem.deleteAsync(input.targetUri, { idempotent: true }).catch(() => undefined);
     await FileSystem.moveAsync({ from: tmpUri, to: input.targetUri });
+    return written;
   } catch (error) {
     await FileSystem.deleteAsync(tmpUri, { idempotent: true }).catch(() => undefined);
     throw error;
   }
-  return { byteLength: zipped.byteLength, sha256: sha256BytesHex(zipped) };
 }

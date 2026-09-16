@@ -52,6 +52,7 @@ module.exports = {
     '<rootDir>/tests/exportPrepSqlite.real.test.ts',
     '<rootDir>/tests/exportPrepPhase3Drain.test.ts',
     '<rootDir>/tests/exportPrepPhase4Corrections.test.ts',
+    '<rootDir>/tests/exportPrepPhase5BoundedZip.test.ts',
     '<rootDir>/tests/photoStableProducers.test.ts',
   ],
   moduleNameMapper: {

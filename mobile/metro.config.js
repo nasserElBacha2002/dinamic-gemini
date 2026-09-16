@@ -14,6 +14,12 @@ config.resolver.nodeModulesPaths = [path.resolve(__dirname, 'node_modules')];
 // Keep hierarchical lookup enabled: React Native 0.74 installs some internal
 // packages (for example @react-native/virtualized-lists) under
 // node_modules/react-native/node_modules.
+config.resolver.extraNodeModules = {
+  ...(config.resolver.extraNodeModules ?? {}),
+  // Only `fs` is required under isNodeRuntime() (Jest). Do not stub `path`/`os`
+  // (many packages need the real Node path module during bundling).
+  fs: path.resolve(__dirname, 'metro-shims/node-builtin.js'),
+};
 config.resolver.blockList = exclusionList([
   /\/android\/build\/.*/,
   /\/android\/\.gradle\/.*/,

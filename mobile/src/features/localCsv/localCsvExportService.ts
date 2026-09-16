@@ -31,6 +31,7 @@ import {
 } from '../localCodeScan/preparedAssetHash';
 import type { LocalCodeScanStrategy } from '../localCodeScan/localCodeScanStrategy';
 import { writeStoreZipAtomic } from '../exportPrep/streamingZipWriter';
+import { ZipWriteError } from '../exportPrep/boundedZipWriter';
 import {
   assertModernZipPhotosArePrepEligible,
   listCanonicalExportPhotos,
@@ -46,6 +47,7 @@ import { decideExportSourcePolicy } from '../exportPrep/exportSourcePolicy';
 import type { OriginalFallbackReason } from '../exportPrep/exportSourcePolicy';
 import { buildPackageContentFingerprint } from '../exportPrep/packageFingerprint';
 import { validateExistingExportPackage } from '../exportPrep/existingPackageValidator';
+import { rethrowExportOrZip } from '../exportPrep/mapZipWriteError';
 import { buildLocalCsvExport } from './buildLocalCsvExport';
 import { isDraftExportReady } from './supplierExportSemantics';
 import { diagnoseExportBlockers } from './localCsvExportPreflight';
@@ -92,6 +94,8 @@ export interface LocalCsvExportServiceDeps {
   /** Soft limit for sum of staged bytes before ZIP build. */
   readonly maxExportUncompressedBytes?: number;
   readonly onZipProgress?: (done: number, total: number) => void;
+  /** Cooperative cancel for ZIP build (does not clear staging). */
+  readonly exportAbortSignal?: AbortSignal;
 }
 
 export interface ExportedLocalCsv {
@@ -521,27 +525,72 @@ export class LocalCsvExportService {
       });
       const written = await writeStoreZipAtomic({
         targetUri: tmpZip,
+        maxTotalBytes: maxBytes,
+        ...(this.deps.exportAbortSignal
+          ? { signal: this.deps.exportAbortSignal }
+          : {}),
         onProgress: (done, total) => {
           this.deps.onZipProgress?.(done, total);
           this.zipProgressListener?.(done, total);
         },
+        onZipProgress: (p) => {
+          // Entry-boundary only (writer already throttles); freeze rechecked in getBytes.
+          if (p.stage !== 'WRITING_ENTRIES' || p.completedEntries === 0) {
+            return;
+          }
+          if (p.completedEntries % 10 !== 0 && p.completedEntries !== p.totalEntries) {
+            return;
+          }
+          this.deps.logger?.info('recovery', {
+            where: 'local_export_zip_progress',
+            code: 'ZIP_WRITE_PROGRESS',
+            sessionId,
+            stage: p.stage,
+            completed_entries: p.completedEntries,
+            total_entries: p.totalEntries,
+            processed_bytes: p.processedBytes,
+            total_bytes: p.totalBytes,
+          });
+        },
         entries: [
-          { path: 'results.csv', getBytes: () => csvBytes },
-          { path: 'manifest.json', getBytes: () => manifestBytes },
+          {
+            path: 'results.csv',
+            sizeBytes: csvBytes.byteLength,
+            getBytes: () => csvBytes,
+          },
+          {
+            path: 'manifest.json',
+            sizeBytes: manifestBytes.byteLength,
+            getBytes: () => manifestBytes,
+          },
           ...packagedPhotos.map((photo) => ({
             path: `photos/${photo.file_name}`,
+            sizeBytes: photo.size_bytes,
+            expectedSha256: photo.sha256,
             getBytes: photo.getBytes,
           })),
         ],
       });
       zipSizeBytes = written.byteLength;
       zipSha256 = written.sha256;
-      if (zipSizeBytes <= 0 || !zipSha256) {
+      if (zipSizeBytes <= 0 || !zipSha256 || written.peakOpenEntries > 1) {
         throw new ExportFromStagingError(
           'PACKAGE_VALIDATION_FAILED',
-          'ZIP tmp inválido tras build',
+          written.peakOpenEntries > 1
+            ? `ZIP concurrency invariant peakOpen=${written.peakOpenEntries}`
+            : 'ZIP tmp inválido tras build',
         );
       }
+      this.deps.logger?.info('recovery', {
+        where: 'local_export_zip_completed',
+        code: 'ZIP_WRITE_COMPLETED',
+        sessionId,
+        entry_count: written.entryCount,
+        zip_size_bytes: zipSizeBytes,
+        method: written.method,
+        peak_open_entries: written.peakOpenEntries,
+        duration_ms: Date.now() - zipBuildStarted,
+      });
 
       await this.assertFreezeUnchanged(
         sessionId,
@@ -589,7 +638,30 @@ export class LocalCsvExportService {
       if (zipPublished) {
         await FileSystem.deleteAsync(zipUri, { idempotent: true }).catch(() => undefined);
       }
-      throw error;
+      if (
+        error instanceof Error &&
+        error.name === 'ZipWriteError' &&
+        'code' in error &&
+        (error as ZipWriteError).code === 'ZIP_CANCELLED'
+      ) {
+        this.deps.logger?.info('recovery', {
+          where: 'local_export_zip_cancelled',
+          code: 'ZIP_CANCELLED',
+          sessionId,
+        });
+      } else if (
+        error instanceof Error &&
+        error.name === 'ZipWriteError' &&
+        'code' in error &&
+        (error as ZipWriteError).code === 'ZIP_SOURCE_CHANGED'
+      ) {
+        this.deps.logger?.warn('recovery', {
+          where: 'local_export_zip_source_changed',
+          code: 'ZIP_SOURCE_CHANGED',
+          sessionId,
+        });
+      }
+      rethrowExportOrZip(error);
     }
 
     await this.assertFreezeUnchanged(
