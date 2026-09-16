@@ -6,17 +6,32 @@ import { LocalCsvExportService } from '../src/features/localCsv/localCsvExportSe
 import type { CapturePhotoRow, CaptureSessionRow } from '../src/database/schema/captureSchema';
 import { EMPTY_CURSOR } from '../src/core/compositeCursor';
 
-jest.mock('expo-file-system', () => ({
-  documentDirectory: 'file:///docs/',
-  cacheDirectory: 'file:///cache/',
-  EncodingType: { UTF8: 'utf8', Base64: 'base64' },
-  getInfoAsync: jest.fn(async () => ({ exists: false })),
-  makeDirectoryAsync: jest.fn(async () => undefined),
-  writeAsStringAsync: jest.fn(async () => undefined),
-  moveAsync: jest.fn(async () => undefined),
-  deleteAsync: jest.fn(async () => undefined),
-  readAsStringAsync: jest.fn(async () => 'aaaa'),
-}));
+jest.mock('expo-file-system', () => {
+  const published = new Set<string>();
+  return {
+    documentDirectory: 'file:///docs/',
+    cacheDirectory: 'file:///cache/',
+    EncodingType: { UTF8: 'utf8', Base64: 'base64' },
+    getInfoAsync: jest.fn(async (uri: string) => {
+      const u = String(uri);
+      if (published.has(u)) return { exists: true, size: 100 };
+      if (u.endsWith('.csv') || u.endsWith('.zip') || u.includes('.tmp.')) {
+        return { exists: false };
+      }
+      return { exists: true, size: 4 };
+    }),
+    makeDirectoryAsync: jest.fn(async () => undefined),
+    writeAsStringAsync: jest.fn(async () => undefined),
+    moveAsync: jest.fn(async ({ from, to }: { from: string; to: string }) => {
+      published.delete(String(from));
+      published.add(String(to));
+    }),
+    deleteAsync: jest.fn(async (uri: string) => {
+      published.delete(String(uri));
+    }),
+    readAsStringAsync: jest.fn(async () => 'aaaa'),
+  };
+});
 
 jest.mock('expo-sharing', () => ({
   isAvailableAsync: jest.fn(async () => false),

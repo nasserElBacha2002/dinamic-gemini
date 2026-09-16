@@ -32,6 +32,10 @@ jest.mock('expo-file-system', () => ({
   readDirectoryAsync: jest.fn(async () => []),
 }));
 
+jest.mock('../src/features/exportPrep/stagedSha256', () => ({
+  hashStagedFileSha256Hex: jest.fn(async () => 'a'.repeat(64)),
+}));
+
 const VALID_SHA = 'a'.repeat(64);
 
 type Row = ExportPrepJobRow & Record<string, unknown>;
@@ -389,11 +393,51 @@ function createMemoryExportPrepDb() {
         return { changes: 1, lastInsertRowId: 0 };
       }
 
-      // enqueueIdempotent requeue UPDATE (no lease fence)
-      if (sql.includes("status = 'QUEUED'") && sql.includes('source_uri = ?')) {
+      // CAS requeueExpiredLease: conditioned on status + lease_token + expiry
+      if (
+        sql.includes("status = 'QUEUED'") &&
+        sql.includes('source_uri = ?') &&
+        sql.includes('lease_token IS')
+      ) {
+        // params: uri, fp, name, now, photoId, status, leaseToken, now
+        const id = String(p[4]);
+        const observedStatus = String(p[5]);
+        const observedToken = p[6] as string | null;
+        const now = String(p[7]);
+        const cur = rows.get(id);
+        if (!cur || cur.status !== observedStatus) return { changes: 0, lastInsertRowId: 0 };
+        const tokenMatch =
+          (observedToken == null && cur.lease_token == null) ||
+          cur.lease_token === observedToken;
+        const expiredOrNull =
+          cur.lease_token == null ||
+          cur.lease_expires_at == null ||
+          cur.lease_expires_at < now;
+        if (!(tokenMatch && expiredOrNull)) return { changes: 0, lastInsertRowId: 0 };
+        rows.set(id, {
+          ...cur,
+          status: 'QUEUED',
+          source_uri: String(p[0]),
+          source_fingerprint: (p[1] as string | null) ?? cur.source_fingerprint,
+          export_file_name: (p[2] as string | null) ?? cur.export_file_name,
+          lease_token: null,
+          lease_expires_at: null,
+          error_code: null,
+          error_message: null,
+          updated_at: String(p[3]),
+        });
+        return { changes: 1, lastInsertRowId: 0 };
+      }
+
+      // FAILED_RETRYABLE → QUEUED (photo-id + status only)
+      if (
+        sql.includes("status = 'QUEUED'") &&
+        sql.includes('source_uri = ?') &&
+        sql.includes("status = 'FAILED_RETRYABLE'")
+      ) {
         const id = String(p[4]);
         const cur = rows.get(id);
-        if (!cur) return { changes: 0, lastInsertRowId: 0 };
+        if (!cur || cur.status !== 'FAILED_RETRYABLE') return { changes: 0, lastInsertRowId: 0 };
         rows.set(id, {
           ...cur,
           status: 'QUEUED',
@@ -796,71 +840,34 @@ describe('ensureJobsForEligiblePhotos + barrier', () => {
   });
 });
 
-describe('upload policy independence (enqueue path)', () => {
-  it.each(['MANUAL', 'NOW', 'WHEN_CONNECTED'] as const)(
-    'enqueueStablePhoto works for policy %s',
-    async (policy) => {
-      void policy;
-      const { db, rows } = createMemoryExportPrepDb();
-      const repo = new ExportPrepRepository(db as never);
-      const photo = {
-        id: 'p1',
-        capture_session_id: 's1',
-        status: 'stable',
-        uri: 'file://source/a.jpg',
-        size: 10,
-        width: 1,
-        height: 1,
-        sequence_number: 1,
-        display_name: 'a.jpg',
-      };
-      const queue = new ExportPrepQueue({
-        prepRepo: repo,
-        captureRepo: {
-          getSession: async () => ({ id: 's1', upload_policy: policy, active_freeze_id: null }),
-          getPhotoById: async () => photo,
-          listPhotos: async () => [photo],
-          listFreezePhotos: async () => [],
-        } as never,
-        draftRepo: { listForSession: async () => [] } as never,
-        localCodeScan: null,
-        localCodeScanEnabled: false,
-      });
-      await queue.enqueueStablePhoto('s1', 'p1');
-      expect(rows.get('p1')?.status).toBe('QUEUED');
-    },
-  );
-
-  it.each(['uploading', 'upload_review'] as const)(
-    'enqueueStablePhoto works for session status %s',
-    async (status) => {
-      const { db, rows } = createMemoryExportPrepDb();
-      const repo = new ExportPrepRepository(db as never);
-      const photo = {
-        id: 'p1',
-        capture_session_id: 's1',
-        status: 'stable',
-        uri: 'file://source/a.jpg',
-        size: 10,
-        width: 1,
-        height: 1,
-        sequence_number: 1,
-        display_name: 'a.jpg',
-      };
-      const queue = new ExportPrepQueue({
-        prepRepo: repo,
-        captureRepo: {
-          getSession: async () => ({ id: 's1', status, upload_policy: 'MANUAL', active_freeze_id: null }),
-          getPhotoById: async () => photo,
-          listPhotos: async () => [photo],
-          listFreezePhotos: async () => [],
-        } as never,
-        draftRepo: { listForSession: async () => [] } as never,
-        localCodeScan: null,
-        localCodeScanEnabled: false,
-      });
-      await queue.enqueueStablePhoto('s1', 'p1');
-      expect(rows.get('p1')?.status).toBe('QUEUED');
-    },
-  );
+describe('CAS requeue vs renew (memory)', () => {
+  it('does not clear a lease renewed between read and UPDATE', async () => {
+    const { db, rows } = createMemoryExportPrepDb();
+    const repo = new ExportPrepRepository(db as never);
+    await repo.enqueueIdempotent({
+      capturePhotoId: 'p1',
+      captureSessionId: 's1',
+      sourceUri: 'file://source/a.jpg',
+      sourceFingerprint: 'fp',
+      exportFileName: '0001_p1.jpg',
+    });
+    const claimed = await repo.claimNext('s1');
+    expect(claimed?.lease_token).toBeTruthy();
+    rows.set('p1', {
+      ...rows.get('p1')!,
+      lease_expires_at: '2000-01-01T00:00:00.000Z',
+    });
+    const observed = (await repo.getByPhotoId('p1'))!;
+    // Worker renews expired lease with same token before backfill CAS.
+    await repo.renewLease('p1', claimed!.lease_token!, 120_000);
+    const cas = await repo.requeueExpiredLease(observed, {
+      sourceUri: 'file://source/a.jpg',
+      sourceFingerprint: 'fp',
+      exportFileName: '0001_p1.jpg',
+    });
+    expect(cas.requeued).toBe(false);
+    expect(cas.job.status).toBe('PREPARING');
+    expect(cas.job.lease_token).toBe(claimed!.lease_token);
+    expect(cas.job.lease_expires_at! > '2000-01-01T00:00:00.000Z').toBe(true);
+  });
 });

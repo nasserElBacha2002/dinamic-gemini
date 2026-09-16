@@ -2,7 +2,6 @@ import type { CaptureRepository } from '../../database/repositories/captureRepos
 import {
   ExportPrepFenceError,
   ExportPrepRepository,
-  isValidStagedSha256,
 } from '../../database/repositories/exportPrepRepository';
 import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import type { Logger } from '../../core/logging';
@@ -16,7 +15,6 @@ import { isDraftExportReady } from '../localCsv/supplierExportSemantics';
 import { exportPhotoFileName } from './exportPhotoFileName';
 import {
   stageOriginalPhotoVersioned,
-  stagingFileExists,
   deleteSessionExportStaging,
 } from './exportStaging';
 import type { ExportPrepCounts, ExportPrepJobRow, EnsureExportPrepJobsResult, ExportPrepEnsureReason } from './exportPrepTypes';
@@ -28,6 +26,11 @@ import {
   selectNonProcessableExportPhotos,
   selectExportPackagingPhotos,
 } from './eligibleExportPhotos';
+import {
+  sourceUriIsReadable,
+  validateReadyStaging,
+  type ReadyValidationMode,
+} from './validateReadyStaging';
 
 export type { ExportPrepCounts, EnsureExportPrepJobsResult, ExportPrepEnsureReason } from './exportPrepTypes';
 export { emptyExportPrepCounts, emptyEnsureExportPrepJobsResult };
@@ -154,6 +157,8 @@ export class ExportPrepQueue {
 
     const eligible = selectEligibleExportPrepPhotos(photos);
     const nonProcessable = selectNonProcessableExportPhotos(photos);
+    const readyMode: ReadyValidationMode =
+      reason === 'EXPORT_PREFLIGHT' ? 'strong' : 'light';
     let existingJobs = 0;
     let createdJobs = 0;
     let requeuedJobs = 0;
@@ -188,22 +193,22 @@ export class ExportPrepQueue {
         const existing = await this.deps.prepRepo.getByPhotoId(photo.id);
 
         if (existing?.status === 'READY') {
-          const readyOk = await this.isReadyJobComplete(existing);
-          if (readyOk) {
+          const readyCheck = await validateReadyStaging(existing, readyMode);
+          if (readyCheck.ok) {
             existingJobs += 1;
             continue;
           }
           await this.deps.prepRepo.invalidateReady(
             photo.id,
-            'EXPORT_PREP_READY_INVALID',
-            'READY inválido: staging/sha/size/nombre incompleto',
+            `EXPORT_PREP_READY_INVALID:${readyCheck.failure ?? 'UNKNOWN'}`,
+            'READY inválido tras validación de staging',
           );
           invalidatedReadyJobs += 1;
+          // fall through to requeue after invalidation
         } else if (existing?.status === 'FAILED_TERMINAL') {
           existingJobs += 1;
           continue;
         } else if (existing?.status === 'EXCLUDED') {
-          // Eligible stable photo with EXCLUDED job — leave until explicit reinclude (Phase 4).
           existingJobs += 1;
           continue;
         } else if (
@@ -221,13 +226,22 @@ export class ExportPrepQueue {
             existingJobs += 1;
             continue;
           }
-          // Expired lease: enqueueIdempotent requeues without resetting attempt_count.
+          // Expired lease: CAS requeue via enqueueIdempotent.
         } else if (existing?.status === 'FAILED_RETRYABLE') {
-          // Leave row; claimNext will pick up. Preserve attempt_count.
           existingJobs += 1;
           continue;
         } else if (existing?.status === 'QUEUED') {
           existingJobs += 1;
+          continue;
+        }
+
+        // Need a durable job — require readable source unless we just invalidated READY
+        // (invalidate cleared staging; source must still be readable to requeue).
+        const needsSource =
+          reason === 'FINISH' || reason === 'REVIEW_OPEN' || reason === 'EXPORT_PREFLIGHT';
+        if (needsSource && !(await sourceUriIsReadable(photo.uri))) {
+          missingSourcePhotos += 1;
+          partialErrors.push(`missing_source:${photo.id}`);
           continue;
         }
 
@@ -240,7 +254,6 @@ export class ExportPrepQueue {
           width: photo.width ?? 0,
           height: photo.height ?? 0,
         });
-        const beforeStatus = existing?.status ?? null;
         const result = await this.deps.prepRepo.enqueueIdempotent({
           capturePhotoId: photo.id,
           captureSessionId: sessionId,
@@ -250,7 +263,7 @@ export class ExportPrepQueue {
         });
         if (result.created) {
           createdJobs += 1;
-        } else if (beforeStatus != null) {
+        } else if (result.requeued) {
           requeuedJobs += 1;
         } else {
           existingJobs += 1;
@@ -297,10 +310,7 @@ export class ExportPrepQueue {
   }
 
   private async isReadyJobComplete(job: ExportPrepJobRow): Promise<boolean> {
-    if (!job.staging_uri || !job.export_file_name) return false;
-    if (!(job.size_bytes != null && job.size_bytes > 0)) return false;
-    if (!isValidStagedSha256(job.sha256)) return false;
-    return stagingFileExists(job.staging_uri);
+    return (await validateReadyStaging(job, 'light')).ok;
   }
 
   async enqueueStablePhoto(sessionId: string, photoId: string): Promise<void> {

@@ -49,6 +49,8 @@ module.exports = {
     '<rootDir>/tests/exportPrepCore.test.ts',
     '<rootDir>/tests/exportPrepFencing.memory.test.ts',
     '<rootDir>/tests/exportPrepPhase2Backfill.test.ts',
+    '<rootDir>/tests/exportPrepSqlite.real.test.ts',
+    '<rootDir>/tests/photoStableProducers.test.ts',
   ],
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/src/core/$1',

@@ -1,8 +1,7 @@
 import type { CaptureService } from '../capture/captureService';
 import type { ExportPrepRepository } from '../../database/repositories/exportPrepRepository';
-import { isValidStagedSha256 } from '../../database/repositories/exportPrepRepository';
 import type { ExportPrepQueue } from './exportPrepQueue';
-import { stagingFileExists } from './exportStaging';
+import { validateReadyStaging } from './validateReadyStaging';
 
 export interface ExportPrepPhotoCoordinatorDeps {
   readonly capture: CaptureService;
@@ -54,11 +53,13 @@ export class ExportPrepPhotoCoordinator {
       return;
     }
 
-    const stagingOk =
-      (await stagingFileExists(job.staging_uri)) && isValidStagedSha256(job.sha256);
+    const strong = await validateReadyStaging(job, 'strong');
     await this.deps.prepRepo.requeueFromExcluded(photoId);
-    if (stagingOk) {
-      const promoted = await this.deps.prepRepo.promoteQueuedToReadyIfComplete(photoId);
+    if (strong.ok) {
+      const promoted = await this.deps.prepRepo.promoteQueuedToReadyIfComplete(
+        photoId,
+        async (candidate) => (await validateReadyStaging(candidate, 'strong')).ok,
+      );
       if (!promoted) {
         this.deps.prepQueue.wake();
       }

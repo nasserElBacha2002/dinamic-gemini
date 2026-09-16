@@ -43,6 +43,13 @@ export function isValidStagedSha256(value: string | null | undefined): boolean {
 export class ExportPrepRepository {
   constructor(private readonly db: SQLiteDatabase) {}
 
+  /**
+   * Schema notes (v35 applied — do not edit):
+   * SQLite CHECK constraints for READY completeness / non-negative attempts would require
+   * table rebuild. Enforcement is in this repository + validateReadyStaging (central READY).
+   * Follow-up v36+ only if a safe rebuild is approved.
+   */
+
   async getByPhotoId(capturePhotoId: string): Promise<ExportPrepJobRow | null> {
     const row = await this.db.getFirstAsync<ExportPrepJobRow>(
       `SELECT * FROM export_prep_jobs WHERE capture_photo_id = ?;`,
@@ -134,8 +141,8 @@ export class ExportPrepRepository {
   }
 
   /**
-   * Idempotent enqueue: inserts QUEUED or requeues FAILED_RETRYABLE / expired lease.
-   * Does not touch READY / EXCLUDED / FAILED_TERMINAL / in-flight with valid lease.
+   * Idempotent enqueue: inserts QUEUED or requeues FAILED_RETRYABLE / expired lease via CAS.
+   * Never clears an in-flight lease with a bare `WHERE capture_photo_id = ?` update.
    */
   async enqueueIdempotent(input: {
     readonly capturePhotoId: string;
@@ -143,16 +150,20 @@ export class ExportPrepRepository {
     readonly sourceUri: string;
     readonly sourceFingerprint: string | null;
     readonly exportFileName: string | null;
-  }): Promise<{ readonly created: boolean; readonly job: ExportPrepJobRow }> {
+  }): Promise<{
+    readonly created: boolean;
+    readonly requeued: boolean;
+    readonly job: ExportPrepJobRow;
+  }> {
     const now = nowIso();
     return runImmediateTransaction(this.db, async () => {
       const existing = await this.getByPhotoId(input.capturePhotoId);
       if (existing) {
         if (existing.status === 'READY' || existing.status === 'EXCLUDED') {
-          return { created: false, job: existing };
+          return { created: false, requeued: false, job: existing };
         }
         if (existing.status === 'FAILED_TERMINAL') {
-          return { created: false, job: existing };
+          return { created: false, requeued: false, job: existing };
         }
         if (
           existing.status === 'PREPARING' ||
@@ -164,29 +175,43 @@ export class ExportPrepRepository {
             existing.lease_expires_at != null &&
             existing.lease_expires_at > now;
           if (leaseOk) {
-            return { created: false, job: existing };
+            return { created: false, requeued: false, job: existing };
           }
+          const cas = await this.requeueExpiredLeaseInTx(existing, input, now);
+          return {
+            created: false,
+            requeued: cas.requeued,
+            job: cas.job,
+          };
         }
-        await this.db.runAsync(
-          `UPDATE export_prep_jobs SET
-             status = 'QUEUED',
-             source_uri = ?,
-             source_fingerprint = COALESCE(?, source_fingerprint),
-             export_file_name = COALESCE(?, export_file_name),
-             lease_token = NULL,
-             lease_expires_at = NULL,
-             error_code = NULL,
-             error_message = NULL,
-             updated_at = ?
-           WHERE capture_photo_id = ?;`,
-          input.sourceUri,
-          input.sourceFingerprint,
-          input.exportFileName,
-          now,
-          input.capturePhotoId,
-        );
-        const job = (await this.getByPhotoId(input.capturePhotoId))!;
-        return { created: false, job };
+        if (existing.status === 'FAILED_RETRYABLE' || existing.status === 'QUEUED') {
+          if (existing.status === 'QUEUED') {
+            return { created: false, requeued: false, job: existing };
+          }
+          // FAILED_RETRYABLE → QUEUED without touching attempt_count; identity is PK.
+          await this.db.runAsync(
+            `UPDATE export_prep_jobs SET
+               status = 'QUEUED',
+               source_uri = ?,
+               source_fingerprint = COALESCE(?, source_fingerprint),
+               export_file_name = COALESCE(?, export_file_name),
+               lease_token = NULL,
+               lease_expires_at = NULL,
+               error_code = NULL,
+               error_message = NULL,
+               updated_at = ?
+             WHERE capture_photo_id = ?
+               AND status = 'FAILED_RETRYABLE';`,
+            input.sourceUri,
+            input.sourceFingerprint,
+            input.exportFileName,
+            now,
+            input.capturePhotoId,
+          );
+          const job = (await this.getByPhotoId(input.capturePhotoId))!;
+          return { created: false, requeued: job.status === 'QUEUED', job };
+        }
+        return { created: false, requeued: false, job: existing };
       }
       await this.db.runAsync(
         `INSERT INTO export_prep_jobs (
@@ -205,11 +230,77 @@ export class ExportPrepRepository {
         now,
       );
       const job = (await this.getByPhotoId(input.capturePhotoId))!;
-      return { created: true, job };
+      return { created: true, requeued: false, job };
     });
   }
 
-  /** Claim next work item. Returned job always has non-null lease_token. */
+  /**
+   * Compare-and-set requeue of an expired in-flight lease.
+   * Must run inside an immediate transaction.
+   * If another worker renewed/reclaimed between read and UPDATE, changes=0 → return current row.
+   */
+  async requeueExpiredLease(
+    observed: ExportPrepJobRow,
+    input: {
+      readonly sourceUri: string;
+      readonly sourceFingerprint: string | null;
+      readonly exportFileName: string | null;
+    },
+  ): Promise<{ readonly requeued: boolean; readonly job: ExportPrepJobRow }> {
+    const now = nowIso();
+    return runImmediateTransaction(this.db, async () =>
+      this.requeueExpiredLeaseInTx(observed, input, now),
+    );
+  }
+
+  private async requeueExpiredLeaseInTx(
+    observed: ExportPrepJobRow,
+    input: {
+      readonly sourceUri: string;
+      readonly sourceFingerprint: string | null;
+      readonly exportFileName: string | null;
+    },
+    now: string,
+  ): Promise<{ readonly requeued: boolean; readonly job: ExportPrepJobRow }> {
+    const result = await this.db.runAsync(
+      `UPDATE export_prep_jobs SET
+         status = 'QUEUED',
+         source_uri = ?,
+         source_fingerprint = COALESCE(?, source_fingerprint),
+         export_file_name = COALESCE(?, export_file_name),
+         lease_token = NULL,
+         lease_expires_at = NULL,
+         error_code = NULL,
+         error_message = NULL,
+         updated_at = ?
+       WHERE capture_photo_id = ?
+         AND status = ?
+         AND (
+           (lease_token IS ? AND (lease_expires_at IS NULL OR lease_expires_at < ?))
+           OR (lease_token IS NULL)
+         );`,
+      input.sourceUri,
+      input.sourceFingerprint,
+      input.exportFileName,
+      now,
+      observed.capture_photo_id,
+      observed.status,
+      observed.lease_token,
+      now,
+    );
+    const job = (await this.getByPhotoId(observed.capture_photo_id))!;
+    if ((result.changes ?? 0) !== 1) {
+      // Lost the race — do not claim we requeued; return authoritative row.
+      return { requeued: false, job };
+    }
+    return { requeued: true, job };
+  }
+
+  /**
+   * Extend lease for the owning worker.
+   * May renew even if `lease_expires_at` is already past **only when `lease_token` still matches**
+   * (claimNext would have replaced the token). Token mismatch → ExportPrepFenceError.
+   */
   async claimNext(
     sessionId: string | null,
     leaseMs: number = LEASE_MS_DEFAULT,
@@ -303,6 +394,16 @@ export class ExportPrepRepository {
     }
   }
 
+  /**
+   * Extend lease for the owning worker.
+   * May renew even if `lease_expires_at` is already past **only when `lease_token` still matches**
+   * (claimNext replaces the token on reclaim). Token mismatch → ExportPrepFenceError.
+   * Backfill must never clear leases via photo-id-only UPDATE; use requeueExpiredLease CAS.
+   *
+   * Invariant vs backfill reclaim: renew succeeds on token match regardless of expiry;
+   * CAS requeue requires observed token + (expires < now | null token). Only one of
+   * renew/CAS can win a race — never both clear and extend the same lease.
+   */
   async renewLease(
     capturePhotoId: string,
     leaseToken: string,
@@ -529,18 +630,16 @@ export class ExportPrepRepository {
   }
 
   /**
-   * Operator reinclude fast-path: QUEUED → READY when staging/hash/size/name are already valid.
+   * Operator reinclude fast-path: QUEUED → READY only after strong staging validation.
    * Not a worker path (no lease). Returns true if promoted.
    */
-  async promoteQueuedToReadyIfComplete(capturePhotoId: string): Promise<boolean> {
+  async promoteQueuedToReadyIfComplete(
+    capturePhotoId: string,
+    validate: (job: ExportPrepJobRow) => Promise<boolean>,
+  ): Promise<boolean> {
     const job = await this.getByPhotoId(capturePhotoId);
     if (!job || job.status !== 'QUEUED') return false;
-    if (
-      !job.staging_uri ||
-      !job.export_file_name ||
-      !(job.size_bytes && job.size_bytes > 0) ||
-      !isValidStagedSha256(job.sha256)
-    ) {
+    if (!(await validate(job))) {
       return false;
     }
     const now = nowIso();

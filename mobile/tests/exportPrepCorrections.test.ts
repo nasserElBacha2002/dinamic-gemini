@@ -40,26 +40,39 @@ jest.mock('../src/features/exportPrep/streamingZipWriter', () => ({
   buildStoreZipBytes: jest.fn(),
 }));
 
-jest.mock('expo-file-system', () => ({
-  documentDirectory: 'file:///docs/',
-  cacheDirectory: 'file:///cache/',
-  EncodingType: { UTF8: 'utf8', Base64: 'base64' },
-  getInfoAsync: jest.fn(async (uri: string) => {
-    if (String(uri).includes('staging') || String(uri).includes('photo')) {
+jest.mock('expo-file-system', () => {
+  const published = new Set<string>();
+  return {
+    documentDirectory: 'file:///docs/',
+    cacheDirectory: 'file:///cache/',
+    EncodingType: { UTF8: 'utf8', Base64: 'base64' },
+    getInfoAsync: jest.fn(async (uri: string) => {
+      const u = String(uri);
+      if (u.includes('staging') || u.includes('photo.jpg')) {
+        return { exists: true, size: 4 };
+      }
+      if (published.has(u)) {
+        return { exists: true, size: 100 };
+      }
+      if (u.endsWith('.csv') || u.endsWith('.zip') || u.includes('.tmp.')) {
+        return { exists: false };
+      }
       return { exists: true, size: 4 };
-    }
-    if (String(uri).endsWith('.csv') || String(uri).endsWith('.zip')) {
-      return { exists: false };
-    }
-    return { exists: true, size: 4 };
-  }),
-  makeDirectoryAsync: jest.fn(async () => undefined),
-  writeAsStringAsync: jest.fn(async () => undefined),
-  moveAsync: jest.fn(async () => undefined),
-  deleteAsync: jest.fn(async () => undefined),
-  readAsStringAsync: jest.fn(async () => Buffer.from('abcd').toString('base64')),
-  copyAsync: jest.fn(async () => undefined),
-}));
+    }),
+    makeDirectoryAsync: jest.fn(async () => undefined),
+    writeAsStringAsync: jest.fn(async () => undefined),
+    moveAsync: jest.fn(async ({ from, to }: { from: string; to: string }) => {
+      published.delete(String(from));
+      published.add(String(to));
+    }),
+    deleteAsync: jest.fn(async (uri: string) => {
+      published.delete(String(uri));
+    }),
+    readAsStringAsync: jest.fn(async () => Buffer.from('abcd').toString('base64')),
+    copyAsync: jest.fn(async () => undefined),
+    __published: published,
+  };
+});
 
 jest.mock('expo-sharing', () => ({
   isAvailableAsync: jest.fn(async () => false),
@@ -392,6 +405,22 @@ describe('FAILED_TERMINAL blocks export', () => {
 });
 
 describe('ZIP failure leaves no published CSV', () => {
+  beforeEach(() => {
+    (FileSystem.moveAsync as jest.Mock).mockReset();
+    (FileSystem.moveAsync as jest.Mock).mockImplementation(
+      async ({ from, to }: { from: string; to: string }) => {
+        const pub = (FileSystem as unknown as { __published?: Set<string> }).__published;
+        pub?.delete(String(from));
+        pub?.add(String(to));
+      },
+    );
+    (FileSystem.deleteAsync as jest.Mock).mockReset();
+    (FileSystem.deleteAsync as jest.Mock).mockImplementation(async (uri: string) => {
+      (FileSystem as unknown as { __published?: Set<string> }).__published?.delete(String(uri));
+    });
+    (writeStoreZipAtomic as jest.Mock).mockReset();
+    (writeStoreZipAtomic as jest.Mock).mockResolvedValue({ byteLength: 10 });
+  });
   it('cleans temps and does not publish final csv/zip', async () => {
     (writeStoreZipAtomic as jest.Mock).mockRejectedValueOnce(new Error('ZIP_BOOM'));
 
@@ -462,9 +491,211 @@ describe('ZIP failure leaves no published CSV', () => {
     expect(moveAsync).not.toHaveBeenCalled();
     expect(FileSystem.deleteAsync).toHaveBeenCalled();
   });
+
+  it('CSV move failure does not insert export and leaves prior artifacts', async () => {
+    (writeStoreZipAtomic as jest.Mock).mockResolvedValueOnce({ byteLength: 10 });
+    const moveAsync = FileSystem.moveAsync as jest.Mock;
+    moveAsync.mockImplementation(async ({ from }: { from: string }) => {
+      if (String(from).includes('.tmp.csv')) {
+        throw new Error('CSV_MOVE_FAIL');
+      }
+    });
+    const insert = jest.fn(async () => undefined);
+    const published = new Set<string>([
+      'file:///docs/aisle-exports/prior.csv',
+      'file:///docs/aisle-exports/prior.zip',
+    ]);
+    (FileSystem.getInfoAsync as jest.Mock).mockImplementation(async (uri: string) => {
+      const u = String(uri);
+      if (u.includes('staging') || u.includes('photo')) return { exists: true, size: 4 };
+      if (published.has(u)) return { exists: true, size: 100 };
+      if (u.includes('.csv') || u.includes('.zip')) return { exists: false };
+      return { exists: true, size: 4 };
+    });
+    (FileSystem.deleteAsync as jest.Mock).mockImplementation(async (uri: string) => {
+      published.delete(String(uri));
+    });
+
+    const drafts = [
+      {
+        id: 'd1',
+        capture_photo_id: 'session-1:1',
+        capture_session_id: 'session-1',
+        status: 'RESOLVED',
+        internal_code: 'SKU-1',
+        label_id: 'L1',
+        product_results_json: null,
+        recognition_profile_snapshot_json: null,
+        position_detected: 0,
+        error_code: null,
+        rejections_json: null,
+      },
+    ];
+    const svc = new LocalCsvExportService({
+      captureRepo: {
+        getSession: jest.fn(async () => session()),
+        listPhotos: jest.fn(async () => [photo()]),
+        listFreezePhotos: jest.fn(async () => []),
+      } as never,
+      draftRepo: { listForSession: jest.fn(async () => drafts as never) } as never,
+      confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
+      exportRepo: { findByFingerprint: jest.fn(async () => null), insert } as never,
+      deviceId: 'dev-1',
+      localCodeScanEnabled: false,
+      exportPrepEnabled: true,
+      exportPrepRepo: {
+        listForSession: jest.fn(async () => [
+          {
+            capture_photo_id: 'session-1:1',
+            capture_session_id: 'session-1',
+            status: 'READY',
+            source_uri: 'file://photo.jpg',
+            staging_uri: 'file:///docs/export-staging/session-1/photos/0001.jpg',
+            export_file_name: '0001_session-1_1.jpg',
+            size_bytes: 4,
+            sha256: VALID_SHA,
+            source_fingerprint: null,
+            error_code: null,
+            error_message: null,
+            attempt_count: 1,
+            max_attempts: 3,
+            lease_token: null,
+            lease_expires_at: null,
+            queued_at: '2026-01-01T00:00:00.000Z',
+            started_at: '2026-01-01T00:00:00.000Z',
+            ready_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        ]),
+        invalidateReady: jest.fn(async () => undefined),
+      } as never,
+    });
+
+    await expect(svc.exportSession('session-1')).rejects.toThrow(/CSV_MOVE_FAIL/);
+    expect(insert).not.toHaveBeenCalled();
+    expect(published.has('file:///docs/aisle-exports/prior.csv')).toBe(true);
+    expect(published.has('file:///docs/aisle-exports/prior.zip')).toBe(true);
+  });
+
+  it('ZIP move failure after CSV publish rolls back new CSV and skips insert', async () => {
+    (writeStoreZipAtomic as jest.Mock).mockResolvedValueOnce({ byteLength: 10 });
+    const live = new Set<string>([
+      'file:///docs/aisle-exports/prior.csv',
+      'file:///docs/aisle-exports/prior.zip',
+    ]);
+    const moveAsync = FileSystem.moveAsync as jest.Mock;
+    moveAsync.mockImplementation(async ({ from, to }: { from: string; to: string }) => {
+      if (String(from).includes('.tmp.zip')) {
+        throw new Error('ZIP_MOVE_FAIL');
+      }
+      live.add(String(to));
+      live.delete(String(from));
+    });
+    (FileSystem.deleteAsync as jest.Mock).mockImplementation(async (uri: string) => {
+      live.delete(String(uri));
+    });
+    (FileSystem.getInfoAsync as jest.Mock).mockImplementation(async (uri: string) => {
+      const u = String(uri);
+      if (u.includes('staging') || u.includes('photo')) return { exists: true, size: 4 };
+      if (live.has(u)) return { exists: true, size: 100 };
+      return { exists: false };
+    });
+    const insert = jest.fn(async () => undefined);
+
+    const drafts = [
+      {
+        id: 'd1',
+        capture_photo_id: 'session-1:1',
+        capture_session_id: 'session-1',
+        status: 'RESOLVED',
+        internal_code: 'SKU-1',
+        label_id: 'L1',
+        product_results_json: null,
+        recognition_profile_snapshot_json: null,
+        position_detected: 0,
+        error_code: null,
+        rejections_json: null,
+      },
+    ];
+    const svc = new LocalCsvExportService({
+      captureRepo: {
+        getSession: jest.fn(async () => session()),
+        listPhotos: jest.fn(async () => [photo()]),
+        listFreezePhotos: jest.fn(async () => []),
+      } as never,
+      draftRepo: { listForSession: jest.fn(async () => drafts as never) } as never,
+      confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
+      exportRepo: { findByFingerprint: jest.fn(async () => null), insert } as never,
+      deviceId: 'dev-1',
+      localCodeScanEnabled: false,
+      exportPrepEnabled: true,
+      exportPrepRepo: {
+        listForSession: jest.fn(async () => [
+          {
+            capture_photo_id: 'session-1:1',
+            capture_session_id: 'session-1',
+            status: 'READY',
+            source_uri: 'file://photo.jpg',
+            staging_uri: 'file:///docs/export-staging/session-1/photos/0001.jpg',
+            export_file_name: '0001_session-1_1.jpg',
+            size_bytes: 4,
+            sha256: VALID_SHA,
+            source_fingerprint: null,
+            error_code: null,
+            error_message: null,
+            attempt_count: 1,
+            max_attempts: 3,
+            lease_token: null,
+            lease_expires_at: null,
+            queued_at: '2026-01-01T00:00:00.000Z',
+            started_at: '2026-01-01T00:00:00.000Z',
+            ready_at: '2026-01-01T00:00:00.000Z',
+            updated_at: '2026-01-01T00:00:00.000Z',
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        ]),
+        invalidateReady: jest.fn(async () => undefined),
+      } as never,
+    });
+
+    await expect(svc.exportSession('session-1')).rejects.toThrow(/ZIP_MOVE_FAIL/);
+    expect(insert).not.toHaveBeenCalled();
+    expect(live.has('file:///docs/aisle-exports/prior.csv')).toBe(true);
+    expect(live.has('file:///docs/aisle-exports/prior.zip')).toBe(true);
+    expect([...live].some((u) => u.includes('.tmp.'))).toBe(false);
+    expect([...live].filter((u) => /\.\d+\.csv$/.test(u)).length).toBe(0);
+  });
 });
 
 describe('feature flag off keeps legacy path', () => {
+  beforeEach(() => {
+    const pub = (FileSystem as unknown as { __published?: Set<string> }).__published;
+    pub?.clear();
+    (FileSystem.moveAsync as jest.Mock).mockReset();
+    (FileSystem.moveAsync as jest.Mock).mockImplementation(
+      async ({ from, to }: { from: string; to: string }) => {
+        pub?.delete(String(from));
+        pub?.add(String(to));
+      },
+    );
+    (FileSystem.getInfoAsync as jest.Mock).mockReset();
+    (FileSystem.getInfoAsync as jest.Mock).mockImplementation(async (uri: string) => {
+      const u = String(uri);
+      if (u.includes('staging') || u.includes('photo.jpg')) {
+        return { exists: true, size: 4 };
+      }
+      if (pub?.has(u)) {
+        return { exists: true, size: 100 };
+      }
+      if (u.endsWith('.csv') || u.endsWith('.zip') || u.includes('.tmp.')) {
+        return { exists: false };
+      }
+      return { exists: true, size: 4 };
+    });
+    (writeStoreZipAtomic as jest.Mock).mockReset();
+    (writeStoreZipAtomic as jest.Mock).mockResolvedValue({ byteLength: 10 });
+  });
   it('does not require prep jobs when exportPrepEnabled is false', async () => {
     (writeStoreZipAtomic as jest.Mock).mockResolvedValueOnce({ byteLength: 10 });
     // Already-ready draft → ensureLocalCodeScans skips execute; legacy mode still applies.

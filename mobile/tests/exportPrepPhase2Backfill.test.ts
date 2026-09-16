@@ -28,6 +28,10 @@ jest.mock('expo-file-system', () => ({
   readDirectoryAsync: jest.fn(async () => []),
 }));
 
+jest.mock('../src/features/exportPrep/stagedSha256', () => ({
+  hashStagedFileSha256Hex: jest.fn(async () => 'c'.repeat(64)),
+}));
+
 const VALID_SHA = 'c'.repeat(64);
 
 type Row = Record<string, unknown> & {
@@ -129,10 +133,47 @@ function createMemoryDb() {
         });
         return { changes: 1, lastInsertRowId: 0 };
       }
-      if (sql.includes("status = 'QUEUED'") && sql.includes('source_uri = ?')) {
+      if (
+        sql.includes("status = 'QUEUED'") &&
+        sql.includes('source_uri = ?') &&
+        sql.includes('lease_token IS')
+      ) {
+        const id = String(p[4]);
+        const observedStatus = String(p[5]);
+        const observedToken = p[6] as string | null;
+        const now = String(p[7]);
+        const cur = rows.get(id);
+        if (!cur || cur.status !== observedStatus) return { changes: 0, lastInsertRowId: 0 };
+        const tokenMatch =
+          (observedToken == null && cur.lease_token == null) ||
+          cur.lease_token === observedToken;
+        const expiredOrNull =
+          cur.lease_token == null ||
+          cur.lease_expires_at == null ||
+          cur.lease_expires_at < now;
+        if (!(tokenMatch && expiredOrNull)) return { changes: 0, lastInsertRowId: 0 };
+        rows.set(id, {
+          ...cur,
+          status: 'QUEUED',
+          source_uri: String(p[0]),
+          source_fingerprint: (p[1] as string | null) ?? cur.source_fingerprint,
+          export_file_name: (p[2] as string | null) ?? cur.export_file_name,
+          lease_token: null,
+          lease_expires_at: null,
+          error_code: null,
+          error_message: null,
+          updated_at: String(p[3]),
+        });
+        return { changes: 1, lastInsertRowId: 0 };
+      }
+      if (
+        sql.includes("status = 'QUEUED'") &&
+        sql.includes('source_uri = ?') &&
+        sql.includes("status = 'FAILED_RETRYABLE'")
+      ) {
         const id = String(p[4]);
         const cur = rows.get(id);
-        if (!cur) return { changes: 0, lastInsertRowId: 0 };
+        if (!cur || cur.status !== 'FAILED_RETRYABLE') return { changes: 0, lastInsertRowId: 0 };
         rows.set(id, {
           ...cur,
           status: 'QUEUED',
@@ -227,18 +268,29 @@ describe('Phase 2 producers + backfill persistence', () => {
     return { queue, repo, rows };
   }
 
-  it.each(['MANUAL', 'NOW', 'WHEN_CONNECTED'] as const)(
-    'enqueueStablePhoto creates exactly one job under policy %s',
-    async () => {
-      const { db, rows } = createMemoryDb();
-      const photos = [photo({ id: 'p1', status: 'stable' })];
-      const { queue } = makeQueue(photos, rows, db);
-      await queue.enqueueStablePhoto('s1', 'p1');
-      await queue.enqueueStablePhoto('s1', 'p1');
-      expect(rows.size).toBe(1);
-      expect(rows.get('p1')?.status).toBe('QUEUED');
-    },
-  );
+  it('enqueueStablePhoto is idempotent (unit; policy wiring covered in photoStableProducers)', async () => {
+    const { db, rows } = createMemoryDb();
+    const photos = [photo({ id: 'p1', status: 'stable' })];
+    const { queue } = makeQueue(photos, rows, db);
+    await queue.enqueueStablePhoto('s1', 'p1');
+    await queue.enqueueStablePhoto('s1', 'p1');
+    expect(rows.size).toBe(1);
+    expect(rows.get('p1')?.status).toBe('QUEUED');
+  });
+
+  it('counts missing/unreadable sources without reporting full success', async () => {
+    const { db, rows } = createMemoryDb();
+    const photos = [
+      photo({ id: 'ok', status: 'stable' }),
+      { ...photo({ id: 'gone', status: 'stable' }), uri: 'file://missing/gone.jpg' },
+    ];
+    const { queue } = makeQueue(photos, rows, db);
+    const result = await queue.ensureJobsForEligiblePhotos('s1', { reason: 'FINISH' });
+    expect(result.createdJobs).toBe(1);
+    expect(result.missingSourcePhotos).toBe(1);
+    expect(result.partialErrors.some((e) => e.includes('missing_source:gone'))).toBe(true);
+    expect(rows.has('gone')).toBe(false);
+  });
 
   it('backfill historical session creates jobs; second pass is idempotent', async () => {
     const { db, rows } = createMemoryDb();

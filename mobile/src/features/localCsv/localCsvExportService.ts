@@ -39,6 +39,7 @@ import {
   listCanonicalExportPhotos,
   selectExportPackagingPhotos,
 } from '../exportPrep/eligibleExportPhotos';
+import { validateReadyStaging } from '../exportPrep/validateReadyStaging';
 import { buildLocalCsvExport } from './buildLocalCsvExport';
 import { isDraftExportReady } from './supplierExportSemantics';
 import { diagnoseExportBlockers } from './localCsvExportPreflight';
@@ -239,6 +240,17 @@ export class LocalCsvExportService {
             `PACKAGE_EXPORT_PREP_PENDING: ${photo.id} aún en ${job.status}`,
           );
         }
+        const ready = await validateReadyStaging(job, 'strong');
+        if (!ready.ok) {
+          await prepRepo.invalidateReady(
+            photo.id,
+            `EXPORT_PREP_READY_INVALID:${ready.failure ?? 'UNKNOWN'}`,
+            'READY no pasó validación fuerte en preflight',
+          );
+          throw new Error(
+            `PACKAGE_EXPORT_PREP_PENDING: ${photo.id} READY inválido (${ready.failure})`,
+          );
+        }
       }
 
       const allReady = eligible.every((p) => prepByPhoto.get(p.id)?.status === 'READY');
@@ -343,10 +355,11 @@ export class LocalCsvExportService {
 
     const dir = `${FileSystem.documentDirectory ?? FileSystem.cacheDirectory}aisle-exports/`;
     await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
-    const csvUri = `${dir}${built.exportId}.csv`;
-    const zipUri = `${dir}${built.exportId}.zip`;
-    const tmpCsv = `${dir}${built.exportId}.tmp.csv`;
     const publishToken = `${Date.now()}`;
+    // Versioned finals — never overwrite prior good artifacts until both new files are validated.
+    const csvUri = `${dir}${built.exportId}.${publishToken}.csv`;
+    const zipUri = `${dir}${built.exportId}.${publishToken}.zip`;
+    const tmpCsv = `${dir}${built.exportId}.${publishToken}.tmp.csv`;
     const tmpZip = `${dir}${built.exportId}.${publishToken}.tmp.zip`;
 
     const photoEntries = packagedPhotos.map(({ getBytes: _g, ...meta }) => meta);
@@ -383,6 +396,7 @@ export class LocalCsvExportService {
     const manifestBytes = utf8Encode(`${JSON.stringify(manifest, null, 2)}\n`);
     const csvBytes = utf8Encode(built.csv);
 
+    let csvPublished = false;
     try {
       await FileSystem.writeAsStringAsync(tmpCsv, built.csv, {
         encoding: FileSystem.EncodingType.UTF8,
@@ -402,14 +416,26 @@ export class LocalCsvExportService {
           })),
         ],
       });
-      // Publish both only after ZIP succeeded.
-      await FileSystem.deleteAsync(csvUri, { idempotent: true }).catch(() => undefined);
-      await FileSystem.deleteAsync(zipUri, { idempotent: true }).catch(() => undefined);
       await FileSystem.moveAsync({ from: tmpCsv, to: csvUri });
+      csvPublished = true;
       await FileSystem.moveAsync({ from: tmpZip, to: zipUri });
+      const csvInfo = await FileSystem.getInfoAsync(csvUri);
+      const zipInfo = await FileSystem.getInfoAsync(zipUri);
+      const zipOk =
+        zipInfo.exists &&
+        'size' in zipInfo &&
+        typeof zipInfo.size === 'number' &&
+        zipInfo.size > 0;
+      if (!csvInfo.exists || !zipOk) {
+        throw new Error('PACKAGE_PUBLISH_INCOMPLETE: CSV/ZIP no válidos tras move');
+      }
     } catch (error) {
       await FileSystem.deleteAsync(tmpCsv, { idempotent: true }).catch(() => undefined);
       await FileSystem.deleteAsync(tmpZip, { idempotent: true }).catch(() => undefined);
+      if (csvPublished) {
+        await FileSystem.deleteAsync(csvUri, { idempotent: true }).catch(() => undefined);
+      }
+      await FileSystem.deleteAsync(zipUri, { idempotent: true }).catch(() => undefined);
       throw error;
     }
 

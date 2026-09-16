@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
 import type { LocalDetectionDraftRow } from '../database/repositories/localDetectionDraftRepository';
@@ -52,6 +52,8 @@ export function ReviewScreen({
   const sessionStatus = snapshot?.session?.status;
   const isLocalCompleted = sessionStatus === 'local_completed';
   const isReadOnly = isLocalCompleted;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   const refreshDrafts = useCallback(() => {
     if (!sessionId || !localCodeScanEnabled) {
@@ -77,24 +79,37 @@ export function ReviewScreen({
       setPrepCounts(emptyExportPrepCounts());
       return;
     }
+    let cancelled = false;
     void prepQueue
       .ensureJobsForEligiblePhotos(sessionId, { reason: 'REVIEW_OPEN' })
       .then(async (ensured) => {
+        if (cancelled) return;
         const counts = await prepQueue.getCounts(sessionId);
+        if (cancelled) return;
         setPrepCounts(counts);
-        if (ensured.partialErrors.length > 0) {
-          onError(
-            `Backfill de preparación con errores parciales (${ensured.partialErrors.length}). La cola sigue activa.`,
+        if (ensured.partialErrors.length > 0 || ensured.missingSourcePhotos > 0) {
+          onErrorRef.current(
+            `Backfill de preparación incompleto (fuentes: ${ensured.missingSourcePhotos}, errores: ${ensured.partialErrors.length}).`,
           );
         }
       })
       .catch((e) => {
-        onError(messageOf(e));
+        if (!cancelled) onErrorRef.current(messageOf(e));
       });
+    return () => {
+      cancelled = true;
+      // unsubscribe replaced below
+    };
+  }, [prepQueue, sessionId]); // intentionally omit onError identity to avoid repeat backfill
+
+  useEffect(() => {
+    if (!prepQueue || !sessionId) {
+      return;
+    }
     return prepQueue.subscribe((sid, c) => {
       if (sid === sessionId || sid == null) setPrepCounts(c);
     });
-  }, [prepQueue, sessionId, onError]);
+  }, [prepQueue, sessionId]);
 
   const incompleteScans = localCodeScanEnabled
     ? countIncompleteLocalCodeScans({ photos, drafts })
@@ -104,6 +119,8 @@ export function ReviewScreen({
     (prepCounts.pending > 0 ||
       prepCounts.failedRetryable > 0 ||
       prepCounts.failedTerminal > 0);
+  const prepBlockCount =
+    prepCounts.pending + prepCounts.failedRetryable + prepCounts.failedTerminal;
   const exportGate = canExportSession({
     session: snapshot?.session,
     photos,
@@ -216,7 +233,9 @@ export function ReviewScreen({
                 exportBusy
                   ? 'Exportando ZIP…'
                   : prepBlocksExport
-                    ? `Prep pendiente (${prepCounts.pending + prepCounts.failedRetryable})`
+                    ? prepCounts.failedTerminal > 0
+                      ? `Prep bloqueada (${prepCounts.failedTerminal} terminal)`
+                      : `Prep pendiente (${prepBlockCount})`
                     : exportBlockedByScan
                       ? `Escaneando… (${incompleteScans})`
                       : 'Exportar ZIP (CSV + fotos)'
@@ -238,7 +257,11 @@ export function ReviewScreen({
                   return;
                 }
                 if (prepBlocksExport) {
-                  onError('Hay fotos sin preparar o con error de preparación.');
+                  onError(
+                    prepCounts.failedTerminal > 0
+                      ? 'Hay fallos terminales de preparación. Reintentá o excluí.'
+                      : 'Hay fotos sin preparar o con error de preparación.',
+                  );
                   return;
                 }
                 setExportBusy(true);
@@ -249,24 +272,8 @@ export function ReviewScreen({
                     setZipProgress(`ZIP ${done}/${total}`);
                   });
                 }
-                void (async () => {
-                  if (prepQueue) {
-                    await prepQueue.ensureJobsForEligiblePhotos(sessionId, {
-                      reason: 'EXPORT_PREFLIGHT',
-                    });
-                    const gate = await prepQueue.evaluateExportability(sessionId);
-                    if (!gate.ok || gate.failedTerminal > 0) {
-                      throw new Error(
-                        gate.failedTerminal > 0
-                          ? 'Hay fallos terminales de preparación. Reintentá o excluí.'
-                          : gate.pending > 0 || gate.missingJobs > 0
-                            ? 'PACKAGE_EXPORT_PREP_PENDING: preparación incompleta.'
-                            : 'Preparación incompleta.',
-                      );
-                    }
-                  }
-                  return runLocalCsvExport(services.localCsvExport!, sessionId);
-                })()
+                // Authoritative preflight lives in LocalCsvExportService.ensureExportPrepJobs.
+                void runLocalCsvExport(services.localCsvExport!, sessionId)
                   .then(({ exported }) => {
                     setZipProgress(null);
                     setExportHint(

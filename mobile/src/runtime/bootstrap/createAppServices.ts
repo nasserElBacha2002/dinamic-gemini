@@ -38,6 +38,7 @@ import { LocalCsvExportService } from '../../features/localCsv/localCsvExportSer
 import { ExportPrepRepository } from '../../database/repositories/exportPrepRepository';
 import { ExportPrepQueue } from '../../features/exportPrep/exportPrepQueue';
 import { ExportPrepPhotoCoordinator } from '../../features/exportPrep/exportPrepPhotoCoordinator';
+import { runPhotoStableProducers } from './photoStableProducers';
 import { cleanupAbandonedExportStagingTemps } from '../../features/exportPrep/exportStaging';
 import { OfflineAisleExportService } from '../../features/offlineAisleExport';
 import { getOrCreateInstallationId } from '../../shared/installationId';
@@ -518,39 +519,20 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       probe: (uri) => probeStability(uri),
     },
     onPhotoStable: (sessionId, photoId) => {
-      // Serialize upload + offline enqueue: parallel fire-and-forget stampedes SQLite
-      // (database is locked) when many photos stabilize during "Finalizar captura".
-      // With localCompletion/csvExport, server upload is deferred until explicit policy
-      // (NOW / WHEN_CONNECTED) or completeReview → uploading — not on every stable photo.
-      // Export prep is an independent consumer of the stable event (not gated on upload policy).
-      // Return the chain promise so finish/freeze await producers before the export barrier.
-      const work = photoStableChain.then(async () => {
-        await uploadQueue.enqueuePhoto(sessionId, photoId);
-        const session = await captureRepo.getSession(sessionId);
-        const localZipMode =
-          config.flags.localCompletion === true || config.flags.mobileCsvExport === true;
-        const policy = session?.upload_policy;
-        const status = session?.status;
-        const allowOfflineUpload =
-          !localZipMode ||
-          policy === 'NOW' ||
-          policy === 'WHEN_CONNECTED' ||
-          status === 'uploading' ||
-          status === 'upload_review';
-        if (allowOfflineUpload) {
-          await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
-        }
-        if (exportPrepQueue) {
-          await exportPrepQueue.enqueueStablePhoto(sessionId, photoId);
-        } else if (
-          !allowOfflineUpload &&
-          (config.flags.mobileLocalCodeScan === true ||
-            config.flags.mobileCsvExport !== false ||
-            config.flags.localCompletion === true)
-        ) {
-          await uploadQueue.rescanPhotoForLocalReview(photoId).catch(() => undefined);
-        }
-      });
+      // Serialize producers: parallel fire-and-forget stampedes SQLite during finish.
+      // CaptureService awaits this Promise inside activeValidations, so finish waits for
+      // enqueue work — not for export-prep drain (Phase 3 barrier, if any).
+      const work = photoStableChain.then(() =>
+        runPhotoStableProducers({
+          sessionId,
+          photoId,
+          flags: config.flags,
+          uploadQueue,
+          captureRepo,
+          offlineAutoEnqueue,
+          exportPrepQueue,
+        }),
+      );
       photoStableChain = work.then(
         () => undefined,
         (error) => {

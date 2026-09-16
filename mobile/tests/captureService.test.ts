@@ -641,6 +641,75 @@ describe('CaptureService corrections', () => {
     ]);
   });
 
+  it('finish awaits the Promise returned by onPhotoStable (deferred)', async () => {
+    const repo = new FakeRepo();
+    repo.sessions.set(
+      'session-1',
+      session({ status: 'active', initial_asset_id: '1', initial_date_added: 1 }),
+    );
+
+    let resolveProbe!: (v: { ok: true; checks: number }) => void;
+    const probePending = new Promise<{ ok: true; checks: number }>((resolve) => {
+      resolveProbe = resolve;
+    });
+    let resolveStable!: () => void;
+    const stablePending = new Promise<void>((resolve) => {
+      resolveStable = resolve;
+    });
+    let onPhotoStableStarted = false;
+
+    const store: CaptureMediaStore = {
+      queryMostRecentPhoto: jest.fn().mockResolvedValue(null),
+      queryNewPhotosSince: jest.fn().mockResolvedValue({
+        images: [image],
+        metrics: {
+          assetsRead: 1,
+          pagesQueried: 1,
+          assetsHydrated: 1,
+          newCandidates: 1,
+          durationMs: 1,
+        },
+      }),
+      subscribeToGalleryChanges: jest.fn().mockReturnValue({ remove: jest.fn() }),
+      fileExists: jest.fn().mockResolvedValue(true),
+    };
+
+    const service = new CaptureService(
+      repo as unknown as CaptureRepository,
+      foreground(),
+      createLogger(() => undefined),
+      {
+        mediaStore: store,
+        stabilityProber: { probe: jest.fn().mockReturnValue(probePending) },
+        validationTimeoutMs: 10_000,
+        onPhotoStable: async () => {
+          onPhotoStableStarted = true;
+          await stablePending;
+        },
+      },
+    );
+
+    await service.loadSession('session-1', true);
+    await service.requestScan();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const finishPromise = service.finish();
+    let finished = false;
+    void finishPromise.then(() => {
+      finished = true;
+    });
+
+    resolveProbe({ ok: true, checks: 1 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onPhotoStableStarted).toBe(true);
+    expect(finished).toBe(false);
+
+    resolveStable();
+    await finishPromise;
+    expect(finished).toBe(true);
+    expect((await repo.getSession('session-1'))?.status).toBe('review');
+  });
+
   it('rolls back finishing when finish is blocked by unstable photos', async () => {
     const repo = new FakeRepo();
     repo.sessions.set('session-1', session({ status: 'active' }));
