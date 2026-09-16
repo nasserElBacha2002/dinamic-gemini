@@ -641,6 +641,73 @@ describe('CaptureService corrections', () => {
     ]);
   });
 
+  it('finish awaits producer barrier after validations when configured', async () => {
+    const repo = new FakeRepo();
+    repo.sessions.set(
+      'session-1',
+      session({ status: 'active', initial_asset_id: '1', initial_date_added: 1 }),
+    );
+
+    const barrier = {
+      closed: false,
+      active: 0,
+      closeAdmission: jest.fn((sid: string) => {
+        expect(sid).toBe('session-1');
+        barrier.closed = true;
+      }),
+      waitUntilIdle: jest.fn(async () => undefined),
+      reopen: jest.fn(),
+    };
+
+    let resolveProbe!: (v: { ok: true; checks: number }) => void;
+    const probePending = new Promise<{ ok: true; checks: number }>((resolve) => {
+      resolveProbe = resolve;
+    });
+
+    const store: CaptureMediaStore = {
+      queryMostRecentPhoto: jest.fn().mockResolvedValue(null),
+      queryNewPhotosSince: jest.fn().mockResolvedValue({
+        images: [image],
+        metrics: {
+          assetsRead: 1,
+          pagesQueried: 1,
+          assetsHydrated: 1,
+          newCandidates: 1,
+          durationMs: 1,
+        },
+      }),
+      subscribeToGalleryChanges: jest.fn().mockReturnValue({ remove: jest.fn() }),
+      fileExists: jest.fn().mockResolvedValue(true),
+    };
+
+    const service = new CaptureService(
+      repo as unknown as CaptureRepository,
+      foreground(),
+      createLogger(() => undefined),
+      {
+        mediaStore: store,
+        stabilityProber: { probe: jest.fn().mockReturnValue(probePending) },
+        validationTimeoutMs: 10_000,
+        sessionFreeze: true,
+        producerBarrier: barrier,
+        producerBarrierTimeoutMs: 5_000,
+        onPhotoStable: async () => undefined,
+      },
+    );
+
+    await service.loadSession('session-1', true);
+    await service.requestScan();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const finishPromise = service.finish();
+    resolveProbe({ ok: true, checks: 1 });
+    await finishPromise;
+
+    expect(barrier.closeAdmission).toHaveBeenCalledWith('session-1');
+    expect(barrier.waitUntilIdle).toHaveBeenCalledWith('session-1', 5_000);
+    expect((await repo.getSession('session-1'))?.status).toBe('review');
+  });
+
   it('finish awaits the Promise returned by onPhotoStable (deferred)', async () => {
     const repo = new FakeRepo();
     repo.sessions.set(

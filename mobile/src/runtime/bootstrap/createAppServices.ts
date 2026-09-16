@@ -38,6 +38,7 @@ import { LocalCsvExportService } from '../../features/localCsv/localCsvExportSer
 import { ExportPrepRepository } from '../../database/repositories/exportPrepRepository';
 import { ExportPrepQueue } from '../../features/exportPrep/exportPrepQueue';
 import { ExportPrepPhotoCoordinator } from '../../features/exportPrep/exportPrepPhotoCoordinator';
+import { SessionProducerBarrier } from '../../features/exportPrep/sessionProducerBarrier';
 import { runPhotoStableProducers } from './photoStableProducers';
 import { cleanupAbandonedExportStagingTemps } from '../../features/exportPrep/exportStaging';
 import { OfflineAisleExportService } from '../../features/offlineAisleExport';
@@ -508,6 +509,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
   );
 
   let photoStableChain: Promise<void> = Promise.resolve();
+  const sessionProducerBarrier = new SessionProducerBarrier();
 
   const capture = new CaptureService(captureRepo, createForegroundService(), logger, {
     mediaStore: {
@@ -520,8 +522,8 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
     },
     onPhotoStable: (sessionId, photoId) => {
       // Serialize producers: parallel fire-and-forget stampedes SQLite during finish.
-      // CaptureService awaits this Promise inside activeValidations, so finish waits for
-      // enqueue work — not for export-prep drain (Phase 3 barrier, if any).
+      // CaptureService awaits this Promise inside activeValidations; Phase 3 also waits
+      // the per-session producer barrier after the final scan.
       const work = photoStableChain.then(() =>
         runPhotoStableProducers({
           sessionId,
@@ -531,6 +533,8 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
           captureRepo,
           offlineAutoEnqueue,
           exportPrepQueue,
+          producerBarrier:
+            config.flags.mobileExportPrepQueue === true ? sessionProducerBarrier : null,
         }),
       );
       photoStableChain = work.then(
@@ -544,6 +548,9 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       );
       return work;
     },
+    producerBarrier:
+      config.flags.mobileExportPrepQueue === true ? sessionProducerBarrier : null,
+    producerBarrierTimeoutMs: 120_000,
     observability: obsWire,
     finishInstrumentation: config.flags.captureFinishInstrumentation,
     finishSafeMediaCheck: config.flags.captureFinishSafeMediaCheck,

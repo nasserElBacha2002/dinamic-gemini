@@ -6,13 +6,19 @@ import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/c
 export type CaptureFinishStage =
   | 'checking_media'
   | 'validating'
+  | 'freezing'
+  | 'preparing_export'
+  | 'draining_export'
   | 'closing'
   | 'preparing_review'
   | null;
 
 export const FINISH_STAGE_LABELS: Record<Exclude<CaptureFinishStage, null>, string> = {
-  checking_media: 'Verificando últimas fotos…',
-  validating: 'Validando fotos…',
+  checking_media: 'Buscando últimas fotos…',
+  validating: 'Validando archivos…',
+  freezing: 'Congelando lote…',
+  preparing_export: 'Preparando fotos…',
+  draining_export: 'Preparando exportación…',
   closing: 'Cerrando captura…',
   preparing_review: 'Preparando revisión…',
 };

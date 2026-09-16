@@ -284,20 +284,40 @@ export function CaptureScreen({
                 }
                 await services.capture.finish();
                 if (prepQueue && sid) {
-                  // Phase 2: materialize durable jobs after freeze. Full drain wait is Phase 3.
-                  setPrepDrainLabel('Asegurando jobs de exportación…');
-                  const ensured = await prepQueue.ensureJobsForEligiblePhotos(sid, {
+                  setPrepDrainLabel('Preparando fotos…');
+                  const drain = await prepQueue.waitUntilExportable(sid, {
                     reason: 'FINISH',
+                    producerBarrierCompleted: true,
+                    timeoutMs: 10 * 60_000,
+                    pollMs: 500,
+                    onProgress: (snap) => {
+                      if (snap.totalEligible <= 0) {
+                        setPrepDrainLabel('Preparando fotos…');
+                        return;
+                      }
+                      setPrepDrainLabel(
+                        `Listas ${snap.ready} de ${snap.totalEligible}…`,
+                      );
+                      void prepQueue.getCounts(sid).then(setPrepCounts);
+                    },
                   });
-                  const countsAfter = await prepQueue.getCounts(sid);
-                  setPrepCounts(countsAfter);
+                  setPrepCounts(await prepQueue.getCounts(sid));
                   setPrepDrainLabel(null);
-                  if (ensured.partialErrors.length > 0 || ensured.missingSourcePhotos > 0) {
+                  if (drain.missingJobs > 0 && !drain.exportable && !drain.timedOut) {
+                    throw new Error(
+                      `Faltan ${drain.missingJobs} job(s) de preparación tras el freeze. Reintentá desde Revisión.`,
+                    );
+                  }
+                  if (drain.timedOut) {
                     Alert.alert(
-                      'Preparación parcial',
-                      `Jobs creados: ${ensured.createdJobs}. Existentes: ${ensured.existingJobs}. ` +
-                        `Sin fuente: ${ensured.missingSourcePhotos}. Errores parciales: ${ensured.partialErrors.length}. ` +
-                        `La cola continúa en segundo plano; revisá el estado en revisión.`,
+                      'Preparación en curso',
+                      `Tiempo de espera agotado (${drain.ready}/${drain.totalEligible} listas). ` +
+                        `Podés continuar en Revisión; la cola sigue en segundo plano.`,
+                    );
+                  } else if (drain.failedTerminal > 0 && !drain.exportable) {
+                    Alert.alert(
+                      'Preparación con fallos',
+                      `${drain.failedTerminal} foto(s) con fallo terminal. Revisá y reintentá o excluí en Revisión.`,
                     );
                   }
                 }

@@ -83,6 +83,17 @@ export interface CaptureServiceAdapters {
   readonly createId?: () => string;
   /** Called after a photo becomes stable (progressive upload hook). */
   readonly onPhotoStable?: (sessionId: string, photoId: string) => void | Promise<void>;
+  /**
+   * Optional per-session producer barrier (Phase 3).
+   * Closed when finish begins; waited after stability validations.
+   */
+  readonly producerBarrier?: {
+    closeAdmission(sessionId: string): void;
+    waitUntilIdle(sessionId: string, timeoutMs: number): Promise<void>;
+    reopen?(sessionId: string): void;
+  } | null;
+  /** Timeout for producer barrier wait (default 120s). */
+  readonly producerBarrierTimeoutMs?: number;
   /** Phase 0 observability (optional; never required for capture). */
   readonly observability?: {
     readonly reporter: import('../../observability').ObservabilityReporter;
@@ -154,6 +165,8 @@ export class CaptureService {
   private readonly validationTimeoutMs: number;
   private readonly createId: () => string;
   private readonly onPhotoStable: CaptureServiceAdapters['onPhotoStable'];
+  private readonly producerBarrier: CaptureServiceAdapters['producerBarrier'];
+  private readonly producerBarrierTimeoutMs: number;
   private readonly observability: CaptureServiceAdapters['observability'];
   private readonly finishInstrumentation: boolean;
   private readonly finishSafeMediaCheck: boolean;
@@ -173,6 +186,8 @@ export class CaptureService {
     this.validationTimeoutMs = adapters.validationTimeoutMs ?? VALIDATION_TIMEOUT_MS;
     this.createId = adapters.createId ?? createId;
     this.onPhotoStable = adapters.onPhotoStable;
+    this.producerBarrier = adapters.producerBarrier ?? null;
+    this.producerBarrierTimeoutMs = adapters.producerBarrierTimeoutMs ?? 120_000;
     this.observability = adapters.observability ?? null;
     this.finishInstrumentation = adapters.finishInstrumentation ?? true;
     this.finishSafeMediaCheck = adapters.finishSafeMediaCheck ?? true;
@@ -668,6 +683,30 @@ export class CaptureService {
         });
       }
 
+      // Close producer admission after final scan/validation, then wait for in-flight work.
+      if (this.producerBarrier) {
+        errorStage = 'producer_barrier';
+        this.setFinishStage('validating');
+        this.producerBarrier.closeAdmission(sessionId);
+        const barrierStarted = Date.now();
+        try {
+          await this.producerBarrier.waitUntilIdle(sessionId, this.producerBarrierTimeoutMs);
+        } catch (barrierError) {
+          this.logger.warn('error', {
+            where: 'producer_barrier',
+            sessionId,
+            message:
+              barrierError instanceof Error ? barrierError.message : String(barrierError),
+          });
+          throw barrierError;
+        }
+        this.logger.info('export_prep', {
+          code: 'EXPORT_PREP_PRODUCERS_DRAINED',
+          sessionId,
+          durationMs: stageDurationMs(barrierStarted),
+        });
+      }
+
       errorStage = 'foreground_stop';
       this.setFinishStage('closing');
       const fgsStarted = Date.now();
@@ -714,6 +753,7 @@ export class CaptureService {
       });
 
       if (this.sessionFreeze) {
+        this.setFinishStage('freezing');
         const frozen = await this.freezeService.freezeSession(sessionId, this.photos);
         this.sqliteBusyCountFinish = 0;
         if (this.session?.id === sessionId) {
@@ -727,6 +767,12 @@ export class CaptureService {
           statusAfter: 'finishing',
           durationMs: 0,
           newMediaCandidateCount: frozen.photoCount,
+        });
+        this.logger.info('export_prep', {
+          code: 'EXPORT_PREP_FREEZE_READY',
+          sessionId,
+          freezeId: frozen.freezeId,
+          photoCount: frozen.photoCount,
         });
         this.logger.info('session_finish', {
           sessionId,
@@ -787,6 +833,7 @@ export class CaptureService {
       return sessionId;
     } catch (error) {
       // Keep capture operable after unresolved unstable/undecodable (or other gate) failures.
+      this.producerBarrier?.reopen?.(sessionId);
       const stillFinishing = (await this.repo.getSession(sessionId))?.status === 'finishing';
       if (stillFinishing) {
         await this.repo.updateSessionStatus(sessionId, resumeStatus);

@@ -294,6 +294,29 @@ describe('export_prep real SQLite', () => {
       expect(third.createdJobs).toBe(0);
       expect((await repo.listForSession('hist-1')).length).toBe(2);
 
+      // Two drain observers coalesce; READY jobs → exportable without mutating rows.
+      for (const id of ['hist-1:100', 'hist-1:101']) {
+        await db2.runAsync(
+          `UPDATE export_prep_jobs SET
+             status = 'READY', staging_uri = ?, export_file_name = ?, size_bytes = 12,
+             sha256 = ?, ready_at = ?, updated_at = ?
+           WHERE capture_photo_id = ?;`,
+          `file:///docs/export-staging/hist-1/photos/${id}.jpg`,
+          `0001_${id}.jpg`,
+          'c'.repeat(64),
+          now,
+          now,
+          id,
+        );
+      }
+      const [d1, d2] = await Promise.all([
+        queue.waitUntilExportable('hist-1', { timeoutMs: 2_000, pollMs: 50, reason: 'RECOVERY' }),
+        queue.waitUntilExportable('hist-1', { timeoutMs: 2_000, pollMs: 50, reason: 'RECOVERY' }),
+      ]);
+      expect(d1.exportable).toBe(true);
+      expect(d2.exportable).toBe(true);
+      expect(d1.sessionId).toBe('hist-1');
+
       sync2.close();
     } finally {
       try {

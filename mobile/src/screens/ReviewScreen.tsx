@@ -15,6 +15,8 @@ import {
 import {
   emptyExportPrepCounts,
   type ExportPrepCounts,
+  type ExportPrepDrainResult,
+  type ExportPrepSettleResult,
 } from '../features/exportPrep/exportPrepQueue';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, ErrorText, PhotoWorkList, SmallButton, countPhotos, messageOf, styles } from '../ui';
@@ -46,6 +48,8 @@ export function ReviewScreen({
   const [exportHint, setExportHint] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<LocalDetectionDraftRow[]>([]);
   const [prepCounts, setPrepCounts] = useState<ExportPrepCounts>(emptyExportPrepCounts());
+  const [prepExportability, setPrepExportability] = useState<ExportPrepSettleResult | null>(null);
+  const [drainBusy, setDrainBusy] = useState(false);
   const [zipProgress, setZipProgress] = useState<string | null>(null);
 
   const sessionId = snapshot?.session?.id;
@@ -77,6 +81,7 @@ export function ReviewScreen({
   useEffect(() => {
     if (!prepQueue || !sessionId) {
       setPrepCounts(emptyExportPrepCounts());
+      setPrepExportability(null);
       return;
     }
     let cancelled = false;
@@ -85,8 +90,10 @@ export function ReviewScreen({
       .then(async (ensured) => {
         if (cancelled) return;
         const counts = await prepQueue.getCounts(sessionId);
+        const gate = await prepQueue.evaluateExportability(sessionId);
         if (cancelled) return;
         setPrepCounts(counts);
+        setPrepExportability(gate);
         if (ensured.partialErrors.length > 0 || ensured.missingSourcePhotos > 0) {
           onErrorRef.current(
             `Backfill de preparación incompleto (fuentes: ${ensured.missingSourcePhotos}, errores: ${ensured.partialErrors.length}).`,
@@ -98,29 +105,60 @@ export function ReviewScreen({
       });
     return () => {
       cancelled = true;
-      // unsubscribe replaced below
     };
-  }, [prepQueue, sessionId]); // intentionally omit onError identity to avoid repeat backfill
+  }, [prepQueue, sessionId]);
 
   useEffect(() => {
     if (!prepQueue || !sessionId) {
       return;
     }
     return prepQueue.subscribe((sid, c) => {
-      if (sid === sessionId || sid == null) setPrepCounts(c);
+      if (sid === sessionId || sid == null) {
+        setPrepCounts(c);
+        void prepQueue.evaluateExportability(sessionId).then(setPrepExportability);
+      }
     });
   }, [prepQueue, sessionId]);
+
+  const resumeDrain = useCallback(async () => {
+    if (!prepQueue || !sessionId || drainBusy) return;
+    setDrainBusy(true);
+    try {
+      const drain: ExportPrepDrainResult = await prepQueue.waitUntilExportable(sessionId, {
+        reason: 'RECOVERY',
+        timeoutMs: 5 * 60_000,
+        pollMs: 500,
+      });
+      setPrepCounts(await prepQueue.getCounts(sessionId));
+      setPrepExportability(await prepQueue.evaluateExportability(sessionId));
+      if (drain.timedOut) {
+        onErrorRef.current(
+          `Preparación aún en curso (${drain.ready}/${drain.totalEligible}). Reintentá la espera.`,
+        );
+      }
+    } catch (e) {
+      onErrorRef.current(messageOf(e));
+    } finally {
+      setDrainBusy(false);
+    }
+  }, [drainBusy, prepQueue, sessionId]);
 
   const incompleteScans = localCodeScanEnabled
     ? countIncompleteLocalCodeScans({ photos, drafts })
     : 0;
   const prepBlocksExport =
     prepQueue != null &&
-    (prepCounts.pending > 0 ||
-      prepCounts.failedRetryable > 0 ||
-      prepCounts.failedTerminal > 0);
+    (prepExportability != null
+      ? !prepExportability.ok
+      : prepCounts.pending > 0 ||
+        prepCounts.failedRetryable > 0 ||
+        prepCounts.failedTerminal > 0);
   const prepBlockCount =
-    prepCounts.pending + prepCounts.failedRetryable + prepCounts.failedTerminal;
+    (prepExportability?.pending ?? prepCounts.pending) +
+    (prepExportability?.failedRetryable ?? prepCounts.failedRetryable) +
+    (prepExportability?.failedTerminal ?? prepCounts.failedTerminal);
+  const freezeId = snapshot?.session?.active_freeze_id;
+  const freezeGen = snapshot?.session?.capture_freeze_generation;
   const exportGate = canExportSession({
     session: snapshot?.session,
     photos,
@@ -178,8 +216,18 @@ export function ReviewScreen({
           </Text>
           {prepQueue ? (
             <Text style={styles.row}>
-              Prep · pendientes: {prepCounts.queued} · procesando: {prepCounts.processing} ·
-              listas: {prepCounts.ready} · fallidas: {prepCounts.failed}
+              Prep · elegibles: {prepExportability?.totalEligible ?? '—'} · listas:{' '}
+              {prepCounts.ready} · cola: {prepCounts.queued} · proc: {prepCounts.processing} ·
+              retry: {prepCounts.failedRetryable} · terminal: {prepCounts.failedTerminal}
+              {prepExportability && prepExportability.missingJobs > 0
+                ? ` · faltan jobs: ${prepExportability.missingJobs}`
+                : ''}
+            </Text>
+          ) : null}
+          {prepQueue && freezeId ? (
+            <Text style={styles.muted}>
+              Freeze {freezeId.slice(0, 8)}… · gen {freezeGen ?? 0}
+              {prepExportability?.ok ? ' · exportable' : ' · no exportable'}
             </Text>
           ) : null}
           {!canConfirm && !isLocalCompleted ? (
@@ -211,7 +259,17 @@ export function ReviewScreen({
           {prepQueue && prepCounts.failed > 0 && sessionId ? (
             <Button
               label={`Reintentar prep fallidas (${prepCounts.failed})`}
-              onPress={() => void prepQueue.retryFailedForSession(sessionId)}
+              disabled={drainBusy}
+              onPress={() => {
+                void prepQueue.retryFailedForSession(sessionId).then(() => resumeDrain());
+              }}
+            />
+          ) : null}
+          {prepQueue && sessionId && prepBlocksExport ? (
+            <Button
+              label={drainBusy ? 'Esperando preparación…' : 'Reanudar preparación'}
+              disabled={drainBusy}
+              onPress={() => void resumeDrain()}
             />
           ) : null}
           {!isLocalCompleted ? (

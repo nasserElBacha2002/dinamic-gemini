@@ -24,7 +24,6 @@ import {
   listCanonicalExportPhotos,
   selectEligibleExportPrepPhotos,
   selectNonProcessableExportPhotos,
-  selectExportPackagingPhotos,
 } from './eligibleExportPhotos';
 import {
   sourceUriIsReadable,
@@ -63,6 +62,49 @@ export interface ExportPrepSettleResult {
   readonly failedRetryable: number;
 }
 
+/** Phase 3 drain observation result (authoritative snapshot). */
+export interface ExportPrepDrainResult {
+  readonly sessionId: string;
+  readonly freezeId: string | null;
+  readonly freezeGeneration: number | null;
+  readonly totalEligible: number;
+  readonly ready: number;
+  readonly queued: number;
+  readonly processing: number;
+  readonly failedRetryable: number;
+  readonly failedTerminal: number;
+  readonly missingJobs: number;
+  readonly excluded: number;
+  readonly timedOut: boolean;
+  readonly producerBarrierCompleted: boolean;
+  readonly exportable: boolean;
+  readonly durationMs: number;
+}
+
+export function emptyExportPrepDrainResult(
+  sessionId: string,
+  partial?: Partial<ExportPrepDrainResult>,
+): ExportPrepDrainResult {
+  return {
+    sessionId,
+    freezeId: null,
+    freezeGeneration: null,
+    totalEligible: 0,
+    ready: 0,
+    queued: 0,
+    processing: 0,
+    failedRetryable: 0,
+    failedTerminal: 0,
+    missingJobs: 0,
+    excluded: 0,
+    timedOut: false,
+    producerBarrierCompleted: false,
+    exportable: false,
+    durationMs: 0,
+    ...partial,
+  };
+}
+
 /**
  * Durable producer-consumer for local ZIP export preparation.
  * Does not block MediaStore capture; one worker by default.
@@ -77,6 +119,7 @@ export class ExportPrepQueue {
   private preferredSessionId: string | null = null;
   private tickScheduled = false;
   private lastBackpressureWarnedAt = 0;
+  private readonly drainWaiters = new Map<string, Promise<ExportPrepDrainResult>>();
   readonly metrics = {
     jobsCompleted: 0,
     jobsFailed: 0,
@@ -122,6 +165,10 @@ export class ExportPrepQueue {
       this.deps.logger?.info('export_prep', {
         code: 'EXPORT_PREP_BOOTSTRAP_RECOVERY',
         reason: 'RECOVERY',
+        recovered: n,
+      });
+      this.deps.logger?.info('export_prep', {
+        code: 'EXPORT_PREP_RECOVERY_RESUMED',
         recovered: n,
       });
     }
@@ -417,56 +464,242 @@ export class ExportPrepQueue {
   }
 
   /**
-   * Barrier: backfill jobs for eligible freeze/session photos, then wait until every
-   * eligible photo is READY | EXCLUDED | FAILED_TERMINAL (no missing jobs / pending).
+   * Phase 3 drain: ensure FINISH jobs after freeze, then observe until exportable,
+   * terminal-complete (not exportable), or timeout. Concurrent callers share one wait.
    */
   async waitUntilExportable(
     sessionId: string,
-    options?: { readonly timeoutMs?: number; readonly pollMs?: number },
-  ): Promise<ExportPrepSettleResult> {
-    // Phase 3 drain barrier — kept available; Phase 2 finish path uses ensure only.
-    await this.ensureJobsForEligiblePhotos(sessionId, { reason: 'RECOVERY' });
+    options?: {
+      readonly timeoutMs?: number;
+      readonly pollMs?: number;
+      readonly producerBarrierCompleted?: boolean;
+      readonly reason?: ExportPrepEnsureReason;
+      readonly onProgress?: (snapshot: ExportPrepDrainResult) => void;
+    },
+  ): Promise<ExportPrepDrainResult> {
+    const existing = this.drainWaiters.get(sessionId);
+    if (existing) {
+      return existing;
+    }
+    const run = this.runDrain(sessionId, options).finally(() => {
+      if (this.drainWaiters.get(sessionId) === run) {
+        this.drainWaiters.delete(sessionId);
+      }
+    });
+    this.drainWaiters.set(sessionId, run);
+    return run;
+  }
+
+  private async runDrain(
+    sessionId: string,
+    options?: {
+      readonly timeoutMs?: number;
+      readonly pollMs?: number;
+      readonly producerBarrierCompleted?: boolean;
+      readonly reason?: ExportPrepEnsureReason;
+      readonly onProgress?: (snapshot: ExportPrepDrainResult) => void;
+    },
+  ): Promise<ExportPrepDrainResult> {
     const timeoutMs = options?.timeoutMs ?? 10 * 60_000;
-    const pollMs = options?.pollMs ?? 250;
+    const pollMs = Math.max(200, options?.pollMs ?? 500);
     const started = Date.now();
+    const producerBarrierCompleted = options?.producerBarrierCompleted ?? true;
+    const reason = options?.reason ?? 'FINISH';
+
+    this.deps.logger?.info('export_prep', {
+      code: 'EXPORT_PREP_FINISH_STARTED',
+      sessionId,
+      reason,
+    });
+
+    let ensured = await this.ensureJobsForEligiblePhotos(sessionId, { reason });
+    this.deps.logger?.info('export_prep', {
+      code: 'EXPORT_PREP_BACKFILL_COMPLETE',
+      sessionId,
+      reason,
+      eligiblePhotos: ensured.eligiblePhotos,
+      createdJobs: ensured.createdJobs,
+      missingSourcePhotos: ensured.missingSourcePhotos,
+      partialErrorCount: ensured.partialErrors.length,
+      durationMs: ensured.durationMs,
+    });
+
+    // Limited rematerialization if jobs are still missing after first backfill.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const snap = await this.snapshotDrain(sessionId, {
+        producerBarrierCompleted,
+        timedOut: false,
+        durationMs: Date.now() - started,
+      });
+      if (snap.missingJobs === 0) break;
+      ensured = await this.ensureJobsForEligiblePhotos(sessionId, { reason });
+    }
+
     this.preferredSessionId = sessionId;
     this.scheduleTick();
-    let last = await this.evaluateExportability(sessionId);
-    while (Date.now() - started < timeoutMs) {
-      this.emit(sessionId, await this.deps.prepRepo.countsForSession(sessionId));
-      if (last.pending === 0 && last.missingJobs === 0 && last.failedRetryable === 0) {
-        return last;
-      }
-      await new Promise((r) => setTimeout(r, pollMs));
-      this.scheduleTick();
-      last = await this.evaluateExportability(sessionId);
-    }
-    return last;
-  }
 
-  /** @deprecated use waitUntilExportable — Phase 3 drain */
-  async waitUntilSettled(
-    sessionId: string,
-    options?: { readonly timeoutMs?: number; readonly pollMs?: number },
-  ): Promise<{ readonly ok: boolean; readonly unresolved: number } & ExportPrepSettleResult> {
-    const result = await this.waitUntilExportable(sessionId, options);
-    return {
-      ...result,
-      unresolved: result.pending + result.missingJobs + result.failedRetryable,
+    let lastProgressKey = '';
+    const emitProgress = (snap: ExportPrepDrainResult, force = false) => {
+      const key = [
+        snap.ready,
+        snap.queued,
+        snap.processing,
+        snap.failedRetryable,
+        snap.failedTerminal,
+        snap.missingJobs,
+        snap.exportable,
+        snap.timedOut,
+      ].join(':');
+      if (!force && key === lastProgressKey) return;
+      lastProgressKey = key;
+      this.deps.logger?.info('export_prep', {
+        code: 'EXPORT_PREP_DRAIN_PROGRESS',
+        sessionId,
+        freezeId: snap.freezeId,
+        freezeGeneration: snap.freezeGeneration,
+        totalEligible: snap.totalEligible,
+        ready: snap.ready,
+        pending: snap.queued + snap.processing,
+        failedRetryable: snap.failedRetryable,
+        failedTerminal: snap.failedTerminal,
+        missingJobs: snap.missingJobs,
+        durationMs: snap.durationMs,
+      });
+      options?.onProgress?.(snap);
     };
+
+    // Event-driven wake + defensive low-frequency poll.
+    let wake: (() => void) | null = null;
+    const unsub = this.subscribe((sid) => {
+      if (sid === sessionId || sid == null) wake?.();
+    });
+
+    try {
+      while (Date.now() - started < timeoutMs) {
+        this.scheduleTick();
+        const snap = await this.snapshotDrain(sessionId, {
+          producerBarrierCompleted,
+          timedOut: false,
+          durationMs: Date.now() - started,
+        });
+        emitProgress(snap);
+
+        if (snap.exportable) {
+          this.deps.logger?.info('export_prep', {
+            code: 'EXPORT_PREP_DRAIN_READY',
+            sessionId,
+            freezeId: snap.freezeId,
+            totalEligible: snap.totalEligible,
+            ready: snap.ready,
+            durationMs: snap.durationMs,
+          });
+          return snap;
+        }
+
+        // Terminal-complete: no more programmable work (user must act in Review).
+        if (
+          snap.missingJobs === 0 &&
+          snap.queued === 0 &&
+          snap.processing === 0 &&
+          snap.failedRetryable === 0 &&
+          snap.failedTerminal > 0 &&
+          snap.ready + snap.failedTerminal === snap.totalEligible
+        ) {
+          this.deps.logger?.info('export_prep', {
+            code: 'EXPORT_PREP_DRAIN_FAILED',
+            sessionId,
+            freezeId: snap.freezeId,
+            failedTerminal: snap.failedTerminal,
+            ready: snap.ready,
+            durationMs: snap.durationMs,
+          });
+          return snap;
+        }
+
+        // Structural: missing jobs persist after rematerialization attempts.
+        if (
+          snap.missingJobs > 0 &&
+          snap.queued === 0 &&
+          snap.processing === 0 &&
+          Date.now() - started > 2_000
+        ) {
+          ensured = await this.ensureJobsForEligiblePhotos(sessionId, { reason: 'RECOVERY' });
+          const after = await this.snapshotDrain(sessionId, {
+            producerBarrierCompleted,
+            timedOut: false,
+            durationMs: Date.now() - started,
+          });
+          if (after.missingJobs > 0 && after.queued === 0 && after.processing === 0) {
+            this.deps.logger?.warn('export_prep', {
+              code: 'EXPORT_PREP_DRAIN_FAILED',
+              sessionId,
+              missingJobs: after.missingJobs,
+              durationMs: after.durationMs,
+            });
+            return after;
+          }
+        }
+
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const done = () => {
+            if (settled) return;
+            settled = true;
+            wake = null;
+            clearTimeout(timer);
+            resolve();
+          };
+          wake = done;
+          const timer = setTimeout(done, pollMs);
+        });
+      }
+
+      const timedOut = await this.snapshotDrain(sessionId, {
+        producerBarrierCompleted,
+        timedOut: true,
+        durationMs: Date.now() - started,
+      });
+      emitProgress(timedOut, true);
+      this.deps.logger?.warn('export_prep', {
+        code: 'EXPORT_PREP_DRAIN_TIMEOUT',
+        sessionId,
+        freezeId: timedOut.freezeId,
+        totalEligible: timedOut.totalEligible,
+        ready: timedOut.ready,
+        pending: timedOut.queued + timedOut.processing,
+        failedRetryable: timedOut.failedRetryable,
+        failedTerminal: timedOut.failedTerminal,
+        missingJobs: timedOut.missingJobs,
+        durationMs: timedOut.durationMs,
+      });
+      return timedOut;
+    } finally {
+      unsub();
+    }
   }
 
-  async evaluateExportability(sessionId: string): Promise<ExportPrepSettleResult> {
-    const { photos } = await listCanonicalExportPhotos(this.deps.captureRepo, sessionId);
-    const eligible = selectExportPackagingPhotos(photos);
+  async snapshotDrain(
+    sessionId: string,
+    meta: {
+      readonly producerBarrierCompleted: boolean;
+      readonly timedOut: boolean;
+      readonly durationMs: number;
+    },
+  ): Promise<ExportPrepDrainResult> {
+    const { session, photos } = await listCanonicalExportPhotos(
+      this.deps.captureRepo,
+      sessionId,
+    );
+    const eligible = selectEligibleExportPrepPhotos(photos);
     const jobs = await this.deps.prepRepo.listForSession(sessionId);
     const byId = new Map(jobs.map((j) => [j.capture_photo_id, j]));
     let ready = 0;
-    let excluded = 0;
-    let failedTerminal = 0;
+    let queued = 0;
+    let processing = 0;
     let failedRetryable = 0;
-    let pending = 0;
+    let failedTerminal = 0;
     let missingJobs = 0;
+    let excluded = 0;
     for (const photo of eligible) {
       const job = byId.get(photo.id);
       if (!job) {
@@ -477,48 +710,96 @@ export class ExportPrepQueue {
         case 'READY':
           ready += 1;
           break;
-        case 'EXCLUDED':
-          excluded += 1;
+        case 'QUEUED':
+          queued += 1;
           break;
-        case 'FAILED_TERMINAL':
-          failedTerminal += 1;
+        case 'PREPARING':
+        case 'SCANNING':
+        case 'VALIDATING':
+          processing += 1;
           break;
         case 'FAILED_RETRYABLE':
           failedRetryable += 1;
           break;
-        case 'QUEUED':
-        case 'PREPARING':
-        case 'SCANNING':
-        case 'VALIDATING':
-          pending += 1;
+        case 'FAILED_TERMINAL':
+          failedTerminal += 1;
+          break;
+        case 'EXCLUDED':
+          excluded += 1;
           break;
         default:
-          pending += 1;
+          processing += 1;
           break;
       }
     }
-    for (const photo of photos.filter((p) => p.status === 'excluded')) {
+    for (const photo of selectNonProcessableExportPhotos(photos)) {
       const job = byId.get(photo.id);
       if (job?.status === 'EXCLUDED') excluded += 1;
     }
-    const accounted = ready + failedTerminal + failedRetryable + pending + missingJobs;
-    const ok =
+    const exportable =
       missingJobs === 0 &&
-      pending === 0 &&
+      queued === 0 &&
+      processing === 0 &&
       failedRetryable === 0 &&
       failedTerminal === 0 &&
       ready === eligible.length &&
-      accounted === eligible.length;
+      eligible.length === ready;
+
     return {
-      ok,
+      sessionId,
+      freezeId: session?.active_freeze_id ?? null,
+      freezeGeneration: session?.capture_freeze_generation ?? null,
       totalEligible: eligible.length,
       ready,
-      excluded,
-      failed: failedTerminal + failedRetryable,
-      pending,
-      missingJobs,
-      failedTerminal,
+      queued,
+      processing,
       failedRetryable,
+      failedTerminal,
+      missingJobs,
+      excluded,
+      timedOut: meta.timedOut,
+      producerBarrierCompleted: meta.producerBarrierCompleted,
+      exportable,
+      durationMs: meta.durationMs,
+    };
+  }
+
+  /** @deprecated use waitUntilExportable — Phase 3 drain */
+  async waitUntilSettled(
+    sessionId: string,
+    options?: { readonly timeoutMs?: number; readonly pollMs?: number },
+  ): Promise<{ readonly ok: boolean; readonly unresolved: number } & ExportPrepSettleResult> {
+    const drain = await this.waitUntilExportable(sessionId, options);
+    return {
+      ok: drain.exportable,
+      totalEligible: drain.totalEligible,
+      ready: drain.ready,
+      excluded: drain.excluded,
+      failed: drain.failedTerminal + drain.failedRetryable,
+      pending: drain.queued + drain.processing,
+      missingJobs: drain.missingJobs,
+      failedTerminal: drain.failedTerminal,
+      failedRetryable: drain.failedRetryable,
+      unresolved: drain.queued + drain.processing + drain.missingJobs + drain.failedRetryable,
+    };
+  }
+
+  async evaluateExportability(sessionId: string): Promise<ExportPrepSettleResult> {
+    const drain = await this.snapshotDrain(sessionId, {
+      producerBarrierCompleted: true,
+      timedOut: false,
+      durationMs: 0,
+    });
+    return {
+      ok: drain.exportable,
+      totalEligible: drain.totalEligible,
+      ready: drain.ready,
+      excluded: drain.excluded,
+      failed: drain.failedTerminal + drain.failedRetryable,
+      pending: drain.queued + drain.processing,
+      missingJobs: drain.missingJobs,
+      failedTerminal: drain.failedTerminal,
+      failedRetryable: drain.failedRetryable,
     };
   }
 

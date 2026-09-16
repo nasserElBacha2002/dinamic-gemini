@@ -32,6 +32,10 @@ export interface PhotoStableProducerDeps {
   readonly exportPrepQueue?: {
     enqueueStablePhoto(sessionId: string, photoId: string): Promise<void>;
   } | null;
+  readonly producerBarrier?: {
+    begin(sessionId: string): boolean;
+    end(sessionId: string): void;
+  } | null;
 }
 
 export function allowOfflineUploadForPhotoStable(input: {
@@ -58,24 +62,34 @@ export function allowOfflineUploadForPhotoStable(input: {
  * Phase 2 does **not** drain the prep queue; finish only awaits this enqueue work.
  */
 export async function runPhotoStableProducers(deps: PhotoStableProducerDeps): Promise<void> {
-  await deps.uploadQueue.enqueuePhoto(deps.sessionId, deps.photoId);
-  const session = await deps.captureRepo.getSession(deps.sessionId);
-  const allowOfflineUpload = allowOfflineUploadForPhotoStable({
-    flags: deps.flags,
-    uploadPolicy: session?.upload_policy,
-    sessionStatus: session?.status,
-  });
-  if (allowOfflineUpload && deps.offlineAutoEnqueue) {
-    await deps.offlineAutoEnqueue.onPhotoPersisted(deps.sessionId, deps.photoId);
+  const barrier = deps.producerBarrier;
+  const tracked = barrier ? barrier.begin(deps.sessionId) : true;
+  if (!tracked) {
+    // Admission closed after finish scan — do not materialize late producers.
+    return;
   }
-  if (deps.exportPrepQueue) {
-    await deps.exportPrepQueue.enqueueStablePhoto(deps.sessionId, deps.photoId);
-  } else if (
-    !allowOfflineUpload &&
-    (deps.flags.mobileLocalCodeScan === true ||
-      deps.flags.mobileCsvExport !== false ||
-      deps.flags.localCompletion === true)
-  ) {
-    await deps.uploadQueue.rescanPhotoForLocalReview?.(deps.photoId)?.catch(() => undefined);
+  try {
+    await deps.uploadQueue.enqueuePhoto(deps.sessionId, deps.photoId);
+    const session = await deps.captureRepo.getSession(deps.sessionId);
+    const allowOfflineUpload = allowOfflineUploadForPhotoStable({
+      flags: deps.flags,
+      uploadPolicy: session?.upload_policy,
+      sessionStatus: session?.status,
+    });
+    if (allowOfflineUpload && deps.offlineAutoEnqueue) {
+      await deps.offlineAutoEnqueue.onPhotoPersisted(deps.sessionId, deps.photoId);
+    }
+    if (deps.exportPrepQueue) {
+      await deps.exportPrepQueue.enqueueStablePhoto(deps.sessionId, deps.photoId);
+    } else if (
+      !allowOfflineUpload &&
+      (deps.flags.mobileLocalCodeScan === true ||
+        deps.flags.mobileCsvExport !== false ||
+        deps.flags.localCompletion === true)
+    ) {
+      await deps.uploadQueue.rescanPhotoForLocalReview?.(deps.photoId)?.catch(() => undefined);
+    }
+  } finally {
+    barrier?.end(deps.sessionId);
   }
 }
