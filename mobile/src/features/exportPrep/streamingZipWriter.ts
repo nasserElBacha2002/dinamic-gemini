@@ -15,6 +15,8 @@
 import { Zip, ZipPassThrough } from 'fflate';
 import * as FileSystem from 'expo-file-system';
 
+import { sha256BytesHex } from '../../core/payloadFingerprint';
+
 export interface StreamingZipEntry {
   readonly path: string;
   readonly getBytes: () => Promise<Uint8Array> | Uint8Array;
@@ -84,7 +86,7 @@ export async function writeStoreZipAtomic(input: {
   readonly entries: readonly StreamingZipEntry[];
   readonly targetUri: string;
   readonly onProgress?: (done: number, total: number) => void;
-}): Promise<{ readonly byteLength: number }> {
+}): Promise<{ readonly byteLength: number; readonly sha256: string }> {
   const total = input.entries.length;
   let done = 0;
   const wrapped: StreamingZipEntry[] = input.entries.map((e) => ({
@@ -112,5 +114,5 @@ export async function writeStoreZipAtomic(input: {
     await FileSystem.deleteAsync(tmpUri, { idempotent: true }).catch(() => undefined);
     throw error;
   }
-  return { byteLength: zipped.byteLength };
+  return { byteLength: zipped.byteLength, sha256: sha256BytesHex(zipped) };
 }

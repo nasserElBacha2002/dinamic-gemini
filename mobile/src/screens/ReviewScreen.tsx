@@ -13,6 +13,9 @@ import {
   userMessageForLocalCsvExportError,
 } from '../features/localCsv/runLocalCsvExport';
 import {
+  classifySessionExportPolicy,
+} from '../features/exportPrep/sessionExportPolicy';
+import {
   emptyExportPrepCounts,
   type ExportPrepCounts,
   type ExportPrepDrainResult,
@@ -51,6 +54,9 @@ export function ReviewScreen({
   const [prepExportability, setPrepExportability] = useState<ExportPrepSettleResult | null>(null);
   const [drainBusy, setDrainBusy] = useState(false);
   const [zipProgress, setZipProgress] = useState<string | null>(null);
+  const [lastDrain, setLastDrain] = useState<ExportPrepDrainResult | null>(null);
+  const mountedRef = useRef(true);
+  const drainAbortRef = useRef<AbortController | null>(null);
 
   const sessionId = snapshot?.session?.id;
   const sessionStatus = snapshot?.session?.status;
@@ -58,6 +64,15 @@ export function ReviewScreen({
   const isReadOnly = isLocalCompleted;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      drainAbortRef.current?.abort();
+      drainAbortRef.current = null;
+    };
+  }, []);
 
   const refreshDrafts = useCallback(() => {
     if (!sessionId || !localCodeScanEnabled) {
@@ -88,10 +103,10 @@ export function ReviewScreen({
     void prepQueue
       .ensureJobsForEligiblePhotos(sessionId, { reason: 'REVIEW_OPEN' })
       .then(async (ensured) => {
-        if (cancelled) return;
+        if (cancelled || !mountedRef.current) return;
         const counts = await prepQueue.getCounts(sessionId);
         const gate = await prepQueue.evaluateExportability(sessionId);
-        if (cancelled) return;
+        if (cancelled || !mountedRef.current) return;
         setPrepCounts(counts);
         setPrepExportability(gate);
         if (ensured.partialErrors.length > 0 || ensured.missingSourcePhotos > 0) {
@@ -101,7 +116,7 @@ export function ReviewScreen({
         }
       })
       .catch((e) => {
-        if (!cancelled) onErrorRef.current(messageOf(e));
+        if (!cancelled && mountedRef.current) onErrorRef.current(messageOf(e));
       });
     return () => {
       cancelled = true;
@@ -113,9 +128,12 @@ export function ReviewScreen({
       return;
     }
     return prepQueue.subscribe((sid, c) => {
+      if (!mountedRef.current) return;
       if (sid === sessionId || sid == null) {
         setPrepCounts(c);
-        void prepQueue.evaluateExportability(sessionId).then(setPrepExportability);
+        void prepQueue.evaluateExportability(sessionId).then((gate) => {
+          if (mountedRef.current) setPrepExportability(gate);
+        });
       }
     });
   }, [prepQueue, sessionId]);
@@ -123,36 +141,84 @@ export function ReviewScreen({
   const resumeDrain = useCallback(async () => {
     if (!prepQueue || !sessionId || drainBusy) return;
     setDrainBusy(true);
+    const ac = new AbortController();
+    drainAbortRef.current?.abort();
+    drainAbortRef.current = ac;
     try {
+      const session = snapshot?.session;
+      if (!session) {
+        onErrorRef.current('La sesión ya no está disponible.');
+        return;
+      }
+      const classification = classifySessionExportPolicy(session, true);
+      const freezeId = session.active_freeze_id ?? null;
+      const freezeGeneration = session.capture_freeze_generation ?? null;
+      if (classification.freezeRequired && freezeId == null) {
+        onErrorRef.current(
+          'No se encontró el freeze de la captura. No se puede tratar como sesión legacy.',
+        );
+        return;
+      }
+      // Recovery after restart: freeze is immutable once set; no active capture session
+      // means producers are gone. Barrier evidence comes from policy, not a UI boolean.
       const drain: ExportPrepDrainResult = await prepQueue.waitUntilExportable(sessionId, {
         reason: 'RECOVERY',
+        producerBarrierCompleted: classification.producerBarrierCompletedForRecovery,
+        expectedFreezeId: freezeId,
+        expectedFreezeGeneration: freezeGeneration,
+        allowLegacyWithoutFreeze: classification.allowLegacyWithoutFreeze,
         timeoutMs: 5 * 60_000,
         pollMs: 500,
+        signal: ac.signal,
+        onProgress: (snap) => {
+          if (!mountedRef.current) return;
+          setLastDrain(snap);
+        },
       });
+      if (!mountedRef.current || ac.signal.aborted) return;
+      setLastDrain(drain);
       setPrepCounts(await prepQueue.getCounts(sessionId));
       setPrepExportability(await prepQueue.evaluateExportability(sessionId));
-      if (drain.timedOut) {
+      if (drain.structuralError) {
+        onErrorRef.current(
+          drain.structuralError === 'SESSION_MISSING'
+            ? 'La sesión ya no está disponible.'
+            : drain.structuralError === 'FREEZE_CHANGED'
+              ? 'El freeze cambió durante la preparación. Reintentá.'
+              : drain.structuralError === 'FREEZE_MISSING'
+                ? 'Falta el freeze de la captura.'
+                : drain.structuralError === 'DATABASE_ERROR'
+                  ? 'Error de base de datos en preparación.'
+                  : 'Error estructural de preparación.',
+        );
+      } else if (drain.timedOut) {
         onErrorRef.current(
           `Preparación aún en curso (${drain.ready}/${drain.totalEligible}). Reintentá la espera.`,
         );
       }
     } catch (e) {
-      onErrorRef.current(messageOf(e));
+      if (mountedRef.current && !ac.signal.aborted) onErrorRef.current(messageOf(e));
     } finally {
-      setDrainBusy(false);
+      if (drainAbortRef.current === ac) drainAbortRef.current = null;
+      if (mountedRef.current) setDrainBusy(false);
     }
-  }, [drainBusy, prepQueue, sessionId]);
+  }, [drainBusy, prepQueue, sessionId, snapshot?.session]);
 
   const incompleteScans = localCodeScanEnabled
     ? countIncompleteLocalCodeScans({ photos, drafts })
     : 0;
+  const structuralBlocksExport =
+    lastDrain?.structuralError != null ||
+    lastDrain?.producerBarrierCompleted === false ||
+    (lastDrain != null && !lastDrain.sessionExists);
   const prepBlocksExport =
     prepQueue != null &&
-    (prepExportability != null
-      ? !prepExportability.ok
-      : prepCounts.pending > 0 ||
-        prepCounts.failedRetryable > 0 ||
-        prepCounts.failedTerminal > 0);
+    (structuralBlocksExport ||
+      (prepExportability != null
+        ? !prepExportability.ok
+        : prepCounts.pending > 0 ||
+          prepCounts.failedRetryable > 0 ||
+          prepCounts.failedTerminal > 0));
   const prepBlockCount =
     (prepExportability?.pending ?? prepCounts.pending) +
     (prepExportability?.failedRetryable ?? prepCounts.failedRetryable) +

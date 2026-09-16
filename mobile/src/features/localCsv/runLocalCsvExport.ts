@@ -69,6 +69,19 @@ export function mapLocalCsvExportError(error: unknown): LocalCsvExportUserError 
   if (raw.startsWith('PACKAGE_PHOTO_READ_FAILED:')) {
     return { kind: 'photo_read' };
   }
+  if (
+    raw.startsWith('PACKAGE_STAGING_MISSING:') ||
+    raw.startsWith('PACKAGE_STAGING_CHECKSUM:') ||
+    raw.startsWith('PACKAGE_EXPORT_PREP_') ||
+    raw.startsWith('PACKAGE_EXPORT_PHOTO_SET_MISMATCH:') ||
+    raw.startsWith('PACKAGE_EXPORT_FREEZE_') ||
+    raw.startsWith('PACKAGE_EXPORT_SESSION_MISSING:') ||
+    raw.startsWith('PACKAGE_EXPORT_DUPLICATE_FILE_NAME:') ||
+    raw.startsWith('PACKAGE_EXPORT_FALLBACK_FORBIDDEN:') ||
+    raw.startsWith('PACKAGE_VALIDATION_FAILED:')
+  ) {
+    return { kind: 'generic', message: raw };
+  }
   if (/no permite compartir|Sharing is not available/i.test(raw)) {
     return { kind: 'share_unavailable' };
   }

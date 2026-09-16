@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Text, View } from 'react-native';
 
 import { OtherAisleCaptureActiveError, type CaptureSnapshot } from '../features/capture/captureService';
@@ -52,6 +52,13 @@ export function CaptureScreen({
   );
   const context = captureContextFrom(snapshotBelongsToSelectedAisle ? snapshot : null, inventory, aisle);
   const prepQueue = services.exportPrepQueue;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const runStart = async (pauseOtherAisle: boolean) => {
     if (!inventory || !aisle) {
@@ -269,60 +276,65 @@ export function CaptureScreen({
               onError(null);
               void (async () => {
                 const sid = snapshot?.session?.id;
-                if (sid) {
-                  const fresh = await services.capture.getSessionSnapshot(sid);
-                  const status = fresh.session?.status;
-                  if (
-                    status &&
-                    status !== 'active' &&
-                    status !== 'paused' &&
-                    status !== 'finishing' &&
-                    status !== 'processing'
-                  ) {
-                    throw new Error(`No se puede finalizar la captura desde el estado "${status}".`);
-                  }
+                if (!sid) {
+                  throw new Error('No se encontró la sesión de captura.');
                 }
-                await services.capture.finish();
-                if (prepQueue && sid) {
-                  setPrepDrainLabel('Preparando fotos…');
-                  const drain = await prepQueue.waitUntilExportable(sid, {
-                    reason: 'FINISH',
-                    producerBarrierCompleted: true,
-                    timeoutMs: 10 * 60_000,
-                    pollMs: 500,
-                    onProgress: (snap) => {
-                      if (snap.totalEligible <= 0) {
-                        setPrepDrainLabel('Preparando fotos…');
-                        return;
-                      }
-                      setPrepDrainLabel(
-                        `Listas ${snap.ready} de ${snap.totalEligible}…`,
-                      );
-                      void prepQueue.getCounts(sid).then(setPrepCounts);
-                    },
-                  });
-                  setPrepCounts(await prepQueue.getCounts(sid));
+                const fresh = await services.capture.getSessionSnapshot(sid);
+                const status = fresh.session?.status;
+                if (
+                  status &&
+                  status !== 'active' &&
+                  status !== 'paused' &&
+                  status !== 'finishing' &&
+                  status !== 'processing'
+                ) {
+                  throw new Error(`No se puede finalizar la captura desde el estado "${status}".`);
+                }
+
+                const result = await services.captureFinalization.finalizeForReview(sid, {
+                  timeoutMs: 10 * 60_000,
+                  onProgress: (snap) => {
+                    if (!mountedRef.current) return;
+                    if (snap.totalEligible <= 0) {
+                      setPrepDrainLabel('Preparando fotos…');
+                      return;
+                    }
+                    setPrepDrainLabel(`Listas ${snap.ready} de ${snap.totalEligible}…`);
+                    if (prepQueue) {
+                      void prepQueue.getCounts(sid).then((c) => {
+                        if (mountedRef.current) setPrepCounts(c);
+                      });
+                    }
+                  },
+                });
+
+                if (!mountedRef.current) return;
+
+                if (!result.captureCommitted) {
+                  setFinishInFlight(false);
                   setPrepDrainLabel(null);
-                  if (drain.missingJobs > 0 && !drain.exportable && !drain.timedOut) {
-                    throw new Error(
-                      `Faltan ${drain.missingJobs} job(s) de preparación tras el freeze. Reintentá desde Revisión.`,
-                    );
-                  }
-                  if (drain.timedOut) {
-                    Alert.alert(
-                      'Preparación en curso',
-                      `Tiempo de espera agotado (${drain.ready}/${drain.totalEligible} listas). ` +
-                        `Podés continuar en Revisión; la cola sigue en segundo plano.`,
-                    );
-                  } else if (drain.failedTerminal > 0 && !drain.exportable) {
-                    Alert.alert(
-                      'Preparación con fallos',
-                      `${drain.failedTerminal} foto(s) con fallo terminal. Revisá y reintentá o excluí en Revisión.`,
-                    );
+                  onError(result.userMessage ?? 'No se pudo finalizar la captura.');
+                  return;
+                }
+
+                // Post-commit: always navigate to Review (never strand on Capture).
+                if (prepQueue) {
+                  setPrepCounts(await prepQueue.getCounts(sid));
+                }
+                setPrepDrainLabel(null);
+
+                if (result.userMessage) {
+                  if (result.preparationStatus === 'TERMINAL_FAILURE') {
+                    Alert.alert('Preparación con fallos', result.userMessage);
+                  } else if (result.preparationStatus === 'STRUCTURAL_FAILURE') {
+                    Alert.alert('Preparación incompleta', result.userMessage);
+                  } else if (result.preparationStatus === 'IN_PROGRESS') {
+                    Alert.alert('Preparación en curso', result.userMessage);
                   }
                 }
                 onReview();
               })().catch((e) => {
+                if (!mountedRef.current) return;
                 setFinishInFlight(false);
                 setPrepDrainLabel(null);
                 onError(messageOf(e));

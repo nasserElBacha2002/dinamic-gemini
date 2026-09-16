@@ -36,7 +36,7 @@ jest.mock('../src/features/exportPrep/exportStaging', () => {
 });
 
 jest.mock('../src/features/exportPrep/streamingZipWriter', () => ({
-  writeStoreZipAtomic: jest.fn(async () => ({ byteLength: 10 })),
+  writeStoreZipAtomic: jest.fn(async () => ({ byteLength: 10, sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' })),
   buildStoreZipBytes: jest.fn(),
 }));
 
@@ -300,6 +300,7 @@ describe('ExportPrepQueue processJob', () => {
       'EXPORT_PREP_HASH_FAILED',
       expect.any(String),
     );
+    queue.stop();
   });
 
   it('abandons on fence loss without overwriting via markFailedFenced', async () => {
@@ -374,6 +375,7 @@ describe('ExportPrepQueue processJob', () => {
     expect(markReady).not.toHaveBeenCalled();
     expect(markFailedFenced).not.toHaveBeenCalled();
     expect(queue.metrics.fenceLost).toBeGreaterThan(0);
+    queue.stop();
   });
 });
 
@@ -387,7 +389,7 @@ describe('FAILED_TERMINAL blocks export', () => {
       } as never,
       draftRepo: { listForSession: jest.fn(async () => []) } as never,
       confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
-      exportRepo: { findByFingerprint: jest.fn(async () => null) } as never,
+      exportRepo: { findByFingerprint: jest.fn(async () => null), findBySessionAndFingerprint: jest.fn(async () => null), tryInsert: jest.fn(async () => true) } as never,
       deviceId: 'dev-1',
       exportPrepEnabled: true,
       exportPrepRepo: {
@@ -419,7 +421,7 @@ describe('ZIP failure leaves no published CSV', () => {
       (FileSystem as unknown as { __published?: Set<string> }).__published?.delete(String(uri));
     });
     (writeStoreZipAtomic as jest.Mock).mockReset();
-    (writeStoreZipAtomic as jest.Mock).mockResolvedValue({ byteLength: 10 });
+    (writeStoreZipAtomic as jest.Mock).mockResolvedValue({ byteLength: 10, sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' });
   });
   it('cleans temps and does not publish final csv/zip', async () => {
     (writeStoreZipAtomic as jest.Mock).mockRejectedValueOnce(new Error('ZIP_BOOM'));
@@ -453,6 +455,8 @@ describe('ZIP failure leaves no published CSV', () => {
       confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
       exportRepo: {
         findByFingerprint: jest.fn(async () => null),
+        findBySessionAndFingerprint: jest.fn(async () => null),
+        tryInsert: jest.fn(async () => true),
         insert: jest.fn(async () => undefined),
       } as never,
       deviceId: 'dev-1',
@@ -493,7 +497,7 @@ describe('ZIP failure leaves no published CSV', () => {
   });
 
   it('CSV move failure does not insert export and leaves prior artifacts', async () => {
-    (writeStoreZipAtomic as jest.Mock).mockResolvedValueOnce({ byteLength: 10 });
+    (writeStoreZipAtomic as jest.Mock).mockResolvedValueOnce({ byteLength: 10, sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' });
     const moveAsync = FileSystem.moveAsync as jest.Mock;
     moveAsync.mockImplementation(async ({ from }: { from: string }) => {
       if (String(from).includes('.tmp.csv')) {
@@ -539,7 +543,9 @@ describe('ZIP failure leaves no published CSV', () => {
       } as never,
       draftRepo: { listForSession: jest.fn(async () => drafts as never) } as never,
       confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
-      exportRepo: { findByFingerprint: jest.fn(async () => null), insert } as never,
+      exportRepo: { findByFingerprint: jest.fn(async () => null),
+        findBySessionAndFingerprint: jest.fn(async () => null),
+        tryInsert: insert, insert } as never,
       deviceId: 'dev-1',
       localCodeScanEnabled: false,
       exportPrepEnabled: true,
@@ -579,7 +585,7 @@ describe('ZIP failure leaves no published CSV', () => {
   });
 
   it('ZIP move failure after CSV publish rolls back new CSV and skips insert', async () => {
-    (writeStoreZipAtomic as jest.Mock).mockResolvedValueOnce({ byteLength: 10 });
+    (writeStoreZipAtomic as jest.Mock).mockResolvedValueOnce({ byteLength: 10, sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' });
     const live = new Set<string>([
       'file:///docs/aisle-exports/prior.csv',
       'file:///docs/aisle-exports/prior.zip',
@@ -626,7 +632,9 @@ describe('ZIP failure leaves no published CSV', () => {
       } as never,
       draftRepo: { listForSession: jest.fn(async () => drafts as never) } as never,
       confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
-      exportRepo: { findByFingerprint: jest.fn(async () => null), insert } as never,
+      exportRepo: { findByFingerprint: jest.fn(async () => null),
+        findBySessionAndFingerprint: jest.fn(async () => null),
+        tryInsert: insert, insert } as never,
       deviceId: 'dev-1',
       localCodeScanEnabled: false,
       exportPrepEnabled: true,
@@ -694,10 +702,10 @@ describe('feature flag off keeps legacy path', () => {
       return { exists: true, size: 4 };
     });
     (writeStoreZipAtomic as jest.Mock).mockReset();
-    (writeStoreZipAtomic as jest.Mock).mockResolvedValue({ byteLength: 10 });
+    (writeStoreZipAtomic as jest.Mock).mockResolvedValue({ byteLength: 10, sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' });
   });
   it('does not require prep jobs when exportPrepEnabled is false', async () => {
-    (writeStoreZipAtomic as jest.Mock).mockResolvedValueOnce({ byteLength: 10 });
+    (writeStoreZipAtomic as jest.Mock).mockResolvedValueOnce({ byteLength: 10, sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' });
     // Already-ready draft → ensureLocalCodeScans skips execute; legacy mode still applies.
     const execute = jest.fn(async () => 'RESOLVED' as const);
 
@@ -726,6 +734,8 @@ describe('feature flag off keeps legacy path', () => {
       confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
       exportRepo: {
         findByFingerprint: jest.fn(async () => null),
+        findBySessionAndFingerprint: jest.fn(async () => null),
+        tryInsert: jest.fn(async () => true),
         insert: jest.fn(async () => undefined),
       } as never,
       deviceId: 'dev-1',

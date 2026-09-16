@@ -46,3 +46,32 @@ export function selectExportPackagingPhotos(
 ): CapturePhotoRow[] {
   return photos.filter((p) => p.status !== 'excluded' && p.status !== 'rejected');
 }
+
+/**
+ * Final ZIP membership for a session snapshot (Phase 4).
+ * expectedPhotos = canonical (freeze when present) − excluded − rejected.
+ */
+export function selectExpectedZipPhotos(
+  photos: readonly CapturePhotoRow[],
+): CapturePhotoRow[] {
+  return selectExportPackagingPhotos(photos);
+}
+
+import { ExportFromStagingError } from './exportFromStagingErrors';
+
+/**
+ * Modern prep path: every ZIP member must be `stable` (has/requires a prep job).
+ * Non-stable leftovers after freeze are a structural mismatch.
+ */
+export function assertModernZipPhotosArePrepEligible(
+  expectedZipPhotos: readonly CapturePhotoRow[],
+): void {
+  const nonStable = expectedZipPhotos.filter((p) => p.status !== 'stable');
+  if (nonStable.length > 0) {
+    const ids = nonStable.map((p) => p.id).slice(0, 5).join(',');
+    throw new ExportFromStagingError(
+      'PHOTO_SET_MISMATCH',
+      `${nonStable.length} foto(s) no estables en el lote ZIP (${ids})`,
+    );
+  }
+}

@@ -8,6 +8,7 @@ import { ProcessingJobRepository } from '../../database/repositories/processingJ
 import { AuthService } from '../../features/auth/authService';
 import { AisleService } from '../../features/aisles/aisleService';
 import { CaptureService } from '../../features/capture/captureService';
+import { CaptureFinalizationCoordinator } from '../../features/capture/captureFinalizationCoordinator';
 import { ClientService } from '../../features/clients/clientService';
 import { InventoryService } from '../../features/inventories/inventoryService';
 import { JobMonitor } from '../../features/processing/jobMonitor';
@@ -132,6 +133,8 @@ export interface AppServices {
   readonly clients: ClientService;
   readonly aisles: AisleService;
   readonly capture: CaptureService;
+  /** Sole UI entry point for finish + export-prep drain (local ZIP path). */
+  readonly captureFinalization: CaptureFinalizationCoordinator;
   readonly api: ApiClient;
   readonly uploadQueue: UploadQueue;
   readonly uploadLimits: UploadLimitsService;
@@ -572,6 +575,12 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
     });
   }
 
+  const captureFinalization = new CaptureFinalizationCoordinator({
+    capture,
+    exportPrepQueue,
+    logger,
+  });
+
   const processing = new ProcessingService(
     api,
     captureRepo,
@@ -772,6 +781,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       offlineRecognitionResolver,
     ),
     capture,
+    captureFinalization,
     uploadQueue,
     uploadLimits,
     processing,

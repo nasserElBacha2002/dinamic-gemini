@@ -63,8 +63,19 @@ export interface ExportPrepSettleResult {
 }
 
 /** Phase 3 drain observation result (authoritative snapshot). */
+export type ExportPrepStructuralError =
+  | 'SESSION_MISSING'
+  | 'FREEZE_MISSING'
+  | 'FREEZE_CHANGED'
+  | 'DRAIN_FAILED'
+  | 'DATABASE_ERROR'
+  | 'STORAGE_ERROR'
+  | null;
+
 export interface ExportPrepDrainResult {
   readonly sessionId: string;
+  readonly sessionExists: boolean;
+  readonly canonicalSnapshotAvailable: boolean;
   readonly freezeId: string | null;
   readonly freezeGeneration: number | null;
   readonly totalEligible: number;
@@ -76,9 +87,13 @@ export interface ExportPrepDrainResult {
   readonly missingJobs: number;
   readonly excluded: number;
   readonly timedOut: boolean;
+  /** Must be an explicit boolean from the coordinator — never defaulted to true. */
   readonly producerBarrierCompleted: boolean;
+  readonly structuralError: ExportPrepStructuralError;
   readonly exportable: boolean;
   readonly durationMs: number;
+  readonly backfillPartialErrors: readonly string[];
+  readonly missingSourcePhotos: number;
 }
 
 export function emptyExportPrepDrainResult(
@@ -87,6 +102,8 @@ export function emptyExportPrepDrainResult(
 ): ExportPrepDrainResult {
   return {
     sessionId,
+    sessionExists: false,
+    canonicalSnapshotAvailable: false,
     freezeId: null,
     freezeGeneration: null,
     totalEligible: 0,
@@ -99,11 +116,58 @@ export function emptyExportPrepDrainResult(
     excluded: 0,
     timedOut: false,
     producerBarrierCompleted: false,
+    structuralError: 'SESSION_MISSING',
     exportable: false,
     durationMs: 0,
+    backfillPartialErrors: [],
+    missingSourcePhotos: 0,
     ...partial,
   };
 }
+
+export interface WaitUntilExportableOptions {
+  readonly timeoutMs?: number;
+  readonly pollMs?: number;
+  /** Explicit proof from coordinator; required — no silent default to true. */
+  readonly producerBarrierCompleted: boolean;
+  readonly reason?: ExportPrepEnsureReason;
+  readonly expectedFreezeId?: string | null;
+  readonly expectedFreezeGeneration?: number | null;
+  /** Historical sessions without freeze (explicit legacy branch). */
+  readonly allowLegacyWithoutFreeze?: boolean;
+  readonly onProgress?: ((snapshot: ExportPrepDrainResult) => void) | undefined;
+  /** Cancel this observer only; shared drain continues for other observers. */
+  readonly signal?: AbortSignal | undefined;
+}
+
+type DrainObserver = {
+  readonly id: number;
+  readonly deadlineAt: number;
+  readonly onProgress?: ((snapshot: ExportPrepDrainResult) => void) | undefined;
+  cancelled: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+  resolve: (result: ExportPrepDrainResult) => void;
+  abortHandler: (() => void) | null;
+};
+
+type SharedDrainWork = {
+  readonly key: string;
+  readonly sessionId: string;
+  readonly startedAt: number;
+  readonly pollMs: number;
+  readonly producerBarrierCompleted: boolean;
+  readonly expectedFreezeId: string | null;
+  readonly expectedFreezeGeneration: number | null;
+  readonly allowLegacyWithoutFreeze: boolean;
+  readonly reason: ExportPrepEnsureReason;
+  observers: Set<DrainObserver>;
+  latest: ExportPrepDrainResult | null;
+  terminal: ExportPrepDrainResult | null;
+  running: boolean;
+  wake: (() => void) | null;
+  unsub: (() => void) | null;
+  pollTimer: ReturnType<typeof setTimeout> | null;
+};
 
 /**
  * Durable producer-consumer for local ZIP export preparation.
@@ -119,7 +183,8 @@ export class ExportPrepQueue {
   private preferredSessionId: string | null = null;
   private tickScheduled = false;
   private lastBackpressureWarnedAt = 0;
-  private readonly drainWaiters = new Map<string, Promise<ExportPrepDrainResult>>();
+  private readonly drainWaiters = new Map<string, SharedDrainWork>();
+  private nextObserverId = 1;
   readonly metrics = {
     jobsCompleted: 0,
     jobsFailed: 0,
@@ -464,125 +529,324 @@ export class ExportPrepQueue {
   }
 
   /**
-   * Phase 3 drain: ensure FINISH jobs after freeze, then observe until exportable,
-   * terminal-complete (not exportable), or timeout. Concurrent callers share one wait.
+   * Phase 3 drain: ensure jobs after freeze, then observe until exportable,
+   * terminal-complete, structural failure, or per-observer timeout.
+   * Shared work is keyed by session+expected freeze; observers keep independent
+   * progress callbacks and deadlines.
    */
   async waitUntilExportable(
     sessionId: string,
-    options?: {
-      readonly timeoutMs?: number;
-      readonly pollMs?: number;
-      readonly producerBarrierCompleted?: boolean;
-      readonly reason?: ExportPrepEnsureReason;
-      readonly onProgress?: (snapshot: ExportPrepDrainResult) => void;
-    },
+    options: WaitUntilExportableOptions,
   ): Promise<ExportPrepDrainResult> {
-    const existing = this.drainWaiters.get(sessionId);
-    if (existing) {
-      return existing;
+    if (typeof options.producerBarrierCompleted !== 'boolean') {
+      throw new Error(
+        'waitUntilExportable requires explicit producerBarrierCompleted (no default true)',
+      );
     }
-    const run = this.runDrain(sessionId, options).finally(() => {
-      if (this.drainWaiters.get(sessionId) === run) {
-        this.drainWaiters.delete(sessionId);
+    const pollMs = Math.max(200, options.pollMs ?? 500);
+    const timeoutMs = options.timeoutMs ?? 10 * 60_000;
+    const reason = options.reason ?? 'FINISH';
+    const expectedFreezeId =
+      options.expectedFreezeId === undefined ? null : options.expectedFreezeId;
+    const expectedFreezeGeneration =
+      options.expectedFreezeGeneration === undefined
+        ? null
+        : options.expectedFreezeGeneration;
+    const allowLegacyWithoutFreeze = options.allowLegacyWithoutFreeze === true;
+    // Security invariants must be part of the shared-work key so incompatible
+    // callers never share producerBarrierCompleted / legacy policy.
+    const key = [
+      sessionId,
+      expectedFreezeId ?? 'nofreeze',
+      expectedFreezeGeneration ?? 'nagen',
+      options.producerBarrierCompleted ? 'barrier1' : 'barrier0',
+      allowLegacyWithoutFreeze ? 'legacy1' : 'legacy0',
+    ].join('|');
+
+    let shared = this.drainWaiters.get(key);
+    if (!shared) {
+      shared = {
+        key,
+        sessionId,
+        startedAt: Date.now(),
+        pollMs,
+        producerBarrierCompleted: options.producerBarrierCompleted,
+        expectedFreezeId,
+        expectedFreezeGeneration,
+        allowLegacyWithoutFreeze,
+        reason,
+        observers: new Set(),
+        latest: null,
+        terminal: null,
+        running: false,
+        wake: null,
+        unsub: null,
+        pollTimer: null,
+      };
+      this.drainWaiters.set(key, shared);
+      void this.runSharedDrain(shared);
+    }
+
+    return new Promise<ExportPrepDrainResult>((resolve) => {
+      const observer: DrainObserver = {
+        id: this.nextObserverId++,
+        deadlineAt: Date.now() + timeoutMs,
+        onProgress: options.onProgress,
+        cancelled: false,
+        timer: null,
+        resolve,
+        abortHandler: null,
+      };
+      shared!.observers.add(observer);
+
+      const clearObserverTimer = () => {
+        if (observer.timer) {
+          clearTimeout(observer.timer);
+          observer.timer = null;
+        }
+      };
+
+      if (options.signal) {
+        const onAbort = () => {
+          if (observer.cancelled) return;
+          clearObserverTimer();
+          observer.cancelled = true;
+          shared!.observers.delete(observer);
+          const base =
+            shared!.latest ??
+            emptyExportPrepDrainResult(sessionId, {
+              producerBarrierCompleted: options.producerBarrierCompleted,
+              timedOut: true,
+              durationMs: Date.now() - shared!.startedAt,
+            });
+          resolve({ ...base, timedOut: true, exportable: false });
+        };
+        if (options.signal.aborted) {
+          onAbort();
+          return;
+        }
+        observer.abortHandler = onAbort;
+        options.signal.addEventListener('abort', onAbort, { once: true });
       }
+
+      if (shared!.terminal) {
+        this.deliverToObserver(shared!, observer, shared!.terminal);
+        return;
+      }
+
+      const tickObserver = () => {
+        if (observer.cancelled || !shared) return;
+        if (shared.terminal) {
+          this.deliverToObserver(shared, observer, shared.terminal);
+          return;
+        }
+        if (Date.now() >= observer.deadlineAt) {
+          const base =
+            shared.latest ??
+            emptyExportPrepDrainResult(sessionId, {
+              producerBarrierCompleted: options.producerBarrierCompleted,
+              timedOut: true,
+              durationMs: Date.now() - shared.startedAt,
+            });
+          const timedOut: ExportPrepDrainResult = {
+            ...base,
+            timedOut: true,
+            exportable: false,
+            durationMs: Date.now() - shared.startedAt,
+          };
+          this.deps.logger?.warn('export_prep', {
+            code: 'EXPORT_PREP_OBSERVER_TIMEOUT',
+            sessionId,
+            observerId: observer.id,
+            ready: timedOut.ready,
+            totalEligible: timedOut.totalEligible,
+            durationMs: timedOut.durationMs,
+          });
+          this.deliverToObserver(shared, observer, timedOut);
+          return;
+        }
+        if (shared.latest) {
+          try {
+            observer.onProgress?.(shared.latest);
+          } catch {
+            // ignore observer progress errors
+          }
+        }
+        const remaining = Math.max(50, observer.deadlineAt - Date.now());
+        clearObserverTimer();
+        observer.timer = setTimeout(tickObserver, Math.min(pollMs, remaining));
+      };
+      clearObserverTimer();
+      observer.timer = setTimeout(tickObserver, 0);
     });
-    this.drainWaiters.set(sessionId, run);
-    return run;
   }
 
-  private async runDrain(
-    sessionId: string,
-    options?: {
-      readonly timeoutMs?: number;
-      readonly pollMs?: number;
-      readonly producerBarrierCompleted?: boolean;
-      readonly reason?: ExportPrepEnsureReason;
-      readonly onProgress?: (snapshot: ExportPrepDrainResult) => void;
-    },
-  ): Promise<ExportPrepDrainResult> {
-    const timeoutMs = options?.timeoutMs ?? 10 * 60_000;
-    const pollMs = Math.max(200, options?.pollMs ?? 500);
-    const started = Date.now();
-    const producerBarrierCompleted = options?.producerBarrierCompleted ?? true;
-    const reason = options?.reason ?? 'FINISH';
+  private deliverToObserver(
+    shared: SharedDrainWork,
+    observer: DrainObserver,
+    result: ExportPrepDrainResult,
+  ): void {
+    if (observer.cancelled) return;
+    observer.cancelled = true;
+    if (observer.timer) {
+      clearTimeout(observer.timer);
+      observer.timer = null;
+    }
+    if (observer.abortHandler) {
+      // Listener is once; drop reference.
+      observer.abortHandler = null;
+    }
+    shared.observers.delete(observer);
+    try {
+      observer.onProgress?.(result);
+    } catch {
+      // ignore
+    }
+    observer.resolve(result);
+    if (shared.observers.size === 0 && shared.terminal) {
+      this.cleanupSharedDrain(shared);
+    }
+  }
+
+  private cleanupSharedDrain(shared: SharedDrainWork): void {
+    if (shared.pollTimer) {
+      clearTimeout(shared.pollTimer);
+      shared.pollTimer = null;
+    }
+    shared.unsub?.();
+    shared.unsub = null;
+    this.drainWaiters.delete(shared.key);
+  }
+
+  private async runSharedDrain(shared: SharedDrainWork): Promise<void> {
+    if (shared.running) return;
+    shared.running = true;
+    const {
+      sessionId,
+      producerBarrierCompleted,
+      expectedFreezeId,
+      expectedFreezeGeneration,
+      allowLegacyWithoutFreeze,
+      reason,
+      pollMs,
+    } = shared;
 
     this.deps.logger?.info('export_prep', {
       code: 'EXPORT_PREP_FINISH_STARTED',
       sessionId,
       reason,
+      expectedFreezeId: expectedFreezeId ?? null,
+      expectedFreezeGeneration: expectedFreezeGeneration ?? null,
     });
 
-    let ensured = await this.ensureJobsForEligiblePhotos(sessionId, { reason });
-    this.deps.logger?.info('export_prep', {
-      code: 'EXPORT_PREP_BACKFILL_COMPLETE',
-      sessionId,
-      reason,
-      eligiblePhotos: ensured.eligiblePhotos,
-      createdJobs: ensured.createdJobs,
-      missingSourcePhotos: ensured.missingSourcePhotos,
-      partialErrorCount: ensured.partialErrors.length,
-      durationMs: ensured.durationMs,
-    });
+    let backfillPartialErrors: string[] = [];
+    let missingSourcePhotos = 0;
 
-    // Limited rematerialization if jobs are still missing after first backfill.
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const snap = await this.snapshotDrain(sessionId, {
-        producerBarrierCompleted,
-        timedOut: false,
-        durationMs: Date.now() - started,
-      });
-      if (snap.missingJobs === 0) break;
-      ensured = await this.ensureJobsForEligiblePhotos(sessionId, { reason });
-    }
-
-    this.preferredSessionId = sessionId;
-    this.scheduleTick();
-
-    let lastProgressKey = '';
-    const emitProgress = (snap: ExportPrepDrainResult, force = false) => {
-      const key = [
-        snap.ready,
-        snap.queued,
-        snap.processing,
-        snap.failedRetryable,
-        snap.failedTerminal,
-        snap.missingJobs,
-        snap.exportable,
-        snap.timedOut,
-      ].join(':');
-      if (!force && key === lastProgressKey) return;
-      lastProgressKey = key;
+    const applyBackfill = async (r: ExportPrepEnsureReason) => {
+      const ensured = await this.ensureJobsForEligiblePhotos(sessionId, { reason: r });
+      backfillPartialErrors = [...ensured.partialErrors];
+      missingSourcePhotos = ensured.missingSourcePhotos;
       this.deps.logger?.info('export_prep', {
-        code: 'EXPORT_PREP_DRAIN_PROGRESS',
+        code: 'EXPORT_PREP_BACKFILL_COMPLETE',
         sessionId,
-        freezeId: snap.freezeId,
-        freezeGeneration: snap.freezeGeneration,
-        totalEligible: snap.totalEligible,
-        ready: snap.ready,
-        pending: snap.queued + snap.processing,
-        failedRetryable: snap.failedRetryable,
-        failedTerminal: snap.failedTerminal,
-        missingJobs: snap.missingJobs,
-        durationMs: snap.durationMs,
+        reason: r,
+        eligiblePhotos: ensured.eligiblePhotos,
+        createdJobs: ensured.createdJobs,
+        missingSourcePhotos: ensured.missingSourcePhotos,
+        partialErrorCount: ensured.partialErrors.length,
+        durationMs: ensured.durationMs,
       });
-      options?.onProgress?.(snap);
+      return ensured;
     };
 
-    // Event-driven wake + defensive low-frequency poll.
-    let wake: (() => void) | null = null;
-    const unsub = this.subscribe((sid) => {
-      if (sid === sessionId || sid == null) wake?.();
-    });
+    const finishTerminal = (result: ExportPrepDrainResult) => {
+      shared.terminal = result;
+      shared.latest = result;
+      for (const obs of [...shared.observers]) {
+        this.deliverToObserver(shared, obs, result);
+      }
+      this.cleanupSharedDrain(shared);
+    };
 
     try {
-      while (Date.now() - started < timeoutMs) {
-        this.scheduleTick();
+      await applyBackfill(reason);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
         const snap = await this.snapshotDrain(sessionId, {
           producerBarrierCompleted,
           timedOut: false,
-          durationMs: Date.now() - started,
+          durationMs: Date.now() - shared.startedAt,
+          expectedFreezeId,
+          expectedFreezeGeneration,
+          allowLegacyWithoutFreeze,
+          backfillPartialErrors,
+          missingSourcePhotos,
         });
-        emitProgress(snap);
+        if (snap.missingJobs === 0 || snap.structuralError) break;
+        await applyBackfill(reason);
+      }
+
+      this.preferredSessionId = sessionId;
+      this.scheduleTick();
+
+      shared.unsub = this.subscribe((sid) => {
+        if (sid === sessionId || sid == null) shared.wake?.();
+      });
+
+      // Cap shared work to 30 minutes absolute; observers may exit earlier.
+      const sharedDeadline = shared.startedAt + 30 * 60_000;
+      let continuePolling = true;
+      while (continuePolling) {
+        if (!this.stopped) this.scheduleTick();
+        const snap = await this.snapshotDrain(sessionId, {
+          producerBarrierCompleted,
+          timedOut: false,
+          durationMs: Date.now() - shared.startedAt,
+          expectedFreezeId,
+          expectedFreezeGeneration,
+          allowLegacyWithoutFreeze,
+          backfillPartialErrors,
+          missingSourcePhotos,
+        });
+        shared.latest = snap;
+        for (const obs of shared.observers) {
+          if (!obs.cancelled) {
+            try {
+              obs.onProgress?.(snap);
+            } catch {
+              // ignore
+            }
+          }
+        }
+
+        this.deps.logger?.info('export_prep', {
+          code: 'EXPORT_PREP_DRAIN_PROGRESS',
+          sessionId,
+          freezeId: snap.freezeId,
+          freezeGeneration: snap.freezeGeneration,
+          totalEligible: snap.totalEligible,
+          ready: snap.ready,
+          pending: snap.queued + snap.processing,
+          failedRetryable: snap.failedRetryable,
+          failedTerminal: snap.failedTerminal,
+          missingJobs: snap.missingJobs,
+          structuralError: snap.structuralError,
+          durationMs: snap.durationMs,
+        });
+
+        if (snap.structuralError) {
+          this.deps.logger?.warn('export_prep', {
+            code:
+              snap.structuralError === 'SESSION_MISSING'
+                ? 'EXPORT_PREP_SESSION_MISSING'
+                : snap.structuralError === 'FREEZE_CHANGED'
+                  ? 'EXPORT_PREP_FREEZE_CHANGED'
+                  : 'EXPORT_PREP_DRAIN_FAILED',
+            sessionId,
+            structuralError: snap.structuralError,
+          });
+          finishTerminal(snap);
+          return;
+        }
 
         if (snap.exportable) {
           this.deps.logger?.info('export_prep', {
@@ -593,10 +857,10 @@ export class ExportPrepQueue {
             ready: snap.ready,
             durationMs: snap.durationMs,
           });
-          return snap;
+          finishTerminal(snap);
+          return;
         }
 
-        // Terminal-complete: no more programmable work (user must act in Review).
         if (
           snap.missingJobs === 0 &&
           snap.queued === 0 &&
@@ -608,36 +872,55 @@ export class ExportPrepQueue {
           this.deps.logger?.info('export_prep', {
             code: 'EXPORT_PREP_DRAIN_FAILED',
             sessionId,
-            freezeId: snap.freezeId,
             failedTerminal: snap.failedTerminal,
             ready: snap.ready,
             durationMs: snap.durationMs,
           });
-          return snap;
+          finishTerminal(snap);
+          return;
         }
 
-        // Structural: missing jobs persist after rematerialization attempts.
         if (
           snap.missingJobs > 0 &&
           snap.queued === 0 &&
           snap.processing === 0 &&
-          Date.now() - started > 2_000
+          Date.now() - shared.startedAt > 2_000
         ) {
-          ensured = await this.ensureJobsForEligiblePhotos(sessionId, { reason: 'RECOVERY' });
+          await applyBackfill('RECOVERY');
           const after = await this.snapshotDrain(sessionId, {
             producerBarrierCompleted,
             timedOut: false,
-            durationMs: Date.now() - started,
+            durationMs: Date.now() - shared.startedAt,
+            expectedFreezeId,
+            expectedFreezeGeneration,
+            allowLegacyWithoutFreeze,
+            backfillPartialErrors,
+            missingSourcePhotos,
           });
-          if (after.missingJobs > 0 && after.queued === 0 && after.processing === 0) {
-            this.deps.logger?.warn('export_prep', {
-              code: 'EXPORT_PREP_DRAIN_FAILED',
-              sessionId,
-              missingJobs: after.missingJobs,
-              durationMs: after.durationMs,
-            });
-            return after;
+          if (
+            after.structuralError ||
+            (after.missingJobs > 0 && after.queued === 0 && after.processing === 0)
+          ) {
+            finishTerminal(after);
+            return;
           }
+        }
+
+        // stop() ends workers; still allow a final snapshot above, then exit drain loop.
+        if (this.stopped || Date.now() >= sharedDeadline) {
+          continuePolling = false;
+          break;
+        }
+
+        if (shared.observers.size === 0) {
+          await new Promise<void>((r) => {
+            shared.pollTimer = setTimeout(r, pollMs);
+          });
+          if (shared.observers.size === 0 || this.stopped) {
+            finishTerminal(snap);
+            return;
+          }
+          continue;
         }
 
         await new Promise<void>((resolve) => {
@@ -645,36 +928,78 @@ export class ExportPrepQueue {
           const done = () => {
             if (settled) return;
             settled = true;
-            wake = null;
-            clearTimeout(timer);
+            shared.wake = null;
+            if (shared.pollTimer) {
+              clearTimeout(shared.pollTimer);
+              shared.pollTimer = null;
+            }
             resolve();
           };
-          wake = done;
-          const timer = setTimeout(done, pollMs);
+          shared.wake = done;
+          shared.pollTimer = setTimeout(done, pollMs);
         });
       }
 
       const timedOut = await this.snapshotDrain(sessionId, {
         producerBarrierCompleted,
-        timedOut: true,
-        durationMs: Date.now() - started,
+        timedOut: !this.stopped,
+        durationMs: Date.now() - shared.startedAt,
+        expectedFreezeId,
+        expectedFreezeGeneration,
+        allowLegacyWithoutFreeze,
+        backfillPartialErrors,
+        missingSourcePhotos,
       });
-      emitProgress(timedOut, true);
+      // If already exportable on the final look (e.g. stop after READY mark), prefer that.
+      if (timedOut.exportable) {
+        finishTerminal({ ...timedOut, timedOut: false });
+        return;
+      }
       this.deps.logger?.warn('export_prep', {
         code: 'EXPORT_PREP_DRAIN_TIMEOUT',
         sessionId,
-        freezeId: timedOut.freezeId,
-        totalEligible: timedOut.totalEligible,
-        ready: timedOut.ready,
-        pending: timedOut.queued + timedOut.processing,
-        failedRetryable: timedOut.failedRetryable,
-        failedTerminal: timedOut.failedTerminal,
-        missingJobs: timedOut.missingJobs,
         durationMs: timedOut.durationMs,
       });
-      return timedOut;
-    } finally {
-      unsub();
+      finishTerminal({ ...timedOut, timedOut: true, exportable: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const lower = message.toLowerCase();
+      let structuralError: ExportPrepStructuralError = 'DRAIN_FAILED';
+      if (
+        lower.includes('no such table') ||
+        lower.includes('sqlite') ||
+        lower.includes('database')
+      ) {
+        structuralError = 'DATABASE_ERROR';
+      } else if (
+        lower.includes('enoent') ||
+        lower.includes('eacces') ||
+        lower.includes('storage') ||
+        lower.includes('file')
+      ) {
+        structuralError = 'STORAGE_ERROR';
+      } else if (
+        message.includes('SESSION_MISSING') ||
+        (lower.includes('sesión') && lower.includes('no'))
+      ) {
+        structuralError = 'SESSION_MISSING';
+      }
+      this.deps.logger?.warn('export_prep', {
+        code: 'EXPORT_PREP_DRAIN_FAILED',
+        sessionId,
+        structuralError,
+        message,
+      });
+      finishTerminal(
+        emptyExportPrepDrainResult(sessionId, {
+          producerBarrierCompleted,
+          timedOut: false,
+          exportable: false,
+          structuralError,
+          durationMs: Date.now() - shared.startedAt,
+          backfillPartialErrors: [...backfillPartialErrors, message],
+        }),
+      );
     }
   }
 
@@ -684,12 +1009,56 @@ export class ExportPrepQueue {
       readonly producerBarrierCompleted: boolean;
       readonly timedOut: boolean;
       readonly durationMs: number;
+      readonly expectedFreezeId?: string | null | undefined;
+      readonly expectedFreezeGeneration?: number | null | undefined;
+      readonly allowLegacyWithoutFreeze?: boolean;
+      readonly backfillPartialErrors?: readonly string[];
+      readonly missingSourcePhotos?: number;
     },
   ): Promise<ExportPrepDrainResult> {
     const { session, photos } = await listCanonicalExportPhotos(
       this.deps.captureRepo,
       sessionId,
     );
+
+    if (!session) {
+      return emptyExportPrepDrainResult(sessionId, {
+        sessionExists: false,
+        canonicalSnapshotAvailable: false,
+        producerBarrierCompleted: meta.producerBarrierCompleted,
+        structuralError: 'SESSION_MISSING',
+        timedOut: meta.timedOut,
+        durationMs: meta.durationMs,
+        backfillPartialErrors: meta.backfillPartialErrors ?? [],
+        missingSourcePhotos: meta.missingSourcePhotos ?? 0,
+        exportable: false,
+      });
+    }
+
+    const freezeId = session.active_freeze_id;
+    const freezeGeneration = session.capture_freeze_generation ?? null;
+    const expectedFreezeId = meta.expectedFreezeId;
+    const expectedFreezeGeneration = meta.expectedFreezeGeneration;
+    const allowLegacy = meta.allowLegacyWithoutFreeze === true;
+
+    let structuralError: ExportPrepStructuralError = null;
+    if (freezeId == null && !allowLegacy) {
+      // Modern / prep-required path: missing freeze is never treated as legacy.
+      structuralError = 'FREEZE_MISSING';
+    } else if (
+      expectedFreezeId != null &&
+      freezeId != null &&
+      expectedFreezeId !== freezeId
+    ) {
+      structuralError = 'FREEZE_CHANGED';
+    } else if (
+      expectedFreezeGeneration != null &&
+      freezeGeneration != null &&
+      expectedFreezeGeneration !== freezeGeneration
+    ) {
+      structuralError = 'FREEZE_CHANGED';
+    }
+
     const eligible = selectEligibleExportPrepPhotos(photos);
     const jobs = await this.deps.prepRepo.listForSession(sessionId);
     const byId = new Map(jobs.map((j) => [j.capture_photo_id, j]));
@@ -736,19 +1105,49 @@ export class ExportPrepQueue {
       const job = byId.get(photo.id);
       if (job?.status === 'EXCLUDED') excluded += 1;
     }
-    const exportable =
+
+    const backfillPartialErrors = meta.backfillPartialErrors ?? [];
+    const missingSourcePhotos = meta.missingSourcePhotos ?? 0;
+    const sessionMissingInBackfill = backfillPartialErrors.some(
+      (e) => e === 'SESSION_MISSING' || e.includes('SESSION_MISSING'),
+    );
+    if (sessionMissingInBackfill) {
+      structuralError = 'SESSION_MISSING';
+    }
+    // Missing sources surface as missingJobs / failed jobs — not a silent empty success.
+    const hasBlockingBackfillErrors =
+      sessionMissingInBackfill ||
+      backfillPartialErrors.some((e) => e.startsWith('session:') || e.includes('STRUCTURAL'));
+
+    const countsOk =
       missingJobs === 0 &&
       queued === 0 &&
       processing === 0 &&
       failedRetryable === 0 &&
       failedTerminal === 0 &&
-      ready === eligible.length &&
-      eligible.length === ready;
+      ready === eligible.length;
+
+    const freezeOk =
+      allowLegacy ||
+      (freezeId != null &&
+        (expectedFreezeId == null || expectedFreezeId === freezeId) &&
+        (expectedFreezeGeneration == null ||
+          expectedFreezeGeneration === freezeGeneration));
+
+    const exportable =
+      session != null &&
+      structuralError == null &&
+      meta.producerBarrierCompleted === true &&
+      freezeOk &&
+      !hasBlockingBackfillErrors &&
+      countsOk;
 
     return {
       sessionId,
-      freezeId: session?.active_freeze_id ?? null,
-      freezeGeneration: session?.capture_freeze_generation ?? null,
+      sessionExists: true,
+      canonicalSnapshotAvailable: true,
+      freezeId,
+      freezeGeneration,
       totalEligible: eligible.length,
       ready,
       queued,
@@ -759,17 +1158,49 @@ export class ExportPrepQueue {
       excluded,
       timedOut: meta.timedOut,
       producerBarrierCompleted: meta.producerBarrierCompleted,
-      exportable,
+      structuralError,
+      exportable: exportable && structuralError == null,
       durationMs: meta.durationMs,
+      backfillPartialErrors,
+      missingSourcePhotos,
     };
+  }
+
+  stop(): void {
+    this.stopped = true;
+    for (const shared of [...this.drainWaiters.values()]) {
+      if (shared.pollTimer) clearTimeout(shared.pollTimer);
+      shared.unsub?.();
+      const terminal =
+        shared.latest ??
+        emptyExportPrepDrainResult(shared.sessionId, {
+          producerBarrierCompleted: shared.producerBarrierCompleted,
+          timedOut: true,
+          exportable: false,
+        });
+      for (const obs of [...shared.observers]) {
+        this.deliverToObserver(shared, obs, { ...terminal, timedOut: true, exportable: false });
+      }
+      this.drainWaiters.delete(shared.key);
+    }
   }
 
   /** @deprecated use waitUntilExportable — Phase 3 drain */
   async waitUntilSettled(
     sessionId: string,
-    options?: { readonly timeoutMs?: number; readonly pollMs?: number },
+    options?: {
+      readonly timeoutMs?: number;
+      readonly pollMs?: number;
+      readonly producerBarrierCompleted?: boolean;
+    },
   ): Promise<{ readonly ok: boolean; readonly unresolved: number } & ExportPrepSettleResult> {
-    const drain = await this.waitUntilExportable(sessionId, options);
+    const drain = await this.waitUntilExportable(sessionId, {
+      ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options?.pollMs !== undefined ? { pollMs: options.pollMs } : {}),
+      producerBarrierCompleted: options?.producerBarrierCompleted === true,
+      allowLegacyWithoutFreeze: true,
+      reason: 'RECOVERY',
+    });
     return {
       ok: drain.exportable,
       totalEligible: drain.totalEligible,
@@ -786,12 +1217,24 @@ export class ExportPrepQueue {
 
   async evaluateExportability(sessionId: string): Promise<ExportPrepSettleResult> {
     const drain = await this.snapshotDrain(sessionId, {
-      producerBarrierCompleted: true,
+      producerBarrierCompleted: false,
       timedOut: false,
       durationMs: 0,
+      allowLegacyWithoutFreeze: true,
     });
+    // evaluateExportability is a soft UI gate: use job counts only when session exists.
+    // Full exportable still requires coordinator drain with barrier proof.
+    const ok =
+      drain.sessionExists &&
+      drain.structuralError == null &&
+      drain.missingJobs === 0 &&
+      drain.queued === 0 &&
+      drain.processing === 0 &&
+      drain.failedRetryable === 0 &&
+      drain.failedTerminal === 0 &&
+      drain.ready === drain.totalEligible;
     return {
-      ok: drain.exportable,
+      ok,
       totalEligible: drain.totalEligible,
       ready: drain.ready,
       excluded: drain.excluded,
@@ -810,10 +1253,6 @@ export class ExportPrepQueue {
   async purgeSessionArtifacts(sessionId: string): Promise<void> {
     await this.deps.prepRepo.deleteForSession(sessionId);
     await deleteSessionExportStaging(sessionId);
-  }
-
-  stop(): void {
-    this.stopped = true;
   }
 
   /** Allow coordinators to wake the worker after requeue. */

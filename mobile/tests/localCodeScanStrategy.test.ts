@@ -259,10 +259,8 @@ describe('LocalCodeScanStrategy', () => {
     const strategy = new LocalCodeScanStrategy({
       drafts,
       timeoutMs: 30,
-      detect: async () =>
-        new Promise((resolve) => {
-          setTimeout(() => resolve([{ rawValue: 'ABC|5', symbology: 'QR_CODE' }]), 200);
-        }),
+      // Never settle — no timer — so withTimeout can reject without leaking handles.
+      detect: async () => new Promise(() => undefined),
       evaluateCapability: async () => 'SUPPORTED',
     });
     const status = await strategy.execute({

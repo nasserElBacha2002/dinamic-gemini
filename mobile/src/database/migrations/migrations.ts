@@ -903,6 +903,21 @@ CREATE INDEX IF NOT EXISTS idx_export_prep_jobs_queued_at
   ON export_prep_jobs(queued_at);
 `,
   },
+  {
+    version: 36,
+    name: 'export_packaging_mode_and_zip_integrity',
+    sql: `
+ALTER TABLE capture_sessions ADD COLUMN export_packaging_mode TEXT;
+ALTER TABLE local_csv_exports ADD COLUMN zip_size_bytes INTEGER;
+ALTER TABLE local_csv_exports ADD COLUMN zip_sha256 TEXT;
+ALTER TABLE local_csv_exports ADD COLUMN package_checksum_sha256 TEXT;
+
+-- Persist identity for concurrent export idempotency (same session + content).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_local_csv_exports_session_fingerprint
+  ON local_csv_exports(capture_session_id, content_fingerprint)
+  WHERE capture_session_id IS NOT NULL;
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

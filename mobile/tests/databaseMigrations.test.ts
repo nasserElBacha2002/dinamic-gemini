@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -225,5 +225,15 @@ describe('SQLite migrations', () => {
     expect(v35?.sql).toContain('export_file_name');
     expect(v35?.sql).toContain('lease_token');
     expect(v35?.sql).toContain('idx_export_prep_jobs_session_status');
+  });
+
+  it('adds v36 export packaging mode and zip integrity columns', () => {
+    const v36 = MIGRATIONS.find((m) => m.version === 36);
+    expect(v36?.name).toBe('export_packaging_mode_and_zip_integrity');
+    expect(v36?.sql).toContain('export_packaging_mode');
+    expect(v36?.sql).toContain('zip_sha256');
+    expect(v36?.sql).toContain('zip_size_bytes');
+    expect(v36?.sql).toContain('package_checksum_sha256');
+    expect(v36?.sql).toContain('idx_local_csv_exports_session_fingerprint');
   });
 });

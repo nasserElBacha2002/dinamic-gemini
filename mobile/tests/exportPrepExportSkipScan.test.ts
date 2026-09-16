@@ -196,6 +196,8 @@ describe('LocalCsvExportService export prep skip-scan', () => {
       } as never,
       exportRepo: {
         findByFingerprint: jest.fn(async () => null),
+        findBySessionAndFingerprint: jest.fn(async () => null),
+        tryInsert: jest.fn(async () => true),
         insert: jest.fn(async () => undefined),
         markShared: jest.fn(async () => undefined),
       } as never,
@@ -249,6 +251,8 @@ describe('LocalCsvExportService export prep skip-scan', () => {
       confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
       exportRepo: {
         findByFingerprint: jest.fn(async () => null),
+        findBySessionAndFingerprint: jest.fn(async () => null),
+        tryInsert: jest.fn(async () => true),
         insert: jest.fn(async () => undefined),
       } as never,
       deviceId: 'dev-1',

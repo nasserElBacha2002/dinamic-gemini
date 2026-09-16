@@ -34,6 +34,9 @@ const VALIDATION_TIMEOUT_MS = 15_000;
 /** Re-scan gallery while capture is active (missed MediaStore events / delayed indexing). */
 const CATCHUP_SCAN_INTERVAL_MS = 4_000;
 
+import type { CaptureFinishCommit } from './captureFinishCommit';
+export type { CaptureFinishCommit } from './captureFinishCommit';
+
 export interface StartCaptureInput {
   readonly inventoryId: string;
   readonly inventoryName: string;
@@ -468,8 +471,28 @@ export class CaptureService {
     await this.requestScan();
   }
 
-  async finish(): Promise<void> {
-    await this.finalizeCaptureForUpload({ targetStatus: 'review' });
+  async finish(): Promise<CaptureFinishCommit> {
+    const sessionId = await this.finalizeCaptureForUpload({ targetStatus: 'review' });
+    const packagingMode = this.sessionFreeze ? 'STAGING_REQUIRED' : 'LEGACY_ORIGINALS';
+    try {
+      await this.repo.setExportPackagingMode(sessionId, packagingMode);
+    } catch (error) {
+      this.logger.warn('error', {
+        where: 'set_export_packaging_mode',
+        sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const refreshed = await this.repo.getSession(sessionId);
+    return {
+      sessionId,
+      freezeId: refreshed?.active_freeze_id ?? null,
+      freezeGeneration: refreshed?.capture_freeze_generation ?? null,
+      // Finish waited producer barrier when configured; otherwise no producers to drain.
+      producerBarrierCompleted: true,
+      committed: true,
+      exportPackagingMode: packagingMode,
+    };
   }
 
   /**

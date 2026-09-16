@@ -309,16 +309,126 @@ describe('export_prep real SQLite', () => {
           id,
         );
       }
+      // Fresh observer queue: workers stopped on prior instance; mock ensure so READY
+      // rows are not invalidated by missing staging files in this unit fixture.
+      const drainQueue = new ExportPrepQueue({
+        prepRepo: repo,
+        captureRepo: {
+          getSession: async () => ({
+            id: 'hist-1',
+            active_freeze_id: null,
+            upload_policy: 'MANUAL',
+          }),
+          listPhotos: async () => photos,
+          listFreezePhotos: async () => photos,
+          getPhotoById: async (id: string) => photos.find((p) => p.id === id) ?? null,
+        } as never,
+        draftRepo: { listForSession: async () => [] } as never,
+        localCodeScan: null,
+        localCodeScanEnabled: false,
+      });
+      jest.spyOn(drainQueue, 'ensureJobsForEligiblePhotos').mockResolvedValue({
+        sessionId: 'hist-1',
+        reason: 'RECOVERY',
+        eligiblePhotos: 2,
+        existingJobs: 2,
+        createdJobs: 0,
+        requeuedJobs: 0,
+        invalidatedReadyJobs: 0,
+        excludedJobs: 0,
+        missingSourcePhotos: 0,
+        partialErrors: [],
+        durationMs: 0,
+      });
       const [d1, d2] = await Promise.all([
-        queue.waitUntilExportable('hist-1', { timeoutMs: 2_000, pollMs: 50, reason: 'RECOVERY' }),
-        queue.waitUntilExportable('hist-1', { timeoutMs: 2_000, pollMs: 50, reason: 'RECOVERY' }),
+        drainQueue.waitUntilExportable('hist-1', {
+          timeoutMs: 2_000,
+          pollMs: 50,
+          reason: 'RECOVERY',
+          producerBarrierCompleted: true,
+          allowLegacyWithoutFreeze: true,
+        }),
+        drainQueue.waitUntilExportable('hist-1', {
+          timeoutMs: 2_000,
+          pollMs: 50,
+          reason: 'RECOVERY',
+          producerBarrierCompleted: true,
+          allowLegacyWithoutFreeze: true,
+        }),
       ]);
       expect(d1.exportable).toBe(true);
       expect(d2.exportable).toBe(true);
+      expect(d1.sessionExists).toBe(true);
       expect(d1.sessionId).toBe('hist-1');
+      drainQueue.stop();
+      queue.stop();
+      // Allow any in-flight write-gate work to settle before closing SQLite.
+      await new Promise((r) => setTimeout(r, 50));
 
       sync2.close();
     } finally {
+      try {
+        fs.unlinkSync(filePath);
+        fs.unlinkSync(`${filePath}-wal`);
+        fs.unlinkSync(`${filePath}-shm`);
+      } catch {
+        /* ignore */
+      }
+    }
+  });
+
+  it('v36 concurrent local_csv_exports inserts for same session+fingerprint stay unique', async () => {
+    const { db, filePath, sync } = openTempDb();
+    try {
+      applyMigrationsThrough(sync, 36);
+      const { LocalCsvExportRepository } = await import(
+        '../src/database/repositories/localCsvExportRepository'
+      );
+      const now = new Date().toISOString();
+      await db.runAsync(
+        `INSERT INTO capture_sessions (
+           id, inventory_id, inventory_name, aisle_id, aisle_name, status,
+           started_at, scan_cursor_date_added, scan_cursor_asset_id,
+           last_valid_cursor_date_added, last_valid_cursor_asset_id,
+           created_at, updated_at, export_packaging_mode
+         ) VALUES (?, 'inv', 'Inv', 'aisle', 'A1', 'local_completed', ?, 0, '', 0, '', ?, ?, 'STAGING_REQUIRED');`,
+        's-export',
+        now,
+        now,
+        now,
+      );
+      const repo = new LocalCsvExportRepository(db as never);
+      const fp = 'content-fp-1';
+      const rowA = {
+        id: 'id-a',
+        export_id: 'export-a',
+        schema_version: '1.1',
+        scope: 'session',
+        capture_session_id: 's-export',
+        inventory_id: 'inv',
+        aisle_id: 'aisle',
+        row_count: 1,
+        checksum_sha256: 'a'.repeat(64),
+        content_fingerprint: fp,
+        file_uri: 'file:///a.csv',
+        freeze_id: 'f1',
+        zip_size_bytes: 10,
+        zip_sha256: 'b'.repeat(64),
+        package_checksum_sha256: fp,
+        exported_at: now,
+        shared_at: null,
+        created_at: now,
+        updated_at: now,
+      };
+      const rowB = { ...rowA, id: 'id-b', export_id: 'export-b', file_uri: 'file:///b.csv' };
+      const [okA, okB] = await Promise.all([repo.tryInsert(rowA), repo.tryInsert(rowB)]);
+      expect(okA || okB).toBe(true);
+      expect(okA && okB).toBe(false);
+      const rows = await repo.listForSession('s-export');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.content_fingerprint).toBe(fp);
+    } finally {
+      db.close();
       try {
         fs.unlinkSync(filePath);
         fs.unlinkSync(`${filePath}-wal`);

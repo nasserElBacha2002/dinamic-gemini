@@ -77,6 +77,7 @@ function session(overrides: Partial<CaptureSessionRow> = {}): CaptureSessionRow 
     capture_frozen_photo_count: null,
     capture_freeze_generation: 0,
     active_freeze_id: null,
+    export_packaging_mode: null,
     upload_policy: null,
     active_position_json: null,
     created_at: now,
@@ -307,6 +308,15 @@ class FakeRepo {
     this.sessions.set(sessionId, { ...row, upload_policy: policy });
   }
 
+  async setExportPackagingMode(
+    sessionId: string,
+    mode: 'STAGING_REQUIRED' | 'LEGACY_ORIGINALS',
+  ) {
+    const row = this.sessions.get(sessionId);
+    if (!row) throw new Error('missing session');
+    this.sessions.set(sessionId, { ...row, export_packaging_mode: mode });
+  }
+
   async listPhotos(sessionId: string) {
     return Array.from(this.photos.values()).filter((p) => p.capture_session_id === sessionId);
   }
@@ -436,14 +446,25 @@ function mediaStore(images: GalleryImage[] = []): CaptureMediaStore {
 }
 
 describe('CaptureService corrections', () => {
+  const liveServices: CaptureService[] = [];
+  function track(service: CaptureService): CaptureService {
+    liveServices.push(service);
+    return service;
+  }
+  afterEach(() => {
+    while (liveServices.length > 0) {
+      liveServices.pop()?.dispose();
+    }
+  });
+
   it('rejects starting another aisle while one exclusive capture is active, unless paused first', async () => {
     let id = 0;
     const repo = new FakeRepo();
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
       createId: () => `session-${++id}`,
-    });
+    }));
     const input = {
       inventoryId: 'inv-1',
       inventoryName: 'Inventario',
@@ -469,10 +490,10 @@ describe('CaptureService corrections', () => {
   it('restores an interrupted active session as paused with persisted context', async () => {
     const repo = new FakeRepo();
     repo.sessions.set('session-1', session({ status: 'active' }));
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
-    });
+    }));
     let snapshot: CaptureSnapshot | undefined;
     service.subscribe((s) => {
       snapshot = s;
@@ -541,10 +562,10 @@ describe('CaptureService corrections', () => {
       fileExists: jest.fn().mockResolvedValue(true),
     };
 
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: batchMediaStore,
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
-    });
+    }));
 
     await service.loadSession('session-1', true);
     await service.requestScan();
@@ -597,10 +618,10 @@ describe('CaptureService corrections', () => {
       fileExists: jest.fn().mockResolvedValue(true),
     };
 
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: store,
       stabilityProber: prober,
-    });
+    }));
 
     await service.loadSession('session-1', true);
     await service.requestScan();
@@ -680,7 +701,7 @@ describe('CaptureService corrections', () => {
       fileExists: jest.fn().mockResolvedValue(true),
     };
 
-    const service = new CaptureService(
+    const service = track(new CaptureService(
       repo as unknown as CaptureRepository,
       foreground(),
       createLogger(() => undefined),
@@ -693,7 +714,7 @@ describe('CaptureService corrections', () => {
         producerBarrierTimeoutMs: 5_000,
         onPhotoStable: async () => undefined,
       },
-    );
+    ));
 
     await service.loadSession('session-1', true);
     await service.requestScan();
@@ -741,7 +762,7 @@ describe('CaptureService corrections', () => {
       fileExists: jest.fn().mockResolvedValue(true),
     };
 
-    const service = new CaptureService(
+    const service = track(new CaptureService(
       repo as unknown as CaptureRepository,
       foreground(),
       createLogger(() => undefined),
@@ -754,7 +775,7 @@ describe('CaptureService corrections', () => {
           await stablePending;
         },
       },
-    );
+    ));
 
     await service.loadSession('session-1', true);
     await service.requestScan();
@@ -788,11 +809,11 @@ describe('CaptureService corrections', () => {
       media_store_numeric_id: 200,
     });
 
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
       validationTimeoutMs: 10,
-    });
+    }));
     await service.loadSession('session-1', false);
 
     await expect(service.finish()).rejects.toThrow(/Resolvé o excluí/);
@@ -800,7 +821,12 @@ describe('CaptureService corrections', () => {
 
     await service.exclude('100');
     expect((await repo.getPhoto('session-1', '100'))?.status).toBe('excluded');
-    await expect(service.finish()).resolves.toBeUndefined();
+    await expect(service.finish()).resolves.toMatchObject({
+      committed: true,
+      sessionId: 'session-1',
+      producerBarrierCompleted: true,
+      exportPackagingMode: 'STAGING_REQUIRED',
+    });
     expect((await repo.getSession('session-1'))?.status).toBe('review');
   });
 
@@ -815,11 +841,11 @@ describe('CaptureService corrections', () => {
       }),
     );
     repo.photos.set('session-1:100', photo('stable'));
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
       validationTimeoutMs: 10,
-    });
+    }));
     await service.loadSession('session-1', false);
 
     await expect(service.finish()).rejects.toThrow(/procesamiento no llegó a confirmarse|fallo de red/i);
@@ -837,11 +863,11 @@ describe('CaptureService corrections', () => {
       }),
     );
     repo.photos.set('session-1:100', photo('stable'));
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
       validationTimeoutMs: 10,
-    });
+    }));
     await service.loadSession('session-1', false);
 
     await expect(service.finish()).rejects.toThrow(/ya está en procesamiento/i);
@@ -857,7 +883,7 @@ describe('CaptureService corrections', () => {
     const statuses: Array<string | undefined> = [];
     const stages: Array<string | null> = [];
     const events: string[] = [];
-    const service = new CaptureService(
+    const service = track(new CaptureService(
       repo as unknown as CaptureRepository,
       foreground(),
       createLogger(() => undefined),
@@ -874,13 +900,16 @@ describe('CaptureService corrections', () => {
           marks: new TimingMarkStore(),
         },
       },
-    );
+    ));
     service.subscribe((snap) => {
       statuses.push(snap.session?.status);
       stages.push(snap.finishStage);
     });
     await service.loadSession('session-1', false);
-    await expect(service.finish()).resolves.toBeUndefined();
+    await expect(service.finish()).resolves.toMatchObject({
+      committed: true,
+      sessionId: 'session-1',
+    });
     expect(statuses).toContain('finishing');
     expect(stages.some((s) => s === 'checking_media' || s === 'closing' || s === 'preparing_review')).toBe(
       true,
@@ -907,7 +936,7 @@ describe('CaptureService corrections', () => {
     repo.sessions.set('session-1', session({ status: 'active' }));
     repo.photos.set('session-1:100', photo('stable'));
     const store = mediaStore([lateImage]);
-    const service = new CaptureService(
+    const service = track(new CaptureService(
       repo as unknown as CaptureRepository,
       foreground(),
       createLogger(() => undefined),
@@ -916,9 +945,12 @@ describe('CaptureService corrections', () => {
         stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
         validationTimeoutMs: 50,
       },
-    );
+    ));
     await service.loadSession('session-1', false);
-    await expect(service.finish()).resolves.toBeUndefined();
+    await expect(service.finish()).resolves.toMatchObject({
+      committed: true,
+      sessionId: 'session-1',
+    });
     const photos = await repo.listPhotos('session-1');
     expect(photos.map((p) => p.asset_id).sort()).toEqual(['100', '999']);
     expect(photos.find((p) => p.asset_id === '999')?.status).toBe('stable');
@@ -929,7 +961,7 @@ describe('CaptureService corrections', () => {
     const repo = new FakeRepo();
     repo.sessions.set('session-1', session({ status: 'active' }));
     repo.photos.set('session-1:100', photo('stable'));
-    const service = new CaptureService(
+    const service = track(new CaptureService(
       repo as unknown as CaptureRepository,
       foreground(),
       createLogger(() => undefined),
@@ -938,11 +970,11 @@ describe('CaptureService corrections', () => {
         stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 1 }) },
         validationTimeoutMs: 10,
       },
-    );
+    ));
     await service.loadSession('session-1', false);
     const [a, b] = await Promise.all([service.finish(), service.finish()]);
-    expect(a).toBeUndefined();
-    expect(b).toBeUndefined();
+    expect(a).toMatchObject({ committed: true, sessionId: 'session-1' });
+    expect(b).toMatchObject({ committed: true, sessionId: 'session-1' });
     expect((await repo.getSession('session-1'))?.status).toBe('review');
     expect((await repo.getSession('session-1'))?.capture_freeze_generation).toBe(1);
   });
@@ -957,10 +989,10 @@ describe('CaptureService corrections', () => {
         resolveProbe = resolve;
       })),
     };
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: prober,
-    });
+    }));
 
     await service.loadSession('session-1', false);
     const retry = service.retryErrors();
@@ -976,10 +1008,10 @@ describe('CaptureService corrections', () => {
   it('completeReview is idempotent when uploads already reached ready_to_process', async () => {
     const repo = new FakeRepo();
     repo.sessions.set('session-1', session({ status: 'ready_to_process' }));
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
-    });
+    }));
     await service.loadSession('session-1', false);
     await expect(service.completeReview()).resolves.toBe('session-1');
     expect((await repo.getSession('session-1'))?.status).toBe('ready_to_process');
@@ -997,11 +1029,11 @@ describe('CaptureService corrections', () => {
         updated_at: '2026-01-02T00:00:00Z',
       }),
     );
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
       createId: () => `session-${++id}`,
-    });
+    }));
     const input = {
       inventoryId: 'inv-1',
       inventoryName: 'Inventario',
@@ -1024,11 +1056,11 @@ describe('CaptureService corrections', () => {
   it('forceNew pauses exclusive same-aisle capture then creates a new session without deleting the old one', async () => {
     let id = 0;
     const repo = new FakeRepo();
-    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+    const service = track(new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
       createId: () => `session-${++id}`,
-    });
+    }));
     const input = {
       inventoryId: 'inv-1',
       inventoryName: 'Inventario',
@@ -1064,7 +1096,7 @@ describe('CaptureService corrections', () => {
       session({ active_position_json: JSON.stringify(active) }),
     );
     clearInMemoryPositionState('session-1');
-    const service = new CaptureService(
+    const service = track(new CaptureService(
       repo as unknown as CaptureRepository,
       foreground(),
       createLogger(() => undefined),
@@ -1072,7 +1104,7 @@ describe('CaptureService corrections', () => {
         mediaStore: mediaStore(),
         positionActiveStateRestoreEnabled: true,
       },
-    );
+    ));
 
     await service.loadSession('session-1', false);
     expect(getActivePosition('session-1')?.normalizedCode).toBe('POS-RESTORE');

@@ -530,6 +530,20 @@ export class CaptureRepository {
     );
   }
 
+  async setExportPackagingMode(
+    sessionId: string,
+    mode: 'STAGING_REQUIRED' | 'LEGACY_ORIGINALS',
+  ): Promise<void> {
+    await withSqliteBusyRetry(() =>
+      this.db.runAsync(
+        `UPDATE capture_sessions SET export_packaging_mode = ?, updated_at = ? WHERE id = ?;`,
+        mode,
+        new Date().toISOString(),
+        sessionId,
+      ),
+    );
+  }
+
   /**
    * Low-level photo upsert. Prefer {@link upsertAdmittedPhotosWithSequences} so
    * sequence_number is assigned at first persist (not at upload time).
