@@ -57,6 +57,7 @@ export function ReviewScreen({
   const [lastDrain, setLastDrain] = useState<ExportPrepDrainResult | null>(null);
   const mountedRef = useRef(true);
   const drainAbortRef = useRef<AbortController | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
 
   const sessionId = snapshot?.session?.id;
   const sessionStatus = snapshot?.session?.status;
@@ -71,6 +72,8 @@ export function ReviewScreen({
       mountedRef.current = false;
       drainAbortRef.current?.abort();
       drainAbortRef.current = null;
+      exportAbortRef.current?.abort();
+      exportAbortRef.current = null;
     };
   }, []);
 
@@ -390,14 +393,25 @@ export function ReviewScreen({
                 }
                 setExportBusy(true);
                 setExportHint(null);
-                setZipProgress('Preparando ZIP…');
+                setZipProgress('Preparando…');
+                const ac = new AbortController();
+                exportAbortRef.current = ac;
                 if (services.localCsvExport) {
-                  services.localCsvExport.setZipProgressListener((done, total) => {
+                  services.localCsvExport.setZipProgressListener((done, total, stage) => {
+                    if (stage === 'Listo') {
+                      setZipProgress('Listo');
+                      return;
+                    }
+                    if (stage) {
+                      setZipProgress(`${stage}${total > 0 ? ` · ${done}/${total}` : ''}`);
+                      return;
+                    }
                     setZipProgress(`ZIP ${done}/${total}`);
                   });
                 }
-                // Authoritative preflight lives in LocalCsvExportService.ensureExportPrepJobs.
-                void runLocalCsvExport(services.localCsvExport!, sessionId)
+                void runLocalCsvExport(services.localCsvExport!, sessionId, {
+                  signal: ac.signal,
+                })
                   .then(({ exported }) => {
                     setZipProgress(null);
                     setExportHint(
@@ -413,13 +427,30 @@ export function ReviewScreen({
                     );
                   })
                   .catch((e) => {
-                    onError(userMessageForLocalCsvExportError(mapLocalCsvExportError(e)));
+                    const mapped = mapLocalCsvExportError(e);
+                    if (mapped.kind === 'cancelled') {
+                      setExportHint('Exportación cancelada.');
+                      return;
+                    }
+                    onError(userMessageForLocalCsvExportError(mapped));
                   })
                   .finally(() => {
+                    if (exportAbortRef.current === ac) {
+                      exportAbortRef.current = null;
+                    }
                     services.localCsvExport?.setZipProgressListener(null);
                     setExportBusy(false);
                     setZipProgress(null);
                   });
+              }}
+            />
+          ) : null}
+          {csvExport && exportBusy ? (
+            <Button
+              label="Cancelar exportación"
+              onPress={() => {
+                exportAbortRef.current?.abort();
+                setExportHint('Cancelando…');
               }}
             />
           ) : null}

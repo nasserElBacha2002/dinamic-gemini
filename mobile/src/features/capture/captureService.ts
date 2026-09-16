@@ -109,6 +109,11 @@ export interface CaptureServiceAdapters {
   /** Persist freeze watermark on successful finish (default true). */
   readonly sessionFreeze?: boolean;
   readonly positionActiveStateRestoreEnabled?: boolean;
+  /**
+   * Phase 6: called after session status is cancelled — purge sandbox + prep rows.
+   * Must not delete MediaStore originals.
+   */
+  readonly onSessionCancelled?: (sessionId: string) => void | Promise<void>;
 }
 
 type Listener = (snapshot: CaptureSnapshot) => void;
@@ -177,6 +182,7 @@ export class CaptureService {
   private readonly positionActiveStateRestoreEnabled: boolean;
   private readonly freezeService: CaptureFreezeService;
   private sqliteBusyCountFinish = 0;
+  private readonly onSessionCancelled: CaptureServiceAdapters['onSessionCancelled'];
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -197,6 +203,7 @@ export class CaptureService {
     this.sessionFreeze = adapters.sessionFreeze ?? true;
     this.positionActiveStateRestoreEnabled =
       adapters.positionActiveStateRestoreEnabled ?? false;
+    this.onSessionCancelled = adapters.onSessionCancelled;
     this.freezeService = new CaptureFreezeService(repo);
     this.coordinator = createScanCoordinator(() => this.runScanOnce());
   }
@@ -1083,10 +1090,22 @@ export class CaptureService {
     this.detachListener();
     this.autoScanEnabled = false;
     await this.stopForeground();
+    this.producerBarrier?.closeAdmission?.(sessionId);
     await this.repo.updateSessionStatus(sessionId, 'cancelled', true);
     await this.repo.updateActivePositionJson(sessionId, null);
     resetPositionSession(sessionId);
     this.clearCurrentSession();
+    if (this.onSessionCancelled) {
+      try {
+        await this.onSessionCancelled(sessionId);
+      } catch (error) {
+        this.logger.warn('recovery', {
+          where: 'session_purge_after_cancel',
+          sessionRef: sessionId.slice(0, 8),
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   async exclude(assetId: string): Promise<void> {

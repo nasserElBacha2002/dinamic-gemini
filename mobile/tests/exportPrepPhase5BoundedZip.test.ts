@@ -140,7 +140,7 @@ describe('writeBoundedStoreZip', () => {
       };
     });
     const csv = enc('h\n');
-    const manifest = enc('{"included_photo_count":10,"package_kind":"local_aisle_export"}\n');
+    const manifest = enc('{"included_photo_count":10,"expected_photo_count":10,"package_kind":"DINAMIC_LOCAL_AISLE_EXPORT","package_version":2}\n');
     const { result, bytes } = await write([
       { path: 'results.csv', sizeBytes: csv.byteLength, getBytes: () => csv },
       { path: 'manifest.json', sizeBytes: manifest.byteLength, getBytes: () => manifest },
@@ -375,7 +375,9 @@ describe('writeBoundedStoreZip', () => {
       const manifest = enc(
         JSON.stringify({
           included_photo_count: n,
-          package_kind: 'local_aisle_export',
+          expected_photo_count: n,
+          package_kind: 'DINAMIC_LOCAL_AISLE_EXPORT',
+          package_version: 2,
           schema_version: 1,
         }) + '\n',
       );

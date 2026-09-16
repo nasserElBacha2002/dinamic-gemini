@@ -70,6 +70,19 @@ export class ExportPrepRepository {
     return rows;
   }
 
+  /** Bounded READY listing for bootstrap reconcile (missing staging detection). */
+  async listReadyJobs(limit: number): Promise<ExportPrepJobRow[]> {
+    const rows = await this.db.getAllAsync<ExportPrepJobRow>(
+      `SELECT * FROM export_prep_jobs
+         WHERE status = 'READY'
+         ORDER BY ready_at ASC
+         LIMIT ?;`,
+      Math.max(1, limit),
+    );
+    for (const row of rows) requireKnownStatus(row.status);
+    return rows;
+  }
+
   async countsForSession(sessionId: string): Promise<ExportPrepCounts> {
     const rows = await this.db.getAllAsync<{ status: string; c: number }>(
       `SELECT status, COUNT(*) AS c FROM export_prep_jobs
@@ -700,5 +713,25 @@ export class ExportPrepRepository {
 
   async deleteForSession(sessionId: string): Promise<void> {
     await this.db.runAsync(`DELETE FROM export_prep_jobs WHERE capture_session_id = ?;`, sessionId);
+  }
+
+  /** Release in-flight leases for a session (cancel/drain). Requeues PREPARING/SCANNING/VALIDATING. */
+  async releaseLeasesForSession(sessionId: string): Promise<number> {
+    const now = nowIso();
+    const result = await this.db.runAsync(
+      `UPDATE export_prep_jobs SET
+         status = CASE
+           WHEN status IN ('PREPARING', 'SCANNING', 'VALIDATING') THEN 'QUEUED'
+           ELSE status
+         END,
+         lease_token = NULL,
+         lease_expires_at = NULL,
+         updated_at = ?
+       WHERE capture_session_id = ?
+         AND (lease_token IS NOT NULL OR status IN ('PREPARING', 'SCANNING', 'VALIDATING'));`,
+      now,
+      sessionId,
+    );
+    return result.changes ?? 0;
   }
 }

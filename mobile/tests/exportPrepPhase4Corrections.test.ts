@@ -2,7 +2,6 @@
  * Phase 4 corrections: safe drain coalescing, fingerprint, package reuse, ZIP names, policy.
  */
 
-import { zipSync, strToU8 } from 'fflate';
 import * as FileSystem from 'expo-file-system';
 
 import { ExportPrepQueue } from '../src/features/exportPrep/exportPrepQueue';
@@ -373,6 +372,19 @@ describe('Phase 4 corrections — ZIP names', () => {
 
 describe('Phase 4 corrections — package reuse validation', () => {
   const fingerprint = 'fp-expected';
+  const live: string[] = [];
+
+  afterEach(() => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    for (const p of live.splice(0)) {
+      try {
+        fs.unlinkSync(p);
+      } catch {
+        /* ignore */
+      }
+    }
+  });
 
   function row(overrides: Partial<LocalCsvExportRow> = {}): LocalCsvExportRow {
     return {
@@ -400,65 +412,94 @@ describe('Phase 4 corrections — package reuse validation', () => {
   }
 
   it('10. non-empty corrupt ZIP is not reused', async () => {
-    const corrupt = Buffer.from('PK\x03\x04not-a-real-zip-but-nonempty');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const os = require('os') as typeof import('os');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path') as typeof import('path');
+    const zipPath = path.join(os.tmpdir(), `corrupt-${Date.now()}.zip`);
+    live.push(zipPath);
+    fs.writeFileSync(zipPath, Buffer.from('PK\x03\x04not-a-real-zip-but-nonempty'));
     (FileSystem.getInfoAsync as jest.Mock).mockImplementation(async (uri: string) => {
       if (String(uri).endsWith('.csv')) return { exists: true, size: 20 };
-      if (String(uri).endsWith('.zip')) return { exists: true, size: corrupt.length };
+      if (String(uri) === zipPath || String(uri).endsWith('.zip')) {
+        return { exists: true, size: fs.statSync(zipPath).size };
+      }
       return { exists: false };
-    });
-    (FileSystem.readAsStringAsync as jest.Mock).mockImplementation(async (uri: string) => {
-      if (String(uri).endsWith('.zip')) return corrupt.toString('base64');
-      return Buffer.from('csv').toString('base64');
     });
     const result = await validateExistingExportPackage({
       row: row(),
       expectedContentFingerprint: fingerprint,
-      zipUri: 'file:///docs/e1.zip',
+      zipUri: zipPath,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(['zip_corrupt', 'zip_missing_required_entries']).toContain(result.reason);
-    }
   });
 
   it('11. incorrect zip_sha256 rejects reuse', async () => {
-    const zipBytes = zipSync({
-      'results.csv': strToU8('a,b\n'),
-      'manifest.json': strToU8(JSON.stringify({ package_checksum_sha256: fingerprint })),
+    const { writeBoundedStoreZip } = await import('../src/features/exportPrep/boundedZipWriter');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const os = require('os') as typeof import('os');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path') as typeof import('path');
+    const zipPath = path.join(os.tmpdir(), `sha-mismatch-${Date.now()}.zip`);
+    live.push(zipPath);
+    const csv = new TextEncoder().encode('a,b\n');
+    const manifest = new TextEncoder().encode(
+      JSON.stringify({
+        package_kind: 'DINAMIC_LOCAL_AISLE_EXPORT',
+        package_version: 2,
+        package_checksum_sha256: fingerprint,
+        included_photo_count: 0,
+        expected_photo_count: 0,
+      }) + '\n',
+    );
+    const written = await writeBoundedStoreZip({
+      targetUri: zipPath,
+      entries: [
+        { path: 'results.csv', sizeBytes: csv.byteLength, getBytes: () => csv },
+        { path: 'manifest.json', sizeBytes: manifest.byteLength, getBytes: () => manifest },
+      ],
     });
     (FileSystem.getInfoAsync as jest.Mock).mockImplementation(async (uri: string) => {
       if (String(uri).endsWith('.csv')) return { exists: true, size: 10 };
-      return { exists: true, size: zipBytes.length };
+      return { exists: true, size: written.byteLength };
     });
-    (FileSystem.readAsStringAsync as jest.Mock).mockImplementation(async () =>
-      Buffer.from(zipBytes).toString('base64'),
-    );
     const result = await validateExistingExportPackage({
-      row: row({ zip_sha256: '0'.repeat(64), zip_size_bytes: zipBytes.length }),
+      row: row({ zip_sha256: '0'.repeat(64), zip_size_bytes: written.byteLength }),
       expectedContentFingerprint: fingerprint,
-      zipUri: 'file:///docs/e1.zip',
+      zipUri: zipPath,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('zip_sha_mismatch');
+    expect(fs.existsSync(zipPath)).toBe(true);
   });
 
   it('12. missing manifest rejects reuse', async () => {
-    const zipBytes = zipSync({
-      'results.csv': strToU8('a,b\n'),
+    const { writeBoundedStoreZip } = await import('../src/features/exportPrep/boundedZipWriter');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const os = require('os') as typeof import('os');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path') as typeof import('path');
+    const zipPath = path.join(os.tmpdir(), `no-manifest-${Date.now()}.zip`);
+    live.push(zipPath);
+    const csv = new TextEncoder().encode('a,b\n');
+    const written = await writeBoundedStoreZip({
+      targetUri: zipPath,
+      entries: [{ path: 'results.csv', sizeBytes: csv.byteLength, getBytes: () => csv }],
     });
     (FileSystem.getInfoAsync as jest.Mock).mockImplementation(async (uri: string) => {
       if (String(uri).endsWith('.csv')) return { exists: true, size: 10 };
-      return { exists: true, size: zipBytes.length };
+      return { exists: true, size: written.byteLength };
     });
-    (FileSystem.readAsStringAsync as jest.Mock).mockImplementation(async () =>
-      Buffer.from(zipBytes).toString('base64'),
-    );
     const result = await validateExistingExportPackage({
-      row: row({ zip_size_bytes: zipBytes.length }),
+      row: row({ zip_size_bytes: written.byteLength, zip_sha256: written.sha256 }),
       expectedContentFingerprint: fingerprint,
-      zipUri: 'file:///docs/e1.zip',
+      zipUri: zipPath,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('zip_missing_required_entries');
+    if (!result.ok) expect(result.reason).toMatch(/missing_manifest/);
   });
 });

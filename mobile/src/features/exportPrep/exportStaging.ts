@@ -1,5 +1,8 @@
 import * as FileSystem from 'expo-file-system';
 
+import { getStorageStatus } from '../support/storageCleanup';
+import { assertSafeSandboxDeleteTarget } from './safeSandboxPath';
+
 /** Durable staging root under documentDirectory (survives cache eviction). */
 export function exportStagingRoot(): string {
   const base = FileSystem.documentDirectory;
@@ -98,7 +101,18 @@ export async function stagingFileExists(uri: string | null | undefined): Promise
  */
 export async function deleteSessionExportStaging(sessionId: string): Promise<void> {
   const dir = exportStagingSessionDir(sessionId);
-  await FileSystem.deleteAsync(dir, { idempotent: true }).catch(() => undefined);
+  assertSafeSandboxDeleteTarget(
+    dir,
+    {
+      documentDirectory: FileSystem.documentDirectory,
+      cacheDirectory: FileSystem.cacheDirectory,
+    },
+    {
+      allowedPrefixes: ['export-staging/'],
+      allowSessionDirDelete: true,
+    },
+  );
+  await FileSystem.deleteAsync(dir, { idempotent: true });
 }
 
 /** Best-effort purge of abandoned `*.tmp` / `*.tmp.*` under export-staging. */
@@ -120,13 +134,21 @@ export async function cleanupAbandonedExportStagingTemps(maxAgeMs = 24 * 60 * 60
         if (!name.includes('.tmp')) continue;
         const uri = `${photosDir}${name}`;
         try {
+          assertSafeSandboxDeleteTarget(
+            uri,
+            {
+              documentDirectory: FileSystem.documentDirectory,
+              cacheDirectory: FileSystem.cacheDirectory,
+            },
+            { allowedPrefixes: ['export-staging/'] },
+          );
           const info = await FileSystem.getInfoAsync(uri, { size: true, md5: false });
           const mod = info.exists && 'modificationTime' in info ? Number(info.modificationTime) : 0;
           if (mod > 0 && now - mod * 1000 < maxAgeMs) continue;
           await FileSystem.deleteAsync(uri, { idempotent: true });
           removed += 1;
         } catch {
-          // ignore
+          // skip unsafe or busy files — do not swallow as success for the whole run
         }
       }
     }
@@ -138,12 +160,6 @@ export async function cleanupAbandonedExportStagingTemps(maxAgeMs = 24 * 60 * 60
 
 /** Free bytes heuristic; null if unknown. */
 export async function getFreeDiskBytesHint(): Promise<number | null> {
-  try {
-    const root = FileSystem.documentDirectory;
-    if (!root) return null;
-    // Expo FS 17 has no free-space API — return null so callers warn without blocking incorrectly.
-    return null;
-  } catch {
-    return null;
-  }
+  const status = await getStorageStatus();
+  return status.freeBytes;
 }

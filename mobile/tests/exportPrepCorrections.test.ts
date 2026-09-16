@@ -36,8 +36,33 @@ jest.mock('../src/features/exportPrep/exportStaging', () => {
 });
 
 jest.mock('../src/features/exportPrep/streamingZipWriter', () => ({
-  writeStoreZipAtomic: jest.fn(async () => ({ byteLength: 10, sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' })),
+  writeStoreZipAtomic: jest.fn(async () => ({
+    byteLength: 10,
+    sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    entryCount: 3,
+    method: 'STORE',
+    peakOpenEntries: 1,
+    physicalPath: '/tmp/mock-export.zip',
+  })),
   buildStoreZipBytes: jest.fn(),
+}));
+
+jest.mock('../src/features/exportPrep/boundedOnDiskZipValidator', () => ({
+  validateOnDiskStoreZip: jest.fn(async () => ({
+    ok: true,
+    entryCount: 3,
+    entries: [],
+    zipSizeBytes: 10,
+    zipSha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    manifest: {
+      package_kind: 'DINAMIC_LOCAL_AISLE_EXPORT',
+      package_version: 2,
+      included_photo_count: 1,
+      expected_photo_count: 1,
+    },
+    rangeReads: 2,
+    maxBufferBytes: 64,
+  })),
 }));
 
 jest.mock('expo-file-system', () => {

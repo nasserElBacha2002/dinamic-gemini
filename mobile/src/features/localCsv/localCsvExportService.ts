@@ -14,7 +14,14 @@ import * as Sharing from 'expo-sharing';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import type { ExportPrepRepository } from '../../database/repositories/exportPrepRepository';
-import type { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
+import {
+  resolveZipUri,
+  type LocalCsvExportRepository,
+} from '../../database/repositories/localCsvExportRepository';
+import {
+  ExportAttemptTransitionError,
+  type LocalExportAttemptRepository,
+} from '../../database/repositories/localExportAttemptRepository';
 import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
@@ -32,6 +39,9 @@ import {
 import type { LocalCodeScanStrategy } from '../localCodeScan/localCodeScanStrategy';
 import { writeStoreZipAtomic } from '../exportPrep/streamingZipWriter';
 import { ZipWriteError } from '../exportPrep/boundedZipWriter';
+import { validateOnDiskStoreZip } from '../exportPrep/boundedOnDiskZipValidator';
+import { assertZipWritePlatformSupported } from '../exportPrep/zipWritePlatform';
+import { getNodeProcess } from '../exportPrep/nodeRuntime';
 import {
   assertModernZipPhotosArePrepEligible,
   listCanonicalExportPhotos,
@@ -48,6 +58,15 @@ import type { OriginalFallbackReason } from '../exportPrep/exportSourcePolicy';
 import { buildPackageContentFingerprint } from '../exportPrep/packageFingerprint';
 import { validateExistingExportPackage } from '../exportPrep/existingPackageValidator';
 import { rethrowExportOrZip } from '../exportPrep/mapZipWriteError';
+import {
+  assessStorageSpace,
+  type StorageFailure,
+} from '../exportPrep/artifactRetentionPolicy';
+import {
+  buildExportPublishPaths,
+  ensureAisleExportsDir,
+} from '../exportPrep/exportArtifactPaths';
+import { getFreeDiskBytesHint } from '../exportPrep/exportStaging';
 import { buildLocalCsvExport } from './buildLocalCsvExport';
 import { isDraftExportReady } from './supplierExportSemantics';
 import { diagnoseExportBlockers } from './localCsvExportPreflight';
@@ -94,8 +113,13 @@ export interface LocalCsvExportServiceDeps {
   /** Soft limit for sum of staged bytes before ZIP build. */
   readonly maxExportUncompressedBytes?: number;
   readonly onZipProgress?: (done: number, total: number) => void;
-  /** Cooperative cancel for ZIP build (does not clear staging). */
-  readonly exportAbortSignal?: AbortSignal;
+  /** Phase 6 durable export attempt catalog. */
+  readonly attemptRepo?: LocalExportAttemptRepository | null;
+}
+
+export interface ExportSessionOptions {
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (progress: import('../exportPrep/boundedZipWriter').ZipWriteProgress) => void;
 }
 
 export interface ExportedLocalCsv {
@@ -147,15 +171,43 @@ function toPackagedMeta(photo: ResolvedExportPhoto): PackagedPhotoMeta {
 }
 
 export class LocalCsvExportService {
-  private zipProgressListener: ((done: number, total: number) => void) | null = null;
+  private zipProgressListener:
+    | ((done: number, total: number, stage?: string) => void)
+    | null = null;
   /** Serialize exports per session (double-tap / concurrent callers). */
   private readonly sessionExportLocks = new Map<string, Promise<unknown>>();
+  /** Active export operations — service-owned cancel, not UI-only AbortController. */
+  private readonly activeExports = new Map<
+    string,
+    { readonly controller: AbortController; readonly promise: Promise<unknown> }
+  >();
 
   constructor(private readonly deps: LocalCsvExportServiceDeps) {}
 
   /** UI-facing ZIP progress hook (stable abstraction; share cancel does not clear staging). */
-  setZipProgressListener(listener: ((done: number, total: number) => void) | null): void {
+  setZipProgressListener(
+    listener: ((done: number, total: number, stage?: string) => void) | null,
+  ): void {
     this.zipProgressListener = listener;
+  }
+
+  /**
+   * Abort in-flight export for session and wait until the promise settles.
+   * Used by SessionArtifactPurgeCoordinator — UI may also call this.
+   */
+  async cancelActiveExport(sessionId: string): Promise<void> {
+    const active = this.activeExports.get(sessionId);
+    if (!active) return;
+    active.controller.abort();
+    try {
+      await active.promise;
+    } catch {
+      // expected after abort
+    }
+  }
+
+  isExportActive(sessionId: string): boolean {
+    return this.activeExports.has(sessionId);
   }
 
   /**
@@ -225,7 +277,10 @@ export class LocalCsvExportService {
     }
   }
 
-  async exportSession(sessionId: string): Promise<ExportedLocalCsv> {
+  async exportSession(
+    sessionId: string,
+    options?: ExportSessionOptions,
+  ): Promise<ExportedLocalCsv> {
     const previous = this.sessionExportLocks.get(sessionId) ?? Promise.resolve();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -234,9 +289,26 @@ export class LocalCsvExportService {
     const chained = previous.catch(() => undefined).then(() => gate);
     this.sessionExportLocks.set(sessionId, chained);
     await previous.catch(() => undefined);
+
+    const controller = new AbortController();
+    const external = options?.signal;
+    const onExternalAbort = () => controller.abort();
+    if (external) {
+      if (external.aborted) controller.abort();
+      else external.addEventListener('abort', onExternalAbort, { once: true });
+    }
+
+    const work = this.exportSessionUnlocked(sessionId, {
+      ...options,
+      signal: controller.signal,
+    });
+    this.activeExports.set(sessionId, { controller, promise: work });
+
     try {
-      return await this.exportSessionUnlocked(sessionId);
+      return await work;
     } finally {
+      if (external) external.removeEventListener('abort', onExternalAbort);
+      this.activeExports.delete(sessionId);
       release();
       if (this.sessionExportLocks.get(sessionId) === chained) {
         this.sessionExportLocks.delete(sessionId);
@@ -244,7 +316,11 @@ export class LocalCsvExportService {
     }
   }
 
-  private async exportSessionUnlocked(sessionId: string): Promise<ExportedLocalCsv> {
+  private async exportSessionUnlocked(
+    sessionId: string,
+    options?: ExportSessionOptions,
+  ): Promise<ExportedLocalCsv> {
+    assertZipWritePlatformSupported();
     if (this.deps.enabled === false) {
       throw new Error('La exportación CSV local no está habilitada.');
     }
@@ -397,6 +473,31 @@ export class LocalCsvExportService {
       );
     }
 
+    const freeBytes = await getFreeDiskBytesHint();
+    const space = assessStorageSpace({
+      freeBytes,
+      estimatedPayloadBytes: estimatedBytes,
+    });
+    if (space.level === 'INSUFFICIENT_FOR_OPERATION') {
+      this.deps.logger?.warn('storage.insufficient_for_export', {
+        sessionRef: sessionId.slice(0, 8),
+        freeBytes: space.freeBytes,
+        requiredBytes: space.requiredBytes,
+      });
+      throw new ExportFromStagingError(
+        'STORAGE_INSUFFICIENT_FOR_EXPORT',
+        `libre=${space.freeBytes} requerido≈${space.requiredBytes}`,
+      );
+    }
+    if (space.level === 'LOW_SPACE_WARNING') {
+      this.deps.logger?.warn('storage.low_space', {
+        sessionRef: sessionId.slice(0, 8),
+        freeBytes: space.freeBytes,
+        requiredBytes: space.requiredBytes,
+        failure: 'STORAGE_LOW' satisfies StorageFailure,
+      });
+    }
+
     const contentFingerprint = await buildPackageContentFingerprint({
       freezeId: freezeIdAtStart,
       freezeGeneration: freezeGenerationAtStart,
@@ -464,14 +565,36 @@ export class LocalCsvExportService {
       sourcePolicy.mode === 'staging_required',
     );
 
-    const dir = `${FileSystem.documentDirectory ?? FileSystem.cacheDirectory}aisle-exports/`;
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
+    await ensureAisleExportsDir();
     const publishToken = `${Date.now()}`;
-    // Versioned finals — never overwrite prior good artifacts until both new files are validated.
-    const csvUri = `${dir}${built.exportId}.${publishToken}.csv`;
-    const zipUri = `${dir}${built.exportId}.${publishToken}.zip`;
-    const tmpCsv = `${dir}${built.exportId}.${publishToken}.tmp.csv`;
-    const tmpZip = `${dir}${built.exportId}.${publishToken}.tmp.zip`;
+    const paths = buildExportPublishPaths({
+      exportId: built.exportId,
+      publishToken,
+    });
+    const { csvUri, zipUri, tmpCsv, tmpZip } = paths;
+
+    const attemptId = createId();
+    const attemptNow = new Date().toISOString();
+    if (this.deps.attemptRepo) {
+      await this.deps.attemptRepo.insert({
+        id: attemptId,
+        capture_session_id: sessionId,
+        freeze_id: freezeIdAtStart,
+        freeze_generation: freezeGenerationAtStart,
+        content_fingerprint: contentFingerprint,
+        state: 'CREATED',
+        tmp_csv_uri: tmpCsv,
+        tmp_zip_uri: tmpZip,
+        final_csv_uri: null,
+        final_zip_uri: null,
+        started_at: attemptNow,
+        heartbeat_at: attemptNow,
+        completed_at: null,
+        error_code: null,
+        created_at: attemptNow,
+        updated_at: attemptNow,
+      });
+    }
 
     const photoEntries = packagedPhotos.map(({ getBytes: _g, ...meta }) => meta);
     const packageChecksumSha256 = contentFingerprint;
@@ -520,21 +643,39 @@ export class LocalCsvExportService {
     let zipSizeBytes = 0;
     let zipSha256 = '';
     try {
+      if (this.deps.attemptRepo) {
+        await this.deps.attemptRepo.transitionState(attemptId, 'WRITING');
+      }
       await FileSystem.writeAsStringAsync(tmpCsv, built.csv, {
         encoding: FileSystem.EncodingType.UTF8,
       });
       const written = await writeStoreZipAtomic({
         targetUri: tmpZip,
         maxTotalBytes: maxBytes,
-        ...(this.deps.exportAbortSignal
-          ? { signal: this.deps.exportAbortSignal }
-          : {}),
+        ...(options?.signal ? { signal: options.signal } : {}),
         onProgress: (done, total) => {
           this.deps.onZipProgress?.(done, total);
-          this.zipProgressListener?.(done, total);
+          this.zipProgressListener?.(done, total, 'WRITING_ENTRIES');
         },
         onZipProgress: (p) => {
-          // Entry-boundary only (writer already throttles); freeze rechecked in getBytes.
+          options?.onProgress?.(p);
+          const stageLabel =
+            p.stage === 'PREPARING'
+              ? 'Preparando'
+              : p.stage === 'WRITING_ENTRIES'
+                ? 'Escribiendo fotos'
+                : p.stage === 'WRITING_DIRECTORY'
+                  ? 'Cerrando ZIP'
+                  : p.stage === 'VALIDATING'
+                    ? 'Validando'
+                    : 'Publicando';
+          this.zipProgressListener?.(
+            p.stage === 'WRITING_ENTRIES'
+              ? Math.min(p.completedEntries, Math.max(0, p.totalEntries - 1))
+              : p.completedEntries,
+            Math.max(1, p.totalEntries),
+            stageLabel,
+          );
           if (p.stage !== 'WRITING_ENTRIES' || p.completedEntries === 0) {
             return;
           }
@@ -581,6 +722,44 @@ export class LocalCsvExportService {
             : 'ZIP tmp inválido tras build',
         );
       }
+
+      this.zipProgressListener?.(written.entryCount, written.entryCount, 'Validando');
+      if (this.deps.attemptRepo) {
+        await this.deps.attemptRepo.transitionState(attemptId, 'VALIDATING');
+      }
+      const roots: string[] = [];
+      if (FileSystem.documentDirectory) roots.push(FileSystem.documentDirectory);
+      if (FileSystem.cacheDirectory) roots.push(FileSystem.cacheDirectory);
+      const tmpdir = getNodeProcess()?.env?.TMPDIR;
+      if (tmpdir) {
+        roots.push(tmpdir);
+      }
+      roots.push('/tmp');
+      const onDisk = await validateOnDiskStoreZip({
+        uri: written.physicalPath || tmpZip,
+        allowedRoots: roots,
+        expectedSizeBytes: zipSizeBytes,
+        expectedSha256: zipSha256,
+        expectedContentFingerprint: contentFingerprint,
+        computeSha256: true,
+        verifyCrcAll: false,
+      });
+      if (!onDisk.ok) {
+        throw new ExportFromStagingError(
+          'PACKAGE_VALIDATION_FAILED',
+          `ZIP tmp validation: ${onDisk.reason}`,
+        );
+      }
+      if (
+        typeof written.entryCount === 'number' &&
+        onDisk.entryCount !== written.entryCount
+      ) {
+        throw new ExportFromStagingError(
+          'PACKAGE_VALIDATION_FAILED',
+          `ZIP entry count ${onDisk.entryCount} != written ${written.entryCount}`,
+        );
+      }
+
       this.deps.logger?.info('recovery', {
         where: 'local_export_zip_completed',
         code: 'ZIP_WRITE_COMPLETED',
@@ -589,6 +768,8 @@ export class LocalCsvExportService {
         zip_size_bytes: zipSizeBytes,
         method: written.method,
         peak_open_entries: written.peakOpenEntries,
+        range_reads: onDisk.rangeReads,
+        max_buffer_bytes: onDisk.maxBufferBytes,
         duration_ms: Date.now() - zipBuildStarted,
       });
 
@@ -600,6 +781,13 @@ export class LocalCsvExportService {
         sourcePolicy.mode === 'staging_required',
       );
 
+      this.zipProgressListener?.(written.entryCount, written.entryCount, 'Publicando');
+      if (this.deps.attemptRepo) {
+        await this.deps.attemptRepo.transitionState(attemptId, 'PUBLISHING', {
+          final_csv_uri: csvUri,
+          final_zip_uri: zipUri,
+        });
+      }
       await this.assertFreezeUnchanged(
         sessionId,
         freezeIdAtStart,
@@ -608,8 +796,21 @@ export class LocalCsvExportService {
         sourcePolicy.mode === 'staging_required',
       );
 
+      if (options?.signal?.aborted) {
+        throw Object.assign(new Error('ZIP_CANCELLED'), {
+          name: 'ZipWriteError',
+          code: 'ZIP_CANCELLED',
+        });
+      }
       await FileSystem.moveAsync({ from: tmpCsv, to: csvUri });
       csvPublished = true;
+      if (options?.signal?.aborted) {
+        // CSV moved — keep for recoverable publish; do not delete as success.
+        throw Object.assign(new Error('ZIP_CANCELLED'), {
+          name: 'ZipWriteError',
+          code: 'ZIP_CANCELLED',
+        });
+      }
       await FileSystem.moveAsync({ from: tmpZip, to: zipUri });
       zipPublished = true;
       const csvInfo = await FileSystem.getInfoAsync(csvUri);
@@ -625,25 +826,70 @@ export class LocalCsvExportService {
           'CSV/ZIP no válidos tras move',
         );
       }
-      // Prefer on-disk size when the FS reports a real length (integration / device).
       if (typeof zipInfo.size === 'number' && zipInfo.size > 0) {
         zipSizeBytes = zipInfo.size;
       }
     } catch (error) {
-      await FileSystem.deleteAsync(tmpCsv, { idempotent: true }).catch(() => undefined);
-      await FileSystem.deleteAsync(tmpZip, { idempotent: true }).catch(() => undefined);
-      if (csvPublished) {
-        await FileSystem.deleteAsync(csvUri, { idempotent: true }).catch(() => undefined);
+      const cancelled =
+        (error instanceof Error &&
+          error.name === 'ZipWriteError' &&
+          'code' in error &&
+          (error as ZipWriteError).code === 'ZIP_CANCELLED') ||
+        options?.signal?.aborted === true ||
+        error instanceof ExportAttemptTransitionError;
+
+      // After both finals exist on disk, do not delete them — leave PUBLISHING/FAILED
+      // with URIs for bootstrap recovery / purge. Only scrub temps / partial single file.
+      const bothFinalsOnDisk = csvPublished && zipPublished;
+      if (!bothFinalsOnDisk) {
+        await FileSystem.deleteAsync(tmpCsv, { idempotent: true }).catch(() => undefined);
+        await FileSystem.deleteAsync(tmpZip, { idempotent: true }).catch(() => undefined);
+        if (csvPublished && !zipPublished) {
+          await FileSystem.deleteAsync(csvUri, { idempotent: true }).catch(() => undefined);
+        }
+      } else {
+        await FileSystem.deleteAsync(tmpCsv, { idempotent: true }).catch(() => undefined);
+        await FileSystem.deleteAsync(tmpZip, { idempotent: true }).catch(() => undefined);
       }
-      if (zipPublished) {
-        await FileSystem.deleteAsync(zipUri, { idempotent: true }).catch(() => undefined);
+
+      if (this.deps.attemptRepo) {
+        try {
+          if (bothFinalsOnDisk && !cancelled) {
+            // Stay recoverable: keep PUBLISHING with final URIs (bootstrap completes insert).
+            await this.deps.attemptRepo.heartbeat(attemptId, new Date().toISOString());
+          } else {
+            await this.deps.attemptRepo.transitionState(
+              attemptId,
+              cancelled ? 'CANCELLED' : 'FAILED',
+              {
+                completed_at: new Date().toISOString(),
+                error_code: cancelled
+                  ? 'ZIP_CANCELLED'
+                  : error instanceof ExportFromStagingError
+                    ? error.code
+                    : error instanceof ExportAttemptTransitionError
+                      ? 'TRANSITION_REJECTED'
+                      : 'EXPORT_FAILED',
+                ...(csvPublished ? { final_csv_uri: csvUri } : {}),
+                ...(zipPublished ? { final_zip_uri: zipUri } : {}),
+              },
+            );
+          }
+        } catch (transitionError) {
+          this.deps.logger?.warn('recovery', {
+            where: 'local_export_attempt_terminal_failed',
+            sessionId,
+            message:
+              transitionError instanceof Error
+                ? transitionError.message
+                : String(transitionError),
+          });
+          throw transitionError instanceof ExportAttemptTransitionError
+            ? transitionError
+            : error;
+        }
       }
-      if (
-        error instanceof Error &&
-        error.name === 'ZipWriteError' &&
-        'code' in error &&
-        (error as ZipWriteError).code === 'ZIP_CANCELLED'
-      ) {
+      if (cancelled) {
         this.deps.logger?.info('recovery', {
           where: 'local_export_zip_cancelled',
           code: 'ZIP_CANCELLED',
@@ -686,6 +932,7 @@ export class LocalCsvExportService {
       checksum_algorithm: built.checksumAlgorithm,
       content_fingerprint: contentFingerprint,
       file_uri: csvUri,
+      zip_uri: zipUri,
       freeze_id: freezeIdAtStart,
       zip_size_bytes: zipSizeBytes,
       zip_sha256: zipSha256,
@@ -700,11 +947,17 @@ export class LocalCsvExportService {
       // Peer won the race — prefer their durable row; discard this attempt's files only.
       await FileSystem.deleteAsync(csvUri, { idempotent: true }).catch(() => undefined);
       await FileSystem.deleteAsync(zipUri, { idempotent: true }).catch(() => undefined);
+      if (this.deps.attemptRepo) {
+        await this.deps.attemptRepo.transitionState(attemptId, 'CANCELLED', {
+          completed_at: new Date().toISOString(),
+          error_code: 'PEER_WON_RACE',
+        });
+      }
       const peer =
         (await this.deps.exportRepo.findBySessionAndFingerprint(sessionId, contentFingerprint)) ??
         (await this.deps.exportRepo.findByFingerprint(contentFingerprint));
       if (peer?.file_uri) {
-        const peerZip = peer.file_uri.replace(/\.csv$/i, '.zip');
+        const peerZip = resolveZipUri(peer) ?? peer.file_uri.replace(/\.csv$/i, '.zip');
         const validated = await validateExistingExportPackage({
           row: peer,
           expectedContentFingerprint: contentFingerprint,
@@ -733,6 +986,15 @@ export class LocalCsvExportService {
       );
     }
 
+    if (this.deps.attemptRepo) {
+      await this.deps.attemptRepo.transitionState(attemptId, 'COMPLETE', {
+        final_csv_uri: csvUri,
+        final_zip_uri: zipUri,
+        completed_at: now,
+        content_fingerprint: contentFingerprint,
+      });
+    }
+
     this.deps.logger?.info('recovery', {
       where: 'local_export_complete',
       code: 'EXPORT_PACKAGE_BUILT',
@@ -746,6 +1008,9 @@ export class LocalCsvExportService {
       zip_build_ms: Date.now() - zipBuildStarted,
       uncompressed_bytes: estimatedBytes,
     });
+
+    // Definitive 100% only after durable persist.
+    this.zipProgressListener?.(1, 1, 'Listo');
 
     return {
       exportId: built.exportId,

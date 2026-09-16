@@ -53,6 +53,9 @@ module.exports = {
     '<rootDir>/tests/exportPrepPhase3Drain.test.ts',
     '<rootDir>/tests/exportPrepPhase4Corrections.test.ts',
     '<rootDir>/tests/exportPrepPhase5BoundedZip.test.ts',
+    '<rootDir>/tests/exportPrepPhase5Corrections.test.ts',
+    '<rootDir>/tests/exportPrepPhase6Integrity.test.ts',
+    '<rootDir>/tests/exportPrepPhase6Corrections.test.ts',
     '<rootDir>/tests/photoStableProducers.test.ts',
   ],
   moduleNameMapper: {

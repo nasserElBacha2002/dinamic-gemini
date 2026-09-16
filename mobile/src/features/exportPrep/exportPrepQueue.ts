@@ -185,6 +185,9 @@ export class ExportPrepQueue {
   private lastBackpressureWarnedAt = 0;
   private readonly drainWaiters = new Map<string, SharedDrainWork>();
   private nextObserverId = 1;
+  /** Sessions blocked from claiming/processing (cancel/drain/purge). */
+  private readonly cancelledSessions = new Set<string>();
+  private readonly activeSessionWorkers = new Map<string, number>();
   readonly metrics = {
     jobsCompleted: 0,
     jobsFailed: 0,
@@ -1255,6 +1258,26 @@ export class ExportPrepQueue {
     await deleteSessionExportStaging(sessionId);
   }
 
+  /**
+   * Stop admission of new work for session, release leases, wait for in-flight workers.
+   * Physical delete is the caller's responsibility after this returns.
+   */
+  async cancelAndDrainSession(sessionId: string, timeoutMs = 30_000): Promise<void> {
+    this.cancelledSessions.add(sessionId);
+    await this.deps.prepRepo.releaseLeasesForSession(sessionId);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const n = this.activeSessionWorkers.get(sessionId) ?? 0;
+      if (n <= 0) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 40));
+    }
+    this.cancelledSessions.delete(sessionId);
+  }
+
+  isSessionCancelled(sessionId: string): boolean {
+    return this.cancelledSessions.has(sessionId);
+  }
+
   /** Allow coordinators to wake the worker after requeue. */
   wake(): void {
     this.scheduleTick();
@@ -1284,9 +1307,18 @@ export class ExportPrepQueue {
         });
         break;
       }
+      if (this.cancelledSessions.has(job.capture_session_id)) {
+        await this.deps.prepRepo.releaseLeasesForSession(job.capture_session_id);
+        continue;
+      }
       this.workers += 1;
+      const sid = job.capture_session_id;
+      this.activeSessionWorkers.set(sid, (this.activeSessionWorkers.get(sid) ?? 0) + 1);
       void this.processJob(job).finally(() => {
         this.workers -= 1;
+        const cur = this.activeSessionWorkers.get(sid) ?? 1;
+        if (cur <= 1) this.activeSessionWorkers.delete(sid);
+        else this.activeSessionWorkers.set(sid, cur - 1);
         this.scheduleTick();
       });
     }
@@ -1297,6 +1329,9 @@ export class ExportPrepQueue {
     const leaseToken = job.lease_token;
     if (!leaseToken) {
       this.metrics.fenceLost += 1;
+      return;
+    }
+    if (this.cancelledSessions.has(sessionId)) {
       return;
     }
     try {

@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -235,5 +235,24 @@ describe('SQLite migrations', () => {
     expect(v36?.sql).toContain('zip_size_bytes');
     expect(v36?.sql).toContain('package_checksum_sha256');
     expect(v36?.sql).toContain('idx_local_csv_exports_session_fingerprint');
+  });
+
+  it('adds v37 local_export_attempts catalog', () => {
+    const v37 = MIGRATIONS.find((m) => m.version === 37);
+    expect(v37?.name).toBe('local_export_attempts');
+    expect(v37?.sql).toContain('CREATE TABLE IF NOT EXISTS local_export_attempts');
+    expect(v37?.sql).toContain('tmp_zip_uri');
+    expect(v37?.sql).toContain('heartbeat_at');
+    expect(v37?.sql).toContain('idx_local_export_attempts_session_state');
+    expect(v37?.sql).toContain("CHECK (state IN");
+  });
+
+  it('adds v38 zip_uri and session_purge_tasks', () => {
+    const v38 = MIGRATIONS.find((m) => m.version === 38);
+    expect(v38?.name).toBe('export_zip_uri_and_purge_tasks');
+    expect(v38?.sql).toContain('ALTER TABLE local_csv_exports ADD COLUMN zip_uri');
+    expect(v38?.sql).toContain('CREATE TABLE IF NOT EXISTS session_purge_tasks');
+    expect(v38?.sql).toContain('PURGE_PENDING');
+    expect(v38?.sql).toContain('idx_local_csv_exports_zip_uri');
   });
 });

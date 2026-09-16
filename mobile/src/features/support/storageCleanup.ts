@@ -1,5 +1,11 @@
 import * as FileSystem from 'expo-file-system';
 import type { Logger } from '../../core/logging';
+import {
+  emptyCleanupResult,
+  cleanupOutcomeLabel,
+  type CleanupResult,
+} from '../exportPrep/cleanupTypes';
+import { assertSafeSandboxDeleteTarget } from '../exportPrep/safeSandboxPath';
 
 export const UPLOAD_TEMP_DIR_NAME = 'dinamic-upload';
 
@@ -52,27 +58,43 @@ export async function getStorageStatus(): Promise<StorageStatus> {
 /**
  * Cleanup only files under cacheDirectory/dinamic-upload/.
  * Never deletes MediaStore originals. Does not scan arbitrary .jpg files.
+ * Returns structured result — partial failures are not reported as full success.
  */
 export async function cleanupTransformTemps(
   logger?: Logger,
   maxAgeMs: number = TEMP_MAX_AGE_MS,
-): Promise<number> {
+  limits?: { readonly maxFiles?: number },
+): Promise<CleanupResult> {
+  const started = Date.now();
   const dir = uploadTempDirectory();
   if (!dir) {
-    return 0;
+    return emptyCleanupResult(started);
   }
-  let removed = 0;
+  const maxFiles = limits?.maxFiles ?? 200;
+  let scanned = 0;
+  let deleted = 0;
+  let bytesRecovered = 0;
+  const errors: import('../exportPrep/cleanupTypes').CleanupError[] = [];
   try {
     const info = await FileSystem.getInfoAsync(dir);
     if (!info.exists) {
-      return 0;
+      return emptyCleanupResult(started);
     }
     const entries = await FileSystem.readDirectoryAsync(dir);
     const now = Date.now();
+    const roots = {
+      documentDirectory: FileSystem.documentDirectory,
+      cacheDirectory: FileSystem.cacheDirectory,
+    };
     for (const name of entries) {
+      if (scanned >= maxFiles) break;
+      scanned += 1;
       const path = `${dir}${name}`;
       try {
-        const meta = await FileSystem.getInfoAsync(path);
+        assertSafeSandboxDeleteTarget(path, roots, {
+          allowedPrefixes: ['dinamic-upload/'],
+        });
+        const meta = await FileSystem.getInfoAsync(path, { size: true });
         const mtime =
           meta.exists && 'modificationTime' in meta && typeof meta.modificationTime === 'number'
             ? meta.modificationTime * 1000
@@ -80,15 +102,48 @@ export async function cleanupTransformTemps(
         if (mtime && now - mtime < maxAgeMs) {
           continue;
         }
+        const size = meta.exists && typeof meta.size === 'number' ? meta.size : 0;
         await FileSystem.deleteAsync(path, { idempotent: true });
-        removed += 1;
-      } catch {
-        // ignore
+        deleted += 1;
+        bytesRecovered += size;
+      } catch (error) {
+        errors.push({
+          code: 'TRANSFORM_TEMP_DELETE_FAILED',
+          artifactType: 'transform_temp',
+          operation: 'delete',
+          recoverable: true,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    errors.push({
+      code: 'TRANSFORM_TEMP_SCAN_FAILED',
+      artifactType: 'transform_temp',
+      operation: 'scan',
+      recoverable: true,
+      message: error instanceof Error ? error.message : String(error),
+    });
   }
-  logger?.info('storage_cleanup', { removed, dir: UPLOAD_TEMP_DIR_NAME });
-  return removed;
+  const result: CleanupResult = {
+    scanned,
+    deleted,
+    quarantined: 0,
+    recovered: 0,
+    invalidated: 0,
+    skippedActive: 0,
+    failed: errors.length,
+    errors,
+    durationMs: Date.now() - started,
+    bytesRecovered,
+  };
+  const label = cleanupOutcomeLabel(result);
+  logger?.info(label === 'completed' ? 'storage.cleanup_completed' : 'storage.cleanup_partial', {
+    removed: deleted,
+    scanned,
+    failed: errors.length,
+    dir: UPLOAD_TEMP_DIR_NAME,
+    durationMs: result.durationMs,
+  });
+  return result;
 }

@@ -5,6 +5,10 @@
  */
 
 import { crc32Bytes } from './crc32';
+import {
+  LOCAL_PACKAGE_KIND,
+  LOCAL_PACKAGE_VERSION,
+} from '../localCsv/localPackageContract';
 
 const SIG_LFH = 0x04034b50;
 const SIG_CEN = 0x02014b50;
@@ -56,10 +60,7 @@ function findEocd(bytes: Uint8Array): number {
 }
 
 function decodePath(bytes: Uint8Array): string {
-  if (typeof TextDecoder !== 'undefined') {
-    return new TextDecoder('utf-8').decode(bytes);
-  }
-  return Buffer.from(bytes).toString('utf8');
+  return new TextDecoder('utf-8').decode(bytes);
 }
 
 /**
@@ -167,7 +168,8 @@ export function parseStoreZipIndependent(bytes: Uint8Array): IndependentZipParse
 }
 
 /**
- * Contractual check for local aisle export packages.
+ * Contractual check for local aisle export packages (in-memory — tests / tiny ZIPs only).
+ * Production validation uses validateOnDiskStoreZip.
  */
 export function validateLocalExportZipContract(bytes: Uint8Array): IndependentZipParseResult {
   const parsed = parseStoreZipIndependent(bytes);
@@ -194,19 +196,31 @@ export function validateLocalExportZipContract(bytes: Uint8Array): IndependentZi
     const manifestText = decodePath(byPath.get('manifest.json')!.data);
     const manifest = JSON.parse(manifestText) as {
       included_photo_count?: number;
+      expected_photo_count?: number;
       package_kind?: string;
+      package_version?: number;
     };
-    if (manifest.package_kind && manifest.package_kind !== 'local_aisle_export') {
-      // Soft: some tests use minimal manifests; only fail if present and wrong.
-      if (manifest.package_kind !== 'local_aisle_export') {
-        /* allow other kinds in unit fixtures */
-      }
+    if (manifest.package_kind !== LOCAL_PACKAGE_KIND) {
+      return fail('package_kind_mismatch');
+    }
+    if (
+      typeof manifest.package_version === 'number' &&
+      manifest.package_version !== LOCAL_PACKAGE_VERSION
+    ) {
+      return fail('package_version_mismatch');
     }
     if (
       typeof manifest.included_photo_count === 'number' &&
       manifest.included_photo_count !== photoCount
     ) {
       return fail('manifest_photo_count_mismatch');
+    }
+    if (
+      typeof manifest.expected_photo_count === 'number' &&
+      typeof manifest.included_photo_count === 'number' &&
+      manifest.expected_photo_count !== manifest.included_photo_count
+    ) {
+      return fail('expected_included_mismatch');
     }
   } catch {
     return fail('manifest_invalid_json');

@@ -34,13 +34,13 @@ describe('buildStoreZipBytes', () => {
     expect(bytes[1]).toBe(0x4b);
   });
 
-  it('synthetic: 100 tiny entries exercise sequential read (not a memory soak)', async () => {
-    // Synthetic unit check only — does not prove device peak memory.
-    const entries = Array.from({ length: 100 }, (_, i) => ({
-      path: `photos/${String(i + 1).padStart(4, '0')}_p.jpg`,
-      getBytes: () => new Uint8Array([i & 0xff]),
-    }));
-    const zip = await buildStoreZipBytes(entries);
-    expect(zip.byteLength).toBeGreaterThan(100);
+  it('rejects packages larger than BUILD_STORE_ZIP_BYTES_MAX', async () => {
+    const { BUILD_STORE_ZIP_BYTES_MAX } = await import(
+      '../src/features/exportPrep/streamingZipWriter'
+    );
+    const big = new Uint8Array(BUILD_STORE_ZIP_BYTES_MAX + 8);
+    await expect(
+      buildStoreZipBytes([{ path: 'huge.bin', getBytes: () => big }]),
+    ).rejects.toMatchObject({ code: 'ZIP_TOTAL_TOO_LARGE' });
   });
 });

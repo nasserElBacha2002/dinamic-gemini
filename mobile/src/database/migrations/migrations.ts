@@ -918,6 +918,63 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_local_csv_exports_session_fingerprint
   WHERE capture_session_id IS NOT NULL;
 `,
   },
+  {
+    version: 37,
+    name: 'local_export_attempts',
+    sql: `
+CREATE TABLE IF NOT EXISTS local_export_attempts (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_session_id TEXT NOT NULL,
+  freeze_id TEXT,
+  freeze_generation INTEGER,
+  content_fingerprint TEXT,
+  state TEXT NOT NULL CHECK (state IN (
+    'CREATED','WRITING','VALIDATING','PUBLISHING','COMPLETE','FAILED','CANCELLED'
+  )),
+  tmp_csv_uri TEXT,
+  tmp_zip_uri TEXT,
+  final_csv_uri TEXT,
+  final_zip_uri TEXT,
+  started_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  completed_at TEXT,
+  error_code TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (capture_session_id) REFERENCES capture_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_local_export_attempts_session_state
+  ON local_export_attempts(capture_session_id, state);
+CREATE INDEX IF NOT EXISTS idx_local_export_attempts_heartbeat
+  ON local_export_attempts(heartbeat_at);
+CREATE INDEX IF NOT EXISTS idx_local_export_attempts_state
+  ON local_export_attempts(state);
+`,
+  },
+  {
+    version: 38,
+    name: 'export_zip_uri_and_purge_tasks',
+    sql: `
+ALTER TABLE local_csv_exports ADD COLUMN zip_uri TEXT;
+CREATE INDEX IF NOT EXISTS idx_local_csv_exports_file_uri
+  ON local_csv_exports(file_uri)
+  WHERE file_uri IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_local_csv_exports_zip_uri
+  ON local_csv_exports(zip_uri)
+  WHERE zip_uri IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS session_purge_tasks (
+  capture_session_id TEXT PRIMARY KEY NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('PURGE_PENDING','PURGE_PARTIAL','PURGE_COMPLETE')),
+  pending_uris_json TEXT NOT NULL DEFAULT '[]',
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_purge_tasks_state
+  ON session_purge_tasks(state);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

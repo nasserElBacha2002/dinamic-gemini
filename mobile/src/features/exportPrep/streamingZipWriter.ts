@@ -1,12 +1,8 @@
 /**
  * Bounded-memory ZIP builder for local aisle export (Phase 5).
  *
- * Previous fflate Zip path accumulated all ZIP chunks then Base64-encoded the full archive.
- * writeStoreZipAtomic now delegates to writeBoundedStoreZip (STORE + append sink).
- *
- * TECHNICAL NOTE (Expo SDK 51):
- * Disk append uses CaptureForegroundService.appendBase64File on Android, or Node fs in tests.
- * Peak ≈ one photo Uint8Array + framing + Base64 encode of ≤256 KiB append chunks — not Σ(photos)+ZIP.
+ * writeStoreZipAtomic delegates to writeBoundedStoreZip (STORE + append sink).
+ * Disk append: CaptureForegroundService on Android, Node fs in tests.
  */
 
 import * as FileSystem from 'expo-file-system';
@@ -18,6 +14,7 @@ import {
   type ZipWriteProgress,
   type ZipWriteResult,
 } from './boundedZipWriter';
+import { assertZipWritePlatformSupported } from './zipWritePlatform';
 
 export type { BoundedZipEntry, ZipWriteProgress, ZipWriteResult };
 export { ZipWriteError, writeBoundedStoreZip } from './boundedZipWriter';
@@ -30,10 +27,29 @@ export interface StreamingZipEntry {
   readonly expectedSha256?: string;
 }
 
-/** @deprecated Prefer writeStoreZipAtomic / writeBoundedStoreZip — in-memory only for tiny probes. */
+/** Hard cap for the deprecated in-memory probe helper (not for photos). */
+export const BUILD_STORE_ZIP_BYTES_MAX = 64 * 1024;
+
+/**
+ * @deprecated Test/probe only — accumulates the whole ZIP in RAM.
+ * Throws if estimated payload exceeds BUILD_STORE_ZIP_BYTES_MAX.
+ */
 export async function buildStoreZipBytes(
   entries: readonly Omit<StreamingZipEntry, 'sizeBytes'>[],
 ): Promise<Uint8Array> {
+  const materialized: { path: string; bytes: Uint8Array }[] = [];
+  let estimated = 0;
+  for (const entry of entries) {
+    const bytes = await entry.getBytes();
+    estimated += bytes.byteLength;
+    if (estimated > BUILD_STORE_ZIP_BYTES_MAX) {
+      throw new ZipWriteError(
+        'ZIP_TOTAL_TOO_LARGE',
+        `buildStoreZipBytes is probe-only (max ${BUILD_STORE_ZIP_BYTES_MAX} bytes); use writeBoundedStoreZip`,
+      );
+    }
+    materialized.push({ path: entry.path, bytes });
+  }
   const { Zip, ZipPassThrough } = await import('fflate');
   return new Promise((resolve, reject) => {
     const chunks: Uint8Array[] = [];
@@ -57,24 +73,47 @@ export async function buildStoreZipBytes(
         resolve(out);
       }
     });
-    void (async () => {
-      try {
-        for (const entry of entries) {
-          const bytes = await entry.getBytes();
-          const file = new ZipPassThrough(entry.path);
-          zip.add(file);
-          file.push(bytes, true);
-        }
-        zip.end();
-      } catch (error) {
-        reject(error);
+    try {
+      for (const entry of materialized) {
+        const file = new ZipPassThrough(entry.path);
+        zip.add(file);
+        file.push(entry.bytes, true);
       }
-    })();
+      zip.end();
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
 /**
+ * Legacy progress adapter: never reports done===total during WRITING_ENTRIES.
+ * Callers must report final completion after persist.
+ */
+export function adaptLegacyZipEntryProgress(
+  progress: ZipWriteProgress,
+  onProgress: (done: number, total: number) => void,
+): void {
+  if (progress.stage === 'PREPARING') {
+    onProgress(0, Math.max(1, progress.totalEntries));
+    return;
+  }
+  if (progress.stage === 'WRITING_ENTRIES') {
+    const total = Math.max(1, progress.totalEntries);
+    // Cap at total-1 so UI cannot show 100% before CD/validate/publish.
+    const done =
+      progress.totalEntries <= 0
+        ? 0
+        : Math.min(progress.completedEntries, Math.max(0, total - 1));
+    onProgress(done, total);
+  }
+  // WRITING_DIRECTORY / VALIDATING / PUBLISHING: no false 100% via entry counts.
+}
+
+/**
  * Build STORE ZIP with bounded memory and publish atomically via tmp + move.
+ * Caller should validate on-disk before treating the target as publishable when
+ * target is a temp path in the export orchestrator.
  */
 export async function writeStoreZipAtomic(input: {
   readonly entries: readonly StreamingZipEntry[];
@@ -84,6 +123,7 @@ export async function writeStoreZipAtomic(input: {
   readonly signal?: AbortSignal;
   readonly maxTotalBytes?: number;
 }): Promise<ZipWriteResult> {
+  assertZipWritePlatformSupported();
   const dir = input.targetUri.replace(/\/[^/]+$/, '/');
   await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
   const tmpUri = `${input.targetUri}.tmp.${Date.now()}`;
@@ -110,8 +150,8 @@ export async function writeStoreZipAtomic(input: {
       ...(input.maxTotalBytes != null ? { maxTotalBytes: input.maxTotalBytes } : {}),
       onProgress: (p) => {
         input.onZipProgress?.(p);
-        if (input.onProgress && (p.stage === 'WRITING_ENTRIES' || p.stage === 'PREPARING')) {
-          input.onProgress(p.completedEntries, p.totalEntries);
+        if (input.onProgress) {
+          adaptLegacyZipEntryProgress(p, input.onProgress);
         }
       },
     });

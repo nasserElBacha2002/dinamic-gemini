@@ -1,14 +1,13 @@
 /**
  * Validate an existing on-disk ZIP/CSV before reporting reused=true.
- * Size > 0 alone is never sufficient.
+ * Uses bounded on-disk ZIP validation — never loads the full ZIP or photo payloads.
  */
 
-import { unzipSync, strFromU8 } from 'fflate';
 import * as FileSystem from 'expo-file-system';
 
-import { sha256BytesHex } from '../../core/payloadFingerprint';
-import { base64ToUint8Array } from '../localCsv/binaryCodec';
 import type { LocalCsvExportRow } from '../../database/repositories/localCsvExportRepository';
+import { validateOnDiskStoreZip } from './boundedOnDiskZipValidator';
+import { getNodeProcess } from './nodeRuntime';
 
 export interface ExistingPackageValidationOk {
   readonly ok: true;
@@ -30,11 +29,17 @@ function fail(reason: string): ExistingPackageValidationFail {
   return { ok: false, reason };
 }
 
-async function readFileBytes(uri: string): Promise<Uint8Array> {
-  const b64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  return base64ToUint8Array(b64);
+function exportSandboxRoots(): string[] {
+  const roots: string[] = [];
+  if (FileSystem.documentDirectory) roots.push(FileSystem.documentDirectory);
+  if (FileSystem.cacheDirectory) roots.push(FileSystem.cacheDirectory);
+  // Jest / Node tmp fallbacks used by binary append sink.
+  const tmpdir = getNodeProcess()?.env?.TMPDIR;
+  if (tmpdir) {
+    roots.push(tmpdir);
+  }
+  roots.push('/tmp');
+  return roots;
 }
 
 /**
@@ -72,49 +77,21 @@ export async function validateExistingExportPackage(input: {
   ) {
     return fail('zip_missing_or_empty');
   }
-  const zipSize = zipInfo.size;
-  if (row.zip_size_bytes != null && row.zip_size_bytes !== zipSize) {
-    return fail('zip_size_mismatch');
+
+  const validated = await validateOnDiskStoreZip({
+    uri: zipUri,
+    allowedRoots: exportSandboxRoots(),
+    expectedSizeBytes: row.zip_size_bytes ?? zipInfo.size,
+    expectedSha256: row.zip_sha256 ?? null,
+    expectedContentFingerprint,
+    computeSha256: true,
+    verifyCrcAll: false,
+  });
+
+  if (!validated.ok) {
+    return fail(validated.reason);
   }
 
-  let zipBytes: Uint8Array;
-  try {
-    zipBytes = await readFileBytes(zipUri);
-  } catch {
-    return fail('zip_unreadable');
-  }
-  if (zipBytes.byteLength !== zipSize) {
-    return fail('zip_read_size_mismatch');
-  }
-
-  const zipSha = sha256BytesHex(zipBytes);
-  if (row.zip_sha256 != null && row.zip_sha256 !== zipSha) {
-    return fail('zip_sha_mismatch');
-  }
-
-  let entries: Record<string, Uint8Array>;
-  try {
-    entries = unzipSync(zipBytes);
-  } catch {
-    return fail('zip_corrupt');
-  }
-  if (!entries['results.csv'] || !entries['manifest.json']) {
-    return fail('zip_missing_required_entries');
-  }
-
-  let manifest: { package_checksum_sha256?: string };
-  try {
-    const manifestText = strFromU8(entries['manifest.json']);
-    manifest = JSON.parse(manifestText) as { package_checksum_sha256?: string };
-  } catch {
-    return fail('manifest_invalid_json');
-  }
-
-  const pkgChecksum =
-    manifest.package_checksum_sha256 ?? row.package_checksum_sha256 ?? null;
-  if (pkgChecksum != null && pkgChecksum !== expectedContentFingerprint) {
-    return fail('manifest_fingerprint_mismatch');
-  }
   if (
     row.package_checksum_sha256 != null &&
     row.package_checksum_sha256 !== expectedContentFingerprint
@@ -122,10 +99,14 @@ export async function validateExistingExportPackage(input: {
     return fail('stored_package_checksum_mismatch');
   }
 
+  if (!validated.zipSha256) {
+    return fail('zip_sha_missing');
+  }
+
   return {
     ok: true,
     zipUri,
-    zipSizeBytes: zipSize,
-    zipSha256: zipSha,
+    zipSizeBytes: validated.zipSizeBytes,
+    zipSha256: validated.zipSha256,
   };
 }

@@ -377,10 +377,10 @@ describe('export_prep real SQLite', () => {
     }
   });
 
-  it('v36 concurrent local_csv_exports inserts for same session+fingerprint stay unique', async () => {
+  it('v36+ concurrent local_csv_exports inserts for same session+fingerprint stay unique', async () => {
     const { db, filePath, sync } = openTempDb();
     try {
-      applyMigrationsThrough(sync, 36);
+      applyMigrationsThrough(sync, 38);
       const { LocalCsvExportRepository } = await import(
         '../src/database/repositories/localCsvExportRepository'
       );

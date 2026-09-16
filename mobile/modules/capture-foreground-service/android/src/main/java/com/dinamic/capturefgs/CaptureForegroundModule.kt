@@ -149,5 +149,56 @@ class CaptureForegroundModule : Module() {
       file.parentFile?.mkdirs()
       java.io.FileOutputStream(file, false).use { /* truncate */ }
     }
+
+    AsyncFunction("getFileSize") { absolutePath: String ->
+      val file = java.io.File(absolutePath)
+      if (!file.exists() || !file.isFile) {
+        throw Exception("file missing: $absolutePath")
+      }
+      file.length().toDouble()
+    }
+
+    /**
+     * Read [length] bytes at [offset] and return Base64 (bounded ZIP validation).
+     * Rejects oversized ranges to protect memory.
+     */
+    AsyncFunction("readFileRangeBase64") { absolutePath: String, offset: Double, length: Double ->
+      val file = java.io.File(absolutePath)
+      if (!file.exists() || !file.isFile) {
+        throw Exception("file missing: $absolutePath")
+      }
+      val off = offset.toLong()
+      val len = length.toLong()
+      if (off < 0 || len < 0 || len > 2L * 1024L * 1024L) {
+        throw Exception("invalid range offset=$off length=$len")
+      }
+      if (off + len > file.length()) {
+        throw Exception("range past EOF")
+      }
+      val buf = ByteArray(len.toInt())
+      java.io.RandomAccessFile(file, "r").use { raf ->
+        raf.seek(off)
+        raf.readFully(buf)
+      }
+      android.util.Base64.encodeToString(buf, android.util.Base64.NO_WRAP)
+    }
+
+    /** Streaming SHA-256 of file contents (does not load whole file). */
+    AsyncFunction("hashFileSha256") { absolutePath: String ->
+      val file = java.io.File(absolutePath)
+      if (!file.exists() || !file.isFile) {
+        throw Exception("file missing: $absolutePath")
+      }
+      val digest = java.security.MessageDigest.getInstance("SHA-256")
+      val buf = ByteArray(64 * 1024)
+      java.io.FileInputStream(file).use { input ->
+        while (true) {
+          val n = input.read(buf)
+          if (n < 0) break
+          digest.update(buf, 0, n)
+        }
+      }
+      digest.digest().joinToString("") { b -> "%02x".format(b) }
+    }
   }
 }

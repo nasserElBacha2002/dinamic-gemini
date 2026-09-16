@@ -9,10 +9,14 @@
 import * as FileSystem from 'expo-file-system';
 
 import { IncrementalSha256 } from './incrementalSha256';
+import { ZipWriteError } from './boundedZipWriter';
+import { isNodeRuntime, nodeTmpDir } from './nodeRuntime';
 
 export interface BinaryAppendSink {
   readonly uri: string;
-  append(bytes: Uint8Array): Promise<void>;
+  /** Absolute filesystem path used for I/O (may differ from uri under Jest stubs). */
+  readonly physicalPath: string;
+  append(bytes: Uint8Array, signal?: AbortSignal): Promise<void>;
   /** Bytes written so far (uncompressed ZIP length on disk). */
   readonly byteLength: number;
   /** Running SHA-256 of all appended bytes. */
@@ -30,7 +34,21 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   if (typeof btoa === 'function') {
     return btoa(binary);
   }
-  return Buffer.from(bytes).toString('base64');
+  // Jest/Node without btoa: encode manually (probe/test only).
+  const alphabet =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i]!;
+    const b = i + 1 < bytes.length ? bytes[i + 1]! : 0;
+    const c = i + 2 < bytes.length ? bytes[i + 2]! : 0;
+    const triple = (a << 16) | (b << 8) | c;
+    out += alphabet[(triple >> 18) & 63];
+    out += alphabet[(triple >> 12) & 63];
+    out += i + 1 < bytes.length ? alphabet[(triple >> 6) & 63] : '=';
+    out += i + 2 < bytes.length ? alphabet[triple & 63] : '=';
+  }
+  return out;
 }
 
 function fileUriToPath(uri: string): string {
@@ -38,6 +56,12 @@ function fileUriToPath(uri: string): string {
     return decodeURIComponent(uri.slice('file://'.length));
   }
   return uri;
+}
+
+function assertNotAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new ZipWriteError('ZIP_CANCELLED', 'abort during append');
+  }
 }
 
 type NativeAppend = {
@@ -71,10 +95,6 @@ function resolveNativeAppend(): NativeAppend | null {
   return null;
 }
 
-function isNodeRuntime(): boolean {
-  return typeof process !== 'undefined' && Boolean(process.versions?.node);
-}
-
 /**
  * Create an empty target file and return an append sink that never retains prior ZIP bytes.
  */
@@ -84,8 +104,6 @@ export async function createBinaryAppendSink(targetUri: string): Promise<BinaryA
   let closed = false;
 
   if (isNodeRuntime()) {
-    // Literal require('fs'): Jest → real Node; Metro → metro-shims/node-builtin.js
-    // (branch never runs on device). Avoid require('path'|'os') so Metro need not stub them.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require('fs') as typeof import('fs');
     const dirname = (p: string): string => {
@@ -101,28 +119,31 @@ export async function createBinaryAppendSink(targetUri: string): Promise<BinaryA
         .filter(Boolean)
         .join('/')
         .replace(/\/+/g, '/');
-    const tmpdir = (): string =>
-      process.env.TMPDIR || process.env.TMP || process.env.TEMP || '/tmp';
     let filePath = fileUriToPath(targetUri);
     try {
       fs.mkdirSync(dirname(filePath), { recursive: true });
       fs.writeFileSync(filePath, new Uint8Array(0));
     } catch {
-      // Jest stubs often use file:///docs which is not writable — fall back to tmp.
-      filePath = join(tmpdir(), 'dinamic-zip-sink', basename(filePath) || `zip-${Date.now()}.bin`);
+      filePath = join(nodeTmpDir(), 'dinamic-zip-sink', basename(filePath) || `zip-${Date.now()}.bin`);
       fs.mkdirSync(dirname(filePath), { recursive: true });
       fs.writeFileSync(filePath, new Uint8Array(0));
     }
     return {
       uri: targetUri,
+      physicalPath: filePath,
       get byteLength() {
         return byteLength;
       },
-      async append(bytes: Uint8Array) {
+      async append(bytes: Uint8Array, signal?: AbortSignal) {
         if (closed) throw new Error('sink closed');
-        fs.appendFileSync(filePath, bytes);
-        hasher.update(bytes);
-        byteLength += bytes.length;
+        const MAX_CHUNK = 256 * 1024;
+        for (let i = 0; i < bytes.length; i += MAX_CHUNK) {
+          assertNotAborted(signal);
+          const slice = bytes.subarray(i, Math.min(i + MAX_CHUNK, bytes.length));
+          fs.appendFileSync(filePath, slice);
+          hasher.update(slice);
+          byteLength += slice.length;
+        }
       },
       digestHex() {
         return hasher.digestHex();
@@ -147,14 +168,15 @@ export async function createBinaryAppendSink(targetUri: string): Promise<BinaryA
     }
     return {
       uri: targetUri,
+      physicalPath: abs,
       get byteLength() {
         return byteLength;
       },
-      async append(bytes: Uint8Array) {
+      async append(bytes: Uint8Array, signal?: AbortSignal) {
         if (closed) throw new Error('sink closed');
-        // Chunk Base64 appends so a single encode never holds >> one entry.
         const MAX_CHUNK = 256 * 1024;
         for (let i = 0; i < bytes.length; i += MAX_CHUNK) {
+          assertNotAborted(signal);
           const slice = bytes.subarray(i, Math.min(i + MAX_CHUNK, bytes.length));
           await native.appendBase64File(abs, uint8ArrayToBase64(slice));
           hasher.update(slice);
@@ -170,7 +192,8 @@ export async function createBinaryAppendSink(targetUri: string): Promise<BinaryA
     };
   }
 
-  throw new Error(
-    'ZIP_WRITE_FAILED: no binary append sink (native appendBase64File / Node fs). Expo FileSystem cannot stream ZIP without holding the full archive.',
+  throw new ZipWriteError(
+    'ZIP_WRITE_FAILED',
+    'no binary append sink (native appendBase64File / Node fs). Expo FileSystem cannot stream ZIP without holding the full archive.',
   );
 }

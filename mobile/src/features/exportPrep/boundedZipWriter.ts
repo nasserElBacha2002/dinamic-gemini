@@ -56,6 +56,8 @@ export interface ZipWriteResult {
   readonly method: 'STORE';
   /** Peak simultaneous open entries (must be ≤1 for concurrency=1). */
   readonly peakOpenEntries: number;
+  /** Absolute path where bytes were written (Jest may remap documentDirectory). */
+  readonly physicalPath: string;
 }
 
 export class ZipWriteError extends Error {
@@ -93,10 +95,7 @@ function encodePath(path: string): Uint8Array {
   if (!path || path.includes('..') || path.startsWith('/') || path.includes('\\')) {
     throw new ZipWriteError('ZIP_VALIDATION_FAILED', `unsafe zip path: ${path}`);
   }
-  const bytes =
-    typeof TextEncoder !== 'undefined'
-      ? new TextEncoder().encode(path)
-      : Uint8Array.from(Buffer.from(path, 'utf8'));
+  const bytes = new TextEncoder().encode(path);
   if (bytes.length > 0xffff) {
     throw new ZipWriteError('ZIP_ENTRY_TOO_LARGE', `path too long: ${path.length}`);
   }
@@ -287,8 +286,8 @@ export async function writeBoundedStoreZip(input: {
         view.setUint16(28, 0, true);
         lfh.set(pathBytes, 30);
 
-        await sink.append(lfh);
-        await sink.append(raw);
+        await sink.append(lfh, input.signal);
+        await sink.append(raw, input.signal);
 
         central.push({
           pathBytes,
@@ -357,7 +356,7 @@ export async function writeBoundedStoreZip(input: {
       view.setUint32(38, 0, true);
       view.setUint32(42, c.localHeaderOffset, true);
       cen.set(c.pathBytes, 46);
-      await sink.append(cen);
+      await sink.append(cen, input.signal);
     }
 
     const cdSize = sink.byteLength - cdStart;
@@ -371,7 +370,7 @@ export async function writeBoundedStoreZip(input: {
     ev.setUint32(12, cdSize, true);
     ev.setUint32(16, cdStart, true);
     ev.setUint16(20, 0, true);
-    await sink.append(eocd);
+    await sink.append(eocd, input.signal);
 
     if (sink.byteLength > maxTotal) {
       throw new ZipWriteError(
@@ -401,6 +400,7 @@ export async function writeBoundedStoreZip(input: {
       entryCount: central.length,
       method: 'STORE',
       peakOpenEntries,
+      physicalPath: sink.physicalPath,
     };
   } catch (error) {
     await sink.close().catch(() => undefined);
