@@ -1,5 +1,5 @@
 /**
- * Local ZIP export must run CODE_SCAN before readiness assert when upload is deferred.
+ * Export prep path: when all photos READY, skip catch-up CODE_SCAN.
  */
 
 import { LocalCsvExportService } from '../src/features/localCsv/localCsvExportService';
@@ -10,12 +10,21 @@ jest.mock('expo-file-system', () => ({
   documentDirectory: 'file:///docs/',
   cacheDirectory: 'file:///cache/',
   EncodingType: { UTF8: 'utf8', Base64: 'base64' },
-  getInfoAsync: jest.fn(async () => ({ exists: false })),
+  getInfoAsync: jest.fn(async (uri: string) => {
+    if (String(uri).includes('staging') || String(uri).includes('photo')) {
+      return { exists: true, size: 4 };
+    }
+    if (String(uri).endsWith('.csv') || String(uri).endsWith('.zip')) {
+      return { exists: false };
+    }
+    return { exists: true, size: 4 };
+  }),
   makeDirectoryAsync: jest.fn(async () => undefined),
   writeAsStringAsync: jest.fn(async () => undefined),
   moveAsync: jest.fn(async () => undefined),
   deleteAsync: jest.fn(async () => undefined),
-  readAsStringAsync: jest.fn(async () => 'aaaa'),
+  readAsStringAsync: jest.fn(async () => 'AAAA'),
+  copyAsync: jest.fn(async () => undefined),
 }));
 
 jest.mock('expo-sharing', () => ({
@@ -23,28 +32,9 @@ jest.mock('expo-sharing', () => ({
   shareAsync: jest.fn(async () => undefined),
 }));
 
-jest.mock('fflate', () => {
-  class FakeZip {
-    constructor(private readonly cb: (err: Error | null, chunk: Uint8Array | null, final: boolean) => void) {}
-    add(): void {}
-    end(): void {
-      this.cb(null, new Uint8Array([1, 2, 3, 4]), true);
-    }
-  }
-  class FakePassThrough {
-    constructor(_path: string) {}
-    push(): void {}
-  }
-  return {
-    zipSync: jest.fn(() => new Uint8Array([1, 2, 3, 4])),
-    Zip: FakeZip,
-    ZipPassThrough: FakePassThrough,
-  };
-});
-
 jest.mock('../src/features/localCodeScan/preparedAssetHash', () => ({
-  hashPreparedFileSha256: jest.fn(async () => 'sha256:prepared'),
-  hashPreparedMetaSha256: jest.fn(() => 'sha256:meta'),
+  hashPreparedFileSha256: jest.fn(async () => 'deadbeef'),
+  hashPreparedMetaSha256: jest.fn(() => 'meta'),
 }));
 
 jest.mock('../src/features/localCsv/binaryCodec', () => ({
@@ -52,7 +42,17 @@ jest.mock('../src/features/localCsv/binaryCodec', () => ({
   uint8ArrayToBase64: jest.fn(() => 'AAAA'),
 }));
 
-describe('LocalCsvExportService CODE_SCAN before export', () => {
+jest.mock('../src/core/payloadFingerprint', () => {
+  const actual = jest.requireActual('../src/core/payloadFingerprint') as Record<string, unknown>;
+  return {
+    ...actual,
+    sha256BytesHex: jest.fn(
+      () => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ),
+  };
+});
+
+describe('LocalCsvExportService export prep skip-scan', () => {
   const now = '2026-01-01T00:00:00.000Z';
 
   function session(): CaptureSessionRow {
@@ -62,9 +62,9 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
       inventory_name: 'Inv',
       aisle_id: 'aisle-1',
       aisle_name: 'A1',
-      status: 'review',
+      status: 'local_completed',
       started_at: now,
-      finished_at: null,
+      finished_at: now,
       initial_asset_id: null,
       initial_date_added: null,
       initial_date_modified: null,
@@ -75,7 +75,7 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
       scan_cursor_asset_id: EMPTY_CURSOR.assetId,
       last_valid_cursor_date_added: EMPTY_CURSOR.dateAdded,
       last_valid_cursor_asset_id: EMPTY_CURSOR.assetId,
-      upload_batch_id: 'b1',
+      upload_batch_id: null,
       upload_status: 'idle',
       processing_status: 'idle',
       backend_job_id: null,
@@ -111,7 +111,7 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
       uri: 'file://photo.jpg',
       display_name: 'photo.jpg',
       mime_type: 'image/jpeg',
-      size: 10,
+      size: 4,
       width: 1,
       height: 1,
       date_added: 1,
@@ -133,7 +133,7 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
       upload_status: 'not_queued',
       upload_progress: 0,
       upload_attempts: 0,
-      upload_batch_id: 'b1',
+      upload_batch_id: null,
       last_upload_error_code: null,
       last_upload_error_message: null,
       last_upload_attempt_at: null,
@@ -153,13 +153,26 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
     } as CapturePhotoRow;
   }
 
-  it('runs local CODE_SCAN with session context before building export rows', async () => {
+  it('skips ensureLocalCodeScans when all eligible jobs are READY', async () => {
     const execute = jest.fn(async () => 'RESOLVED' as const);
-    const drafts: unknown[] = [];
-    const sess = session();
+    const drafts = [
+      {
+        id: 'd1',
+        capture_photo_id: 'session-1:1',
+        capture_session_id: 'session-1',
+        status: 'RESOLVED',
+        internal_code: 'SKU-1',
+        label_id: 'L1',
+        product_results_json: null,
+        recognition_profile_snapshot_json: null,
+        position_detected: 0,
+        error_code: null,
+        rejections_json: null,
+      },
+    ];
     const svc = new LocalCsvExportService({
       captureRepo: {
-        getSession: jest.fn(async () => sess),
+        getSession: jest.fn(async () => session()),
         listPhotos: jest.fn(async () => [photo()]),
         listFreezePhotos: jest.fn(async () => []),
       } as never,
@@ -177,97 +190,71 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
       deviceId: 'dev-1',
       localCodeScan: { execute } as never,
       localCodeScanEnabled: true,
-    });
-
-    execute.mockImplementation(async () => {
-      drafts.push({
-        id: 'd1',
-        capture_photo_id: 'session-1:1',
-        capture_session_id: 'session-1',
-        client_file_id: 'cf-1',
-        status: 'RESOLVED',
-        raw_value_hash: null,
-        internal_code: 'SKU-1',
-        quantity: 2,
-        quantity_status: 'PRESENT',
-        detected_format: 'PLAIN',
-        detected_symbology: 'QR_CODE',
-        parser_version: '1',
-        detector_version: '1',
-        candidate_count: 1,
-        error_code: null,
-        processing_ms: 1,
-        comparison_status: null,
-        compare_result: null,
-        compared_at: null,
-        prepared_asset_fingerprint: 'sha256:prepared',
-        scan_owner: null,
-        scan_generation: 1,
-        sync_status: 'NOT_READY',
-        sync_attempt_count: 0,
-        sync_next_retry_at: null,
-        sync_last_error_code: null,
-        server_preliminary_id: null,
-        synced_at: null,
-        sync_lease_token: null,
-        sync_lease_expires_at: null,
-        position_snapshot_json: null,
-        detected_at: now,
-        created_at: now,
-        updated_at: now,
-      });
-      return 'RESOLVED';
+      exportPrepEnabled: true,
+      exportPrepRepo: {
+        listForSession: jest.fn(async () => [
+          {
+            capture_photo_id: 'session-1:1',
+            capture_session_id: 'session-1',
+            status: 'READY',
+            source_uri: 'file://photo.jpg',
+            staging_uri: 'file:///docs/export-staging/session-1/photos/0001_session-1_1.jpg',
+            export_file_name: '0001_session-1_1.jpg',
+            size_bytes: 4,
+            sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            source_fingerprint: null,
+            error_code: null,
+            error_message: null,
+            attempt_count: 1,
+            max_attempts: 3,
+            lease_token: null,
+            lease_expires_at: null,
+            queued_at: now,
+            started_at: now,
+            ready_at: now,
+            updated_at: now,
+            created_at: now,
+          },
+        ]),
+        invalidateReady: jest.fn(async () => undefined),
+      } as never,
     });
 
     const result = await svc.exportSession('session-1');
-    expect(execute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inventoryId: 'inv-1',
-        aisleId: 'aisle-1',
-        recognitionContext: 'OFFLINE',
-        processingMode: 'CODE_SCAN',
-      }),
-    );
-    expect(result.rowCount).toBe(1);
-    expect(result.zipUri).toContain('.zip');
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.scanMode).toBe('skipped_all_ready');
+    expect(result.photoCount).toBe(1);
   });
 
-  it('skips rescan when draft is already export-ready', async () => {
-    const execute = jest.fn(async () => 'RESOLVED' as const);
-    const readyDraft = {
-      id: 'd-ready',
-      capture_photo_id: 'session-1:1',
-      capture_session_id: 'session-1',
-      client_file_id: 'cf-1',
-      status: 'RESOLVED',
-      internal_code: 'SKU-READY',
-      product_results_json: JSON.stringify([
-        { labelId: 'L1', internalCode: 'SKU-READY', quantity: 3 },
-      ]),
-      recognition_profile_snapshot_json: null,
-      position_detected: 0,
-      error_code: null,
-    };
+  it('blocks export when a prep job is still QUEUED', async () => {
     const svc = new LocalCsvExportService({
       captureRepo: {
         getSession: jest.fn(async () => session()),
         listPhotos: jest.fn(async () => [photo()]),
         listFreezePhotos: jest.fn(async () => []),
       } as never,
-      draftRepo: {
-        listForSession: jest.fn(async () => [readyDraft]),
-      } as never,
+      draftRepo: { listForSession: jest.fn(async () => []) } as never,
       confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
       exportRepo: {
         findByFingerprint: jest.fn(async () => null),
         insert: jest.fn(async () => undefined),
       } as never,
       deviceId: 'dev-1',
-      localCodeScan: { execute } as never,
       localCodeScanEnabled: true,
+      exportPrepEnabled: true,
+      exportPrepRepo: {
+        listForSession: jest.fn(async () => [
+          {
+            capture_photo_id: 'session-1:1',
+            status: 'QUEUED',
+            staging_uri: null,
+            export_file_name: null,
+            size_bytes: null,
+            sha256: null,
+          },
+        ]),
+      } as never,
     });
-
-    await svc.exportSession('session-1');
-    expect(execute).not.toHaveBeenCalled();
+    await expect(svc.exportSession('session-1')).rejects.toThrow(/PACKAGE_EXPORT_PREP_PENDING/);
   });
 });

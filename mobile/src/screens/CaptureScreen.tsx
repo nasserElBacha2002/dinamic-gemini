@@ -8,6 +8,11 @@ import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import { Button, ErrorText, PhotoWorkList, SmallButton, captureContextFrom, countPhotos, messageOf, styles } from '../ui';
 import { FINISH_STAGE_LABELS } from '../features/capture/finishObservability';
+import {
+  emptyExportPrepCounts,
+  summarizeExportPrepForUi,
+  type ExportPrepCounts,
+} from '../features/exportPrep/exportPrepQueue';
 
 export interface CaptureScreenProps {
   services: AppServices;
@@ -36,6 +41,8 @@ export function CaptureScreen({
 }: CaptureScreenProps) {
   const [permission, setPermission] = useState('desconocido');
   const [finishInFlight, setFinishInFlight] = useState(false);
+  const [prepCounts, setPrepCounts] = useState<ExportPrepCounts>(emptyExportPrepCounts());
+  const [prepDrainLabel, setPrepDrainLabel] = useState<string | null>(null);
   const snapshotBelongsToSelectedAisle = Boolean(
     snapshot?.session &&
       inventory &&
@@ -44,6 +51,7 @@ export function CaptureScreen({
       snapshot.context?.aisleId === aisle.id,
   );
   const context = captureContextFrom(snapshotBelongsToSelectedAisle ? snapshot : null, inventory, aisle);
+  const prepQueue = services.exportPrepQueue;
 
   const runStart = async (pauseOtherAisle: boolean) => {
     if (!inventory || !aisle) {
@@ -112,11 +120,25 @@ export function CaptureScreen({
   const photos = snapshotBelongsToSelectedAisle ? snapshot?.photos ?? [] : [];
   const counts = countPhotos(photos);
   const sessionStatus = snapshotBelongsToSelectedAisle ? snapshot?.session?.status : undefined;
+  const sessionId = snapshotBelongsToSelectedAisle ? snapshot?.session?.id : undefined;
   const isFinishing = finishInFlight || sessionStatus === 'finishing';
   const finishStageLabel =
     snapshotBelongsToSelectedAisle && snapshot?.finishStage
       ? FINISH_STAGE_LABELS[snapshot.finishStage]
       : null;
+
+  useEffect(() => {
+    if (!prepQueue || !sessionId) {
+      setPrepCounts(emptyExportPrepCounts());
+      return;
+    }
+    void prepQueue.getCounts(sessionId).then(setPrepCounts).catch(() => undefined);
+    return prepQueue.subscribe((sid, c) => {
+      if (sid === sessionId || sid == null) {
+        setPrepCounts(c);
+      }
+    });
+  }, [prepQueue, sessionId]);
 
   useEffect(() => {
     if (sessionStatus !== 'active') return;
@@ -128,14 +150,43 @@ export function CaptureScreen({
     return () => sub.remove();
   }, [sessionStatus, services.capture]);
 
+  const leaveCapture = () => {
+    if (prepQueue && prepCounts.pending > 0) {
+      Alert.alert(
+        'Preparación en curso',
+        `Hay ${prepCounts.pending} foto(s) preparándose para exportar. ¿Salir de todos modos?`,
+        [
+          { text: 'Quedarme', style: 'cancel' },
+          { text: 'Salir', style: 'destructive', onPress: onBackToAisles },
+        ],
+      );
+      return;
+    }
+    onBackToAisles();
+  };
+
   return (
     <PhotoWorkList
       photos={photos}
-      onExclude={(id) => void services.capture.exclude(id)}
-      onReinclude={(id) => void services.capture.reincorporate(id)}
+      onExclude={(id) => {
+        if (services.exportPrepPhotoCoordinator) {
+          void services.exportPrepPhotoCoordinator.excludeByAssetId(id).catch((e) => onError(messageOf(e)));
+        } else {
+          void services.capture.exclude(id);
+        }
+      }}
+      onReinclude={(id) => {
+        if (services.exportPrepPhotoCoordinator) {
+          void services.exportPrepPhotoCoordinator
+            .reincorporateByAssetId(id)
+            .catch((e) => onError(messageOf(e)));
+        } else {
+          void services.capture.reincorporate(id);
+        }
+      }}
       header={
         <View>
-          <SmallButton label="← Pasillos" onPress={onBackToAisles} />
+          <SmallButton label="← Pasillos" onPress={leaveCapture} />
           <Text style={styles.h2}>
             Captura · {context?.inventoryName ?? inventory?.name ?? 'Inventario'} /{' '}
             {context?.aisleName ?? aisle?.code ?? 'Pasillo'}
@@ -147,14 +198,13 @@ export function CaptureScreen({
             FGS activo: {snapshotBelongsToSelectedAisle && snapshot?.fgsActive ? 'sí' : 'no'}
           </Text>
           <Text style={styles.row}>
-            Detectadas: {counts.total} · Validando: {counts.waiting} · Estables: {counts.stable} · Error:{' '}
-            {counts.errors} · Excluidas: {counts.excluded}
+            {summarizeExportPrepForUi(counts, prepQueue ? prepCounts : null)}
           </Text>
           {isFinishing ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8 }}>
               <ActivityIndicator />
               <Text style={styles.row}>
-                {finishStageLabel ?? 'Cerrando captura y preparando revisión…'}
+                {prepDrainLabel ?? finishStageLabel ?? 'Cerrando captura y preparando revisión…'}
               </Text>
             </View>
           ) : null}
@@ -218,10 +268,9 @@ export function CaptureScreen({
               setFinishInFlight(true);
               onError(null);
               void (async () => {
-                const sessionId = snapshot?.session?.id;
-                if (sessionId) {
-                  // Re-read DB: process start / uploads may have moved status while UI still showed active.
-                  const fresh = await services.capture.getSessionSnapshot(sessionId);
+                const sid = snapshot?.session?.id;
+                if (sid) {
+                  const fresh = await services.capture.getSessionSnapshot(sid);
                   const status = fresh.session?.status;
                   if (
                     status &&
@@ -234,9 +283,28 @@ export function CaptureScreen({
                   }
                 }
                 await services.capture.finish();
+                if (prepQueue && sid) {
+                  // Phase 2: materialize durable jobs after freeze. Full drain wait is Phase 3.
+                  setPrepDrainLabel('Asegurando jobs de exportación…');
+                  const ensured = await prepQueue.ensureJobsForEligiblePhotos(sid, {
+                    reason: 'FINISH',
+                  });
+                  const countsAfter = await prepQueue.getCounts(sid);
+                  setPrepCounts(countsAfter);
+                  setPrepDrainLabel(null);
+                  if (ensured.partialErrors.length > 0 || ensured.missingSourcePhotos > 0) {
+                    Alert.alert(
+                      'Preparación parcial',
+                      `Jobs creados: ${ensured.createdJobs}. Existentes: ${ensured.existingJobs}. ` +
+                        `Sin fuente: ${ensured.missingSourcePhotos}. Errores parciales: ${ensured.partialErrors.length}. ` +
+                        `La cola continúa en segundo plano; revisá el estado en revisión.`,
+                    );
+                  }
+                }
                 onReview();
               })().catch((e) => {
                 setFinishInFlight(false);
+                setPrepDrainLabel(null);
                 onError(messageOf(e));
               });
             }}

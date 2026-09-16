@@ -177,6 +177,8 @@ const config: ExpoConfig = {
         'serverOfflineIdempotencySupport',
       ),
       ...optionalFlag('DINAMIC_FLAG_MOBILE_SERVER_UPLOAD', 'mobileServerUpload'),
+      // Kill-switch: DINAMIC_FLAG_EXPORT_PREP_QUEUE=0 disables incremental staging prep.
+      ...optionalFlag('DINAMIC_FLAG_EXPORT_PREP_QUEUE', 'mobileExportPrepQueue'),
     },
   },
 };

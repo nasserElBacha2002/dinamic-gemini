@@ -35,6 +35,10 @@ import {
   OfflineRecognitionSyncService,
 } from '../../features/offlineRecognition';
 import { LocalCsvExportService } from '../../features/localCsv/localCsvExportService';
+import { ExportPrepRepository } from '../../database/repositories/exportPrepRepository';
+import { ExportPrepQueue } from '../../features/exportPrep/exportPrepQueue';
+import { ExportPrepPhotoCoordinator } from '../../features/exportPrep/exportPrepPhotoCoordinator';
+import { cleanupAbandonedExportStagingTemps } from '../../features/exportPrep/exportStaging';
 import { OfflineAisleExportService } from '../../features/offlineAisleExport';
 import { getOrCreateInstallationId } from '../../shared/installationId';
 import { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
@@ -134,6 +138,8 @@ export interface AppServices {
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly confirmedLocalResults: ConfirmedLocalResultRepository;
   readonly localCsvExport: LocalCsvExportService | null;
+  readonly exportPrepQueue: ExportPrepQueue | null;
+  readonly exportPrepPhotoCoordinator: ExportPrepPhotoCoordinator | null;
   readonly offlineAisleExport: OfflineAisleExportService | null;
   readonly confirmLocalResult: Pick<
     ConfirmLocalResultService,
@@ -210,6 +216,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
   const localCsvExportRepo = new LocalCsvExportRepository(db);
+  const exportPrepRepo = new ExportPrepRepository(db);
   const offlineRecognitionRepo = new OfflineRecognitionConfigRepository(db);
   const catalogRepo = new LocalCatalogRepository(db);
   const offlineRecognitionResolver = new LocalLabelProfileResolver(offlineRecognitionRepo, catalogRepo);
@@ -285,9 +292,49 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
           localCodeScanEnabled: true,
           logger,
           profileResolver: offlineRecognitionResolver,
+          exportPrepRepo:
+            config.flags.mobileExportPrepQueue === true ? exportPrepRepo : null,
+          exportPrepEnabled: config.flags.mobileExportPrepQueue === true,
+          ensureExportPrepJobs:
+            config.flags.mobileExportPrepQueue === true
+              ? async (sessionId: string) => {
+                  const result = await exportPrepQueue?.ensureJobsForEligiblePhotos(sessionId, {
+                    reason: 'EXPORT_PREFLIGHT',
+                  });
+                  if (
+                    result &&
+                    (result.createdJobs > 0 ||
+                      result.requeuedJobs > 0 ||
+                      result.invalidatedReadyJobs > 0)
+                  ) {
+                    throw new Error(
+                      `PACKAGE_EXPORT_PREP_PENDING: se materializaron ${result.createdJobs + result.requeuedJobs + result.invalidatedReadyJobs} job(s) de preparación; reintentá cuando estén READY.`,
+                    );
+                  }
+                }
+              : null,
+          maxExportUncompressedBytes: 480 * 1024 * 1024,
         })
       : null;
+  const exportPrepQueue =
+    config.flags.mobileExportPrepQueue === true && config.flags.mobileCsvExport !== false
+      ? new ExportPrepQueue({
+          prepRepo: exportPrepRepo,
+          captureRepo,
+          draftRepo: localDetectionDrafts,
+          localCodeScan,
+          localCodeScanEnabled: true,
+          logger,
+          maxWorkers: 1,
+          warningPendingThreshold: 150,
+        })
+      : null;
+  if (exportPrepQueue) {
+    void exportPrepQueue.recoverOnBootstrap().catch(() => undefined);
+    void cleanupAbandonedExportStagingTemps().catch(() => undefined);
+  }
   const captureServiceRef: { current: CaptureService | null } = { current: null };
+  let exportPrepPhotoCoordinator: ExportPrepPhotoCoordinator | null = null;
   const offlineAisleExport =
     config.flags.mobileCsvExport !== false
       ? new OfflineAisleExportService({
@@ -475,37 +522,45 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       // (database is locked) when many photos stabilize during "Finalizar captura".
       // With localCompletion/csvExport, server upload is deferred until explicit policy
       // (NOW / WHEN_CONNECTED) or completeReview → uploading — not on every stable photo.
-      // Local CODE_SCAN still runs when upload is deferred so ZIP export has drafts.
-      photoStableChain = photoStableChain
-        .then(async () => {
-          await uploadQueue.enqueuePhoto(sessionId, photoId);
-          const session = await captureRepo.getSession(sessionId);
-          const localZipMode =
-            config.flags.localCompletion === true || config.flags.mobileCsvExport === true;
-          const policy = session?.upload_policy;
-          const status = session?.status;
-          const allowOfflineUpload =
-            !localZipMode ||
-            policy === 'NOW' ||
-            policy === 'WHEN_CONNECTED' ||
-            status === 'uploading' ||
-            status === 'upload_review';
-          if (allowOfflineUpload) {
-            await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
-          } else if (
-            config.flags.mobileLocalCodeScan === true ||
+      // Export prep is an independent consumer of the stable event (not gated on upload policy).
+      // Return the chain promise so finish/freeze await producers before the export barrier.
+      const work = photoStableChain.then(async () => {
+        await uploadQueue.enqueuePhoto(sessionId, photoId);
+        const session = await captureRepo.getSession(sessionId);
+        const localZipMode =
+          config.flags.localCompletion === true || config.flags.mobileCsvExport === true;
+        const policy = session?.upload_policy;
+        const status = session?.status;
+        const allowOfflineUpload =
+          !localZipMode ||
+          policy === 'NOW' ||
+          policy === 'WHEN_CONNECTED' ||
+          status === 'uploading' ||
+          status === 'upload_review';
+        if (allowOfflineUpload) {
+          await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
+        }
+        if (exportPrepQueue) {
+          await exportPrepQueue.enqueueStablePhoto(sessionId, photoId);
+        } else if (
+          !allowOfflineUpload &&
+          (config.flags.mobileLocalCodeScan === true ||
             config.flags.mobileCsvExport !== false ||
-            config.flags.localCompletion === true
-          ) {
-            await uploadQueue.rescanPhotoForLocalReview(photoId).catch(() => undefined);
-          }
-        })
-        .catch((error) => {
+            config.flags.localCompletion === true)
+        ) {
+          await uploadQueue.rescanPhotoForLocalReview(photoId).catch(() => undefined);
+        }
+      });
+      photoStableChain = work.then(
+        () => undefined,
+        (error) => {
           logger.warn('recovery', {
             where: 'on_photo_stable_chain',
             message: error instanceof Error ? error.message : String(error),
           });
-        });
+        },
+      );
+      return work;
     },
     observability: obsWire,
     finishInstrumentation: config.flags.captureFinishInstrumentation,
@@ -515,6 +570,18 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       config.flags.positionActiveStateRestoreEnabled,
   });
   captureServiceRef.current = capture;
+  if (exportPrepQueue) {
+    exportPrepPhotoCoordinator = new ExportPrepPhotoCoordinator({
+      capture,
+      prepQueue: exportPrepQueue,
+      prepRepo: exportPrepRepo,
+      getSessionId: () => capture.getSnapshot().session?.id ?? null,
+      resolvePhotoIdByAssetId: async (sessionId, assetId) => {
+        const photos = await captureRepo.listPhotos(sessionId);
+        return photos.find((p) => p.asset_id === assetId)?.id ?? null;
+      },
+    });
+  }
 
   const processing = new ProcessingService(
     api,
@@ -723,6 +790,8 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
     localDetectionDrafts,
     confirmedLocalResults,
     localCsvExport,
+    exportPrepQueue,
+    exportPrepPhotoCoordinator,
     offlineAisleExport,
     confirmLocalResult,
     preliminarySync,
@@ -797,6 +866,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       }),
     getStorageStatus,
     async dispose() {
+      exportPrepQueue?.stop();
       preliminarySync.stopScheduler();
       authoritativeLocalSync.stopScheduler();
       offlineScheduler?.stop();

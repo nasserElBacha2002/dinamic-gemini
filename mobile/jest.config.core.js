@@ -46,6 +46,9 @@ module.exports = {
     '<rootDir>/tests/quantityCompleteness.test.ts',
     '<rootDir>/tests/supplierExportSemantics.test.ts',
     '<rootDir>/tests/localCsvExportPreflight.test.ts',
+    '<rootDir>/tests/exportPrepCore.test.ts',
+    '<rootDir>/tests/exportPrepFencing.memory.test.ts',
+    '<rootDir>/tests/exportPrepPhase2Backfill.test.ts',
   ],
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/src/core/$1',

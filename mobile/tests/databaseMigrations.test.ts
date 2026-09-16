@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -214,5 +214,16 @@ describe('SQLite migrations', () => {
     expect(v32?.sql).toContain('item_source');
     expect(v32?.sql).toContain('position_source');
     expect(v32?.sql).toContain('PRIMARY KEY (inventory_id, client_supplier_id)');
+  });
+
+  it('adds v35 export_prep_jobs durable queue table', () => {
+    const v35 = MIGRATIONS.find((m) => m.version === 35);
+    expect(v35?.name).toBe('export_prep_jobs');
+    expect(v35?.sql).toContain('CREATE TABLE IF NOT EXISTS export_prep_jobs');
+    expect(v35?.sql).toContain('capture_photo_id TEXT PRIMARY KEY');
+    expect(v35?.sql).toContain('staging_uri');
+    expect(v35?.sql).toContain('export_file_name');
+    expect(v35?.sql).toContain('lease_token');
+    expect(v35?.sql).toContain('idx_export_prep_jobs_session_status');
   });
 });

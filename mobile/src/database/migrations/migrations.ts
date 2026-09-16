@@ -868,6 +868,41 @@ ALTER TABLE local_detection_drafts ADD COLUMN position_reconciled_at TEXT;
 ALTER TABLE local_detection_drafts ADD COLUMN position_reconciliation_revision INTEGER NOT NULL DEFAULT 0;
 `,
   },
+  {
+    version: 35,
+    name: 'export_prep_jobs',
+    sql: `
+CREATE TABLE IF NOT EXISTS export_prep_jobs (
+  capture_photo_id TEXT PRIMARY KEY NOT NULL,
+  capture_session_id TEXT NOT NULL REFERENCES capture_sessions(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  source_uri TEXT NOT NULL,
+  staging_uri TEXT,
+  export_file_name TEXT,
+  size_bytes INTEGER,
+  sha256 TEXT,
+  source_fingerprint TEXT,
+  error_code TEXT,
+  error_message TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  lease_token TEXT,
+  lease_expires_at TEXT,
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  ready_at TEXT,
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_export_prep_jobs_session_status
+  ON export_prep_jobs(capture_session_id, status);
+CREATE INDEX IF NOT EXISTS idx_export_prep_jobs_status_lease
+  ON export_prep_jobs(status, lease_expires_at);
+CREATE INDEX IF NOT EXISTS idx_export_prep_jobs_queued_at
+  ON export_prep_jobs(queued_at);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

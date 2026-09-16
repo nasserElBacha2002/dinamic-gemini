@@ -47,6 +47,9 @@ module.exports = {
     '<rootDir>/tests/localAislePhase3.test.ts',
     '<rootDir>/tests/offlineAislePackageSchema.test.ts',
     '<rootDir>/tests/appBootstrapLifecycle.test.ts',
+    '<rootDir>/tests/exportPrepExportSkipScan.test.ts',
+    '<rootDir>/tests/exportPrepStreamingZip.test.ts',
+    '<rootDir>/tests/exportPrepCorrections.test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
