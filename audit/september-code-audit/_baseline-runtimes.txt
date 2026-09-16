@@ -1,6 +1,0 @@
-os=Darwin MacBook-Air-de-Nasser.local 25.5.0 Darwin Kernel Version 25.5.0: Mon Apr 27 20:41:26 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM64_T8132 arm64
-python3=Python 3.14.6
-backend_venv=Python 3.13.12
-node=v22.14.0
-npm=11.4.2
-docker=Docker version 28.1.1, build 4eba377

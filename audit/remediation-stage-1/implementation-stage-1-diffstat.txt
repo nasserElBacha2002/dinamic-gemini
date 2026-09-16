@@ -1,6 +1,0 @@
- backend/src/jobs/claim_cycle.py            |  37 +++++++++
- backend/src/jobs/job_store.py              | 112 ++++++++++++++++++++-----
- backend/src/jobs/worker_runtime.py         |  40 ++++++++-
- backend/tests/jobs/test_worker_db_claim.py | 126 ++++++++++++++++++++++++++++-
- backend/tests/jobs/test_worker_runtime.py  |  50 ++++++++++++
- 5 files changed, 339 insertions(+), 26 deletions(-)
