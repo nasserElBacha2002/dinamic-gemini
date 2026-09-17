@@ -120,6 +120,36 @@ export interface LocalCsvExportServiceDeps {
 export interface ExportSessionOptions {
   readonly signal?: AbortSignal;
   readonly onProgress?: (progress: import('../exportPrep/boundedZipWriter').ZipWriteProgress) => void;
+  /**
+   * Optional timing observer (benchmark / diagnostics). No-op when unset —
+   * does not alter export behavior.
+   */
+  readonly onExportPhase?: (event: LocalExportPhaseEvent) => void;
+}
+
+export type LocalExportPhaseName =
+  | 'export_resolution'
+  | 'strong_validation'
+  | 'strong_validation_hash'
+  | 'csv_build'
+  | 'csv_write'
+  | 'manifest_build'
+  | 'zip_open'
+  | 'zip_entry'
+  | 'zip_finalize'
+  | 'zip_digest'
+  | 'zip_validation'
+  | 'total_export';
+
+export interface LocalExportPhaseEvent {
+  readonly phase: LocalExportPhaseName;
+  readonly monotonicStartMs: number;
+  readonly durationMs: number;
+  readonly success: boolean;
+  readonly errorCode?: string | null;
+  readonly photoId?: string | null;
+  readonly sequence?: number | null;
+  readonly extras?: Readonly<Record<string, number | string | boolean | null>>;
 }
 
 export interface ExportedLocalCsv {
@@ -152,6 +182,8 @@ interface PackagedPhotoMeta {
   readonly height: number;
   readonly asset_variant: 'ORIGINAL' | 'PREPARED';
   readonly getBytes: () => Promise<Uint8Array>;
+  /** Staging/original absolute path for stream-append ZIP write (no JS Base64). */
+  readonly sourceAbsolutePath?: string;
 }
 
 function toPackagedMeta(photo: ResolvedExportPhoto): PackagedPhotoMeta {
@@ -167,6 +199,7 @@ function toPackagedMeta(photo: ResolvedExportPhoto): PackagedPhotoMeta {
     height: photo.height,
     asset_variant: photo.source === 'VALIDATED_STAGING' ? 'PREPARED' : 'ORIGINAL',
     getBytes: photo.getBytes,
+    ...(photo.uri ? { sourceAbsolutePath: photo.uri } : {}),
   };
 }
 
@@ -324,7 +357,41 @@ export class LocalCsvExportService {
     if (this.deps.enabled === false) {
       throw new Error('La exportación CSV local no está habilitada.');
     }
+    const mono = () => {
+      const p = (globalThis as { performance?: { now(): number } }).performance;
+      return typeof p?.now === 'function' ? p.now() : Date.now();
+    };
+    const emitPhase = (
+      phase: LocalExportPhaseName,
+      started: number,
+      extra?: {
+        readonly success?: boolean;
+        readonly errorCode?: string | null;
+        readonly photoId?: string | null;
+        readonly sequence?: number | null;
+        readonly extras?: Readonly<Record<string, number | string | boolean | null>>;
+      },
+    ) => {
+      if (!options?.onExportPhase) return;
+      try {
+        options.onExportPhase({
+          phase,
+          monotonicStartMs: started,
+          durationMs: mono() - started,
+          success: extra?.success !== false,
+          errorCode: extra?.errorCode ?? null,
+          photoId: extra?.photoId ?? null,
+          sequence: extra?.sequence ?? null,
+          ...(extra?.extras ? { extras: extra.extras } : {}),
+        });
+      } catch {
+        // never break export for observer errors
+      }
+    };
+
+    const totalExportStarted = mono();
     const preflightStarted = Date.now();
+    const resolutionStarted = mono();
     const session = await this.deps.captureRepo.getSession(sessionId);
     if (!session) {
       throw new ExportFromStagingError('SESSION_MISSING', 'No se encontró la captura local.');
@@ -357,11 +424,71 @@ export class LocalCsvExportService {
       const jobs = await prepRepo.listForSession(sessionId);
       const prepByPhoto = new Map(jobs.map((j) => [j.capture_photo_id, j]));
 
+      const strongStarted = mono();
+      let reusedHashCount = 0;
+      let validationFallbackHashCount = 0;
+      let nativeHashCount = 0;
+      let totalBytesHashed = 0;
       const resolved = await resolveExportPhotosFromStaging({
         session,
         expectedPhotos: eligible,
         jobsByPhotoId: prepByPhoto,
         prepRepo,
+        onReadyValidation: ({ photoId, sequence, result }) => {
+          const dig = result.digest;
+          const hashMode = dig?.hashMode ?? 'native_file';
+          const hashSource = dig?.hashSource ?? 'validation_fallback';
+          const bytesHashed = dig?.bytesHashed ?? 0;
+          const digestDuration = dig?.durationMs ?? 0;
+          if (hashMode === 'reused_persisted') {
+            reusedHashCount += 1;
+          } else {
+            nativeHashCount += 1;
+            validationFallbackHashCount += 1;
+            totalBytesHashed += bytesHashed;
+          }
+          if (options?.onExportPhase) {
+            try {
+              options.onExportPhase({
+                phase: 'strong_validation_hash',
+                monotonicStartMs: mono() - digestDuration,
+                durationMs: digestDuration,
+                success: result.ok,
+                errorCode: result.ok ? null : (result.failure ?? 'STAGING_SHA_MISMATCH'),
+                photoId,
+                sequence,
+                extras: {
+                  hashMode,
+                  hashSource,
+                  bytesHashed,
+                  hashCount: hashMode === 'reused_persisted' ? 0 : 1,
+                  fullFileReadCount: hashMode === 'reused_persisted' ? 0 : 1,
+                  hashImplementation:
+                    hashMode === 'reused_persisted' ? 'cached_digest' : 'native_stream',
+                  digestReused: hashMode === 'reused_persisted',
+                  reuseReason: dig?.reason ?? null,
+                  base64FullFileHashCount: 0,
+                },
+              });
+            } catch {
+              // never break export for observer errors
+            }
+          }
+        },
+      });
+      emitPhase('strong_validation', strongStarted, {
+        extras: {
+          photoCount: eligible.length,
+          reusedHashCount,
+          validationFallbackHashCount,
+          nativeHashCount,
+          base64FullFileHashCount: 0,
+          totalBytesHashed,
+          hashesPerPhoto:
+            eligible.length > 0
+              ? (nativeHashCount + reusedHashCount) / eligible.length
+              : 0,
+        },
       });
       packagedResolved = resolved.photos;
       stagingPhotoCount = resolved.stagingCount;
@@ -425,7 +552,15 @@ export class LocalCsvExportService {
     if (blocker) {
       throw new Error(`${blocker.code}: ${blocker.detail}`);
     }
+    emitPhase('export_resolution', resolutionStarted, {
+      extras: {
+        eligibleCount: eligible.length,
+        draftCount: drafts.length,
+        stagingPhotoCount,
+      },
+    });
 
+    const csvBuildStarted = mono();
     const built = await buildLocalCsvExport({
       session,
       photos: eligible,
@@ -437,13 +572,20 @@ export class LocalCsvExportService {
       freezeId: session.active_freeze_id,
       freezeGeneration: session.capture_freeze_generation,
     });
+    emitPhase('csv_build', csvBuildStarted, {
+      extras: {
+        rowCount: built.rowCount,
+        photoCount: eligible.length,
+        csvBytes: utf8Encode(built.csv).byteLength,
+      },
+    });
 
     const packagedPhotos = packagedResolved.map((photo) => {
       const meta = toPackagedMeta(photo);
       if (sourcePolicy.mode !== 'staging_required') {
         return meta;
       }
-      // Recheck freeze identity while reading bytes (long exports).
+      // Recheck freeze identity while reading/streaming bytes (long exports).
       return {
         ...meta,
         getBytes: async () => {
@@ -596,7 +738,9 @@ export class LocalCsvExportService {
       });
     }
 
-    const photoEntries = packagedPhotos.map(({ getBytes: _g, ...meta }) => meta);
+    const photoEntries = packagedPhotos.map(
+      ({ getBytes: _g, sourceAbsolutePath: _path, ...meta }) => meta,
+    );
     const packageChecksumSha256 = contentFingerprint;
     const manifest = {
       schema_version: built.schemaVersion,
@@ -634,8 +778,16 @@ export class LocalCsvExportService {
       );
     }
 
+    const manifestBuildStarted = mono();
     const manifestBytes = utf8Encode(`${JSON.stringify(manifest, null, 2)}\n`);
     const csvBytes = utf8Encode(built.csv);
+    emitPhase('manifest_build', manifestBuildStarted, {
+      extras: {
+        manifestBytes: manifestBytes.byteLength,
+        csvBytes: csvBytes.byteLength,
+        expectedPhotoCount: manifest.expected_photo_count,
+      },
+    });
     const zipBuildStarted = Date.now();
 
     let csvPublished = false;
@@ -646,9 +798,28 @@ export class LocalCsvExportService {
       if (this.deps.attemptRepo) {
         await this.deps.attemptRepo.transitionState(attemptId, 'WRITING');
       }
+      const csvWriteStarted = mono();
       await FileSystem.writeAsStringAsync(tmpCsv, built.csv, {
         encoding: FileSystem.EncodingType.UTF8,
       });
+      emitPhase('csv_write', csvWriteStarted, {
+        extras: {
+          csvBytes: csvBytes.byteLength,
+          writeTarget: 'tmp_csv_sidecar',
+        },
+      });
+
+      const zipOpenStarted = mono();
+      emitPhase('zip_open', zipOpenStarted, { extras: { entryCount: 2 + packagedPhotos.length } });
+
+      let lastCompletedEntries = 0;
+      let entryWallStart = mono();
+      let finalizeWallStart: number | null = null;
+      let digestWallStart: number | null = null;
+      const photoByZipPath = new Map<string, (typeof packagedPhotos)[number]>(
+        packagedPhotos.map((p) => [`photos/${p.file_name}`, p]),
+      );
+
       const written = await writeStoreZipAtomic({
         targetUri: tmpZip,
         maxTotalBytes: maxBytes,
@@ -676,6 +847,51 @@ export class LocalCsvExportService {
             Math.max(1, p.totalEntries),
             stageLabel,
           );
+          if (p.stage === 'WRITING_ENTRIES' && p.completedEntries > lastCompletedEntries) {
+            const entryPath = p.currentEntry ?? '';
+            const entryKind = entryPath.startsWith('photos/')
+              ? 'photo'
+              : entryPath.endsWith('.csv')
+                ? 'csv'
+                : entryPath.endsWith('.json')
+                  ? 'manifest'
+                  : 'other';
+            const photoMeta = photoByZipPath.get(entryPath);
+            const ext = entryPath.includes('.') ? entryPath.slice(entryPath.lastIndexOf('.')) : '';
+            const sized =
+              entryKind === 'csv'
+                ? csvBytes.byteLength
+                : entryKind === 'manifest'
+                  ? manifestBytes.byteLength
+                  : (photoMeta?.size_bytes ?? null);
+            emitPhase('zip_entry', entryWallStart, {
+              photoId: photoMeta?.capture_photo_id ?? null,
+              sequence: photoMeta?.sequence_number ?? null,
+              extras: {
+                entryKind,
+                entryIndex: p.completedEntries,
+                entryExt: ext,
+                inputBytes: sized,
+                outputBytes: sized,
+                executionContext:
+                  entryKind === 'photo'
+                    ? photoMeta?.sourceAbsolutePath
+                      ? 'native'
+                      : 'js'
+                    : 'js',
+              },
+            });
+            lastCompletedEntries = p.completedEntries;
+            entryWallStart = mono();
+          }
+          // Central directory + EOCD (before sink.close / incremental digest).
+          if (p.stage === 'WRITING_DIRECTORY' && finalizeWallStart == null) {
+            finalizeWallStart = mono();
+          }
+          // Writer emits VALIDATING immediately before sink.close()+digestHex().
+          if (p.stage === 'VALIDATING' && digestWallStart == null) {
+            digestWallStart = mono();
+          }
           if (p.stage !== 'WRITING_ENTRIES' || p.completedEntries === 0) {
             return;
           }
@@ -708,9 +924,55 @@ export class LocalCsvExportService {
             path: `photos/${photo.file_name}`,
             sizeBytes: photo.size_bytes,
             expectedSha256: photo.sha256,
-            getBytes: photo.getBytes,
+            // Stream from staging/original path — avoids Base64 read+write through JS.
+            ...(photo.sourceAbsolutePath
+              ? {
+                  sourceAbsolutePath: photo.sourceAbsolutePath,
+                  beforeAppend: async () => {
+                    await this.assertFreezeUnchanged(
+                      sessionId,
+                      freezeIdAtStart,
+                      freezeGenerationAtStart,
+                      'zip_append_photo',
+                      sourcePolicy.mode === 'staging_required',
+                    );
+                  },
+                }
+              : { getBytes: photo.getBytes }),
           })),
         ],
+      });
+      const writeReturnedAt = mono();
+      const finalizeStarted = finalizeWallStart ?? writeReturnedAt;
+      // Finalize = CD/EOCD wall only (ends when VALIDATING / close begins).
+      const finalizeEnd = digestWallStart ?? writeReturnedAt;
+      if (options?.onExportPhase) {
+        try {
+          options.onExportPhase({
+            phase: 'zip_finalize',
+            monotonicStartMs: finalizeStarted,
+            durationMs: Math.max(0, finalizeEnd - finalizeStarted),
+            success: true,
+            errorCode: null,
+            photoId: null,
+            sequence: null,
+            extras: {
+              entryCount: written.entryCount,
+              peakOpenEntries: written.peakOpenEntries,
+            },
+          });
+        } catch {
+          // never break export for observer errors
+        }
+      }
+      // Digest = sink.close + digestHex (incremental_write; not a second full-file read here).
+      const digestStarted = digestWallStart ?? writeReturnedAt;
+      emitPhase('zip_digest', digestStarted, {
+        extras: {
+          digestMode: 'incremental_write',
+          fullFileRead: false,
+          zipBytes: written.byteLength,
+        },
       });
       zipSizeBytes = written.byteLength;
       zipSha256 = written.sha256;
@@ -735,14 +997,29 @@ export class LocalCsvExportService {
         roots.push(tmpdir);
       }
       roots.push('/tmp');
+      const onDiskStarted = mono();
       const onDisk = await validateOnDiskStoreZip({
-        uri: written.physicalPath || tmpZip,
+        // After writeStoreZipAtomic, bytes live at tmpZip (not the nested .tmp.<ts> sink path).
+        uri: tmpZip,
         allowedRoots: roots,
         expectedSizeBytes: zipSizeBytes,
         expectedSha256: zipSha256,
         expectedContentFingerprint: contentFingerprint,
         computeSha256: true,
         verifyCrcAll: false,
+      });
+      emitPhase('zip_validation', onDiskStarted, {
+        success: onDisk.ok,
+        errorCode: onDisk.ok ? null : onDisk.reason,
+        extras: {
+          expectedSize: zipSizeBytes,
+          actualSize: onDisk.ok ? onDisk.zipSizeBytes : null,
+          rangesRead: onDisk.ok ? onDisk.rangeReads : null,
+          bytesRead: onDisk.ok ? onDisk.maxBufferBytes : null,
+          digestRecomputed: true,
+          validationMode: 'on_disk_store_zip',
+          fullFileRead: true,
+        },
       });
       if (!onDisk.ok) {
         throw new ExportFromStagingError(
@@ -1011,6 +1288,14 @@ export class LocalCsvExportService {
 
     // Definitive 100% only after durable persist.
     this.zipProgressListener?.(1, 1, 'Listo');
+
+    emitPhase('total_export', totalExportStarted, {
+      extras: {
+        rowCount: built.rowCount,
+        photoCount: packagedPhotos.length,
+        zipBytes: zipSizeBytes,
+      },
+    });
 
     return {
       exportId: built.exportId,

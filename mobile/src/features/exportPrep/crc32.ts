@@ -14,7 +14,7 @@ const CRC_TABLE = (() => {
   return table;
 })();
 
-/** Update running CRC-32 (initial value 0). */
+/** Update running CRC-32 (initial value 0). Single-buffer convenience (not multi-chunk). */
 export function crc32Update(crc: number, bytes: Uint8Array): number {
   let c = (crc ^ 0xffffffff) >>> 0;
   for (let i = 0; i < bytes.length; i += 1) {
@@ -25,6 +25,23 @@ export function crc32Update(crc: number, bytes: Uint8Array): number {
 
 export function crc32Bytes(bytes: Uint8Array): number {
   return crc32Update(0, bytes);
+}
+
+/** Streaming CRC: start with crc32StreamInit(), feed chunks, finish with crc32StreamFinal(). */
+export function crc32StreamInit(): number {
+  return 0xffffffff;
+}
+
+export function crc32StreamFeed(state: number, bytes: Uint8Array): number {
+  let c = state >>> 0;
+  for (let i = 0; i < bytes.length; i += 1) {
+    c = CRC_TABLE[(c ^ bytes[i]!) & 0xff]! ^ (c >>> 8);
+  }
+  return c >>> 0;
+}
+
+export function crc32StreamFinal(state: number): number {
+  return (state ^ 0xffffffff) >>> 0;
 }
 
 /** Known vector: CRC32("123456789") = 0xcbf43926 */

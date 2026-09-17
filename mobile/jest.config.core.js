@@ -9,6 +9,7 @@ module.exports = {
   rootDir: '.',
   roots: ['<rootDir>/tests', '<rootDir>/src/core'],
   testMatch: [
+    '<rootDir>/tests/base64ToBytes.test.ts',
     '<rootDir>/tests/compositeCursor.test.ts',
     '<rootDir>/tests/imageFilter.test.ts',
     '<rootDir>/tests/stability.test.ts',
@@ -54,9 +55,13 @@ module.exports = {
     '<rootDir>/tests/exportPrepPhase4Corrections.test.ts',
     '<rootDir>/tests/exportPrepPhase5BoundedZip.test.ts',
     '<rootDir>/tests/exportPrepPhase5Corrections.test.ts',
+    '<rootDir>/tests/incrementalSha256.test.ts',
+    '<rootDir>/tests/exportPrepUtf8.test.ts',
     '<rootDir>/tests/exportPrepPhase6Integrity.test.ts',
     '<rootDir>/tests/exportPrepPhase6Corrections.test.ts',
     '<rootDir>/tests/photoStableProducers.test.ts',
+    '<rootDir>/tests/phase1NativeHash.test.ts',
+    '<rootDir>/tests/benchmarkHarnessCore.test.ts',
   ],
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/src/core/$1',

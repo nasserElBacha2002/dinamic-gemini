@@ -9,6 +9,10 @@ export type CaptureForegroundNativeModule = {
   detectBarcodes?: (uri: string, formatsCsv: string) => Promise<unknown>;
   appendBase64File?: (absolutePath: string, base64: string) => Promise<void>;
   truncateFile?: (absolutePath: string) => Promise<void>;
+  appendFile?: (destAbsolutePath: string, sourceAbsolutePath: string) => Promise<number>;
+  digestFile?: (
+    absolutePath: string,
+  ) => Promise<{ size: number; sha256: string; crc32: number }>;
   getFileSize?: (absolutePath: string) => Promise<number>;
   readFileRangeBase64?: (
     absolutePath: string,

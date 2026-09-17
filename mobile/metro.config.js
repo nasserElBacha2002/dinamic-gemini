@@ -14,11 +14,26 @@ config.resolver.nodeModulesPaths = [path.resolve(__dirname, 'node_modules')];
 // Keep hierarchical lookup enabled: React Native 0.74 installs some internal
 // packages (for example @react-native/virtualized-lists) under
 // node_modules/react-native/node_modules.
+const nodeBuiltinShim = path.resolve(__dirname, 'metro-shims/node-builtin.js');
+const nodeFsAliases = new Set(['fs', 'node:fs', 'fs/promises', 'node:fs/promises']);
+
 config.resolver.extraNodeModules = {
   ...(config.resolver.extraNodeModules ?? {}),
-  // Only `fs` is required under isNodeRuntime() (Jest). Do not stub `path`/`os`
-  // (many packages need the real Node path module during bundling).
-  fs: path.resolve(__dirname, 'metro-shims/node-builtin.js'),
+  // Safety net only — Android must resolve requireNodeFs.native.ts (no fs import).
+  // Do not stub `path`/`os` (needed during bundling).
+  fs: nodeBuiltinShim,
+};
+
+// Chain Expo's resolver: intercept Node fs aliases before Expo throws on builtins.
+const expoResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (nodeFsAliases.has(moduleName)) {
+    return { filePath: nodeBuiltinShim, type: 'sourceFile' };
+  }
+  if (typeof expoResolveRequest === 'function') {
+    return expoResolveRequest(context, moduleName, platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
 };
 config.resolver.blockList = exclusionList([
   /\/android\/build\/.*/,

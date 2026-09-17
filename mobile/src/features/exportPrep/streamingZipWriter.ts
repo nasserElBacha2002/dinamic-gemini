@@ -21,10 +21,13 @@ export { ZipWriteError, writeBoundedStoreZip } from './boundedZipWriter';
 
 export interface StreamingZipEntry {
   readonly path: string;
-  readonly getBytes: () => Promise<Uint8Array> | Uint8Array;
+  readonly getBytes?: () => Promise<Uint8Array> | Uint8Array;
+  /** Stream from disk (photos) — preferred over getBytes on device. */
+  readonly sourceAbsolutePath?: string;
   /** Required — avoids a probe read that would retain bytes. */
   readonly sizeBytes: number;
   readonly expectedSha256?: string;
+  readonly beforeAppend?: () => Promise<void> | void;
 }
 
 /** Hard cap for the deprecated in-memory probe helper (not for photos). */
@@ -40,6 +43,12 @@ export async function buildStoreZipBytes(
   const materialized: { path: string; bytes: Uint8Array }[] = [];
   let estimated = 0;
   for (const entry of entries) {
+    if (!entry.getBytes) {
+      throw new ZipWriteError(
+        'ZIP_VALIDATION_FAILED',
+        `buildStoreZipBytes requires getBytes for ${entry.path}`,
+      );
+    }
     const bytes = await entry.getBytes();
     estimated += bytes.byteLength;
     if (estimated > BUILD_STORE_ZIP_BYTES_MAX) {
@@ -114,6 +123,9 @@ export function adaptLegacyZipEntryProgress(
  * Build STORE ZIP with bounded memory and publish atomically via tmp + move.
  * Caller should validate on-disk before treating the target as publishable when
  * target is a temp path in the export orchestrator.
+ *
+ * physicalPath always refers to the final target after move (not the nested
+ * `.tmp.<timestamp>` sink path), so native getFileSize/hash see the real file.
  */
 export async function writeStoreZipAtomic(input: {
   readonly entries: readonly StreamingZipEntry[];
@@ -133,11 +145,19 @@ export async function writeStoreZipAtomic(input: {
     if (e.sizeBytes == null || e.sizeBytes < 0 || !Number.isFinite(e.sizeBytes)) {
       throw new ZipWriteError('ZIP_VALIDATION_FAILED', `missing sizeBytes for ${e.path}`);
     }
+    if (!e.sourceAbsolutePath && !e.getBytes) {
+      throw new ZipWriteError(
+        'ZIP_VALIDATION_FAILED',
+        `missing getBytes/sourceAbsolutePath for ${e.path}`,
+      );
+    }
     const entry: BoundedZipEntry = {
       path: e.path,
       sizeBytes: e.sizeBytes,
-      getBytes: e.getBytes,
+      ...(e.getBytes ? { getBytes: e.getBytes } : {}),
+      ...(e.sourceAbsolutePath ? { sourceAbsolutePath: e.sourceAbsolutePath } : {}),
       ...(e.expectedSha256 ? { expectedSha256: e.expectedSha256 } : {}),
+      ...(e.beforeAppend ? { beforeAppend: e.beforeAppend } : {}),
     };
     bounded.push(entry);
   }
@@ -157,9 +177,19 @@ export async function writeStoreZipAtomic(input: {
     });
     await FileSystem.deleteAsync(input.targetUri, { idempotent: true }).catch(() => undefined);
     await FileSystem.moveAsync({ from: tmpUri, to: input.targetUri });
-    return written;
+    return {
+      ...written,
+      physicalPath: fileUriToAbsolutePath(input.targetUri),
+    };
   } catch (error) {
     await FileSystem.deleteAsync(tmpUri, { idempotent: true }).catch(() => undefined);
     throw error;
   }
+}
+
+function fileUriToAbsolutePath(uri: string): string {
+  if (uri.startsWith('file://')) {
+    return decodeURIComponent(uri.slice('file://'.length));
+  }
+  return uri;
 }

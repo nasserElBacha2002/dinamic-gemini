@@ -37,6 +37,7 @@ import {
   LocalLabelProfileResolver,
   OfflineRecognitionSyncService,
 } from '../../features/offlineRecognition';
+import { startBenchmarkCommandWatch } from '../../features/benchmark';
 import { LocalCsvExportService } from '../../features/localCsv/localCsvExportService';
 import { ExportPrepRepository } from '../../database/repositories/exportPrepRepository';
 import { ExportPrepQueue } from '../../features/exportPrep/exportPrepQueue';
@@ -784,7 +785,9 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
     duration_ms: Date.now() - bootstrapStartedMs,
   });
 
-  return {
+  let stopBenchmarkWatch: (() => void) | null = null;
+
+  const services: AppServices = {
     config,
     configError,
     databaseRecoveredFromCorruption,
@@ -910,6 +913,8 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       }),
     getStorageStatus,
     async dispose() {
+      stopBenchmarkWatch?.();
+      stopBenchmarkWatch = null;
       exportPrepQueue?.stop();
       preliminarySync.stopScheduler();
       authoritativeLocalSync.stopScheduler();
@@ -921,4 +926,11 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       await backgroundWork.cancelAllTracked();
     },
   };
+
+  stopBenchmarkWatch = startBenchmarkCommandWatch(services, {
+    captureRepo,
+    sessionPurge: sessionArtifactPurge,
+  });
+
+  return services;
 }

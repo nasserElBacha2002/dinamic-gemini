@@ -13,6 +13,7 @@ import {
   buildStoreZipBytes,
   BUILD_STORE_ZIP_BYTES_MAX,
   adaptLegacyZipEntryProgress,
+  writeStoreZipAtomic,
 } from '../src/features/exportPrep/streamingZipWriter';
 import { assertZipWritePlatformSupported, resolveZipWritePlatform } from '../src/features/exportPrep/zipWritePlatform';
 import { createBinaryAppendSink } from '../src/features/exportPrep/binaryAppendSink';
@@ -172,6 +173,125 @@ describe('Phase 5 corrections — on-disk validator', () => {
       (d, t) => reports.push([d, t]),
     );
     expect(reports[0]).toEqual([4, 5]);
+  });
+});
+
+describe('Phase 5 corrections — writeStoreZipAtomic physicalPath', () => {
+  const live: string[] = [];
+  afterEach(() => {
+    for (const p of live.splice(0)) {
+      try {
+        fs.unlinkSync(p);
+      } catch {
+        /* ignore */
+      }
+    }
+    const FileSystem = require('expo-file-system') as {
+      moveAsync: jest.Mock;
+      makeDirectoryAsync: jest.Mock;
+      deleteAsync: jest.Mock;
+    };
+    FileSystem.moveAsync.mockReset();
+    FileSystem.moveAsync.mockResolvedValue(undefined);
+    FileSystem.deleteAsync.mockReset();
+    FileSystem.deleteAsync.mockResolvedValue(undefined);
+    FileSystem.makeDirectoryAsync.mockReset();
+    FileSystem.makeDirectoryAsync.mockResolvedValue(undefined);
+  });
+
+  it('returns physicalPath of final target after nested tmp move (not sink .tmp.<ts>)', async () => {
+    const FileSystem = require('expo-file-system') as {
+      moveAsync: jest.Mock;
+      makeDirectoryAsync: jest.Mock;
+      deleteAsync: jest.Mock;
+    };
+    const targetAbs = tmpPath('atomic-final.zip');
+    live.push(targetAbs);
+    const targetUri = `file://${targetAbs}`;
+    FileSystem.moveAsync.mockImplementation(async ({ from, to }: { from: string; to: string }) => {
+      const fromPath = from.startsWith('file://') ? decodeURIComponent(from.slice('file://'.length)) : from;
+      const toPath = to.startsWith('file://') ? decodeURIComponent(to.slice('file://'.length)) : to;
+      fs.mkdirSync(path.dirname(toPath), { recursive: true });
+      fs.renameSync(fromPath, toPath);
+    });
+    FileSystem.deleteAsync.mockResolvedValue(undefined);
+    FileSystem.makeDirectoryAsync.mockResolvedValue(undefined);
+
+    const csv = enc('sku,qty\n1,1\n');
+    const manifest = enc(
+      JSON.stringify({
+        package_kind: LOCAL_PACKAGE_KIND,
+        package_version: LOCAL_PACKAGE_VERSION,
+        included_photo_count: 0,
+        expected_photo_count: 0,
+      }) + '\n',
+    );
+    const written = await writeStoreZipAtomic({
+      targetUri,
+      entries: [
+        { path: 'results.csv', sizeBytes: csv.byteLength, getBytes: () => csv },
+        { path: 'manifest.json', sizeBytes: manifest.byteLength, getBytes: () => manifest },
+      ],
+    });
+
+    expect(fs.existsSync(targetAbs)).toBe(true);
+    expect(written.physicalPath).toBe(targetAbs);
+    expect(written.physicalPath.includes('.tmp.')).toBe(false);
+    expect(written.byteLength).toBeGreaterThan(0);
+
+    const validated = await validateOnDiskStoreZip({
+      uri: targetUri,
+      allowedRoots: [os.tmpdir()],
+      expectedSha256: written.sha256,
+      expectedSizeBytes: written.byteLength,
+    });
+    expect(validated.ok).toBe(true);
+  });
+
+  it('streams photo via sourceAbsolutePath (no getBytes) and validates sha', async () => {
+    const photoPath = tmpPath('src-photo.jpg');
+    live.push(photoPath);
+    const photo = new Uint8Array(128 * 1024);
+    photo.fill(0x5a);
+    fs.writeFileSync(photoPath, photo);
+
+    const target = tmpPath('stream-src.zip');
+    live.push(target);
+    const csv = enc('n=1\n');
+    const manifest = enc(
+      JSON.stringify({
+        package_kind: LOCAL_PACKAGE_KIND,
+        package_version: LOCAL_PACKAGE_VERSION,
+        included_photo_count: 1,
+        expected_photo_count: 1,
+      }) + '\n',
+    );
+    const { createHash } = require('node:crypto') as typeof import('node:crypto');
+    const expectedSha = createHash('sha256').update(Buffer.from(photo)).digest('hex');
+
+    const written = await writeBoundedStoreZip({
+      targetUri: target,
+      entries: [
+        { path: 'results.csv', sizeBytes: csv.byteLength, getBytes: () => csv },
+        { path: 'manifest.json', sizeBytes: manifest.byteLength, getBytes: () => manifest },
+        {
+          path: 'photos/0001_p.jpg',
+          sizeBytes: photo.byteLength,
+          sourceAbsolutePath: photoPath,
+          expectedSha256: expectedSha,
+        },
+      ],
+    });
+    const validated = await validateOnDiskStoreZip({
+      uri: target,
+      allowedRoots: [os.tmpdir()],
+      expectedSha256: written.sha256,
+      expectedSizeBytes: written.byteLength,
+    });
+    expect(validated.ok).toBe(true);
+    expect(written.sha256).toBe(
+      createHash('sha256').update(fs.readFileSync(target)).digest('hex'),
+    );
   });
 });
 

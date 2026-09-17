@@ -134,9 +134,10 @@ class CaptureForegroundModule : Module() {
     /**
      * Append Base64-decoded bytes to an absolute filesystem path (ZIP streaming).
      * Expo FileSystem cannot append without rewriting the whole file.
+     * Native rebuild required when this AsyncFunction is added/changed.
      */
     AsyncFunction("appendBase64File") { absolutePath: String, base64: String ->
-      val file = java.io.File(absolutePath)
+      val file = java.io.File(stripFileUri(absolutePath))
       file.parentFile?.mkdirs()
       val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
       java.io.FileOutputStream(file, true).use { out ->
@@ -145,15 +146,70 @@ class CaptureForegroundModule : Module() {
     }
 
     AsyncFunction("truncateFile") { absolutePath: String ->
-      val file = java.io.File(absolutePath)
+      val file = java.io.File(stripFileUri(absolutePath))
       file.parentFile?.mkdirs()
       java.io.FileOutputStream(file, false).use { /* truncate */ }
     }
 
-    AsyncFunction("getFileSize") { absolutePath: String ->
-      val file = java.io.File(absolutePath)
+    /**
+     * Append raw bytes from [sourceAbsolutePath] onto [destAbsolutePath] (no Base64).
+     * Used for ZIP STORE photo payloads — avoids JS↔native Base64 round-trips.
+     * Returns bytes copied.
+     */
+    AsyncFunction("appendFile") { destAbsolutePath: String, sourceAbsolutePath: String ->
+      val dest = java.io.File(stripFileUri(destAbsolutePath))
+      val source = java.io.File(stripFileUri(sourceAbsolutePath))
+      if (!source.exists() || !source.isFile) {
+        throw Exception("source missing: $sourceAbsolutePath (resolved=${source.absolutePath})")
+      }
+      dest.parentFile?.mkdirs()
+      var copied = 0L
+      val buf = ByteArray(256 * 1024)
+      java.io.FileInputStream(source).use { input ->
+        java.io.FileOutputStream(dest, true).use { out ->
+          while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            copied += n.toLong()
+          }
+        }
+      }
+      copied.toDouble()
+    }
+
+    /**
+     * One streaming pass: size + SHA-256 + CRC-32 (ZIP) without loading the file into JS.
+     */
+    AsyncFunction("digestFile") { absolutePath: String ->
+      val file = java.io.File(stripFileUri(absolutePath))
       if (!file.exists() || !file.isFile) {
-        throw Exception("file missing: $absolutePath")
+        throw Exception("file missing: $absolutePath (resolved=${file.absolutePath})")
+      }
+      val sha = java.security.MessageDigest.getInstance("SHA-256")
+      val crc = java.util.zip.CRC32()
+      val buf = ByteArray(256 * 1024)
+      var size = 0L
+      java.io.FileInputStream(file).use { input ->
+        while (true) {
+          val n = input.read(buf)
+          if (n < 0) break
+          sha.update(buf, 0, n)
+          crc.update(buf, 0, n)
+          size += n.toLong()
+        }
+      }
+      mapOf(
+        "size" to size.toDouble(),
+        "sha256" to sha.digest().joinToString("") { b -> "%02x".format(b) },
+        "crc32" to (crc.value and 0xffffffffL).toDouble(),
+      )
+    }
+
+    AsyncFunction("getFileSize") { absolutePath: String ->
+      val file = java.io.File(stripFileUri(absolutePath))
+      if (!file.exists() || !file.isFile) {
+        throw Exception("file missing: $absolutePath (resolved=${file.absolutePath})")
       }
       file.length().toDouble()
     }
@@ -163,9 +219,9 @@ class CaptureForegroundModule : Module() {
      * Rejects oversized ranges to protect memory.
      */
     AsyncFunction("readFileRangeBase64") { absolutePath: String, offset: Double, length: Double ->
-      val file = java.io.File(absolutePath)
+      val file = java.io.File(stripFileUri(absolutePath))
       if (!file.exists() || !file.isFile) {
-        throw Exception("file missing: $absolutePath")
+        throw Exception("file missing: $absolutePath (resolved=${file.absolutePath})")
       }
       val off = offset.toLong()
       val len = length.toLong()
@@ -185,9 +241,9 @@ class CaptureForegroundModule : Module() {
 
     /** Streaming SHA-256 of file contents (does not load whole file). */
     AsyncFunction("hashFileSha256") { absolutePath: String ->
-      val file = java.io.File(absolutePath)
+      val file = java.io.File(stripFileUri(absolutePath))
       if (!file.exists() || !file.isFile) {
-        throw Exception("file missing: $absolutePath")
+        throw Exception("file missing: $absolutePath (resolved=${file.absolutePath})")
       }
       val digest = java.security.MessageDigest.getInstance("SHA-256")
       val buf = ByteArray(64 * 1024)
@@ -199,6 +255,20 @@ class CaptureForegroundModule : Module() {
         }
       }
       digest.digest().joinToString("") { b -> "%02x".format(b) }
+    }
+  }
+
+  private fun stripFileUri(path: String): String {
+    return when {
+      path.startsWith("file://") -> {
+        val raw = path.removePrefix("file://")
+        try {
+          java.net.URLDecoder.decode(raw, "UTF-8")
+        } catch (_: Exception) {
+          raw
+        }
+      }
+      else -> path
     }
   }
 }

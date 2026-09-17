@@ -2,8 +2,9 @@
  * Platform gate for bounded ZIP write (Android-only product + Node tests).
  */
 
-import { ZipWriteError } from './boundedZipWriter';
+import { ZipWriteError } from './zipWriteError';
 import { isNodeRuntime } from './nodeRuntime';
+import { missingNativeZipIoDetail, resolveNativeBinaryAppend } from './captureForegroundNative';
 
 export type ZipWritePlatform = 'android' | 'node' | 'unsupported';
 
@@ -25,6 +26,7 @@ export function resolveZipWritePlatform(): ZipWritePlatform {
 
 /**
  * Dinamic Captura is Android-only. Fail before starting ZIP I/O on unsupported platforms.
+ * On Android, also require CaptureForegroundService.appendBase64File (Phase 5 native build).
  */
 export function assertZipWritePlatformSupported(): void {
   const platform = resolveZipWritePlatform();
@@ -32,6 +34,12 @@ export function assertZipWritePlatformSupported(): void {
     throw new ZipWriteError(
       'ZIP_WRITE_FAILED',
       'ZIP export requiere Android (cliente Android-only; no hay sink in-memory de respaldo)',
+    );
+  }
+  if (platform === 'android' && !resolveNativeBinaryAppend()) {
+    throw new ZipWriteError(
+      'ZIP_WRITE_FAILED',
+      `ZIP export requiere appendBase64File nativo (${missingNativeZipIoDetail()})`,
     );
   }
 }

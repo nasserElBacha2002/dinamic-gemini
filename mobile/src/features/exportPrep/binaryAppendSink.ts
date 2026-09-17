@@ -2,24 +2,39 @@
  * Binary append sink for bounded ZIP writes.
  *
  * Expo FileSystem (SDK 51 / ~17) cannot append binary without loading the whole file.
- * On Android we use CaptureForegroundService.appendBase64File (FileOutputStream append).
- * In Node/Jest we use fs.appendFile. No in-memory accumulation of prior ZIP bytes.
+ * On Android:
+ *   - small framing (LFH/CEN/EOCD): appendBase64File
+ *   - photo payloads: appendFile (raw stream copy — no Base64)
+ *   - ZIP digest: MessageDigest via hashFileSha256 after close (disk-authoritative)
+ * In Node/Jest: fs append + IncrementalSha256.
  */
 
 import * as FileSystem from 'expo-file-system';
 
 import { IncrementalSha256 } from './incrementalSha256';
-import { ZipWriteError } from './boundedZipWriter';
+import { ZipWriteError } from './zipWriteError';
 import { isNodeRuntime, nodeTmpDir } from './nodeRuntime';
+import { requireNodeFs } from './requireNodeFs';
+import {
+  missingNativeZipIoDetail,
+  resolveNativeBinaryAppend,
+  resolveNativeRandomAccess,
+  type CaptureForegroundAppendNative,
+} from './captureForegroundNative';
 
 export interface BinaryAppendSink {
   readonly uri: string;
   /** Absolute filesystem path used for I/O (may differ from uri under Jest stubs). */
   readonly physicalPath: string;
   append(bytes: Uint8Array, signal?: AbortSignal): Promise<void>;
+  /**
+   * Append an on-disk file without loading it into JS (Android native / Node fs).
+   * Prefer this for photo payloads.
+   */
+  appendFromFile?(sourceAbsolutePath: string, signal?: AbortSignal): Promise<number>;
   /** Bytes written so far (uncompressed ZIP length on disk). */
   readonly byteLength: number;
-  /** Running SHA-256 of all appended bytes. */
+  /** Running / finalized SHA-256 of all appended bytes (call after close). */
   digestHex(): string;
   close(): Promise<void>;
 }
@@ -34,7 +49,6 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   if (typeof btoa === 'function') {
     return btoa(binary);
   }
-  // Jest/Node without btoa: encode manually (probe/test only).
   const alphabet =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let out = '';
@@ -64,37 +78,6 @@ function assertNotAborted(signal: AbortSignal | undefined): void {
   }
 }
 
-type NativeAppend = {
-  appendBase64File: (absolutePath: string, base64: string) => Promise<void>;
-  truncateFile?: (absolutePath: string) => Promise<void>;
-};
-
-function resolveNativeAppend(): NativeAppend | null {
-  let os: string | undefined;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    os = (require('react-native') as { Platform?: { OS?: string } }).Platform?.OS;
-  } catch {
-    return null;
-  }
-  if (os !== 'android') {
-    return null;
-  }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { requireOptionalNativeModule } = require('expo-modules-core') as {
-      requireOptionalNativeModule: (name: string) => NativeAppend | null;
-    };
-    const mod = requireOptionalNativeModule('CaptureForegroundService');
-    if (mod && typeof mod.appendBase64File === 'function') {
-      return mod;
-    }
-  } catch {
-    /* unavailable in this runtime */
-  }
-  return null;
-}
-
 /**
  * Create an empty target file and return an append sink that never retains prior ZIP bytes.
  */
@@ -102,10 +85,10 @@ export async function createBinaryAppendSink(targetUri: string): Promise<BinaryA
   const hasher = new IncrementalSha256();
   let byteLength = 0;
   let closed = false;
+  let finalizedDigest: string | null = null;
 
   if (isNodeRuntime()) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('fs') as typeof import('fs');
+    const fs = requireNodeFs();
     const dirname = (p: string): string => {
       const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
       return i <= 0 ? '.' : p.slice(0, i);
@@ -145,16 +128,45 @@ export async function createBinaryAppendSink(targetUri: string): Promise<BinaryA
           byteLength += slice.length;
         }
       },
+      async appendFromFile(sourceAbsolutePath: string, signal?: AbortSignal) {
+        if (closed) throw new Error('sink closed');
+        assertNotAborted(signal);
+        const src = fileUriToPath(sourceAbsolutePath);
+        const fd = fs.openSync(src, 'r');
+        try {
+          const size = fs.fstatSync(fd).size;
+          const CHUNK = 256 * 1024;
+          const buf = new Uint8Array(CHUNK);
+          let offset = 0;
+          while (offset < size) {
+            assertNotAborted(signal);
+            const n = fs.readSync(fd, buf, 0, Math.min(CHUNK, size - offset), offset);
+            const slice = buf.subarray(0, n);
+            fs.appendFileSync(filePath, slice);
+            hasher.update(slice);
+            byteLength += n;
+            offset += n;
+          }
+          return size;
+        } finally {
+          fs.closeSync(fd);
+        }
+      },
       digestHex() {
-        return hasher.digestHex();
+        if (finalizedDigest == null) {
+          throw new Error('digestHex requires close()');
+        }
+        return finalizedDigest;
       },
       async close() {
+        if (closed) return;
         closed = true;
+        finalizedDigest = hasher.digestHex();
       },
     };
   }
 
-  const native = resolveNativeAppend();
+  const native: CaptureForegroundAppendNative | null = resolveNativeBinaryAppend();
   if (native) {
     const abs = fileUriToPath(targetUri);
     const dir = targetUri.replace(/\/[^/]+$/, '/');
@@ -166,6 +178,7 @@ export async function createBinaryAppendSink(targetUri: string): Promise<BinaryA
         encoding: FileSystem.EncodingType.UTF8,
       });
     }
+    const ra = resolveNativeRandomAccess();
     return {
       uri: targetUri,
       physicalPath: abs,
@@ -174,26 +187,52 @@ export async function createBinaryAppendSink(targetUri: string): Promise<BinaryA
       },
       async append(bytes: Uint8Array, signal?: AbortSignal) {
         if (closed) throw new Error('sink closed');
+        // Framing only (small). Photos should use appendFromFile.
         const MAX_CHUNK = 256 * 1024;
         for (let i = 0; i < bytes.length; i += MAX_CHUNK) {
           assertNotAborted(signal);
           const slice = bytes.subarray(i, Math.min(i + MAX_CHUNK, bytes.length));
           await native.appendBase64File(abs, uint8ArrayToBase64(slice));
-          hasher.update(slice);
           byteLength += slice.length;
         }
       },
+      async appendFromFile(sourceAbsolutePath: string, signal?: AbortSignal) {
+        if (closed) throw new Error('sink closed');
+        assertNotAborted(signal);
+        if (typeof native.appendFile !== 'function') {
+          throw new ZipWriteError(
+            'ZIP_WRITE_FAILED',
+            `appendFile missing (${missingNativeZipIoDetail()}) — rebuild Android native`,
+          );
+        }
+        const src = fileUriToPath(sourceAbsolutePath);
+        const copied = Math.trunc(await native.appendFile(abs, src));
+        byteLength += copied;
+        return copied;
+      },
       digestHex() {
-        return hasher.digestHex();
+        if (finalizedDigest == null) {
+          throw new Error('digestHex requires close()');
+        }
+        return finalizedDigest;
       },
       async close() {
+        if (closed) return;
         closed = true;
+        // Disk-authoritative digest (same algorithm as validateOnDiskStoreZip on device).
+        if (!ra) {
+          throw new ZipWriteError(
+            'ZIP_WRITE_FAILED',
+            `hashFileSha256 missing (${missingNativeZipIoDetail()})`,
+          );
+        }
+        finalizedDigest = (await ra.hashFileSha256(abs)).toLowerCase();
       },
     };
   }
 
   throw new ZipWriteError(
     'ZIP_WRITE_FAILED',
-    'no binary append sink (native appendBase64File / Node fs). Expo FileSystem cannot stream ZIP without holding the full archive.',
+    `no binary append sink (${missingNativeZipIoDetail()}). Expo FileSystem cannot stream ZIP without holding the full archive.`,
   );
 }

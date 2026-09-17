@@ -14,6 +14,7 @@ import {
   type RandomAccessBinaryFile,
   MAX_RANGE_READ_BYTES,
 } from './randomAccessBinary';
+import { decodeUtf8 } from './utf8';
 
 const SIG_LFH = 0x04034b50;
 const SIG_CEN = 0x02014b50;
@@ -50,10 +51,6 @@ export type OnDiskZipValidationResult = OnDiskZipValidationOk | OnDiskZipValidat
 
 function fail(reason: string): OnDiskZipValidationFail {
   return { ok: false, reason };
-}
-
-function decodeUtf8(bytes: Uint8Array): string {
-  return new TextDecoder('utf-8').decode(bytes);
 }
 
 function isSafeZipPath(path: string): boolean {

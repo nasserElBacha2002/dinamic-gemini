@@ -15,7 +15,12 @@ export function base64ToBytes(b64: string): Uint8Array {
   if (normalized.endsWith('==')) padding = 2;
   else if (normalized.endsWith('=')) padding = 1;
   const len = normalized.length;
-  const outLen = ((len * 3) / 4) | 0 - padding;
+  // Parentheses required: `|` binds looser than `-`, so `| 0 - padding` became `| -1` /
+  // `| -2` and Hermes threw "A negative value cannot be an index" on padded JPEG base64.
+  const outLen = (((len * 3) / 4) | 0) - padding;
+  if (outLen < 0) {
+    throw new Error('base64 length invalid');
+  }
   const out = new Uint8Array(outLen);
   let p = 0;
   for (let i = 0; i < len; i += 4) {

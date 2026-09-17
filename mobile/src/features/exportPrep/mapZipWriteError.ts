@@ -2,7 +2,7 @@
  * Map ZipWriteError → ExportFromStagingError (Phase 5).
  */
 
-import { ZipWriteError, type ZipWriteFailure } from './boundedZipWriter';
+import { ZipWriteError, type ZipWriteFailure } from './zipWriteError';
 import { ExportFromStagingError, type ExportFromStagingFailure } from './exportFromStagingErrors';
 
 const ZIP_TO_EXPORT: Record<ZipWriteFailure, ExportFromStagingFailure> = {

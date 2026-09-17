@@ -9,6 +9,7 @@ import {
   LOCAL_PACKAGE_KIND,
   LOCAL_PACKAGE_VERSION,
 } from '../localCsv/localPackageContract';
+import { decodeUtf8 } from './utf8';
 
 const SIG_LFH = 0x04034b50;
 const SIG_CEN = 0x02014b50;
@@ -60,7 +61,7 @@ function findEocd(bytes: Uint8Array): number {
 }
 
 function decodePath(bytes: Uint8Array): string {
-  return new TextDecoder('utf-8').decode(bytes);
+  return decodeUtf8(bytes);
 }
 
 /**

@@ -12,7 +12,7 @@ import { exportPhotoFileName } from './exportPhotoFileName';
 import { ExportFromStagingError } from './exportFromStagingErrors';
 import type { OriginalFallbackReason } from './exportSourcePolicy';
 import type { ExportPrepJobRow } from './exportPrepTypes';
-import { validateReadyStaging } from './validateReadyStaging';
+import { validateReadyStaging, type ReadyValidationResult } from './validateReadyStaging';
 import { assertSafeExportFileName } from './validateExportFileName';
 
 export type ExportPhotoSource =
@@ -71,6 +71,12 @@ export async function resolveExportPhotosFromStaging(input: {
   readonly jobsByPhotoId: ReadonlyMap<string, ExportPrepJobRow>;
   readonly prepRepo: ExportPrepRepository;
   readonly invalidateOnFailure?: boolean;
+  /** Optional observer for strong-validation digest decisions (benchmark / metrics). */
+  readonly onReadyValidation?: (event: {
+    readonly photoId: string;
+    readonly sequence: number;
+    readonly result: ReadyValidationResult;
+  }) => void;
 }): Promise<ResolveExportPhotosResult> {
   const {
     session,
@@ -78,6 +84,7 @@ export async function resolveExportPhotosFromStaging(input: {
     jobsByPhotoId,
     prepRepo,
     invalidateOnFailure = true,
+    onReadyValidation,
   } = input;
   const freezeId = session.active_freeze_id;
   const freezeGeneration = session.capture_freeze_generation ?? null;
@@ -126,6 +133,11 @@ export async function resolveExportPhotosFromStaging(input: {
     }
 
     const ready = await validateReadyStaging(job, 'strong');
+    onReadyValidation?.({
+      photoId: photo.id,
+      sequence: photo.sequence_number ?? i + 1,
+      result: ready,
+    });
     if (!ready.ok) {
       const failure = ready.failure ?? 'UNKNOWN';
       if (invalidateOnFailure) {

@@ -34,6 +34,11 @@ jest.mock('expo-file-system', () => ({
 
 jest.mock('../src/features/exportPrep/stagedSha256', () => ({
   hashStagedFileSha256Hex: jest.fn(async () => 'a'.repeat(64)),
+  hashStagedFileSha256Detailed: jest.fn(async () => ({
+    sha256: 'a'.repeat(64),
+    bytesHashed: 12,
+    hashMode: 'native_file' as const,
+  })),
 }));
 
 const VALID_SHA = 'a'.repeat(64);

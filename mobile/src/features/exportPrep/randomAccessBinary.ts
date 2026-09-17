@@ -8,8 +8,11 @@
 
 import { base64ToUint8Array } from '../localCsv/binaryCodec';
 import { IncrementalSha256 } from './incrementalSha256';
-import { ZipWriteError } from './boundedZipWriter';
+import { ZipWriteError } from './zipWriteError';
 import { isNodeRuntime } from './nodeRuntime';
+import { requireNodeFs } from './requireNodeFs';
+import { resolveNativeRandomAccess } from './captureForegroundNative';
+
 
 /** Soft cap for a single range read (EOCD scan / small entries / CD slices). */
 export const MAX_RANGE_READ_BYTES = 2 * 1024 * 1024;
@@ -35,37 +38,6 @@ type NativeRange = {
   readFileRangeBase64: (absolutePath: string, offset: number, length: number) => Promise<string>;
   hashFileSha256: (absolutePath: string) => Promise<string>;
 };
-
-function resolveNativeRange(): NativeRange | null {
-  let os: string | undefined;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    os = (require('react-native') as { Platform?: { OS?: string } }).Platform?.OS;
-  } catch {
-    return null;
-  }
-  if (os !== 'android') {
-    return null;
-  }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { requireOptionalNativeModule } = require('expo-modules-core') as {
-      requireOptionalNativeModule: (name: string) => NativeRange | null;
-    };
-    const mod = requireOptionalNativeModule('CaptureForegroundService');
-    if (
-      mod &&
-      typeof mod.getFileSize === 'function' &&
-      typeof mod.readFileRangeBase64 === 'function' &&
-      typeof mod.hashFileSha256 === 'function'
-    ) {
-      return mod;
-    }
-  } catch {
-    /* unavailable */
-  }
-  return null;
-}
 
 /**
  * Ensure path is under one of the allowed export roots (sandbox).
@@ -94,8 +66,7 @@ export async function openRandomAccessBinaryFile(
   }
 
   if (isNodeRuntime()) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('fs') as typeof import('fs');
+    const fs = requireNodeFs();
     const abs = fileUriToPath(uri);
     const fd = fs.openSync(abs, 'r');
     let closed = false;
@@ -136,7 +107,7 @@ export async function openRandomAccessBinaryFile(
     };
   }
 
-  const native = resolveNativeRange();
+  const native: NativeRange | null = resolveNativeRandomAccess();
   if (native) {
     const abs = fileUriToPath(uri);
     return {

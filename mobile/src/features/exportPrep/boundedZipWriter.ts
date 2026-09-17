@@ -10,7 +10,15 @@
 
 import { createBinaryAppendSink, type BinaryAppendSink } from './binaryAppendSink';
 import { crc32Bytes } from './crc32';
+import { digestAbsoluteFile } from './digestAbsoluteFile';
 import { sha256BytesHex } from '../../core/payloadFingerprint';
+import { isNodeRuntime } from './nodeRuntime';
+import { resolveNativeBinaryAppend } from './captureForegroundNative';
+import { encodeUtf8 } from './utf8';
+import { ZipWriteError, type ZipWriteFailure } from './zipWriteError';
+
+export type { ZipWriteFailure };
+export { ZipWriteError };
 
 export type ZipWriteStage =
   | 'PREPARING'
@@ -18,18 +26,6 @@ export type ZipWriteStage =
   | 'WRITING_DIRECTORY'
   | 'VALIDATING'
   | 'PUBLISHING';
-
-export type ZipWriteFailure =
-  | 'ZIP_ENTRY_TOO_LARGE'
-  | 'ZIP_TOTAL_TOO_LARGE'
-  | 'ZIP_TOO_MANY_ENTRIES'
-  | 'ZIP_OFFSET_OVERFLOW'
-  | 'ZIP_UNSUPPORTED_ZIP64'
-  | 'ZIP_SOURCE_CHANGED'
-  | 'ZIP_SOURCE_READ_FAILED'
-  | 'ZIP_WRITE_FAILED'
-  | 'ZIP_CANCELLED'
-  | 'ZIP_VALIDATION_FAILED';
 
 export interface ZipWriteProgress {
   readonly completedEntries: number;
@@ -44,9 +40,20 @@ export interface BoundedZipEntry {
   readonly path: string;
   /** Uncompressed size hint (required for ZIP32 planning). */
   readonly sizeBytes: number;
-  readonly getBytes: () => Promise<Uint8Array> | Uint8Array;
+  /**
+   * Load entry bytes into JS. Prefer sourceAbsolutePath for large photos
+   * (native/Node stream append — no Base64 through the bridge).
+   */
+  readonly getBytes?: () => Promise<Uint8Array> | Uint8Array;
+  /**
+   * Absolute filesystem path (or file:// URI) to stream into the ZIP.
+   * When set, WRITING_ENTRIES avoids loading the photo into JS.
+   */
+  readonly sourceAbsolutePath?: string;
   /** When set, bytes must match this SHA-256 or ZIP_SOURCE_CHANGED. */
   readonly expectedSha256?: string;
+  /** Optional gate (e.g. freeze check) before streaming/appending this entry. */
+  readonly beforeAppend?: () => Promise<void> | void;
 }
 
 export interface ZipWriteResult {
@@ -58,16 +65,6 @@ export interface ZipWriteResult {
   readonly peakOpenEntries: number;
   /** Absolute path where bytes were written (Jest may remap documentDirectory). */
   readonly physicalPath: string;
-}
-
-export class ZipWriteError extends Error {
-  readonly code: ZipWriteFailure;
-
-  constructor(code: ZipWriteFailure, detail: string) {
-    super(`${code}: ${detail}`);
-    this.name = 'ZipWriteError';
-    this.code = code;
-  }
 }
 
 /** ZIP32 unsigned 32-bit max (sizes/offsets). */
@@ -95,7 +92,7 @@ function encodePath(path: string): Uint8Array {
   if (!path || path.includes('..') || path.startsWith('/') || path.includes('\\')) {
     throw new ZipWriteError('ZIP_VALIDATION_FAILED', `unsafe zip path: ${path}`);
   }
-  const bytes = new TextEncoder().encode(path);
+  const bytes = encodeUtf8(path);
   if (bytes.length > 0xffff) {
     throw new ZipWriteError('ZIP_ENTRY_TOO_LARGE', `path too long: ${path.length}`);
   }
@@ -223,6 +220,10 @@ export async function writeBoundedStoreZip(input: {
         stage: 'WRITING_ENTRIES',
       });
 
+      if (entry.beforeAppend) {
+        await entry.beforeAppend();
+      }
+
       openCount += 1;
       peakOpenEntries = Math.max(peakOpenEntries, openCount);
       if (openCount > 1) {
@@ -231,71 +232,137 @@ export async function writeBoundedStoreZip(input: {
 
       let raw: Uint8Array | null = null;
       try {
-        try {
-          raw = await entry.getBytes();
-        } catch (error) {
-          // Preserve typed export / staging failures from getBytes.
-          if (
-            error instanceof Error &&
-            (error.name === 'ExportFromStagingError' || error.name === 'ZipWriteError')
-          ) {
-            throw error;
-          }
-          const msg = error instanceof Error ? error.message : String(error);
-          throw new ZipWriteError('ZIP_SOURCE_READ_FAILED', `${entry.path}: ${msg}`);
-        }
-
-        if (!raw || raw.byteLength === 0) {
-          throw new ZipWriteError('ZIP_SOURCE_CHANGED', `${entry.path} empty`);
-        }
-        if (raw.byteLength !== entry.sizeBytes) {
-          throw new ZipWriteError(
-            'ZIP_SOURCE_CHANGED',
-            `${entry.path} size ${raw.byteLength} != ${entry.sizeBytes}`,
-          );
-        }
-        if (raw.byteLength > ZIP32_MAX_UINT32) {
-          throw new ZipWriteError('ZIP_ENTRY_TOO_LARGE', entry.path);
-        }
-        if (entry.expectedSha256) {
-          const sha = sha256BytesHex(raw);
-          if (sha !== entry.expectedSha256.toLowerCase()) {
-            throw new ZipWriteError('ZIP_SOURCE_CHANGED', `${entry.path} sha mismatch`);
-          }
-        }
-
-        const crc = crc32Bytes(raw);
+        let crc: number;
+        let payloadSize: number;
         const localOffset = sink.byteLength;
         if (localOffset > ZIP32_MAX_UINT32) {
           throw new ZipWriteError('ZIP_OFFSET_OVERFLOW', `offset ${localOffset}`);
         }
 
-        // Local file header
-        const lfh = new Uint8Array(30 + pathBytes.length);
-        const view = new DataView(lfh.buffer);
-        view.setUint32(0, SIG_LFH, true);
-        view.setUint16(4, VERSION_EXTRACT, true);
-        view.setUint16(6, FLAG_UTF8, true);
-        view.setUint16(8, METHOD_STORE, true);
-        view.setUint16(10, dosTime, true);
-        view.setUint16(12, dosDate, true);
-        view.setUint32(14, crc, true);
-        view.setUint32(18, raw.byteLength, true);
-        view.setUint32(22, raw.byteLength, true);
-        view.setUint16(26, pathBytes.length, true);
-        view.setUint16(28, 0, true);
-        lfh.set(pathBytes, 30);
+        const sourcePath = entry.sourceAbsolutePath?.trim();
+        const appendFromFile = sink.appendFromFile?.bind(sink);
+        const canStreamFromFile =
+          !!sourcePath &&
+          typeof appendFromFile === 'function' &&
+          (isNodeRuntime() || !!resolveNativeBinaryAppend()?.appendFile);
+        if (canStreamFromFile && sourcePath && appendFromFile) {
+          // Fast path: digest + stream-append without loading photo into JS / Base64 bridge.
+          let dig;
+          try {
+            dig = await digestAbsoluteFile(sourcePath);
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            throw new ZipWriteError('ZIP_SOURCE_READ_FAILED', `${entry.path}: ${msg}`);
+          }
+          if (dig.size <= 0) {
+            throw new ZipWriteError('ZIP_SOURCE_CHANGED', `${entry.path} empty`);
+          }
+          if (dig.size !== entry.sizeBytes) {
+            throw new ZipWriteError(
+              'ZIP_SOURCE_CHANGED',
+              `${entry.path} size ${dig.size} != ${entry.sizeBytes}`,
+            );
+          }
+          if (dig.size > ZIP32_MAX_UINT32) {
+            throw new ZipWriteError('ZIP_ENTRY_TOO_LARGE', entry.path);
+          }
+          if (entry.expectedSha256 && dig.sha256 !== entry.expectedSha256.toLowerCase()) {
+            throw new ZipWriteError('ZIP_SOURCE_CHANGED', `${entry.path} sha mismatch`);
+          }
+          crc = dig.crc32 >>> 0;
+          payloadSize = dig.size;
 
-        await sink.append(lfh, input.signal);
-        await sink.append(raw, input.signal);
+          const lfh = new Uint8Array(30 + pathBytes.length);
+          const view = new DataView(lfh.buffer);
+          view.setUint32(0, SIG_LFH, true);
+          view.setUint16(4, VERSION_EXTRACT, true);
+          view.setUint16(6, FLAG_UTF8, true);
+          view.setUint16(8, METHOD_STORE, true);
+          view.setUint16(10, dosTime, true);
+          view.setUint16(12, dosDate, true);
+          view.setUint32(14, crc, true);
+          view.setUint32(18, payloadSize, true);
+          view.setUint32(22, payloadSize, true);
+          view.setUint16(26, pathBytes.length, true);
+          view.setUint16(28, 0, true);
+          lfh.set(pathBytes, 30);
+
+          await sink.append(lfh, input.signal);
+          const copied = await appendFromFile(sourcePath, input.signal);
+          if (copied !== payloadSize) {
+            throw new ZipWriteError(
+              'ZIP_WRITE_FAILED',
+              `${entry.path} appendFromFile copied ${copied} != ${payloadSize}`,
+            );
+          }
+        } else {
+          if (!entry.getBytes) {
+            throw new ZipWriteError(
+              'ZIP_SOURCE_READ_FAILED',
+              `${entry.path}: missing getBytes and sourceAbsolutePath`,
+            );
+          }
+          try {
+            raw = await entry.getBytes();
+          } catch (error) {
+            if (
+              error instanceof Error &&
+              (error.name === 'ExportFromStagingError' || error.name === 'ZipWriteError')
+            ) {
+              throw error;
+            }
+            const msg = error instanceof Error ? error.message : String(error);
+            throw new ZipWriteError('ZIP_SOURCE_READ_FAILED', `${entry.path}: ${msg}`);
+          }
+
+          if (!raw || raw.byteLength === 0) {
+            throw new ZipWriteError('ZIP_SOURCE_CHANGED', `${entry.path} empty`);
+          }
+          if (raw.byteLength !== entry.sizeBytes) {
+            throw new ZipWriteError(
+              'ZIP_SOURCE_CHANGED',
+              `${entry.path} size ${raw.byteLength} != ${entry.sizeBytes}`,
+            );
+          }
+          if (raw.byteLength > ZIP32_MAX_UINT32) {
+            throw new ZipWriteError('ZIP_ENTRY_TOO_LARGE', entry.path);
+          }
+          if (entry.expectedSha256) {
+            const sha = sha256BytesHex(raw);
+            if (sha !== entry.expectedSha256.toLowerCase()) {
+              throw new ZipWriteError('ZIP_SOURCE_CHANGED', `${entry.path} sha mismatch`);
+            }
+          }
+
+          crc = crc32Bytes(raw);
+          payloadSize = raw.byteLength;
+
+          const lfh = new Uint8Array(30 + pathBytes.length);
+          const view = new DataView(lfh.buffer);
+          view.setUint32(0, SIG_LFH, true);
+          view.setUint16(4, VERSION_EXTRACT, true);
+          view.setUint16(6, FLAG_UTF8, true);
+          view.setUint16(8, METHOD_STORE, true);
+          view.setUint16(10, dosTime, true);
+          view.setUint16(12, dosDate, true);
+          view.setUint32(14, crc, true);
+          view.setUint32(18, payloadSize, true);
+          view.setUint32(22, payloadSize, true);
+          view.setUint16(26, pathBytes.length, true);
+          view.setUint16(28, 0, true);
+          lfh.set(pathBytes, 30);
+
+          await sink.append(lfh, input.signal);
+          await sink.append(raw, input.signal);
+        }
 
         central.push({
           pathBytes,
           crc32: crc,
-          size: raw.byteLength,
+          size: payloadSize,
           localHeaderOffset: localOffset,
         });
-        processedBytes += raw.byteLength;
+        processedBytes += payloadSize;
       } finally {
         raw = null;
         openCount -= 1;

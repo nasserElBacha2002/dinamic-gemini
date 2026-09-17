@@ -1,24 +1,44 @@
-import * as FileSystem from 'expo-file-system';
-
-import { base64ToBytes } from '../../core/base64';
-import { sha256BytesHex } from '../../core/payloadFingerprint';
+import { digestAbsoluteFile } from './digestAbsoluteFile';
 import { isValidStagedSha256 } from '../../database/repositories/exportPrepRepository';
 
+export type StagedHashMode = 'native_file' | 'js_base64_full_file';
+
+export type StagedHashResult = {
+  readonly sha256: string;
+  readonly bytesHashed: number;
+  readonly hashMode: StagedHashMode;
+};
+
 /**
- * SHA-256 of staged file bytes as pure 64-char hex (no `sha256:` prefix).
- * Throws if the file cannot be read or the digest is invalid.
+ * SHA-256 of staged file bytes as pure 64-char lowercase hex (no `sha256:` prefix).
+ * Uses native/file streaming digest — does **not** load the JPEG as Base64 into JS.
  */
 export async function hashStagedFileSha256Hex(uri: string): Promise<string> {
-  const b64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  const bytes = base64ToBytes(b64);
-  if (bytes.byteLength === 0) {
+  const result = await hashStagedFileSha256Detailed(uri);
+  return result.sha256;
+}
+
+export async function hashStagedFileSha256Detailed(uri: string): Promise<StagedHashResult> {
+  let dig: Awaited<ReturnType<typeof digestAbsoluteFile>>;
+  try {
+    dig = await digestAbsoluteFile(uri);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'EXPORT_PREP_HASH_FAILED';
+    throw Object.assign(new Error(message), {
+      code: 'EXPORT_PREP_HASH_FAILED',
+      cause: error,
+    });
+  }
+  if (!(dig.size > 0)) {
     throw Object.assign(new Error('EXPORT_PREP_HASH_EMPTY'), { code: 'EXPORT_PREP_HASH_EMPTY' });
   }
-  const hex = sha256BytesHex(bytes).trim().toLowerCase();
+  const hex = dig.sha256.trim().toLowerCase();
   if (!isValidStagedSha256(hex)) {
     throw Object.assign(new Error('EXPORT_PREP_HASH_INVALID'), { code: 'EXPORT_PREP_HASH_INVALID' });
   }
-  return hex;
+  return {
+    sha256: hex,
+    bytesHashed: dig.size,
+    hashMode: 'native_file',
+  };
 }

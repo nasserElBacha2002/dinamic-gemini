@@ -19,7 +19,7 @@ import {
 } from './exportStaging';
 import type { ExportPrepCounts, ExportPrepJobRow, EnsureExportPrepJobsResult, ExportPrepEnsureReason } from './exportPrepTypes';
 import { emptyExportPrepCounts, emptyEnsureExportPrepJobsResult } from './exportPrepTypes';
-import { hashStagedFileSha256Hex } from './stagedSha256';
+import { hashStagedFileSha256Detailed } from './stagedSha256';
 import {
   listCanonicalExportPhotos,
   selectEligibleExportPrepPhotos,
@@ -33,6 +33,25 @@ import {
 
 export type { ExportPrepCounts, EnsureExportPrepJobsResult, ExportPrepEnsureReason } from './exportPrepTypes';
 export { emptyExportPrepCounts, emptyEnsureExportPrepJobsResult };
+
+/** Optional debug/benchmark stage observer — no-op when unset (production path unchanged). */
+export type ExportPrepStageObserver = {
+  onStage(event: {
+    readonly stage: 'staging_copy' | 'local_scan' | 'staging_hash' | 'draft_lookup';
+    readonly photoId: string;
+    readonly sequence: number | null;
+    readonly monotonicStartMs: number;
+    readonly durationMs: number;
+    readonly inputBytes: number | null;
+    readonly outputBytes: number | null;
+    readonly queueDepth: number | null;
+    readonly workerConcurrency: number | null;
+    readonly executionContext: 'js' | 'native' | 'unknown';
+    readonly success: boolean;
+    readonly errorCode: string | null;
+    readonly extras?: Readonly<Record<string, number | string | boolean | null>>;
+  }): void;
+};
 
 export interface ExportPrepQueueDeps {
   readonly prepRepo: ExportPrepRepository;
@@ -188,6 +207,7 @@ export class ExportPrepQueue {
   /** Sessions blocked from claiming/processing (cancel/drain/purge). */
   private readonly cancelledSessions = new Set<string>();
   private readonly activeSessionWorkers = new Map<string, number>();
+  private stageObserver: ExportPrepStageObserver | null = null;
   readonly metrics = {
     jobsCompleted: 0,
     jobsFailed: 0,
@@ -200,6 +220,27 @@ export class ExportPrepQueue {
     this.maxWorkers = Math.max(1, Math.min(2, deps.maxWorkers ?? 1));
     this.warningPendingThreshold = Math.max(1, deps.warningPendingThreshold ?? 150);
     this.maxExportUncompressedBytes = deps.maxExportUncompressedBytes ?? 480 * 1024 * 1024;
+  }
+
+  /** Debug/benchmark only — null clears. No effect on production behavior when unset. */
+  setStageObserver(observer: ExportPrepStageObserver | null | undefined): void {
+    this.stageObserver = observer ?? null;
+  }
+
+  private observeStage(
+    event: Parameters<ExportPrepStageObserver['onStage']>[0],
+  ): void {
+    if (!this.stageObserver) return;
+    try {
+      this.stageObserver.onStage(event);
+    } catch {
+      // never break prep for observer errors
+    }
+  }
+
+  private monoNow(): number {
+    const p = (globalThis as { performance?: { now(): number } }).performance;
+    return typeof p?.now === 'function' ? p.now() : Date.now();
   }
 
   subscribe(listener: ExportPrepListener): () => void {
@@ -1354,11 +1395,26 @@ export class ExportPrepQueue {
 
       await this.deps.prepRepo.renewLease(job.capture_photo_id, leaseToken, 120_000);
 
+      const stageT0 = this.monoNow();
       const staged = await stageOriginalPhotoVersioned({
         sessionId,
         sourceUri: photo.uri,
         exportFileName,
         previousStagingUri: job.staging_uri,
+      });
+      this.observeStage({
+        stage: 'staging_copy',
+        photoId: photo.id,
+        sequence: seq,
+        monotonicStartMs: stageT0,
+        durationMs: this.monoNow() - stageT0,
+        inputBytes: photo.size ?? null,
+        outputBytes: staged.sizeBytes,
+        queueDepth: null,
+        workerConcurrency: this.maxWorkers,
+        executionContext: 'js',
+        success: true,
+        errorCode: null,
       });
 
       await this.deps.prepRepo.markScanning(job.capture_photo_id, leaseToken, {
@@ -1368,14 +1424,55 @@ export class ExportPrepQueue {
         renewLeaseMs: 180_000,
       });
 
+      const scanT0 = this.monoNow();
       await this.runCodeScanIfNeeded(photo, staged.stagingUri);
+      this.observeStage({
+        stage: 'local_scan',
+        photoId: photo.id,
+        sequence: seq,
+        monotonicStartMs: scanT0,
+        durationMs: this.monoNow() - scanT0,
+        inputBytes: staged.sizeBytes,
+        outputBytes: null,
+        queueDepth: null,
+        workerConcurrency: this.maxWorkers,
+        executionContext: 'native',
+        success: true,
+        errorCode: null,
+      });
 
       await this.deps.prepRepo.markValidating(job.capture_photo_id, leaseToken, 60_000);
 
-      const draftRow = await this.deps.draftRepo
-        .listForSession(sessionId)
-        .then((rows) => rows.find((d) => d.capture_photo_id === photo.id) ?? null)
-        .catch(() => null);
+      const draftT0 = this.monoNow();
+      let draftRows: Awaited<ReturnType<typeof this.deps.draftRepo.listForSession>> = [];
+      try {
+        draftRows = await this.deps.draftRepo.listForSession(sessionId);
+      } catch {
+        draftRows = [];
+      }
+      const draftRow = draftRows.find((d) => d.capture_photo_id === photo.id) ?? null;
+      const counts = await this.deps.prepRepo.countsForSession(sessionId).catch(() => null);
+      this.observeStage({
+        stage: 'draft_lookup',
+        photoId: photo.id,
+        sequence: seq,
+        monotonicStartMs: draftT0,
+        durationMs: this.monoNow() - draftT0,
+        inputBytes: null,
+        outputBytes: null,
+        queueDepth: counts?.pending ?? null,
+        workerConcurrency: this.maxWorkers,
+        executionContext: 'js',
+        success: isDraftExportReady(draftRow),
+        errorCode: isDraftExportReady(draftRow) ? null : 'EXPORT_PREP_DRAFT_NOT_READY',
+        extras: {
+          queryCount: 1,
+          draftCount: draftRows.length,
+          rowsReturned: draftRows.length,
+          lookupMode: 'list_for_session_then_find',
+          cacheHit: false,
+        },
+      });
       if (!isDraftExportReady(draftRow)) {
         throw Object.assign(new Error('EXPORT_PREP_DRAFT_NOT_READY'), {
           code: 'EXPORT_PREP_DRAFT_NOT_READY',
@@ -1384,7 +1481,35 @@ export class ExportPrepQueue {
 
       let sha256: string;
       try {
-        sha256 = await hashStagedFileSha256Hex(staged.stagingUri);
+        const hashT0 = this.monoNow();
+        const hashed = await hashStagedFileSha256Detailed(staged.stagingUri);
+        sha256 = hashed.sha256;
+        this.observeStage({
+          stage: 'staging_hash',
+          photoId: photo.id,
+          sequence: seq,
+          monotonicStartMs: hashT0,
+          durationMs: this.monoNow() - hashT0,
+          inputBytes: hashed.bytesHashed,
+          outputBytes: 64,
+          queueDepth: counts?.pending ?? null,
+          workerConcurrency: this.maxWorkers,
+          executionContext: 'native',
+          success: true,
+          errorCode: null,
+          extras: {
+            hashCount: 1,
+            fullFileReadCount: 1,
+            hashInputBytes: hashed.bytesHashed,
+            hashExecutionContext: 'native',
+            hashImplementation: 'native_stream',
+            hashMode: 'native_file',
+            hashSource: 'computed',
+            bytesHashed: hashed.bytesHashed,
+            digestReused: false,
+            base64FullFileHashCount: 0,
+          },
+        });
       } catch (error) {
         throw Object.assign(
           new Error(error instanceof Error ? error.message : 'EXPORT_PREP_HASH_FAILED'),

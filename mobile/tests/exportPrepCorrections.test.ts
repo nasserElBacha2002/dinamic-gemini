@@ -18,6 +18,11 @@ import { writeStoreZipAtomic } from '../src/features/exportPrep/streamingZipWrit
 
 jest.mock('../src/features/exportPrep/stagedSha256', () => ({
   hashStagedFileSha256Hex: jest.fn(async () => 'b'.repeat(64)),
+  hashStagedFileSha256Detailed: jest.fn(async () => ({
+    sha256: 'b'.repeat(64),
+    bytesHashed: 12,
+    hashMode: 'native_file' as const,
+  })),
 }));
 
 jest.mock('../src/features/exportPrep/exportStaging', () => {

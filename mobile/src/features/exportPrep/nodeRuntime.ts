@@ -12,8 +12,23 @@ export function getNodeProcess(): NodeProcessLike | undefined {
   return typeof g.process !== 'undefined' ? g.process : undefined;
 }
 
+/**
+ * True only in real Node (Jest core). React Native may expose `process` but must
+ * never take the Node fs ZIP sink path.
+ */
 export function isNodeRuntime(): boolean {
-  return Boolean(getNodeProcess()?.versions?.node);
+  if (!getNodeProcess()?.versions?.node) {
+    return false;
+  }
+  const product = (globalThis as { navigator?: { product?: string } }).navigator?.product;
+  if (product === 'ReactNative') {
+    return false;
+  }
+  // Hermes / RN bridge present ⇒ device or emulator, not Jest node.
+  if (typeof (globalThis as { nativeCallSyncHook?: unknown }).nativeCallSyncHook === 'function') {
+    return false;
+  }
+  return true;
 }
 
 export function nodeTmpDir(): string {
