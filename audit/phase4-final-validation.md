@@ -1,15 +1,31 @@
-# Phase 4 final validation
+# Phase 4 — Final validation checklist
+
+Generated: 2026-09-18T18:32:35Z
+
+## Smoke
+- [x] Metro 8081 with `--clear`
+- [x] adb reverse 8081/8000; app relaunch
+- [x] 3ph C=1 EXIT 0
+- [x] 3ph C=2 EXIT 0 + NATIVE_CONCURRENCY_PREFLIGHT_OK
+- [x] 12ph C=2 EXIT 0; JS maxObs==2 (native==1)
+
+## Benches
+- [x] 5×50 C=1 EXIT 0
+- [x] 5×50 C=2 EXIT 0
+- [x] 2×300 C=1 EXIT 0
+- [ ] 2×300 C=2 full — **only run1 COMPLETED**; run2 killed (blocker)
 
 ## Tests
-See `phase4-final-corrections-tests.txt` — typecheck, lint, test:core (618), test:services+detectOpenHandles (380) PASS.
+- [x] typecheck:core EXIT 0
+- [x] lint EXIT 0
+- [x] test:core 618 passed
+- [x] test:services 380 passed
+- Evidence: `audit/phase4-final-corrections-tests.txt`
 
-## Device smoke
-- C=1 smoke3: PASS
-- C=2 smoke3: PASS + NATIVE_CONCURRENCY_PREFLIGHT_OK
-- C=2 concurrent12: PASS; maxObservedScannerConcurrency=2 (JS), native=1
+## Artifacts
+- [x] summaries, correctness CSVs, sequence bands (6 bands, real metrics)
+- [x] reports + FINAL VERDICT
+- [x] review/ git status/diffstat/diff
 
-## Fixture order v2
-Gates OK; bands ~13–14 POSITION / 21–22 ITEM / 15 multi each; no homogeneous tail.
-
-## Final status
-`CORRECTIONS_WITH_WARNINGS` / experiment **INCONCLUSIVE** until exclusive full A/B finishes.
+## FINAL VERDICT
+`REJECTED_NO_NET_BENEFIT_DOMAIN_REGRESSION_NATIVE_NOT_ENGAGED`

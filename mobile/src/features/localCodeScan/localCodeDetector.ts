@@ -25,6 +25,11 @@ type NativeBarcodeMod = {
     active?: number;
     maxObserved?: number;
   }>;
+  resetBarcodeScanConcurrencyStats?: () => Promise<{
+    configured?: number;
+    active?: number;
+    maxObserved?: number;
+  }>;
 };
 
 function platformOS(): string {
@@ -151,4 +156,24 @@ export async function getNativeBarcodeScanConcurrencyStats(): Promise<{
   } catch {
     return { available: false, configured: null, active: null, maxObserved: null };
   }
+}
+
+/** Phase 4: reset native peak counters before every isolated run. */
+export async function resetNativeBarcodeScanConcurrencyStats(): Promise<{
+  readonly available: boolean;
+  readonly configured: number | null;
+  readonly active: number | null;
+  readonly maxObserved: number | null;
+}> {
+  const native = resolveNative();
+  if (!native?.resetBarcodeScanConcurrencyStats) {
+    return { available: false, configured: null, active: null, maxObserved: null };
+  }
+  const stats = await native.resetBarcodeScanConcurrencyStats();
+  return {
+    available: true,
+    configured: typeof stats?.configured === 'number' ? stats.configured : null,
+    active: typeof stats?.active === 'number' ? stats.active : null,
+    maxObserved: typeof stats?.maxObserved === 'number' ? stats.maxObserved : null,
+  };
 }

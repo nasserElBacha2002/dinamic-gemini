@@ -608,6 +608,243 @@ describe('LocalCodeScanStrategy supplier position-only ASP', () => {
   });
 });
 
+describe('LocalCodeScanStrategy supplier POSITION + false label', () => {
+  const sessionId = 'session-pos-false';
+  const aspRaw = 'ASP-A01-P04-R';
+
+  const andesProfiles = {
+    resolveForAisle: jest.fn(async () => ({
+      item: {
+        labelKind: 'ITEM' as const,
+        source: 'SUPPLIER' as const,
+        resolutionSource: 'CLIENT_SUPPLIER' as const,
+        clientSupplierId: 'sup-a',
+        missingSupplierProfile: false,
+        recognitionConfigNotReady: false,
+        profile: {
+          profile_id: 'item-prof',
+          profile_version: 3,
+          configuration_schema_version: 2,
+        },
+        configuration: {
+          recognition_mode: 'FULL',
+          required_fields: ['label_id', 'quantity'],
+          quantity_rules: {
+            required: true,
+            expected_presence: 'ALWAYS',
+            allow_external_fallback: false,
+            minimum: 1,
+          },
+          deterministic: {
+            expected_prefix: 'ASI',
+            exact_length: 10,
+            character_set: 'ALPHANUMERIC_WITH_HYPHEN',
+            payload_structure: 'SEGMENTED',
+            delimiter: '|',
+            expected_segment_count: 2,
+            field_mappings: [
+              { target: 'label_id', source: 'SEGMENT', segment_index: 0 },
+              { target: 'quantity', source: 'SEGMENT', segment_index: 1 },
+            ],
+            normalization: {
+              case_normalization: 'UPPER',
+              trim_outer_whitespace: true,
+              remove_internal_spaces: true,
+              remove_hyphens: false,
+            },
+          },
+        },
+      },
+      position: {
+        labelKind: 'POSITION' as const,
+        source: 'SUPPLIER' as const,
+        resolutionSource: 'CLIENT_SUPPLIER' as const,
+        clientSupplierId: 'sup-a',
+        missingSupplierProfile: false,
+        recognitionConfigNotReady: false,
+        profile: {
+          profile_id: 'pos-prof',
+          profile_version: 1,
+          configuration_schema_version: 2,
+        },
+        configuration: {
+          recognition_mode: 'MINIMAL',
+          required_fields: ['label_id'],
+          deterministic: {
+            expected_prefix: 'ASP',
+            character_set: 'ALPHANUMERIC_WITH_HYPHEN',
+            payload_structure: 'SIMPLE',
+            field_mappings: [{ target: 'label_id', source: 'WHOLE' }],
+          },
+        },
+      },
+    })),
+  };
+
+  beforeEach(async () => {
+    const { clearAllActivePositions } = await import(
+      '../src/features/localCodeScan/activePositionStore'
+    );
+    clearAllActivePositions();
+  });
+
+  it.each([
+    ['BADXXXX1', 'BADxxxx'],
+    ['FAKEXXXX', 'FAKExxxx'],
+    ['POSX9999', 'POSXxxxx'],
+  ])(
+    'keeps valid POSITION and rejects false label %s (%s)',
+    async (falseRaw) => {
+      const drafts = createMemoryDrafts();
+      const strategy = new LocalCodeScanStrategy({
+        drafts,
+        detect: async () => [
+          { rawValue: aspRaw, symbology: 'QR_CODE', detectionIndex: 0 },
+          { rawValue: falseRaw, symbology: 'QR_CODE', detectionIndex: 1 },
+        ],
+        evaluateCapability: async () => 'SUPPORTED',
+        profileResolver: andesProfiles as never,
+      });
+
+      const status = await strategy.execute({
+        capturePhotoId: `photo-pos-false-${falseRaw}`,
+        captureSessionId: sessionId,
+        clientFileId: `cf-${falseRaw}`,
+        preparedUri: 'file:///tmp/pos-false.jpg',
+        preparedAssetFingerprint: `sha256:pos-false-${falseRaw}`,
+        processingMode: 'CODE_SCAN',
+        flagEnabled: true,
+        inventoryId: 'inv-1',
+        aisleId: 'aisle-1',
+        recognitionContext: 'OFFLINE',
+      });
+
+      expect(status).toBe('DETECTED_UNVERIFIED');
+      const row = drafts.rows[0];
+      expect(row?.error_code).toBe('POSITION_LABEL_DETECTED');
+      expect(row?.position_detected).toBe(1);
+      expect(row?.candidate_count).toBe(2);
+      expect(row?.product_results_json).toBeNull();
+      const rejections = JSON.parse(row?.rejections_json ?? '[]') as Array<{
+        reason: string;
+        rawValuePreview: string;
+      }>;
+      expect(rejections.some((r) => r.rawValuePreview.startsWith(falseRaw.slice(0, 8)))).toBe(
+        true,
+      );
+      expect(rejections.some((r) => r.reason === 'rejected_alongside_valid_supplier_position')).toBe(
+        true,
+      );
+      const snap = JSON.parse(row?.position_snapshot_json ?? '{}') as { rawPayload?: string };
+      expect(snap.rawPayload).toBe(aspRaw);
+    },
+  );
+
+  it('keeps POSITION for fixture-like ASP-A05-B01-P03-R + BAD0002', async () => {
+    const drafts = createMemoryDrafts();
+    const aspRaw = 'ASP-A05-B01-P03-R';
+    const falseRaw = 'BAD0002';
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [
+        { rawValue: aspRaw, symbology: 'QR_CODE', detectionIndex: 0 },
+        { rawValue: falseRaw, symbology: 'QR_CODE', detectionIndex: 1 },
+      ],
+      evaluateCapability: async () => 'SUPPORTED',
+      profileResolver: andesProfiles as never,
+    });
+
+    const status = await strategy.execute({
+      capturePhotoId: 'photo-242-equiv',
+      captureSessionId: `${sessionId}-242`,
+      clientFileId: 'cf-242',
+      preparedUri: 'file:///tmp/242.jpg',
+      preparedAssetFingerprint: 'sha256:242',
+      processingMode: 'CODE_SCAN',
+      flagEnabled: true,
+      inventoryId: 'inv-1',
+      aisleId: 'aisle-1',
+      recognitionContext: 'OFFLINE',
+    });
+
+    expect(status).toBe('DETECTED_UNVERIFIED');
+    const row = drafts.rows[0];
+    expect(row?.error_code).toBe('POSITION_LABEL_DETECTED');
+    expect(row?.position_detected).toBe(1);
+    const snap = JSON.parse(row?.position_snapshot_json ?? '{}') as { rawPayload?: string };
+    expect(snap.rawPayload).toBe(aspRaw);
+  });
+
+  it('ITEM + false keeps ITEM and rejects false', async () => {
+    const drafts = createMemoryDrafts();
+    const itemRaw = 'ASI-9T6R2V|48';
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [
+        { rawValue: itemRaw, symbology: 'QR_CODE', detectionIndex: 0 },
+        { rawValue: 'BADXXXX1', symbology: 'QR_CODE', detectionIndex: 1 },
+      ],
+      evaluateCapability: async () => 'SUPPORTED',
+      profileResolver: andesProfiles as never,
+    });
+
+    const status = await strategy.execute({
+      capturePhotoId: 'photo-item-false',
+      captureSessionId: `${sessionId}-item`,
+      clientFileId: 'cf-item-false',
+      preparedUri: 'file:///tmp/item-false.jpg',
+      preparedAssetFingerprint: 'sha256:item-false',
+      processingMode: 'CODE_SCAN',
+      flagEnabled: true,
+      inventoryId: 'inv-1',
+      aisleId: 'aisle-1',
+      recognitionContext: 'OFFLINE',
+    });
+
+    expect(status).toBe('RESOLVED');
+    const row = drafts.rows[0];
+    expect(row?.position_detected ?? 0).toBe(0);
+    expect(row?.label_id).toBe('ASI-9T6R2V');
+    const products = JSON.parse(row?.product_results_json ?? '[]') as Array<{ labelId?: string }>;
+    expect(products).toHaveLength(1);
+    expect(products[0]?.labelId).toBe('ASI-9T6R2V');
+  });
+
+  it('POSITION + ITEM keeps both per current domain rules', async () => {
+    const drafts = createMemoryDrafts();
+    const itemRaw = 'ASI-2W5H8D|6';
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [
+        { rawValue: aspRaw, symbology: 'QR_CODE', detectionIndex: 0 },
+        { rawValue: itemRaw, symbology: 'QR_CODE', detectionIndex: 1 },
+      ],
+      evaluateCapability: async () => 'SUPPORTED',
+      profileResolver: andesProfiles as never,
+    });
+
+    const status = await strategy.execute({
+      capturePhotoId: 'photo-pos-item',
+      captureSessionId: `${sessionId}-both`,
+      clientFileId: 'cf-pos-item',
+      preparedUri: 'file:///tmp/pos-item.jpg',
+      preparedAssetFingerprint: 'sha256:pos-item',
+      processingMode: 'CODE_SCAN',
+      flagEnabled: true,
+      inventoryId: 'inv-1',
+      aisleId: 'aisle-1',
+      recognitionContext: 'OFFLINE',
+    });
+
+    // Current domain: valid supplier ITEM injects product; POSITION applied independently.
+    expect(status).toBe('RESOLVED');
+    const row = drafts.rows[0];
+    expect(row?.position_detected).toBe(1);
+    const products = JSON.parse(row?.product_results_json ?? '[]') as unknown[];
+    expect(products).toHaveLength(1);
+  });
+});
+
 describe('compareLocalVsServer', () => {
   it('returns NOT_COMPARABLE without reliable mapping (caller must not persist)', () => {
     expect(

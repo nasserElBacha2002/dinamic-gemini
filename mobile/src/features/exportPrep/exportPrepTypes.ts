@@ -114,6 +114,11 @@ export interface EnsureExportPrepJobsResult {
   readonly jobsSnapshotSessionId?: string;
   /** In-flight workers for this session when the snapshot was taken (must be 0). */
   readonly activeWorkersAtSnapshot?: number;
+  /**
+   * Session jobs mutation revision at attach time. Consume must see the same
+   * revision (ExportPrepQueue.getSessionJobsRevision) or fall back to live list.
+   */
+  readonly jobsSnapshotRevision?: number;
 }
 
 export function emptyEnsureExportPrepJobsResult(

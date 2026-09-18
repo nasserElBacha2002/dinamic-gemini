@@ -14,7 +14,6 @@ import com.google.mlkit.vision.common.InputImage
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.max
@@ -22,6 +21,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -90,6 +90,13 @@ object LocalBarcodeDetector {
   @JvmStatic
   fun getMaxObservedConcurrentScans(): Int = maxObservedConcurrency.get()
 
+  /** Reset per-run evidence. Benchmark runner guarantees no scan is active. */
+  @JvmStatic
+  fun resetObservedConcurrencyStats() {
+    check(activeScans.get() == 0) { "BARCODE_SCAN_CONCURRENCY_RESET_WHILE_ACTIVE" }
+    maxObservedConcurrency.set(0)
+  }
+
   /** Test helper: reset counters (does not interrupt in-flight scans). */
   @JvmStatic
   fun resetConcurrencyCountersForTest() {
@@ -97,9 +104,6 @@ object LocalBarcodeDetector {
     activeScans.set(0)
     maxObservedConcurrency.set(0)
   }
-
-  /** Tracks the in-flight ML Kit client for the current scan slot(s). */
-  private val activeScanner = AtomicReference<BarcodeScanner?>(null)
 
   data class LoadedScanImage(
     val inputImage: InputImage,
@@ -153,13 +157,10 @@ object LocalBarcodeDetector {
         if (System.nanoTime() >= slotWaitDeadline) {
           throw Exception("LOCAL_SCAN_BUSY")
         }
-        try {
-          Thread.sleep(5)
-        } catch (_: InterruptedException) {
-          throw Exception("LOCAL_SCAN_CANCELLED")
-        }
+        delay(5)
       }
       var fullBitmap: Bitmap? = null
+      // One ML Kit client per detect call — never share across concurrent slots.
       var scanner: BarcodeScanner? = null
       try {
         @Suppress("UNUSED_EXPRESSION")
@@ -167,7 +168,6 @@ object LocalBarcodeDetector {
         val file = resolveReadableFile(uriString)
         fullBitmap = decodeBitmapForScan(file, SCAN_MAX_EDGE_PX)
         scanner = BarcodeScanning.getClient(buildOptions(formatsCsv))
-        activeScanner.set(scanner)
 
         withTimeout(timeoutMs) {
           val bitmap = fullBitmap!!
@@ -235,7 +235,6 @@ object LocalBarcodeDetector {
       } catch (e: TimeoutCancellationException) {
         throw Exception("LOCAL_SCAN_TIMEOUT")
       } finally {
-        activeScanner.compareAndSet(scanner, null)
         try {
           scanner?.close()
         } catch (_: Throwable) {

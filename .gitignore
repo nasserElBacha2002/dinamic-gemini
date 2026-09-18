@@ -157,6 +157,8 @@ audit/phase4-*-summary.csv
 audit/phase4-*-correctness*.csv
 audit/phase4-correctness-diff.csv
 audit/phase4-sequence-bands.csv
+audit/phase4-fixture-bands.csv
+audit/phase4-performance-bands.csv
 audit/phase4-fixture-order-*.csv
 audit/phase4-fixture-order-*-meta.json
 audit/phase4-*-corrections-*.txt

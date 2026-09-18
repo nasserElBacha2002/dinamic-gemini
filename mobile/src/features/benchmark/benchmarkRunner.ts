@@ -54,6 +54,7 @@ import {
 import { classifyScenarioKind } from './benchmarkFixtureOrder';
 import {
   getNativeBarcodeScanConcurrencyStats,
+  resetNativeBarcodeScanConcurrencyStats,
   setNativeBarcodeScanConcurrency,
 } from '../localCodeScan/localCodeDetector';
 
@@ -99,12 +100,16 @@ export interface BenchmarkCommand {
   /**
    * Phase 4 experimental knob — strictly 1 or 2.
    * Controls LocalCodeScanStrategy + native ML Kit slots only.
-   * Does NOT change ExportPrepQueue workers (always 1 for Phase 4 A/B).
+   * Does NOT change ExportPrepQueue workers (fixed at 2 feed workers for Phase 4 A/B).
    * Default 1 (production-safe). Does not change the app default unless command sets 2.
    */
   readonly scannerConcurrency?: 1 | 2;
   readonly fixtureOrderVersion?: string;
   readonly fixtureOrderSeed?: number;
+  readonly campaignId?: string;
+  readonly datasetSha?: string;
+  readonly commitSha?: string;
+  readonly deviceSerial?: string;
 }
 
 export interface BenchmarkStatusDocument {
@@ -399,6 +404,13 @@ export class BenchmarkRunner {
       );
     }
     this.deps.localCodeScan?.setMaxConcurrency(scannerConcurrency);
+    this.deps.localCodeScan?.resetConcurrencyStats();
+    const nativeReset = await resetNativeBarcodeScanConcurrencyStats();
+    if (nativeConc.available && !nativeReset.available) {
+      throw Object.assign(new Error('NATIVE_SCANNER_CONCURRENCY_RESET_UNAVAILABLE'), {
+        code: 'NATIVE_SCANNER_CONCURRENCY_RESET_UNAVAILABLE',
+      });
+    }
     this.deps.localCodeScan?.clearRawDetectedPayloads?.();
 
     const envStart = await captureBenchmarkEnvironmentStart({
@@ -632,7 +644,8 @@ export class BenchmarkRunner {
               ? 'native'
               : phase.extras && phase.extras.executionContext === 'js'
                 ? 'js'
-                : phase.phase === 'strong_validation_hash' || phase.phase === 'staging_hash'
+                : phase.phase === 'strong_validation_hash' ||
+                    phase.phase === 'strong_validation'
                     ? 'native'
                     : 'unknown';
           sink.emit({
@@ -1011,6 +1024,11 @@ export class BenchmarkRunner {
           scannerConcurrency,
           maxObservedScannerConcurrency,
           maxObservedNativeScannerConcurrency,
+          campaignId: command.campaignId ?? null,
+          datasetSha: command.datasetSha ?? null,
+          commitSha: command.commitSha ?? null,
+          deviceSerial: command.deviceSerial ?? null,
+          fixtureOrderVersion: command.fixtureOrderVersion ?? null,
           dualCorrectnessSummary: dualSummary,
           dualCorrectnessRows: dualRows,
         },

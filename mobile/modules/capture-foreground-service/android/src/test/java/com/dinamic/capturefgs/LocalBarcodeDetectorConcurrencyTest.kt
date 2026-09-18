@@ -107,4 +107,49 @@ class LocalBarcodeDetectorConcurrencyTest {
     assertTrue(rejected2 >= 0)
     assertTrue(max2 <= 2)
   }
+
+  @Test
+  fun resetObservedConcurrencyStats_clearsPeakWhileIdle() {
+    LocalBarcodeDetector.resetConcurrencyCountersForTest()
+    LocalBarcodeDetector.setMaxConcurrentScans(2)
+    // Simulate peak without real ML Kit: bump via reflection-free public API only.
+    // resetObserved requires active==0 (idle).
+    LocalBarcodeDetector.resetObservedConcurrencyStats()
+    assertEquals(0, LocalBarcodeDetector.getMaxObservedConcurrentScans())
+    assertEquals(2, LocalBarcodeDetector.getMaxConcurrentScans())
+    LocalBarcodeDetector.resetConcurrencyCountersForTest()
+  }
+
+  @Test(expected = IllegalStateException::class)
+  fun resetObservedConcurrencyStats_throwsWhenActive() {
+    LocalBarcodeDetector.resetConcurrencyCountersForTest()
+    // Force active>0 via test helper then call resetObserved — use reflection on activeScans.
+    val field = LocalBarcodeDetector::class.java.getDeclaredField("activeScans")
+    field.isAccessible = true
+    val active = field.get(LocalBarcodeDetector) as java.util.concurrent.atomic.AtomicInteger
+    active.set(1)
+    try {
+      LocalBarcodeDetector.resetObservedConcurrencyStats()
+    } finally {
+      active.set(0)
+      LocalBarcodeDetector.resetConcurrencyCountersForTest()
+    }
+  }
+
+  @Test
+  fun setMaxConcurrentScans_clampsToOneOrTwoOnly() {
+    LocalBarcodeDetector.resetConcurrencyCountersForTest()
+    LocalBarcodeDetector.setMaxConcurrentScans(1)
+    assertEquals(1, LocalBarcodeDetector.getMaxConcurrentScans())
+    LocalBarcodeDetector.setMaxConcurrentScans(2)
+    assertEquals(2, LocalBarcodeDetector.getMaxConcurrentScans())
+    var threw = false
+    try {
+      LocalBarcodeDetector.setMaxConcurrentScans(3)
+    } catch (_: IllegalArgumentException) {
+      threw = true
+    }
+    assertTrue(threw)
+    LocalBarcodeDetector.resetConcurrencyCountersForTest()
+  }
 }

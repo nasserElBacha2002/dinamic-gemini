@@ -158,4 +158,46 @@ describe('jobsSnapshotFence', () => {
       }),
     ).toEqual({ ok: false, reason: 'live_identity_drift' });
   });
+
+  test('revision drift invalidates snapshot without live list query', () => {
+    const snapshot = [job()];
+    const token = buildJobsSnapshotToken(snapshot);
+    expect(
+      assertJobsSnapshotConsumable({
+        snapshot,
+        token,
+        sessionId: 's1',
+        snapshotSessionId: 's1',
+        activeWorkersNow: 0,
+        activeWorkersAtSnapshot: 0,
+        snapshotRevision: 3,
+        liveRevision: 3,
+      }),
+    ).toEqual({ ok: true });
+
+    expect(
+      assertJobsSnapshotConsumable({
+        snapshot,
+        token,
+        sessionId: 's1',
+        snapshotSessionId: 's1',
+        activeWorkersNow: 0,
+        activeWorkersAtSnapshot: 0,
+        snapshotRevision: 3,
+        liveRevision: 4,
+      }),
+    ).toEqual({ ok: false, reason: 'revision_drift' });
+
+    expect(
+      assertJobsSnapshotConsumable({
+        snapshot,
+        token,
+        sessionId: 's1',
+        snapshotSessionId: 's1',
+        activeWorkersNow: 0,
+        activeWorkersAtSnapshot: 0,
+        snapshotRevision: 3,
+      }),
+    ).toEqual({ ok: false, reason: 'revision_unchecked' });
+  });
 });

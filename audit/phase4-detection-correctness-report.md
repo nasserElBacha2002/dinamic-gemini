@@ -1,18 +1,25 @@
 # Phase 4 — Detection correctness
 
-## Evidence source
-- Device: Samsung SM-G985F (`R58N30GNF2T`)
-- Completed: **5×50 C=2** (`audit/mobile-pipeline/benchmark/2026-09-18T17-02-05-907Z`)
-- Partial: **1×50 C=1** (`.../2026-09-18T17-01-03-587Z`)
-- Smoke concurrent 12 C=2: detection rows present; 50-set without labels_json is not authoritative
+Generated: 2026-09-18T18:32:35Z
 
-## Results (50-photo interleaved v2 prefix, C=2 run1)
-- detectionExactAccuracy: **1.00** (50/50)
-- detectionRecall: **1.00**
-- detectionFalseNegative: 0
-- detectionUnexpectedExtra: 0
+## Experiment controls
+- Device: R58N30GNF2T (SM-G985F)
+- Fixture order: `andes_interleaved_v2` seed `0xa4de5302`
+- `exportPrepMaxWorkers=2` held constant (feed capacity)
+- A/B variable: `scannerConcurrency` ∈ {1, 2}
+- Full suites use `andes_benchmark_300` (`--photos 50` = band 1 of full v2 order). Standalone `andes_benchmark_50` cannot satisfy v2 gates (2 position / 48 item).
 
-Single POSITION and single ITEM detection were exact for all photos in the 50 prefix.
+## Detection results (exact match accuracy)
 
-## Gap
-- Full **2×300** detection CSVs were not completed in this iteration (device contention / overlapping pipelines).
+| Suite | C | detectionExactAccuracy |
+|-------|---|------------------------|
+| 5×50 run5 | 1 | **1.00** |
+| 5×50 run5 | 2 | **1.00** |
+| 2×300 run2 | 1 | **1.00** |
+| 1×300 run1 | 2 | **1.00** |
+
+Detection layer is exact across all completed A/B runs. No detection regression from C=2.
+
+## Sequence bands (300 C=1 run2)
+
+See `audit/phase4-sequence-bands.csv` — 6 bands, detection_exact_accuracy=1.0 in every band.

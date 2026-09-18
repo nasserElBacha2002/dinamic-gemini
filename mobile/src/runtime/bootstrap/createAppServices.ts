@@ -316,11 +316,17 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
                     readonly photos?: readonly import('../../database/schema/captureSchema').CapturePhotoRow[];
                   },
                 ) => {
-                  const result = await exportPrepQueue?.ensureJobsForEligiblePhotos(sessionId, {
-                    reason: 'EXPORT_PREFLIGHT',
-                    session: options?.session,
-                    photos: options?.photos,
-                  });
+                  const ensureOpts: {
+                    readonly reason: 'EXPORT_PREFLIGHT';
+                    readonly session?: import('../../database/schema/captureSchema').CaptureSessionRow;
+                    readonly photos?: readonly import('../../database/schema/captureSchema').CapturePhotoRow[];
+                  } = { reason: 'EXPORT_PREFLIGHT' };
+                  if (options?.session) ensureOpts.session = options.session;
+                  if (options?.photos) ensureOpts.photos = options.photos;
+                  const result = await exportPrepQueue?.ensureJobsForEligiblePhotos(
+                    sessionId,
+                    ensureOpts,
+                  );
                   if (
                     result &&
                     (result.createdJobs > 0 ||
@@ -337,6 +343,10 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
           getExportPrepActiveWorkers:
             config.flags.mobileExportPrepQueue === true
               ? (sessionId: string) => exportPrepQueue?.getActiveSessionWorkers(sessionId) ?? 0
+              : null,
+          getExportPrepSessionJobsRevision:
+            config.flags.mobileExportPrepQueue === true
+              ? (sessionId: string) => exportPrepQueue?.getSessionJobsRevision(sessionId) ?? 0
               : null,
           maxExportUncompressedBytes: 480 * 1024 * 1024,
           attemptRepo: localExportAttemptRepo,

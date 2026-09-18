@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const { spawnSync, execFileSync } = require('child_process');
 const {
   BENCHMARK_FIXTURE_ORDER_DEFAULT_VERSION,
@@ -28,15 +29,20 @@ const {
   dualCorrectnessToCsv,
   extractDualRowsFromEvents,
   extractDualRowsFromStatus,
-  buildSequenceBandsCsv,
+  buildFixtureBandsCsv,
+  buildPerformanceBandRows,
+  performanceBandsToCsv,
 } = require('./lib/andesDualCorrectness.cjs');
 
-/** Phase 4 A/B: ExportPrep workers stay at 1; only scannerConcurrency varies. */
+/** Phase 4 A/B: ExportPrep workers stay fixed at 2 (feed); only scannerConcurrency varies. */
 const PHASE4_EXPORT_PREP_MAX_WORKERS = 2;
 const AUTHORIZED_CLIENT = '8a3c9a01-7494-4be0-99be-595ecbf2b9bd';
 const AUTHORIZED_SUPPLIER = 'bce1460e-7238-4e39-82ec-8c4e51dcb9ca';
 const PACKAGE = 'com.dinamic.inventory.capture';
 const EXPECTED_PROFILE = 'andes';
+const C2_PRECONDITION_PHOTOS = 12;
+const FIXTURE_BAND_SIZE = 50;
+const TERMINAL_STATUSES = new Set(['COMPLETED', 'FAILED', 'TIMEOUT']);
 
 function die(code, message) {
   console.error(`ERROR[${code}]: ${message}`);
@@ -101,6 +107,70 @@ function resolveInputDir(raw) {
     die('INPUT', 'fixtures must stay outside the mobile package directory');
   }
   return resolved;
+}
+
+function acquireDeviceLock(device) {
+  const safeSerial = device.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const lockPath = path.join(os.tmpdir(), `dinamic-phase4-${safeSerial}.lock`);
+  const owner = { pid: process.pid, deviceSerial: device, startedAtUtc: new Date().toISOString() };
+  const create = () => {
+    const fd = fs.openSync(lockPath, 'wx', 0o600);
+    fs.writeFileSync(fd, JSON.stringify(owner));
+    fs.closeSync(fd);
+  };
+  try {
+    create();
+  } catch (error) {
+    if (error && error.code === 'EEXIST') {
+      let existing = null;
+      try {
+        existing = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+      } catch {
+        // An unreadable lock is treated as reserved.
+      }
+      let active = true;
+      if (Number.isInteger(existing?.pid)) {
+        try {
+          process.kill(existing.pid, 0);
+        } catch (killError) {
+          active = killError?.code !== 'ESRCH';
+        }
+      }
+      if (!active) {
+        fs.unlinkSync(lockPath);
+        create();
+      } else {
+        die(
+          'DEVICE_RESERVED',
+          `device ${device} is reserved by PID ${existing?.pid ?? 'unknown'} (${lockPath})`,
+        );
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    try {
+      const current = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+      if (current.pid === owner.pid && current.deviceSerial === owner.deviceSerial) {
+        fs.unlinkSync(lockPath);
+      }
+    } catch {
+      // Best-effort process-exit cleanup.
+    }
+  };
+  process.once('exit', release);
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.once(signal, () => {
+      release();
+      process.exit(128);
+    });
+  }
+  return release;
 }
 
 function parseManifest(text) {
@@ -279,10 +349,120 @@ function listDevices() {
     .filter((id) => id && id !== 'List');
 }
 
-function runAs(device, shellCmd) {
+function runAs(device, shellCmd, opts = {}) {
   // One shell string so `sh -c` receives the full command.
   const quoted = shellCmd.replace(/'/g, `'"'"'`);
-  return adb(device, ['shell', `run-as ${PACKAGE} sh -c '${quoted}'`]);
+  return adb(device, ['shell', `run-as ${PACKAGE} sh -c '${quoted}'`], opts);
+}
+
+function readLatestDeviceStatus(device) {
+  const listing = runAs(
+    device,
+    'ls -t files/benchmark/*/status.json 2>/dev/null',
+    { allowFail: true },
+  );
+  const latest = String(listing.stdout || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!latest) return null;
+  const raw = runAs(device, `cat "${latest}"`, { allowFail: true });
+  if (raw.status !== 0 || !String(raw.stdout || '').trim().startsWith('{')) return null;
+  try {
+    return JSON.parse(raw.stdout);
+  } catch {
+    return null;
+  }
+}
+
+function waitForDeviceIdle(device, timeoutMs) {
+  reclaimAbandonedDeviceRuns(device);
+  const started = Date.now();
+  let lastReason = 'device state unavailable';
+  while (Date.now() - started < timeoutMs) {
+    const pendingCommand = runAs(
+      device,
+      'test -f files/benchmark/inbox/command.json',
+      { allowFail: true },
+    ).status === 0;
+    const status = readLatestDeviceStatus(device);
+    const noPriorRun = status == null;
+    const terminal = status && TERMINAL_STATUSES.has(status.status);
+    const queueEmpty = noPriorRun || Number(status.pendingJobs) === 0;
+    const jobsTerminal =
+      noPriorRun ||
+      status.status !== 'COMPLETED' ||
+      (Number(status.expectedCount) >= 0 &&
+        Number(status.terminalCount) === Number(status.expectedCount));
+    if (!pendingCommand && (noPriorRun || terminal) && queueEmpty && jobsTerminal) {
+      return;
+    }
+    lastReason = JSON.stringify({
+      pendingCommand,
+      status: status?.status ?? null,
+      pendingJobs: status?.pendingJobs ?? null,
+      terminalCount: status?.terminalCount ?? null,
+      expectedCount: status?.expectedCount ?? null,
+    });
+    sleep(2000);
+  }
+  die('DEVICE_NOT_IDLE', `prior run did not drain before timeout: ${lastReason}`);
+}
+
+/**
+ * Host-side cleanup: a killed Mac coordinator can leave status=RUNNING with
+ * pendingJobs=0 and no inbox command. That is not a live pipeline — mark FAILED
+ * so the exclusive campaign can proceed without waiting for a dead run.
+ */
+function reclaimAbandonedDeviceRuns(device) {
+  const pendingCommand =
+    runAs(device, 'test -f files/benchmark/inbox/command.json', { allowFail: true })
+      .status === 0;
+  if (pendingCommand) return;
+  const list = runAs(device, 'ls -1 files/benchmark', { allowFail: true });
+  if (list.status !== 0) return;
+  const dirs = String(list.stdout || '')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s && s !== 'inbox');
+  for (const runId of dirs) {
+    const raw = runAs(device, `cat files/benchmark/${runId}/status.json`, {
+      allowFail: true,
+    });
+    if (raw.status !== 0 || !String(raw.stdout || '').trim().startsWith('{')) continue;
+    let status;
+    try {
+      status = JSON.parse(raw.stdout);
+    } catch {
+      continue;
+    }
+    if (status.status !== 'RUNNING') continue;
+    if (Number(status.pendingJobs) > 0) continue;
+    const abandoned = {
+      ...status,
+      status: 'FAILED',
+      errorCode: 'ABANDONED_BY_HOST',
+      errorDetail: 'reclaimed_stale_RUNNING_no_pending_command',
+      updatedAtUtc: new Date().toISOString(),
+    };
+    const tmpLocal = path.join(
+      os.tmpdir(),
+      `dinamic-bench-reclaim-${runId}-${Date.now()}.json`,
+    );
+    fs.writeFileSync(tmpLocal, JSON.stringify(abandoned, null, 2));
+    try {
+      pushViaTmp(device, tmpLocal, `benchmark/${runId}/status.json`);
+      console.warn(
+        `WARN: reclaimed abandoned RUNNING run ${runId} (expectedCount=${status.expectedCount})`,
+      );
+    } finally {
+      try {
+        fs.unlinkSync(tmpLocal);
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 function pushViaTmp(device, localPath, remoteRelUnderFiles) {
@@ -429,25 +609,29 @@ function assertNativeScannerConcurrencyCapability(device) {
     const needles = [
       Buffer.from('setBarcodeScanConcurrency'),
       Buffer.from('getBarcodeScanConcurrencyStats'),
+      Buffer.from('resetBarcodeScanConcurrencyStats'),
     ];
     let foundSet = false;
     let foundStats = false;
+    let foundReset = false;
     for (const name of dexNames) {
       const dexPath = path.join(tmpRoot, name);
       if (!fs.existsSync(dexPath)) continue;
       const data = fs.readFileSync(dexPath);
       if (data.includes(needles[0])) foundSet = true;
       if (data.includes(needles[1])) foundStats = true;
+      if (data.includes(needles[2])) foundReset = true;
     }
-    if (!foundSet || !foundStats) {
+    if (!foundSet || !foundStats || !foundReset) {
       die(
         'NATIVE_SCANNER_CONCURRENCY_UNAVAILABLE',
-        `APK DEX missing native API (set=${foundSet} stats=${foundStats}) — rebuild native module before C=2`,
+        `APK DEX missing native API (set=${foundSet} stats=${foundStats} reset=${foundReset}) — rebuild native module before C=2`,
       );
     }
     console.log('NATIVE_CONCURRENCY_PREFLIGHT_OK', {
       set: foundSet,
       stats: foundStats,
+      reset: foundReset,
       dex: dexNames.length,
       source: apkSource,
     });
@@ -484,10 +668,16 @@ function writeDualCorrectnessArtifacts(outRoot, label, status, events, options =
   const summary =
     (status && status.extras && status.extras.dualCorrectnessSummary) ||
     summarizeDualCorrectness(rows);
+  const summaryArtifact = {
+    ...summary,
+    ...(options.sourceMetadata || {}),
+    sourceRunIds: [status.benchmarkRunId],
+    sourcePhotoCount: rows.length,
+  };
   fs.writeFileSync(path.join(outRoot, `${label}-dual-correctness.csv`), dualCorrectnessToCsv(rows));
   fs.writeFileSync(
     path.join(outRoot, `${label}-dual-correctness-summary.json`),
-    JSON.stringify(summary, null, 2),
+    JSON.stringify(summaryArtifact, null, 2),
   );
   const absoluteGate = evaluateAbsoluteCorrectnessGate(summary);
   fs.writeFileSync(
@@ -935,6 +1125,85 @@ Corrected smoke:
 `;
 }
 
+function validateAggregateSources(statuses, expected) {
+  const failures = [];
+  const ids = new Set();
+  for (const status of statuses) {
+    const runId = status?.benchmarkRunId;
+    if (!runId || ids.has(runId)) failures.push(`duplicate_or_missing_run_id=${runId || 'missing'}`);
+    ids.add(runId);
+    if (status?.status !== 'COMPLETED') failures.push(`${runId}:status=${status?.status}`);
+    if (Number(status?.expectedCount) !== expected.photoCount) {
+      failures.push(`${runId}:photoCount=${status?.expectedCount}`);
+    }
+    if (Number(status?.terminalCount) !== expected.photoCount) {
+      failures.push(`${runId}:terminalCount=${status?.terminalCount}`);
+    }
+    if (Number(status?.pendingJobs) !== 0) failures.push(`${runId}:pendingJobs=${status?.pendingJobs}`);
+    if (Number(status?.extras?.scannerConcurrency) !== expected.scannerConcurrency) {
+      failures.push(`${runId}:scannerConcurrency=${status?.extras?.scannerConcurrency}`);
+    }
+    if (Number(status?.extras?.exportPrepMaxWorkers) !== PHASE4_EXPORT_PREP_MAX_WORKERS) {
+      failures.push(`${runId}:exportPrepMaxWorkers=${status?.extras?.exportPrepMaxWorkers}`);
+    }
+    for (const field of [
+      'campaignId',
+      'datasetSha',
+      'commitSha',
+      'deviceSerial',
+      'fixtureOrderVersion',
+    ]) {
+      if (status?.extras?.[field] !== expected[field]) {
+        failures.push(`${runId}:${field}=${status?.extras?.[field] ?? 'missing'}`);
+      }
+    }
+  }
+  if (failures.length) {
+    die('SOURCE_METADATA_MISMATCH', failures.join('; '));
+  }
+}
+
+function outcomeSignature(row) {
+  return JSON.stringify({
+    sequence: row.benchmarkSequence ?? row.benchmark_sequence,
+    detection: row.detectionResult ?? row.detection_result,
+    domain: row.domainResult ?? row.domain_result,
+    raw: row.actualRawDetectedPayloads ?? row.actual_raw_detected_payloads,
+    accepted: row.actualAcceptedPayloads ?? row.actual_accepted_payloads,
+    rejected: row.actualRejectedPayloads ?? row.actual_rejected_payloads,
+    position: row.actualPosition ?? row.actual_position,
+    items: row.actualItems ?? row.actual_items,
+    pipelineError: row.pipelineError ?? row.pipeline_error,
+  });
+}
+
+function evaluateNonDeterminism(runs) {
+  if (runs.length < 2) return { pass: true, comparableRuns: runs.length, mismatches: [] };
+  const baseline = new Map(
+    runs[0].rows.map((row) => [
+      Number(row.benchmarkSequence ?? row.benchmark_sequence),
+      outcomeSignature(row),
+    ]),
+  );
+  const mismatches = [];
+  for (const run of runs.slice(1)) {
+    for (const row of run.rows) {
+      const sequence = Number(row.benchmarkSequence ?? row.benchmark_sequence);
+      if (baseline.get(sequence) !== outcomeSignature(row)) {
+        mismatches.push({ run: run.run, benchmarkSequence: sequence });
+      }
+    }
+  }
+  return { pass: mismatches.length === 0, comparableRuns: runs.length, mismatches };
+}
+
+function writeFinalReport(outRoot, summary, body) {
+  if (summary.campaignComplete !== true) {
+    die('CAMPAIGN_INCOMPLETE', 'refusing to generate final report before campaign completion');
+  }
+  fs.writeFileSync(path.join(outRoot, 'benchmark-report.md'), body);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.clientId !== AUTHORIZED_CLIENT || args.supplierId !== AUTHORIZED_SUPPLIER) {
@@ -961,6 +1230,7 @@ async function main() {
   if (args.device && !devices.includes(args.device)) {
     die('DEVICE', `device ${args.device} not connected`);
   }
+  acquireDeviceLock(device);
 
   ensureDebuggable(device);
   if (args.scannerConcurrency === 2) {
@@ -974,6 +1244,38 @@ async function main() {
     stamp,
   );
   fs.mkdirSync(outRoot, { recursive: true });
+  const campaignId = crypto.randomUUID();
+  const commitSha = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  const datasetSha = sha256File(manifestPath);
+  const fullCampaignRequested = args.photos > 3 || args.runs > 1;
+  const fullPhotoCount = args.photos > 3 ? args.photos : 50;
+  const c2PreconditionRequired =
+    fullCampaignRequested &&
+    args.scannerConcurrency === 2 &&
+    args.runs >= 5 &&
+    fullPhotoCount === 50;
+  // Standalone --photos 12..20 (no --confirm-full-run) is an explicit concurrency smoke.
+  // Full 5×50 C2 still uses the 12-photo precondition gate above.
+  const smokePhotoCount = c2PreconditionRequired
+    ? C2_PRECONDITION_PHOTOS
+    : !args.confirmFullRun && args.photos >= C2_PRECONDITION_PHOTOS
+      ? Math.min(Math.max(args.photos, C2_PRECONDITION_PHOTOS), 20)
+      : 3;
+  fs.writeFileSync(
+    path.join(outRoot, 'campaign-status.json'),
+    JSON.stringify(
+      {
+        campaignId,
+        campaignComplete: false,
+        status: 'RUNNING',
+        deviceSerial: device,
+        commitSha,
+        datasetSha,
+      },
+      null,
+      2,
+    ),
+  );
 
   const configDoc = {
     clientId: AUTHORIZED_CLIENT,
@@ -997,8 +1299,28 @@ async function main() {
       `${preflight.code}\n${preflight.detail}\n`,
     );
     fs.writeFileSync(
-      path.join(outRoot, 'benchmark-report.md'),
+      path.join(outRoot, 'preflight-report.md'),
       `# Benchmark\n\nStatus: BENCHMARK_PROFILE_PREFLIGHT_FAILED\n\n${preflight.detail}\n`,
+    );
+    fs.writeFileSync(
+      path.join(outRoot, 'campaign-status.json'),
+      JSON.stringify(
+        {
+          campaignId,
+          campaignComplete: false,
+          status: 'BENCHMARK_PROFILE_PREFLIGHT_FAILED',
+          reason: preflight.detail,
+          sourceRunIds: [],
+          sourcePhotoCount: 0,
+          concurrency: args.scannerConcurrency,
+          deviceSerial: device,
+          commitSha,
+          fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+          datasetSha,
+        },
+        null,
+        2,
+      ),
     );
     console.error('BENCHMARK_PROFILE_PREFLIGHT_FAILED', preflight.detail);
     process.exit(3);
@@ -1010,13 +1332,12 @@ async function main() {
     (props.match(/\[ro.product.manufacturer\]: \[(.+?)\]/) || [])[1] || 'unknown';
   const release = (props.match(/\[ro.build.version.release\]: \[(.+?)\]/) || [])[1] || 'unknown';
   const sdk = (props.match(/\[ro.build.version.sdk\]: \[(.+?)\]/) || [])[1] || null;
-  const gitSha = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  const gitSha = commitSha;
   const dirty =
     spawnSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).stdout.trim() !== '';
-  const smokeFixtureBytes = selectFixtures(allRows, 3, { interleave: false }).reduce(
-    (a, r) => a + r.sizeBytes,
-    0,
-  );
+  const smokeFixtureBytes = selectFixtures(allRows, smokePhotoCount, {
+    interleave: smokePhotoCount > 3,
+  }).reduce((a, r) => a + r.sizeBytes, 0);
   const envDoc = {
     appVersion: null,
     appBuild: null,
@@ -1033,7 +1354,7 @@ async function main() {
     freeStorageBytesEnd: null,
     freeStorageUnavailableReason: 'filled_from_device_after_run',
     totalFixtureBytes: smokeFixtureBytes,
-    fixtureCount: 3,
+    fixtureCount: smokePhotoCount,
     exportPrepMaxWorkers: PHASE4_EXPORT_PREP_MAX_WORKERS,
     scannerConcurrency: args.scannerConcurrency,
     fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
@@ -1044,6 +1365,10 @@ async function main() {
     androidSdk: sdk ? Number(sdk) : null,
     package: PACKAGE,
     device,
+    deviceSerial: device,
+    campaignId,
+    datasetSha,
+    commitSha,
     gitSha,
     dirty,
     uploadHttpEnabled: false,
@@ -1058,7 +1383,9 @@ async function main() {
   fs.writeFileSync(path.join(outRoot, 'benchmark-environment.json'), JSON.stringify(envDoc, null, 2));
 
   // --- Smoke ---
-  const smokeFixtures = selectFixtures(allRows, 3, { interleave: false });
+  const smokeFixtures = selectFixtures(allRows, smokePhotoCount, {
+    interleave: smokePhotoCount > 3,
+  });
   for (const fx of smokeFixtures) {
     const fp = path.join(inputDir, fx.filename);
     if (!fs.existsSync(fp)) die('FIXTURE', `missing ${fx.filename}`);
@@ -1075,6 +1402,7 @@ async function main() {
     outRoot,
     runLabel: 'smoke',
     scannerConcurrency: args.scannerConcurrency,
+    sourceMetadata: { campaignId, datasetSha, commitSha, deviceSerial: device },
   });
 
   const smokeEventsPath = path.join(outRoot, 'smoke-events.jsonl');
@@ -1102,6 +1430,14 @@ async function main() {
   // Dual correctness from real device rows (never INCONCLUSIVE placeholders).
   const smokeDual = writeDualCorrectnessArtifacts(outRoot, 'smoke', smokeStatus, smokeEvents, {
     optional: true,
+    sourceMetadata: {
+      concurrency: args.scannerConcurrency,
+      deviceSerial: device,
+      commitSha,
+      fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+      datasetSha,
+      campaignId,
+    },
   });
 
   const terminals = smokeEvents.filter((e) => e.stage === 'photo_terminal');
@@ -1143,32 +1479,104 @@ async function main() {
     ].join('\n');
     fs.writeFileSync(path.join(outRoot, 'benchmark-errors.txt'), failBody + '\n');
     fs.writeFileSync(
-      path.join(outRoot, 'benchmark-report.md'),
+      path.join(outRoot, 'smoke-report.md'),
       `# Benchmark\n\nStatus: SMOKE_FAILED_INSTRUMENTATION_INVALID\n\n\`\`\`json\n${JSON.stringify(instr, null, 2)}\n\`\`\`\n\n${comparison}\n`,
     );
     console.error('SMOKE_FAILED_INSTRUMENTATION_INVALID', instr.failures);
     process.exit(4);
   }
 
+  if (
+    c2PreconditionRequired &&
+    Number(smokeStatus.extras?.maxObservedNativeScannerConcurrency) !== 2
+  ) {
+    const reason = 'NATIVE_CONCURRENCY_NOT_OBSERVED';
+    fs.writeFileSync(
+      path.join(outRoot, 'campaign-status.json'),
+      JSON.stringify(
+        {
+          campaignId,
+          campaignComplete: false,
+          status: 'INVALID_EXPERIMENT',
+          reason,
+          deviceSerial: device,
+          commitSha,
+          datasetSha,
+          sourceRunIds: [smokeStatus.benchmarkRunId],
+          sourcePhotoCount: smokeStatus.expectedCount,
+          concurrency: args.scannerConcurrency,
+          fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+        },
+        null,
+        2,
+      ),
+    );
+    fs.writeFileSync(
+      path.join(outRoot, 'benchmark-errors.txt'),
+      `INVALID_EXPERIMENT reason=${reason}\n`,
+    );
+    console.error(`INVALID_EXPERIMENT reason=${reason}`);
+    process.exit(5);
+  }
+
   fs.writeFileSync(path.join(outRoot, 'benchmark-errors.txt'), '');
   fs.writeFileSync(
-    path.join(outRoot, 'benchmark-report.md'),
+    path.join(outRoot, 'smoke-report.md'),
     `# Benchmark\n\nStatus: SMOKE_PASSED_INSTRUMENTATION_VALIDATED\n\nPROFILE RESOLUTION EVIDENCE\n\n\`\`\`json\n${JSON.stringify(configDoc, null, 2)}\n\`\`\`\n\n## Instrumentation\n\n\`\`\`json\n${JSON.stringify(instr.summary, null, 2)}\n\`\`\`\n\n${comparison}\n\nDecision: do not run 5×50 until explicitly requested after this gate.\n`,
   );
 
-  if (args.photos > 3 || args.runs > 1) {
+  if (fullCampaignRequested) {
     if (!args.confirmFullRun) {
+      fs.writeFileSync(
+        path.join(outRoot, 'campaign-status.json'),
+        JSON.stringify(
+          {
+            campaignId,
+            campaignComplete: false,
+            status: 'FULL_RUN_NOT_REQUESTED',
+            sourceRunIds: [smokeStatus.benchmarkRunId],
+            sourcePhotoCount: smokeStatus.expectedCount,
+            concurrency: args.scannerConcurrency,
+            deviceSerial: device,
+            commitSha,
+            fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+            datasetSha,
+          },
+          null,
+          2,
+        ),
+      );
       console.log('SMOKE_PASSED_INSTRUMENTATION_VALIDATED');
       console.log('FULL_RUN_NOT_REQUESTED (pass --confirm-full-run for 5×50)');
       process.exit(0);
     }
   } else {
+    const smokeSummary = {
+      campaignId,
+      campaignComplete: true,
+      status: 'SMOKE_COMPLETED',
+      sourceRunIds: [smokeStatus.benchmarkRunId],
+      sourcePhotoCount: smokeStatus.expectedCount,
+      concurrency: args.scannerConcurrency,
+      deviceSerial: device,
+      commitSha,
+      fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+      datasetSha,
+    };
+    fs.writeFileSync(
+      path.join(outRoot, 'campaign-status.json'),
+      JSON.stringify(smokeSummary, null, 2),
+    );
+    writeFinalReport(
+      outRoot,
+      smokeSummary,
+      `# Benchmark\n\nStatus: SMOKE_COMPLETED\n\ncampaignComplete: true\n\n\`\`\`json\n${JSON.stringify(smokeSummary, null, 2)}\n\`\`\`\n`,
+    );
     console.log('SMOKE_PASSED_INSTRUMENTATION_VALIDATED');
     process.exit(0);
   }
 
   // Full run — use requested --photos (50 default for short suite; 300 for scale).
-  const fullPhotoCount = args.photos > 3 ? args.photos : 50;
   const fullFixtures = selectFixtures(allRows, fullPhotoCount, {
     interleave: args.interleave && fullPhotoCount >= 50,
   });
@@ -1194,8 +1602,8 @@ async function main() {
     ),
   );
   fs.writeFileSync(
-    path.join(outRoot, 'fixture-sequence-bands.csv'),
-    buildSequenceBandsCsv(fullFixtures, 50),
+    path.join(outRoot, 'phase4-fixture-bands.csv'),
+    buildFixtureBandsCsv(fullFixtures, FIXTURE_BAND_SIZE),
   );
   console.log('FULL RUN');
   console.log({
@@ -1218,6 +1626,9 @@ async function main() {
     'run,coldWarm,status,durationMs,terminalCount,pendingJobs,errorCode,scannerConcurrency,exportPrepMaxWorkers',
   ];
   let lastDualSummary = smokeDual.summary;
+  const sourceStatuses = [];
+  const correctnessRuns = [];
+  const performanceBandRows = [];
   for (let i = 0; i < args.runs; i += 1) {
     const coldWarm = i === 0 ? 'cold' : 'warm';
     const t0 = Date.now();
@@ -1230,6 +1641,7 @@ async function main() {
       outRoot,
       runLabel: `run${i + 1}`,
       scannerConcurrency: args.scannerConcurrency,
+      sourceMetadata: { campaignId, datasetSha, commitSha, deviceSerial: device },
     });
     const dur = Date.now() - t0;
     runDurations.push(dur);
@@ -1238,8 +1650,28 @@ async function main() {
     );
     const eventsPath = path.join(outRoot, `run${i + 1}-events.jsonl`);
     const events = fs.existsSync(eventsPath) ? readJsonl(eventsPath) : [];
-    const dual = writeDualCorrectnessArtifacts(outRoot, `run${i + 1}`, st, events);
+    const dual = writeDualCorrectnessArtifacts(outRoot, `run${i + 1}`, st, events, {
+      sourceMetadata: {
+        concurrency: args.scannerConcurrency,
+        deviceSerial: device,
+        commitSha,
+        fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+        datasetSha,
+        campaignId,
+      },
+    });
     lastDualSummary = dual.summary;
+    sourceStatuses.push(st);
+    correctnessRuns.push({ run: i + 1, rows: dual.rows });
+    performanceBandRows.push(
+      ...buildPerformanceBandRows(
+        i + 1,
+        events,
+        dual.rows,
+        args.scannerConcurrency,
+        FIXTURE_BAND_SIZE,
+      ),
+    );
     if (!dual.absoluteGate.pass && fullPhotoCount >= 50) {
       fs.writeFileSync(
         path.join(outRoot, `run${i + 1}-CORRECTNESS_ABSOLUTE_GATE_FAILED.txt`),
@@ -1257,6 +1689,27 @@ async function main() {
     if (i < args.runs - 1) sleep(args.cooldownMs);
   }
   fs.writeFileSync(path.join(outRoot, 'benchmark-runs.csv'), csvRows.join('\n'));
+  validateAggregateSources(sourceStatuses, {
+    photoCount: fullPhotoCount,
+    scannerConcurrency: args.scannerConcurrency,
+    campaignId,
+    datasetSha,
+    commitSha,
+    deviceSerial: device,
+    fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+  });
+  fs.writeFileSync(
+    path.join(outRoot, 'phase4-performance-bands.csv'),
+    performanceBandsToCsv(performanceBandRows),
+  );
+  const nonDeterminism = evaluateNonDeterminism(correctnessRuns);
+  fs.writeFileSync(
+    path.join(outRoot, 'non-determinism-gate.json'),
+    JSON.stringify(nonDeterminism, null, 2),
+  );
+  const aggregateDualSummary = summarizeDualCorrectness(
+    correctnessRuns.flatMap((run) => run.rows),
+  );
 
   if (args.compareCorrectness) {
     if (!lastDualSummary) {
@@ -1278,19 +1731,50 @@ async function main() {
   }
 
   const summary = {
+    campaignId,
+    campaignComplete: true,
+    status: nonDeterminism.pass ? 'BENCHMARK_COMPLETED' : 'INVALID_EXPERIMENT',
+    reason: nonDeterminism.pass ? null : 'NON_DETERMINISM',
+    sourceRunIds: sourceStatuses.map((status) => status.benchmarkRunId),
+    sourcePhotoCount: sourceStatuses.reduce(
+      (total, status) => total + Number(status.expectedCount || 0),
+      0,
+    ),
+    concurrency: args.scannerConcurrency,
+    deviceSerial: device,
+    commitSha,
+    fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+    datasetSha,
     min: Math.min(...runDurations),
     max: Math.max(...runDurations),
     median: median(runDurations),
     exportPrepMaxWorkers: PHASE4_EXPORT_PREP_MAX_WORKERS,
     scannerConcurrency: args.scannerConcurrency,
-    dualCorrectness: lastDualSummary,
+    dualCorrectness: aggregateDualSummary,
+    nonDeterminism,
+    scale300:
+      fullPhotoCount === 300
+        ? {
+            status: 'COMPLETED',
+            sourceRunIds: sourceStatuses.map((status) => status.benchmarkRunId),
+            sourcePhotoCount: sourceStatuses.reduce(
+              (total, status) => total + Number(status.expectedCount || 0),
+              0,
+            ),
+          }
+        : { status: 'MISSING' },
     note: 'Do not treat 5 totals as p95; per-photo percentiles live in events jsonl',
   };
   fs.writeFileSync(
-    path.join(outRoot, 'benchmark-report.md'),
-    `# Benchmark\n\nStatus: BENCHMARK_COMPLETED\n\n## Durations (ms)\n\n${JSON.stringify(summary, null, 2)}\n\n## PROFILE RESOLUTION EVIDENCE\n\n\`\`\`json\n${JSON.stringify(configDoc, null, 2)}\n\`\`\`\n\nNo performance improvement is claimed in this phase.\n`,
+    path.join(outRoot, 'campaign-status.json'),
+    JSON.stringify(summary, null, 2),
   );
-  console.log('BENCHMARK_COMPLETED', summary);
+  writeFinalReport(
+    outRoot,
+    summary,
+    `# Benchmark\n\nStatus: ${summary.status}\n\ncampaignComplete: true\n\n## Durations (ms)\n\n${JSON.stringify(summary, null, 2)}\n\n## PROFILE RESOLUTION EVIDENCE\n\n\`\`\`json\n${JSON.stringify(configDoc, null, 2)}\n\`\`\`\n\nNo performance improvement is claimed in this phase.\n`,
+  );
+  console.log(summary.status, summary);
 }
 
 async function runOne({
@@ -1302,7 +1786,9 @@ async function runOne({
   outRoot,
   runLabel,
   scannerConcurrency = 1,
+  sourceMetadata,
 }) {
+  waitForDeviceIdle(device, timeoutMs);
   const runId = crypto.randomUUID();
   const relFixtures = `benchmark/${runId}/fixtures`;
   runAs(
@@ -1347,6 +1833,7 @@ async function runOne({
     // exportPrepMaxWorkers is fixed at 2 on device (feed capacity); only scannerConcurrency varies.
     fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
     fixtureOrderSeed: BENCHMARK_FIXTURE_ORDER_SEED,
+    ...sourceMetadata,
   };
   const cmdLocal = path.join(outRoot, `${runLabel}-command.json`);
   fs.writeFileSync(cmdLocal, JSON.stringify(command, null, 2));

@@ -273,5 +273,7 @@ describe('phase4 scanner / prep concurrency', () => {
     expect(strategy.getMaxConcurrency()).toBe(1);
     strategy.setMaxConcurrency(2);
     expect(strategy.getMaxConcurrency()).toBe(2);
+    expect(() => strategy.resetConcurrencyStats()).not.toThrow();
+    expect(strategy.getMaxObservedConcurrency()).toBe(0);
   });
 });

@@ -1,5 +1,6 @@
 package com.dinamic.capturefgs
 
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -140,13 +141,29 @@ class CaptureForegroundModule : Module() {
       )
     }
 
-    AsyncFunction("detectBarcodes") { uri: String, formatsCsv: String ->
+    /**
+     * Clear peak/active counters for a new benchmark arm. Does not change configured concurrency.
+     * Must not be called while scans are in flight (active must be 0).
+     */
+    AsyncFunction("resetBarcodeScanConcurrencyStats") {
+      LocalBarcodeDetector.resetObservedConcurrencyStats()
+      mapOf(
+        "configured" to LocalBarcodeDetector.getMaxConcurrentScans(),
+        "active" to LocalBarcodeDetector.getActiveConcurrentScans(),
+        "maxObserved" to LocalBarcodeDetector.getMaxObservedConcurrentScans(),
+      )
+    }
+
+    /**
+     * Suspend AsyncFunction (not runBlocking): Expo's modulesQueue is a single
+     * HandlerThread; runBlocking held that thread for the whole ML Kit multipass
+     * and prevented overlapping detectBarcodes → maxObservedNative stayed 1.
+     * Suspend + withContext(IO) inside detect frees the queue so C=2 can overlap.
+     */
+    AsyncFunction("detectBarcodes") Coroutine { uri: String, formatsCsv: String ->
       val context = appContext.reactContext
         ?: throw Exception("React context unavailable; cannot scan barcodes")
-      // Suspendable ML Kit path; bridges as a single awaited AsyncFunction.
-      kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-        LocalBarcodeDetector.detect(context, uri, formatsCsv)
-      }
+      LocalBarcodeDetector.detect(context, uri, formatsCsv)
     }
 
     /**

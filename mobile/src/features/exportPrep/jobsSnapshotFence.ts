@@ -76,14 +76,16 @@ export function jobsSnapshotStillValid(
 
 /**
  * Fail-closed check before packaging reuses ensure's jobsSnapshot.
- * When live jobs are unavailable, require zero active workers + matching token.
+ * When live jobs are unavailable, require zero active workers + matching token
+ * + matching session jobs revision (mutation fence).
  *
- * Fence proof (no extra query required when liveJobs is supplied):
+ * Fence proof (no extra list query required when revision is supplied):
  * 1. ensure attaches snapshot only when canAttachJobsSnapshot (0 mutations, 0 workers).
  * 2. Token is FNV over job identities (status/uri/size/sha/timestamps).
- * 3. Before consume, assertJobsSnapshotConsumable re-hashes liveJobs and rejects
- *    any identity drift (status/sha/uri change) — so a mutation between snapshot
- *    and consume cannot silently reuse a stale list.
+ * 3. jobsSnapshotRevision is captured at attach; any create/requeue/invalidate
+ *    bumps ExportPrepQueue session revision → consume rejects stale snapshot.
+ * 4. Optional liveJobs re-hash remains available for tests / explicit revalidate.
+ * 5. sessionExportLocks serialize exportSession per session (no concurrent exporters).
  */
 export function assertJobsSnapshotConsumable(input: {
   readonly snapshot: readonly ExportPrepJobRow[];
@@ -92,6 +94,8 @@ export function assertJobsSnapshotConsumable(input: {
   readonly snapshotSessionId: string | undefined;
   readonly activeWorkersNow: number;
   readonly activeWorkersAtSnapshot: number | undefined;
+  readonly snapshotRevision?: number | undefined;
+  readonly liveRevision?: number | undefined;
   readonly liveJobs?: readonly ExportPrepJobRow[] | null;
 }): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
   if (!input.token) {
@@ -108,6 +112,21 @@ export function assertJobsSnapshotConsumable(input: {
   }
   if (buildJobsSnapshotToken(input.snapshot) !== input.token) {
     return { ok: false, reason: 'token_mismatch_snapshot' };
+  }
+  if (
+    typeof input.snapshotRevision === 'number' &&
+    typeof input.liveRevision === 'number' &&
+    input.snapshotRevision !== input.liveRevision
+  ) {
+    return { ok: false, reason: 'revision_drift' };
+  }
+  if (
+    typeof input.snapshotRevision === 'number' &&
+    input.liveRevision === undefined &&
+    !input.liveJobs
+  ) {
+    // Fail closed: revision attached but live revision not provided and no live list.
+    return { ok: false, reason: 'revision_unchecked' };
   }
   if (input.liveJobs) {
     if (!jobsSnapshotStillValid(input.snapshot, input.token, input.liveJobs)) {

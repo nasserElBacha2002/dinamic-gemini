@@ -222,6 +222,8 @@ export class ExportPrepQueue {
   /** Sessions blocked from claiming/processing (cancel/drain/purge). */
   private readonly cancelledSessions = new Set<string>();
   private readonly activeSessionWorkers = new Map<string, number>();
+  /** Monotonic per-session jobs mutation counter for snapshot fencing. */
+  private readonly sessionJobsRevision = new Map<string, number>();
   private stageObserver: ExportPrepStageObserver | null = null;
   readonly metrics = {
     jobsCompleted: 0,
@@ -264,6 +266,17 @@ export class ExportPrepQueue {
   /** In-flight processJob count for a session (snapshot fencing). */
   getActiveSessionWorkers(sessionId: string): number {
     return this.activeSessionWorkers.get(sessionId) ?? 0;
+  }
+
+  /** Current jobs mutation revision (bumped on create/requeue/invalidate). */
+  getSessionJobsRevision(sessionId: string): number {
+    return this.sessionJobsRevision.get(sessionId) ?? 0;
+  }
+
+  private bumpSessionJobsRevision(sessionId: string): number {
+    const next = (this.sessionJobsRevision.get(sessionId) ?? 0) + 1;
+    this.sessionJobsRevision.set(sessionId, next);
+    return next;
   }
 
   /** Debug/benchmark only — null clears. No effect on production behavior when unset. */
@@ -435,6 +448,7 @@ export class ExportPrepQueue {
             'READY inválido tras validación de staging',
           );
           invalidatedReadyJobs += 1;
+          this.bumpSessionJobsRevision(sessionId);
           // fall through to requeue after invalidation
         } else if (existing?.status === 'FAILED_TERMINAL') {
           existingJobs += 1;
@@ -494,8 +508,10 @@ export class ExportPrepQueue {
         });
         if (result.created) {
           createdJobs += 1;
+          this.bumpSessionJobsRevision(sessionId);
         } else if (result.requeued) {
           requeuedJobs += 1;
+          this.bumpSessionJobsRevision(sessionId);
         } else {
           existingJobs += 1;
         }
@@ -546,6 +562,7 @@ export class ExportPrepQueue {
             jobsSnapshotToken: buildJobsSnapshotToken(snapshotJobs),
             jobsSnapshotSessionId: sessionId,
             activeWorkersAtSnapshot: activeWorkersForSession,
+            jobsSnapshotRevision: this.getSessionJobsRevision(sessionId),
           }
         : {}),
     };
@@ -626,6 +643,7 @@ export class ExportPrepQueue {
         'EXPORT_PREP_STAGING_MISSING',
         'Archivo staged ausente tras reopen',
       );
+      this.bumpSessionJobsRevision(sessionId);
     }
 
     const result = await this.deps.prepRepo.enqueueIdempotent({

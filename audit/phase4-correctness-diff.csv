@@ -1,3 +1,5 @@
-scope,status,note
-C1_vs_C2_50,INCOMPLETE,C1 only 1/5 runs; C2 5/5 complete
-C1_vs_C2_300,INCOMPLETE,300 A/B not completed
+label,scannerConcurrency,totalPhotos,detectionExactAccuracy,domainExactAccuracy,domainExact,correctRejections,falseNegatives,falsePositives,ambiguousExpected,ambiguousCorrect,pipelineErrors
+50_c1_run5,1,50,1,0.96,48,5,2,0,0,0,0
+50_c2_run5,2,50,1,0.86,43,5,2,0,5,0,0
+300_c1_run2,1,300,1,0.8766666666666667,263,30,7,0,30,0,0
+300_c2_run1,2,300,1,0.8766666666666667,263,30,7,0,30,0,0

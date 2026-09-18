@@ -241,18 +241,8 @@ function extractDualRowsFromStatus(status) {
   return Array.isArray(rows) ? rows : [];
 }
 
-function buildSequenceBandsCsv(ordered, bandSize = 50) {
-  const header = [
-    'band',
-    'start',
-    'end',
-    'position',
-    'item',
-    'multi_true',
-    'multi_mixed',
-    'multi_false',
-    'other',
-  ].join(',');
+function buildFixtureBandsCsv(ordered, bandSize = 50) {
+  const header = ['band', 'position', 'item', 'multi_true', 'multi_mixed', 'multi_false'].join(',');
   const n = ordered.length;
   const numBands = n === 0 ? 0 : Math.ceil(n / bandSize);
   const lines = [];
@@ -264,17 +254,118 @@ function buildSequenceBandsCsv(ordered, bandSize = 50) {
     lines.push(
       [
         b + 1,
-        start + 1,
-        end,
         count('position'),
         count('item'),
         count('multi_true'),
         count('multi_mixed'),
         count('multi_false'),
-        count('other'),
       ].join(','),
     );
   }
+  return [header, ...lines].join('\n') + '\n';
+}
+
+function percentileNearestRank(values, percentile) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.max(1, Math.ceil((percentile / 100) * sorted.length));
+  return sorted[rank - 1];
+}
+
+function buildPerformanceBandRows(run, events, dualRows, concurrency, bandSize = 50) {
+  const terminalBySequence = new Map(
+    (events || [])
+      .filter((e) => e && e.stage === 'photo_terminal' && Number.isFinite(Number(e.sequence)))
+      .map((e) => [Number(e.sequence), e]),
+  );
+  const byBand = new Map();
+  for (const row of dualRows || []) {
+    const sequence = Number(row.benchmarkSequence ?? row.benchmark_sequence);
+    if (!Number.isFinite(sequence) || sequence < 1) continue;
+    const band = Math.floor((sequence - 1) / bandSize) + 1;
+    const cur = byBand.get(band) || {
+      total: 0,
+      scanner: [],
+      wall: [],
+      detectionExact: 0,
+      domainExact: 0,
+      falsePositives: 0,
+      falseNegatives: 0,
+      pipelineErrors: 0,
+    };
+    const event = terminalBySequence.get(sequence);
+    const scannerMs = Number(
+      row.scannerProcessingMs ?? row.scanner_processing_ms ?? event?.extras?.scannerProcessingMs,
+    );
+    const wallMs = Number(event?.extras?.photoPipelineWallMs ?? event?.durationMs);
+    if (Number.isFinite(scannerMs)) cur.scanner.push(scannerMs);
+    if (Number.isFinite(wallMs)) cur.wall.push(wallMs);
+    cur.total += 1;
+    if ((row.detectionResult ?? row.detection_result) === 'DETECTION_EXACT_MATCH') {
+      cur.detectionExact += 1;
+    }
+    const domainResult = row.domainResult ?? row.domain_result;
+    if (
+      domainResult === 'DOMAIN_EXACT_MATCH' ||
+      domainResult === 'AMBIGUOUS_CORRECT' ||
+      domainResult === 'CORRECT_REJECTION'
+    ) {
+      cur.domainExact += 1;
+    }
+    if (domainResult === 'FALSE_POSITIVE') cur.falsePositives += 1;
+    if (domainResult === 'FALSE_NEGATIVE') cur.falseNegatives += 1;
+    if (row.pipelineError ?? row.pipeline_error) cur.pipelineErrors += 1;
+    byBand.set(band, cur);
+  }
+  return [...byBand.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([band, row]) => ({
+      concurrency,
+      run,
+      band,
+      scannerP50: percentileNearestRank(row.scanner, 50),
+      scannerP95: percentileNearestRank(row.scanner, 95),
+      msPerPhoto: row.wall.length
+        ? row.wall.reduce((sum, value) => sum + value, 0) / row.wall.length
+        : null,
+      detectionAccuracy: row.total ? row.detectionExact / row.total : null,
+      domainAccuracy: row.total ? row.domainExact / row.total : null,
+      falsePositives: row.falsePositives,
+      falseNegatives: row.falseNegatives,
+      pipelineErrors: row.pipelineErrors,
+    }));
+}
+
+function performanceBandsToCsv(rows) {
+  const header = [
+    'concurrency',
+    'run',
+    'band',
+    'scanner_p50',
+    'scanner_p95',
+    'ms_per_photo',
+    'detection_accuracy',
+    'domain_accuracy',
+    'false_positives',
+    'false_negatives',
+    'pipeline_errors',
+  ].join(',');
+  const fmt = (value) => (typeof value === 'number' ? Number(value.toFixed(6)) : '');
+  const lines = (rows || []).map((row) =>
+    [
+      row.concurrency,
+      row.run,
+      row.band,
+      fmt(row.scannerP50),
+      fmt(row.scannerP95),
+      fmt(row.msPerPhoto),
+      fmt(row.detectionAccuracy),
+      fmt(row.domainAccuracy),
+      row.falsePositives,
+      row.falseNegatives,
+      row.pipelineErrors,
+    ].join(','),
+  );
   return [header, ...lines].join('\n') + '\n';
 }
 
@@ -286,5 +377,7 @@ module.exports = {
   dualCorrectnessToCsv,
   extractDualRowsFromEvents,
   extractDualRowsFromStatus,
-  buildSequenceBandsCsv,
+  buildFixtureBandsCsv,
+  buildPerformanceBandRows,
+  performanceBandsToCsv,
 };

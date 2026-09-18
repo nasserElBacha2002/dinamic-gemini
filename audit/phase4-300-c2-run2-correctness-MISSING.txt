@@ -1,0 +1,2 @@
+run2 incomplete: coordinator SIGTERM/SIGKILL during fixture push (EXIT 143 then 137).
+Evidence retained: run1 COMPLETED in benchmark/2026-09-18T17-31-53-749Z

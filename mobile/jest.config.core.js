@@ -69,6 +69,7 @@ module.exports = {
     '<rootDir>/tests/benchmarkCorrectness.test.ts',
     '<rootDir>/tests/benchmarkDualCorrectness.test.ts',
     '<rootDir>/tests/jobsSnapshotFence.test.ts',
+    '<rootDir>/tests/localCodeScanStrategy.test.ts',
     '<rootDir>/tests/phase3bLightStrongIntegrity.test.ts',
     '<rootDir>/tests/phase4ScannerConcurrency.test.ts',
   ],

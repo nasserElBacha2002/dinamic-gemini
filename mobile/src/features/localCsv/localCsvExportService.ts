@@ -129,11 +129,14 @@ export interface LocalCsvExportServiceDeps {
             readonly jobsSnapshotToken?: string;
             readonly jobsSnapshotSessionId?: string;
             readonly activeWorkersAtSnapshot?: number;
+            readonly jobsSnapshotRevision?: number;
           }
       >)
     | null;
   /** Active export-prep workers for a session (Phase 4 snapshot fence). */
   readonly getExportPrepActiveWorkers?: ((sessionId: string) => number) | null;
+  /** Session jobs mutation revision (Phase 4 snapshot fence). */
+  readonly getExportPrepSessionJobsRevision?: ((sessionId: string) => number) | null;
   /** Soft limit for sum of staged bytes before ZIP build. */
   readonly maxExportUncompressedBytes?: number;
   readonly onZipProgress?: (done: number, total: number) => void;
@@ -503,6 +506,7 @@ export class LocalCsvExportService {
       let ensureJobsSnapshotToken: string | undefined;
       let ensureJobsSnapshotSessionId: string | undefined;
       let ensureActiveWorkersAtSnapshot: number | undefined;
+      let ensureJobsSnapshotRevision: number | undefined;
       let jobsSnapshotFenced = false;
 
       if (this.deps.ensureExportPrepJobs) {
@@ -522,6 +526,7 @@ export class LocalCsvExportService {
             ensureJobsSnapshotToken = ensureResult.jobsSnapshotToken;
             ensureJobsSnapshotSessionId = ensureResult.jobsSnapshotSessionId;
             ensureActiveWorkersAtSnapshot = ensureResult.activeWorkersAtSnapshot;
+            ensureJobsSnapshotRevision = ensureResult.jobsSnapshotRevision;
           }
           const ensureExtras =
             ensureResult && typeof ensureResult === 'object'
@@ -603,6 +608,7 @@ export class LocalCsvExportService {
       let jobsListReusedFromEnsure = false;
       try {
         const activeWorkersNow = this.deps.getExportPrepActiveWorkers?.(sessionId) ?? 0;
+        const liveRevision = this.deps.getExportPrepSessionJobsRevision?.(sessionId);
         const fence =
           ensureJobsSnapshot && ensureJobsSnapshot.length > 0
             ? assertJobsSnapshotConsumable({
@@ -612,6 +618,8 @@ export class LocalCsvExportService {
                 snapshotSessionId: ensureJobsSnapshotSessionId,
                 activeWorkersNow,
                 activeWorkersAtSnapshot: ensureActiveWorkersAtSnapshot,
+                snapshotRevision: ensureJobsSnapshotRevision,
+                liveRevision,
               })
             : { ok: false as const, reason: 'no_snapshot' };
         jobsSnapshotFenced = fence.ok;

@@ -1,23 +1,41 @@
 # Phase 4 — Performance
 
-## Experiment controls
-- exportPrepMaxWorkers **fixed at 2** (feed). Scans only run inside `ExportPrepQueue.processJob`; workers=1 cannot observe scanner C=2.
-- Measured variable: scannerConcurrency 1 vs 2.
-- Order: `andes_interleaved_v2` seed `0xa4de5302`.
+Generated: 2026-09-18T18:32:35Z
 
-## Completed data
-### 5×50 C=2 wall clocks (ms)
-See `phase4-50-c2-summary.csv` (median of five COMPLETED runs).
+## Controls
+- workers (`exportPrepMaxWorkers`) = **2** constant
+- only `scannerConcurrency` varies
+- Why workers ≠ 1: barcode scans execute inside `processJob`; workers=2 keeps feed capacity so C=2 can saturate the scanner pool. Holding workers fixed isolates the A/B variable.
 
-### 5×50 C=1
-Only **1/5** runs completed before overlapping pipelines interrupted the campaign.
+## Wall-clock suite totals (Mac coordinator `benchmark-runs.csv`)
 
-### 300
-Not completed to a comparable C1 vs C2 pair in this iteration.
+| Suite | C | runs | median ms | min | max | ms/photo |
+|-------|---|------|-----------|-----|-----|----------|
+| 50 | 1 | 5 | 43132 | 42079 | 45412 | 862.6 |
+| 50 | 2 | 5 | 43087 | 42489 | 57605 | 861.7 |
+| 300 | 1 | 2 | 269810 | 269212 | 270408 | 899.4 |
+| 300 | 2 | 1* | n/a (no runs.csv; env-span ≈200445 ms on-device) | — | — | — |
+
+\* Second 300 C=2 run incomplete (coordinator SIGTERM/SIGKILL during push). Do not treat 300 C=2 wall as conclusive vs C=1.
+
+## Per-photo scanner_processing_ms (dual correctness rows)
+
+| Suite | C | median | p95 | n |
+|-------|---|--------|-----|---|
+| 50 | 1 | 325 | 457 | 250 |
+| 50 | 2 | 294 | 653 | 250 |
+| 300 | 1 | 320 | 546 | 600 |
+| 300 | 2 | 303 | 599 | 300 |
+
+C=2 shows a small median scanner gain on 50 (~9.5%) but **worse p95** (457→653). Suite wall-clock median is flat (43132 vs 43087).
 
 ## Concurrency observation
-- Smoke 12 C=2: `maxObservedScannerConcurrency=2` (JS), `maxObservedNativeScannerConcurrency=1`.
-- 5×50 C=2: `maxObservedScannerConcurrency=1`, native=1 → **CONCURRENCY_NOT_OBSERVED** for native ML Kit parallelism (Expo AsyncFunction `detectBarcodes` appears to serialize; JS slots can still peak at 2 while waiting).
 
-## Verdict on performance gate
-**INCONCLUSIVE** — missing balanced C1 medians and 300 confirmation; native C=2 not observed.
+| Suite | configured C | maxObservedScannerConcurrency (JS) | maxObservedNativeScannerConcurrency |
+|-------|--------------|--------------------------------------|-------------------------------------|
+| 50 C=1 | 1 | 1 | 1 |
+| 50 C=2 | 2 | **2** | **1** |
+| 300 C=1 | 1 | 1 | 1 |
+| 300 C=2 | 2 | **2** | **1** |
+
+JS pool reaches 2; **native ML Kit never observes concurrency > 1**.

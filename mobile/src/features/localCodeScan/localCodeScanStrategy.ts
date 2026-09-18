@@ -160,6 +160,16 @@ export class LocalCodeScanStrategy {
     return this.maxObservedConcurrency;
   }
 
+  /** Phase 4: clear per-run JS concurrency evidence only while idle. */
+  resetConcurrencyStats(): void {
+    if (this.active !== 0) {
+      throw Object.assign(new Error('LOCAL_SCAN_CONCURRENCY_RESET_WHILE_ACTIVE'), {
+        code: 'LOCAL_SCAN_CONCURRENCY_RESET_WHILE_ACTIVE',
+      });
+    }
+    this.maxObservedConcurrency = 0;
+  }
+
   getRawDetectedPayloads(photoId: string): readonly string[] | null {
     return this.rawDetectedByPhoto.get(photoId) ?? null;
   }
@@ -344,6 +354,41 @@ export class LocalCodeScanStrategy {
               normalizedPayload: profileAware.supplierItem.normalizedPayload,
             },
           ],
+        };
+      }
+      // Keep-valid supplier POSITION when consolidator treats ASP + false PLAIN as
+      // MULTIPLE_DISTINCT_CODES (Andes ASP is not recognized as Dinamic position).
+      // Do not enter when a valid supplier ITEM is also present (multi_true path).
+      if (
+        profileAware.supplierPosition?.status === 'VALID' &&
+        profileAware.supplierPosition.rawPayload &&
+        profileAware.supplierItem?.status !== 'VALID' &&
+        (consolidated.status === 'MULTIPLE_DISTINCT_CODES' ||
+          (consolidated.productResults.length === 0 &&
+            candidates.length > 1 &&
+            consolidated.status !== 'RESOLVED'))
+      ) {
+        const posRaw = profileAware.supplierPosition.rawPayload;
+        const leftovers = candidates.filter((c) => c.rawValue !== posRaw);
+        const rest = consolidateCodeDetections(leftovers);
+        const acceptedRaws = new Set(
+          rest.productResults.map((p) => p.rawPayload).filter(Boolean),
+        );
+        const falseRejections: ProductLabelRejection[] = leftovers
+          .filter((c) => !acceptedRaws.has(c.rawValue))
+          .map((c) => ({
+            labelId: null,
+            validationStatus: 'NON_ANDES_OR_INVALID',
+            reason: 'rejected_alongside_valid_supplier_position',
+            ...(typeof c.detectionIndex === 'number'
+              ? { detectionIndex: c.detectionIndex }
+              : {}),
+            rawValuePreview: c.rawValue.slice(0, 48),
+          }));
+        consolidated = {
+          ...rest,
+          rejections: [...rest.rejections, ...falseRejections],
+          warnings: [...new Set([...rest.warnings, 'POSITION_LABEL_DETECTED'])],
         };
       }
       const parsedError =
