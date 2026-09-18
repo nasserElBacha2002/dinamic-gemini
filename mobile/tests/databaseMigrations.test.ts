@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -254,5 +254,12 @@ describe('SQLite migrations', () => {
     expect(v38?.sql).toContain('CREATE TABLE IF NOT EXISTS session_purge_tasks');
     expect(v38?.sql).toContain('PURGE_PENDING');
     expect(v38?.sql).toContain('idx_local_csv_exports_zip_uri');
+  });
+
+  it('adds v39 session_photo index for draft lookup', () => {
+    const v39 = MIGRATIONS.find((m) => m.version === 39);
+    expect(v39?.name).toBe('local_detection_drafts_session_photo_index');
+    expect(v39?.sql).toContain('CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_session_photo');
+    expect(v39?.sql).not.toMatch(/CREATE\s+UNIQUE\s+INDEX/i);
   });
 });

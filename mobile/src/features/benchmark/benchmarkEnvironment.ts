@@ -22,8 +22,17 @@ export type BenchmarkEnvironmentSnapshot = {
   readonly freeStorageUnavailableReason: string | null;
   readonly totalFixtureBytes: number | null;
   readonly fixtureCount: number | null;
+  /**
+   * ExportPrepQueue worker slots. Phase 4 A/B keeps this at 1 while varying
+   * scannerConcurrency independently — do not couple the two knobs.
+   */
   readonly exportPrepMaxWorkers: number | null;
+  /** Local/native barcode scan concurrency (Phase 4 A/B variable). */
   readonly scannerConcurrency: number | null;
+  /** Peak JS LocalCodeScanStrategy in-flight scans observed during the run. */
+  readonly maxObservedScannerConcurrency: number | null;
+  /** Peak native ML Kit in-flight scans when getBarcodeScanConcurrencyStats exists. */
+  readonly maxObservedNativeScannerConcurrency: number | null;
   readonly deviceManufacturer: string | null;
   readonly deviceModel: string | null;
   readonly androidRelease: string | null;
@@ -62,6 +71,8 @@ export async function captureBenchmarkEnvironmentStart(input: {
   readonly fixtureCount: number;
   readonly exportPrepMaxWorkers: number;
   readonly scannerConcurrency: number;
+  readonly maxObservedScannerConcurrency?: number | null;
+  readonly maxObservedNativeScannerConcurrency?: number | null;
 }): Promise<BenchmarkEnvironmentSnapshot> {
   const free = await freeStorageBytes();
   const constants = Platform.constants as
@@ -92,6 +103,8 @@ export async function captureBenchmarkEnvironmentStart(input: {
     fixtureCount: input.fixtureCount,
     exportPrepMaxWorkers: input.exportPrepMaxWorkers,
     scannerConcurrency: input.scannerConcurrency,
+    maxObservedScannerConcurrency: input.maxObservedScannerConcurrency ?? null,
+    maxObservedNativeScannerConcurrency: input.maxObservedNativeScannerConcurrency ?? null,
     deviceManufacturer: constants?.Manufacturer ?? constants?.Brand ?? null,
     deviceModel: constants?.Model ?? null,
     androidRelease: Platform.OS === 'android' ? String(constants?.Release ?? Platform.Version) : null,
@@ -104,6 +117,10 @@ export async function captureBenchmarkEnvironmentStart(input: {
 
 export async function finalizeBenchmarkEnvironment(
   start: BenchmarkEnvironmentSnapshot,
+  overrides?: {
+    readonly maxObservedScannerConcurrency?: number | null;
+    readonly maxObservedNativeScannerConcurrency?: number | null;
+  },
 ): Promise<BenchmarkEnvironmentSnapshot> {
   const free = await freeStorageBytes();
   return {
@@ -113,5 +130,10 @@ export async function finalizeBenchmarkEnvironment(
     // Battery/thermal still unavailable without native modules.
     batteryLevelEnd: null,
     thermalStatusEnd: null,
+    maxObservedScannerConcurrency:
+      overrides?.maxObservedScannerConcurrency ?? start.maxObservedScannerConcurrency,
+    maxObservedNativeScannerConcurrency:
+      overrides?.maxObservedNativeScannerConcurrency ??
+      start.maxObservedNativeScannerConcurrency,
   };
 }

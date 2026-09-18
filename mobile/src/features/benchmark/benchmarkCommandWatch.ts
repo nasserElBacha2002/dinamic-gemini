@@ -65,6 +65,7 @@ export function startBenchmarkCommandWatch(
         profileResolver: services.offlineRecognition.resolver,
         sessionPurge: hooks.sessionPurge,
         documentDirectory: doc,
+        localCodeScan: services.localCodeScan ?? null,
       });
       const status = await runner.run(command);
       await writeWatchAck(doc, status);

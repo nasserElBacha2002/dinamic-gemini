@@ -77,6 +77,74 @@ jest.mock('../src/core/payloadFingerprint', () => {
   };
 });
 
+jest.mock('../src/features/exportPrep/stagedSha256', () => ({
+  hashStagedFileSha256Hex: jest.fn(async () =>
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  ),
+  hashStagedFileSha256Detailed: jest.fn(async () => ({
+    sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    bytesHashed: 4,
+    hashMode: 'native_file' as const,
+    hashSource: 'computed' as const,
+    durationMs: 1,
+  })),
+  classifyStagedDigestError: jest.fn(() => ({ failure: 'STAGING_DIGEST_FAILED' })),
+}));
+
+jest.mock('../src/features/exportPrep/digestAbsoluteFile', () => ({
+  assertNativeDigestCapability: jest.fn(),
+}));
+
+jest.mock('../src/features/exportPrep/streamingZipWriter', () => {
+  const state = { lastEntryCount: 3 };
+  return {
+    __zipMockState: state,
+    writeStoreZipAtomic: jest.fn(async (input: {
+      entries: readonly { getBytes?: () => Promise<Uint8Array> }[];
+    }) => {
+      for (const entry of input.entries ?? []) {
+        if (typeof entry.getBytes === 'function') {
+          await entry.getBytes();
+        }
+      }
+      state.lastEntryCount = input.entries?.length ?? 3;
+      return {
+        byteLength: 10,
+        sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        entryCount: state.lastEntryCount,
+        method: 'STORE',
+        peakOpenEntries: 1,
+        physicalPath: '/tmp/mock-export.zip',
+      };
+    }),
+    buildStoreZipBytes: jest.fn(),
+  };
+});
+
+jest.mock('../src/features/exportPrep/boundedOnDiskZipValidator', () => ({
+  validateOnDiskStoreZip: jest.fn(async () => {
+    const zipMock = jest.requireMock('../src/features/exportPrep/streamingZipWriter') as {
+      __zipMockState: { lastEntryCount: number };
+    };
+    const entryCount = zipMock.__zipMockState?.lastEntryCount ?? 3;
+    return {
+      ok: true,
+      entryCount,
+      entries: [],
+      zipSizeBytes: 10,
+      zipSha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      manifest: {
+        package_kind: 'DINAMIC_LOCAL_AISLE_EXPORT',
+        package_version: 2,
+        included_photo_count: Math.max(0, entryCount - 2),
+        expected_photo_count: Math.max(0, entryCount - 2),
+      },
+      rangeReads: 2,
+      maxBufferBytes: 64,
+    };
+  }),
+}));
+
 const SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const now = '2026-01-01T00:00:00.000Z';
 

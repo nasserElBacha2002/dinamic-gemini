@@ -353,6 +353,15 @@ describe('benchmark harness corrections', () => {
   test('zip metric stage names are distinct from total_export', () => {
     const stages = [
       'export_resolution',
+      'export_resolution_queries',
+      'export_resolution_ensure_jobs',
+      'export_resolution_staging_validation',
+      'export_resolution_hash_validation',
+      'export_resolution_scan_catchup',
+      'export_resolution_profile',
+      'export_resolution_freeze_checks',
+      'export_resolution_entry_build',
+      'export_resolution_other',
       'csv_build',
       'csv_write',
       'manifest_build',
@@ -365,6 +374,16 @@ describe('benchmark harness corrections', () => {
     ];
     expect(new Set(stages).size).toBe(stages.length);
     expect(stages).not.toContain('zip_close');
+  });
+
+  test('phase4 A/B keeps exportPrepMaxWorkers constant while scannerConcurrency varies', () => {
+    // workers=2 feeds the scanner; workers=1 cannot observe C=2 (scans only in processJob).
+    // Fields remain independent: workers held at 2 for both arms; only scanner changes.
+    const c1 = { exportPrepMaxWorkers: 2 as const, scannerConcurrency: 1 as const };
+    const c2 = { exportPrepMaxWorkers: 2 as const, scannerConcurrency: 2 as const };
+    expect(c1.exportPrepMaxWorkers).toBe(c2.exportPrepMaxWorkers);
+    expect(c1.scannerConcurrency).not.toBe(c2.scannerConcurrency);
+    expect(c1.exportPrepMaxWorkers).not.toBe(c1.scannerConcurrency);
   });
 
   test('photo_terminal duration semantics fields are distinct', () => {

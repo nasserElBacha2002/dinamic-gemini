@@ -15,6 +15,32 @@ export {
   percentileNearestRank,
   isTerminalStatus,
 } from './benchmarkManifest';
+export {
+  BENCHMARK_FIXTURE_ORDER_VERSION,
+  BENCHMARK_FIXTURE_ORDER_SEED,
+  BENCHMARK_FIXTURE_ORDER_V2,
+  BENCHMARK_FIXTURE_ORDER_V2_SEED,
+  BENCHMARK_FIXTURE_ORDER_DEFAULT_VERSION,
+  BENCHMARK_FIXTURE_ORDER_DEFAULT_SEED,
+  MAX_CONSECUTIVE_POSITION,
+  MAX_CONSECUTIVE_ITEM,
+  classifyScenarioKind,
+  createSeededRng,
+  buildInterleavedFixtureOrder,
+  buildInterleavedFixtureOrderV2,
+  validateFixtureOrderGates,
+  assertSameOrder,
+  toOrderedManifestCsv,
+} from './benchmarkFixtureOrder';
+export {
+  parseLabelsJson,
+  parseItemPayload,
+  classifyPhotoCorrectness,
+  summarizeCorrectness,
+  diffCorrectnessRuns,
+  evaluateCorrectnessRegressionGate,
+  toCorrectnessCsv,
+} from './benchmarkCorrectness';
 export { runBenchmarkProfilePreflight } from './benchmarkProfilePreflight';
 export {
   assertDeletableBenchmarkPath,

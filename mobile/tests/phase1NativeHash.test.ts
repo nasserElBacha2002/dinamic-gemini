@@ -1,5 +1,5 @@
 /**
- * Phase 1 — native staged SHA-256 + strong-validation reuse.
+ * Phase 1 corrections — native staged SHA-256 with strong native rehash (no weak reuse).
  */
 
 import * as fs from 'node:fs';
@@ -7,12 +7,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 
-import { digestAbsoluteFile } from '../src/features/exportPrep/digestAbsoluteFile';
+import { DigestCapabilityError, DigestIoError, digestAbsoluteFile } from '../src/features/exportPrep/digestAbsoluteFile';
 import {
+  classifyStagedDigestError,
   hashStagedFileSha256Detailed,
   hashStagedFileSha256Hex,
 } from '../src/features/exportPrep/stagedSha256';
-import { validateReadyStaging } from '../src/features/exportPrep/validateReadyStaging';
+import {
+  isConfirmedReadyIntegrityFailure,
+  validateReadyStaging,
+} from '../src/features/exportPrep/validateReadyStaging';
 
 jest.mock('expo-file-system', () => {
   const actualFs = jest.requireActual('node:fs') as typeof import('node:fs');
@@ -41,10 +45,10 @@ jest.mock('../src/features/exportPrep/exportStaging', () => ({
   }),
 }));
 
-function writeFixture(bytes: Buffer): { uri: string; abs: string; sha: string } {
+function writeFixture(bytes: Buffer, nameHint = 'bin'): { uri: string; abs: string; sha: string } {
   const abs = path.join(
     os.tmpdir(),
-    `phase1-hash-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`,
+    `phase1-hash-${Date.now()}-${Math.random().toString(16).slice(2)}-${nameHint}`,
   );
   fs.writeFileSync(abs, bytes);
   const sha = createHash('sha256').update(bytes).digest('hex');
@@ -107,12 +111,29 @@ describe('phase1 native staged hash', () => {
     expect(ha).not.toBe(hb);
   });
 
-  test('missing file fails', async () => {
+  test('missing file fails as digest IO (not mismatch)', async () => {
     await expect(hashStagedFileSha256Hex('file:///tmp/phase1-missing-xyz.bin')).rejects.toBeTruthy();
+    try {
+      await hashStagedFileSha256Hex('file:///tmp/phase1-missing-xyz.bin');
+    } catch (error) {
+      const classified = classifyStagedDigestError(error);
+      expect(classified.failure).toBe('STAGING_DIGEST_FAILED');
+    }
+  });
+
+  test('file URI with plus sign preserves path and digests', async () => {
+    const payload = Buffer.from('plus-path-bytes');
+    const abs = path.join(os.tmpdir(), `item+A-${Date.now()}.bin`);
+    fs.writeFileSync(abs, payload);
+    live.push(abs);
+    const uri = `file://${abs}`;
+    expect(uri).toContain('+');
+    const sha = await hashStagedFileSha256Hex(uri);
+    expect(sha).toBe(createHash('sha256').update(payload).digest('hex'));
   });
 });
 
-describe('phase1 strong validation reuse', () => {
+describe('phase1 strong validation always rehashes', () => {
   const live: string[] = [];
 
   afterEach(() => {
@@ -123,6 +144,7 @@ describe('phase1 strong validation reuse', () => {
         /* ignore */
       }
     }
+    jest.restoreAllMocks();
   });
 
   function jobFor(fx: { uri: string; sha: string; abs: string }, size: number, readyAt: string | null) {
@@ -135,47 +157,70 @@ describe('phase1 strong validation reuse', () => {
     };
   }
 
-  test('reuses persisted sha when ready identity matches', async () => {
-    const payload = Buffer.from('ready-reuse');
-    const fx = writeFixture(payload);
-    live.push(fx.abs);
-    const readyAt = new Date(Date.now() + 5_000).toISOString(); // after mtime
-    const result = await validateReadyStaging(
-      jobFor(fx, payload.byteLength, readyAt),
-      'strong',
-    );
-    expect(result.ok).toBe(true);
-    expect(result.digest?.hashMode).toBe('reused_persisted');
-    expect(result.digest?.hashSource).toBe('staging_ready');
-    expect(result.digest?.bytesHashed).toBe(0);
-    expect(result.actualSha256).toBe(fx.sha);
-  });
-
-  test('legacy missing ready_at forces native fallback', async () => {
-    const payload = Buffer.from('legacy-row');
-    const fx = writeFixture(payload);
-    live.push(fx.abs);
-    const result = await validateReadyStaging(jobFor(fx, payload.byteLength, null), 'strong');
-    expect(result.ok).toBe(true);
-    expect(result.digest?.hashMode).toBe('native_file');
-    expect(result.digest?.hashSource).toBe('validation_fallback');
-    expect(result.digest?.bytesHashed).toBe(payload.byteLength);
-    expect(result.digest?.reason).toBe('legacy_missing_ready_at');
-  });
-
-  test('forceRehash computes native digest', async () => {
-    const payload = Buffer.from('force-rehash');
+  test('strong validation always uses native_file computed digest', async () => {
+    const payload = Buffer.from('ready-rehash');
     const fx = writeFixture(payload);
     live.push(fx.abs);
     const readyAt = new Date(Date.now() + 5_000).toISOString();
     const result = await validateReadyStaging(
       jobFor(fx, payload.byteLength, readyAt),
       'strong',
-      { forceRehash: true },
     );
     expect(result.ok).toBe(true);
     expect(result.digest?.hashMode).toBe('native_file');
-    expect(result.digest?.reason).toBe('force_rehash');
+    expect(result.digest?.hashSource).toBe('computed');
+    expect(result.digest?.bytesHashed).toBe(payload.byteLength);
+    expect(result.digest?.reason).toBe('strong_native_rehash');
+    expect(result.actualSha256).toBe(fx.sha);
+  });
+
+  test('same-size content swap is detected (never reused by size/mtime)', async () => {
+    const original = Buffer.from('AAAA-same-size-content-01');
+    const tampered = Buffer.from('BBBB-same-size-content-02');
+    expect(original.byteLength).toBe(tampered.byteLength);
+    const fx = writeFixture(original);
+    live.push(fx.abs);
+    const readyAt = new Date().toISOString();
+    // Preserve mtime window: write tamper then restore mtime to before ready_at.
+    const st = fs.statSync(fx.abs);
+    fs.writeFileSync(fx.abs, tampered);
+    fs.utimesSync(fx.abs, st.atime, st.mtime);
+
+    const result = await validateReadyStaging(
+      jobFor(fx, original.byteLength, readyAt),
+      'strong',
+    );
+    expect(result.ok).toBe(false);
+    expect(result.failure).toBe('STAGING_SHA_MISMATCH');
+    expect(result.actualSha256).toBe(createHash('sha256').update(tampered).digest('hex'));
+    expect(result.digest?.hashMode).toBe('native_file');
+  });
+
+  test('same-size swap within two seconds of ready_at still mismatches', async () => {
+    const original = Buffer.alloc(32, 0x11);
+    const tampered = Buffer.alloc(32, 0x22);
+    const fx = writeFixture(original);
+    live.push(fx.abs);
+    const readyAt = new Date().toISOString();
+    fs.writeFileSync(fx.abs, tampered);
+    // mtime is now ≈ ready_at (within 2s skew of old heuristic)
+    const result = await validateReadyStaging(
+      jobFor(fx, original.byteLength, readyAt),
+      'strong',
+    );
+    expect(result.ok).toBe(false);
+    expect(result.failure).toBe('STAGING_SHA_MISMATCH');
+  });
+
+  test('legacy missing ready_at still native rehashes', async () => {
+    const payload = Buffer.from('legacy-row');
+    const fx = writeFixture(payload);
+    live.push(fx.abs);
+    const result = await validateReadyStaging(jobFor(fx, payload.byteLength, null), 'strong');
+    expect(result.ok).toBe(true);
+    expect(result.digest?.hashMode).toBe('native_file');
+    expect(result.digest?.hashSource).toBe('computed');
+    expect(result.digest?.bytesHashed).toBe(payload.byteLength);
   });
 
   test('size mismatch fails without accepting', async () => {
@@ -190,7 +235,7 @@ describe('phase1 strong validation reuse', () => {
     expect(result.failure).toBe('STAGING_SIZE_MISMATCH');
   });
 
-  test('wrong persisted sha detected on forced rehash', async () => {
+  test('wrong persisted sha detected on rehash', async () => {
     const payload = Buffer.from('wrong-sha');
     const fx = writeFixture(payload);
     live.push(fx.abs);
@@ -204,20 +249,41 @@ describe('phase1 strong validation reuse', () => {
     expect(result.ok).toBe(false);
     expect(result.failure).toBe('STAGING_SHA_MISMATCH');
     expect(result.actualSha256).toBe(fx.sha);
+    expect(isConfirmedReadyIntegrityFailure(result.failure)).toBe(true);
   });
 
-  test('mtime newer than ready_at forces rehash', async () => {
-    const payload = Buffer.from('mtime-newer');
+  test('digest capability error does not report SHA mismatch', async () => {
+    const payload = Buffer.from('cap-miss');
     const fx = writeFixture(payload);
     live.push(fx.abs);
-    const readyAt = new Date(Date.now() - 60_000).toISOString(); // ready in the past
-    // Touch file so mtime is now
-    const now = new Date();
-    fs.utimesSync(fx.abs, now, now);
-    const result = await validateReadyStaging(jobFor(fx, payload.byteLength, readyAt), 'strong');
-    expect(result.ok).toBe(true);
-    expect(result.digest?.hashMode).toBe('native_file');
-    expect(result.digest?.reason).toBe('staging_mtime_newer_than_ready_at');
+    const digestMod = require('../src/features/exportPrep/digestAbsoluteFile') as typeof import('../src/features/exportPrep/digestAbsoluteFile');
+    jest.spyOn(digestMod, 'digestAbsoluteFile').mockRejectedValueOnce(
+      new DigestCapabilityError('digestFile unavailable'),
+    );
+
+    const result = await validateReadyStaging(
+      jobFor(fx, payload.byteLength, new Date().toISOString()),
+      'strong',
+    );
+    expect(result.ok).toBe(false);
+    expect(result.failure).toBe('STAGING_DIGEST_UNAVAILABLE');
+    expect(isConfirmedReadyIntegrityFailure(result.failure)).toBe(false);
+  });
+
+  test('digest IO error does not report SHA mismatch', async () => {
+    const payload = Buffer.from('io-fail');
+    const fx = writeFixture(payload);
+    live.push(fx.abs);
+    const digestMod = require('../src/features/exportPrep/digestAbsoluteFile') as typeof import('../src/features/exportPrep/digestAbsoluteFile');
+    jest.spyOn(digestMod, 'digestAbsoluteFile').mockRejectedValueOnce(new DigestIoError('EIO'));
+
+    const result = await validateReadyStaging(
+      jobFor(fx, payload.byteLength, new Date().toISOString()),
+      'strong',
+    );
+    expect(result.ok).toBe(false);
+    expect(result.failure).toBe('STAGING_DIGEST_FAILED');
+    expect(isConfirmedReadyIntegrityFailure(result.failure)).toBe(false);
   });
 
   test('light mode never digests', async () => {
@@ -230,5 +296,19 @@ describe('phase1 strong validation reuse', () => {
     );
     expect(result.ok).toBe(true);
     expect(result.digest).toBeUndefined();
+  });
+
+  test('classifyStagedDigestError maps capability vs io', () => {
+    expect(classifyStagedDigestError(new DigestCapabilityError('x')).failure).toBe(
+      'STAGING_DIGEST_UNAVAILABLE',
+    );
+    expect(classifyStagedDigestError(new DigestIoError('y')).failure).toBe(
+      'STAGING_DIGEST_FAILED',
+    );
+    expect(
+      classifyStagedDigestError(Object.assign(new Error('digestFile unavailable'), {
+        code: 'DIGEST_UNAVAILABLE',
+      })).failure,
+    ).toBe('STAGING_DIGEST_UNAVAILABLE');
   });
 });

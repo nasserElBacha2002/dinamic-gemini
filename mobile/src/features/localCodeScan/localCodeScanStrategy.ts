@@ -38,6 +38,7 @@ import { isLikelyRawSegmentedPayload } from '../localCsv/supplierExportSemantics
 
 /** Must cover native multipass (full + tiles + zoom crops). */
 export const LOCAL_CODE_SCAN_TIMEOUT_MS = 22_000;
+/** Default JS local-scan concurrency (hard cap remains 2 via setMaxConcurrency). */
 export const LOCAL_CODE_SCAN_CONCURRENCY = 1;
 export const LOCAL_SCAN_STALE_MS = 60_000;
 export const LOCAL_SCAN_OWNER = 'js-local-code-scan';
@@ -118,8 +119,12 @@ function draftStatusFromConsolidation(
  */
 export class LocalCodeScanStrategy {
   private active = 0;
+  private maxConcurrency: 1 | 2 = LOCAL_CODE_SCAN_CONCURRENCY as 1 | 2;
+  private maxObservedConcurrency = 0;
   private readonly waiters: Array<() => void> = [];
   private generation = 0;
+  /** Benchmark-only: last raw ML Kit payloads per photo (not persisted). */
+  private readonly rawDetectedByPhoto = new Map<string, readonly string[]>();
   private readonly detect: typeof detectLocalBarcodes;
   private readonly evaluateCapability: typeof evaluateLocalCodeScanCapability;
   private readonly nowMs: () => number;
@@ -130,6 +135,37 @@ export class LocalCodeScanStrategy {
     this.evaluateCapability = deps.evaluateCapability ?? evaluateLocalCodeScanCapability;
     this.nowMs = deps.nowMs ?? (() => Date.now());
     this.timeoutMs = deps.timeoutMs ?? LOCAL_CODE_SCAN_TIMEOUT_MS;
+  }
+
+  /** Bounded JS scanner concurrency for Phase 4 benchmarks: strictly 1 or 2. */
+  setMaxConcurrency(n: number): void {
+    if (n !== 1 && n !== 2) {
+      throw Object.assign(new Error('LOCAL_SCAN_MAX_CONCURRENCY_INVALID'), {
+        code: 'LOCAL_SCAN_MAX_CONCURRENCY_INVALID',
+        detail: `maxConcurrency must be 1 or 2, got ${n}`,
+      });
+    }
+    this.maxConcurrency = n;
+  }
+
+  getMaxConcurrency(): 1 | 2 {
+    return this.maxConcurrency;
+  }
+
+  getActiveConcurrency(): number {
+    return this.active;
+  }
+
+  getMaxObservedConcurrency(): number {
+    return this.maxObservedConcurrency;
+  }
+
+  getRawDetectedPayloads(photoId: string): readonly string[] | null {
+    return this.rawDetectedByPhoto.get(photoId) ?? null;
+  }
+
+  clearRawDetectedPayloads(): void {
+    this.rawDetectedByPhoto.clear();
   }
 
   /** Recover drafts left in SCANNING after process death. */
@@ -245,6 +281,10 @@ export class LocalCodeScanStrategy {
       });
 
       const candidates = await withTimeout(this.detect(input.preparedUri), this.timeoutMs);
+      this.rawDetectedByPhoto.set(
+        input.capturePhotoId,
+        Object.freeze(candidates.map((c) => c.rawValue)),
+      );
       const offline = input.recognitionContext === 'OFFLINE';
       const profileAware = await runProfileAwareLocalScan({
         candidates,
@@ -733,13 +773,15 @@ export class LocalCodeScanStrategy {
   }
 
   private acquireSlot(): Promise<void> {
-    if (this.active < LOCAL_CODE_SCAN_CONCURRENCY) {
+    if (this.active < this.maxConcurrency) {
       this.active += 1;
+      this.maxObservedConcurrency = Math.max(this.maxObservedConcurrency, this.active);
       return Promise.resolve();
     }
     return new Promise((resolve) => {
       this.waiters.push(() => {
         this.active += 1;
+        this.maxObservedConcurrency = Math.max(this.maxObservedConcurrency, this.active);
         resolve();
       });
     });

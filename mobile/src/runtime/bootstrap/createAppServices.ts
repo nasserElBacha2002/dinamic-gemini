@@ -146,6 +146,7 @@ export interface AppServices {
   readonly jobMonitor: JobMonitor;
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly confirmedLocalResults: ConfirmedLocalResultRepository;
+  readonly localCodeScan: LocalCodeScanStrategy;
   readonly localCsvExport: LocalCsvExportService | null;
   readonly exportPrepQueue: ExportPrepQueue | null;
   readonly exportPrepPhotoCoordinator: ExportPrepPhotoCoordinator | null;
@@ -308,9 +309,17 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
           exportPrepEnabled: config.flags.mobileExportPrepQueue === true,
           ensureExportPrepJobs:
             config.flags.mobileExportPrepQueue === true
-              ? async (sessionId: string) => {
+              ? async (
+                  sessionId: string,
+                  options?: {
+                    readonly session?: import('../../database/schema/captureSchema').CaptureSessionRow;
+                    readonly photos?: readonly import('../../database/schema/captureSchema').CapturePhotoRow[];
+                  },
+                ) => {
                   const result = await exportPrepQueue?.ensureJobsForEligiblePhotos(sessionId, {
                     reason: 'EXPORT_PREFLIGHT',
+                    session: options?.session,
+                    photos: options?.photos,
                   });
                   if (
                     result &&
@@ -322,7 +331,12 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
                       `PACKAGE_EXPORT_PREP_PENDING: se materializaron ${result.createdJobs + result.requeuedJobs + result.invalidatedReadyJobs} job(s) de preparación; reintentá cuando estén READY.`,
                     );
                   }
+                  return result;
                 }
+              : null,
+          getExportPrepActiveWorkers:
+            config.flags.mobileExportPrepQueue === true
+              ? (sessionId: string) => exportPrepQueue?.getActiveSessionWorkers(sessionId) ?? 0
               : null,
           maxExportUncompressedBytes: 480 * 1024 * 1024,
           attemptRepo: localExportAttemptRepo,
@@ -836,6 +850,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
     jobMonitor,
     localDetectionDrafts,
     confirmedLocalResults,
+    localCodeScan,
     localCsvExport,
     exportPrepQueue,
     exportPrepPhotoCoordinator,

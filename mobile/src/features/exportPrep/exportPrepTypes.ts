@@ -90,6 +90,30 @@ export interface EnsureExportPrepJobsResult {
   readonly missingSourcePhotos: number;
   readonly partialErrors: readonly string[];
   readonly durationMs: number;
+  /**
+   * READY completeness check mode used during ensure.
+   * Phase 3B: EXPORT_PREFLIGHT uses `light` (existence/size/format); packaging
+   * always performs `strong` native rehash once. Other ensure reasons keep light.
+   */
+  readonly readyValidationMode?: 'light' | 'strong';
+  /** How many READY jobs were completeness-checked (ok or invalidate). */
+  readonly readyValidatedCount?: number;
+  /** True when caller supplied session+photos (skipped listCanonicalExportPhotos). */
+  readonly reusedCanonicalPhotos?: boolean;
+  /** True when jobs were loaded via a single listForSession instead of N getByPhotoId. */
+  readonly batchedJobLookup?: boolean;
+  /**
+   * Session jobs snapshot from ensure (only when no create/requeue/invalidate
+   * and no in-flight workers for the session). Export may reuse this to skip
+   * a second listForSession when the fence token still matches.
+   */
+  readonly jobsSnapshot?: readonly ExportPrepJobRow[];
+  /** FNV identity token over jobsSnapshot rows (required when snapshot is set). */
+  readonly jobsSnapshotToken?: string;
+  /** Session id the snapshot belongs to (fence against cross-session reuse). */
+  readonly jobsSnapshotSessionId?: string;
+  /** In-flight workers for this session when the snapshot was taken (must be 0). */
+  readonly activeWorkersAtSnapshot?: number;
 }
 
 export function emptyEnsureExportPrepJobsResult(
@@ -108,6 +132,10 @@ export function emptyEnsureExportPrepJobsResult(
     missingSourcePhotos: 0,
     partialErrors: [],
     durationMs: 0,
+    readyValidationMode: 'light',
+    readyValidatedCount: 0,
+    reusedCanonicalPhotos: false,
+    batchedJobLookup: false,
   };
 }
 

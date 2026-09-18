@@ -1,7 +1,7 @@
 import type { ExportPrepJobRow } from './exportPrepTypes';
 import { isValidStagedSha256 } from '../../database/repositories/exportPrepRepository';
 import { stagingFileExists } from './exportStaging';
-import { hashStagedFileSha256Hex } from './stagedSha256';
+import { hashStagedFileSha256Hex, classifyStagedDigestError } from './stagedSha256';
 import * as FileSystem from 'expo-file-system';
 
 export type ReadyValidationMode = 'light' | 'strong';
@@ -13,13 +13,14 @@ export type ReadyValidationFailure =
   | 'INVALID_SHA256_FORMAT'
   | 'STAGING_FILE_MISSING'
   | 'STAGING_SIZE_MISMATCH'
-  | 'STAGING_SHA_MISMATCH';
+  | 'STAGING_SHA_MISMATCH'
+  /** Native digest module/capability missing — not corruption. */
+  | 'STAGING_DIGEST_UNAVAILABLE'
+  /** Digest I/O/bridge failure — not a confirmed content mismatch. */
+  | 'STAGING_DIGEST_FAILED';
 
-export type ReadyDigestHashMode = 'reused_persisted' | 'native_file';
-export type ReadyDigestHashSource =
-  | 'staging_ready'
-  | 'validation_fallback'
-  | 'computed';
+export type ReadyDigestHashMode = 'native_file';
+export type ReadyDigestHashSource = 'computed' | 'validation_fallback';
 
 export type ReadyDigestDecision = {
   readonly hashMode: ReadyDigestHashMode;
@@ -35,10 +36,15 @@ export interface ReadyValidationResult {
   readonly actualSizeBytes?: number;
   readonly actualSha256?: string;
   readonly digest?: ReadyDigestDecision;
+  /** Original technical error message when digest failed (no paths). */
+  readonly digestErrorCode?: string;
 }
 
 export type ValidateReadyStagingOptions = {
-  /** Force native re-hash even when identity would allow reuse. */
+  /**
+   * @deprecated Strong validation always recomputes a native digest.
+   * Kept for call-site compatibility; ignored.
+   */
   readonly forceRehash?: boolean;
 };
 
@@ -48,43 +54,21 @@ function monoNow(): number {
 }
 
 /**
- * Staging write-once invariant (export prep):
- * After markReady, the staged file is not rewritten in place. invalidateReady clears
- * staging_uri/sha256 before any new copy. Therefore a READY job with matching on-disk
- * size and a valid persisted sha256 may reuse that digest during strong validation.
- *
- * Fallback to native re-hash when:
- * - ready_at missing (legacy / incomplete rows)
- * - modificationTime is clearly newer than ready_at (possible overwrite)
- * - forceRehash is set
- * - any identity check fails before size mismatch
+ * Failures that prove READY staging is inconsistent with on-disk state.
+ * Technical digest failures are excluded — READY must be preserved for retry.
  */
-function shouldReusePersistedSha(input: {
-  readonly readyAt: string | null | undefined;
-  readonly modificationTimeSec: number | null;
-  readonly forceRehash: boolean;
-}): { reuse: boolean; reason: string } {
-  if (input.forceRehash) {
-    return { reuse: false, reason: 'force_rehash' };
-  }
-  if (!input.readyAt) {
-    return { reuse: false, reason: 'legacy_missing_ready_at' };
-  }
-  const readyMs = Date.parse(input.readyAt);
-  if (!Number.isFinite(readyMs)) {
-    return { reuse: false, reason: 'ready_at_unparseable' };
-  }
-  if (input.modificationTimeSec != null && Number.isFinite(input.modificationTimeSec)) {
-    const mtimeMs = input.modificationTimeSec * 1000;
-    // 2s skew: ready_at is written after digest; mtime is file close time.
-    if (mtimeMs > readyMs + 2000) {
-      return { reuse: false, reason: 'staging_mtime_newer_than_ready_at' };
-    }
-  }
-  return {
-    reuse: true,
-    reason: 'ready_immutable_staging_size_match',
-  };
+export function isConfirmedReadyIntegrityFailure(
+  failure: ReadyValidationFailure | undefined,
+): boolean {
+  return (
+    failure === 'STAGING_SHA_MISMATCH' ||
+    failure === 'STAGING_SIZE_MISMATCH' ||
+    failure === 'STAGING_FILE_MISSING' ||
+    failure === 'INVALID_SHA256_FORMAT' ||
+    failure === 'INVALID_SIZE_BYTES' ||
+    failure === 'MISSING_STAGING_URI' ||
+    failure === 'MISSING_EXPORT_FILE_NAME'
+  );
 }
 
 /**
@@ -94,8 +78,12 @@ function shouldReusePersistedSha(input: {
  * staging file exists, and **real file size === size_bytes**.
  *
  * - `light`: stops after size match — no digest.
- * - `strong`: reuses persisted sha256 when the write-once identity holds; otherwise
- *   recomputes via native file digest and requires equality with persisted sha256.
+ * - `strong`: always recomputes SHA-256 via native/file streaming digest and requires
+ *   equality with the persisted sha256. Size match alone is never treated as content identity.
+ *
+ * Rationale: staged paths are versioned by convention, but the filesystem does not enforce
+ * immutability of a READY URI. Reusing a persisted digest from size/mtime/ready_at would
+ * accept same-size content swaps. Native digest is cheap enough (~ms) to keep integrity.
  */
 export async function validateReadyStaging(
   job: Pick<
@@ -103,7 +91,7 @@ export async function validateReadyStaging(
     'staging_uri' | 'export_file_name' | 'size_bytes' | 'sha256' | 'ready_at'
   >,
   mode: ReadyValidationMode,
-  options?: ValidateReadyStagingOptions,
+  _options?: ValidateReadyStagingOptions,
 ): Promise<ReadyValidationResult> {
   if (!job.staging_uri) {
     return { ok: false, failure: 'MISSING_STAGING_URI' };
@@ -137,32 +125,6 @@ export async function validateReadyStaging(
   }
 
   const expectedSha = job.sha256!.trim().toLowerCase();
-  const modificationTimeSec =
-    info.exists && typeof (info as { modificationTime?: unknown }).modificationTime === 'number'
-      ? ((info as { modificationTime: number }).modificationTime)
-      : null;
-
-  const decision = shouldReusePersistedSha({
-    readyAt: job.ready_at,
-    modificationTimeSec,
-    forceRehash: options?.forceRehash === true,
-  });
-
-  if (decision.reuse) {
-    return {
-      ok: true,
-      actualSizeBytes: actualSize,
-      actualSha256: expectedSha,
-      digest: {
-        hashMode: 'reused_persisted',
-        hashSource: 'staging_ready',
-        bytesHashed: 0,
-        durationMs: 0,
-        reason: decision.reason,
-      },
-    };
-  }
-
   const t0 = monoNow();
   let actualSha: string;
   let bytesHashed = actualSize;
@@ -170,17 +132,19 @@ export async function validateReadyStaging(
     // Prefer hex helper so unit tests can mock digest without native modules.
     actualSha = await hashStagedFileSha256Hex(job.staging_uri);
     bytesHashed = actualSize;
-  } catch {
+  } catch (error) {
+    const classified = classifyStagedDigestError(error);
     return {
       ok: false,
-      failure: 'STAGING_SHA_MISMATCH',
+      failure: classified.failure,
       actualSizeBytes: actualSize,
+      digestErrorCode: classified.code,
       digest: {
         hashMode: 'native_file',
-        hashSource: 'validation_fallback',
+        hashSource: 'computed',
         bytesHashed: 0,
         durationMs: monoNow() - t0,
-        reason: decision.reason,
+        reason: classified.reason,
       },
     };
   }
@@ -193,10 +157,10 @@ export async function validateReadyStaging(
       actualSha256: actualSha,
       digest: {
         hashMode: 'native_file',
-        hashSource: 'validation_fallback',
+        hashSource: 'computed',
         bytesHashed,
         durationMs,
-        reason: `${decision.reason}|sha_mismatch`,
+        reason: 'sha_mismatch_after_native_digest',
       },
     };
   }
@@ -206,10 +170,10 @@ export async function validateReadyStaging(
     actualSha256: actualSha,
     digest: {
       hashMode: 'native_file',
-      hashSource: decision.reason === 'force_rehash' ? 'validation_fallback' : 'validation_fallback',
+      hashSource: 'computed',
       bytesHashed,
       durationMs,
-      reason: decision.reason,
+      reason: 'strong_native_rehash',
     },
   };
 }

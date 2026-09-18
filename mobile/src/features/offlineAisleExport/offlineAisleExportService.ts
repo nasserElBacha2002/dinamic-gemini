@@ -4,6 +4,7 @@ import * as Sharing from 'expo-sharing';
 import { sha256BytesHex } from '../../core/payloadFingerprint';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
+import { canonicalizeDraftsByPhoto } from '../../database/repositories/localDetectionDraftRepository';
 import type { LocalCatalogRepository } from '../../database/repositories/localCatalogRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import { createId } from '../../shared/createId';
@@ -149,10 +150,7 @@ export class OfflineAisleExportService {
     }
 
     const photos: CapturePhotoRow[] = [];
-    const draftByPhoto = new Map<
-      string,
-      Awaited<ReturnType<LocalDetectionDraftRepository['listForSession']>>[number]
-    >();
+    const allDrafts: Awaited<ReturnType<LocalDetectionDraftRepository['listForSession']>> = [];
 
     for (const session of sessionSnapshot) {
       if (this.deps.sessionCsvExport) {
@@ -168,10 +166,9 @@ export class OfflineAisleExportService {
         photos.push(p);
       }
       const drafts = await this.deps.draftRepo.listForSession(session.id);
-      for (const d of drafts) {
-        draftByPhoto.set(d.capture_photo_id, d);
-      }
+      allDrafts.push(...drafts);
     }
+    const draftByPhoto = canonicalizeDraftsByPhoto(allDrafts);
 
     if (photos.length === 0) {
       throw new OfflineAisleExportError('NO_CAPTURES', 'sin fotos elegibles');

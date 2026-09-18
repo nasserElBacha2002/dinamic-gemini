@@ -122,6 +122,24 @@ class CaptureForegroundModule : Module() {
       LocalBarcodeDetector.isAvailable()
     }
 
+    /** Phase 4: bound native ML Kit concurrent detects to 1 or 2. */
+    AsyncFunction("setBarcodeScanConcurrency") { n: Int ->
+      LocalBarcodeDetector.setMaxConcurrentScans(n)
+      mapOf(
+        "configured" to LocalBarcodeDetector.getMaxConcurrentScans(),
+        "active" to LocalBarcodeDetector.getActiveConcurrentScans(),
+        "maxObserved" to LocalBarcodeDetector.getMaxObservedConcurrentScans(),
+      )
+    }
+
+    AsyncFunction("getBarcodeScanConcurrencyStats") {
+      mapOf(
+        "configured" to LocalBarcodeDetector.getMaxConcurrentScans(),
+        "active" to LocalBarcodeDetector.getActiveConcurrentScans(),
+        "maxObserved" to LocalBarcodeDetector.getMaxObservedConcurrentScans(),
+      )
+    }
+
     AsyncFunction("detectBarcodes") { uri: String, formatsCsv: String ->
       val context = appContext.reactContext
         ?: throw Exception("React context unavailable; cannot scan barcodes")
@@ -259,16 +277,6 @@ class CaptureForegroundModule : Module() {
   }
 
   private fun stripFileUri(path: String): String {
-    return when {
-      path.startsWith("file://") -> {
-        val raw = path.removePrefix("file://")
-        try {
-          java.net.URLDecoder.decode(raw, "UTF-8")
-        } catch (_: Exception) {
-          raw
-        }
-      }
-      else -> path
-    }
+    return FileUriPaths.toAbsolutePath(path)
   }
 }

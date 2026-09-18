@@ -1,4 +1,5 @@
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
+import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import {
   ExportPrepFenceError,
   ExportPrepRepository,
@@ -19,7 +20,12 @@ import {
 } from './exportStaging';
 import type { ExportPrepCounts, ExportPrepJobRow, EnsureExportPrepJobsResult, ExportPrepEnsureReason } from './exportPrepTypes';
 import { emptyExportPrepCounts, emptyEnsureExportPrepJobsResult } from './exportPrepTypes';
-import { hashStagedFileSha256Detailed } from './stagedSha256';
+import {
+  buildJobsSnapshotToken,
+  canAttachJobsSnapshot,
+} from './jobsSnapshotFence';
+import { hashStagedFileSha256Detailed, classifyStagedDigestError } from './stagedSha256';
+import { assertNativeDigestCapability } from './digestAbsoluteFile';
 import {
   listCanonicalExportPhotos,
   selectEligibleExportPrepPhotos,
@@ -37,7 +43,13 @@ export { emptyExportPrepCounts, emptyEnsureExportPrepJobsResult };
 /** Optional debug/benchmark stage observer — no-op when unset (production path unchanged). */
 export type ExportPrepStageObserver = {
   onStage(event: {
-    readonly stage: 'staging_copy' | 'local_scan' | 'staging_hash' | 'draft_lookup';
+    readonly stage:
+      | 'staging_copy'
+      | 'local_scan'
+      | 'staging_hash'
+      | 'draft_lookup'
+      | 'draft_lookup_pre_scan'
+      | 'draft_lookup_post_scan';
     readonly photoId: string;
     readonly sequence: number | null;
     readonly monotonicStartMs: number;
@@ -52,6 +64,8 @@ export type ExportPrepStageObserver = {
     readonly extras?: Readonly<Record<string, number | string | boolean | null>>;
   }): void;
 };
+
+export type DraftLookupPurpose = 'skip_scan_check' | 'export_ready_check';
 
 export interface ExportPrepQueueDeps {
   readonly prepRepo: ExportPrepRepository;
@@ -194,7 +208,8 @@ type SharedDrainWork = {
  */
 export class ExportPrepQueue {
   private workers = 0;
-  private readonly maxWorkers: number;
+  private maxWorkers: number;
+  private maxObservedWorkers = 0;
   private readonly warningPendingThreshold: number;
   private readonly maxExportUncompressedBytes: number;
   private stopped = false;
@@ -220,6 +235,35 @@ export class ExportPrepQueue {
     this.maxWorkers = Math.max(1, Math.min(2, deps.maxWorkers ?? 1));
     this.warningPendingThreshold = Math.max(1, deps.warningPendingThreshold ?? 150);
     this.maxExportUncompressedBytes = deps.maxExportUncompressedBytes ?? 480 * 1024 * 1024;
+  }
+
+  /** Bounded scanner/prep concurrency: strictly 1 or 2. */
+  setMaxWorkers(n: number): void {
+    if (n !== 1 && n !== 2) {
+      throw Object.assign(new Error('EXPORT_PREP_MAX_WORKERS_INVALID'), {
+        code: 'EXPORT_PREP_MAX_WORKERS_INVALID',
+        detail: `maxWorkers must be 1 or 2, got ${n}`,
+      });
+    }
+    this.maxWorkers = n;
+    this.scheduleTick();
+  }
+
+  getMaxWorkers(): 1 | 2 {
+    return this.maxWorkers as 1 | 2;
+  }
+
+  getActiveWorkers(): number {
+    return this.workers;
+  }
+
+  getMaxObservedWorkers(): number {
+    return this.maxObservedWorkers;
+  }
+
+  /** In-flight processJob count for a session (snapshot fencing). */
+  getActiveSessionWorkers(sessionId: string): number {
+    return this.activeSessionWorkers.get(sessionId) ?? 0;
   }
 
   /** Debug/benchmark only — null clears. No effect on production behavior when unset. */
@@ -288,20 +332,34 @@ export class ExportPrepQueue {
    * Ensure one durable job per eligible stable photo (session or active freeze).
    * Idempotent; safe for historical sessions without prep rows.
    * Does not weaken lease fencing — never touches in-flight jobs with a valid lease.
+   *
+   * Phase 3B: EXPORT_PREFLIGHT READY completeness uses **light** validation
+   * (uri/name/size/sha-format/on-disk size). Cryptographic strong rehash remains
+   * mandatory once at packaging (`resolveExportPhotosFromStaging`). Optional
+   * `session`+`photos` avoid re-listing canonical export photos when export already
+   * loaded them; jobs are batched via `listForSession` (no N× getByPhotoId).
    */
   async ensureJobsForEligiblePhotos(
     sessionId: string,
-    options?: { readonly reason?: ExportPrepEnsureReason },
+    options?: {
+      readonly reason?: ExportPrepEnsureReason;
+      readonly session?: CaptureSessionRow;
+      readonly photos?: readonly CapturePhotoRow[];
+    },
   ): Promise<EnsureExportPrepJobsResult> {
     const reason = options?.reason ?? 'RECOVERY';
     const started = Date.now();
     const base = emptyEnsureExportPrepJobsResult(sessionId, reason);
     const partialErrors: string[] = [];
 
-    const { session, photos } = await listCanonicalExportPhotos(
-      this.deps.captureRepo,
-      sessionId,
-    );
+    let session = options?.session ?? null;
+    let photos = options?.photos ?? null;
+    const reusedCanonicalPhotos = session != null && photos != null;
+    if (!reusedCanonicalPhotos) {
+      const listed = await listCanonicalExportPhotos(this.deps.captureRepo, sessionId);
+      session = listed.session;
+      photos = listed.photos;
+    }
     if (!session) {
       this.deps.logger?.warn('export_prep', {
         code: 'EXPORT_PREP_BACKFILL_SESSION_MISSING',
@@ -311,20 +369,36 @@ export class ExportPrepQueue {
       return { ...base, durationMs: Date.now() - started, partialErrors: ['SESSION_MISSING'] };
     }
 
-    const eligible = selectEligibleExportPrepPhotos(photos);
-    const nonProcessable = selectNonProcessableExportPhotos(photos);
-    const readyMode: ReadyValidationMode =
-      reason === 'EXPORT_PREFLIGHT' ? 'strong' : 'light';
+    const eligible = selectEligibleExportPrepPhotos(photos!);
+    const nonProcessable = selectNonProcessableExportPhotos(photos!);
+    // Phase 3B: never double-strong. EXPORT_PREFLIGHT used to strong-validate every
+    // READY job, then packaging strong-validated again. Completeness gate stays light;
+    // packaging keeps the single native rehash integrity boundary.
+    const readyMode: ReadyValidationMode = 'light';
     let existingJobs = 0;
     let createdJobs = 0;
     let requeuedJobs = 0;
     let invalidatedReadyJobs = 0;
     let excludedJobs = 0;
     let missingSourcePhotos = 0;
+    let readyValidatedCount = 0;
+
+    const jobsByPhoto = new Map<string, ExportPrepJobRow>();
+    try {
+      const listedJobs = await this.deps.prepRepo.listForSession(sessionId);
+      for (const j of listedJobs) {
+        jobsByPhoto.set(j.capture_photo_id, j);
+      }
+    } catch (error) {
+      partialErrors.push(
+        `list_jobs:${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const batchedJobLookup = true;
 
     for (const photo of nonProcessable) {
       try {
-        const existing = await this.deps.prepRepo.getByPhotoId(photo.id);
+        const existing = jobsByPhoto.get(photo.id) ?? null;
         if (existing && existing.status !== 'EXCLUDED') {
           await this.deps.prepRepo.markExcluded(photo.id);
           excludedJobs += 1;
@@ -346,9 +420,10 @@ export class ExportPrepQueue {
           continue;
         }
 
-        const existing = await this.deps.prepRepo.getByPhotoId(photo.id);
+        const existing = jobsByPhoto.get(photo.id) ?? null;
 
         if (existing?.status === 'READY') {
+          readyValidatedCount += 1;
           const readyCheck = await validateReadyStaging(existing, readyMode);
           if (readyCheck.ok) {
             existingJobs += 1;
@@ -433,7 +508,21 @@ export class ExportPrepQueue {
 
     this.preferredSessionId = sessionId;
     this.emit(sessionId, await this.deps.prepRepo.countsForSession(sessionId));
-    this.scheduleTick();
+    // EXPORT_PREFLIGHT with a stable READY snapshot must not kick workers
+    // that could mutate other-session state mid-export; still schedule when
+    // ensure created/requeued work that needs processing.
+    const snapshotJobs = [...jobsByPhoto.values()];
+    const activeWorkersForSession = this.activeSessionWorkers.get(sessionId) ?? 0;
+    const attachSnapshot = canAttachJobsSnapshot({
+      createdJobs,
+      requeuedJobs,
+      invalidatedReadyJobs,
+      activeWorkersForSession,
+      jobs: snapshotJobs,
+    });
+    if (!attachSnapshot || reason !== 'EXPORT_PREFLIGHT') {
+      this.scheduleTick();
+    }
 
     const result: EnsureExportPrepJobsResult = {
       sessionId,
@@ -447,6 +536,18 @@ export class ExportPrepQueue {
       missingSourcePhotos,
       partialErrors,
       durationMs: Date.now() - started,
+      readyValidationMode: readyMode,
+      readyValidatedCount,
+      reusedCanonicalPhotos,
+      batchedJobLookup,
+      ...(attachSnapshot
+        ? {
+            jobsSnapshot: snapshotJobs,
+            jobsSnapshotToken: buildJobsSnapshotToken(snapshotJobs),
+            jobsSnapshotSessionId: sessionId,
+            activeWorkersAtSnapshot: activeWorkersForSession,
+          }
+        : {}),
     };
     this.deps.logger?.info('export_prep', {
       code: 'EXPORT_PREP_BACKFILL',
@@ -461,6 +562,13 @@ export class ExportPrepQueue {
       missingSourcePhotos: result.missingSourcePhotos,
       partialErrorCount: partialErrors.length,
       durationMs: result.durationMs,
+      readyValidationMode: result.readyValidationMode,
+      readyValidatedCount: result.readyValidatedCount,
+      reusedCanonicalPhotos: result.reusedCanonicalPhotos,
+      batchedJobLookup: result.batchedJobLookup,
+      jobsSnapshotAttached: Boolean(result.jobsSnapshot),
+      jobsSnapshotToken: result.jobsSnapshotToken ?? null,
+      activeWorkersAtSnapshot: result.activeWorkersAtSnapshot ?? null,
     });
     return result;
   }
@@ -1353,6 +1461,7 @@ export class ExportPrepQueue {
         continue;
       }
       this.workers += 1;
+      this.maxObservedWorkers = Math.max(this.maxObservedWorkers, this.workers);
       const sid = job.capture_session_id;
       this.activeSessionWorkers.set(sid, (this.activeSessionWorkers.get(sid) ?? 0) + 1);
       void this.processJob(job).finally(() => {
@@ -1443,35 +1552,11 @@ export class ExportPrepQueue {
 
       await this.deps.prepRepo.markValidating(job.capture_photo_id, leaseToken, 60_000);
 
-      const draftT0 = this.monoNow();
-      let draftRows: Awaited<ReturnType<typeof this.deps.draftRepo.listForSession>> = [];
-      try {
-        draftRows = await this.deps.draftRepo.listForSession(sessionId);
-      } catch {
-        draftRows = [];
-      }
-      const draftRow = draftRows.find((d) => d.capture_photo_id === photo.id) ?? null;
-      const counts = await this.deps.prepRepo.countsForSession(sessionId).catch(() => null);
-      this.observeStage({
-        stage: 'draft_lookup',
+      const draftRow = await this.lookupDraftInstrumented({
+        sessionId,
         photoId: photo.id,
         sequence: seq,
-        monotonicStartMs: draftT0,
-        durationMs: this.monoNow() - draftT0,
-        inputBytes: null,
-        outputBytes: null,
-        queueDepth: counts?.pending ?? null,
-        workerConcurrency: this.maxWorkers,
-        executionContext: 'js',
-        success: isDraftExportReady(draftRow),
-        errorCode: isDraftExportReady(draftRow) ? null : 'EXPORT_PREP_DRAFT_NOT_READY',
-        extras: {
-          queryCount: 1,
-          draftCount: draftRows.length,
-          rowsReturned: draftRows.length,
-          lookupMode: 'list_for_session_then_find',
-          cacheHit: false,
-        },
+        purpose: 'export_ready_check',
       });
       if (!isDraftExportReady(draftRow)) {
         throw Object.assign(new Error('EXPORT_PREP_DRAFT_NOT_READY'), {
@@ -1482,6 +1567,7 @@ export class ExportPrepQueue {
       let sha256: string;
       try {
         const hashT0 = this.monoNow();
+        assertNativeDigestCapability();
         const hashed = await hashStagedFileSha256Detailed(staged.stagingUri);
         sha256 = hashed.sha256;
         this.observeStage({
@@ -1492,7 +1578,7 @@ export class ExportPrepQueue {
           durationMs: this.monoNow() - hashT0,
           inputBytes: hashed.bytesHashed,
           outputBytes: 64,
-          queueDepth: counts?.pending ?? null,
+          queueDepth: null,
           workerConcurrency: this.maxWorkers,
           executionContext: 'native',
           success: true,
@@ -1511,9 +1597,15 @@ export class ExportPrepQueue {
           },
         });
       } catch (error) {
+        const classified = classifyStagedDigestError(error);
         throw Object.assign(
           new Error(error instanceof Error ? error.message : 'EXPORT_PREP_HASH_FAILED'),
-          { code: 'EXPORT_PREP_HASH_FAILED' },
+          {
+            code:
+              classified.failure === 'STAGING_DIGEST_UNAVAILABLE'
+                ? 'EXPORT_PREP_DIGEST_UNAVAILABLE'
+                : 'EXPORT_PREP_HASH_FAILED',
+          },
         );
       }
 
@@ -1570,12 +1662,130 @@ export class ExportPrepQueue {
     this.emit(sessionId, await this.deps.prepRepo.countsForSession(sessionId));
   }
 
+  /**
+   * Timed draft lookup. `durationMs` covers only `getBySessionAndPhotoId` —
+   * never `countsForSession` or other SQLite work.
+   */
+  private async lookupDraftInstrumented(input: {
+    readonly sessionId: string;
+    readonly photoId: string;
+    readonly sequence: number | null;
+    readonly purpose: DraftLookupPurpose;
+  }): Promise<Awaited<
+    ReturnType<typeof this.deps.draftRepo.getBySessionAndPhotoId>
+  >['draft']> {
+    const stageName =
+      input.purpose === 'skip_scan_check'
+        ? ('draft_lookup_pre_scan' as const)
+        : ('draft_lookup_post_scan' as const);
+    const draftT0 = this.monoNow();
+    let draftRow: Awaited<
+      ReturnType<typeof this.deps.draftRepo.getBySessionAndPhotoId>
+    >['draft'] = null;
+    let lookupExtras: {
+      queryCount: number;
+      rowsReturned: number;
+      fullSessionRowsLoaded: number;
+      lookupMode: string;
+      lookupPurpose: DraftLookupPurpose;
+      selectionRule: string | null;
+      cacheHit: boolean;
+      draftFound: boolean;
+      draftReady: boolean;
+    } = {
+      queryCount: 1,
+      rowsReturned: 0,
+      fullSessionRowsLoaded: 0,
+      lookupMode: 'direct_indexed_lookup',
+      lookupPurpose: input.purpose,
+      selectionRule: null,
+      cacheHit: false,
+      draftFound: false,
+      draftReady: false,
+    };
+    let lookupErrorCode: string | null = null;
+    let lookupSuccess = false;
+    try {
+      const lookup = await this.deps.draftRepo.getBySessionAndPhotoId(
+        input.sessionId,
+        input.photoId,
+      );
+      const durationMs = this.monoNow() - draftT0;
+      draftRow = lookup.draft;
+      lookupExtras = {
+        queryCount: lookup.queryCount,
+        rowsReturned: lookup.rowsMatched,
+        fullSessionRowsLoaded: lookup.fullSessionRowsLoaded,
+        lookupMode: lookup.lookupMode,
+        lookupPurpose: input.purpose,
+        selectionRule: lookup.selectionRule,
+        cacheHit: false,
+        draftFound: draftRow != null,
+        draftReady: isDraftExportReady(draftRow),
+      };
+      lookupSuccess =
+        input.purpose === 'skip_scan_check'
+          ? true
+          : isDraftExportReady(draftRow);
+      lookupErrorCode =
+        input.purpose === 'export_ready_check' && !isDraftExportReady(draftRow)
+          ? 'EXPORT_PREP_DRAFT_NOT_READY'
+          : null;
+      const common = {
+        photoId: input.photoId,
+        sequence: input.sequence,
+        monotonicStartMs: draftT0,
+        durationMs,
+        inputBytes: null as number | null,
+        outputBytes: null as number | null,
+        queueDepth: null as number | null,
+        workerConcurrency: this.maxWorkers,
+        executionContext: 'js' as const,
+        success: lookupSuccess,
+        errorCode: lookupErrorCode,
+        extras: lookupExtras,
+      };
+      // Purpose-specific stage + legacy alias so gates/aggregators stay compatible.
+      this.observeStage({ stage: stageName, ...common });
+      this.observeStage({ stage: 'draft_lookup', ...common });
+      return draftRow;
+    } catch (error) {
+      const durationMs = this.monoNow() - draftT0;
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code: unknown }).code)
+          : 'DRAFT_LOOKUP_FAILED';
+      lookupErrorCode = code;
+      const common = {
+        photoId: input.photoId,
+        sequence: input.sequence,
+        monotonicStartMs: draftT0,
+        durationMs,
+        inputBytes: null as number | null,
+        outputBytes: null as number | null,
+        queueDepth: null as number | null,
+        workerConcurrency: this.maxWorkers,
+        executionContext: 'js' as const,
+        success: false,
+        errorCode: lookupErrorCode,
+        extras: lookupExtras,
+      };
+      this.observeStage({ stage: stageName, ...common });
+      this.observeStage({ stage: 'draft_lookup', ...common });
+      throw Object.assign(
+        new Error(error instanceof Error ? error.message : 'DRAFT_LOOKUP_FAILED'),
+        { code: lookupErrorCode },
+      );
+    }
+  }
+
   private async runCodeScanIfNeeded(
     photo: {
       readonly id: string;
       readonly capture_session_id: string;
       readonly client_file_id: string | null;
       readonly upload_cancel_requested?: number;
+      readonly sequence_number?: number | null;
     },
     stagedUri: string,
   ): Promise<void> {
@@ -1583,11 +1793,13 @@ export class ExportPrepQueue {
     if (!strategy || !this.deps.localCodeScanEnabled) {
       return;
     }
-    const existing = await this.deps.draftRepo
-      .listForSession(photo.capture_session_id)
-      .then((rows) => rows.find((d) => d.capture_photo_id === photo.id))
-      .catch(() => undefined);
-    if (isDraftExportReady(existing ?? null)) {
+    const existing = await this.lookupDraftInstrumented({
+      sessionId: photo.capture_session_id,
+      photoId: photo.id,
+      sequence: photo.sequence_number ?? null,
+      purpose: 'skip_scan_check',
+    });
+    if (isDraftExportReady(existing)) {
       this.metrics.scansSkippedReadyDraft += 1;
       return;
     }

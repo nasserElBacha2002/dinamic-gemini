@@ -93,6 +93,107 @@ export interface LocalDetectionDraftRow {
   readonly updated_at: string;
 }
 
+export class DraftLookupError extends Error {
+  readonly code: 'DRAFT_LOOKUP_FAILED' | 'DRAFT_SESSION_MISMATCH';
+
+  constructor(
+    code: DraftLookupError['code'],
+    message: string,
+    options?: { readonly cause?: unknown },
+  ) {
+    super(message);
+    this.name = 'DraftLookupError';
+    this.code = code;
+    if (options?.cause !== undefined) {
+      (this as { cause?: unknown }).cause = options.cause;
+    }
+  }
+}
+
+/** Fields required for the single session+photo canonical selection rule. */
+export type DraftCanonicalComparable = {
+  readonly capture_photo_id: string;
+  readonly scan_generation: number;
+  readonly updated_at: string;
+  readonly created_at: string;
+};
+
+export type DraftSessionPhotoLookupResult = {
+  readonly draft: LocalDetectionDraftRow | null;
+  /** Rows matching session+photo before canonical selection. */
+  readonly rowsMatched: number;
+  readonly lookupMode: 'direct_indexed_lookup';
+  /** Always 1 — single selective SELECT (no full-session load). */
+  readonly queryCount: 1;
+  readonly fullSessionRowsLoaded: 0;
+  /**
+   * How the authoritative row was chosen when multiple drafts share session+photo.
+   * UNIQUE is (photo, detector, parser, fingerprint) — multiples are valid.
+   */
+  readonly selectionRule: 'scan_generation_desc_updated_at_desc_created_at_desc';
+};
+
+/**
+ * Canonical draft among session+photo matches.
+ *
+ * Contract (case B): multiple rows for the same session+photo are valid when
+ * detector/parser/fingerprint differ (UNIQUE key). Authoritative row is the
+ * highest `scan_generation`, then latest `updated_at`, then latest `created_at`
+ * — not earliest created_at (that was an artifact of `list.find`, which preferred
+ * stale fingerprints over reprocessed drafts).
+ *
+ * This is the **only** selection rule for export-prep / export / CSV / blockers.
+ * Result is independent of input array order.
+ */
+export function selectCanonicalDraftForSessionPhoto<T extends DraftCanonicalComparable>(
+  rows: readonly T[],
+): T | null {
+  if (rows.length === 0) {
+    return null;
+  }
+  let best = rows[0]!;
+  for (let i = 1; i < rows.length; i += 1) {
+    const row = rows[i]!;
+    if (row.scan_generation !== best.scan_generation) {
+      if (row.scan_generation > best.scan_generation) best = row;
+      continue;
+    }
+    if (row.updated_at !== best.updated_at) {
+      if (row.updated_at > best.updated_at) best = row;
+      continue;
+    }
+    if (row.created_at > best.created_at) {
+      best = row;
+    }
+  }
+  return best;
+}
+
+/**
+ * One canonical draft per `capture_photo_id` using {@link selectCanonicalDraftForSessionPhoto}.
+ */
+export function canonicalizeDraftsByPhoto<T extends DraftCanonicalComparable>(
+  rows: readonly T[],
+): Map<string, T> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const list = grouped.get(row.capture_photo_id);
+    if (list) {
+      list.push(row);
+    } else {
+      grouped.set(row.capture_photo_id, [row]);
+    }
+  }
+  const out = new Map<string, T>();
+  for (const [photoId, list] of grouped) {
+    const canonical = selectCanonicalDraftForSessionPhoto(list);
+    if (canonical) {
+      out.set(photoId, canonical);
+    }
+  }
+  return out;
+}
+
 export class LocalDetectionDraftRepository {
   constructor(private readonly db: SQLiteDatabase) {}
 
@@ -307,6 +408,88 @@ export class LocalDetectionDraftRepository {
        ORDER BY created_at ASC;`,
       sessionId,
     );
+  }
+
+  /**
+   * Export-prep draft lookup: one selective query for (session, photo).
+   *
+   * No SQL ORDER BY — sorting is in JS so the query plan stays on
+   * `idx_local_detection_drafts_session_photo` without a temp B-tree.
+   * Row cardinality per photo is small (fingerprints/versions), so in-memory
+   * selection is cheaper than maintaining an ordered covering index.
+   *
+   * Multiples are valid (UNIQUE is photo+detector+parser+fingerprint).
+   * Canonical selection: see `selectCanonicalDraftForSessionPhoto`.
+   *
+   * SQLite / bridge errors propagate as `DRAFT_LOOKUP_FAILED` — never as null.
+   */
+  async getBySessionAndPhotoId(
+    sessionId: string,
+    capturePhotoId: string,
+  ): Promise<DraftSessionPhotoLookupResult> {
+    let rows: LocalDetectionDraftRow[];
+    try {
+      rows = await this.db.getAllAsync<LocalDetectionDraftRow>(
+        `SELECT * FROM local_detection_drafts
+         WHERE capture_session_id = ?
+           AND capture_photo_id = ?;`,
+        sessionId,
+        capturePhotoId,
+      );
+    } catch (error) {
+      throw new DraftLookupError(
+        'DRAFT_LOOKUP_FAILED',
+        error instanceof Error ? error.message : 'draft lookup failed',
+        { cause: error },
+      );
+    }
+
+    const selectionRule =
+      'scan_generation_desc_updated_at_desc_created_at_desc' as const;
+
+    if (rows.length === 0) {
+      return {
+        draft: null,
+        rowsMatched: 0,
+        lookupMode: 'direct_indexed_lookup',
+        queryCount: 1,
+        fullSessionRowsLoaded: 0,
+        selectionRule,
+      };
+    }
+
+    const draft = selectCanonicalDraftForSessionPhoto(rows);
+    if (!draft) {
+      return {
+        draft: null,
+        rowsMatched: rows.length,
+        lookupMode: 'direct_indexed_lookup',
+        queryCount: 1,
+        fullSessionRowsLoaded: 0,
+        selectionRule,
+      };
+    }
+    if (draft.capture_session_id !== sessionId) {
+      throw new DraftLookupError(
+        'DRAFT_SESSION_MISMATCH',
+        'draft session does not match lookup session',
+      );
+    }
+    if (draft.capture_photo_id !== capturePhotoId) {
+      throw new DraftLookupError(
+        'DRAFT_LOOKUP_FAILED',
+        'draft photo id does not match lookup photo',
+      );
+    }
+
+    return {
+      draft,
+      rowsMatched: rows.length,
+      lookupMode: 'direct_indexed_lookup',
+      queryCount: 1,
+      fullSessionRowsLoaded: 0,
+      selectionRule,
+    };
   }
 
   async listForPhoto(capturePhotoId: string): Promise<LocalDetectionDraftRow[]> {

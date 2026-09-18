@@ -51,6 +51,7 @@ module.exports = {
     '<rootDir>/tests/exportPrepStreamingZip.test.ts',
     '<rootDir>/tests/exportPrepCorrections.test.ts',
     '<rootDir>/tests/exportPrepPhase4Staging.test.ts',
+    '<rootDir>/tests/phase3aExportResolutionInstrumentation.test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],

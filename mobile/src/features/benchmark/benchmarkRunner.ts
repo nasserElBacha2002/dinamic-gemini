@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { LocalCatalogRepository } from '../../database/repositories/localCatalogRepository';
 import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
+import { canonicalizeDraftsByPhoto } from '../../database/repositories/localDetectionDraftRepository';
 import type { OfflineRecognitionConfigRepository } from '../../database/repositories/offlineRecognitionConfigRepository';
 import type { GalleryImage } from '../../domain/entities/galleryImage';
 import { createId } from '../../shared/createId';
@@ -44,6 +45,17 @@ import {
   captureBenchmarkEnvironmentStart,
   finalizeBenchmarkEnvironment,
 } from './benchmarkEnvironment';
+import {
+  buildDualCorrectnessRow,
+  reconstructActualFromDraft,
+  summarizeDualCorrectness,
+  type DualCorrectnessRow,
+} from './benchmarkDualCorrectness';
+import { classifyScenarioKind } from './benchmarkFixtureOrder';
+import {
+  getNativeBarcodeScanConcurrencyStats,
+  setNativeBarcodeScanConcurrency,
+} from '../localCodeScan/localCodeDetector';
 
 export type BenchmarkRunStatus =
   | 'PENDING'
@@ -62,6 +74,15 @@ export interface BenchmarkFixtureRef {
   readonly height: number;
   /** Absolute file:// URI inside benchmark sandbox (device). */
   readonly fileUri: string;
+  /** Original manifest sequence before interleave (optional). */
+  readonly originalSequence?: number;
+  /** Manifest scenario kind when known (position/item/multi_*). */
+  readonly scenarioKind?: string;
+  /** Manifest labels_json for dual correctness expected side. */
+  readonly labelsJson?: string | null;
+  /** Manifest scenario string (e.g. position_single_valid). */
+  readonly scenario?: string | null;
+  readonly category?: string | null;
 }
 
 export interface BenchmarkCommand {
@@ -75,6 +96,15 @@ export interface BenchmarkCommand {
   readonly fixtures: readonly BenchmarkFixtureRef[];
   readonly skipUpload: true;
   readonly timeoutMs?: number;
+  /**
+   * Phase 4 experimental knob — strictly 1 or 2.
+   * Controls LocalCodeScanStrategy + native ML Kit slots only.
+   * Does NOT change ExportPrepQueue workers (always 1 for Phase 4 A/B).
+   * Default 1 (production-safe). Does not change the app default unless command sets 2.
+   */
+  readonly scannerConcurrency?: 1 | 2;
+  readonly fixtureOrderVersion?: string;
+  readonly fixtureOrderSeed?: number;
 }
 
 export interface BenchmarkStatusDocument {
@@ -90,6 +120,8 @@ export interface BenchmarkStatusDocument {
   readonly exportId: string | null;
   readonly sessionId: string | null;
   readonly metricsPath: string | null;
+  /** Optional Phase 4 dual-correctness / concurrency extras. */
+  readonly extras?: Record<string, unknown> | null;
 }
 
 export interface BenchmarkRunnerDeps {
@@ -106,6 +138,8 @@ export interface BenchmarkRunnerDeps {
   readonly profileResolver: LocalLabelProfileResolver;
   readonly sessionPurge: SessionArtifactPurgeCoordinator | null;
   readonly documentDirectory: string;
+  /** Optional: apply JS scan concurrency for Phase 4 A/B. */
+  readonly localCodeScan?: import('../localCodeScan/localCodeScanStrategy').LocalCodeScanStrategy | null;
 }
 
 function emptyMarker(inventoryId: string, aisleId: string) {
@@ -338,11 +372,40 @@ export class BenchmarkRunner {
     const hostInventoryId = preflight.hostInventoryId;
     registry.inventoryId = hostInventoryId;
 
+    const scannerConcurrency: 1 | 2 =
+      command.scannerConcurrency === 2 ? 2 : 1;
+    // Phase 4 A/B: ExportPrepQueue workers are held constant at 2 for BOTH arms.
+    // Local ML Kit scans only run inside processJob; with workers=1 the scanner
+    // slot pool can never reach concurrency 2 (feed-starved). Holding workers=2
+    // isolates the measured variable to scannerConcurrency (1 vs 2). Staging/hash
+    // may overlap equally on both arms; only the scan slot/native ML Kit slots change.
+    const exportPrepMaxWorkers = 2 as const;
+    const queueForConcurrency = this.deps.exportPrepQueue;
+    if (queueForConcurrency) {
+      queueForConcurrency.setMaxWorkers(exportPrepMaxWorkers);
+    }
+
+    const nativeConc = await setNativeBarcodeScanConcurrency(scannerConcurrency).catch(() => ({
+      configured: scannerConcurrency,
+      applied: false as boolean,
+      available: false as boolean,
+    }));
+    if (scannerConcurrency === 2 && (!nativeConc.available || !nativeConc.applied)) {
+      throw Object.assign(
+        new Error(
+          'NATIVE_SCANNER_CONCURRENCY_UNAVAILABLE: C=2 requires native setBarcodeScanConcurrency; refusing silent fallback to C=1',
+        ),
+        { code: 'NATIVE_SCANNER_CONCURRENCY_UNAVAILABLE' },
+      );
+    }
+    this.deps.localCodeScan?.setMaxConcurrency(scannerConcurrency);
+    this.deps.localCodeScan?.clearRawDetectedPayloads?.();
+
     const envStart = await captureBenchmarkEnvironmentStart({
       totalFixtureBytes: command.fixtures.reduce((a, f) => a + f.sizeBytes, 0),
       fixtureCount: command.fixtures.length,
-      exportPrepMaxWorkers: 1,
-      scannerConcurrency: 1,
+      exportPrepMaxWorkers,
+      scannerConcurrency,
     });
     sink.emit({
       sessionId: null,
@@ -351,7 +414,20 @@ export class BenchmarkRunner {
       durationMs: 0,
       executionContext: 'js',
       success: true,
-      extras: { ...envStart },
+      extras: {
+        ...envStart,
+        configuredConcurrency: scannerConcurrency,
+        exportPrepMaxWorkers,
+        scannerConcurrency,
+        scanConcurrency: scannerConcurrency,
+        nativeConcurrencyApplied: nativeConc.applied,
+        nativeConcurrencyAvailable: nativeConc.available,
+        activeConcurrency: queueForConcurrency?.getActiveWorkers() ?? 0,
+        maxObservedExportPrepWorkers: queueForConcurrency?.getMaxObservedWorkers() ?? 0,
+        maxObservedScannerConcurrency: this.deps.localCodeScan?.getMaxObservedConcurrency() ?? 0,
+        fixtureOrderVersion: command.fixtureOrderVersion ?? null,
+        fixtureOrderSeed: command.fixtureOrderSeed ?? null,
+      },
     });
 
     const inventory = await this.deps.catalogRepo.getInventoryById(hostInventoryId);
@@ -449,7 +525,9 @@ export class BenchmarkRunner {
       queueDepth: postAdmitCounts?.pending ?? null,
       extras: {
         queueDepthAtEnd: postAdmitCounts?.pending ?? null,
-        configuredWorkers: 1,
+        configuredWorkers: exportPrepMaxWorkers,
+        exportPrepMaxWorkers,
+        scannerConcurrency,
         when: 'post_admission',
       },
     });
@@ -554,10 +632,7 @@ export class BenchmarkRunner {
               ? 'native'
               : phase.extras && phase.extras.executionContext === 'js'
                 ? 'js'
-                : phase.phase === 'strong_validation_hash' &&
-                    phase.extras?.hashMode === 'reused_persisted'
-                  ? 'js'
-                  : phase.phase === 'strong_validation_hash' || phase.phase === 'staging_hash'
+                : phase.phase === 'strong_validation_hash' || phase.phase === 'staging_hash'
                     ? 'native'
                     : 'unknown';
           sink.emit({
@@ -585,9 +660,14 @@ export class BenchmarkRunner {
       registry.exportIds.push(exported.exportId);
 
       const drafts = await this.deps.draftRepo.listForSession(sessionId);
+      const draftByPhoto = canonicalizeDraftsByPhoto(drafts);
+      const fixtureBySequence = new Map(
+        command.fixtures.map((f) => [f.sequence, f] as const),
+      );
+      const dualRows: DualCorrectnessRow[] = [];
       let terminalCount = 0;
       for (const photo of photos) {
-        const draft = drafts.find((d) => d.capture_photo_id === photo.id) ?? null;
+        const draft = draftByPhoto.get(photo.id) ?? null;
         const outcome = classifyDraftOutcome({
           draftStatus: draft?.status,
           errorCode: draft?.error_code,
@@ -606,7 +686,7 @@ export class BenchmarkRunner {
           inputBytes: photo.size,
           outputBytes: null,
           queueDepth: 0,
-          workerConcurrency: 1,
+          workerConcurrency: exportPrepMaxWorkers,
           executionContext: 'js',
           success: outcomeIsSuccess(outcome),
           outcome,
@@ -620,7 +700,99 @@ export class BenchmarkRunner {
           },
         });
         terminalCount += 1;
+
+        // Dual correctness: exactly one row per photo (PIPELINE_ERROR if unrecoverable).
+        const photoSeq = photo.sequence_number ?? 0;
+        const fx =
+          fixtureByAssetId.get(photo.asset_id) ??
+          (photo.sequence_number != null
+            ? fixtureBySequence.get(photo.sequence_number) ?? null
+            : null);
+        let dualRow: DualCorrectnessRow;
+        try {
+          const actual = reconstructActualFromDraft(draft);
+          const rawDetected =
+            this.deps.localCodeScan?.getRawDetectedPayloads(photo.id) ?? [];
+          const scenarioKind = resolveFixtureScenarioKind(fx);
+          dualRow = buildDualCorrectnessRow({
+            benchmarkSequence: fx?.sequence ?? photoSeq,
+            originalSequence: fx?.originalSequence ?? fx?.sequence ?? photoSeq,
+            filename: fx?.filename ?? photo.display_name ?? photo.id,
+            scenarioKind,
+            labelsJson: fx?.labelsJson ?? null,
+            actualRawDetectedPayloads: rawDetected,
+            actualAcceptedPayloads: actual.actualAcceptedPayloads,
+            actualRejectedPayloads: actual.actualRejectedPayloads,
+            actualPosition: actual.actualPosition,
+            actualItems: actual.actualItems,
+            draftStatus: actual.draftStatus,
+            errorCode: actual.errorCode,
+            pipelineError: actual.pipelineError,
+            scannerProcessingMs: draft?.processing_ms ?? null,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message.slice(0, 160) : 'unknown';
+          dualRow = buildDualCorrectnessRow({
+            benchmarkSequence: fx?.sequence ?? photoSeq,
+            originalSequence: fx?.originalSequence ?? fx?.sequence ?? photoSeq,
+            filename: fx?.filename ?? photo.display_name ?? photo.id,
+            scenarioKind: resolveFixtureScenarioKind(fx),
+            labelsJson: fx?.labelsJson ?? null,
+            actualRawDetectedPayloads: [],
+            actualAcceptedPayloads: [],
+            actualRejectedPayloads: [],
+            actualPosition: null,
+            actualItems: [],
+            pipelineError: `PIPELINE_ERROR:${message}`,
+            scannerProcessingMs: draft?.processing_ms ?? null,
+          });
+        }
+        dualRows.push(dualRow);
+        sink.emit({
+          sessionId,
+          photoId: photo.id,
+          sequence: photo.sequence_number,
+          stage: 'dual_correctness_row',
+          monotonicStartMs: monoNowMs(),
+          durationMs: 0,
+          executionContext: 'js',
+          success: dualRow.pipelineError == null,
+          errorCode: dualRow.pipelineError,
+          extras: {
+            benchmarkSequence: dualRow.benchmarkSequence,
+            originalSequence: dualRow.originalSequence,
+            filename: dualRow.filename,
+            scenarioKind: dualRow.scenarioKind,
+            expectedValidPayloads: dualRow.expectedValidPayloads.join('|'),
+            expectedFalsePayloads: dualRow.expectedFalsePayloads.join('|'),
+            actualRawDetectedPayloads: dualRow.actualRawDetectedPayloads.join('|'),
+            actualAcceptedPayloads: dualRow.actualAcceptedPayloads.join('|'),
+            actualRejectedPayloads: dualRow.actualRejectedPayloads.join('|'),
+            expectedPosition: dualRow.expectedPosition,
+            actualPosition: dualRow.actualPosition,
+            expectedItems: dualRow.expectedItems,
+            actualItems: dualRow.actualItems,
+            detectionResult: dualRow.detectionResult,
+            domainResult: dualRow.domainResult,
+            expectedDomainOutcome: dualRow.expectedDomainOutcome,
+            pipelineError: dualRow.pipelineError,
+            scannerProcessingMs: dualRow.scannerProcessingMs,
+            detectionDetail: dualRow.detectionDetail ?? null,
+            domainDetail: dualRow.domainDetail ?? null,
+          },
+        });
       }
+
+      const dualSummary = summarizeDualCorrectness(dualRows);
+      sink.emit({
+        sessionId,
+        stage: 'dual_correctness_summary',
+        monotonicStartMs: monoNowMs(),
+        durationMs: 0,
+        executionContext: 'js',
+        success: dualSummary.pipelineErrors === 0,
+        extras: flattenDualSummaryExtras(dualSummary),
+      });
 
       const counts = await queue.getCounts(sessionId);
       const pendingJobs = counts.queued + counts.processing + counts.failedRetryable;
@@ -641,14 +813,16 @@ export class BenchmarkRunner {
         durationMs: monoNowMs() - pipelineStart,
         inputBytes: command.fixtures.reduce((a, f) => a + f.sizeBytes, 0),
         queueDepth: pendingJobs,
-        workerConcurrency: 1,
+        workerConcurrency: exportPrepMaxWorkers,
         executionContext: 'js',
         success: pendingJobs === 0 && terminalCount === command.fixtures.length,
         errorCode: pendingJobs === 0 ? null : 'PENDING_JOBS',
         extras: {
           coldWarm: command.coldWarm,
           maxQueueDepth,
-          configuredWorkers: 1,
+          configuredWorkers: exportPrepMaxWorkers,
+          exportPrepMaxWorkers,
+          scannerConcurrency,
           ...summarizeHashCounters(sink.events),
         },
       });
@@ -675,14 +849,86 @@ export class BenchmarkRunner {
           e.stage === 'staging_hash' &&
           (e.extras?.hashMode === 'native_file' || e.extras?.hashImplementation === 'native_stream'),
       );
-      const strongReused = sink.events.filter(
+      // Integrity: strong validation always native-rehashes (no reused_persisted).
+      const strongNative = sink.events.filter(
+        (e) =>
+          e.stage === 'strong_validation_hash' &&
+          (e.extras?.hashMode === 'native_file' ||
+            e.extras?.hashImplementation === 'native_stream'),
+      ).length;
+      const strongReusedUnexpected = sink.events.filter(
         (e) =>
           e.stage === 'strong_validation_hash' && e.extras?.hashMode === 'reused_persisted',
       ).length;
       const hashOk =
         hashCounters.base64FullFileHashCount === 0 &&
         stagingNative &&
-        (command.fixtures.length < 3 || strongReused === command.fixtures.length);
+        (command.fixtures.length < 3 ||
+          (strongNative === command.fixtures.length && strongReusedUnexpected === 0));
+
+      const draftLookups = sink.events.filter(
+        (e) =>
+          e.stage === 'draft_lookup' ||
+          e.stage === 'draft_lookup_pre_scan' ||
+          e.stage === 'draft_lookup_post_scan',
+      );
+      const draftLookupOk =
+        command.fixtures.length < 3 ||
+        (draftLookups.length >= command.fixtures.length &&
+          draftLookups.every(
+            (e) =>
+              e.extras?.lookupMode === 'direct_indexed_lookup' &&
+              Number(e.extras?.queryCount) === 1 &&
+              Number(e.extras?.fullSessionRowsLoaded ?? 0) === 0,
+          ) &&
+          sink.events.some((e) => e.stage === 'draft_lookup_pre_scan') &&
+          sink.events.some((e) => e.stage === 'draft_lookup_post_scan'));
+
+      const stageOnceOk = (stage: string): boolean => {
+        const rows = sink.events.filter((e) => e.stage === stage);
+        return rows.length === 1 && Number(rows[0]!.durationMs) >= 0;
+      };
+      const hasStagingResolution = sink.events.some(
+        (e) => e.stage === 'export_resolution_staging_validation',
+      );
+      let exportResolutionOk = true;
+      if (hasStagingResolution || sink.events.some((e) => e.stage === 'export_resolution')) {
+        exportResolutionOk =
+          stageOnceOk('export_resolution') &&
+          stageOnceOk('export_resolution_queries') &&
+          stageOnceOk('export_resolution_freeze_checks') &&
+          stageOnceOk('export_resolution_profile');
+        if (hasStagingResolution) {
+          const staging = sink.events.find(
+            (e) => e.stage === 'export_resolution_staging_validation',
+          );
+          const hash = sink.events.find((e) => e.stage === 'export_resolution_hash_validation');
+          const hashNestedOk =
+            staging != null &&
+            hash != null &&
+            Number(hash.durationMs) <= Number(staging.durationMs) + 50;
+          const entryOrOther =
+            sink.events.some((e) => e.stage === 'export_resolution_entry_build') ||
+            sink.events.some((e) => e.stage === 'export_resolution_other');
+          const noFictitious =
+            !sink.events.some(
+              (e) =>
+                (e.stage === 'export_resolution_ensure_jobs' || e.stage === 'export_resolution') &&
+                Number(e.extras?.queryCount) === -1,
+            );
+          exportResolutionOk =
+            exportResolutionOk &&
+            stageOnceOk('export_resolution_ensure_jobs') &&
+            stageOnceOk('export_resolution_staging_validation') &&
+            stageOnceOk('export_resolution_hash_validation') &&
+            stageOnceOk('export_resolution_scan_catchup') &&
+            entryOrOther &&
+            hashNestedOk &&
+            noFictitious;
+        }
+      }
+
+      const dualRowCountOk = dualRows.length === command.fixtures.length;
 
       const instrumentationInvalid =
         missingFixture ||
@@ -690,9 +936,20 @@ export class BenchmarkRunner {
         !hasZipFinalize ||
         !hasZipValidation ||
         !positionOk ||
-        !hashOk;
+        !hashOk ||
+        !draftLookupOk ||
+        !exportResolutionOk ||
+        !dualRowCountOk;
 
-      const envEnd = await finalizeBenchmarkEnvironment(envStart);
+      const maxObservedScannerConcurrency =
+        this.deps.localCodeScan?.getMaxObservedConcurrency() ?? 0;
+      const nativeStats = await getNativeBarcodeScanConcurrencyStats();
+      const maxObservedNativeScannerConcurrency = nativeStats.maxObserved;
+
+      const envEnd = await finalizeBenchmarkEnvironment(envStart, {
+        maxObservedScannerConcurrency,
+        maxObservedNativeScannerConcurrency,
+      });
       sink.emit({
         sessionId,
         stage: 'benchmark_environment_end',
@@ -700,7 +957,15 @@ export class BenchmarkRunner {
         durationMs: 0,
         executionContext: 'js',
         success: true,
-        extras: { ...envEnd },
+        extras: {
+          ...envEnd,
+          exportPrepMaxWorkers,
+          scannerConcurrency,
+          maxObservedScannerConcurrency,
+          maxObservedNativeScannerConcurrency,
+          nativeStatsAvailable: nativeStats.available,
+          ...flattenDualSummaryExtras(dualSummary),
+        },
       });
       const envPath = `${this.deps.documentDirectory}${BENCHMARK_NAMESPACE_PREFIX}/${runId}/environment.json`;
       await FileSystem.writeAsStringAsync(envPath, JSON.stringify(envEnd, null, 2)).catch(
@@ -724,7 +989,7 @@ export class BenchmarkRunner {
               ? 'SMOKE_FAILED_INSTRUMENTATION_INVALID'
               : null,
         errorDetail: instrumentationInvalid
-          ? `fixtureMissing=${missingFixture};zipEntry=${hasZipEntry};finalize=${hasZipFinalize};validation=${hasZipValidation};positionOk=${positionOk};hashOk=${hashOk};base64=${hashCounters.base64FullFileHashCount};reused=${strongReused}`
+          ? `fixtureMissing=${missingFixture};zipEntry=${hasZipEntry};finalize=${hasZipFinalize};validation=${hasZipValidation};positionOk=${positionOk};hashOk=${hashOk};base64=${hashCounters.base64FullFileHashCount};strongNative=${strongNative};draftLookupOk=${draftLookupOk};exportResolutionOk=${exportResolutionOk};dualRowCountOk=${dualRowCountOk}`
           : null,
         profile: {
           resolvedClientId: preflight.resolvedClientId,
@@ -741,6 +1006,14 @@ export class BenchmarkRunner {
         exportId: exported.exportId,
         sessionId,
         metricsPath: this.metricsPath(runId),
+        extras: {
+          exportPrepMaxWorkers,
+          scannerConcurrency,
+          maxObservedScannerConcurrency,
+          maxObservedNativeScannerConcurrency,
+          dualCorrectnessSummary: dualSummary,
+          dualCorrectnessRows: dualRows,
+        },
       };
     } finally {
       queue.setStageObserver(null);
@@ -776,6 +1049,53 @@ export class BenchmarkRunner {
 /** Used by command watch to mint process id once per JS runtime. */
 export function createBenchmarkProcessId(): string {
   return `proc-${createId()}`;
+}
+
+function resolveFixtureScenarioKind(
+  fx: BenchmarkFixtureRef | null,
+): import('./benchmarkFixtureOrder').BenchmarkManifestScenarioKind {
+  if (fx?.scenarioKind) {
+    const k = fx.scenarioKind.trim().toLowerCase();
+    if (
+      k === 'position' ||
+      k === 'item' ||
+      k === 'multi_true' ||
+      k === 'multi_mixed' ||
+      k === 'multi_false' ||
+      k === 'other'
+    ) {
+      return k;
+    }
+  }
+  const scenario = fx?.scenario ?? fx?.type ?? '';
+  const category = fx?.category ?? fx?.type ?? '';
+  return classifyScenarioKind(String(scenario), String(category));
+}
+
+function flattenDualSummaryExtras(
+  summary: import('./benchmarkDualCorrectness').DualCorrectnessSummary,
+): Record<string, number | string | boolean | null> {
+  return {
+    totalPhotos: summary.totalPhotos,
+    detectionExact: summary.detectionExact,
+    detectionPartial: summary.detectionPartial,
+    detectionFalseNegative: summary.detectionFalseNegative,
+    detectionUnexpectedExtra: summary.detectionUnexpectedExtra,
+    detectionExactAccuracy: summary.detectionExactAccuracy,
+    detectionRecall: summary.detectionRecall,
+    domainExact: summary.domainExact,
+    correctRejections: summary.correctRejections,
+    falsePositives: summary.falsePositives,
+    falseNegatives: summary.falseNegatives,
+    wrongPosition: summary.wrongPosition,
+    wrongItem: summary.wrongItem,
+    wrongQuantity: summary.wrongQuantity,
+    ambiguousExpected: summary.ambiguousExpected,
+    ambiguousCorrect: summary.ambiguousCorrect,
+    pipelineErrors: summary.pipelineErrors,
+    domainExactAccuracy: summary.domainExactAccuracy,
+    byScenarioJson: JSON.stringify(summary.byScenario),
+  };
 }
 
 function summarizeHashCounters(

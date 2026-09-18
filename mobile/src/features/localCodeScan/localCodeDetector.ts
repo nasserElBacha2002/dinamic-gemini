@@ -15,6 +15,16 @@ type NativeBarcodeMod = {
     formatsCsv: string,
   ) => Promise<Array<{ rawValue: string; format: string; boundingBox?: string }>>;
   isBarcodeScannerAvailable?: () => Promise<boolean>;
+  setBarcodeScanConcurrency?: (n: number) => Promise<{
+    configured?: number;
+    active?: number;
+    maxObserved?: number;
+  }>;
+  getBarcodeScanConcurrencyStats?: () => Promise<{
+    configured?: number;
+    active?: number;
+    maxObserved?: number;
+  }>;
 };
 
 function platformOS(): string {
@@ -94,4 +104,51 @@ export async function detectLocalBarcodes(uri: string): Promise<DetectedCodeCand
       detectionIndex: i,
       boundingBox: typeof r.boundingBox === 'string' && r.boundingBox.trim() ? r.boundingBox : null,
     }));
+}
+
+/** Phase 4: configure native ML Kit concurrent scan slots (1|2). */
+export async function setNativeBarcodeScanConcurrency(n: 1 | 2): Promise<{
+  readonly configured: number;
+  readonly applied: boolean;
+  readonly available: boolean;
+}> {
+  if (n !== 1 && n !== 2) {
+    throw Object.assign(new Error('NATIVE_SCAN_CONCURRENCY_INVALID'), {
+      code: 'NATIVE_SCAN_CONCURRENCY_INVALID',
+    });
+  }
+  const native = resolveNative();
+  if (!native?.setBarcodeScanConcurrency) {
+    return { configured: n, applied: false, available: false };
+  }
+  const stats = await native.setBarcodeScanConcurrency(n);
+  return {
+    configured: Number(stats?.configured ?? n),
+    applied: true,
+    available: true,
+  };
+}
+
+/** Phase 4: read native concurrent-scan stats when the module exposes them. */
+export async function getNativeBarcodeScanConcurrencyStats(): Promise<{
+  readonly available: boolean;
+  readonly configured: number | null;
+  readonly active: number | null;
+  readonly maxObserved: number | null;
+}> {
+  const native = resolveNative();
+  if (!native?.getBarcodeScanConcurrencyStats) {
+    return { available: false, configured: null, active: null, maxObserved: null };
+  }
+  try {
+    const stats = await native.getBarcodeScanConcurrencyStats();
+    return {
+      available: true,
+      configured: typeof stats?.configured === 'number' ? stats.configured : null,
+      active: typeof stats?.active === 'number' ? stats.active : null,
+      maxObserved: typeof stats?.maxObserved === 'number' ? stats.maxObserved : null,
+    };
+  } catch {
+    return { available: false, configured: null, active: null, maxObserved: null };
+  }
 }

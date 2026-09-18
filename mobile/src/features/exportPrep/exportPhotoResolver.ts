@@ -12,7 +12,11 @@ import { exportPhotoFileName } from './exportPhotoFileName';
 import { ExportFromStagingError } from './exportFromStagingErrors';
 import type { OriginalFallbackReason } from './exportSourcePolicy';
 import type { ExportPrepJobRow } from './exportPrepTypes';
-import { validateReadyStaging, type ReadyValidationResult } from './validateReadyStaging';
+import {
+  isConfirmedReadyIntegrityFailure,
+  validateReadyStaging,
+  type ReadyValidationResult,
+} from './validateReadyStaging';
 import { assertSafeExportFileName } from './validateExportFileName';
 
 export type ExportPhotoSource =
@@ -140,7 +144,12 @@ export async function resolveExportPhotosFromStaging(input: {
     });
     if (!ready.ok) {
       const failure = ready.failure ?? 'UNKNOWN';
-      if (invalidateOnFailure) {
+      // Only invalidate READY when integrity is proven wrong — never on digest
+      // unavailable/failed (preserve recoverable state for retry after APK/bridge fix).
+      if (
+        invalidateOnFailure &&
+        isConfirmedReadyIntegrityFailure(ready.failure)
+      ) {
         await prepRepo.invalidateReady(
           photo.id,
           `EXPORT_PREP_READY_INVALID:${failure}`,
@@ -154,7 +163,11 @@ export async function resolveExportPhotosFromStaging(input: {
             ? 'STAGING_SIZE_MISMATCH'
             : failure === 'STAGING_SHA_MISMATCH' || failure === 'INVALID_SHA256_FORMAT'
               ? 'STAGING_HASH_MISMATCH'
-              : 'PREP_NOT_READY';
+              : failure === 'STAGING_DIGEST_UNAVAILABLE'
+                ? 'STAGING_DIGEST_UNAVAILABLE'
+                : failure === 'STAGING_DIGEST_FAILED'
+                  ? 'STAGING_DIGEST_FAILED'
+                  : 'PREP_NOT_READY';
       throw new ExportFromStagingError(
         code,
         `${photo.id} READY inválido (${failure})`,

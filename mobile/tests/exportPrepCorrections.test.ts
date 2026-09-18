@@ -12,18 +12,30 @@ import {
   isValidStagedSha256,
 } from '../src/database/repositories/exportPrepRepository';
 import { ExportPrepQueue } from '../src/features/exportPrep/exportPrepQueue';
-import { hashStagedFileSha256Hex } from '../src/features/exportPrep/stagedSha256';
+import {
+  hashStagedFileSha256Detailed,
+  hashStagedFileSha256Hex,
+} from '../src/features/exportPrep/stagedSha256';
 import * as FileSystem from 'expo-file-system';
 import { writeStoreZipAtomic } from '../src/features/exportPrep/streamingZipWriter';
 
-jest.mock('../src/features/exportPrep/stagedSha256', () => ({
-  hashStagedFileSha256Hex: jest.fn(async () => 'b'.repeat(64)),
-  hashStagedFileSha256Detailed: jest.fn(async () => ({
-    sha256: 'b'.repeat(64),
-    bytesHashed: 12,
-    hashMode: 'native_file' as const,
-  })),
-}));
+jest.mock('../src/features/exportPrep/stagedSha256', () => {
+  const actual = jest.requireActual('../src/features/exportPrep/stagedSha256') as Record<
+    string,
+    unknown
+  >;
+  return {
+    ...actual,
+    hashStagedFileSha256Hex: jest.fn(async () => 'b'.repeat(64)),
+    hashStagedFileSha256Detailed: jest.fn(async () => ({
+      sha256: 'b'.repeat(64),
+      bytesHashed: 12,
+      hashMode: 'native_file' as const,
+      hashSource: 'computed' as const,
+      durationMs: 1,
+    })),
+  };
+});
 
 jest.mock('../src/features/exportPrep/exportStaging', () => {
   const actual = jest.requireActual('../src/features/exportPrep/exportStaging') as Record<
@@ -240,7 +252,7 @@ describe('staged SHA-256 fail-closed', () => {
 
 describe('ExportPrepQueue processJob', () => {
   it('never calls markReady when staged hash fails; uses fenced markFailed', async () => {
-    (hashStagedFileSha256Hex as jest.Mock).mockRejectedValueOnce(
+    (hashStagedFileSha256Detailed as jest.Mock).mockRejectedValueOnce(
       Object.assign(new Error('hash fail'), { code: 'EXPORT_PREP_HASH_FAILED' }),
     );
 
@@ -306,6 +318,22 @@ describe('ExportPrepQueue processJob', () => {
         getSession: async () => ({ id: 's1', preparation_processing_mode: 'CODE_SCAN' }),
       } as never,
       draftRepo: {
+        getBySessionAndPhotoId: async () => ({
+          draft: {
+            capture_photo_id: 'p1',
+            capture_session_id: 's1',
+            status: 'RESOLVED',
+            internal_code: 'SKU',
+            label_id: 'L',
+            product_results_json: '[]',
+            position_detected: 0,
+          },
+          rowsMatched: 1,
+          lookupMode: 'direct_indexed_lookup' as const,
+          queryCount: 1 as const,
+          fullSessionRowsLoaded: 0 as const,
+          selectionRule: 'scan_generation_desc_updated_at_desc_created_at_desc' as const,
+        }),
         listForSession: async () => [
           {
             capture_photo_id: 'p1',
@@ -396,7 +424,17 @@ describe('ExportPrepQueue processJob', () => {
           upload_cancel_requested: 0,
         }),
       } as never,
-      draftRepo: { listForSession: async () => [] } as never,
+      draftRepo: {
+        getBySessionAndPhotoId: async () => ({
+          draft: null,
+          rowsMatched: 0,
+          lookupMode: 'direct_indexed_lookup' as const,
+          queryCount: 1 as const,
+          fullSessionRowsLoaded: 0 as const,
+          selectionRule: 'scan_generation_desc_updated_at_desc_created_at_desc' as const,
+        }),
+        listForSession: async () => [],
+      } as never,
       localCodeScan: null,
       localCodeScanEnabled: false,
     });

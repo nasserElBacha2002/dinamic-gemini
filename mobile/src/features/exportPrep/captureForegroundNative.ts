@@ -14,6 +14,18 @@ export type CaptureForegroundAppendNative = {
   ) => Promise<{ size: number; sha256: string; crc32: number }>;
 };
 
+/** Explicit native binary capabilities for deployment / OTA gating. */
+export type NativeBinaryCapabilities = {
+  readonly moduleLoaded: boolean;
+  readonly appendBase64File: boolean;
+  readonly appendFile: boolean;
+  readonly digestFile: boolean;
+  readonly truncateFile: boolean;
+  readonly getFileSize: boolean;
+  readonly readFileRangeBase64: boolean;
+  readonly hashFileSha256: boolean;
+};
+
 export type CaptureForegroundRandomAccessNative = {
   getFileSize: (absolutePath: string) => Promise<number>;
   readFileRangeBase64: (
@@ -62,6 +74,33 @@ function normalizeDigest(raw: Record<string, unknown>): {
   const sha256 = String(raw.sha256 ?? '').toLowerCase();
   const crc32 = Math.trunc(Number(raw.crc32)) >>> 0;
   return { size, sha256, crc32 };
+}
+
+/** Probe which CaptureForegroundService methods exist on the installed APK. */
+export function getNativeBinaryCapabilities(): NativeBinaryCapabilities {
+  const mod = resolveCaptureForegroundNative();
+  if (!mod) {
+    return {
+      moduleLoaded: false,
+      appendBase64File: false,
+      appendFile: false,
+      digestFile: false,
+      truncateFile: false,
+      getFileSize: false,
+      readFileRangeBase64: false,
+      hashFileSha256: false,
+    };
+  }
+  return {
+    moduleLoaded: true,
+    appendBase64File: isFn(mod.appendBase64File),
+    appendFile: isFn(mod.appendFile),
+    digestFile: isFn(mod.digestFile),
+    truncateFile: isFn(mod.truncateFile),
+    getFileSize: isFn(mod.getFileSize),
+    readFileRangeBase64: isFn(mod.readFileRangeBase64),
+    hashFileSha256: isFn(mod.hashFileSha256),
+  };
 }
 
 /** Android ZIP append APIs, or null if this native binary is missing Phase 5 methods. */

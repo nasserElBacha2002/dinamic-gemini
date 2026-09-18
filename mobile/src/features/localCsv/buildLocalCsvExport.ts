@@ -1,6 +1,7 @@
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import type { ConfirmedLocalResultRow } from '../../database/repositories/confirmedLocalResultRepository';
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
+import { canonicalizeDraftsByPhoto } from '../../database/repositories/localDetectionDraftRepository';
 import {
   CHECKSUM_ALGORITHM,
   LOCAL_CSV_SCHEMA_VERSION,
@@ -262,7 +263,7 @@ function settledEmptyRowSource(input: {
 export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
   const exportId = input.exportId ?? createId();
   const exportedAt = input.exportedAt ?? new Date().toISOString();
-  const draftByPhoto = new Map(input.drafts.map((d) => [d.capture_photo_id, d]));
+  const draftByPhoto = canonicalizeDraftsByPhoto(input.drafts);
   const confirmedByPhoto = new Map(input.confirmed.map((c) => [c.capture_photo_id, c]));
 
   const eligible = [...input.photos]

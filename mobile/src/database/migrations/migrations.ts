@@ -975,6 +975,16 @@ CREATE INDEX IF NOT EXISTS idx_session_purge_tasks_state
   ON session_purge_tasks(state);
 `,
   },
+  {
+    version: 39,
+    name: 'local_detection_drafts_session_photo_index',
+    sql: `
+-- Selective lookup for export-prep draft_lookup (session + photo).
+-- Not UNIQUE: multiple rows per photo remain possible across detector/parser/fingerprint.
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_session_photo
+  ON local_detection_drafts(capture_session_id, capture_photo_id);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

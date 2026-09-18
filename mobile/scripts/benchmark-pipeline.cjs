@@ -12,7 +12,27 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync, execFileSync } = require('child_process');
+const {
+  BENCHMARK_FIXTURE_ORDER_DEFAULT_VERSION,
+  BENCHMARK_FIXTURE_ORDER_DEFAULT_SEED,
+  buildInterleavedFixtureOrderV2,
+} = require('./lib/andesFixtureOrder.cjs');
 
+/** New benches default to andes_interleaved_v2. */
+const BENCHMARK_FIXTURE_ORDER_VERSION = BENCHMARK_FIXTURE_ORDER_DEFAULT_VERSION;
+const BENCHMARK_FIXTURE_ORDER_SEED = BENCHMARK_FIXTURE_ORDER_DEFAULT_SEED;
+const {
+  summarizeDualCorrectness,
+  evaluateAbsoluteCorrectnessGate,
+  evaluateDualRegressionGate,
+  dualCorrectnessToCsv,
+  extractDualRowsFromEvents,
+  extractDualRowsFromStatus,
+  buildSequenceBandsCsv,
+} = require('./lib/andesDualCorrectness.cjs');
+
+/** Phase 4 A/B: ExportPrep workers stay at 1; only scannerConcurrency varies. */
+const PHASE4_EXPORT_PREP_MAX_WORKERS = 2;
 const AUTHORIZED_CLIENT = '8a3c9a01-7494-4be0-99be-595ecbf2b9bd';
 const AUTHORIZED_SUPPLIER = 'bce1460e-7238-4e39-82ec-8c4e51dcb9ca';
 const PACKAGE = 'com.dinamic.inventory.capture';
@@ -34,6 +54,9 @@ function parseArgs(argv) {
     confirmFullRun: false,
     cooldownMs: 5000,
     timeoutMs: 20 * 60 * 1000,
+    scannerConcurrency: 1,
+    interleave: true,
+    compareCorrectness: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -51,6 +74,13 @@ function parseArgs(argv) {
     else if (a === '--confirm-full-run') out.confirmFullRun = true;
     else if (a === '--cooldown-ms') out.cooldownMs = Number(next());
     else if (a === '--timeout-ms') out.timeoutMs = Number(next());
+    else if (a === '--scanner-concurrency') {
+      const n = Number(next());
+      if (n !== 1 && n !== 2) die('ARGS', '--scanner-concurrency must be 1 or 2');
+      out.scannerConcurrency = n;
+    } else if (a === '--compare-correctness') {
+      out.compareCorrectness = next();
+    } else if (a === '--no-interleave') out.interleave = false;
     else if (a === '--help' || a === '-h') {
       console.log(`See mobile/scripts/benchmark-pipeline.mjs header`);
       process.exit(0);
@@ -76,37 +106,132 @@ function resolveInputDir(raw) {
 function parseManifest(text) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) die('MANIFEST', 'empty manifest');
+  const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const idx = (name) => header.indexOf(name);
+  // Legacy Andes 50: sequence,filename,type,sourceTemplate,width,height,sizeBytes,sha256
+  // Andes 300: sequence,filename,scenario,category,width,height,size_bytes,sha256,...
+  const hasCategory = idx('category') >= 0;
+  const colFilename = idx('filename') >= 0 ? idx('filename') : 1;
+  const colType = hasCategory ? idx('category') : idx('type') >= 0 ? idx('type') : 2;
+  const colTemplate = hasCategory
+    ? idx('scenario') >= 0
+      ? idx('scenario')
+      : 2
+    : idx('sourcetemplate') >= 0
+      ? idx('sourcetemplate')
+      : 3;
+  const colWidth = idx('width') >= 0 ? idx('width') : 4;
+  const colHeight = idx('height') >= 0 ? idx('height') : 5;
+  const colSize =
+    idx('size_bytes') >= 0 ? idx('size_bytes') : idx('sizebytes') >= 0 ? idx('sizebytes') : 6;
+  const colSha = idx('sha256') >= 0 ? idx('sha256') : 7;
+  const colScenario = idx('scenario') >= 0 ? idx('scenario') : -1;
+  const colValid = idx('valid_andes_count') >= 0 ? idx('valid_andes_count') : -1;
+  const colFalse = idx('false_label_count') >= 0 ? idx('false_label_count') : -1;
+  const colLabels = idx('label_count') >= 0 ? idx('label_count') : -1;
+  const colLabelsJson = idx('labels_json') >= 0 ? idx('labels_json') : -1;
+  const colDecoded = idx('decoded_payloads') >= 0 ? idx('decoded_payloads') : -1;
+
   const rows = [];
   const seen = new Set();
   for (let i = 1; i < lines.length; i += 1) {
-    const cols = lines[i].split(',');
+    // CSV may contain quoted JSON with commas — use a minimal split that keeps trailing fields joined when needed.
+    const cols = splitCsvLine(lines[i]);
     if (cols.length < 8) die('MANIFEST', `bad row ${i}`);
-    const filename = cols[1].trim();
+    const filename = cols[colFilename].trim();
     if (seen.has(filename)) die('MANIFEST', `duplicate filename ${filename}`);
     seen.add(filename);
+    const typeRaw = cols[colType].trim().toLowerCase();
+    const type =
+      typeRaw === 'position' || typeRaw === 'item'
+        ? typeRaw
+        : typeRaw.includes('position')
+          ? 'position'
+          : typeRaw.includes('item')
+            ? 'item'
+            : typeRaw;
     rows.push({
       sequence: Number(cols[0]),
       filename,
-      type: cols[2].trim().toLowerCase(),
-      sourceTemplate: cols[3].trim(),
-      width: Number(cols[4]),
-      height: Number(cols[5]),
-      sizeBytes: Number(cols[6]),
-      sha256: cols[7].trim().toLowerCase(),
+      type,
+      sourceTemplate: cols[colTemplate].trim(),
+      width: Number(cols[colWidth]),
+      height: Number(cols[colHeight]),
+      sizeBytes: Number(cols[colSize]),
+      sha256: cols[colSha].trim().toLowerCase(),
+      scenario: colScenario >= 0 ? cols[colScenario].trim() : null,
+      category: hasCategory ? typeRaw : type,
+      labelCount: colLabels >= 0 ? Number(cols[colLabels]) : null,
+      validAndesCount: colValid >= 0 ? Number(cols[colValid]) : null,
+      falseLabelCount: colFalse >= 0 ? Number(cols[colFalse]) : null,
+      labelsJson: colLabelsJson >= 0 ? cols[colLabelsJson] : null,
+      decodedPayloads: colDecoded >= 0 ? cols[colDecoded] : null,
     });
   }
   return rows;
 }
 
-function selectFixtures(rows, photos) {
+/** Split a CSV line respecting double-quoted fields (for Andes 300 labels_json). */
+function splitCsvLine(line) {
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) {
+      out.push(cur);
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+function selectFixtures(rows, photos, options = {}) {
   if (photos === 3) {
-    const positions = rows.filter((r) => r.type === 'position');
-    const items = rows.filter((r) => r.type === 'item');
+    const positions = rows.filter((r) => r.type === 'position' || r.category === 'position');
+    const items = rows.filter((r) => r.type === 'item' || r.category === 'item');
     if (positions.length < 1 || items.length < 2) die('SMOKE', 'need 1 position + 2 item');
     return [positions[0], items[0], items[1]];
   }
   if (photos < 1 || photos > rows.length) die('PHOTOS', 'invalid --photos');
-  return rows.slice(0, photos);
+  if (options.interleave === false || photos <= 3) {
+    return rows.slice(0, photos).map((r, i) => ({
+      ...r,
+      benchmarkSequence: i + 1,
+      originalSequence: r.sequence,
+    }));
+  }
+  // Interleave the FULL manifest first, then take the first N of the ordered
+  // stream. Slicing before interleave starves ITEM/MULTI when the raw CSV is
+  // category-sorted (POSITION head).
+  const enriched = rows.map((r) => ({
+    ...r,
+    scenario: r.scenario || r.sourceTemplate || r.type,
+    category: r.category || r.type,
+  }));
+  const built = buildInterleavedFixtureOrderV2(enriched, {
+    seed: options.seed != null ? options.seed : BENCHMARK_FIXTURE_ORDER_SEED,
+    version: options.version || BENCHMARK_FIXTURE_ORDER_VERSION,
+  });
+  return built.ordered.slice(0, photos).map((r, i) => ({
+    ...r,
+    benchmarkSequence: i + 1,
+    // Domain order for device command.sequence must follow benchmarkSequence.
+    sequence: i + 1,
+    type: r.type || (r.scenarioKind === 'position' ? 'position' : 'item'),
+  }));
 }
 
 function sha256File(filePath) {
@@ -118,11 +243,24 @@ function sha256File(filePath) {
 function adb(device, args, opts = {}) {
   const base = device ? ['-s', device] : [];
   const full = [...base, ...args];
-  const res = spawnSync('adb', full, {
-    encoding: 'utf8',
-    maxBuffer: 20 * 1024 * 1024,
-    ...opts,
-  });
+  const maxAttempts = opts.retries != null ? opts.retries : 3;
+  const { retries: _retries, ...spawnOpts } = opts;
+  let res = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    res = spawnSync('adb', full, {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      ...spawnOpts,
+    });
+    const enobufs =
+      (res.error && (res.error.code === 'ENOBUFS' || /ENOBUFS/i.test(String(res.error.message || '')))) ||
+      /ENOBUFS/i.test(String(res.stderr || ''));
+    if (enobufs && attempt < maxAttempts) {
+      sleep(1500 * attempt);
+      continue;
+    }
+    break;
+  }
   if (res.error) die('ADB', res.error.message);
   if (res.status !== 0 && !opts.allowFail) {
     die('ADB', `adb ${full.join(' ')} failed: ${res.stderr || res.stdout}`);
@@ -214,6 +352,149 @@ function pollStatus(device, runId, timeoutMs) {
         expectedCount: 0,
         pendingJobs: -1,
       };
+}
+
+/**
+ * Abort C=2 before any labeled run if the installed APK lacks native
+ * setBarcodeScanConcurrency. APK is a ZIP — plain `strings` on the APK file
+ * misses DEX contents, so we pull the APK and search uncompressed classes*.dex.
+ */
+function assertNativeScannerConcurrencyCapability(device) {
+  const pathOut = adb(device, ['shell', 'pm', 'path', PACKAGE], { allowFail: true });
+  if (pathOut.status !== 0 || !pathOut.stdout) {
+    die(
+      'NATIVE_SCANNER_CONCURRENCY_UNAVAILABLE',
+      'cannot resolve APK path for native concurrency preflight',
+    );
+  }
+  const apkLine = String(pathOut.stdout)
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.startsWith('package:'));
+  const apk = apkLine ? apkLine.replace(/^package:/, '').trim() : '';
+  if (!apk) {
+    die(
+      'NATIVE_SCANNER_CONCURRENCY_UNAVAILABLE',
+      'empty pm path for package; cannot verify setBarcodeScanConcurrency',
+    );
+  }
+  const tmpRoot = fs.mkdtempSync(path.join(require('os').tmpdir(), 'phase4-apk-preflight-'));
+  const localApk = path.join(tmpRoot, 'base.apk');
+  try {
+    // Prefer the local debug APK when present to avoid large adb pulls (ENOBUFS
+    // after heavy 300-photo transfers). Fall back to device pull with retries.
+    const localDebugApk = path.resolve(
+      __dirname,
+      '../android/app/build/outputs/apk/debug/app-debug.apk',
+    );
+    let apkSource = 'device-pull';
+    if (fs.existsSync(localDebugApk)) {
+      fs.copyFileSync(localDebugApk, localApk);
+      apkSource = 'local-debug-apk';
+    } else {
+      const pull = adb(device, ['pull', apk, localApk], { allowFail: true, retries: 5 });
+      if (pull.status !== 0 || !fs.existsSync(localApk)) {
+        die(
+          'NATIVE_SCANNER_CONCURRENCY_UNAVAILABLE',
+          `adb pull failed for ${apk}: ${(pull.stderr || pull.error && pull.error.message || pull.stdout || '').slice(0, 200)}`,
+        );
+      }
+    }
+    void apkSource;
+    const { spawnSync: sp } = require('child_process');
+    const unzip = sp(
+      'unzip',
+      ['-l', localApk],
+      { encoding: 'utf8' },
+    );
+    const dexNames = String(unzip.stdout || '')
+      .split('\n')
+      .map((l) => {
+        const m = l.match(/\b(classes\d*\.dex)\b/);
+        return m ? m[1] : null;
+      })
+      .filter(Boolean);
+    if (dexNames.length === 0) {
+      die('NATIVE_SCANNER_CONCURRENCY_UNAVAILABLE', 'APK has no classes*.dex entries');
+    }
+    const extract = sp('unzip', ['-qo', localApk, ...dexNames, '-d', tmpRoot], {
+      encoding: 'utf8',
+    });
+    if (extract.status !== 0) {
+      die(
+        'NATIVE_SCANNER_CONCURRENCY_UNAVAILABLE',
+        `unzip dex failed: ${(extract.stderr || '').slice(0, 200)}`,
+      );
+    }
+    const needles = [
+      Buffer.from('setBarcodeScanConcurrency'),
+      Buffer.from('getBarcodeScanConcurrencyStats'),
+    ];
+    let foundSet = false;
+    let foundStats = false;
+    for (const name of dexNames) {
+      const dexPath = path.join(tmpRoot, name);
+      if (!fs.existsSync(dexPath)) continue;
+      const data = fs.readFileSync(dexPath);
+      if (data.includes(needles[0])) foundSet = true;
+      if (data.includes(needles[1])) foundStats = true;
+    }
+    if (!foundSet || !foundStats) {
+      die(
+        'NATIVE_SCANNER_CONCURRENCY_UNAVAILABLE',
+        `APK DEX missing native API (set=${foundSet} stats=${foundStats}) — rebuild native module before C=2`,
+      );
+    }
+    console.log('NATIVE_CONCURRENCY_PREFLIGHT_OK', {
+      set: foundSet,
+      stats: foundStats,
+      dex: dexNames.length,
+      source: apkSource,
+    });
+  } finally {
+    try {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup
+    }
+  }
+}
+
+function writeDualCorrectnessArtifacts(outRoot, label, status, events, options = {}) {
+  let rows = extractDualRowsFromStatus(status);
+  if (!rows.length) {
+    rows = extractDualRowsFromEvents(events);
+  }
+  if (!rows.length) {
+    if (options.optional) {
+      console.warn(
+        `WARN[${label}]: dual correctness rows missing (device build may predate Phase4 runner)`,
+      );
+      return {
+        rows: [],
+        summary: null,
+        absoluteGate: { pass: true, failures: ['dual_rows_missing_optional'] },
+      };
+    }
+    die(
+      'DUAL_CORRECTNESS_MISSING',
+      `${label}: no dual_correctness_row events and no status.extras.dualCorrectnessRows`,
+    );
+  }
+  const summary =
+    (status && status.extras && status.extras.dualCorrectnessSummary) ||
+    summarizeDualCorrectness(rows);
+  fs.writeFileSync(path.join(outRoot, `${label}-dual-correctness.csv`), dualCorrectnessToCsv(rows));
+  fs.writeFileSync(
+    path.join(outRoot, `${label}-dual-correctness-summary.json`),
+    JSON.stringify(summary, null, 2),
+  );
+  const absoluteGate = evaluateAbsoluteCorrectnessGate(summary);
+  fs.writeFileSync(
+    path.join(outRoot, `${label}-correctness-absolute-gate.json`),
+    JSON.stringify(absoluteGate, null, 2),
+  );
+  return { rows, summary, absoluteGate };
 }
 
 function devicePreflightSqlite(device) {
@@ -450,20 +731,127 @@ function validateSmokeInstrumentation(events, status) {
     if (strongHashes.length < status.expectedCount) {
       failures.push(`strong_validation_hash_count=${strongHashes.length}`);
     }
-    const reused = strongHashes.filter((e) => e.extras?.hashMode === 'reused_persisted');
-    if (reused.length !== status.expectedCount) {
-      failures.push(`strong_reused_persisted=${reused.length}/${status.expectedCount}`);
+    // Integrity correction: strong validation always native-rehashes (no reused_persisted).
+    const nativeStrong = strongHashes.filter(
+      (e) =>
+        e.extras?.hashMode === 'native_file' ||
+        e.extras?.hashImplementation === 'native_stream',
+    );
+    if (nativeStrong.length !== status.expectedCount) {
+      failures.push(`strong_native_file=${nativeStrong.length}/${status.expectedCount}`);
     }
-    const fallback = strongHashes.filter((e) => e.extras?.hashSource === 'validation_fallback');
-    if (fallback.length !== 0) {
-      failures.push(`validation_fallback_unexpected=${fallback.length}`);
+    const reused = strongHashes.filter((e) => e.extras?.hashMode === 'reused_persisted');
+    if (reused.length !== 0) {
+      failures.push(`strong_reused_persisted_unexpected=${reused.length}`);
+    }
+    const base64Strong = strongHashes.filter(
+      (e) =>
+        e.extras?.hashMode === 'js_base64_full_file' ||
+        e.extras?.hashImplementation === 'js_base64_full_file',
+    );
+    if (base64Strong.length !== 0) {
+      failures.push(`strong_base64_unexpected=${base64Strong.length}`);
     }
   }
 
-  const draftLookup = events.filter((e) => e.stage === 'draft_lookup');
+  const draftLookup = events.filter(
+    (e) =>
+      e.stage === 'draft_lookup' ||
+      e.stage === 'draft_lookup_pre_scan' ||
+      e.stage === 'draft_lookup_post_scan',
+  );
   if (!draftLookup.length) failures.push('draft_lookup_missing');
   else if (draftLookup.some((e) => !(e.extras && e.extras.lookupMode))) {
     failures.push('draft_lookup_metrics_incomplete');
+  } else {
+    const badMode = draftLookup.filter(
+      (e) => e.extras && e.extras.lookupMode !== 'direct_indexed_lookup',
+    );
+    if (badMode.length) {
+      failures.push(`draft_lookup_mode_unexpected=${badMode.length}`);
+    }
+    const badFull = draftLookup.filter(
+      (e) => e.extras && Number(e.extras.fullSessionRowsLoaded) > 0,
+    );
+    if (badFull.length) {
+      failures.push(`draft_lookup_full_session_loaded=${badFull.length}`);
+    }
+    const badQuery = draftLookup.filter((e) => e.extras && Number(e.extras.queryCount) !== 1);
+    if (badQuery.length) {
+      failures.push(`draft_lookup_query_count_unexpected=${badQuery.length}`);
+    }
+    const aliased = events.filter((e) => e.stage === 'draft_lookup');
+    const pre = events.filter((e) => e.stage === 'draft_lookup_pre_scan');
+    const post = events.filter((e) => e.stage === 'draft_lookup_post_scan');
+    if (status.expectedCount >= 3) {
+      if (!pre.length) failures.push('draft_lookup_pre_scan_missing');
+      if (!post.length) failures.push('draft_lookup_post_scan_missing');
+      const badPurpose = aliased.filter(
+        (e) =>
+          e.extras &&
+          e.extras.lookupPurpose !== 'skip_scan_check' &&
+          e.extras.lookupPurpose !== 'export_ready_check',
+      );
+      if (badPurpose.length) {
+        failures.push(`draft_lookup_purpose_unexpected=${badPurpose.length}`);
+      }
+      // Alias events should equal pre+post (each lookup emits purpose stage + draft_lookup).
+      if (aliased.length !== pre.length + post.length) {
+        failures.push(
+          `draft_lookup_alias_count_mismatch=alias:${aliased.length},pre:${pre.length},post:${post.length}`,
+        );
+      }
+    }
+  }
+
+  // Phase 3A — export_resolution substages (staging path; soft-skip when only legacy stages).
+  const exportResolution = events.filter((e) => e.stage === 'export_resolution');
+  const stagingValidation = events.filter((e) => e.stage === 'export_resolution_staging_validation');
+  const hashValidation = events.filter((e) => e.stage === 'export_resolution_hash_validation');
+  const HASH_NEST_TOLERANCE_MS = 50;
+  if (stagingValidation.length || hashValidation.length || exportResolution.length) {
+    const requireOnce = (stage) => {
+      const rows = events.filter((e) => e.stage === stage);
+      if (!rows.length) failures.push(`${stage}_missing`);
+      else if (rows.length > 1) failures.push(`${stage}_duplicated=${rows.length}`);
+      else if (!(Number(rows[0].durationMs) >= 0)) failures.push(`${stage}_duration_negative`);
+      return rows[0] || null;
+    };
+    requireOnce('export_resolution');
+    requireOnce('export_resolution_queries');
+    requireOnce('export_resolution_freeze_checks');
+    requireOnce('export_resolution_profile');
+    if (stagingValidation.length) {
+      requireOnce('export_resolution_ensure_jobs');
+      requireOnce('export_resolution_staging_validation');
+      requireOnce('export_resolution_hash_validation');
+      requireOnce('export_resolution_scan_catchup');
+      const entryOrOther =
+        events.filter((e) => e.stage === 'export_resolution_entry_build').length ||
+        events.filter((e) => e.stage === 'export_resolution_other').length;
+      if (!entryOrOther) failures.push('export_resolution_entry_or_other_missing');
+
+      const staging = stagingValidation[0];
+      const hash = hashValidation[0];
+      if (staging && hash) {
+        const sDur = Number(staging.durationMs) || 0;
+        const hDur = Number(hash.durationMs) || 0;
+        if (hDur > sDur + HASH_NEST_TOLERANCE_MS) {
+          failures.push(`hash_validation_exceeds_staging=${hDur}>${sDur}`);
+        }
+      }
+      const agg = exportResolution[0];
+      if (agg && agg.extras && agg.extras.reconciliationValid === false) {
+        failures.push('export_resolution_reconciliation_invalid');
+      }
+      if (agg && Number(agg.extras?.queryCount) === -1) {
+        failures.push('export_resolution_fictitious_queryCount_-1');
+      }
+      const ensure = events.find((e) => e.stage === 'export_resolution_ensure_jobs');
+      if (ensure && Number(ensure.extras?.queryCount) === -1) {
+        failures.push('ensure_jobs_fictitious_queryCount_-1');
+      }
+    }
   }
 
   const queueOk = events.some(
@@ -575,6 +963,9 @@ async function main() {
   }
 
   ensureDebuggable(device);
+  if (args.scannerConcurrency === 2) {
+    assertNativeScannerConcurrencyCapability(device);
+  }
   const preflight = devicePreflightSqlite(device);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const outRoot = path.resolve(
@@ -622,7 +1013,10 @@ async function main() {
   const gitSha = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
   const dirty =
     spawnSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).stdout.trim() !== '';
-  const smokeFixtureBytes = selectFixtures(allRows, 3).reduce((a, r) => a + r.sizeBytes, 0);
+  const smokeFixtureBytes = selectFixtures(allRows, 3, { interleave: false }).reduce(
+    (a, r) => a + r.sizeBytes,
+    0,
+  );
   const envDoc = {
     appVersion: null,
     appBuild: null,
@@ -640,8 +1034,10 @@ async function main() {
     freeStorageUnavailableReason: 'filled_from_device_after_run',
     totalFixtureBytes: smokeFixtureBytes,
     fixtureCount: 3,
-    exportPrepMaxWorkers: 1,
-    scannerConcurrency: 1,
+    exportPrepMaxWorkers: PHASE4_EXPORT_PREP_MAX_WORKERS,
+    scannerConcurrency: args.scannerConcurrency,
+    fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+    fixtureOrderSeed: BENCHMARK_FIXTURE_ORDER_SEED,
     deviceManufacturer: manufacturer,
     deviceModel: model,
     androidRelease: release,
@@ -651,14 +1047,18 @@ async function main() {
     gitSha,
     dirty,
     uploadHttpEnabled: false,
-    concurrency: { exportPrepMaxWorkers: 1 },
+    concurrency: {
+      exportPrepMaxWorkers: PHASE4_EXPORT_PREP_MAX_WORKERS,
+      scannerConcurrency: args.scannerConcurrency,
+      note: 'Phase4 A/B: workers fixed at 2 (feed); scannerConcurrency is the measured variable',
+    },
     profile: configDoc,
     baselineNote: 'baseline del working tree exacto utilizado',
   };
   fs.writeFileSync(path.join(outRoot, 'benchmark-environment.json'), JSON.stringify(envDoc, null, 2));
 
   // --- Smoke ---
-  const smokeFixtures = selectFixtures(allRows, 3);
+  const smokeFixtures = selectFixtures(allRows, 3, { interleave: false });
   for (const fx of smokeFixtures) {
     const fp = path.join(inputDir, fx.filename);
     if (!fs.existsSync(fp)) die('FIXTURE', `missing ${fx.filename}`);
@@ -674,6 +1074,7 @@ async function main() {
     timeoutMs: args.timeoutMs,
     outRoot,
     runLabel: 'smoke',
+    scannerConcurrency: args.scannerConcurrency,
   });
 
   const smokeEventsPath = path.join(outRoot, 'smoke-events.jsonl');
@@ -697,6 +1098,11 @@ async function main() {
   }
 
   fs.writeFileSync(path.join(outRoot, 'benchmark-stage-summary.csv'), buildStageSummaryCsv(smokeEvents));
+
+  // Dual correctness from real device rows (never INCONCLUSIVE placeholders).
+  const smokeDual = writeDualCorrectnessArtifacts(outRoot, 'smoke', smokeStatus, smokeEvents, {
+    optional: true,
+  });
 
   const terminals = smokeEvents.filter((e) => e.stage === 'photo_terminal');
   const totalPipeline = smokeEvents.find((e) => e.stage === 'total_pipeline');
@@ -761,8 +1167,36 @@ async function main() {
     process.exit(0);
   }
 
-  // Full run
-  const fullFixtures = selectFixtures(allRows, 50);
+  // Full run — use requested --photos (50 default for short suite; 300 for scale).
+  const fullPhotoCount = args.photos > 3 ? args.photos : 50;
+  const fullFixtures = selectFixtures(allRows, fullPhotoCount, {
+    interleave: args.interleave && fullPhotoCount >= 50,
+  });
+  fs.writeFileSync(
+    path.join(outRoot, 'fixture-order.json'),
+    JSON.stringify(
+      {
+        version: BENCHMARK_FIXTURE_ORDER_VERSION,
+        seed: BENCHMARK_FIXTURE_ORDER_SEED,
+        exportPrepMaxWorkers: PHASE4_EXPORT_PREP_MAX_WORKERS,
+        scannerConcurrency: args.scannerConcurrency,
+        photos: fullFixtures.length,
+        order: fullFixtures.map((f) => ({
+          benchmarkSequence: f.benchmarkSequence || f.sequence,
+          originalSequence: f.originalSequence || f.sequence,
+          filename: f.filename,
+          scenario: f.scenario || f.sourceTemplate,
+          scenarioKind: f.scenarioKind || null,
+        })),
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    path.join(outRoot, 'fixture-sequence-bands.csv'),
+    buildSequenceBandsCsv(fullFixtures, 50),
+  );
   console.log('FULL RUN');
   console.log({
     device,
@@ -772,12 +1206,18 @@ async function main() {
     profile: preflight.resolvedProfileName,
     item: preflight.itemProfileVersion,
     position: preflight.positionProfileVersion,
-    photos: 50,
+    photos: fullFixtures.length,
     runs: args.runs,
+    scannerConcurrency: args.scannerConcurrency,
+    exportPrepMaxWorkers: PHASE4_EXPORT_PREP_MAX_WORKERS,
+    fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
   });
 
   const runDurations = [];
-  const csvRows = ['run,coldWarm,status,durationMs,terminalCount,pendingJobs,errorCode'];
+  const csvRows = [
+    'run,coldWarm,status,durationMs,terminalCount,pendingJobs,errorCode,scannerConcurrency,exportPrepMaxWorkers',
+  ];
+  let lastDualSummary = smokeDual.summary;
   for (let i = 0; i < args.runs; i += 1) {
     const coldWarm = i === 0 ? 'cold' : 'warm';
     const t0 = Date.now();
@@ -789,12 +1229,27 @@ async function main() {
       timeoutMs: args.timeoutMs,
       outRoot,
       runLabel: `run${i + 1}`,
+      scannerConcurrency: args.scannerConcurrency,
     });
     const dur = Date.now() - t0;
     runDurations.push(dur);
     csvRows.push(
-      `${i + 1},${coldWarm},${st.status},${dur},${st.terminalCount},${st.pendingJobs},${st.errorCode || ''}`,
+      `${i + 1},${coldWarm},${st.status},${dur},${st.terminalCount},${st.pendingJobs},${st.errorCode || ''},${args.scannerConcurrency},${PHASE4_EXPORT_PREP_MAX_WORKERS}`,
     );
+    const eventsPath = path.join(outRoot, `run${i + 1}-events.jsonl`);
+    const events = fs.existsSync(eventsPath) ? readJsonl(eventsPath) : [];
+    const dual = writeDualCorrectnessArtifacts(outRoot, `run${i + 1}`, st, events);
+    lastDualSummary = dual.summary;
+    if (!dual.absoluteGate.pass && fullPhotoCount >= 50) {
+      fs.writeFileSync(
+        path.join(outRoot, `run${i + 1}-CORRECTNESS_ABSOLUTE_GATE_FAILED.txt`),
+        dual.absoluteGate.failures.join('\n') + '\n',
+      );
+      console.warn(
+        `WARN: CORRECTNESS_ABSOLUTE_GATE_FAILED run ${i + 1}: ${dual.absoluteGate.failures.join('; ')}`,
+      );
+      // Do not abort mid A/B — collect all runs; final verdict consumes gate files.
+    }
     if (st.status !== 'COMPLETED') {
       fs.writeFileSync(path.join(outRoot, 'benchmark-runs.csv'), csvRows.join('\n'));
       die('FULL_RUN_FAILED', `run ${i + 1} status=${st.status}`);
@@ -802,10 +1257,33 @@ async function main() {
     if (i < args.runs - 1) sleep(args.cooldownMs);
   }
   fs.writeFileSync(path.join(outRoot, 'benchmark-runs.csv'), csvRows.join('\n'));
+
+  if (args.compareCorrectness) {
+    if (!lastDualSummary) {
+      die('COMPARE_CORRECTNESS', 'no dual correctness summary from this run to compare');
+    }
+    const baselinePath = path.resolve(process.cwd(), args.compareCorrectness);
+    if (!fs.existsSync(baselinePath)) {
+      die('COMPARE_CORRECTNESS', `baseline not found: ${baselinePath}`);
+    }
+    const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+    const regression = evaluateDualRegressionGate(baseline, lastDualSummary);
+    fs.writeFileSync(
+      path.join(outRoot, 'correctness-regression-gate.json'),
+      JSON.stringify(regression, null, 2),
+    );
+    if (!regression.pass) {
+      die('CORRECTNESS_REGRESSION_GATE_FAILED', regression.failures.join('; '));
+    }
+  }
+
   const summary = {
     min: Math.min(...runDurations),
     max: Math.max(...runDurations),
     median: median(runDurations),
+    exportPrepMaxWorkers: PHASE4_EXPORT_PREP_MAX_WORKERS,
+    scannerConcurrency: args.scannerConcurrency,
+    dualCorrectness: lastDualSummary,
     note: 'Do not treat 5 totals as p95; per-photo percentiles live in events jsonl',
   };
   fs.writeFileSync(
@@ -815,7 +1293,16 @@ async function main() {
   console.log('BENCHMARK_COMPLETED', summary);
 }
 
-async function runOne({ device, inputDir, fixtures, coldWarm, timeoutMs, outRoot, runLabel }) {
+async function runOne({
+  device,
+  inputDir,
+  fixtures,
+  coldWarm,
+  timeoutMs,
+  outRoot,
+  runLabel,
+  scannerConcurrency = 1,
+}) {
   const runId = crypto.randomUUID();
   const relFixtures = `benchmark/${runId}/fixtures`;
   runAs(
@@ -829,7 +1316,7 @@ async function runOne({ device, inputDir, fixtures, coldWarm, timeoutMs, outRoot
     const remoteRel = `${relFixtures}/${fx.filename}`;
     pushViaTmp(device, local, remoteRel);
     fixtureRefs.push({
-      sequence: fx.sequence,
+      sequence: fx.benchmarkSequence || fx.sequence,
       fixtureId: fx.filename.replace(/\.jpg$/i, ''),
       filename: fx.filename,
       type: fx.type,
@@ -837,6 +1324,11 @@ async function runOne({ device, inputDir, fixtures, coldWarm, timeoutMs, outRoot
       width: fx.width,
       height: fx.height,
       fileUri: `file:///data/user/0/${PACKAGE}/files/${remoteRel}`,
+      originalSequence: fx.originalSequence || fx.sequence,
+      scenarioKind: fx.scenarioKind || null,
+      labelsJson: fx.labelsJson || null,
+      scenario: fx.scenario || fx.sourceTemplate || null,
+      category: fx.category || fx.type || null,
     });
   }
 
@@ -851,6 +1343,10 @@ async function runOne({ device, inputDir, fixtures, coldWarm, timeoutMs, outRoot
     fixtures: fixtureRefs,
     skipUpload: true,
     timeoutMs,
+    scannerConcurrency: scannerConcurrency === 2 ? 2 : 1,
+    // exportPrepMaxWorkers is fixed at 2 on device (feed capacity); only scannerConcurrency varies.
+    fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
+    fixtureOrderSeed: BENCHMARK_FIXTURE_ORDER_SEED,
   };
   const cmdLocal = path.join(outRoot, `${runLabel}-command.json`);
   fs.writeFileSync(cmdLocal, JSON.stringify(command, null, 2));
