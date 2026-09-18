@@ -316,16 +316,13 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
                     readonly photos?: readonly import('../../database/schema/captureSchema').CapturePhotoRow[];
                   },
                 ) => {
-                  const ensureOpts: {
-                    readonly reason: 'EXPORT_PREFLIGHT';
-                    readonly session?: import('../../database/schema/captureSchema').CaptureSessionRow;
-                    readonly photos?: readonly import('../../database/schema/captureSchema').CapturePhotoRow[];
-                  } = { reason: 'EXPORT_PREFLIGHT' };
-                  if (options?.session) ensureOpts.session = options.session;
-                  if (options?.photos) ensureOpts.photos = options.photos;
                   const result = await exportPrepQueue?.ensureJobsForEligiblePhotos(
                     sessionId,
-                    ensureOpts,
+                    {
+                      reason: 'EXPORT_PREFLIGHT',
+                      ...(options?.session ? { session: options.session } : {}),
+                      ...(options?.photos ? { photos: options.photos } : {}),
+                    },
                   );
                   if (
                     result &&
