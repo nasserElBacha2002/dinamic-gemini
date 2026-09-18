@@ -1,7 +1,0 @@
-band,start,end,position,item,multi_true,multi_mixed,multi_false,other,n_rows,detection_exact,detection_exact_accuracy,domain_exact_match,correct_rejection,false_negative,ambiguous_incorrect,domain_exact_accuracy,scanner_ms_median,scanner_ms_p95
-1,1,50,13,22,5,5,5,0,50,50,1.0,43,5,2,0,0.86,319.5,428.0
-2,51,100,14,21,5,5,5,0,50,50,1.0,42,5,3,0,0.84,316.0,424.0
-3,101,150,13,22,5,5,5,0,50,50,1.0,43,5,2,0,0.86,315.0,463.0
-4,151,200,13,22,5,5,5,0,50,50,1.0,35,5,0,10,0.7,343.0,571.0
-5,201,250,14,21,5,5,5,0,50,50,1.0,35,5,0,10,0.7,388.5,555.0
-6,251,300,13,22,5,5,5,0,50,50,1.0,35,5,0,10,0.7,347.5,541.0

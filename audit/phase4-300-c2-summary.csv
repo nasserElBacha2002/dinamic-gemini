@@ -1,2 +1,0 @@
-run,coldWarm,status,durationMs,terminalCount,pendingJobs,errorCode,scannerConcurrency,exportPrepMaxWorkers,note
-1,cold,COMPLETED,200445,300,0,,2,2,run2 SIGTERM mid-push; single completed C=2 300 run used

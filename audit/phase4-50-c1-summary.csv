@@ -1,6 +1,0 @@
-run,coldWarm,status,durationMs,terminalCount,pendingJobs,errorCode,scannerConcurrency,exportPrepMaxWorkers
-1,cold,COMPLETED,45412,50,0,,1,2
-2,warm,COMPLETED,42079,50,0,,1,2
-3,warm,COMPLETED,43132,50,0,,1,2
-4,warm,COMPLETED,43158,50,0,,1,2
-5,warm,COMPLETED,42852,50,0,,1,2
