@@ -50,6 +50,13 @@ export interface CaptureSessionRow {
   readonly capture_freeze_generation: number;
   /** Active freeze snapshot id (exact photo set for CSV/upload). */
   readonly active_freeze_id: string | null;
+  /**
+   * Export packaging policy for this session (Phase 4 corrections).
+   * - STAGING_REQUIRED: modern finish with freeze; missing freeze is an error
+   * - LEGACY_ORIGINALS: historical / explicit originals path
+   * - null: pre-migration row — classify via freeze signals
+   */
+  readonly export_packaging_mode: string | null;
   /** Upload scheduling policy: MANUAL | WHEN_CONNECTED | NOW */
   readonly upload_policy: string | null;
   /** JSON-serialized ActivePositionState for the current session (nullable). */

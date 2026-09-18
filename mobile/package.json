@@ -24,6 +24,7 @@
     "test:integration": "jest --config jest.config.integration.js --watchman=false",
     "doctor": "node scripts/expo-doctor-android.js",
     "verify": "npm run typecheck && npm run lint && npm test",
+    "benchmark:pipeline": "node scripts/benchmark-pipeline.cjs",
     "android:release": "cd android && ./gradlew assembleRelease",
     "ios": "expo run:ios"
   },

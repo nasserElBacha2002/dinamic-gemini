@@ -40,7 +40,22 @@ export type LogEvent =
   | 'health_check'
   | 'mobile_api_base_url'
   | 'aisle_blocked'
-  | 'local_export_scan_failed';
+  | 'local_export_scan_failed'
+  | 'export_prep'
+  | 'storage.cleanup_started'
+  | 'storage.cleanup_completed'
+  | 'storage.cleanup_partial'
+  | 'storage.reconcile_started'
+  | 'storage.reconcile_completed'
+  | 'storage.artifact_quarantined'
+  | 'storage.ready_invalidated'
+  | 'storage.low_space'
+  | 'storage.insufficient_for_export'
+  | 'storage.purge_started'
+  | 'storage.purge_completed'
+  | 'storage.purge_partial'
+  | 'storage.permission_revoked'
+  | 'storage.orphan_detected';
 
 export interface LogRecord {
   readonly ts: string;

@@ -8,6 +8,7 @@ import { ProcessingJobRepository } from '../../database/repositories/processingJ
 import { AuthService } from '../../features/auth/authService';
 import { AisleService } from '../../features/aisles/aisleService';
 import { CaptureService } from '../../features/capture/captureService';
+import { CaptureFinalizationCoordinator } from '../../features/capture/captureFinalizationCoordinator';
 import { ClientService } from '../../features/clients/clientService';
 import { InventoryService } from '../../features/inventories/inventoryService';
 import { JobMonitor } from '../../features/processing/jobMonitor';
@@ -26,6 +27,8 @@ import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
+import { LocalExportAttemptRepository } from '../../database/repositories/localExportAttemptRepository';
+import { SessionPurgeTaskRepository } from '../../database/repositories/sessionPurgeTaskRepository';
 import { OfflineRecognitionConfigRepository } from '../../database/repositories/offlineRecognitionConfigRepository';
 import { LocalCatalogRepository } from '../../database/repositories/localCatalogRepository';
 import { CatalogSyncService } from '../../features/catalog/catalogSyncService';
@@ -34,7 +37,15 @@ import {
   LocalLabelProfileResolver,
   OfflineRecognitionSyncService,
 } from '../../features/offlineRecognition';
+import { startBenchmarkCommandWatch } from '../../features/benchmark';
 import { LocalCsvExportService } from '../../features/localCsv/localCsvExportService';
+import { ExportPrepRepository } from '../../database/repositories/exportPrepRepository';
+import { ExportPrepQueue } from '../../features/exportPrep/exportPrepQueue';
+import { ExportPrepPhotoCoordinator } from '../../features/exportPrep/exportPrepPhotoCoordinator';
+import { SessionProducerBarrier } from '../../features/exportPrep/sessionProducerBarrier';
+import { ExportArtifactReconciler } from '../../features/exportPrep/exportArtifactReconciler';
+import { SessionArtifactPurgeCoordinator } from '../../features/exportPrep/sessionArtifactPurgeCoordinator';
+import { runPhotoStableProducers } from './photoStableProducers';
 import { OfflineAisleExportService } from '../../features/offlineAisleExport';
 import { getOrCreateInstallationId } from '../../shared/installationId';
 import { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
@@ -126,6 +137,8 @@ export interface AppServices {
   readonly clients: ClientService;
   readonly aisles: AisleService;
   readonly capture: CaptureService;
+  /** Sole UI entry point for finish + export-prep drain (local ZIP path). */
+  readonly captureFinalization: CaptureFinalizationCoordinator;
   readonly api: ApiClient;
   readonly uploadQueue: UploadQueue;
   readonly uploadLimits: UploadLimitsService;
@@ -133,7 +146,10 @@ export interface AppServices {
   readonly jobMonitor: JobMonitor;
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly confirmedLocalResults: ConfirmedLocalResultRepository;
+  readonly localCodeScan: LocalCodeScanStrategy;
   readonly localCsvExport: LocalCsvExportService | null;
+  readonly exportPrepQueue: ExportPrepQueue | null;
+  readonly exportPrepPhotoCoordinator: ExportPrepPhotoCoordinator | null;
   readonly offlineAisleExport: OfflineAisleExportService | null;
   readonly confirmLocalResult: Pick<
     ConfirmLocalResultService,
@@ -210,6 +226,9 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
   const localCsvExportRepo = new LocalCsvExportRepository(db);
+  const localExportAttemptRepo = new LocalExportAttemptRepository(db);
+  const sessionPurgeTaskRepo = new SessionPurgeTaskRepository(db);
+  const exportPrepRepo = new ExportPrepRepository(db);
   const offlineRecognitionRepo = new OfflineRecognitionConfigRepository(db);
   const catalogRepo = new LocalCatalogRepository(db);
   const offlineRecognitionResolver = new LocalLabelProfileResolver(offlineRecognitionRepo, catalogRepo);
@@ -285,9 +304,99 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
           localCodeScanEnabled: true,
           logger,
           profileResolver: offlineRecognitionResolver,
+          exportPrepRepo:
+            config.flags.mobileExportPrepQueue === true ? exportPrepRepo : null,
+          exportPrepEnabled: config.flags.mobileExportPrepQueue === true,
+          ensureExportPrepJobs:
+            config.flags.mobileExportPrepQueue === true
+              ? async (
+                  sessionId: string,
+                  options?: {
+                    readonly session?: import('../../database/schema/captureSchema').CaptureSessionRow;
+                    readonly photos?: readonly import('../../database/schema/captureSchema').CapturePhotoRow[];
+                  },
+                ) => {
+                  const result = await exportPrepQueue?.ensureJobsForEligiblePhotos(
+                    sessionId,
+                    {
+                      reason: 'EXPORT_PREFLIGHT',
+                      ...(options?.session ? { session: options.session } : {}),
+                      ...(options?.photos ? { photos: options.photos } : {}),
+                    },
+                  );
+                  if (
+                    result &&
+                    (result.createdJobs > 0 ||
+                      result.requeuedJobs > 0 ||
+                      result.invalidatedReadyJobs > 0)
+                  ) {
+                    throw new Error(
+                      `PACKAGE_EXPORT_PREP_PENDING: se materializaron ${result.createdJobs + result.requeuedJobs + result.invalidatedReadyJobs} job(s) de preparación; reintentá cuando estén READY.`,
+                    );
+                  }
+                  return result;
+                }
+              : null,
+          getExportPrepActiveWorkers:
+            config.flags.mobileExportPrepQueue === true
+              ? (sessionId: string) => exportPrepQueue?.getActiveSessionWorkers(sessionId) ?? 0
+              : null,
+          getExportPrepSessionJobsRevision:
+            config.flags.mobileExportPrepQueue === true
+              ? (sessionId: string) => exportPrepQueue?.getSessionJobsRevision(sessionId) ?? 0
+              : null,
+          maxExportUncompressedBytes: 480 * 1024 * 1024,
+          attemptRepo: localExportAttemptRepo,
         })
       : null;
+  const exportPrepQueue =
+    config.flags.mobileExportPrepQueue === true && config.flags.mobileCsvExport !== false
+      ? new ExportPrepQueue({
+          prepRepo: exportPrepRepo,
+          captureRepo,
+          draftRepo: localDetectionDrafts,
+          localCodeScan,
+          localCodeScanEnabled: true,
+          logger,
+          maxWorkers: 1,
+          warningPendingThreshold: 150,
+        })
+      : null;
+  const sessionArtifactPurge = new SessionArtifactPurgeCoordinator({
+    exportPrepQueue,
+    attemptRepo: localExportAttemptRepo,
+    exportRepo: localCsvExportRepo,
+    purgeTaskRepo: sessionPurgeTaskRepo,
+    logger,
+    ...(localCsvExport
+      ? { cancelActiveExport: (sessionId: string) => localCsvExport.cancelActiveExport(sessionId) }
+      : {}),
+  });
+  const exportArtifactReconciler = new ExportArtifactReconciler({
+    captureRepo,
+    exportRepo: localCsvExportRepo,
+    attemptRepo: localExportAttemptRepo,
+    prepRepo: config.flags.mobileExportPrepQueue === true ? exportPrepRepo : null,
+    logger,
+  });
+  if (exportPrepQueue) {
+    void exportPrepQueue.recoverOnBootstrap().catch(() => undefined);
+  }
+  void sessionArtifactPurge.resumePendingPurges().catch((error) => {
+    logger.warn('recovery', {
+      where: 'session_purge_resume_bootstrap',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  });
+  // Bounded Phase 6 reconcile (temps, stale attempts, missing READY) — single-flight.
+  void exportArtifactReconciler.runBounded().catch((error) => {
+    logger.warn('recovery', {
+      where: 'export_artifact_reconcile_bootstrap',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  });
   const captureServiceRef: { current: CaptureService | null } = { current: null };
+  let exportPrepPhotoCoordinator: ExportPrepPhotoCoordinator | null = null;
   const offlineAisleExport =
     config.flags.mobileCsvExport !== false
       ? new OfflineAisleExportService({
@@ -460,6 +569,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
   );
 
   let photoStableChain: Promise<void> = Promise.resolve();
+  const sessionProducerBarrier = new SessionProducerBarrier();
 
   const capture = new CaptureService(captureRepo, createForegroundService(), logger, {
     mediaStore: {
@@ -471,50 +581,72 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       probe: (uri) => probeStability(uri),
     },
     onPhotoStable: (sessionId, photoId) => {
-      // Serialize upload + offline enqueue: parallel fire-and-forget stampedes SQLite
-      // (database is locked) when many photos stabilize during "Finalizar captura".
-      // With localCompletion/csvExport, server upload is deferred until explicit policy
-      // (NOW / WHEN_CONNECTED) or completeReview → uploading — not on every stable photo.
-      // Local CODE_SCAN still runs when upload is deferred so ZIP export has drafts.
-      photoStableChain = photoStableChain
-        .then(async () => {
-          await uploadQueue.enqueuePhoto(sessionId, photoId);
-          const session = await captureRepo.getSession(sessionId);
-          const localZipMode =
-            config.flags.localCompletion === true || config.flags.mobileCsvExport === true;
-          const policy = session?.upload_policy;
-          const status = session?.status;
-          const allowOfflineUpload =
-            !localZipMode ||
-            policy === 'NOW' ||
-            policy === 'WHEN_CONNECTED' ||
-            status === 'uploading' ||
-            status === 'upload_review';
-          if (allowOfflineUpload) {
-            await offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
-          } else if (
-            config.flags.mobileLocalCodeScan === true ||
-            config.flags.mobileCsvExport !== false ||
-            config.flags.localCompletion === true
-          ) {
-            await uploadQueue.rescanPhotoForLocalReview(photoId).catch(() => undefined);
-          }
-        })
-        .catch((error) => {
+      // Serialize producers: parallel fire-and-forget stampedes SQLite during finish.
+      // CaptureService awaits this Promise inside activeValidations; Phase 3 also waits
+      // the per-session producer barrier after the final scan.
+      const work = photoStableChain.then(() =>
+        runPhotoStableProducers({
+          sessionId,
+          photoId,
+          flags: config.flags,
+          uploadQueue,
+          captureRepo,
+          offlineAutoEnqueue,
+          exportPrepQueue,
+          producerBarrier:
+            config.flags.mobileExportPrepQueue === true ? sessionProducerBarrier : null,
+        }),
+      );
+      photoStableChain = work.then(
+        () => undefined,
+        (error) => {
           logger.warn('recovery', {
             where: 'on_photo_stable_chain',
             message: error instanceof Error ? error.message : String(error),
           });
-        });
+        },
+      );
+      return work;
     },
+    producerBarrier:
+      config.flags.mobileExportPrepQueue === true ? sessionProducerBarrier : null,
+    producerBarrierTimeoutMs: 120_000,
     observability: obsWire,
     finishInstrumentation: config.flags.captureFinishInstrumentation,
     finishSafeMediaCheck: config.flags.captureFinishSafeMediaCheck,
     sessionFreeze: config.flags.captureSessionFreeze,
     positionActiveStateRestoreEnabled:
       config.flags.positionActiveStateRestoreEnabled,
+    onSessionCancelled: async (sessionId) => {
+      const result = await sessionArtifactPurge.purgeSession(sessionId);
+      if (result.failed > 0) {
+        logger.warn('storage.purge_partial', {
+          sessionRef: sessionId.slice(0, 8),
+          failed: result.failed,
+          deleted: result.deleted,
+        });
+      }
+    },
   });
   captureServiceRef.current = capture;
+  if (exportPrepQueue) {
+    exportPrepPhotoCoordinator = new ExportPrepPhotoCoordinator({
+      capture,
+      prepQueue: exportPrepQueue,
+      prepRepo: exportPrepRepo,
+      getSessionId: () => capture.getSnapshot().session?.id ?? null,
+      resolvePhotoIdByAssetId: async (sessionId, assetId) => {
+        const photos = await captureRepo.listPhotos(sessionId);
+        return photos.find((p) => p.asset_id === assetId)?.id ?? null;
+      },
+    });
+  }
+
+  const captureFinalization = new CaptureFinalizationCoordinator({
+    capture,
+    exportPrepQueue,
+    logger,
+  });
 
   const processing = new ProcessingService(
     api,
@@ -663,7 +795,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       void cleanupTransformTemps(logger);
       void getStorageStatus().then((s) => {
         if (s.lowSpace) {
-          logger.warn('error', { code: 'CAPTURE_STORAGE_LOW', freeBytes: s.freeBytes });
+          logger.warn('storage.low_space', { code: 'CAPTURE_STORAGE_LOW', freeBytes: s.freeBytes });
         }
       });
     });
@@ -674,7 +806,9 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
     duration_ms: Date.now() - bootstrapStartedMs,
   });
 
-  return {
+  let stopBenchmarkWatch: (() => void) | null = null;
+
+  const services: AppServices = {
     config,
     configError,
     databaseRecoveredFromCorruption,
@@ -716,13 +850,17 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       offlineRecognitionResolver,
     ),
     capture,
+    captureFinalization,
     uploadQueue,
     uploadLimits,
     processing,
     jobMonitor,
     localDetectionDrafts,
     confirmedLocalResults,
+    localCodeScan,
     localCsvExport,
+    exportPrepQueue,
+    exportPrepPhotoCoordinator,
     offlineAisleExport,
     confirmLocalResult,
     preliminarySync,
@@ -797,6 +935,9 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       }),
     getStorageStatus,
     async dispose() {
+      stopBenchmarkWatch?.();
+      stopBenchmarkWatch = null;
+      exportPrepQueue?.stop();
       preliminarySync.stopScheduler();
       authoritativeLocalSync.stopScheduler();
       offlineScheduler?.stop();
@@ -807,4 +948,11 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       await backgroundWork.cancelAllTracked();
     },
   };
+
+  stopBenchmarkWatch = startBenchmarkCommandWatch(services, {
+    captureRepo,
+    sessionPurge: sessionArtifactPurge,
+  });
+
+  return services;
 }

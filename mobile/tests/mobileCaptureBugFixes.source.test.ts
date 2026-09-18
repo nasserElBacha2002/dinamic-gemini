@@ -82,4 +82,18 @@ describe('mobile capture bug-fix source contracts', () => {
     const index = read('index.ts');
     expect(index).toMatch(/SafeAreaProvider/);
   });
+
+  it('CaptureScreen finalizes only via CaptureFinalizationCoordinator', () => {
+    const capture = read('src/screens/CaptureScreen.tsx');
+    expect(capture).toMatch(/captureFinalization\.finalizeForReview/);
+    expect(capture).toMatch(/captureCommitted/);
+    expect(capture).not.toMatch(/capture\.finish\(\)/);
+    expect(capture).not.toMatch(/waitUntilExportable/);
+  });
+
+  it('createAppServices wires captureFinalization', () => {
+    const boot = read('src/runtime/bootstrap/createAppServices.ts');
+    expect(boot).toMatch(/CaptureFinalizationCoordinator/);
+    expect(boot).toMatch(/captureFinalization/);
+  });
 });

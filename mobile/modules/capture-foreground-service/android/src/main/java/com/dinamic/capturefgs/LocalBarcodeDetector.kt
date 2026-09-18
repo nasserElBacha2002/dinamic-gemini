@@ -13,7 +13,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.max
@@ -21,7 +21,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -70,8 +70,40 @@ object LocalBarcodeDetector {
       Barcode.FORMAT_UPC_E to "UPC_E",
     )
 
-  private val scanMutex = Mutex()
-  private val activeScanner = AtomicReference<BarcodeScanner?>(null)
+  private val configuredConcurrency = AtomicInteger(1)
+  private val activeScans = AtomicInteger(0)
+  private val maxObservedConcurrency = AtomicInteger(0)
+
+  /** Benchmark / Phase 4: allow 1 or 2 concurrent native detects (hard cap 2). */
+  @JvmStatic
+  fun setMaxConcurrentScans(n: Int) {
+    require(n == 1 || n == 2) { "maxConcurrentScans must be 1 or 2, got $n" }
+    configuredConcurrency.set(n)
+  }
+
+  @JvmStatic
+  fun getMaxConcurrentScans(): Int = configuredConcurrency.get()
+
+  @JvmStatic
+  fun getActiveConcurrentScans(): Int = activeScans.get()
+
+  @JvmStatic
+  fun getMaxObservedConcurrentScans(): Int = maxObservedConcurrency.get()
+
+  /** Reset per-run evidence. Benchmark runner guarantees no scan is active. */
+  @JvmStatic
+  fun resetObservedConcurrencyStats() {
+    check(activeScans.get() == 0) { "BARCODE_SCAN_CONCURRENCY_RESET_WHILE_ACTIVE" }
+    maxObservedConcurrency.set(0)
+  }
+
+  /** Test helper: reset counters (does not interrupt in-flight scans). */
+  @JvmStatic
+  fun resetConcurrencyCountersForTest() {
+    configuredConcurrency.set(1)
+    activeScans.set(0)
+    maxObservedConcurrency.set(0)
+  }
 
   data class LoadedScanImage(
     val inputImage: InputImage,
@@ -112,10 +144,23 @@ object LocalBarcodeDetector {
     @Suppress("UNUSED_PARAMETER") forceBitmapFallback: Boolean = false,
   ): List<Map<String, String>> =
     withContext(Dispatchers.IO) {
-      if (!scanMutex.tryLock()) {
-        throw Exception("LOCAL_SCAN_BUSY")
+      // Bounded concurrency (1|2). Wait up to timeout rather than fail-fast BUSY so
+      // JS workers can overlap staging while a scan slot frees.
+      val slotWaitDeadline = System.nanoTime() + timeoutMs * 1_000_000L
+      while (true) {
+        val cur = activeScans.get()
+        val max = configuredConcurrency.get()
+        if (cur < max && activeScans.compareAndSet(cur, cur + 1)) {
+          maxObservedConcurrency.updateAndGet { prev -> maxOf(prev, cur + 1) }
+          break
+        }
+        if (System.nanoTime() >= slotWaitDeadline) {
+          throw Exception("LOCAL_SCAN_BUSY")
+        }
+        delay(5)
       }
       var fullBitmap: Bitmap? = null
+      // One ML Kit client per detect call — never share across concurrent slots.
       var scanner: BarcodeScanner? = null
       try {
         @Suppress("UNUSED_EXPRESSION")
@@ -123,7 +168,6 @@ object LocalBarcodeDetector {
         val file = resolveReadableFile(uriString)
         fullBitmap = decodeBitmapForScan(file, SCAN_MAX_EDGE_PX)
         scanner = BarcodeScanning.getClient(buildOptions(formatsCsv))
-        activeScanner.set(scanner)
 
         withTimeout(timeoutMs) {
           val bitmap = fullBitmap!!
@@ -191,7 +235,6 @@ object LocalBarcodeDetector {
       } catch (e: TimeoutCancellationException) {
         throw Exception("LOCAL_SCAN_TIMEOUT")
       } finally {
-        activeScanner.compareAndSet(scanner, null)
         try {
           scanner?.close()
         } catch (_: Throwable) {
@@ -200,7 +243,7 @@ object LocalBarcodeDetector {
           fullBitmap?.let { if (!it.isRecycled) it.recycle() }
         } catch (_: Throwable) {
         }
-        scanMutex.unlock()
+        activeScans.updateAndGet { cur -> maxOf(0, cur - 1) }
       }
     }
 

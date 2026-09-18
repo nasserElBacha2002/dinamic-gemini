@@ -9,6 +9,7 @@ export type LocalCsvExportUserError =
   | { kind: 'offline_config' }
   | { kind: 'scan_unsupported' }
   | { kind: 'photos_unstable' }
+  | { kind: 'cancelled' }
   | { kind: 'generic'; message: string };
 
 export interface RunLocalCsvExportResult {
@@ -24,9 +25,29 @@ export interface RunLocalCsvExportResult {
 export async function runLocalCsvExport(
   service: LocalCsvExportService,
   sessionId: string,
-  options: { share?: boolean } = {},
+  options: {
+    share?: boolean;
+    signal?: AbortSignal;
+    onProgress?: (progress: {
+      stage: string;
+      completedEntries: number;
+      totalEntries: number;
+    }) => void;
+  } = {},
 ): Promise<RunLocalCsvExportResult> {
-  const exported = await service.exportSession(sessionId);
+  const exported = await service.exportSession(sessionId, {
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.onProgress
+      ? {
+          onProgress: (p) =>
+            options.onProgress?.({
+              stage: p.stage,
+              completedEntries: p.completedEntries,
+              totalEntries: p.totalEntries,
+            }),
+        }
+      : {}),
+  });
   if (options.share === false) {
     return { exported, shared: false };
   }
@@ -35,7 +56,6 @@ export async function runLocalCsvExport(
     return { exported, shared: true };
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e);
-    // User dismiss / cancel should not surface as a hard failure that blocks retries.
     if (/cancel|dismiss|User did not share/i.test(raw)) {
       return { exported, shared: false };
     }
@@ -45,6 +65,12 @@ export async function runLocalCsvExport(
 
 export function mapLocalCsvExportError(error: unknown): LocalCsvExportUserError {
   const raw = error instanceof Error ? error.message : String(error);
+  if (
+    raw.includes('ZIP_CANCELLED') ||
+    raw.startsWith('PACKAGE_VALIDATION_FAILED: ZIP_CANCELLED')
+  ) {
+    return { kind: 'cancelled' };
+  }
   if (raw.startsWith('PACKAGE_EXPORT_UNRESOLVED:')) {
     return { kind: 'unresolved' };
   }
@@ -69,6 +95,20 @@ export function mapLocalCsvExportError(error: unknown): LocalCsvExportUserError 
   if (raw.startsWith('PACKAGE_PHOTO_READ_FAILED:')) {
     return { kind: 'photo_read' };
   }
+  if (
+    raw.startsWith('PACKAGE_STAGING_MISSING:') ||
+    raw.startsWith('PACKAGE_STAGING_CHECKSUM:') ||
+    raw.startsWith('PACKAGE_EXPORT_PREP_') ||
+    raw.startsWith('PACKAGE_EXPORT_PHOTO_SET_MISMATCH:') ||
+    raw.startsWith('PACKAGE_EXPORT_FREEZE_') ||
+    raw.startsWith('PACKAGE_EXPORT_SESSION_MISSING:') ||
+    raw.startsWith('PACKAGE_EXPORT_DUPLICATE_FILE_NAME:') ||
+    raw.startsWith('PACKAGE_EXPORT_FALLBACK_FORBIDDEN:') ||
+    raw.startsWith('PACKAGE_EXPORT_TOO_LARGE:') ||
+    raw.startsWith('PACKAGE_VALIDATION_FAILED:')
+  ) {
+    return { kind: 'generic', message: raw };
+  }
   if (/no permite compartir|Sharing is not available/i.test(raw)) {
     return { kind: 'share_unavailable' };
   }
@@ -85,6 +125,8 @@ export function userMessageForLocalCsvExportError(error: LocalCsvExportUserError
       return 'No se pudo exportar: este dispositivo no puede escanear códigos localmente. Verificá que la app tenga el módulo de captura instalado (Android).';
     case 'photos_unstable':
       return 'No se pudo exportar: las fotos aún se están procesando. Esperá unos segundos y volvé a intentar.';
+    case 'cancelled':
+      return 'Exportación cancelada.';
       case 'no_products':
       return 'No se pudo exportar: no hay productos con código interno o label_id. Escaneá al menos un ítem (las fotos de posición solas no alcanzan).';
     case 'empty':

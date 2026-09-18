@@ -1,4 +1,5 @@
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
+import { canonicalizeDraftsByPhoto } from '../../database/repositories/localDetectionDraftRepository';
 import type { CapturePhotoRow } from '../../database/schema/captureSchema';
 import { isDraftExportReady } from './supplierExportSemantics';
 import type { ResolvedLocalProfileSource } from '../offlineRecognition/localLabelProfileResolver';
@@ -57,7 +58,7 @@ export function diagnoseExportBlockers(
   drafts: readonly LocalDetectionDraftRow[],
   expectedRecognition?: ExpectedRecognitionResolution | null,
 ): { code: LocalCsvExportBlockCode; detail: string } | null {
-  const draftByPhoto = new Map(drafts.map((d) => [d.capture_photo_id, d]));
+  const draftByPhoto = canonicalizeDraftsByPhoto(drafts);
   let pending = 0;
   let unstableOnly = 0;
   let offlineProfileMissing = false;

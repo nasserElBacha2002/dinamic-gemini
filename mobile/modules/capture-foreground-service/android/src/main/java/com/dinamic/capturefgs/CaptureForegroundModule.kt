@@ -1,5 +1,6 @@
 package com.dinamic.capturefgs
 
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -122,13 +123,177 @@ class CaptureForegroundModule : Module() {
       LocalBarcodeDetector.isAvailable()
     }
 
-    AsyncFunction("detectBarcodes") { uri: String, formatsCsv: String ->
+    /** Phase 4: bound native ML Kit concurrent detects to 1 or 2. */
+    AsyncFunction("setBarcodeScanConcurrency") { n: Int ->
+      LocalBarcodeDetector.setMaxConcurrentScans(n)
+      mapOf(
+        "configured" to LocalBarcodeDetector.getMaxConcurrentScans(),
+        "active" to LocalBarcodeDetector.getActiveConcurrentScans(),
+        "maxObserved" to LocalBarcodeDetector.getMaxObservedConcurrentScans(),
+      )
+    }
+
+    AsyncFunction("getBarcodeScanConcurrencyStats") {
+      mapOf(
+        "configured" to LocalBarcodeDetector.getMaxConcurrentScans(),
+        "active" to LocalBarcodeDetector.getActiveConcurrentScans(),
+        "maxObserved" to LocalBarcodeDetector.getMaxObservedConcurrentScans(),
+      )
+    }
+
+    /**
+     * Clear peak/active counters for a new benchmark arm. Does not change configured concurrency.
+     * Must not be called while scans are in flight (active must be 0).
+     */
+    AsyncFunction("resetBarcodeScanConcurrencyStats") {
+      LocalBarcodeDetector.resetObservedConcurrencyStats()
+      mapOf(
+        "configured" to LocalBarcodeDetector.getMaxConcurrentScans(),
+        "active" to LocalBarcodeDetector.getActiveConcurrentScans(),
+        "maxObserved" to LocalBarcodeDetector.getMaxObservedConcurrentScans(),
+      )
+    }
+
+    /**
+     * Suspend AsyncFunction (not runBlocking): Expo's modulesQueue is a single
+     * HandlerThread; runBlocking held that thread for the whole ML Kit multipass
+     * and prevented overlapping detectBarcodes → maxObservedNative stayed 1.
+     * Suspend + withContext(IO) inside detect frees the queue so C=2 can overlap.
+     */
+    AsyncFunction("detectBarcodes") Coroutine { uri: String, formatsCsv: String ->
       val context = appContext.reactContext
         ?: throw Exception("React context unavailable; cannot scan barcodes")
-      // Suspendable ML Kit path; bridges as a single awaited AsyncFunction.
-      kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-        LocalBarcodeDetector.detect(context, uri, formatsCsv)
+      LocalBarcodeDetector.detect(context, uri, formatsCsv)
+    }
+
+    /**
+     * Append Base64-decoded bytes to an absolute filesystem path (ZIP streaming).
+     * Expo FileSystem cannot append without rewriting the whole file.
+     * Native rebuild required when this AsyncFunction is added/changed.
+     */
+    AsyncFunction("appendBase64File") { absolutePath: String, base64: String ->
+      val file = java.io.File(stripFileUri(absolutePath))
+      file.parentFile?.mkdirs()
+      val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
+      java.io.FileOutputStream(file, true).use { out ->
+        out.write(bytes)
       }
     }
+
+    AsyncFunction("truncateFile") { absolutePath: String ->
+      val file = java.io.File(stripFileUri(absolutePath))
+      file.parentFile?.mkdirs()
+      java.io.FileOutputStream(file, false).use { /* truncate */ }
+    }
+
+    /**
+     * Append raw bytes from [sourceAbsolutePath] onto [destAbsolutePath] (no Base64).
+     * Used for ZIP STORE photo payloads — avoids JS↔native Base64 round-trips.
+     * Returns bytes copied.
+     */
+    AsyncFunction("appendFile") { destAbsolutePath: String, sourceAbsolutePath: String ->
+      val dest = java.io.File(stripFileUri(destAbsolutePath))
+      val source = java.io.File(stripFileUri(sourceAbsolutePath))
+      if (!source.exists() || !source.isFile) {
+        throw Exception("source missing: $sourceAbsolutePath (resolved=${source.absolutePath})")
+      }
+      dest.parentFile?.mkdirs()
+      var copied = 0L
+      val buf = ByteArray(256 * 1024)
+      java.io.FileInputStream(source).use { input ->
+        java.io.FileOutputStream(dest, true).use { out ->
+          while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            copied += n.toLong()
+          }
+        }
+      }
+      copied.toDouble()
+    }
+
+    /**
+     * One streaming pass: size + SHA-256 + CRC-32 (ZIP) without loading the file into JS.
+     */
+    AsyncFunction("digestFile") { absolutePath: String ->
+      val file = java.io.File(stripFileUri(absolutePath))
+      if (!file.exists() || !file.isFile) {
+        throw Exception("file missing: $absolutePath (resolved=${file.absolutePath})")
+      }
+      val sha = java.security.MessageDigest.getInstance("SHA-256")
+      val crc = java.util.zip.CRC32()
+      val buf = ByteArray(256 * 1024)
+      var size = 0L
+      java.io.FileInputStream(file).use { input ->
+        while (true) {
+          val n = input.read(buf)
+          if (n < 0) break
+          sha.update(buf, 0, n)
+          crc.update(buf, 0, n)
+          size += n.toLong()
+        }
+      }
+      mapOf(
+        "size" to size.toDouble(),
+        "sha256" to sha.digest().joinToString("") { b -> "%02x".format(b) },
+        "crc32" to (crc.value and 0xffffffffL).toDouble(),
+      )
+    }
+
+    AsyncFunction("getFileSize") { absolutePath: String ->
+      val file = java.io.File(stripFileUri(absolutePath))
+      if (!file.exists() || !file.isFile) {
+        throw Exception("file missing: $absolutePath (resolved=${file.absolutePath})")
+      }
+      file.length().toDouble()
+    }
+
+    /**
+     * Read [length] bytes at [offset] and return Base64 (bounded ZIP validation).
+     * Rejects oversized ranges to protect memory.
+     */
+    AsyncFunction("readFileRangeBase64") { absolutePath: String, offset: Double, length: Double ->
+      val file = java.io.File(stripFileUri(absolutePath))
+      if (!file.exists() || !file.isFile) {
+        throw Exception("file missing: $absolutePath (resolved=${file.absolutePath})")
+      }
+      val off = offset.toLong()
+      val len = length.toLong()
+      if (off < 0 || len < 0 || len > 2L * 1024L * 1024L) {
+        throw Exception("invalid range offset=$off length=$len")
+      }
+      if (off + len > file.length()) {
+        throw Exception("range past EOF")
+      }
+      val buf = ByteArray(len.toInt())
+      java.io.RandomAccessFile(file, "r").use { raf ->
+        raf.seek(off)
+        raf.readFully(buf)
+      }
+      android.util.Base64.encodeToString(buf, android.util.Base64.NO_WRAP)
+    }
+
+    /** Streaming SHA-256 of file contents (does not load whole file). */
+    AsyncFunction("hashFileSha256") { absolutePath: String ->
+      val file = java.io.File(stripFileUri(absolutePath))
+      if (!file.exists() || !file.isFile) {
+        throw Exception("file missing: $absolutePath (resolved=${file.absolutePath})")
+      }
+      val digest = java.security.MessageDigest.getInstance("SHA-256")
+      val buf = ByteArray(64 * 1024)
+      java.io.FileInputStream(file).use { input ->
+        while (true) {
+          val n = input.read(buf)
+          if (n < 0) break
+          digest.update(buf, 0, n)
+        }
+      }
+      digest.digest().joinToString("") { b -> "%02x".format(b) }
+    }
+  }
+
+  private fun stripFileUri(path: String): String {
+    return FileUriPaths.toAbsolutePath(path)
   }
 }

@@ -34,6 +34,9 @@ const VALIDATION_TIMEOUT_MS = 15_000;
 /** Re-scan gallery while capture is active (missed MediaStore events / delayed indexing). */
 const CATCHUP_SCAN_INTERVAL_MS = 4_000;
 
+import type { CaptureFinishCommit } from './captureFinishCommit';
+export type { CaptureFinishCommit } from './captureFinishCommit';
+
 export interface StartCaptureInput {
   readonly inventoryId: string;
   readonly inventoryName: string;
@@ -83,6 +86,17 @@ export interface CaptureServiceAdapters {
   readonly createId?: () => string;
   /** Called after a photo becomes stable (progressive upload hook). */
   readonly onPhotoStable?: (sessionId: string, photoId: string) => void | Promise<void>;
+  /**
+   * Optional per-session producer barrier (Phase 3).
+   * Closed when finish begins; waited after stability validations.
+   */
+  readonly producerBarrier?: {
+    closeAdmission(sessionId: string): void;
+    waitUntilIdle(sessionId: string, timeoutMs: number): Promise<void>;
+    reopen?(sessionId: string): void;
+  } | null;
+  /** Timeout for producer barrier wait (default 120s). */
+  readonly producerBarrierTimeoutMs?: number;
   /** Phase 0 observability (optional; never required for capture). */
   readonly observability?: {
     readonly reporter: import('../../observability').ObservabilityReporter;
@@ -95,6 +109,11 @@ export interface CaptureServiceAdapters {
   /** Persist freeze watermark on successful finish (default true). */
   readonly sessionFreeze?: boolean;
   readonly positionActiveStateRestoreEnabled?: boolean;
+  /**
+   * Phase 6: called after session status is cancelled — purge sandbox + prep rows.
+   * Must not delete MediaStore originals.
+   */
+  readonly onSessionCancelled?: (sessionId: string) => void | Promise<void>;
 }
 
 type Listener = (snapshot: CaptureSnapshot) => void;
@@ -154,6 +173,8 @@ export class CaptureService {
   private readonly validationTimeoutMs: number;
   private readonly createId: () => string;
   private readonly onPhotoStable: CaptureServiceAdapters['onPhotoStable'];
+  private readonly producerBarrier: CaptureServiceAdapters['producerBarrier'];
+  private readonly producerBarrierTimeoutMs: number;
   private readonly observability: CaptureServiceAdapters['observability'];
   private readonly finishInstrumentation: boolean;
   private readonly finishSafeMediaCheck: boolean;
@@ -161,6 +182,7 @@ export class CaptureService {
   private readonly positionActiveStateRestoreEnabled: boolean;
   private readonly freezeService: CaptureFreezeService;
   private sqliteBusyCountFinish = 0;
+  private readonly onSessionCancelled: CaptureServiceAdapters['onSessionCancelled'];
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -173,12 +195,15 @@ export class CaptureService {
     this.validationTimeoutMs = adapters.validationTimeoutMs ?? VALIDATION_TIMEOUT_MS;
     this.createId = adapters.createId ?? createId;
     this.onPhotoStable = adapters.onPhotoStable;
+    this.producerBarrier = adapters.producerBarrier ?? null;
+    this.producerBarrierTimeoutMs = adapters.producerBarrierTimeoutMs ?? 120_000;
     this.observability = adapters.observability ?? null;
     this.finishInstrumentation = adapters.finishInstrumentation ?? true;
     this.finishSafeMediaCheck = adapters.finishSafeMediaCheck ?? true;
     this.sessionFreeze = adapters.sessionFreeze ?? true;
     this.positionActiveStateRestoreEnabled =
       adapters.positionActiveStateRestoreEnabled ?? false;
+    this.onSessionCancelled = adapters.onSessionCancelled;
     this.freezeService = new CaptureFreezeService(repo);
     this.coordinator = createScanCoordinator(() => this.runScanOnce());
   }
@@ -453,8 +478,28 @@ export class CaptureService {
     await this.requestScan();
   }
 
-  async finish(): Promise<void> {
-    await this.finalizeCaptureForUpload({ targetStatus: 'review' });
+  async finish(): Promise<CaptureFinishCommit> {
+    const sessionId = await this.finalizeCaptureForUpload({ targetStatus: 'review' });
+    const packagingMode = this.sessionFreeze ? 'STAGING_REQUIRED' : 'LEGACY_ORIGINALS';
+    try {
+      await this.repo.setExportPackagingMode(sessionId, packagingMode);
+    } catch (error) {
+      this.logger.warn('error', {
+        where: 'set_export_packaging_mode',
+        sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const refreshed = await this.repo.getSession(sessionId);
+    return {
+      sessionId,
+      freezeId: refreshed?.active_freeze_id ?? null,
+      freezeGeneration: refreshed?.capture_freeze_generation ?? null,
+      // Finish waited producer barrier when configured; otherwise no producers to drain.
+      producerBarrierCompleted: true,
+      committed: true,
+      exportPackagingMode: packagingMode,
+    };
   }
 
   /**
@@ -668,6 +713,30 @@ export class CaptureService {
         });
       }
 
+      // Close producer admission after final scan/validation, then wait for in-flight work.
+      if (this.producerBarrier) {
+        errorStage = 'producer_barrier';
+        this.setFinishStage('validating');
+        this.producerBarrier.closeAdmission(sessionId);
+        const barrierStarted = Date.now();
+        try {
+          await this.producerBarrier.waitUntilIdle(sessionId, this.producerBarrierTimeoutMs);
+        } catch (barrierError) {
+          this.logger.warn('error', {
+            where: 'producer_barrier',
+            sessionId,
+            message:
+              barrierError instanceof Error ? barrierError.message : String(barrierError),
+          });
+          throw barrierError;
+        }
+        this.logger.info('export_prep', {
+          code: 'EXPORT_PREP_PRODUCERS_DRAINED',
+          sessionId,
+          durationMs: stageDurationMs(barrierStarted),
+        });
+      }
+
       errorStage = 'foreground_stop';
       this.setFinishStage('closing');
       const fgsStarted = Date.now();
@@ -714,6 +783,7 @@ export class CaptureService {
       });
 
       if (this.sessionFreeze) {
+        this.setFinishStage('freezing');
         const frozen = await this.freezeService.freezeSession(sessionId, this.photos);
         this.sqliteBusyCountFinish = 0;
         if (this.session?.id === sessionId) {
@@ -727,6 +797,12 @@ export class CaptureService {
           statusAfter: 'finishing',
           durationMs: 0,
           newMediaCandidateCount: frozen.photoCount,
+        });
+        this.logger.info('export_prep', {
+          code: 'EXPORT_PREP_FREEZE_READY',
+          sessionId,
+          freezeId: frozen.freezeId,
+          photoCount: frozen.photoCount,
         });
         this.logger.info('session_finish', {
           sessionId,
@@ -787,6 +863,7 @@ export class CaptureService {
       return sessionId;
     } catch (error) {
       // Keep capture operable after unresolved unstable/undecodable (or other gate) failures.
+      this.producerBarrier?.reopen?.(sessionId);
       const stillFinishing = (await this.repo.getSession(sessionId))?.status === 'finishing';
       if (stillFinishing) {
         await this.repo.updateSessionStatus(sessionId, resumeStatus);
@@ -1013,10 +1090,22 @@ export class CaptureService {
     this.detachListener();
     this.autoScanEnabled = false;
     await this.stopForeground();
+    this.producerBarrier?.closeAdmission?.(sessionId);
     await this.repo.updateSessionStatus(sessionId, 'cancelled', true);
     await this.repo.updateActivePositionJson(sessionId, null);
     resetPositionSession(sessionId);
     this.clearCurrentSession();
+    if (this.onSessionCancelled) {
+      try {
+        await this.onSessionCancelled(sessionId);
+      } catch (error) {
+        this.logger.warn('recovery', {
+          where: 'session_purge_after_cancel',
+          sessionRef: sessionId.slice(0, 8),
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   async exclude(assetId: string): Promise<void> {

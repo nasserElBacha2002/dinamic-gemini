@@ -10,15 +10,21 @@
 
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { zipSync } from 'fflate';
 
-import { sha256BytesHex } from '../../core/payloadFingerprint';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
-import type { LocalCsvExportRepository } from '../../database/repositories/localCsvExportRepository';
+import type { ExportPrepRepository } from '../../database/repositories/exportPrepRepository';
+import {
+  resolveZipUri,
+  type LocalCsvExportRepository,
+} from '../../database/repositories/localCsvExportRepository';
+import {
+  ExportAttemptTransitionError,
+  type LocalExportAttemptRepository,
+} from '../../database/repositories/localExportAttemptRepository';
 import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
-import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
+import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import type { Logger } from '../../core/logging';
 import {
@@ -31,14 +37,46 @@ import {
   hashPreparedMetaSha256,
 } from '../localCodeScan/preparedAssetHash';
 import type { LocalCodeScanStrategy } from '../localCodeScan/localCodeScanStrategy';
+import { writeStoreZipAtomic } from '../exportPrep/streamingZipWriter';
+import { ZipWriteError } from '../exportPrep/boundedZipWriter';
+import { validateOnDiskStoreZip } from '../exportPrep/boundedOnDiskZipValidator';
+import { assertZipWritePlatformSupported } from '../exportPrep/zipWritePlatform';
+import { getNodeProcess } from '../exportPrep/nodeRuntime';
+import {
+  assertModernZipPhotosArePrepEligible,
+  listCanonicalExportPhotos,
+  selectExpectedZipPhotos,
+} from '../exportPrep/eligibleExportPhotos';
+import { ExportFromStagingError } from '../exportPrep/exportFromStagingErrors';
+import {
+  resolveExportPhotosFromOriginals,
+  resolveExportPhotosFromStaging,
+  type ResolvedExportPhoto,
+} from '../exportPrep/exportPhotoResolver';
+import { decideExportSourcePolicy } from '../exportPrep/exportSourcePolicy';
+import { assertJobsSnapshotConsumable } from '../exportPrep/jobsSnapshotFence';
+import type { OriginalFallbackReason } from '../exportPrep/exportSourcePolicy';
+import { buildPackageContentFingerprint } from '../exportPrep/packageFingerprint';
+import { validateExistingExportPackage } from '../exportPrep/existingPackageValidator';
+import { rethrowExportOrZip } from '../exportPrep/mapZipWriteError';
+import {
+  assessStorageSpace,
+  type StorageFailure,
+} from '../exportPrep/artifactRetentionPolicy';
+import {
+  buildExportPublishPaths,
+  ensureAisleExportsDir,
+} from '../exportPrep/exportArtifactPaths';
+import { getFreeDiskBytesHint } from '../exportPrep/exportStaging';
 import { buildLocalCsvExport } from './buildLocalCsvExport';
 import { isDraftExportReady } from './supplierExportSemantics';
 import { diagnoseExportBlockers } from './localCsvExportPreflight';
-import { sha256Hex } from './csvFormat';
-import { base64ToUint8Array, uint8ArrayToBase64 } from './binaryCodec';
 import { LOCAL_PACKAGE_KIND, LOCAL_PACKAGE_VERSION } from './localPackageContract';
 
 export { LOCAL_PACKAGE_KIND, LOCAL_PACKAGE_VERSION } from './localPackageContract';
+
+/** Set when export path skips catch-up CODE_SCAN because all eligible photos are READY. */
+export type ExportScanMode = 'catch_up' | 'skipped_all_ready' | 'legacy';
 
 function utf8Encode(text: string): Uint8Array {
   if (typeof TextEncoder !== 'undefined') {
@@ -68,6 +106,86 @@ export interface LocalCsvExportServiceDeps {
   readonly localCodeScanEnabled?: boolean;
   readonly logger?: Logger | null;
   readonly profileResolver?: LocalLabelProfileResolver | null;
+  /** When set + flag path, export reads READY staging only (no MediaStore fallback). */
+  readonly exportPrepRepo?: ExportPrepRepository | null;
+  readonly exportPrepEnabled?: boolean;
+  /** Backfill missing jobs before export preflight (historical sessions). */
+  readonly ensureExportPrepJobs?:
+    | ((
+        sessionId: string,
+        options?: {
+          readonly session?: CaptureSessionRow;
+          readonly photos?: readonly CapturePhotoRow[];
+        },
+      ) => Promise<
+        | void
+        | {
+            readonly readyValidationMode?: 'light' | 'strong';
+            readonly readyValidatedCount?: number;
+            readonly reusedCanonicalPhotos?: boolean;
+            readonly batchedJobLookup?: boolean;
+            readonly durationMs?: number;
+            readonly jobsSnapshot?: readonly import('../exportPrep/exportPrepTypes').ExportPrepJobRow[];
+            readonly jobsSnapshotToken?: string;
+            readonly jobsSnapshotSessionId?: string;
+            readonly activeWorkersAtSnapshot?: number;
+            readonly jobsSnapshotRevision?: number;
+          }
+      >)
+    | null;
+  /** Active export-prep workers for a session (Phase 4 snapshot fence). */
+  readonly getExportPrepActiveWorkers?: ((sessionId: string) => number) | null;
+  /** Session jobs mutation revision (Phase 4 snapshot fence). */
+  readonly getExportPrepSessionJobsRevision?: ((sessionId: string) => number) | null;
+  /** Soft limit for sum of staged bytes before ZIP build. */
+  readonly maxExportUncompressedBytes?: number;
+  readonly onZipProgress?: (done: number, total: number) => void;
+  /** Phase 6 durable export attempt catalog. */
+  readonly attemptRepo?: LocalExportAttemptRepository | null;
+}
+
+export interface ExportSessionOptions {
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (progress: import('../exportPrep/boundedZipWriter').ZipWriteProgress) => void;
+  /**
+   * Optional timing observer (benchmark / diagnostics). No-op when unset —
+   * does not alter export behavior.
+   */
+  readonly onExportPhase?: (event: LocalExportPhaseEvent) => void;
+}
+
+export type LocalExportPhaseName =
+  | 'export_resolution'
+  | 'export_resolution_queries'
+  | 'export_resolution_ensure_jobs'
+  | 'export_resolution_staging_validation'
+  | 'export_resolution_hash_validation'
+  | 'export_resolution_scan_catchup'
+  | 'export_resolution_profile'
+  | 'export_resolution_freeze_checks'
+  | 'export_resolution_entry_build'
+  | 'export_resolution_other'
+  | 'strong_validation'
+  | 'strong_validation_hash'
+  | 'csv_build'
+  | 'csv_write'
+  | 'manifest_build'
+  | 'zip_open'
+  | 'zip_entry'
+  | 'zip_finalize'
+  | 'zip_digest'
+  | 'zip_validation'
+  | 'total_export';
+
+export interface LocalExportPhaseEvent {
+  readonly phase: LocalExportPhaseName;
+  readonly monotonicStartMs: number;
+  readonly durationMs: number;
+  readonly success: boolean;
+  readonly errorCode?: string | null;
+  readonly photoId?: string | null;
+  readonly sequence?: number | null;
+  readonly extras?: Readonly<Record<string, number | string | boolean | null>>;
 }
 
 export interface ExportedLocalCsv {
@@ -79,9 +197,16 @@ export interface ExportedLocalCsv {
   readonly photoCount: number;
   readonly packageChecksumSha256: string | null;
   readonly reused: boolean;
+  /** Observability: whether catch-up CODE_SCAN ran. */
+  readonly scanMode?: ExportScanMode;
+  /** Phase 4: photos read from validated staging. */
+  readonly stagingPhotoCount?: number;
+  /** Phase 4: photos read via controlled original fallback. */
+  readonly originalFallbackCount?: number;
+  readonly fallbackReason?: OriginalFallbackReason | null;
 }
 
-interface PackagedPhoto {
+interface PackagedPhotoMeta {
   readonly capture_photo_id: string;
   readonly client_file_id: string;
   readonly sequence_number: number;
@@ -92,11 +217,67 @@ interface PackagedPhoto {
   readonly width: number;
   readonly height: number;
   readonly asset_variant: 'ORIGINAL' | 'PREPARED';
-  readonly bytes: Uint8Array;
+  readonly getBytes: () => Promise<Uint8Array>;
+  /** Staging/original absolute path for stream-append ZIP write (no JS Base64). */
+  readonly sourceAbsolutePath?: string;
+}
+
+function toPackagedMeta(photo: ResolvedExportPhoto): PackagedPhotoMeta {
+  return {
+    capture_photo_id: photo.capturePhotoId,
+    client_file_id: photo.clientFileId,
+    sequence_number: photo.sequenceNumber,
+    file_name: photo.exportFileName,
+    mime_type: photo.mimeType,
+    size_bytes: photo.sizeBytes,
+    sha256: photo.sha256,
+    width: photo.width,
+    height: photo.height,
+    asset_variant: photo.source === 'VALIDATED_STAGING' ? 'PREPARED' : 'ORIGINAL',
+    getBytes: photo.getBytes,
+    ...(photo.uri ? { sourceAbsolutePath: photo.uri } : {}),
+  };
 }
 
 export class LocalCsvExportService {
+  private zipProgressListener:
+    | ((done: number, total: number, stage?: string) => void)
+    | null = null;
+  /** Serialize exports per session (double-tap / concurrent callers). */
+  private readonly sessionExportLocks = new Map<string, Promise<unknown>>();
+  /** Active export operations — service-owned cancel, not UI-only AbortController. */
+  private readonly activeExports = new Map<
+    string,
+    { readonly controller: AbortController; readonly promise: Promise<unknown> }
+  >();
+
   constructor(private readonly deps: LocalCsvExportServiceDeps) {}
+
+  /** UI-facing ZIP progress hook (stable abstraction; share cancel does not clear staging). */
+  setZipProgressListener(
+    listener: ((done: number, total: number, stage?: string) => void) | null,
+  ): void {
+    this.zipProgressListener = listener;
+  }
+
+  /**
+   * Abort in-flight export for session and wait until the promise settles.
+   * Used by SessionArtifactPurgeCoordinator — UI may also call this.
+   */
+  async cancelActiveExport(sessionId: string): Promise<void> {
+    const active = this.activeExports.get(sessionId);
+    if (!active) return;
+    active.controller.abort();
+    try {
+      await active.promise;
+    } catch {
+      // expected after abort
+    }
+  }
+
+  isExportActive(sessionId: string): boolean {
+    return this.activeExports.has(sessionId);
+  }
 
   /**
    * Offline ZIP path no longer goes through upload-prepare, so CODE_SCAN must run here
@@ -165,43 +346,773 @@ export class LocalCsvExportService {
     }
   }
 
-  async exportSession(sessionId: string): Promise<ExportedLocalCsv> {
+  async exportSession(
+    sessionId: string,
+    options?: ExportSessionOptions,
+  ): Promise<ExportedLocalCsv> {
+    const previous = this.sessionExportLocks.get(sessionId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const chained = previous.catch(() => undefined).then(() => gate);
+    this.sessionExportLocks.set(sessionId, chained);
+    await previous.catch(() => undefined);
+
+    const controller = new AbortController();
+    const external = options?.signal;
+    const onExternalAbort = () => controller.abort();
+    if (external) {
+      if (external.aborted) controller.abort();
+      else external.addEventListener('abort', onExternalAbort, { once: true });
+    }
+
+    const work = this.exportSessionUnlocked(sessionId, {
+      ...options,
+      signal: controller.signal,
+    });
+    this.activeExports.set(sessionId, { controller, promise: work });
+
+    try {
+      return await work;
+    } finally {
+      if (external) external.removeEventListener('abort', onExternalAbort);
+      this.activeExports.delete(sessionId);
+      release();
+      if (this.sessionExportLocks.get(sessionId) === chained) {
+        this.sessionExportLocks.delete(sessionId);
+      }
+    }
+  }
+
+  private async exportSessionUnlocked(
+    sessionId: string,
+    options?: ExportSessionOptions,
+  ): Promise<ExportedLocalCsv> {
+    assertZipWritePlatformSupported();
     if (this.deps.enabled === false) {
       throw new Error('La exportación CSV local no está habilitada.');
     }
-    const session = await this.deps.captureRepo.getSession(sessionId);
-    if (!session) {
-      throw new Error('No se encontró la captura local.');
-    }
-    let photos = await this.deps.captureRepo.listPhotos(sessionId);
-    if (session.active_freeze_id) {
-      photos = await this.deps.captureRepo.listFreezePhotos(session.active_freeze_id);
-    }
-    const eligible = photos.filter((p) => p.status !== 'excluded' && p.status !== 'rejected');
-    let drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => []);
-    await this.ensureLocalCodeScans(session, eligible, drafts);
-    drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => drafts);
-    const confirmed = await this.deps.confirmedRepo.listForSession(sessionId).catch(() => []);
+    const mono = () => {
+      const p = (globalThis as { performance?: { now(): number } }).performance;
+      return typeof p?.now === 'function' ? p.now() : Date.now();
+    };
+    const emitPhase = (
+      phase: LocalExportPhaseName,
+      started: number,
+      extra?: {
+        readonly durationMs?: number;
+        readonly success?: boolean;
+        readonly errorCode?: string | null;
+        readonly photoId?: string | null;
+        readonly sequence?: number | null;
+        readonly extras?: Readonly<Record<string, number | string | boolean | null>>;
+      },
+    ) => {
+      if (!options?.onExportPhase) return;
+      try {
+        options.onExportPhase({
+          phase,
+          monotonicStartMs: started,
+          durationMs: extra?.durationMs ?? mono() - started,
+          success: extra?.success !== false,
+          errorCode: extra?.errorCode ?? null,
+          photoId: extra?.photoId ?? null,
+          sequence: extra?.sequence ?? null,
+          ...(extra?.extras ? { extras: extra.extras } : {}),
+        });
+      } catch {
+        // never break export for observer errors
+      }
+    };
 
-    const resolved = await this.deps.profileResolver
+    const totalExportStarted = mono();
+    const preflightStarted = Date.now();
+    const resolutionStarted = mono();
+
+    // --- export_resolution_freeze_checks (snapshot only; assert runs later on getBytes) ---
+    let resolutionQueryCount = 0;
+    let resolutionRowsReturned = 0;
+    let queriesDurationMs = 0;
+    const queriesStarted = mono();
+    const session = await this.deps.captureRepo.getSession(sessionId);
+    resolutionQueryCount += 1;
+    if (!session) {
+      throw new ExportFromStagingError('SESSION_MISSING', 'No se encontró la captura local.');
+    }
+    const freezeIdAtStart = session.active_freeze_id;
+    const freezeGenerationAtStart = session.capture_freeze_generation ?? null;
+    const freezeDurationMs = 0;
+    emitPhase('export_resolution_freeze_checks', queriesStarted, {
+      durationMs: freezeDurationMs,
+      extras: {
+        queryCount: 0,
+        queryCountKnown: true,
+        rowsReturned: 0,
+        photoCount: 0,
+        hashCount: 0,
+        bytesHashed: 0,
+        fullFileReadCount: 0,
+        validationMode: 'freeze_snapshot',
+        freezeIdPresent: freezeIdAtStart != null,
+        note: 'assertFreezeUnchanged runs during zip getBytes (outside export_resolution)',
+      },
+    });
+
+    const { photos } = await listCanonicalExportPhotos(this.deps.captureRepo, sessionId, session);
+    // listCanonical: 1 query (listFreezePhotos or listPhotos); session already provided
+    resolutionQueryCount += 1;
+    resolutionRowsReturned += photos.length;
+    const eligible = selectExpectedZipPhotos(photos);
+
+    let draftsFallbackUsed = false;
+    let drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => {
+      draftsFallbackUsed = true;
+      return [] as LocalDetectionDraftRow[];
+    });
+    resolutionQueryCount += 1;
+    resolutionRowsReturned += drafts.length;
+    queriesDurationMs += mono() - queriesStarted;
+
+    const prepFlagOn = this.deps.exportPrepEnabled === true && this.deps.exportPrepRepo != null;
+    const sourcePolicy = decideExportSourcePolicy({
+      exportPrepEnabled: prepFlagOn,
+      session,
+    });
+    let scanMode: ExportScanMode =
+      sourcePolicy.mode === 'staging_required' ? 'catch_up' : 'legacy';
+    let stagingPhotoCount = 0;
+    let originalFallbackCount = 0;
+    let fallbackReason: OriginalFallbackReason | null = sourcePolicy.fallbackReason;
+    let packagedResolved: readonly ResolvedExportPhoto[] = [];
+
+    let ensureJobsDurationMs = 0;
+    let stagingValidationDurationMs = 0;
+    let hashValidationDurationMs = 0;
+    let scanCatchupDurationMs = 0;
+    let profileDurationMs = 0;
+    let entryBuildDurationMs = 0;
+    let otherDurationMs = 0;
+    let substageHashCount = 0;
+    let substageBytesHashed = 0;
+    let substageFullFileReads = 0;
+
+    if (sourcePolicy.mode === 'staging_required') {
+      assertModernZipPhotosArePrepEligible(eligible);
+
+      let ensureJobsSnapshot:
+        | readonly import('../exportPrep/exportPrepTypes').ExportPrepJobRow[]
+        | null = null;
+      let ensureJobsSnapshotToken: string | undefined;
+      let ensureJobsSnapshotSessionId: string | undefined;
+      let ensureActiveWorkersAtSnapshot: number | undefined;
+      let ensureJobsSnapshotRevision: number | undefined;
+      let jobsSnapshotFenced = false;
+
+      if (this.deps.ensureExportPrepJobs) {
+        const ensureStarted = mono();
+        try {
+          const ensureResult = await this.deps.ensureExportPrepJobs(sessionId, {
+            session,
+            photos: eligible,
+          });
+          ensureJobsDurationMs = mono() - ensureStarted;
+          if (
+            ensureResult &&
+            typeof ensureResult === 'object' &&
+            Array.isArray(ensureResult.jobsSnapshot)
+          ) {
+            ensureJobsSnapshot = ensureResult.jobsSnapshot;
+            ensureJobsSnapshotToken = ensureResult.jobsSnapshotToken;
+            ensureJobsSnapshotSessionId = ensureResult.jobsSnapshotSessionId;
+            ensureActiveWorkersAtSnapshot = ensureResult.activeWorkersAtSnapshot;
+            ensureJobsSnapshotRevision = ensureResult.jobsSnapshotRevision;
+          }
+          const ensureExtras =
+            ensureResult && typeof ensureResult === 'object'
+              ? {
+                  readyValidationMode: ensureResult.readyValidationMode ?? 'light',
+                  readyValidatedCount: ensureResult.readyValidatedCount ?? null,
+                  reusedCanonicalPhotos: ensureResult.reusedCanonicalPhotos === true,
+                  batchedJobLookup: ensureResult.batchedJobLookup === true,
+                  reusedFromPrep: ensureResult.reusedCanonicalPhotos === true,
+                  revalidated: true,
+                  jobsSnapshotReused: Array.isArray(ensureResult.jobsSnapshot),
+                  jobsSnapshotFenced: Array.isArray(ensureResult.jobsSnapshot),
+                }
+              : {
+                  readyValidationMode: 'light' as const,
+                  reusedFromPrep: false,
+                  revalidated: true,
+                  jobsSnapshotReused: false,
+                  jobsSnapshotFenced: false,
+                };
+          emitPhase('export_resolution_ensure_jobs', ensureStarted, {
+            durationMs: ensureJobsDurationMs,
+            extras: {
+              photoCount: eligible.length,
+              queryCount:
+                ensureResult && typeof ensureResult === 'object' && ensureResult.batchedJobLookup
+                  ? 1
+                  : null,
+              queryCountKnown: !!(
+                ensureResult &&
+                typeof ensureResult === 'object' &&
+                ensureResult.batchedJobLookup
+              ),
+              rowsReturned: ensureJobsSnapshot?.length ?? null,
+              validationMode: 'EXPORT_PREFLIGHT_LIGHT',
+              note: 'READY completeness=light; strong native rehash only at packaging',
+              ...ensureExtras,
+            },
+          });
+        } catch (error) {
+          ensureJobsDurationMs = mono() - ensureStarted;
+          const code =
+            error && typeof error === 'object' && 'code' in error
+              ? String((error as { code: unknown }).code)
+              : 'ENSURE_EXPORT_PREP_JOBS_FAILED';
+          emitPhase('export_resolution_ensure_jobs', ensureStarted, {
+            durationMs: ensureJobsDurationMs,
+            success: false,
+            errorCode: code,
+            extras: {
+              photoCount: eligible.length,
+              queryCount: null,
+              queryCountKnown: false,
+              fallbackUsed: false,
+              reusedFromPrep: false,
+              revalidated: false,
+              jobsSnapshotReused: false,
+              jobsSnapshotFenced: false,
+            },
+          });
+          emitPhase('export_resolution', resolutionStarted, {
+            success: false,
+            errorCode: code,
+            extras: {
+              queriesDurationMs,
+              ensureJobsDurationMs,
+              additiveSubstageMs: queriesDurationMs + ensureJobsDurationMs,
+              unaccountedMs: null,
+              reconciliationValid: false,
+            },
+          });
+          throw error;
+        }
+      }
+
+      const prepRepo = this.deps.exportPrepRepo!;
+      const jobsQueryStarted = mono();
+      let jobs: Awaited<ReturnType<ExportPrepRepository['listForSession']>>;
+      let jobsListReusedFromEnsure = false;
+      try {
+        const activeWorkersNow = this.deps.getExportPrepActiveWorkers?.(sessionId) ?? 0;
+        const liveRevision = this.deps.getExportPrepSessionJobsRevision?.(sessionId);
+        const fence =
+          ensureJobsSnapshot && ensureJobsSnapshot.length > 0
+            ? assertJobsSnapshotConsumable({
+                snapshot: ensureJobsSnapshot,
+                token: ensureJobsSnapshotToken,
+                sessionId,
+                snapshotSessionId: ensureJobsSnapshotSessionId,
+                activeWorkersNow,
+                activeWorkersAtSnapshot: ensureActiveWorkersAtSnapshot,
+                snapshotRevision: ensureJobsSnapshotRevision,
+                liveRevision,
+              })
+            : { ok: false as const, reason: 'no_snapshot' };
+        jobsSnapshotFenced = fence.ok;
+        if (fence.ok && ensureJobsSnapshot) {
+          jobs = [...ensureJobsSnapshot];
+          jobsListReusedFromEnsure = true;
+        } else {
+          jobs = await prepRepo.listForSession(sessionId);
+          resolutionQueryCount += 1;
+          resolutionRowsReturned += jobs.length;
+        }
+        queriesDurationMs += mono() - jobsQueryStarted;
+      } catch (error) {
+        queriesDurationMs += mono() - jobsQueryStarted;
+        const code =
+          error && typeof error === 'object' && 'code' in error
+            ? String((error as { code: unknown }).code)
+            : 'PREP_LIST_FAILED';
+        emitPhase('export_resolution_queries', queriesStarted, {
+          durationMs: queriesDurationMs,
+          success: false,
+          errorCode: code,
+          extras: {
+            queryCount: resolutionQueryCount,
+            queryCountKnown: true,
+            fallbackUsed: false,
+          },
+        });
+        emitPhase('export_resolution', resolutionStarted, {
+          success: false,
+          errorCode: code,
+          extras: { queriesDurationMs, reconciliationValid: false },
+        });
+        throw error;
+      }
+
+      emitPhase('export_resolution_queries', queriesStarted, {
+        durationMs: queriesDurationMs,
+        success: !draftsFallbackUsed,
+        errorCode: draftsFallbackUsed ? 'DRAFT_LIST_FALLBACK_EMPTY' : null,
+        extras: {
+          queryCount: resolutionQueryCount,
+          queryCountKnown: true,
+          rowsReturned: resolutionRowsReturned,
+          photoCount: eligible.length,
+          draftCount: drafts.length,
+          jobCount: jobs.length,
+          hashCount: 0,
+          bytesHashed: 0,
+          fullFileReadCount: 0,
+          includesEnsureJobs: false,
+          fallbackUsed: draftsFallbackUsed,
+          reusedFromPrep: jobsListReusedFromEnsure,
+          revalidated: !jobsListReusedFromEnsure,
+          jobsSnapshotReused: jobsListReusedFromEnsure,
+          jobsSnapshotFenced,
+          ...(draftsFallbackUsed
+            ? {
+                note: 'listForSession drafts failed; continuing with empty drafts (legacy catch)',
+              }
+            : {}),
+        },
+      });
+
+      const prepByPhoto = new Map(jobs.map((j) => [j.capture_photo_id, j]));
+
+      const strongStarted = mono();
+      let reusedHashCount = 0;
+      let validationFallbackHashCount = 0;
+      let nativeHashCount = 0;
+      let totalBytesHashed = 0;
+      let digestDurationSumMs = 0;
+      try {
+        const resolved = await resolveExportPhotosFromStaging({
+          session,
+          expectedPhotos: eligible,
+          jobsByPhotoId: prepByPhoto,
+          prepRepo,
+          onReadyValidation: ({ photoId, sequence, result }) => {
+            const dig = result.digest;
+            const hashMode: string = dig?.hashMode ?? 'native_file';
+            const hashSource: string = dig?.hashSource ?? 'validation_fallback';
+            const bytesHashed = dig?.bytesHashed ?? 0;
+            const digestDuration = dig?.durationMs ?? 0;
+            digestDurationSumMs += digestDuration;
+            const reused = hashMode === 'reused_persisted';
+            if (reused) {
+              reusedHashCount += 1;
+            } else {
+              nativeHashCount += 1;
+              if (hashSource === 'validation_fallback') {
+                validationFallbackHashCount += 1;
+              }
+              totalBytesHashed += bytesHashed;
+            }
+            if (options?.onExportPhase) {
+              try {
+                options.onExportPhase({
+                  phase: 'strong_validation_hash',
+                  monotonicStartMs: mono() - digestDuration,
+                  durationMs: digestDuration,
+                  success: result.ok,
+                  errorCode: result.ok ? null : (result.failure ?? 'STAGING_SHA_MISMATCH'),
+                  photoId,
+                  sequence,
+                  extras: {
+                    hashMode,
+                    hashSource,
+                    bytesHashed,
+                    hashCount: reused ? 0 : 1,
+                    fullFileReadCount: reused ? 0 : 1,
+                    hashImplementation: reused ? 'cached_digest' : 'native_stream',
+                    digestReused: reused,
+                    reuseReason: dig?.reason ?? null,
+                    base64FullFileHashCount: 0,
+                    validationMode: 'strong',
+                  },
+                });
+              } catch {
+                // never break export for observer errors
+              }
+            }
+          },
+        });
+        stagingValidationDurationMs = mono() - strongStarted;
+        hashValidationDurationMs = digestDurationSumMs;
+        substageHashCount = nativeHashCount + reusedHashCount;
+        substageBytesHashed = totalBytesHashed;
+        substageFullFileReads = nativeHashCount;
+
+        emitPhase('export_resolution_staging_validation', strongStarted, {
+          durationMs: stagingValidationDurationMs,
+          extras: {
+            photoCount: eligible.length,
+            queryCount: 0,
+            queryCountKnown: true,
+            rowsReturned: 0,
+            hashCount: substageHashCount,
+            bytesHashed: totalBytesHashed,
+            fullFileReadCount: nativeHashCount,
+            validationMode: 'strong',
+            digestReused: false,
+            nestedHashValidation: true,
+            reusedFromPrep: false,
+            revalidated: true,
+            note: 'single_strong_native_rehash_at_packaging',
+            base64FullFileHashCount: 0,
+          },
+        });
+        emitPhase('export_resolution_hash_validation', strongStarted, {
+          durationMs: hashValidationDurationMs,
+          extras: {
+            photoCount: eligible.length,
+            queryCount: 0,
+            queryCountKnown: true,
+            rowsReturned: 0,
+            hashCount: substageHashCount,
+            bytesHashed: totalBytesHashed,
+            fullFileReadCount: nativeHashCount,
+            validationMode: 'strong_native_rehash',
+            digestReused: false,
+            nestParent: 'export_resolution_staging_validation',
+            reconciliation: 'nested_not_additive',
+            digestDurationSumMs: hashValidationDurationMs,
+            reusedFromPrep: false,
+            revalidated: true,
+            base64FullFileHashCount: 0,
+          },
+        });
+        emitPhase('strong_validation', strongStarted, {
+          extras: {
+            photoCount: eligible.length,
+            reusedHashCount,
+            validationFallbackHashCount,
+            nativeHashCount,
+            base64FullFileHashCount: 0,
+            totalBytesHashed,
+            hashesPerPhoto:
+              eligible.length > 0
+                ? (nativeHashCount + reusedHashCount) / eligible.length
+                : 0,
+          },
+        });
+        packagedResolved = resolved.photos;
+        stagingPhotoCount = resolved.stagingCount;
+        originalFallbackCount = resolved.originalFallbackCount;
+        fallbackReason = resolved.fallbackReason;
+
+        if (resolved.allStagingStrongValidated) {
+          scanMode = 'skipped_all_ready';
+          this.deps.logger?.info('recovery', {
+            where: 'local_export_scan_skipped',
+            code: 'EXPORT_SCAN_SKIPPED_ALL_READY',
+            sessionId,
+            photo_count: eligible.length,
+            staging_photo_count: stagingPhotoCount,
+            preflight_ms: Date.now() - preflightStarted,
+          });
+          const skipStarted = mono();
+          emitPhase('export_resolution_scan_catchup', skipStarted, {
+            durationMs: 0,
+            extras: {
+              photoCount: eligible.length,
+              queryCount: 0,
+              queryCountKnown: true,
+              rowsReturned: 0,
+              skipped: true,
+              reason: 'all_staging_strong_validated',
+              hashCount: 0,
+              bytesHashed: 0,
+              fullFileReadCount: 0,
+              base64FullFileHashCount: 0,
+            },
+          });
+        } else {
+          const catchupStarted = mono();
+          await this.ensureLocalCodeScans(session, eligible, drafts);
+          drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => drafts);
+          resolutionQueryCount += 1;
+          resolutionRowsReturned += drafts.length;
+          scanCatchupDurationMs = mono() - catchupStarted;
+          emitPhase('export_resolution_scan_catchup', catchupStarted, {
+            durationMs: scanCatchupDurationMs,
+            extras: {
+              photoCount: eligible.length,
+              queryCount: 1,
+              queryCountKnown: true,
+              rowsReturned: drafts.length,
+              skipped: false,
+              hashCount: 0,
+              bytesHashed: 0,
+              fullFileReadCount: 0,
+              base64FullFileHashCount: 0,
+            },
+          });
+        }
+      } catch (error) {
+        stagingValidationDurationMs = mono() - strongStarted;
+        hashValidationDurationMs = digestDurationSumMs;
+        substageHashCount = nativeHashCount + reusedHashCount;
+        substageBytesHashed = totalBytesHashed;
+        substageFullFileReads = nativeHashCount;
+        const code =
+          error && typeof error === 'object' && 'code' in error
+            ? String((error as { code: unknown }).code)
+            : 'STAGING_VALIDATION_FAILED';
+        emitPhase('export_resolution_staging_validation', strongStarted, {
+          durationMs: stagingValidationDurationMs,
+          success: false,
+          errorCode: code,
+          extras: {
+            photoCount: eligible.length,
+            queryCount: 0,
+            queryCountKnown: true,
+            rowsReturned: 0,
+            hashCount: substageHashCount,
+            bytesHashed: totalBytesHashed,
+            fullFileReadCount: nativeHashCount,
+            validationMode: 'strong',
+            digestReused: false,
+            nestedHashValidation: true,
+            note: 'single_strong_native_rehash_at_packaging',
+            base64FullFileHashCount: 0,
+          },
+        });
+        emitPhase('export_resolution_hash_validation', strongStarted, {
+          durationMs: hashValidationDurationMs,
+          success: false,
+          errorCode: code,
+          extras: {
+            photoCount: eligible.length,
+            queryCount: 0,
+            queryCountKnown: true,
+            rowsReturned: 0,
+            hashCount: substageHashCount,
+            bytesHashed: totalBytesHashed,
+            fullFileReadCount: nativeHashCount,
+            validationMode: 'strong_native_rehash',
+            digestReused: false,
+            nestParent: 'export_resolution_staging_validation',
+            reconciliation: 'nested_not_additive',
+            digestDurationSumMs: hashValidationDurationMs,
+            base64FullFileHashCount: 0,
+          },
+        });
+        emitPhase('export_resolution', resolutionStarted, {
+          success: false,
+          errorCode: code,
+          extras: {
+            queriesDurationMs,
+            ensureJobsDurationMs,
+            stagingValidationDurationMs,
+            hashValidationDurationMs,
+            reconciliationValid: false,
+          },
+        });
+        throw error;
+      }
+    } else {
+      emitPhase('export_resolution_queries', queriesStarted, {
+        durationMs: queriesDurationMs,
+        success: !draftsFallbackUsed,
+        errorCode: draftsFallbackUsed ? 'DRAFT_LIST_FALLBACK_EMPTY' : null,
+        extras: {
+          queryCount: resolutionQueryCount,
+          queryCountKnown: true,
+          rowsReturned: resolutionRowsReturned,
+          photoCount: eligible.length,
+          draftCount: drafts.length,
+          jobCount: 0,
+          hashCount: 0,
+          bytesHashed: 0,
+          fullFileReadCount: 0,
+          mode: 'legacy_original_fallback',
+          fallbackUsed: draftsFallbackUsed,
+          base64FullFileHashCount: 0,
+        },
+      });
+      this.deps.logger?.info('recovery', {
+        where: 'local_export_original_fallback',
+        code: 'EXPORT_ORIGINAL_FALLBACK',
+        sessionId,
+        reason: sourcePolicy.fallbackReason,
+        photo_count: eligible.length,
+      });
+      const catchupStarted = mono();
+      await this.ensureLocalCodeScans(session, eligible, drafts);
+      drafts = await this.deps.draftRepo.listForSession(sessionId).catch(() => drafts);
+      resolutionQueryCount += 1;
+      scanCatchupDurationMs = mono() - catchupStarted;
+      emitPhase('export_resolution_scan_catchup', catchupStarted, {
+        durationMs: scanCatchupDurationMs,
+        extras: {
+          photoCount: eligible.length,
+          queryCount: 1,
+          queryCountKnown: true,
+          rowsReturned: drafts.length,
+          skipped: false,
+          mode: 'legacy',
+          base64FullFileHashCount: 0,
+        },
+      });
+      const entryStarted = mono();
+      const resolved = await resolveExportPhotosFromOriginals({
+        session,
+        expectedPhotos: eligible,
+        fallbackReason: sourcePolicy.fallbackReason ?? 'FEATURE_DISABLED',
+      });
+      packagedResolved = resolved.photos;
+      stagingPhotoCount = resolved.stagingCount;
+      originalFallbackCount = resolved.originalFallbackCount;
+      fallbackReason = resolved.fallbackReason;
+      entryBuildDurationMs = mono() - entryStarted;
+      emitPhase('export_resolution_entry_build', entryStarted, {
+        durationMs: entryBuildDurationMs,
+        extras: {
+          photoCount: packagedResolved.length,
+          queryCount: 0,
+          queryCountKnown: true,
+          rowsReturned: 0,
+          mode: 'originals',
+          base64FullFileHashCount: 0,
+        },
+      });
+    }
+
+    const profileStarted = mono();
+    let confirmedFallbackUsed = false;
+    const confirmed = await this.deps.confirmedRepo.listForSession(sessionId).catch(() => {
+      confirmedFallbackUsed = true;
+      return [];
+    });
+    resolutionQueryCount += 1;
+    resolutionRowsReturned += confirmed.length;
+
+    const profileResolverPresent = this.deps.profileResolver != null;
+    let profileResolveFailed = false;
+    const resolvedProfiles = await this.deps.profileResolver
       ?.resolveForAisle(session.inventory_id, session.aisle_id)
-      .catch(() => null);
+      .catch(() => {
+        profileResolveFailed = true;
+        return null;
+      });
+    profileDurationMs = mono() - profileStarted;
+    const profileSuccess = !confirmedFallbackUsed && !profileResolveFailed;
+    emitPhase('export_resolution_profile', profileStarted, {
+      durationMs: profileDurationMs,
+      success: profileSuccess,
+      errorCode: confirmedFallbackUsed
+        ? 'CONFIRMED_LIST_FALLBACK_EMPTY'
+        : profileResolveFailed
+          ? 'PROFILE_RESOLVE_FALLBACK_NULL'
+          : null,
+      extras: {
+        queryCount: null,
+        queryCountKnown: false,
+        rowsReturned: confirmed.length,
+        photoCount: eligible.length,
+        cacheHit: false,
+        profileResolverPresent,
+        profileResolved: resolvedProfiles != null,
+        fallbackUsed: confirmedFallbackUsed || profileResolveFailed,
+        base64FullFileHashCount: 0,
+      },
+    });
+
+    const entryStarted = mono();
     const blocker = diagnoseExportBlockers(
       eligible,
       drafts,
-      resolved
+      resolvedProfiles
         ? {
             clientSupplierId:
-              resolved.item.clientSupplierId ?? resolved.position.clientSupplierId ?? null,
-            itemSource: resolved.item.source,
-            positionSource: resolved.position.source,
+              resolvedProfiles.item.clientSupplierId ??
+              resolvedProfiles.position.clientSupplierId ??
+              null,
+            itemSource: resolvedProfiles.item.source,
+            positionSource: resolvedProfiles.position.source,
           }
         : null,
     );
     if (blocker) {
       throw new Error(`${blocker.code}: ${blocker.detail}`);
     }
+    if (sourcePolicy.mode === 'staging_required') {
+      entryBuildDurationMs = mono() - entryStarted;
+      emitPhase('export_resolution_entry_build', entryStarted, {
+        durationMs: entryBuildDurationMs,
+        extras: {
+          photoCount: packagedResolved.length,
+          queryCount: 0,
+          queryCountKnown: true,
+          rowsReturned: 0,
+          draftCount: drafts.length,
+          mode: 'staging_blockers_diagnose',
+          base64FullFileHashCount: 0,
+        },
+      });
+    } else {
+      otherDurationMs = mono() - entryStarted;
+      emitPhase('export_resolution_other', entryStarted, {
+        durationMs: otherDurationMs,
+        extras: {
+          photoCount: eligible.length,
+          queryCount: 0,
+          queryCountKnown: true,
+          rowsReturned: 0,
+          note: 'legacy_blocker_diagnose',
+          base64FullFileHashCount: 0,
+        },
+      });
+    }
 
+    const additiveSubstageMs =
+      queriesDurationMs +
+      ensureJobsDurationMs +
+      stagingValidationDurationMs +
+      scanCatchupDurationMs +
+      profileDurationMs +
+      entryBuildDurationMs +
+      otherDurationMs;
+    const resolutionWallMs = mono() - resolutionStarted;
+    const unaccountedMs = resolutionWallMs - additiveSubstageMs;
+    emitPhase('export_resolution', resolutionStarted, {
+      extras: {
+        eligibleCount: eligible.length,
+        draftCount: drafts.length,
+        stagingPhotoCount,
+        queryCount: resolutionQueryCount,
+        rowsReturned: resolutionRowsReturned,
+        hashCount: substageHashCount,
+        bytesHashed: substageBytesHashed,
+        fullFileReadCount: substageFullFileReads,
+        queriesDurationMs,
+        ensureJobsDurationMs,
+        stagingValidationDurationMs,
+        hashValidationDurationMs,
+        scanCatchupDurationMs,
+        profileDurationMs,
+        freezeDurationMs,
+        entryBuildDurationMs,
+        otherDurationMs,
+        additiveSubstageMs,
+        unaccountedMs,
+        nestedHashInStaging: true,
+        reconciliationValid: Number.isFinite(unaccountedMs),
+        reconciliation:
+          'additive=queries+ensure+staging+scan+profile+entry+other; hash nested in staging (not additive)',
+        base64FullFileHashCount: 0,
+      },
+    });
+
+    const csvBuildStarted = mono();
     const built = await buildLocalCsvExport({
       session,
       photos: eligible,
@@ -213,58 +1124,174 @@ export class LocalCsvExportService {
       freezeId: session.active_freeze_id,
       freezeGeneration: session.capture_freeze_generation,
     });
+    emitPhase('csv_build', csvBuildStarted, {
+      extras: {
+        rowCount: built.rowCount,
+        photoCount: eligible.length,
+        csvBytes: utf8Encode(built.csv).byteLength,
+      },
+    });
 
-    const packagedPhotos = await readEligiblePhotosStrict(eligible);
-    const photoFingerprintPart = packagedPhotos
-      .map((p) => `${p.capture_photo_id}:${p.sha256}`)
-      .join(',');
-    const contentFingerprint = await sha256Hex(
-      [
-        `pkg-v${LOCAL_PACKAGE_VERSION}`,
-        session.active_freeze_id ?? '',
-        built.checksumSha256,
-        photoFingerprintPart,
-      ].join('|'),
-    );
+    const packagedPhotos = packagedResolved.map((photo) => {
+      const meta = toPackagedMeta(photo);
+      if (sourcePolicy.mode !== 'staging_required') {
+        return meta;
+      }
+      // Recheck freeze identity while reading/streaming bytes (long exports).
+      return {
+        ...meta,
+        getBytes: async () => {
+          await this.assertFreezeUnchanged(
+            sessionId,
+            freezeIdAtStart,
+            freezeGenerationAtStart,
+            'getBytes',
+          );
+          return meta.getBytes();
+        },
+      };
+    });
+    if (packagedPhotos.length !== eligible.length) {
+      throw new ExportFromStagingError(
+        'PHOTO_SET_MISMATCH',
+        `packaged ${packagedPhotos.length} != expected ${eligible.length}`,
+      );
+    }
 
-    const existing = await this.deps.exportRepo.findByFingerprint(contentFingerprint);
+    const estimatedBytes = packagedPhotos.reduce((sum, p) => sum + (p.size_bytes || 0), 0);
+    const maxBytes = this.deps.maxExportUncompressedBytes ?? 480 * 1024 * 1024;
+    if (estimatedBytes > maxBytes) {
+      throw new ExportFromStagingError(
+        'EXPORT_TOO_LARGE',
+        `estimado ${estimatedBytes} bytes supera el límite ${maxBytes}`,
+      );
+    }
+
+    const freeBytes = await getFreeDiskBytesHint();
+    const space = assessStorageSpace({
+      freeBytes,
+      estimatedPayloadBytes: estimatedBytes,
+    });
+    if (space.level === 'INSUFFICIENT_FOR_OPERATION') {
+      this.deps.logger?.warn('storage.insufficient_for_export', {
+        sessionRef: sessionId.slice(0, 8),
+        freeBytes: space.freeBytes,
+        requiredBytes: space.requiredBytes,
+      });
+      throw new ExportFromStagingError(
+        'STORAGE_INSUFFICIENT_FOR_EXPORT',
+        `libre=${space.freeBytes} requerido≈${space.requiredBytes}`,
+      );
+    }
+    if (space.level === 'LOW_SPACE_WARNING') {
+      this.deps.logger?.warn('storage.low_space', {
+        sessionRef: sessionId.slice(0, 8),
+        freeBytes: space.freeBytes,
+        requiredBytes: space.requiredBytes,
+        failure: 'STORAGE_LOW' satisfies StorageFailure,
+      });
+    }
+
+    const contentFingerprint = await buildPackageContentFingerprint({
+      freezeId: freezeIdAtStart,
+      freezeGeneration: freezeGenerationAtStart,
+      csvChecksumSha256: built.checksumSha256,
+      photos: packagedPhotos.map((p) => ({
+        capturePhotoId: p.capture_photo_id,
+        sequenceNumber: p.sequence_number,
+        fileName: p.file_name,
+        mimeType: p.mime_type,
+        sizeBytes: p.size_bytes,
+        sha256: p.sha256,
+        assetVariant: p.asset_variant,
+      })),
+    });
+
+    const existing =
+      (await this.deps.exportRepo.findBySessionAndFingerprint(sessionId, contentFingerprint)) ??
+      (await this.deps.exportRepo.findByFingerprint(contentFingerprint));
     if (existing?.file_uri) {
-      const csvInfo = await FileSystem.getInfoAsync(existing.file_uri);
       const zipCandidate = existing.file_uri.replace(/\.csv$/i, '.zip');
-      const zipInfo = await FileSystem.getInfoAsync(zipCandidate);
-      const zipOk =
-        zipInfo.exists &&
-        'size' in zipInfo &&
-        typeof zipInfo.size === 'number' &&
-        zipInfo.size > 0;
-      if (csvInfo.exists && zipOk) {
+      const validated = await validateExistingExportPackage({
+        row: existing,
+        expectedContentFingerprint: contentFingerprint,
+        zipUri: zipCandidate,
+      });
+      if (validated.ok) {
+        this.deps.logger?.info('recovery', {
+          where: 'local_export_reused',
+          code: 'EXPORT_PACKAGE_REUSED',
+          sessionId,
+          export_id: existing.export_id,
+          staging_photo_count: stagingPhotoCount,
+          original_fallback_count: originalFallbackCount,
+        });
         return {
           exportId: existing.export_id,
           fileUri: existing.file_uri,
-          zipUri: zipCandidate,
+          zipUri: validated.zipUri,
           checksumSha256: existing.checksum_sha256,
           rowCount: existing.row_count,
           photoCount: packagedPhotos.length,
           packageChecksumSha256: contentFingerprint,
           reused: true,
+          scanMode,
+          stagingPhotoCount,
+          originalFallbackCount,
+          fallbackReason,
         };
       }
+      this.deps.logger?.warn('recovery', {
+        where: 'local_export_reuse_rejected',
+        code: 'EXPORT_PACKAGE_REUSE_REJECTED',
+        sessionId,
+        export_id: existing.export_id,
+        reason: validated.reason,
+      });
+      // Fall through to rebuild; do not delete the prior row/files of another fingerprint.
     }
 
-    const dir = `${FileSystem.documentDirectory ?? FileSystem.cacheDirectory}aisle-exports/`;
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
-    const csvUri = `${dir}${built.exportId}.csv`;
-    const zipUri = `${dir}${built.exportId}.zip`;
-    const tmpCsv = `${dir}${built.exportId}.tmp.csv`;
-    const tmpZip = `${dir}${built.exportId}.tmp.zip`;
+    await this.assertFreezeUnchanged(
+      sessionId,
+      freezeIdAtStart,
+      freezeGenerationAtStart,
+      'pre_build',
+      sourcePolicy.mode === 'staging_required',
+    );
 
-    await FileSystem.writeAsStringAsync(tmpCsv, built.csv, {
-      encoding: FileSystem.EncodingType.UTF8,
+    await ensureAisleExportsDir();
+    const publishToken = `${Date.now()}`;
+    const paths = buildExportPublishPaths({
+      exportId: built.exportId,
+      publishToken,
     });
-    await FileSystem.moveAsync({ from: tmpCsv, to: csvUri });
+    const { csvUri, zipUri, tmpCsv, tmpZip } = paths;
+
+    const attemptId = createId();
+    const attemptNow = new Date().toISOString();
+    if (this.deps.attemptRepo) {
+      await this.deps.attemptRepo.insert({
+        id: attemptId,
+        capture_session_id: sessionId,
+        freeze_id: freezeIdAtStart,
+        freeze_generation: freezeGenerationAtStart,
+        content_fingerprint: contentFingerprint,
+        state: 'CREATED',
+        tmp_csv_uri: tmpCsv,
+        tmp_zip_uri: tmpZip,
+        final_csv_uri: null,
+        final_zip_uri: null,
+        started_at: attemptNow,
+        heartbeat_at: attemptNow,
+        completed_at: null,
+        error_code: null,
+        created_at: attemptNow,
+        updated_at: attemptNow,
+      });
+    }
 
     const photoEntries = packagedPhotos.map(
-      ({ bytes: _bytes, ...meta }) => meta,
+      ({ getBytes: _g, sourceAbsolutePath: _path, ...meta }) => meta,
     );
     const packageChecksumSha256 = contentFingerprint;
     const manifest = {
@@ -277,8 +1304,8 @@ export class LocalCsvExportService {
       inventory_id: session.inventory_id,
       aisle_id: session.aisle_id,
       capture_session_id: sessionId,
-      freeze_id: session.active_freeze_id,
-      freeze_generation: session.capture_freeze_generation,
+      freeze_id: freezeIdAtStart,
+      freeze_generation: freezeGenerationAtStart,
       row_count: built.rowCount,
       expected_photo_count: eligible.length,
       included_photo_count: packagedPhotos.length,
@@ -296,28 +1323,432 @@ export class LocalCsvExportService {
       photos: photoEntries,
     };
 
-    const zipEntries: Record<string, Uint8Array> = {
-      'results.csv': utf8Encode(built.csv),
-      'manifest.json': utf8Encode(`${JSON.stringify(manifest, null, 2)}\n`),
-    };
-    for (const photo of packagedPhotos) {
-      zipEntries[`photos/${photo.file_name}`] = photo.bytes;
+    if (manifest.expected_photo_count !== manifest.included_photo_count) {
+      throw new ExportFromStagingError(
+        'PACKAGE_VALIDATION_FAILED',
+        `expected_photo_count ${manifest.expected_photo_count} != included ${manifest.included_photo_count}`,
+      );
     }
 
-    const zipped = zipSync(zipEntries, { level: 0 });
-    // Drop entry buffers before base64 encode to reduce peak overlap.
-    for (const key of Object.keys(zipEntries)) {
-      delete zipEntries[key];
-    }
-    const zipB64 = uint8ArrayToBase64(zipped);
-    await FileSystem.writeAsStringAsync(tmpZip, zipB64, {
-      encoding: FileSystem.EncodingType.Base64,
+    const manifestBuildStarted = mono();
+    const manifestBytes = utf8Encode(`${JSON.stringify(manifest, null, 2)}\n`);
+    const csvBytes = utf8Encode(built.csv);
+    emitPhase('manifest_build', manifestBuildStarted, {
+      extras: {
+        manifestBytes: manifestBytes.byteLength,
+        csvBytes: csvBytes.byteLength,
+        expectedPhotoCount: manifest.expected_photo_count,
+      },
     });
-    await FileSystem.deleteAsync(zipUri, { idempotent: true }).catch(() => undefined);
-    await FileSystem.moveAsync({ from: tmpZip, to: zipUri });
+    const zipBuildStarted = Date.now();
+
+    let csvPublished = false;
+    let zipPublished = false;
+    let zipSizeBytes = 0;
+    let zipSha256 = '';
+    try {
+      if (this.deps.attemptRepo) {
+        await this.deps.attemptRepo.transitionState(attemptId, 'WRITING');
+      }
+      const csvWriteStarted = mono();
+      await FileSystem.writeAsStringAsync(tmpCsv, built.csv, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      emitPhase('csv_write', csvWriteStarted, {
+        extras: {
+          csvBytes: csvBytes.byteLength,
+          writeTarget: 'tmp_csv_sidecar',
+        },
+      });
+
+      const zipOpenStarted = mono();
+      emitPhase('zip_open', zipOpenStarted, { extras: { entryCount: 2 + packagedPhotos.length } });
+
+      let lastCompletedEntries = 0;
+      let entryWallStart = mono();
+      let finalizeWallStart: number | null = null;
+      let digestWallStart: number | null = null;
+      const photoByZipPath = new Map<string, (typeof packagedPhotos)[number]>(
+        packagedPhotos.map((p) => [`photos/${p.file_name}`, p]),
+      );
+
+      const written = await writeStoreZipAtomic({
+        targetUri: tmpZip,
+        maxTotalBytes: maxBytes,
+        ...(options?.signal ? { signal: options.signal } : {}),
+        onProgress: (done, total) => {
+          this.deps.onZipProgress?.(done, total);
+          this.zipProgressListener?.(done, total, 'WRITING_ENTRIES');
+        },
+        onZipProgress: (p) => {
+          options?.onProgress?.(p);
+          const stageLabel =
+            p.stage === 'PREPARING'
+              ? 'Preparando'
+              : p.stage === 'WRITING_ENTRIES'
+                ? 'Escribiendo fotos'
+                : p.stage === 'WRITING_DIRECTORY'
+                  ? 'Cerrando ZIP'
+                  : p.stage === 'VALIDATING'
+                    ? 'Validando'
+                    : 'Publicando';
+          this.zipProgressListener?.(
+            p.stage === 'WRITING_ENTRIES'
+              ? Math.min(p.completedEntries, Math.max(0, p.totalEntries - 1))
+              : p.completedEntries,
+            Math.max(1, p.totalEntries),
+            stageLabel,
+          );
+          if (p.stage === 'WRITING_ENTRIES' && p.completedEntries > lastCompletedEntries) {
+            const entryPath = p.currentEntry ?? '';
+            const entryKind = entryPath.startsWith('photos/')
+              ? 'photo'
+              : entryPath.endsWith('.csv')
+                ? 'csv'
+                : entryPath.endsWith('.json')
+                  ? 'manifest'
+                  : 'other';
+            const photoMeta = photoByZipPath.get(entryPath);
+            const ext = entryPath.includes('.') ? entryPath.slice(entryPath.lastIndexOf('.')) : '';
+            const sized =
+              entryKind === 'csv'
+                ? csvBytes.byteLength
+                : entryKind === 'manifest'
+                  ? manifestBytes.byteLength
+                  : (photoMeta?.size_bytes ?? null);
+            emitPhase('zip_entry', entryWallStart, {
+              photoId: photoMeta?.capture_photo_id ?? null,
+              sequence: photoMeta?.sequence_number ?? null,
+              extras: {
+                entryKind,
+                entryIndex: p.completedEntries,
+                entryExt: ext,
+                inputBytes: sized,
+                outputBytes: sized,
+                executionContext:
+                  entryKind === 'photo'
+                    ? photoMeta?.sourceAbsolutePath
+                      ? 'native'
+                      : 'js'
+                    : 'js',
+              },
+            });
+            lastCompletedEntries = p.completedEntries;
+            entryWallStart = mono();
+          }
+          // Central directory + EOCD (before sink.close / incremental digest).
+          if (p.stage === 'WRITING_DIRECTORY' && finalizeWallStart == null) {
+            finalizeWallStart = mono();
+          }
+          // Writer emits VALIDATING immediately before sink.close()+digestHex().
+          if (p.stage === 'VALIDATING' && digestWallStart == null) {
+            digestWallStart = mono();
+          }
+          if (p.stage !== 'WRITING_ENTRIES' || p.completedEntries === 0) {
+            return;
+          }
+          if (p.completedEntries % 10 !== 0 && p.completedEntries !== p.totalEntries) {
+            return;
+          }
+          this.deps.logger?.info('recovery', {
+            where: 'local_export_zip_progress',
+            code: 'ZIP_WRITE_PROGRESS',
+            sessionId,
+            stage: p.stage,
+            completed_entries: p.completedEntries,
+            total_entries: p.totalEntries,
+            processed_bytes: p.processedBytes,
+            total_bytes: p.totalBytes,
+          });
+        },
+        entries: [
+          {
+            path: 'results.csv',
+            sizeBytes: csvBytes.byteLength,
+            getBytes: () => csvBytes,
+          },
+          {
+            path: 'manifest.json',
+            sizeBytes: manifestBytes.byteLength,
+            getBytes: () => manifestBytes,
+          },
+          ...packagedPhotos.map((photo) => ({
+            path: `photos/${photo.file_name}`,
+            sizeBytes: photo.size_bytes,
+            expectedSha256: photo.sha256,
+            // Stream from staging/original path — avoids Base64 read+write through JS.
+            ...(photo.sourceAbsolutePath
+              ? {
+                  sourceAbsolutePath: photo.sourceAbsolutePath,
+                  beforeAppend: async () => {
+                    await this.assertFreezeUnchanged(
+                      sessionId,
+                      freezeIdAtStart,
+                      freezeGenerationAtStart,
+                      'zip_append_photo',
+                      sourcePolicy.mode === 'staging_required',
+                    );
+                  },
+                }
+              : { getBytes: photo.getBytes }),
+          })),
+        ],
+      });
+      const writeReturnedAt = mono();
+      const finalizeStarted = finalizeWallStart ?? writeReturnedAt;
+      // Finalize = CD/EOCD wall only (ends when VALIDATING / close begins).
+      const finalizeEnd = digestWallStart ?? writeReturnedAt;
+      if (options?.onExportPhase) {
+        try {
+          options.onExportPhase({
+            phase: 'zip_finalize',
+            monotonicStartMs: finalizeStarted,
+            durationMs: Math.max(0, finalizeEnd - finalizeStarted),
+            success: true,
+            errorCode: null,
+            photoId: null,
+            sequence: null,
+            extras: {
+              entryCount: written.entryCount,
+              peakOpenEntries: written.peakOpenEntries,
+            },
+          });
+        } catch {
+          // never break export for observer errors
+        }
+      }
+      // Digest = sink.close + digestHex (incremental_write; not a second full-file read here).
+      const digestStarted = digestWallStart ?? writeReturnedAt;
+      emitPhase('zip_digest', digestStarted, {
+        extras: {
+          digestMode: 'incremental_write',
+          fullFileRead: false,
+          zipBytes: written.byteLength,
+        },
+      });
+      zipSizeBytes = written.byteLength;
+      zipSha256 = written.sha256;
+      if (zipSizeBytes <= 0 || !zipSha256 || written.peakOpenEntries > 1) {
+        throw new ExportFromStagingError(
+          'PACKAGE_VALIDATION_FAILED',
+          written.peakOpenEntries > 1
+            ? `ZIP concurrency invariant peakOpen=${written.peakOpenEntries}`
+            : 'ZIP tmp inválido tras build',
+        );
+      }
+
+      this.zipProgressListener?.(written.entryCount, written.entryCount, 'Validando');
+      if (this.deps.attemptRepo) {
+        await this.deps.attemptRepo.transitionState(attemptId, 'VALIDATING');
+      }
+      const roots: string[] = [];
+      if (FileSystem.documentDirectory) roots.push(FileSystem.documentDirectory);
+      if (FileSystem.cacheDirectory) roots.push(FileSystem.cacheDirectory);
+      const tmpdir = getNodeProcess()?.env?.TMPDIR;
+      if (tmpdir) {
+        roots.push(tmpdir);
+      }
+      roots.push('/tmp');
+      const onDiskStarted = mono();
+      const onDisk = await validateOnDiskStoreZip({
+        // After writeStoreZipAtomic, bytes live at tmpZip (not the nested .tmp.<ts> sink path).
+        uri: tmpZip,
+        allowedRoots: roots,
+        expectedSizeBytes: zipSizeBytes,
+        expectedSha256: zipSha256,
+        expectedContentFingerprint: contentFingerprint,
+        computeSha256: true,
+        verifyCrcAll: false,
+      });
+      emitPhase('zip_validation', onDiskStarted, {
+        success: onDisk.ok,
+        errorCode: onDisk.ok ? null : onDisk.reason,
+        extras: {
+          expectedSize: zipSizeBytes,
+          actualSize: onDisk.ok ? onDisk.zipSizeBytes : null,
+          rangesRead: onDisk.ok ? onDisk.rangeReads : null,
+          bytesRead: onDisk.ok ? onDisk.maxBufferBytes : null,
+          digestRecomputed: true,
+          validationMode: 'on_disk_store_zip',
+          fullFileRead: true,
+        },
+      });
+      if (!onDisk.ok) {
+        throw new ExportFromStagingError(
+          'PACKAGE_VALIDATION_FAILED',
+          `ZIP tmp validation: ${onDisk.reason}`,
+        );
+      }
+      if (
+        typeof written.entryCount === 'number' &&
+        onDisk.entryCount !== written.entryCount
+      ) {
+        throw new ExportFromStagingError(
+          'PACKAGE_VALIDATION_FAILED',
+          `ZIP entry count ${onDisk.entryCount} != written ${written.entryCount}`,
+        );
+      }
+
+      this.deps.logger?.info('recovery', {
+        where: 'local_export_zip_completed',
+        code: 'ZIP_WRITE_COMPLETED',
+        sessionId,
+        entry_count: written.entryCount,
+        zip_size_bytes: zipSizeBytes,
+        method: written.method,
+        peak_open_entries: written.peakOpenEntries,
+        range_reads: onDisk.rangeReads,
+        max_buffer_bytes: onDisk.maxBufferBytes,
+        duration_ms: Date.now() - zipBuildStarted,
+      });
+
+      await this.assertFreezeUnchanged(
+        sessionId,
+        freezeIdAtStart,
+        freezeGenerationAtStart,
+        'post_zip',
+        sourcePolicy.mode === 'staging_required',
+      );
+
+      this.zipProgressListener?.(written.entryCount, written.entryCount, 'Publicando');
+      if (this.deps.attemptRepo) {
+        await this.deps.attemptRepo.transitionState(attemptId, 'PUBLISHING', {
+          final_csv_uri: csvUri,
+          final_zip_uri: zipUri,
+        });
+      }
+      await this.assertFreezeUnchanged(
+        sessionId,
+        freezeIdAtStart,
+        freezeGenerationAtStart,
+        'pre_publish',
+        sourcePolicy.mode === 'staging_required',
+      );
+
+      if (options?.signal?.aborted) {
+        throw Object.assign(new Error('ZIP_CANCELLED'), {
+          name: 'ZipWriteError',
+          code: 'ZIP_CANCELLED',
+        });
+      }
+      await FileSystem.moveAsync({ from: tmpCsv, to: csvUri });
+      csvPublished = true;
+      if (options?.signal?.aborted) {
+        // CSV moved — keep for recoverable publish; do not delete as success.
+        throw Object.assign(new Error('ZIP_CANCELLED'), {
+          name: 'ZipWriteError',
+          code: 'ZIP_CANCELLED',
+        });
+      }
+      await FileSystem.moveAsync({ from: tmpZip, to: zipUri });
+      zipPublished = true;
+      const csvInfo = await FileSystem.getInfoAsync(csvUri);
+      const zipInfo = await FileSystem.getInfoAsync(zipUri);
+      const zipOk =
+        zipInfo.exists &&
+        'size' in zipInfo &&
+        typeof zipInfo.size === 'number' &&
+        zipInfo.size > 0;
+      if (!csvInfo.exists || !zipOk) {
+        throw new ExportFromStagingError(
+          'PACKAGE_VALIDATION_FAILED',
+          'CSV/ZIP no válidos tras move',
+        );
+      }
+      if (typeof zipInfo.size === 'number' && zipInfo.size > 0) {
+        zipSizeBytes = zipInfo.size;
+      }
+    } catch (error) {
+      const cancelled =
+        (error instanceof Error &&
+          error.name === 'ZipWriteError' &&
+          'code' in error &&
+          (error as ZipWriteError).code === 'ZIP_CANCELLED') ||
+        options?.signal?.aborted === true ||
+        error instanceof ExportAttemptTransitionError;
+
+      // After both finals exist on disk, do not delete them — leave PUBLISHING/FAILED
+      // with URIs for bootstrap recovery / purge. Only scrub temps / partial single file.
+      const bothFinalsOnDisk = csvPublished && zipPublished;
+      if (!bothFinalsOnDisk) {
+        await FileSystem.deleteAsync(tmpCsv, { idempotent: true }).catch(() => undefined);
+        await FileSystem.deleteAsync(tmpZip, { idempotent: true }).catch(() => undefined);
+        if (csvPublished && !zipPublished) {
+          await FileSystem.deleteAsync(csvUri, { idempotent: true }).catch(() => undefined);
+        }
+      } else {
+        await FileSystem.deleteAsync(tmpCsv, { idempotent: true }).catch(() => undefined);
+        await FileSystem.deleteAsync(tmpZip, { idempotent: true }).catch(() => undefined);
+      }
+
+      if (this.deps.attemptRepo) {
+        try {
+          if (bothFinalsOnDisk && !cancelled) {
+            // Stay recoverable: keep PUBLISHING with final URIs (bootstrap completes insert).
+            await this.deps.attemptRepo.heartbeat(attemptId, new Date().toISOString());
+          } else {
+            await this.deps.attemptRepo.transitionState(
+              attemptId,
+              cancelled ? 'CANCELLED' : 'FAILED',
+              {
+                completed_at: new Date().toISOString(),
+                error_code: cancelled
+                  ? 'ZIP_CANCELLED'
+                  : error instanceof ExportFromStagingError
+                    ? error.code
+                    : error instanceof ExportAttemptTransitionError
+                      ? 'TRANSITION_REJECTED'
+                      : 'EXPORT_FAILED',
+                ...(csvPublished ? { final_csv_uri: csvUri } : {}),
+                ...(zipPublished ? { final_zip_uri: zipUri } : {}),
+              },
+            );
+          }
+        } catch (transitionError) {
+          this.deps.logger?.warn('recovery', {
+            where: 'local_export_attempt_terminal_failed',
+            sessionId,
+            message:
+              transitionError instanceof Error
+                ? transitionError.message
+                : String(transitionError),
+          });
+          throw transitionError instanceof ExportAttemptTransitionError
+            ? transitionError
+            : error;
+        }
+      }
+      if (cancelled) {
+        this.deps.logger?.info('recovery', {
+          where: 'local_export_zip_cancelled',
+          code: 'ZIP_CANCELLED',
+          sessionId,
+        });
+      } else if (
+        error instanceof Error &&
+        error.name === 'ZipWriteError' &&
+        'code' in error &&
+        (error as ZipWriteError).code === 'ZIP_SOURCE_CHANGED'
+      ) {
+        this.deps.logger?.warn('recovery', {
+          where: 'local_export_zip_source_changed',
+          code: 'ZIP_SOURCE_CHANGED',
+          sessionId,
+        });
+      }
+      rethrowExportOrZip(error);
+    }
+
+    await this.assertFreezeUnchanged(
+      sessionId,
+      freezeIdAtStart,
+      freezeGenerationAtStart,
+      'pre_insert',
+      sourcePolicy.mode === 'staging_required',
+    );
 
     const now = new Date().toISOString();
-    await this.deps.exportRepo.insert({
+    const row = {
       id: createId(),
       export_id: built.exportId,
       schema_version: built.schemaVersion,
@@ -330,11 +1761,92 @@ export class LocalCsvExportService {
       checksum_algorithm: built.checksumAlgorithm,
       content_fingerprint: contentFingerprint,
       file_uri: csvUri,
-      freeze_id: built.freezeId,
+      zip_uri: zipUri,
+      freeze_id: freezeIdAtStart,
+      zip_size_bytes: zipSizeBytes,
+      zip_sha256: zipSha256,
+      package_checksum_sha256: packageChecksumSha256,
       exported_at: built.exportedAt,
       shared_at: null,
       created_at: now,
       updated_at: now,
+    };
+    const inserted = await this.deps.exportRepo.tryInsert(row);
+    if (!inserted) {
+      // Peer won the race — prefer their durable row; discard this attempt's files only.
+      await FileSystem.deleteAsync(csvUri, { idempotent: true }).catch(() => undefined);
+      await FileSystem.deleteAsync(zipUri, { idempotent: true }).catch(() => undefined);
+      if (this.deps.attemptRepo) {
+        await this.deps.attemptRepo.transitionState(attemptId, 'CANCELLED', {
+          completed_at: new Date().toISOString(),
+          error_code: 'PEER_WON_RACE',
+        });
+      }
+      const peer =
+        (await this.deps.exportRepo.findBySessionAndFingerprint(sessionId, contentFingerprint)) ??
+        (await this.deps.exportRepo.findByFingerprint(contentFingerprint));
+      if (peer?.file_uri) {
+        const peerZip = resolveZipUri(peer) ?? peer.file_uri.replace(/\.csv$/i, '.zip');
+        const validated = await validateExistingExportPackage({
+          row: peer,
+          expectedContentFingerprint: contentFingerprint,
+          zipUri: peerZip,
+        });
+        if (validated.ok) {
+          return {
+            exportId: peer.export_id,
+            fileUri: peer.file_uri,
+            zipUri: validated.zipUri,
+            checksumSha256: peer.checksum_sha256,
+            rowCount: peer.row_count,
+            photoCount: packagedPhotos.length,
+            packageChecksumSha256: contentFingerprint,
+            reused: true,
+            scanMode,
+            stagingPhotoCount,
+            originalFallbackCount,
+            fallbackReason,
+          };
+        }
+      }
+      throw new ExportFromStagingError(
+        'PACKAGE_VALIDATION_FAILED',
+        'Conflicto de exportación concurrente sin paquete válido peer',
+      );
+    }
+
+    if (this.deps.attemptRepo) {
+      await this.deps.attemptRepo.transitionState(attemptId, 'COMPLETE', {
+        final_csv_uri: csvUri,
+        final_zip_uri: zipUri,
+        completed_at: now,
+        content_fingerprint: contentFingerprint,
+      });
+    }
+
+    this.deps.logger?.info('recovery', {
+      where: 'local_export_complete',
+      code: 'EXPORT_PACKAGE_BUILT',
+      sessionId,
+      export_id: built.exportId,
+      staging_photo_count: stagingPhotoCount,
+      original_fallback_count: originalFallbackCount,
+      fallback_reason: fallbackReason,
+      scan_mode: scanMode,
+      preflight_ms: Date.now() - preflightStarted,
+      zip_build_ms: Date.now() - zipBuildStarted,
+      uncompressed_bytes: estimatedBytes,
+    });
+
+    // Definitive 100% only after durable persist.
+    this.zipProgressListener?.(1, 1, 'Listo');
+
+    emitPhase('total_export', totalExportStarted, {
+      extras: {
+        rowCount: built.rowCount,
+        photoCount: packagedPhotos.length,
+        zipBytes: zipSizeBytes,
+      },
     });
 
     return {
@@ -346,7 +1858,41 @@ export class LocalCsvExportService {
       photoCount: packagedPhotos.length,
       packageChecksumSha256,
       reused: false,
+      scanMode,
+      stagingPhotoCount,
+      originalFallbackCount,
+      fallbackReason,
     };
+  }
+
+  private async assertFreezeUnchanged(
+    sessionId: string,
+    expectedFreezeId: string | null,
+    expectedFreezeGeneration: number | null,
+    stage: string,
+    enforce = true,
+  ): Promise<void> {
+    if (!enforce) return;
+    const sessionNow = await this.deps.captureRepo.getSession(sessionId);
+    if (!sessionNow) {
+      throw new ExportFromStagingError('SESSION_MISSING', 'La sesión desapareció durante la exportación.');
+    }
+    if (
+      sessionNow.active_freeze_id !== expectedFreezeId ||
+      (sessionNow.capture_freeze_generation ?? null) !== expectedFreezeGeneration
+    ) {
+      this.deps.logger?.warn('error', {
+        code: 'EXPORT_FREEZE_CHANGED',
+        sessionId,
+        stage,
+        expected_freeze_id: expectedFreezeId,
+        actual_freeze_id: sessionNow.active_freeze_id,
+      });
+      throw new ExportFromStagingError(
+        'FREEZE_CHANGED',
+        `El freeze cambió durante la exportación (${stage}); no se publicó el ZIP.`,
+      );
+    }
   }
 
   /** Run local CODE_SCAN on session photos before aisle/session export (no CSV/ZIP). */
@@ -384,51 +1930,4 @@ export class LocalCsvExportService {
     });
     await this.deps.exportRepo.markShared(exportId, new Date().toISOString());
   }
-}
-
-async function readEligiblePhotosStrict(eligible: CapturePhotoRow[]): Promise<PackagedPhoto[]> {
-  const out: PackagedPhoto[] = [];
-  for (let i = 0; i < eligible.length; i += 1) {
-    const photo = eligible[i]!;
-    const seq = photo.sequence_number ?? i + 1;
-    const name = photoFileName(photo.id, seq, photo.display_name);
-    // Prefer original capture bytes for OCR / evidence; prepared is upload-optimized.
-    const sourceUri = photo.uri;
-    const assetVariant: 'ORIGINAL' | 'PREPARED' = 'ORIGINAL';
-    let bytes: Uint8Array;
-    try {
-      const b64 = await FileSystem.readAsStringAsync(sourceUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      bytes = base64ToUint8Array(b64);
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `PACKAGE_PHOTO_READ_FAILED: no se pudo leer la foto ${photo.id} (${name}): ${detail}`,
-      );
-    }
-    if (bytes.byteLength === 0) {
-      throw new Error(`PACKAGE_PHOTO_READ_FAILED: foto vacía ${photo.id} (${name})`);
-    }
-    out.push({
-      capture_photo_id: photo.id,
-      client_file_id: photo.client_file_id ?? photo.id,
-      sequence_number: seq,
-      file_name: name,
-      mime_type: photo.mime_type || 'image/jpeg',
-      size_bytes: bytes.byteLength,
-      sha256: sha256BytesHex(bytes),
-      width: photo.width ?? 0,
-      height: photo.height ?? 0,
-      asset_variant: assetVariant,
-      bytes,
-    });
-  }
-  return out;
-}
-
-function photoFileName(photoId: string, sequence: number, displayName: string | null): string {
-  const safeId = photoId.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const ext = (displayName && /\.[a-z0-9]+$/i.exec(displayName)?.[0]) || '.jpg';
-  return `${String(sequence).padStart(4, '0')}_${safeId}${ext}`;
 }

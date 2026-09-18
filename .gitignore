@@ -15,6 +15,9 @@ lib64/
 # Allow the Phase 0 audit shared package (root `lib/` stays ignored).
 !scripts/audit/lib/
 !scripts/audit/lib/**
+# Allow mobile Mac-coordinator helpers (andesFixtureOrder / dualCorrectness).
+!mobile/scripts/lib/
+!mobile/scripts/lib/**
 # Re-ignore bytecode under the force-included audit lib package.
 scripts/audit/lib/**/__pycache__/
 scripts/audit/lib/**/*.py[cod]
@@ -126,9 +129,44 @@ audit/*-corrections-diff.txt
 audit/*-corrections-diffstat.txt
 audit/*-corrections-status.txt
 
+# Phase 2 closure / Phase 3A generated evidence (device smoke, JSONL, caches) — do not version.
+audit/mobile-pipeline/phase2-closure-phase3a/**
+audit/mobile-pipeline/phase3b-export-resolution/**
+audit/mobile-pipeline/benchmark/**
+audit/mobile-pipeline/phase4/**
+audit/mobile-pipeline/*-console.log
+audit/mobile-pipeline/*-tests-run.log
+audit/mobile-pipeline/**/*.jsonl
+audit/mobile-pipeline/**/*-dual-correctness.csv
+audit/mobile-pipeline/**/*-command.json
+audit/mobile-pipeline/**/*-status.json
+audit/mobile-pipeline/**/*-events.jsonl
+# Keep intentional markdown reports under audit/mobile-pipeline when present.
+!audit/mobile-pipeline/**/*.md
+
 # Phase 4 security hardening dumps (repo root; never commit)
 phase4-security-hardening-*.txt
 **/phase4-security-hardening-*.txt
+**/phase4-*-dump*.json
+**/phase4-*-dump*.jsonl
+**/phase4-*-temp*.csv
+**/tmp-phase4-*.csv
+
+# Phase 4 device/run CSVs & order dumps (keep intentional *.md reports under audit/)
+audit/phase4-*-summary.csv
+audit/phase4-*-correctness*.csv
+audit/phase4-correctness-diff.csv
+audit/phase4-sequence-bands.csv
+audit/phase4-fixture-bands.csv
+audit/phase4-performance-bands.csv
+audit/phase4-fixture-order-*.csv
+audit/phase4-fixture-order-*-meta.json
+audit/phase4-*-corrections-*.txt
+audit/phase4-final-corrections-tests.txt
+!audit/phase4-*-report.md
+!audit/phase4-*-validation.md
+!audit/phase4-fixture-order-v2-validation.md
+**/tmp-bench-*.csv
 
 # Test coverage
 htmlcov/
@@ -174,6 +212,7 @@ implementation-corrections-diffstat.txt
 implementation-corrections-status.txt
 implementation-corrections-test-results.txt
 implementation-corrections-*.txt
+implementation-corrections-validation.md
 phase2-source-of-truth-security-*.txt
 **/phase2-source-of-truth-security-*.txt
 phase3-lease-fencing-*.txt

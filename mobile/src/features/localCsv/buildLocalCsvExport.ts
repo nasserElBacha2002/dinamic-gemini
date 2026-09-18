@@ -1,6 +1,7 @@
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import type { ConfirmedLocalResultRow } from '../../database/repositories/confirmedLocalResultRepository';
 import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
+import { canonicalizeDraftsByPhoto } from '../../database/repositories/localDetectionDraftRepository';
 import {
   CHECKSUM_ALGORITHM,
   LOCAL_CSV_SCHEMA_VERSION,
@@ -262,7 +263,7 @@ function settledEmptyRowSource(input: {
 export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
   const exportId = input.exportId ?? createId();
   const exportedAt = input.exportedAt ?? new Date().toISOString();
-  const draftByPhoto = new Map(input.drafts.map((d) => [d.capture_photo_id, d]));
+  const draftByPhoto = canonicalizeDraftsByPhoto(input.drafts);
   const confirmedByPhoto = new Map(input.confirmed.map((c) => [c.capture_photo_id, c]));
 
   const eligible = [...input.photos]
@@ -283,6 +284,15 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
   let legacyMarkerIndex = '';
   let legacyMarkerTotal = '';
 
+  /**
+   * Sequence-ordered active position for product photos.
+   * Only advances when this photo detected a position label (`position_detected`).
+   * Product drafts may carry a wrong snapshot if CODE_SCAN ran out of photo order
+   * (e.g. R marker scanned before intervening product photos) — prefer this replay.
+   */
+  let runningPosition: PositionFields | null = null;
+  let runningCarryStatus: 'FROM_SNAPSHOT' | 'INFERRED_FROM_PRIOR_LABEL' = 'FROM_SNAPSHOT';
+
   const rows: LocalCsvRow[] = [];
   const emittedLabelIds = new Set<string>();
 
@@ -298,15 +308,35 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
     );
 
     let position: PositionFields;
-    if (snapshot) {
-      position = fieldsFromActiveState(
-        snapshot,
-        detectedHere ? 'LABEL_DETECTED' : 'FROM_SNAPSHOT',
-      );
+    if (detectedHere && snapshot) {
+      position = fieldsFromActiveState(snapshot, 'LABEL_DETECTED');
+      runningPosition = position;
+      runningCarryStatus = 'FROM_SNAPSHOT';
+    } else if (detectedHere && supplierPosition) {
+      position = {
+        positionCode: supplierPosition.positionCode,
+        positionStatus: 'LABEL_DETECTED',
+        pallet: supplierPosition.pallet,
+        side: supplierPosition.side,
+        level: supplierPosition.level,
+        markerIndex: '',
+        markerTotal: '',
+        positionLabelId: supplierPosition.positionLabelId,
+        positionPayloadRaw: supplierPosition.positionPayloadRaw,
+      };
+      runningPosition = position;
+      runningCarryStatus = 'FROM_SNAPSHOT';
+    } else if (runningPosition) {
+      position = {
+        ...runningPosition,
+        positionStatus: runningCarryStatus,
+      };
+    } else if (snapshot) {
+      position = fieldsFromActiveState(snapshot, 'FROM_SNAPSHOT');
     } else if (supplierPosition) {
       position = {
         positionCode: supplierPosition.positionCode,
-        positionStatus: detectedHere ? 'LABEL_DETECTED' : 'FROM_SUPPLIER_SNAPSHOT',
+        positionStatus: 'FROM_SUPPLIER_SNAPSHOT',
         pallet: supplierPosition.pallet,
         side: supplierPosition.side,
         level: supplierPosition.level,
@@ -349,6 +379,10 @@ export function buildLocalCsvRows(input: LocalCsvExportInput): LocalCsvRow[] {
         positionLabelId: '',
         positionPayloadRaw: '',
       };
+      if (detectedHere && position.positionCode) {
+        runningPosition = position;
+        runningCarryStatus = 'INFERRED_FROM_PRIOR_LABEL';
+      }
     }
 
     const requiresReview =

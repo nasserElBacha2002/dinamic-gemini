@@ -211,6 +211,17 @@ export class LocalCatalogRepository {
     return row;
   }
 
+  /** Soft-deactivate a LOCAL_ONLY aisle (benchmark cleanup). No-op if missing. */
+  async deactivateLocalAisle(inventoryId: string, aisleId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `UPDATE local_aisles
+       SET active = 0, updated_at = ?
+       WHERE inventory_id = ? AND id = ? AND origin = 'LOCAL'`,
+      [now, inventoryId, aisleId],
+    );
+  }
+
   /** Materialize one backend-authoritative aisle before it can enter capture. */
   async upsertRemoteAisle(aisle: AisleDto, syncedAtIso: string): Promise<LocalAisleRow> {
     await this.db.withTransactionAsync(async () => {

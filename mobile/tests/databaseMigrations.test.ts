@@ -32,7 +32,7 @@ describe('SQLite migrations', () => {
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
     ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
@@ -214,5 +214,52 @@ describe('SQLite migrations', () => {
     expect(v32?.sql).toContain('item_source');
     expect(v32?.sql).toContain('position_source');
     expect(v32?.sql).toContain('PRIMARY KEY (inventory_id, client_supplier_id)');
+  });
+
+  it('adds v35 export_prep_jobs durable queue table', () => {
+    const v35 = MIGRATIONS.find((m) => m.version === 35);
+    expect(v35?.name).toBe('export_prep_jobs');
+    expect(v35?.sql).toContain('CREATE TABLE IF NOT EXISTS export_prep_jobs');
+    expect(v35?.sql).toContain('capture_photo_id TEXT PRIMARY KEY');
+    expect(v35?.sql).toContain('staging_uri');
+    expect(v35?.sql).toContain('export_file_name');
+    expect(v35?.sql).toContain('lease_token');
+    expect(v35?.sql).toContain('idx_export_prep_jobs_session_status');
+  });
+
+  it('adds v36 export packaging mode and zip integrity columns', () => {
+    const v36 = MIGRATIONS.find((m) => m.version === 36);
+    expect(v36?.name).toBe('export_packaging_mode_and_zip_integrity');
+    expect(v36?.sql).toContain('export_packaging_mode');
+    expect(v36?.sql).toContain('zip_sha256');
+    expect(v36?.sql).toContain('zip_size_bytes');
+    expect(v36?.sql).toContain('package_checksum_sha256');
+    expect(v36?.sql).toContain('idx_local_csv_exports_session_fingerprint');
+  });
+
+  it('adds v37 local_export_attempts catalog', () => {
+    const v37 = MIGRATIONS.find((m) => m.version === 37);
+    expect(v37?.name).toBe('local_export_attempts');
+    expect(v37?.sql).toContain('CREATE TABLE IF NOT EXISTS local_export_attempts');
+    expect(v37?.sql).toContain('tmp_zip_uri');
+    expect(v37?.sql).toContain('heartbeat_at');
+    expect(v37?.sql).toContain('idx_local_export_attempts_session_state');
+    expect(v37?.sql).toContain("CHECK (state IN");
+  });
+
+  it('adds v38 zip_uri and session_purge_tasks', () => {
+    const v38 = MIGRATIONS.find((m) => m.version === 38);
+    expect(v38?.name).toBe('export_zip_uri_and_purge_tasks');
+    expect(v38?.sql).toContain('ALTER TABLE local_csv_exports ADD COLUMN zip_uri');
+    expect(v38?.sql).toContain('CREATE TABLE IF NOT EXISTS session_purge_tasks');
+    expect(v38?.sql).toContain('PURGE_PENDING');
+    expect(v38?.sql).toContain('idx_local_csv_exports_zip_uri');
+  });
+
+  it('adds v39 session_photo index for draft lookup', () => {
+    const v39 = MIGRATIONS.find((m) => m.version === 39);
+    expect(v39?.name).toBe('local_detection_drafts_session_photo_index');
+    expect(v39?.sql).toContain('CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_session_photo');
+    expect(v39?.sql).not.toMatch(/CREATE\s+UNIQUE\s+INDEX/i);
   });
 });

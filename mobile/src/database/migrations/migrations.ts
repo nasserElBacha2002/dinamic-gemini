@@ -868,6 +868,123 @@ ALTER TABLE local_detection_drafts ADD COLUMN position_reconciled_at TEXT;
 ALTER TABLE local_detection_drafts ADD COLUMN position_reconciliation_revision INTEGER NOT NULL DEFAULT 0;
 `,
   },
+  {
+    version: 35,
+    name: 'export_prep_jobs',
+    sql: `
+CREATE TABLE IF NOT EXISTS export_prep_jobs (
+  capture_photo_id TEXT PRIMARY KEY NOT NULL,
+  capture_session_id TEXT NOT NULL REFERENCES capture_sessions(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  source_uri TEXT NOT NULL,
+  staging_uri TEXT,
+  export_file_name TEXT,
+  size_bytes INTEGER,
+  sha256 TEXT,
+  source_fingerprint TEXT,
+  error_code TEXT,
+  error_message TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  lease_token TEXT,
+  lease_expires_at TEXT,
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  ready_at TEXT,
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_export_prep_jobs_session_status
+  ON export_prep_jobs(capture_session_id, status);
+CREATE INDEX IF NOT EXISTS idx_export_prep_jobs_status_lease
+  ON export_prep_jobs(status, lease_expires_at);
+CREATE INDEX IF NOT EXISTS idx_export_prep_jobs_queued_at
+  ON export_prep_jobs(queued_at);
+`,
+  },
+  {
+    version: 36,
+    name: 'export_packaging_mode_and_zip_integrity',
+    sql: `
+ALTER TABLE capture_sessions ADD COLUMN export_packaging_mode TEXT;
+ALTER TABLE local_csv_exports ADD COLUMN zip_size_bytes INTEGER;
+ALTER TABLE local_csv_exports ADD COLUMN zip_sha256 TEXT;
+ALTER TABLE local_csv_exports ADD COLUMN package_checksum_sha256 TEXT;
+
+-- Persist identity for concurrent export idempotency (same session + content).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_local_csv_exports_session_fingerprint
+  ON local_csv_exports(capture_session_id, content_fingerprint)
+  WHERE capture_session_id IS NOT NULL;
+`,
+  },
+  {
+    version: 37,
+    name: 'local_export_attempts',
+    sql: `
+CREATE TABLE IF NOT EXISTS local_export_attempts (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_session_id TEXT NOT NULL,
+  freeze_id TEXT,
+  freeze_generation INTEGER,
+  content_fingerprint TEXT,
+  state TEXT NOT NULL CHECK (state IN (
+    'CREATED','WRITING','VALIDATING','PUBLISHING','COMPLETE','FAILED','CANCELLED'
+  )),
+  tmp_csv_uri TEXT,
+  tmp_zip_uri TEXT,
+  final_csv_uri TEXT,
+  final_zip_uri TEXT,
+  started_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  completed_at TEXT,
+  error_code TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (capture_session_id) REFERENCES capture_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_local_export_attempts_session_state
+  ON local_export_attempts(capture_session_id, state);
+CREATE INDEX IF NOT EXISTS idx_local_export_attempts_heartbeat
+  ON local_export_attempts(heartbeat_at);
+CREATE INDEX IF NOT EXISTS idx_local_export_attempts_state
+  ON local_export_attempts(state);
+`,
+  },
+  {
+    version: 38,
+    name: 'export_zip_uri_and_purge_tasks',
+    sql: `
+ALTER TABLE local_csv_exports ADD COLUMN zip_uri TEXT;
+CREATE INDEX IF NOT EXISTS idx_local_csv_exports_file_uri
+  ON local_csv_exports(file_uri)
+  WHERE file_uri IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_local_csv_exports_zip_uri
+  ON local_csv_exports(zip_uri)
+  WHERE zip_uri IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS session_purge_tasks (
+  capture_session_id TEXT PRIMARY KEY NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('PURGE_PENDING','PURGE_PARTIAL','PURGE_COMPLETE')),
+  pending_uris_json TEXT NOT NULL DEFAULT '[]',
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_purge_tasks_state
+  ON session_purge_tasks(state);
+`,
+  },
+  {
+    version: 39,
+    name: 'local_detection_drafts_session_photo_index',
+    sql: `
+-- Selective lookup for export-prep draft_lookup (session + photo).
+-- Not UNIQUE: multiple rows per photo remain possible across detector/parser/fingerprint.
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_session_photo
+  ON local_detection_drafts(capture_session_id, capture_photo_id);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

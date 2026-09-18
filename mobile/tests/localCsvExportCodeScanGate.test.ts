@@ -6,26 +6,56 @@ import { LocalCsvExportService } from '../src/features/localCsv/localCsvExportSe
 import type { CapturePhotoRow, CaptureSessionRow } from '../src/database/schema/captureSchema';
 import { EMPTY_CURSOR } from '../src/core/compositeCursor';
 
-jest.mock('expo-file-system', () => ({
-  documentDirectory: 'file:///docs/',
-  cacheDirectory: 'file:///cache/',
-  EncodingType: { UTF8: 'utf8', Base64: 'base64' },
-  getInfoAsync: jest.fn(async () => ({ exists: false })),
-  makeDirectoryAsync: jest.fn(async () => undefined),
-  writeAsStringAsync: jest.fn(async () => undefined),
-  moveAsync: jest.fn(async () => undefined),
-  deleteAsync: jest.fn(async () => undefined),
-  readAsStringAsync: jest.fn(async () => 'aaaa'),
-}));
+jest.mock('expo-file-system', () => {
+  const published = new Set<string>();
+  return {
+    documentDirectory: 'file:///docs/',
+    cacheDirectory: 'file:///cache/',
+    EncodingType: { UTF8: 'utf8', Base64: 'base64' },
+    getInfoAsync: jest.fn(async (uri: string) => {
+      const u = String(uri);
+      if (published.has(u)) return { exists: true, size: 100 };
+      if (u.endsWith('.csv') || u.endsWith('.zip') || u.includes('.tmp.')) {
+        return { exists: false };
+      }
+      return { exists: true, size: 4 };
+    }),
+    makeDirectoryAsync: jest.fn(async () => undefined),
+    writeAsStringAsync: jest.fn(async () => undefined),
+    moveAsync: jest.fn(async ({ from, to }: { from: string; to: string }) => {
+      published.delete(String(from));
+      published.add(String(to));
+    }),
+    deleteAsync: jest.fn(async (uri: string) => {
+      published.delete(String(uri));
+    }),
+    readAsStringAsync: jest.fn(async () => 'aaaa'),
+  };
+});
 
 jest.mock('expo-sharing', () => ({
   isAvailableAsync: jest.fn(async () => false),
   shareAsync: jest.fn(async () => undefined),
 }));
 
-jest.mock('fflate', () => ({
-  zipSync: jest.fn(() => new Uint8Array([1, 2, 3, 4])),
-}));
+jest.mock('fflate', () => {
+  class FakeZip {
+    constructor(private readonly cb: (err: Error | null, chunk: Uint8Array | null, final: boolean) => void) {}
+    add(): void {}
+    end(): void {
+      this.cb(null, new Uint8Array([1, 2, 3, 4]), true);
+    }
+  }
+  class FakePassThrough {
+    constructor(_path: string) {}
+    push(): void {}
+  }
+  return {
+    zipSync: jest.fn(() => new Uint8Array([1, 2, 3, 4])),
+    Zip: FakeZip,
+    ZipPassThrough: FakePassThrough,
+  };
+});
 
 jest.mock('../src/features/localCodeScan/preparedAssetHash', () => ({
   hashPreparedFileSha256: jest.fn(async () => 'sha256:prepared'),
@@ -35,6 +65,46 @@ jest.mock('../src/features/localCodeScan/preparedAssetHash', () => ({
 jest.mock('../src/features/localCsv/binaryCodec', () => ({
   base64ToUint8Array: jest.fn(() => new Uint8Array([0xff, 0xd8, 0xff, 0xd9])),
   uint8ArrayToBase64: jest.fn(() => 'AAAA'),
+}));
+
+jest.mock('../src/core/payloadFingerprint', () => {
+  const actual = jest.requireActual('../src/core/payloadFingerprint') as Record<string, unknown>;
+  return {
+    ...actual,
+    sha256BytesHex: jest.fn(
+      () => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ),
+  };
+});
+
+jest.mock('../src/features/exportPrep/streamingZipWriter', () => ({
+  writeStoreZipAtomic: jest.fn(async () => ({
+    byteLength: 10,
+    sha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    entryCount: 3,
+    method: 'STORE',
+    peakOpenEntries: 1,
+    physicalPath: '/tmp/mock-export.zip',
+  })),
+  buildStoreZipBytes: jest.fn(),
+}));
+
+jest.mock('../src/features/exportPrep/boundedOnDiskZipValidator', () => ({
+  validateOnDiskStoreZip: jest.fn(async () => ({
+    ok: true,
+    entryCount: 3,
+    entries: [],
+    zipSizeBytes: 10,
+    zipSha256: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    manifest: {
+      package_kind: 'DINAMIC_LOCAL_AISLE_EXPORT',
+      package_version: 2,
+      included_photo_count: 1,
+      expected_photo_count: 1,
+    },
+    rangeReads: 2,
+    maxBufferBytes: 64,
+  })),
 }));
 
 describe('LocalCsvExportService CODE_SCAN before export', () => {
@@ -156,6 +226,8 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
       } as never,
       exportRepo: {
         findByFingerprint: jest.fn(async () => null),
+        findBySessionAndFingerprint: jest.fn(async () => null),
+        tryInsert: jest.fn(async () => true),
         insert: jest.fn(async () => undefined),
         markShared: jest.fn(async () => undefined),
       } as never,
@@ -245,6 +317,8 @@ describe('LocalCsvExportService CODE_SCAN before export', () => {
       confirmedRepo: { listForSession: jest.fn(async () => []) } as never,
       exportRepo: {
         findByFingerprint: jest.fn(async () => null),
+        findBySessionAndFingerprint: jest.fn(async () => null),
+        tryInsert: jest.fn(async () => true),
         insert: jest.fn(async () => undefined),
       } as never,
       deviceId: 'dev-1',

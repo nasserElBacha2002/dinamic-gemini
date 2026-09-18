@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Text, View } from 'react-native';
 
 import { OtherAisleCaptureActiveError, type CaptureSnapshot } from '../features/capture/captureService';
@@ -8,6 +8,11 @@ import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import { Button, ErrorText, PhotoWorkList, SmallButton, captureContextFrom, countPhotos, messageOf, styles } from '../ui';
 import { FINISH_STAGE_LABELS } from '../features/capture/finishObservability';
+import {
+  emptyExportPrepCounts,
+  summarizeExportPrepForUi,
+  type ExportPrepCounts,
+} from '../features/exportPrep/exportPrepQueue';
 
 export interface CaptureScreenProps {
   services: AppServices;
@@ -36,6 +41,8 @@ export function CaptureScreen({
 }: CaptureScreenProps) {
   const [permission, setPermission] = useState('desconocido');
   const [finishInFlight, setFinishInFlight] = useState(false);
+  const [prepCounts, setPrepCounts] = useState<ExportPrepCounts>(emptyExportPrepCounts());
+  const [prepDrainLabel, setPrepDrainLabel] = useState<string | null>(null);
   const snapshotBelongsToSelectedAisle = Boolean(
     snapshot?.session &&
       inventory &&
@@ -44,6 +51,14 @@ export function CaptureScreen({
       snapshot.context?.aisleId === aisle.id,
   );
   const context = captureContextFrom(snapshotBelongsToSelectedAisle ? snapshot : null, inventory, aisle);
+  const prepQueue = services.exportPrepQueue;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const runStart = async (pauseOtherAisle: boolean) => {
     if (!inventory || !aisle) {
@@ -112,11 +127,25 @@ export function CaptureScreen({
   const photos = snapshotBelongsToSelectedAisle ? snapshot?.photos ?? [] : [];
   const counts = countPhotos(photos);
   const sessionStatus = snapshotBelongsToSelectedAisle ? snapshot?.session?.status : undefined;
+  const sessionId = snapshotBelongsToSelectedAisle ? snapshot?.session?.id : undefined;
   const isFinishing = finishInFlight || sessionStatus === 'finishing';
   const finishStageLabel =
     snapshotBelongsToSelectedAisle && snapshot?.finishStage
       ? FINISH_STAGE_LABELS[snapshot.finishStage]
       : null;
+
+  useEffect(() => {
+    if (!prepQueue || !sessionId) {
+      setPrepCounts(emptyExportPrepCounts());
+      return;
+    }
+    void prepQueue.getCounts(sessionId).then(setPrepCounts).catch(() => undefined);
+    return prepQueue.subscribe((sid, c) => {
+      if (sid === sessionId || sid == null) {
+        setPrepCounts(c);
+      }
+    });
+  }, [prepQueue, sessionId]);
 
   useEffect(() => {
     if (sessionStatus !== 'active') return;
@@ -128,14 +157,43 @@ export function CaptureScreen({
     return () => sub.remove();
   }, [sessionStatus, services.capture]);
 
+  const leaveCapture = () => {
+    if (prepQueue && prepCounts.pending > 0) {
+      Alert.alert(
+        'Preparación en curso',
+        `Hay ${prepCounts.pending} foto(s) preparándose para exportar. ¿Salir de todos modos?`,
+        [
+          { text: 'Quedarme', style: 'cancel' },
+          { text: 'Salir', style: 'destructive', onPress: onBackToAisles },
+        ],
+      );
+      return;
+    }
+    onBackToAisles();
+  };
+
   return (
     <PhotoWorkList
       photos={photos}
-      onExclude={(id) => void services.capture.exclude(id)}
-      onReinclude={(id) => void services.capture.reincorporate(id)}
+      onExclude={(id) => {
+        if (services.exportPrepPhotoCoordinator) {
+          void services.exportPrepPhotoCoordinator.excludeByAssetId(id).catch((e) => onError(messageOf(e)));
+        } else {
+          void services.capture.exclude(id);
+        }
+      }}
+      onReinclude={(id) => {
+        if (services.exportPrepPhotoCoordinator) {
+          void services.exportPrepPhotoCoordinator
+            .reincorporateByAssetId(id)
+            .catch((e) => onError(messageOf(e)));
+        } else {
+          void services.capture.reincorporate(id);
+        }
+      }}
       header={
         <View>
-          <SmallButton label="← Pasillos" onPress={onBackToAisles} />
+          <SmallButton label="← Pasillos" onPress={leaveCapture} />
           <Text style={styles.h2}>
             Captura · {context?.inventoryName ?? inventory?.name ?? 'Inventario'} /{' '}
             {context?.aisleName ?? aisle?.code ?? 'Pasillo'}
@@ -147,14 +205,13 @@ export function CaptureScreen({
             FGS activo: {snapshotBelongsToSelectedAisle && snapshot?.fgsActive ? 'sí' : 'no'}
           </Text>
           <Text style={styles.row}>
-            Detectadas: {counts.total} · Validando: {counts.waiting} · Estables: {counts.stable} · Error:{' '}
-            {counts.errors} · Excluidas: {counts.excluded}
+            {summarizeExportPrepForUi(counts, prepQueue ? prepCounts : null)}
           </Text>
           {isFinishing ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8 }}>
               <ActivityIndicator />
               <Text style={styles.row}>
-                {finishStageLabel ?? 'Cerrando captura y preparando revisión…'}
+                {prepDrainLabel ?? finishStageLabel ?? 'Cerrando captura y preparando revisión…'}
               </Text>
             </View>
           ) : null}
@@ -218,25 +275,68 @@ export function CaptureScreen({
               setFinishInFlight(true);
               onError(null);
               void (async () => {
-                const sessionId = snapshot?.session?.id;
-                if (sessionId) {
-                  // Re-read DB: process start / uploads may have moved status while UI still showed active.
-                  const fresh = await services.capture.getSessionSnapshot(sessionId);
-                  const status = fresh.session?.status;
-                  if (
-                    status &&
-                    status !== 'active' &&
-                    status !== 'paused' &&
-                    status !== 'finishing' &&
-                    status !== 'processing'
-                  ) {
-                    throw new Error(`No se puede finalizar la captura desde el estado "${status}".`);
+                const sid = snapshot?.session?.id;
+                if (!sid) {
+                  throw new Error('No se encontró la sesión de captura.');
+                }
+                const fresh = await services.capture.getSessionSnapshot(sid);
+                const status = fresh.session?.status;
+                if (
+                  status &&
+                  status !== 'active' &&
+                  status !== 'paused' &&
+                  status !== 'finishing' &&
+                  status !== 'processing'
+                ) {
+                  throw new Error(`No se puede finalizar la captura desde el estado "${status}".`);
+                }
+
+                const result = await services.captureFinalization.finalizeForReview(sid, {
+                  timeoutMs: 10 * 60_000,
+                  onProgress: (snap) => {
+                    if (!mountedRef.current) return;
+                    if (snap.totalEligible <= 0) {
+                      setPrepDrainLabel('Preparando fotos…');
+                      return;
+                    }
+                    setPrepDrainLabel(`Listas ${snap.ready} de ${snap.totalEligible}…`);
+                    if (prepQueue) {
+                      void prepQueue.getCounts(sid).then((c) => {
+                        if (mountedRef.current) setPrepCounts(c);
+                      });
+                    }
+                  },
+                });
+
+                if (!mountedRef.current) return;
+
+                if (!result.captureCommitted) {
+                  setFinishInFlight(false);
+                  setPrepDrainLabel(null);
+                  onError(result.userMessage ?? 'No se pudo finalizar la captura.');
+                  return;
+                }
+
+                // Post-commit: always navigate to Review (never strand on Capture).
+                if (prepQueue) {
+                  setPrepCounts(await prepQueue.getCounts(sid));
+                }
+                setPrepDrainLabel(null);
+
+                if (result.userMessage) {
+                  if (result.preparationStatus === 'TERMINAL_FAILURE') {
+                    Alert.alert('Preparación con fallos', result.userMessage);
+                  } else if (result.preparationStatus === 'STRUCTURAL_FAILURE') {
+                    Alert.alert('Preparación incompleta', result.userMessage);
+                  } else if (result.preparationStatus === 'IN_PROGRESS') {
+                    Alert.alert('Preparación en curso', result.userMessage);
                   }
                 }
-                await services.capture.finish();
                 onReview();
               })().catch((e) => {
+                if (!mountedRef.current) return;
                 setFinishInFlight(false);
+                setPrepDrainLabel(null);
                 onError(messageOf(e));
               });
             }}

@@ -99,6 +99,12 @@ export interface FeatureFlags {
   readonly positionActiveStateRestoreEnabled: boolean;
   /** Add PositionSyncReference V2 to preliminary evidence. */
   readonly positionSyncReferenceV2Enabled: boolean;
+  /**
+   * Incremental export prep queue: stage originals + CODE_SCAN per stable photo
+   * before ZIP packing. Kill-switch via DINAMIC_FLAG_EXPORT_PREP_QUEUE=0.
+   * Default: on in non-production (opt-in style), off in production until device evidence.
+   */
+  readonly mobileExportPrepQueue: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -152,6 +158,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   mobileCanonicalPositionStateEnabled: false,
   positionActiveStateRestoreEnabled: false,
   positionSyncReferenceV2Enabled: false,
+  mobileExportPrepQueue: true,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -256,5 +263,6 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     mobileCanonicalPositionStateEnabled: bool('mobileCanonicalPositionStateEnabled', false),
     positionActiveStateRestoreEnabled: bool('positionActiveStateRestoreEnabled', false),
     positionSyncReferenceV2Enabled: bool('positionSyncReferenceV2Enabled', false),
+    mobileExportPrepQueue: bool('mobileExportPrepQueue', optInDefault),
   };
 }
