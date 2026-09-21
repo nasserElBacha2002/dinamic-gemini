@@ -28,14 +28,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Keep in sync with mobile-validate (node:sqlite needs Node >= 22.5)
+          node-version: '22'
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # v3 defaults include deprecated `tools` (removed from Google's repo).
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
       - name: Validate version inputs
         env:
           VERSION_NAME: ${{ inputs.version_name }}
