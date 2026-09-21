@@ -3,6 +3,9 @@
   "version": "0.3.0",
   "private": true,
   "description": "Dinamic Inventory — Android capture/upload client. Photos-only. Fase 3 hardening.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "main": "index.ts",
   "expo": {
     "autolinking": {
