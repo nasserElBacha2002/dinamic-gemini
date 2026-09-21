@@ -63,7 +63,10 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        # v3 defaults include deprecated `tools` (removed from Google's repo).
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
       - run: npm ci
       # Expo 51+: --non-interactive is unsupported; use CI=1. android/ is gitignored and must be generated.
       - name: Prebuild Android

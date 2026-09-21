@@ -36,7 +36,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # v3 defaults include deprecated `tools` (removed from Google's repo).
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
       - name: Validate version inputs
         env:
           VERSION_NAME: ${{ inputs.version_name }}
