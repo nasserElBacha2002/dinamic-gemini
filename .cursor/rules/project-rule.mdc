@@ -1,0 +1,44 @@
+---
+alwaysApply: true
+---
+
+This repository is Dinamic Gemini, a production inventory system that processes inventory captures, labels, positions, images, jobs, and imported data.
+
+Apply the global engineering rules plus the following project-specific constraints.
+
+Architecture:
+- Preserve the existing backend, frontend, mobile, persistence, job-processing, and inventory-domain boundaries.
+- Do not redesign the processing pipeline unless explicitly requested.
+- Preserve the established processing order, fallbacks, provider/profile resolution, job/session boundaries, and snapshot semantics unless the task explicitly changes them.
+- Keep image-processing, label-identification, position-resolution, import, and reporting responsibilities clearly separated.
+- Prefer deterministic and auditable outcomes.
+- When available evidence is insufficient for a reliable result, preserve the project's existing unresolved/UNKNOWN behavior rather than inventing a result.
+
+Backend:
+- Follow the existing Python/FastAPI conventions and Python 3.11+ compatibility.
+- Preserve API contracts unless a versioned or explicitly requested breaking change is required.
+- Preserve tenant/client/inventory/job isolation.
+- Do not weaken authentication, authorization, validation, checksums, signatures, or ownership checks without explicit requirements.
+- Be careful with transaction boundaries, retries, idempotency, and background jobs.
+
+Performance:
+- Treat per-image and per-job code paths as performance-sensitive.
+- Avoid unnecessary image reads, decoding, encoding, Base64 conversions, hashing, filesystem operations, database round trips, and repeated scans of in-memory collections.
+- Reuse already-computed metadata, hashes, staged files, indexes, and cached lookups where safe.
+- Do not trade correctness or auditability for performance.
+
+Mobile:
+- Preserve offline/background queue behavior, retry semantics, capture/session associations, and SQLite persistence.
+- Avoid unnecessary memory copies and large in-memory image representations.
+- Respect the existing concurrency limits and upload/export lifecycle.
+
+Data and compatibility:
+- Preserve existing SQL Server data semantics and migration ordering.
+- Migrations must be safe for existing installations and existing records.
+- Preserve CSV, TXT, API, and export formats unless a format change is explicitly requested.
+- Do not silently reinterpret previously valid stored data.
+
+Testing and evidence:
+- Prioritize tests around processing correctness, job isolation, idempotency, imports, image handling, concurrency, persistence, and backward compatibility.
+- For performance work, distinguish measured improvements from expected improvements.
+- For OCR, barcode, QR, or vision behavior, do not claim accuracy improvements without executed evidence.
