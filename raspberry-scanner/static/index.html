@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dinamic · Scanner local</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 44rem; padding: 0 1rem; color: #172033; }
+      button { padding: .65rem 1rem; margin-right: .5rem; font-size: 1rem; } .state { margin: 1rem 0; }
+      .error { color: #b42318; } li { padding: .45rem 0; border-bottom: 1px solid #ddd; overflow-wrap: anywhere; }
+      code { font-size: 1rem; } .muted { color: #5b6475; }
+    </style>
+  </head>
+  <body>
+    <h1>Scanner local</h1>
+    <button id="start">Iniciar escaneo</button><button id="stop">Detener escaneo</button>
+    <p class="state">Estado: <strong id="state">cargando…</strong></p>
+    <p id="error" class="error" role="alert"></p>
+    <h2>Lecturas: <span id="count">0</span></h2>
+    <p class="muted">Los valores se muestran tal como llegan del scanner y se pierden al reiniciar.</p>
+    <ol id="readings"></ol>
+    <script>
+      const state = document.querySelector('#state'), error = document.querySelector('#error');
+      async function update() {
+        try {
+          const data = await (await fetch('/api/state', {cache: 'no-store'})).json();
+          state.textContent = data.scanner_state;
+          error.textContent = data.error || '';
+          document.querySelector('#count').textContent = data.count;
+          document.querySelector('#readings').replaceChildren(...data.readings.map(r => {
+            const item = document.createElement('li'), value = document.createElement('code');
+            value.textContent = r.value; item.append(`#${r.sequence} `, value); return item;
+          }));
+        } catch (_) { state.textContent = 'sin conexión con el servidor'; }
+      }
+      async function action(path) { await fetch(path, {method: 'POST'}); await update(); }
+      document.querySelector('#start').onclick = () => action('/api/scanning/start');
+      document.querySelector('#stop').onclick = () => action('/api/scanning/stop');
+      update(); setInterval(update, 1000);
+    </script>
+  </body>
+</html>
