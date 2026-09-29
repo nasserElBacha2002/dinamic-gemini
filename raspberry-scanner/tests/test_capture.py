@@ -73,10 +73,14 @@ class CaptureServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(CaptureError, "client_selection_required"):
             CaptureService(FakeRecognition(client_id=None), self.directory).start("A1")
 
-    def test_all_raw_and_nonexportable_positions_finish_without_txt(self) -> None:
+    def test_specific_raw_and_nonexportable_positions_finish_without_txt(self) -> None:
         self.capture.start("A1")
         self.capture.record(Reading(1, "raw", 0, {"accepted": False, "classification": "REJECTED"}))
-        self.capture.record(Reading(2, "raw", 0, {"accepted": True, "classification": "RAW", "recognition": {}}))
+        self.capture.record(Reading(2, "raw", 0, {
+            "accepted": True,
+            "classification": "RAW",
+            "recognition": {"selection_mode": "SPECIFIC"},
+        }))
         self.capture.record(Reading(3, "v1", 0, {"accepted": True, "classification": "POSITION", "recognition": {"results": {"POSITION": {"status": "VALID", "source": "DINAMIC", "position_id": "P"}}}}))
         state = self.capture.snapshot()
         self.assertEqual(state["physical_count"], 3)
@@ -87,10 +91,6 @@ class CaptureServiceTests(unittest.TestCase):
         finished = self.capture.finish()
         self.assertEqual(finished["state"], "FINISHED")
         self.assertIsNone(finished["filename"])
-        from src.application.services.dinamic_scanner_txt_parser import parse_dinamic_scanner_txt
-        parsed = parse_dinamic_scanner_txt(b"unclassified-all-raw\n")
-        self.assertEqual(parsed.products, ())
-        self.assertTrue(any("unknown_record" in warning for warning in parsed.parse_warnings))
 
     def test_existing_file_is_preserved_and_write_error_keeps_capture(self) -> None:
         target = self.directory / "A1.txt"
@@ -138,19 +138,25 @@ class CaptureServiceTests(unittest.TestCase):
         self.assertIsNone(result["filename"])
         self.assertEqual(result["physical_count"], 0)
 
-    def test_all_raw_reaches_capture_but_is_not_txt_exportable(self) -> None:
+    def test_all_raw_is_exported_verbatim_in_order_with_duplicates(self) -> None:
         capture = CaptureService(FakeRecognition(supplier_id=None), self.directory / "all")
-        capture.start("ALL")
-        capture.record(Reading(1, "raw scanner payload", 0, {
-            "accepted": True,
-            "classification": "RAW",
-            "recognition": {"selection_mode": "ALL"},
-        }))
+        capture.start("P1")
+        for sequence, raw in enumerate(("ABC123", "XYZ456", "ABC123"), start=1):
+            capture.record(Reading(sequence, raw, 0, {
+                "accepted": True,
+                "classification": "RAW",
+                "recognition": {"selection_mode": "ALL"},
+            }))
         state = capture.snapshot()
-        self.assertEqual(state["physical_count"], 1)
-        self.assertEqual(state["f2_accepted_count"], 1)
-        self.assertEqual(state["not_exportable_count"], 1)
-        self.assertEqual(capture.finish()["state"], "FINISHED")
+        self.assertEqual(state["physical_count"], 3)
+        self.assertEqual(state["f2_accepted_count"], 3)
+        self.assertEqual(state["accepted_count"], 3)
+        self.assertEqual(state["rejected_count"], 0)
+        self.assertEqual(state["not_exportable_count"], 0)
+        finished = capture.finish()
+        self.assertEqual(finished["state"], "FINISHED")
+        self.assertEqual(finished["filename"], "P1.txt")
+        self.assertEqual((self.directory / "all" / "P1.txt").read_bytes(), b"ABC123\nXYZ456\nABC123\n")
 
 
 if __name__ == "__main__":

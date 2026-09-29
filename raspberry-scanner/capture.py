@@ -189,6 +189,16 @@ def _export_line(raw: str, decision: dict[str, object]) -> str | None:
     """Map F2's structured decision to the existing TXT grammar without reparse."""
     classification = decision.get("classification")
     recognition = decision.get("recognition")
+    # ALL is F2's explicitly accepted, transport-preserving mode: it has no
+    # supplier/Dinamic recognition result to normalize. Keep the scanner value
+    # verbatim for the backend import flow to interpret later.
+    if (
+        decision.get("accepted") is True
+        and classification == "RAW"
+        and isinstance(recognition, dict)
+        and recognition.get("selection_mode") == "ALL"
+    ):
+        return raw
     results = recognition.get("results") if isinstance(recognition, dict) else None
     if not isinstance(results, dict):
         return None
