@@ -108,6 +108,9 @@ from src.application.use_cases.clients.get_client import GetClientUseCase
 from src.application.use_cases.clients.get_client_recognition_config import (
     GetClientRecognitionConfigUseCase,
 )
+from src.application.use_cases.clients.get_raspberry_recognition_config import (
+    GetRaspberryRecognitionConfigUseCase,
+)
 from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.application.use_cases.clients.update_client import UpdateClientUseCase
 from src.application.use_cases.code_scans.export_aisle_code_scans import ExportAisleCodeScansUseCase
@@ -566,6 +569,16 @@ def get_client_recognition_config_use_case(
         label_profile_repo=label_profile_repo,
     )
 
+def get_raspberry_recognition_config_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_recognition_use_case: GetClientRecognitionConfigUseCase = Depends(
+        get_client_recognition_config_use_case
+    ),
+) -> GetRaspberryRecognitionConfigUseCase:
+    return GetRaspberryRecognitionConfigUseCase(
+        client_repo=client_repo,
+        client_recognition_use_case=client_recognition_use_case,
+    )
 
 def get_get_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),

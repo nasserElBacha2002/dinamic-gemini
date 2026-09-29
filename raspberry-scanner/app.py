@@ -11,6 +11,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
+from urllib.parse import unquote
 
 from config.repository import SnapshotRepository
 from config.service import ConfigService
@@ -34,71 +35,155 @@ def make_handler(
 ) -> type[BaseHTTPRequestHandler]:
     class RequestHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-            if self.path == "/":
+            path = self.path.split("?", 1)[0]
+
+            if path == "/":
                 self._send_file(
                     ROOT / "static" / "index.html",
                     "text/html; charset=utf-8",
                 )
-            elif self.path == "/api/state":
+                return
+
+            if path == "/api/state":
                 state = session.snapshot()
                 state["config"] = config_service.status()
-                self._send_json(HTTPStatus.OK, state)
-            elif self.path == "/api/config":
+                self._send_json(
+                    HTTPStatus.OK,
+                    state,
+                )
+                return
+
+            if path == "/api/config":
                 self._send_json(
                     HTTPStatus.OK,
                     config_service.status(),
                 )
-            elif self.path == "/api/config/suppliers":
+                return
+
+            if path == "/api/config/clients":
                 self._send_json(
                     HTTPStatus.OK,
-                    {"items": config_service.suppliers()},
+                    {
+                        "items": config_service.clients(),
+                    },
                 )
-            elif self.path.startswith("/api/config/suppliers/"):
-                supplier_id = (
-                    self.path
-                    .removeprefix("/api/config/suppliers/")
-                    .strip()
-                )
+                return
 
-                supplier = config_service.supplier_config(supplier_id)
+            client_prefix = "/api/config/clients/"
 
-                if supplier is None:
-                    self._send_json(
-                        HTTPStatus.NOT_FOUND,
-                        {"error": "supplier_not_found"},
+            if path.startswith(client_prefix):
+                remainder = path.removeprefix(client_prefix)
+                parts = [
+                    unquote(part).strip()
+                    for part in remainder.split("/")
+                    if part.strip()
+                ]
+
+                if len(parts) == 1:
+                    client_id = parts[0]
+                    client = config_service.client_config(client_id)
+
+                    if client is None:
+                        self._send_json(
+                            HTTPStatus.NOT_FOUND,
+                            {"error": "client_not_found"},
+                        )
+                    else:
+                        self._send_json(
+                            HTTPStatus.OK,
+                            client,
+                        )
+                    return
+
+                if (
+                    len(parts) == 2
+                    and parts[1] == "suppliers"
+                ):
+                    client_id = parts[0]
+                    client = config_service.client_config(client_id)
+
+                    if client is None:
+                        self._send_json(
+                            HTTPStatus.NOT_FOUND,
+                            {"error": "client_not_found"},
+                        )
+                    else:
+                        self._send_json(
+                            HTTPStatus.OK,
+                            {
+                                "items": config_service.suppliers(
+                                    client_id
+                                )
+                            },
+                        )
+                    return
+
+                if (
+                    len(parts) == 3
+                    and parts[1] == "suppliers"
+                ):
+                    client_id = parts[0]
+                    supplier_id = parts[2]
+
+                    client = config_service.client_config(client_id)
+
+                    if client is None:
+                        self._send_json(
+                            HTTPStatus.NOT_FOUND,
+                            {"error": "client_not_found"},
+                        )
+                        return
+
+                    supplier = config_service.supplier_config(
+                        client_id,
+                        supplier_id,
                     )
-                else:
-                    self._send_json(
-                        HTTPStatus.OK,
-                        supplier,
-                    )
-            else:
-                self._send_json(
-                    HTTPStatus.NOT_FOUND,
-                    {"error": "not_found"},
-                )
+
+                    if supplier is None:
+                        self._send_json(
+                            HTTPStatus.NOT_FOUND,
+                            {"error": "supplier_not_found"},
+                        )
+                    else:
+                        self._send_json(
+                            HTTPStatus.OK,
+                            supplier,
+                        )
+                    return
+
+            self._send_json(
+                HTTPStatus.NOT_FOUND,
+                {"error": "not_found"},
+            )
 
         def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-            if self.path == "/api/scanning/start":
+            path = self.path.split("?", 1)[0]
+
+            if path == "/api/scanning/start":
                 self._send_json(
                     HTTPStatus.OK,
                     session.start(),
                 )
-            elif self.path == "/api/scanning/stop":
+                return
+
+            if path == "/api/scanning/stop":
                 self._send_json(
                     HTTPStatus.OK,
                     session.stop(),
                 )
-            elif self.path == "/api/config/sync":
+                return
+
+            if path == "/api/config/sync":
                 self._send_json(
                     HTTPStatus.OK,
                     config_service.sync(),
                 )
-            else:
-                self._send_json(
-                    HTTPStatus.NOT_FOUND,
-                    {"error": "not_found"},
-                )
+                return
+
+            self._send_json(
+                HTTPStatus.NOT_FOUND,
+                {"error": "not_found"},
+            )
 
         def _send_file(
             self,
@@ -115,7 +200,10 @@ def make_handler(
                 return
 
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", content_type)
+            self.send_header(
+                "Content-Type",
+                content_type,
+            )
             self.send_header(
                 "Content-Length",
                 str(len(content)),
@@ -162,10 +250,13 @@ def build_session(
     factory: Callable[[], SerialLineReader] | None = None
 
     if device:
-        factory = lambda: SerialLineReader(
-            device,
-            baud_rate,
-        )
+        def create_reader() -> SerialLineReader:
+            return SerialLineReader(
+                device,
+                baud_rate,
+            )
+
+    factory = create_reader
 
     return ScannerSession(
         factory,
@@ -254,10 +345,6 @@ def main() -> None:
         os.environ.get("DINAMIC_BACKEND_URL") or ""
     ).strip()
 
-    client_id = (
-        os.environ.get("DINAMIC_CLIENT_ID") or ""
-    ).strip() or None
-
     device_token = (
         os.environ.get("DINAMIC_DEVICE_TOKEN") or ""
     ).strip() or None
@@ -294,7 +381,6 @@ def main() -> None:
     config_service = ConfigService(
         SnapshotRepository(config_path),
         backend_client,
-        client_id,
     )
 
     sync_stop_event = threading.Event()

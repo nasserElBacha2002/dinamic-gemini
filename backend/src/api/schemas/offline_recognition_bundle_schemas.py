@@ -87,3 +87,29 @@ class OfflineClientRecognitionBundleResponse(BaseModel):
     )
     profiles: list[OfflineRecognitionProfileDto] = Field(default_factory=list)
     bundle_revision: str | None = None
+
+class OfflineRaspberryClientRecognitionConfigDto(BaseModel):
+    """Recognition configuration for one client in the Raspberry bundle."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    client_id: str
+    name: str
+    suppliers: list[OfflineClientSupplierRecognitionConfigDto] = Field(
+        default_factory=list
+    )
+    profiles: list[OfflineRecognitionProfileDto] = Field(default_factory=list)
+    bundle_revision: str
+
+
+class OfflineRaspberryRecognitionBundleResponse(BaseModel):
+    """Versioned multi-client recognition bundle for Raspberry devices."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    bundle_schema_version: int = OFFLINE_RECOGNITION_BUNDLE_SCHEMA_VERSION
+    generated_at: datetime
+    clients: list[OfflineRaspberryClientRecognitionConfigDto] = Field(
+        default_factory=list
+    )
+    bundle_revision: str

@@ -1,10 +1,9 @@
-"""Backend transport for client-scoped recognition snapshots."""
+"""Backend transport for the global Raspberry recognition snapshot."""
 
 from __future__ import annotations
 
 import json
 import urllib.error
-import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -26,15 +25,18 @@ class BackendSnapshotClient:
         self._device_token = device_token.strip() if device_token else None
         self._timeout_seconds = timeout_seconds
 
-    def fetch(self, client_id: str) -> RecognitionSnapshot:
-        encoded_client_id = urllib.parse.quote(client_id, safe="")
-        url = f"{self._base_url}/api/v3/clients/{encoded_client_id}/recognition-config"
+    def fetch(self) -> RecognitionSnapshot:
+        url = f"{self._base_url}/api/v3/raspberry/recognition-config"
 
         headers = {"Accept": "application/json"}
         if self._device_token:
             headers["X-Device-Token"] = self._device_token
 
-        request = urllib.request.Request(url, headers=headers, method="GET")
+        request = urllib.request.Request(
+            url,
+            headers=headers,
+            method="GET",
+        )
 
         try:
             with urllib.request.urlopen(
