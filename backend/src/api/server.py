@@ -33,6 +33,9 @@ from src.api.routes.v3.admin_finalization_recovery import (
 from src.api.routes.v3.admin_storage import router as v3_admin_storage_router
 from src.api.routes.v3.analytics_api import router as v3_analytics_router
 from src.api.routes.v3.clients import router as v3_clients_router
+from src.api.routes.v3.raspberry_recognition_config import (
+    router as raspberry_recognition_config_router,
+)
 from src.api.routes.v3.config import router as v3_config_router
 from src.api.routes.v3.observability import router as v3_observability_router
 from src.api.routes.v3.review_queue import router as v3_review_queue_router
@@ -160,6 +163,7 @@ elif (settings.api_key or "").strip():
 # Include routers (v3 only for inventory operations; legacy v1 jobs/entities removed in Stage 3).
 app.include_router(v3_router)
 app.include_router(v3_clients_router)
+app.include_router(raspberry_recognition_config_router)
 app.include_router(v3_analytics_router)
 app.include_router(v3_review_queue_router)
 app.include_router(v3_observability_router)

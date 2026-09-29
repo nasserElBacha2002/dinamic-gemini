@@ -17,6 +17,7 @@ from src.application.ports.mobile_preliminary_detection_repository import (
 from src.application.ports.preliminary_detection_reconciliation_repository import (
     PreliminaryDetectionReconciliationRepository,
 )
+from src.application.ports.raspberry_device_repository import RaspberryDeviceRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -781,6 +782,31 @@ def build_client_position_label_repository(
     return build_repo(
         backend_info_name="ClientPositionLabelRepository",
         sql_error_subject="client_position_label repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_raspberry_device_repository(
+    build_repo: BuildSqlOrMemory[RaspberryDeviceRepository],
+) -> RaspberryDeviceRepository:
+    def _sql(client: SqlServerClient) -> RaspberryDeviceRepository:
+        from src.infrastructure.repositories.sql_raspberry_device_repository import (
+            SqlRaspberryDeviceRepository,
+        )
+
+        return SqlRaspberryDeviceRepository(client)
+
+    def _memory() -> RaspberryDeviceRepository:
+        from src.infrastructure.repositories.memory_raspberry_device_repository import (
+            MemoryRaspberryDeviceRepository,
+        )
+
+        return MemoryRaspberryDeviceRepository()
+
+    return build_repo(
+        backend_info_name="RaspberryDeviceRepository",
+        sql_error_subject="raspberry device repo",
         build_sql=_sql,
         build_memory=_memory,
     )
