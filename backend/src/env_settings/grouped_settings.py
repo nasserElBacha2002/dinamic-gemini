@@ -611,6 +611,10 @@ class ApiRuntimeSettings(BaseModel):
     model_config = {"extra": "forbid"}
 
     # API Server (Stage 7)
+    raspberry_device_token: str = Field(
+        default_factory=lambda: (os.getenv("RASPBERRY_DEVICE_TOKEN", "") or "").strip(),
+        description="Shared technical secret for the Raspberry recognition-config route.",
+    )
     api_key: str = Field(
         default_factory=lambda: os.getenv("API_KEY", ""),
         description=(

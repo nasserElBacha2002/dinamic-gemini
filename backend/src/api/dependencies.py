@@ -16,9 +16,10 @@ environment where the default is wrong for your deployment.
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import TYPE_CHECKING
 
-from fastapi import Depends
+from fastapi import Depends, Header, HTTPException, status
 
 if TYPE_CHECKING:
     from src.application.use_cases.recovery.recover_aisle_processing import (
@@ -104,6 +105,9 @@ from src.application.use_cases.analytics.export_aisle_benchmark import (
 )
 from src.application.use_cases.clients.create_client import CreateClientUseCase
 from src.application.use_cases.clients.get_client import GetClientUseCase
+from src.application.use_cases.clients.get_client_recognition_config import (
+    GetClientRecognitionConfigUseCase,
+)
 from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.application.use_cases.clients.update_client import UpdateClientUseCase
 from src.application.use_cases.code_scans.export_aisle_code_scans import ExportAisleCodeScansUseCase
@@ -343,6 +347,28 @@ def require_client_scope(
     return principal
 
 
+def require_raspberry_device_token(
+    x_device_token: str | None = Header(default=None, alias="X-Device-Token"),
+) -> None:
+    from src.config import load_settings
+
+    expected_token = (load_settings().raspberry_device_token or "").strip()
+    if not expected_token or not x_device_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Raspberry device authentication is not configured or missing",
+            headers={"WWW-Authenticate": "Device-Token"},
+        )
+    if not secrets.compare_digest(
+        x_device_token.encode("utf-8"), expected_token.encode("utf-8")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Raspberry device token",
+            headers={"WWW-Authenticate": "Device-Token"},
+        )
+
+
 def get_access_principal(
     user: AuthUser = Depends(get_current_admin),
 ) -> AccessPrincipal:
@@ -520,6 +546,22 @@ def get_inventory_recognition_config_use_case(
     return GetInventoryRecognitionConfigUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        extraction_profile_repo=extraction_profile_repo,
+        label_profile_repo=label_profile_repo,
+    )
+
+
+def get_client_recognition_config_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    extraction_profile_repo: SupplierExtractionProfileRepository = Depends(
+        get_supplier_extraction_profile_repo
+    ),
+    label_profile_repo=Depends(get_client_supplier_label_profile_repo),
+) -> GetClientRecognitionConfigUseCase:
+    return GetClientRecognitionConfigUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
         extraction_profile_repo=extraction_profile_repo,
         label_profile_repo=label_profile_repo,
     )
