@@ -1,8 +1,9 @@
 # Raspberry scanner local (V1)
 
-Módulo aislado para una Raspberry Pi que publica una página local y recibe
-lecturas RAW de un scanner serial. No se conecta al backend, no persiste,
-exporta ni interpreta valores.
+Módulo aislado para una Raspberry Pi que publica una página local, recibe
+lecturas RAW de un scanner serial y mantiene un snapshot local de configuración
+de reconocimiento por cliente/proveedor. Las lecturas todavía no son interpretadas
+ni filtradas por esas reglas; esa integración pertenece a la fase siguiente.
 
 ## Decisiones y alcance
 
@@ -13,6 +14,8 @@ exporta ni interpreta valores.
 - Polling HTTP cada segundo: es más simple que mantener WebSocket/SSE y se recupera
   solo cuando un cliente se desconecta o vuelve a abrir la página.
 - Las últimas 100 lecturas quedan en memoria (configurable). Al reiniciar se pierden.
+- La configuración offline sí es persistente: se valida antes de guardarse y se reemplaza
+  atómicamente, conservando la última versión válida si el backend no está disponible.
 
 ## Resultado del relevamiento
 
@@ -63,6 +66,14 @@ python3 -m unittest discover -s tests -v
    SCANNER_BAUD_RATE=9600
    SCANNER_PORT=8080
    SCANNER_MAX_READINGS=100
+
+   # Fase 1: configuración offline por cliente.
+   DINAMIC_CLIENT_ID=<client-id>
+   DINAMIC_BACKEND_URL=https://api.example.com
+   # Temporal mientras el backend conserve JWT de usuario. No es login de la UI local.
+   DINAMIC_BACKEND_BEARER_TOKEN=<token-provisionado>
+   # Opcional; systemd ya crea el directorio por StateDirectory.
+   DINAMIC_CONFIG_PATH=/var/lib/dinamic-raspberry-scanner/recognition-config.json
    ```
 
    `SCANNER_PORT` se aplica porque el unit no fija el puerto por línea de
@@ -83,6 +94,25 @@ python3 -m unittest discover -s tests -v
 El servicio reintenta abrir el scanner si no está conectado y tras una lectura
 que falle. Detener el escaneo desde la página cierra el dispositivo; iniciar ya
 iniciado y detener ya detenido son operaciones seguras.
+
+## Configuración offline (Fase 1)
+
+El backend debe exponer `GET /api/v3/clients/{client_id}/recognition-config`. La
+Raspberry no pide usuario/contraseña en su interfaz local. La autorización de la
+sincronización sigue separada y, mientras el backend mantenga su JWT actual, puede
+provisionarse `DINAMIC_BACKEND_BEARER_TOKEN` en el archivo de entorno del servicio.
+No se almacena ni expone ese token dentro del snapshot.
+
+Endpoints locales disponibles:
+
+- `GET /api/config`: estado del snapshot y última sincronización.
+- `POST /api/config/sync`: intenta actualizar; ante error conserva last-known-good.
+- `GET /api/config/suppliers`: proveedores disponibles offline.
+- `GET /api/config/suppliers/{supplier_id}`: sources y profiles ITEM/POSITION.
+
+La aplicación no sincroniza automáticamente al arrancar en esta fase: una actualización
+debe dispararse explícitamente. Esto evita convertir un problema de conectividad o
+autorización en una dependencia para iniciar el scanner local.
 
 ## Wi-Fi local autónomo
 

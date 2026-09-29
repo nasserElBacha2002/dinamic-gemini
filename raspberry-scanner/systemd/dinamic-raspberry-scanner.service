@@ -8,6 +8,7 @@ Type=simple
 User=dinamic
 WorkingDirectory=/opt/dinamic-raspberry-scanner
 EnvironmentFile=/etc/dinamic-raspberry-scanner.env
+StateDirectory=dinamic-raspberry-scanner
 ExecStart=/usr/bin/python3 /opt/dinamic-raspberry-scanner/app.py --host 0.0.0.0
 Restart=on-failure
 RestartSec=3
