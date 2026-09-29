@@ -147,6 +147,25 @@ class ScannerSessionTests(unittest.TestCase):
         self.assertEqual(calls, 2)
         session.stop()
 
+    def test_listener_failure_is_observable_and_reader_continues(self) -> None:
+        reader = FakeReader()
+        observed: list[str] = []
+
+        def listener(_reading: object) -> None:
+            raise RuntimeError("capture unavailable")
+
+        session = ScannerSession(
+            lambda: reader,
+            reading_listener=listener,
+            listener_error_handler=lambda exc: observed.append(str(exc)),
+        )
+        session.start()
+        reader.values.put(["one", "two"])
+        self.wait_for(lambda: session.snapshot()["count"] == 2)
+        self.assertIn("RuntimeError: capture unavailable", session.snapshot()["listener_error"])
+        self.assertEqual(observed, ["capture unavailable", "capture unavailable"])
+        session.stop()
+
     def test_disconnect_then_reconnects_and_reads_again(self) -> None:
         first = FakeReader()
         second = FakeReader()

@@ -64,10 +64,15 @@
           supplier.disabled = data.scanning || !client.value;
           const captureState = data.capture;
           const captureActive = captureState.state === 'ACTIVE';
-          aisle.disabled = captureActive;
-          document.querySelector('#capture-start').disabled = captureActive || data.scanning;
-          document.querySelector('#capture-finish').disabled = !captureActive;
-          capture.textContent = captureState.aisle_code ? `Captura: ${captureState.state} · Pasillo: ${captureState.aisle_code} · Exportables: ${captureState.accepted_count} · No exportables: ${captureState.rejected_count}${captureState.filename ? ` · Archivo: ${captureState.filename}` : ''}${captureState.error ? ` · Error: ${captureState.error}` : ''}` : 'Sin captura activa.';
+          const capturePending = captureActive || captureState.state === 'EXPORT_FAILED';
+          client.disabled = data.scanning || captureActive;
+          supplier.disabled = data.scanning || captureActive || !client.value;
+          aisle.disabled = capturePending;
+          document.querySelector('#capture-start').disabled = capturePending || data.scanning;
+          document.querySelector('#capture-finish').disabled = !(captureActive || captureState.state === 'EXPORT_FAILED');
+          document.querySelector('#start').disabled = captureActive;
+          document.querySelector('#stop').disabled = captureActive;
+          capture.textContent = captureState.aisle_code ? `Captura: ${captureState.state} · Pasillo: ${captureState.aisle_code} · F2 aceptadas: ${captureState.f2_accepted_count} · Exportables: ${captureState.accepted_count} · No exportables/rechazadas: ${captureState.rejected_count}${captureState.filename ? ` · Archivo: ${captureState.filename}` : ''}${captureState.error ? ` · Error: ${captureState.error}` : ''}${captureState.listener_error ? ` · Listener: ${captureState.listener_error}` : ''}` : 'Sin captura activa.';
           const policy = data.recognition;
           if (policy.client_id && policy.client_id !== currentClient) { currentClient = policy.client_id; await loadClients(policy.client_id); await loadSuppliers(policy.client_id, policy.supplier_id); }
           selection.textContent = policy.client_id ? `Cliente: ${policy.client_id} · Proveedor: ${policy.supplier_id || 'Todos'}${policy.item_source ? ` · ITEM: ${policy.item_source} · POSITION: ${policy.position_source}` : ''}` : 'Sin selección de cliente.';

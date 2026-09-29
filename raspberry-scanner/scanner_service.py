@@ -99,7 +99,7 @@ class SerialLineReader:
 
 
 class ScannerSession:
-    def __init__(self, reader_factory: Callable[[], ScannerReader] | None, max_readings: int = 100, reading_policy: Callable[[str], dict[str, object]] | None = None, reading_listener: Callable[[Reading], None] | None = None) -> None:
+    def __init__(self, reader_factory: Callable[[], ScannerReader] | None, max_readings: int = 100, reading_policy: Callable[[str], dict[str, object]] | None = None, reading_listener: Callable[[Reading], None] | None = None, listener_error_handler: Callable[[Exception], None] | None = None) -> None:
         if max_readings < 1:
             raise ValueError("max_readings must be at least 1")
         self._reader_factory = reader_factory
@@ -114,6 +114,8 @@ class ScannerSession:
         self._sequence = 0
         self._reading_policy = reading_policy
         self._reading_listener = reading_listener
+        self._listener_error_handler = listener_error_handler
+        self._listener_error: str | None = None
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -152,6 +154,7 @@ class ScannerSession:
             "scanning": self._requested,
             "scanner_state": self._scanner_state,
             "error": self._error,
+            "listener_error": self._listener_error,
             "count": self._sequence,
             "readings": [reading.as_dict() for reading in reversed(self._readings)],
         }
@@ -223,6 +226,14 @@ class ScannerSession:
                 if self._reading_listener is not None:
                     try:
                         self._reading_listener(reading)
-                    except Exception:
+                    except Exception as exc:
                         # A capture observer is not allowed to interrupt UART.
-                        pass
+                        self._listener_error = f"{type(exc).__name__}: {exc}"
+                        if self._listener_error_handler is not None:
+                            try:
+                                self._listener_error_handler(exc)
+                            except Exception as handler_exc:
+                                self._listener_error = (
+                                    f"{type(exc).__name__}: {exc}; "
+                                    f"error_handler {type(handler_exc).__name__}: {handler_exc}"
+                                )

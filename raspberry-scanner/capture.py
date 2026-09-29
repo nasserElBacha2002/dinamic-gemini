@@ -37,7 +37,9 @@ class CaptureService:
         self._selection: dict[str, object] | None = None
         self._records: list[ExportRecord] = []
         self._accepted_count = 0
+        self._f2_accepted_count = 0
         self._rejected_count = 0
+        self._listener_error: str | None = None
         self._started_at: str | None = None
         self._filename: str | None = None
         self._error: str | None = None
@@ -48,17 +50,30 @@ class CaptureService:
         if not selection.get("client_id"):
             raise CaptureError("client_selection_required")
         with self._lock:
-            if self._state == "ACTIVE":
-                raise CaptureError("capture_already_active")
+            if self._state != "IDLE" and self._state != "FINISHED":
+                raise CaptureError("capture_requires_resolution")
             self._state = "ACTIVE"
             self._aisle_code = code
             self._selection = selection
             self._records = []
             self._accepted_count = 0
+            self._f2_accepted_count = 0
             self._rejected_count = 0
             self._started_at = datetime.now(timezone.utc).isoformat()
             self._filename = None
             self._error = None
+            return self._snapshot_locked()
+
+    def abort_start(self, error: str) -> dict[str, object]:
+        """Rollback a start transition that could not start the scanner."""
+        with self._lock:
+            if self._state != "ACTIVE" or self._records:
+                raise CaptureError("capture_abort_not_available")
+            self._state = "IDLE"
+            self._aisle_code = None
+            self._selection = None
+            self._started_at = None
+            self._error = error
             return self._snapshot_locked()
 
     def record(self, reading: Reading) -> None:
@@ -69,12 +84,18 @@ class CaptureService:
             if decision.get("accepted") is not True:
                 self._rejected_count += 1
                 return
+            self._f2_accepted_count += 1
             line = _export_line(reading.value, decision)
             if line is None:
                 self._rejected_count += 1
                 return
             self._accepted_count += 1
             self._records.append(ExportRecord(reading.sequence, line))
+
+    def report_listener_error(self, exc: Exception) -> None:
+        with self._lock:
+            if self._state == "ACTIVE":
+                self._listener_error = f"{type(exc).__name__}: {exc}"
 
     def finish(self) -> dict[str, object]:
         with self._lock:
@@ -114,10 +135,12 @@ class CaptureService:
             "supplier_id": selection.get("supplier_id"),
             "selection_mode": selection.get("selection_mode"),
             "accepted_count": self._accepted_count,
+            "f2_accepted_count": self._f2_accepted_count,
             "rejected_count": self._rejected_count,
             "started_at": self._started_at,
             "filename": self._filename,
             "error": self._error,
+            "listener_error": self._listener_error,
         }
 
 

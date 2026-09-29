@@ -179,15 +179,20 @@ def make_handler(
                 # Serialize start against selection updates so one session never
                 # begins with a selection concurrently being replaced.
                 with selection_operation_lock:
+                    if capture_service.snapshot()["state"] == "ACTIVE":
+                        self._send_json(HTTPStatus.CONFLICT, {"error": "capture_controls_scanner"})
+                        return
                     state = session.start()
                 self._send_json(HTTPStatus.OK, state)
                 return
 
             if path == "/api/scanning/stop":
-                self._send_json(
-                    HTTPStatus.OK,
-                    session.stop(),
-                )
+                with selection_operation_lock:
+                    if capture_service.snapshot()["state"] == "ACTIVE":
+                        self._send_json(HTTPStatus.CONFLICT, {"error": "capture_controls_scanner"})
+                        return
+                    state = session.stop()
+                self._send_json(HTTPStatus.OK, state)
                 return
 
             if path == "/api/config/sync":
@@ -201,13 +206,15 @@ def make_handler(
                 try:
                     payload = self._read_json_body()
                     with selection_operation_lock:
+                        if capture_service.snapshot()["state"] == "ACTIVE":
+                            raise SelectionError("selection_locked_while_capture_active")
                         selection = recognition_service.select(
                             payload.get("client_id"),
                             payload.get("supplier_id"),
                             scanning=bool(session.snapshot()["scanning"]),
                         )
                 except SelectionError as exc:
-                    self._send_json(HTTPStatus.CONFLICT if str(exc) == "selection_locked_while_scanning" else HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    self._send_json(HTTPStatus.CONFLICT if str(exc) in {"selection_locked_while_scanning", "selection_locked_while_capture_active"} else HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                     return
                 except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                     self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
@@ -227,6 +234,7 @@ def make_handler(
                         capture = capture_service.start(payload.get("aisle_code"))
                         scanner_state = session.start()
                         if not scanner_state["scanning"]:
+                            capture_service.abort_start("scanner_not_started")
                             raise CaptureError("scanner_not_started")
                 except CaptureError as exc:
                     self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -325,6 +333,7 @@ def build_session(
     max_readings: int,
     reading_policy: Callable[[str], dict[str, object]] | None = None,
     reading_listener: Callable[[Reading], None] | None = None,
+    listener_error_handler: Callable[[Exception], None] | None = None,
 ) -> ScannerSession:
     factory: Callable[[], SerialLineReader] | None = None
 
@@ -341,6 +350,7 @@ def build_session(
         max_readings=max_readings,
         reading_policy=reading_policy,
         reading_listener=reading_listener,
+        listener_error_handler=listener_error_handler,
     )
 
 
@@ -470,6 +480,7 @@ def main() -> None:
         args.max_readings,
         recognition_service.process,
         capture_service.record,
+        capture_service.report_listener_error,
     )
 
     sync_stop_event = threading.Event()

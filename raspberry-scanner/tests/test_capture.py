@@ -82,6 +82,10 @@ class CaptureServiceTests(unittest.TestCase):
         self.assertEqual(self.capture.snapshot()["rejected_count"], 3)
         with self.assertRaisesRegex(CaptureError, "no_exportable_readings"):
             self.capture.finish()
+        from src.application.services.dinamic_scanner_txt_parser import parse_dinamic_scanner_txt
+        parsed = parse_dinamic_scanner_txt(b"unclassified-all-raw\n")
+        self.assertEqual(parsed.products, ())
+        self.assertTrue(any("unknown_record" in warning for warning in parsed.parse_warnings))
 
     def test_existing_file_is_preserved_and_write_error_keeps_capture(self) -> None:
         target = self.directory / "A1.txt"
@@ -99,6 +103,28 @@ class CaptureServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(CaptureError, "export_write_failed"):
                 fresh.finish()
         self.assertFalse((self.directory / "other" / "A2.txt").exists())
+
+    def test_export_failed_blocks_new_start_and_retry_preserves_records(self) -> None:
+        self.capture.start("A1")
+        self.capture.record(position_reading(1))
+        self.capture.record(item_reading(2, "D1|A|B|1|C"))
+        with patch("capture._write_new_atomic", side_effect=OSError("temporary")):
+            with self.assertRaisesRegex(CaptureError, "export_write_failed"):
+                self.capture.finish()
+        before = self.capture.snapshot()
+        with self.assertRaisesRegex(CaptureError, "capture_requires_resolution"):
+            self.capture.start("A2")
+        with patch("capture._write_new_atomic") as write:
+            self.capture.finish()
+        content = write.call_args.args[2]
+        self.assertEqual(before["aisle_code"], "A1")
+        self.assertEqual(content.splitlines(), ["POSITION|POS1|04|RIGHT", "D1|A|B|1|C"])
+
+    def test_abort_start_removes_active_capture_without_records(self) -> None:
+        self.capture.start("A1")
+        rolled_back = self.capture.abort_start("scanner_not_started")
+        self.assertEqual(rolled_back["state"], "IDLE")
+        self.assertEqual(rolled_back["error"], "scanner_not_started")
 
 
 if __name__ == "__main__":
