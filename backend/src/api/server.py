@@ -36,6 +36,9 @@ from src.api.routes.v3.clients import router as v3_clients_router
 from src.api.routes.v3.config import router as v3_config_router
 from src.api.routes.v3.observability import router as v3_observability_router
 from src.api.routes.v3.raspberry_recognition_config import (
+    raspberry_router,
+)
+from src.api.routes.v3.raspberry_recognition_config import (
     router as raspberry_recognition_config_router,
 )
 from src.api.routes.v3.review_queue import router as v3_review_queue_router
@@ -164,6 +167,7 @@ elif (settings.api_key or "").strip():
 app.include_router(v3_router)
 app.include_router(v3_clients_router)
 app.include_router(raspberry_recognition_config_router)
+app.include_router(raspberry_router)
 app.include_router(v3_analytics_router)
 app.include_router(v3_review_queue_router)
 app.include_router(v3_observability_router)

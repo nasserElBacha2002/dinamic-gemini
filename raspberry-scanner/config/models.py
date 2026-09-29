@@ -1,4 +1,4 @@
-"""Validation and query helpers for client-scoped offline recognition snapshots."""
+"""Validation and query helpers for multi-client offline recognition snapshots."""
 
 from __future__ import annotations
 
@@ -24,8 +24,23 @@ def _required_string(value: Any, field: str) -> str:
 def _source(value: Any, field: str) -> str:
     source = _required_string(value, field)
     if source not in VALID_SOURCES:
-        raise SnapshotValidationError(f"{field} has unsupported value: {source}")
+        raise SnapshotValidationError(
+            f"{field} has unsupported value: {source}"
+        )
     return source
+
+
+def _validate_generated_at(value: Any) -> str:
+    generated_at = _required_string(value, "generated_at")
+
+    try:
+        datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise SnapshotValidationError(
+            "generated_at must be ISO-8601"
+        ) from exc
+
+    return generated_at
 
 
 @dataclass(frozen=True)
@@ -39,11 +54,24 @@ class SupplierConfig:
     def from_dict(cls, data: Any) -> "SupplierConfig":
         if not isinstance(data, dict):
             raise SnapshotValidationError("supplier must be an object")
+
         return cls(
-            client_supplier_id=_required_string(data.get("client_supplier_id"), "supplier.client_supplier_id"),
-            name=_required_string(data.get("name"), "supplier.name"),
-            item_source=_source(data.get("item_source"), "supplier.item_source"),
-            position_source=_source(data.get("position_source"), "supplier.position_source"),
+            client_supplier_id=_required_string(
+                data.get("client_supplier_id"),
+                "supplier.client_supplier_id",
+            ),
+            name=_required_string(
+                data.get("name"),
+                "supplier.name",
+            ),
+            item_source=_source(
+                data.get("item_source"),
+                "supplier.item_source",
+            ),
+            position_source=_source(
+                data.get("position_source"),
+                "supplier.position_source",
+            ),
         )
 
     def as_dict(self) -> dict[str, str]:
@@ -71,32 +99,82 @@ class RecognitionProfile:
     def from_dict(cls, data: Any) -> "RecognitionProfile":
         if not isinstance(data, dict):
             raise SnapshotValidationError("profile must be an object")
-        kind = _required_string(data.get("label_kind"), "profile.label_kind")
+
+        kind = _required_string(
+            data.get("label_kind"),
+            "profile.label_kind",
+        )
         if kind not in VALID_LABEL_KINDS:
-            raise SnapshotValidationError(f"profile.label_kind has unsupported value: {kind}")
-        source = _required_string(data.get("source"), "profile.source")
+            raise SnapshotValidationError(
+                f"profile.label_kind has unsupported value: {kind}"
+            )
+
+        source = _required_string(
+            data.get("source"),
+            "profile.source",
+        )
         if source != "SUPPLIER":
-            raise SnapshotValidationError("profile.source must be SUPPLIER")
+            raise SnapshotValidationError(
+                "profile.source must be SUPPLIER"
+            )
+
         version = data.get("profile_version")
         schema_version = data.get("configuration_schema_version")
-        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
-            raise SnapshotValidationError("profile.profile_version must be a positive integer")
-        if not isinstance(schema_version, int) or isinstance(schema_version, bool) or schema_version < 1:
-            raise SnapshotValidationError("profile.configuration_schema_version must be a positive integer")
+
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version < 1
+        ):
+            raise SnapshotValidationError(
+                "profile.profile_version must be a positive integer"
+            )
+
+        if (
+            not isinstance(schema_version, int)
+            or isinstance(schema_version, bool)
+            or schema_version < 1
+        ):
+            raise SnapshotValidationError(
+                "profile.configuration_schema_version must be a positive integer"
+            )
+
         configuration = data.get("configuration")
         if not isinstance(configuration, dict):
-            raise SnapshotValidationError("profile.configuration must be an object")
+            raise SnapshotValidationError(
+                "profile.configuration must be an object"
+            )
+
         recognition_mode = data.get("recognition_mode")
         semantic_type = data.get("semantic_type")
-        if recognition_mode is not None and not isinstance(recognition_mode, str):
-            raise SnapshotValidationError("profile.recognition_mode must be a string or null")
-        if semantic_type is not None and not isinstance(semantic_type, str):
-            raise SnapshotValidationError("profile.semantic_type must be a string or null")
+
+        if recognition_mode is not None and not isinstance(
+            recognition_mode,
+            str,
+        ):
+            raise SnapshotValidationError(
+                "profile.recognition_mode must be a string or null"
+            )
+
+        if semantic_type is not None and not isinstance(
+            semantic_type,
+            str,
+        ):
+            raise SnapshotValidationError(
+                "profile.semantic_type must be a string or null"
+            )
+
         return cls(
-            client_supplier_id=_required_string(data.get("client_supplier_id"), "profile.client_supplier_id"),
+            client_supplier_id=_required_string(
+                data.get("client_supplier_id"),
+                "profile.client_supplier_id",
+            ),
             label_kind=kind,
             source=source,
-            profile_id=_required_string(data.get("profile_id"), "profile.profile_id"),
+            profile_id=_required_string(
+                data.get("profile_id"),
+                "profile.profile_id",
+            ),
             profile_version=version,
             configuration_schema_version=schema_version,
             recognition_mode=recognition_mode,
@@ -111,87 +189,253 @@ class RecognitionProfile:
             "source": self.source,
             "profile_id": self.profile_id,
             "profile_version": self.profile_version,
-            "configuration_schema_version": self.configuration_schema_version,
+            "configuration_schema_version": (
+                self.configuration_schema_version
+            ),
             "recognition_mode": self.recognition_mode,
             "semantic_type": self.semantic_type,
             "configuration": self.configuration,
         }
 
 
+def _validate_supplier_configuration(
+    suppliers: tuple[SupplierConfig, ...],
+    profiles: tuple[RecognitionProfile, ...],
+    *,
+    client_id: str,
+) -> None:
+    supplier_ids = {
+        supplier.client_supplier_id
+        for supplier in suppliers
+    }
+
+    if len(supplier_ids) != len(suppliers):
+        raise SnapshotValidationError(
+            f"duplicate client_supplier_id in client {client_id}"
+        )
+
+    profile_keys: set[tuple[str, str]] = set()
+
+    for profile in profiles:
+        if profile.client_supplier_id not in supplier_ids:
+            raise SnapshotValidationError(
+                f"profile references supplier not present in client {client_id}"
+            )
+
+        key = (
+            profile.client_supplier_id,
+            profile.label_kind,
+        )
+
+        if key in profile_keys:
+            raise SnapshotValidationError(
+                f"duplicate supplier/label_kind profile in client {client_id}"
+            )
+
+        profile_keys.add(key)
+
+    for supplier in suppliers:
+        for kind, source in (
+            ("ITEM", supplier.item_source),
+            ("POSITION", supplier.position_source),
+        ):
+            if (
+                source == "SUPPLIER"
+                and (
+                    supplier.client_supplier_id,
+                    kind,
+                )
+                not in profile_keys
+            ):
+                raise SnapshotValidationError(
+                    f"supplier {supplier.client_supplier_id} "
+                    f"requires missing {kind} profile"
+                )
+
+
 @dataclass(frozen=True)
-class RecognitionSnapshot:
-    bundle_schema_version: int
+class ClientRecognitionConfig:
     client_id: str
-    generated_at: str
+    name: str
     bundle_revision: str
     suppliers: tuple[SupplierConfig, ...]
     profiles: tuple[RecognitionProfile, ...]
 
     @classmethod
-    def from_dict(cls, data: Any) -> "RecognitionSnapshot":
+    def from_dict(cls, data: Any) -> "ClientRecognitionConfig":
         if not isinstance(data, dict):
-            raise SnapshotValidationError("snapshot must be an object")
-        schema_version = data.get("bundle_schema_version")
-        if schema_version != SUPPORTED_SCHEMA_VERSION:
             raise SnapshotValidationError(
-                f"unsupported bundle_schema_version: {schema_version}; expected {SUPPORTED_SCHEMA_VERSION}"
+                "client recognition config must be an object"
             )
-        generated_at = _required_string(data.get("generated_at"), "generated_at")
-        try:
-            datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise SnapshotValidationError("generated_at must be ISO-8601") from exc
+
+        client_id = _required_string(
+            data.get("client_id"),
+            "client.client_id",
+        )
+
         raw_suppliers = data.get("suppliers")
         raw_profiles = data.get("profiles")
-        if not isinstance(raw_suppliers, list) or not isinstance(raw_profiles, list):
-            raise SnapshotValidationError("suppliers and profiles must be arrays")
-        suppliers = tuple(SupplierConfig.from_dict(row) for row in raw_suppliers)
-        profiles = tuple(RecognitionProfile.from_dict(row) for row in raw_profiles)
-        supplier_ids = {supplier.client_supplier_id for supplier in suppliers}
-        if len(supplier_ids) != len(suppliers):
-            raise SnapshotValidationError("duplicate client_supplier_id in suppliers")
-        profile_keys: set[tuple[str, str]] = set()
-        for profile in profiles:
-            if profile.client_supplier_id not in supplier_ids:
-                raise SnapshotValidationError("profile references supplier not present in snapshot")
-            key = (profile.client_supplier_id, profile.label_kind)
-            if key in profile_keys:
-                raise SnapshotValidationError("duplicate supplier/label_kind profile")
-            profile_keys.add(key)
-        for supplier in suppliers:
-            for kind, source in (("ITEM", supplier.item_source), ("POSITION", supplier.position_source)):
-                if source == "SUPPLIER" and (supplier.client_supplier_id, kind) not in profile_keys:
-                    raise SnapshotValidationError(
-                        f"supplier {supplier.client_supplier_id} requires missing {kind} profile"
-                    )
+
+        if not isinstance(raw_suppliers, list):
+            raise SnapshotValidationError(
+                f"client {client_id} suppliers must be an array"
+            )
+
+        if not isinstance(raw_profiles, list):
+            raise SnapshotValidationError(
+                f"client {client_id} profiles must be an array"
+            )
+
+        suppliers = tuple(
+            SupplierConfig.from_dict(row)
+            for row in raw_suppliers
+        )
+        profiles = tuple(
+            RecognitionProfile.from_dict(row)
+            for row in raw_profiles
+        )
+
+        _validate_supplier_configuration(
+            suppliers,
+            profiles,
+            client_id=client_id,
+        )
+
         return cls(
-            bundle_schema_version=schema_version,
-            client_id=_required_string(data.get("client_id"), "client_id"),
-            generated_at=generated_at,
-            bundle_revision=_required_string(data.get("bundle_revision"), "bundle_revision"),
+            client_id=client_id,
+            name=_required_string(
+                data.get("name"),
+                "client.name",
+            ),
+            bundle_revision=_required_string(
+                data.get("bundle_revision"),
+                "client.bundle_revision",
+            ),
             suppliers=suppliers,
             profiles=profiles,
         )
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "bundle_schema_version": self.bundle_schema_version,
             "client_id": self.client_id,
-            "generated_at": self.generated_at,
-            "suppliers": [supplier.as_dict() for supplier in self.suppliers],
-            "profiles": [profile.as_dict() for profile in self.profiles],
+            "name": self.name,
+            "suppliers": [
+                supplier.as_dict()
+                for supplier in self.suppliers
+            ],
+            "profiles": [
+                profile.as_dict()
+                for profile in self.profiles
+            ],
             "bundle_revision": self.bundle_revision,
         }
 
-    def supplier(self, supplier_id: str) -> SupplierConfig | None:
-        return next((row for row in self.suppliers if row.client_supplier_id == supplier_id), None)
-
-    def profile(self, supplier_id: str, label_kind: str) -> RecognitionProfile | None:
+    def supplier(
+        self,
+        supplier_id: str,
+    ) -> SupplierConfig | None:
         return next(
             (
-                row
-                for row in self.profiles
-                if row.client_supplier_id == supplier_id and row.label_kind == label_kind
+                supplier
+                for supplier in self.suppliers
+                if supplier.client_supplier_id == supplier_id
+            ),
+            None,
+        )
+
+    def profile(
+        self,
+        supplier_id: str,
+        label_kind: str,
+    ) -> RecognitionProfile | None:
+        return next(
+            (
+                profile
+                for profile in self.profiles
+                if profile.client_supplier_id == supplier_id
+                and profile.label_kind == label_kind
+            ),
+            None,
+        )
+
+
+@dataclass(frozen=True)
+class RecognitionSnapshot:
+    bundle_schema_version: int
+    generated_at: str
+    bundle_revision: str
+    clients: tuple[ClientRecognitionConfig, ...]
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "RecognitionSnapshot":
+        if not isinstance(data, dict):
+            raise SnapshotValidationError(
+                "snapshot must be an object"
+            )
+
+        schema_version = data.get("bundle_schema_version")
+
+        if schema_version != SUPPORTED_SCHEMA_VERSION:
+            raise SnapshotValidationError(
+                "unsupported bundle_schema_version: "
+                f"{schema_version}; expected {SUPPORTED_SCHEMA_VERSION}"
+            )
+
+        generated_at = _validate_generated_at(
+            data.get("generated_at")
+        )
+
+        raw_clients = data.get("clients")
+        if not isinstance(raw_clients, list):
+            raise SnapshotValidationError(
+                "clients must be an array"
+            )
+
+        clients = tuple(
+            ClientRecognitionConfig.from_dict(row)
+            for row in raw_clients
+        )
+
+        client_ids = {
+            client.client_id
+            for client in clients
+        }
+
+        if len(client_ids) != len(clients):
+            raise SnapshotValidationError(
+                "duplicate client_id in snapshot"
+            )
+
+        return cls(
+            bundle_schema_version=schema_version,
+            generated_at=generated_at,
+            bundle_revision=_required_string(
+                data.get("bundle_revision"),
+                "bundle_revision",
+            ),
+            clients=clients,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "bundle_schema_version": self.bundle_schema_version,
+            "generated_at": self.generated_at,
+            "clients": [
+                client.as_dict()
+                for client in self.clients
+            ],
+            "bundle_revision": self.bundle_revision,
+        }
+
+    def client(
+        self,
+        client_id: str,
+    ) -> ClientRecognitionConfig | None:
+        return next(
+            (
+                client
+                for client in self.clients
+                if client.client_id == client_id
             ),
             None,
         )
