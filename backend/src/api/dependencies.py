@@ -16,8 +16,7 @@ environment where the default is wrong for your deployment.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from hashlib import sha256
+import secrets
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, Header, HTTPException, status
@@ -39,7 +38,6 @@ from src.application.ports.capture_repositories import (
 )
 from src.application.ports.clock import Clock
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
-from src.application.ports.raspberry_device_repository import RaspberryDeviceRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -73,7 +71,6 @@ from src.application.services.operational_execution_config_resolver import (
     OperationalExecutionConfigResolver,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.domain.raspberry_device.entities import RaspberryDevice, RaspberryDeviceStatus
 from src.application.use_cases.aisles.activate_aisle import ActivateAisleUseCase
 from src.application.use_cases.aisles.cancel_aisle_job import CancelAisleJobUseCase
 from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
@@ -205,7 +202,6 @@ from src.runtime.v3_deps import (
     get_position_repo,
     get_preliminary_detection_reconciliation_repo,
     get_product_record_repo,
-    get_raspberry_device_repo,
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
     get_source_asset_repo,
@@ -351,34 +347,26 @@ def require_client_scope(
     return principal
 
 
-def require_raspberry_client_scope(
-    client_id: str,
+def require_raspberry_device_token(
     x_device_token: str | None = Header(default=None, alias="X-Device-Token"),
-    device_repo: RaspberryDeviceRepository = Depends(get_raspberry_device_repo),
-    client_repo: ClientRepository = Depends(get_client_repo),
-) -> RaspberryDevice:
-    if not x_device_token:
+) -> None:
+    from src.config import load_settings
+
+    expected_token = (load_settings().raspberry_device_token or "").strip()
+    if not expected_token or not x_device_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Device authentication required",
+            detail="Raspberry device authentication is not configured or missing",
             headers={"WWW-Authenticate": "Device-Token"},
         )
-
-    token_hash = sha256(x_device_token.encode("utf-8")).hexdigest()
-    device = device_repo.get_by_token_hash(token_hash)
-    if device is None or device.status is not RaspberryDeviceStatus.ACTIVE:
+    if not secrets.compare_digest(
+        x_device_token.encode("utf-8"), expected_token.encode("utf-8")
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid device credentials",
+            detail="Invalid Raspberry device token",
             headers={"WWW-Authenticate": "Device-Token"},
         )
-
-    client = client_repo.get_by_id(client_id)
-    if client is None or device.client_id != client.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
-
-    device_repo.update_last_used_at(device.id, datetime.now(timezone.utc))
-    return device
 
 
 def get_access_principal(

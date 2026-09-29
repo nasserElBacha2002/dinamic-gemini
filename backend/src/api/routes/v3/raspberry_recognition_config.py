@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from src.api.constants.route_paths import API_V3_CLIENTS_ROUTER_PREFIX
 from src.api.dependencies import (
     get_client_recognition_config_use_case,
-    require_raspberry_client_scope,
+    require_raspberry_device_token,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.offline_recognition_bundle_schemas import (
@@ -17,7 +17,6 @@ from src.application.use_cases.clients.get_client_recognition_config import (
     ClientRecognitionConfigCommand,
     GetClientRecognitionConfigUseCase,
 )
-from src.domain.raspberry_device.entities import RaspberryDevice
 
 
 router = APIRouter(prefix=API_V3_CLIENTS_ROUTER_PREFIX, tags=["clients-v3-device"])
@@ -30,7 +29,7 @@ router = APIRouter(prefix=API_V3_CLIENTS_ROUTER_PREFIX, tags=["clients-v3-device
 )
 def get_client_recognition_config(
     client_id: str,
-    _device: RaspberryDevice = Depends(require_raspberry_client_scope),
+    _authenticated: None = Depends(require_raspberry_device_token),
     use_case: GetClientRecognitionConfigUseCase = Depends(
         get_client_recognition_config_use_case
     ),

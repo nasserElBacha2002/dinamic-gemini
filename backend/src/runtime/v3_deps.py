@@ -22,7 +22,6 @@ from src.application.ports.mobile_preliminary_detection_repository import (
 from src.application.ports.preliminary_detection_reconciliation_repository import (
     PreliminaryDetectionReconciliationRepository,
 )
-from src.application.ports.raspberry_device_repository import RaspberryDeviceRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -61,10 +60,6 @@ def get_client_repo() -> ClientRepository:
 
 def get_client_supplier_repo() -> ClientSupplierRepository:
     return get_app_container().get_client_supplier_repo()
-
-
-def get_raspberry_device_repo() -> RaspberryDeviceRepository:
-    return get_app_container().get_raspberry_device_repo()
 
 
 def get_aisle_repo() -> AisleRepository:

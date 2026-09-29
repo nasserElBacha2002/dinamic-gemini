@@ -43,7 +43,6 @@ from src.application.ports.position_materialization_unit_of_work import (
 from src.application.ports.preliminary_detection_reconciliation_repository import (
     PreliminaryDetectionReconciliationRepository,
 )
-from src.application.ports.raspberry_device_repository import RaspberryDeviceRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -230,7 +229,6 @@ from src.runtime.container.repository_builders import (
     build_position_repository,
     build_preliminary_detection_reconciliation_repository,
     build_product_record_repository,
-    build_raspberry_device_repository,
     build_result_evidence_repository,
     build_review_action_repository,
     build_server_reprocess_repository,
@@ -296,7 +294,6 @@ class AppContainer:
         self._local_inventory_package_repo = None
         self._client_repo: ClientRepository | None = None
         self._client_supplier_repo: ClientSupplierRepository | None = None
-        self._raspberry_device_repo: RaspberryDeviceRepository | None = None
         self._aisle_repo: AisleRepository | None = None
         self._job_repo: JobRepository | None = None
         self._asset_repo: SourceAssetRepository | None = None
@@ -890,14 +887,6 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._client_supplier_repo
-
-    def get_raspberry_device_repo(self) -> RaspberryDeviceRepository:
-        if self._raspberry_device_repo is not None:
-            return self._raspberry_device_repo
-        self._raspberry_device_repo = build_raspberry_device_repository(
-            self._build_sql_repository_or_memory
-        )
-        return self._raspberry_device_repo
 
     def get_aisle_repo(self) -> AisleRepository:
         if self._aisle_repo is not None:
