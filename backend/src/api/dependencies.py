@@ -104,6 +104,9 @@ from src.application.use_cases.analytics.export_aisle_benchmark import (
 )
 from src.application.use_cases.clients.create_client import CreateClientUseCase
 from src.application.use_cases.clients.get_client import GetClientUseCase
+from src.application.use_cases.clients.get_client_recognition_config import (
+    GetClientRecognitionConfigUseCase,
+)
 from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.application.use_cases.clients.update_client import UpdateClientUseCase
 from src.application.use_cases.code_scans.export_aisle_code_scans import ExportAisleCodeScansUseCase
@@ -520,6 +523,22 @@ def get_inventory_recognition_config_use_case(
     return GetInventoryRecognitionConfigUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        extraction_profile_repo=extraction_profile_repo,
+        label_profile_repo=label_profile_repo,
+    )
+
+
+def get_client_recognition_config_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    extraction_profile_repo: SupplierExtractionProfileRepository = Depends(
+        get_supplier_extraction_profile_repo
+    ),
+    label_profile_repo=Depends(get_client_supplier_label_profile_repo),
+) -> GetClientRecognitionConfigUseCase:
+    return GetClientRecognitionConfigUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
         extraction_profile_repo=extraction_profile_repo,
         label_profile_repo=label_profile_repo,
     )

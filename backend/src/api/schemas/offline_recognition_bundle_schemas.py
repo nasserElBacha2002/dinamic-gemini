@@ -63,3 +63,27 @@ class OfflineRecognitionBundleResponse(BaseModel):
     profiles: list[OfflineRecognitionProfileDto]
     #: Optional weak etag for skip-download (ISO generated_at + profile count).
     bundle_revision: str | None = None
+
+
+class OfflineClientSupplierRecognitionConfigDto(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    client_supplier_id: str
+    name: str
+    item_source: Literal["DINAMIC", "SUPPLIER"]
+    position_source: Literal["DINAMIC", "SUPPLIER"]
+
+
+class OfflineClientRecognitionBundleResponse(BaseModel):
+    """Versioned client-scoped bundle for offline supplier recognition."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    bundle_schema_version: int = OFFLINE_RECOGNITION_BUNDLE_SCHEMA_VERSION
+    client_id: str
+    generated_at: datetime
+    suppliers: list[OfflineClientSupplierRecognitionConfigDto] = Field(
+        default_factory=list
+    )
+    profiles: list[OfflineRecognitionProfileDto] = Field(default_factory=list)
+    bundle_revision: str | None = None

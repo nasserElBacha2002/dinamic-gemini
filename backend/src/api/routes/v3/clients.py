@@ -44,6 +44,7 @@ from src.api.dependencies import (
     get_update_client_use_case,
     get_upload_supplier_reference_images_use_case,
     get_upsert_client_supplier_label_profile_use_case,
+    get_client_recognition_config_use_case,
     require_client_scope,
 )
 from src.api.errors import reraise_if_mapped
@@ -58,6 +59,11 @@ from src.api.schemas.client_supplier_schemas import (
     ClientSupplierResponse,
     CreateClientSupplierRequest,
     PaginatedClientSupplierListResponse,
+)
+from src.api.schemas.offline_recognition_bundle_schemas import (
+    OfflineClientRecognitionBundleResponse,
+    OfflineClientSupplierRecognitionConfigDto,
+    OfflineRecognitionProfileDto,
 )
 from src.api.schemas.identification_mode_literals import (
     IdentificationModeLiteral,
@@ -110,6 +116,10 @@ from src.application.errors import (
 from src.application.services.optional_unset import UNSET
 from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
 from src.application.use_cases.clients.get_client import GetClientUseCase
+from src.application.use_cases.clients.get_client_recognition_config import (
+    ClientRecognitionConfigCommand,
+    GetClientRecognitionConfigUseCase,
+)
 from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.application.use_cases.clients.update_client import (
     UpdateClientCommand,
@@ -488,6 +498,54 @@ def list_client_suppliers(
         page_size=page_size,
         total_items=total,
         total_pages=compute_total_pages(total, page_size),
+    )
+
+
+@router.get(
+    "/{client_id}/recognition-config",
+    response_model=OfflineClientRecognitionBundleResponse,
+    summary="Offline recognition config bundle for one client",
+)
+def get_client_recognition_config(
+    client_id: str,
+    _principal: AccessPrincipal = Depends(require_client_scope),
+    use_case: GetClientRecognitionConfigUseCase = Depends(
+        get_client_recognition_config_use_case
+    ),
+) -> OfflineClientRecognitionBundleResponse:
+    try:
+        bundle = use_case.execute(ClientRecognitionConfigCommand(client_id=client_id))
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return OfflineClientRecognitionBundleResponse(
+        bundle_schema_version=bundle.bundle_schema_version,
+        client_id=bundle.client_id,
+        generated_at=bundle.generated_at,
+        suppliers=[
+            OfflineClientSupplierRecognitionConfigDto(
+                client_supplier_id=supplier.client_supplier_id,
+                name=supplier.name,
+                item_source=supplier.item_source,  # type: ignore[arg-type]
+                position_source=supplier.position_source,  # type: ignore[arg-type]
+            )
+            for supplier in bundle.suppliers
+        ],
+        profiles=[
+            OfflineRecognitionProfileDto(
+                client_supplier_id=profile.client_supplier_id,
+                label_kind=profile.label_kind,  # type: ignore[arg-type]
+                source="SUPPLIER",
+                profile_id=profile.profile_id,
+                profile_version=profile.profile_version,
+                configuration_schema_version=profile.configuration_schema_version,
+                recognition_mode=profile.recognition_mode,
+                semantic_type=profile.semantic_type,
+                configuration=profile.configuration,
+            )
+            for profile in bundle.profiles
+        ],
+        bundle_revision=bundle.bundle_revision,
     )
 
 
