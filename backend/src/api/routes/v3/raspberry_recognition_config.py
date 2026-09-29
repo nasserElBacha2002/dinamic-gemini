@@ -18,7 +18,6 @@ from src.application.use_cases.clients.get_client_recognition_config import (
     GetClientRecognitionConfigUseCase,
 )
 
-
 router = APIRouter(prefix=API_V3_CLIENTS_ROUTER_PREFIX, tags=["clients-v3-device"])
 
 

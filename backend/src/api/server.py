@@ -33,11 +33,11 @@ from src.api.routes.v3.admin_finalization_recovery import (
 from src.api.routes.v3.admin_storage import router as v3_admin_storage_router
 from src.api.routes.v3.analytics_api import router as v3_analytics_router
 from src.api.routes.v3.clients import router as v3_clients_router
+from src.api.routes.v3.config import router as v3_config_router
+from src.api.routes.v3.observability import router as v3_observability_router
 from src.api.routes.v3.raspberry_recognition_config import (
     router as raspberry_recognition_config_router,
 )
-from src.api.routes.v3.config import router as v3_config_router
-from src.api.routes.v3.observability import router as v3_observability_router
 from src.api.routes.v3.review_queue import router as v3_review_queue_router
 from src.api.schema_guard import schema_guard_state
 from src.api.schemas.responses import HealthResponse

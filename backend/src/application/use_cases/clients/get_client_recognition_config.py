@@ -24,12 +24,12 @@ from src.application.use_cases.inventories.get_inventory_recognition_config impo
     configuration_for_offline,
 )
 from src.domain.client_supplier.entities import ClientSupplierStatus
+from src.domain.label_profiles.errors import SupplierLabelProfileNotConfiguredError
 from src.domain.label_profiles.kinds import (
     LabelKind,
     LabelProfileSource,
     effective_label_kind,
 )
-from src.domain.label_profiles.errors import SupplierLabelProfileNotConfiguredError
 
 
 @dataclass(frozen=True)
