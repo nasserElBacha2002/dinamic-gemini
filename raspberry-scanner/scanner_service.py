@@ -8,6 +8,7 @@ only the transport delimiter is removed.
 from __future__ import annotations
 
 import os
+import logging
 import select
 import termios
 import threading
@@ -16,6 +17,8 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ScannerReader(Protocol):
@@ -173,6 +176,7 @@ class ScannerSession:
                     reader = self._reader_factory()
                 except Exception as exc:
                     self._set_waiting_error(exc)
+                    LOGGER.warning("scanner reader open failed: %s: %s", type(exc).__name__, exc)
                     time.sleep(1)
                     continue
                 with self._lock:
@@ -187,6 +191,7 @@ class ScannerSession:
                 values = reader.read(0.25)
             except Exception as exc:
                 reader.close()
+                LOGGER.warning("scanner reader failed: %s: %s", type(exc).__name__, exc)
                 with self._lock:
                     if self._reader is reader:
                         self._reader = None
@@ -229,6 +234,7 @@ class ScannerSession:
                     except Exception as exc:
                         # A capture observer is not allowed to interrupt UART.
                         self._listener_error = f"{type(exc).__name__}: {exc}"
+                        LOGGER.error("scanner reading listener failed: %s", self._listener_error)
                         if self._listener_error_handler is not None:
                             try:
                                 self._listener_error_handler(exc)

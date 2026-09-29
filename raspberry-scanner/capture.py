@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import tempfile
 import threading
 import unicodedata
@@ -13,6 +14,8 @@ from typing import Any
 
 from recognition import RecognitionService
 from scanner_service import Reading
+
+LOGGER = logging.getLogger(__name__)
 
 
 class CaptureError(ValueError):
@@ -37,8 +40,10 @@ class CaptureService:
         self._selection: dict[str, object] | None = None
         self._records: list[ExportRecord] = []
         self._accepted_count = 0
+        self._physical_count = 0
         self._f2_accepted_count = 0
         self._rejected_count = 0
+        self._not_exportable_count = 0
         self._listener_error: str | None = None
         self._started_at: str | None = None
         self._filename: str | None = None
@@ -57,11 +62,15 @@ class CaptureService:
             self._selection = selection
             self._records = []
             self._accepted_count = 0
+            self._physical_count = 0
             self._f2_accepted_count = 0
             self._rejected_count = 0
+            self._not_exportable_count = 0
             self._started_at = datetime.now(timezone.utc).isoformat()
             self._filename = None
             self._error = None
+            self._listener_error = None
+            LOGGER.info("capture started aisle=%s", code)
             return self._snapshot_locked()
 
     def abort_start(self, error: str) -> dict[str, object]:
@@ -81,13 +90,14 @@ class CaptureService:
         with self._lock:
             if self._state != "ACTIVE":
                 return
+            self._physical_count += 1
             if decision.get("accepted") is not True:
                 self._rejected_count += 1
                 return
             self._f2_accepted_count += 1
             line = _export_line(reading.value, decision)
             if line is None:
-                self._rejected_count += 1
+                self._not_exportable_count += 1
                 return
             self._accepted_count += 1
             self._records.append(ExportRecord(reading.sequence, line))
@@ -96,14 +106,27 @@ class CaptureService:
         with self._lock:
             if self._state == "ACTIVE":
                 self._listener_error = f"{type(exc).__name__}: {exc}"
+                LOGGER.error(
+                    "capture listener failed aisle=%s error=%s",
+                    self._aisle_code,
+                    self._listener_error,
+                )
 
     def finish(self) -> dict[str, object]:
         with self._lock:
             if self._state not in {"ACTIVE", "EXPORT_FAILED"}:
                 raise CaptureError("capture_not_active")
             if not self._records:
-                self._error = "no_exportable_readings"
-                raise CaptureError(self._error)
+                self._state = "FINISHED"
+                self._filename = None
+                self._error = None
+                LOGGER.info(
+                    "capture finished without export aisle=%s physical=%s f2_accepted=%s",
+                    self._aisle_code,
+                    self._physical_count,
+                    self._f2_accepted_count,
+                )
+                return self._snapshot_locked()
             assert self._aisle_code is not None
             filename = f"{self._aisle_code}.txt"
             content = "\n".join(record.line for record in self._records) + "\n"
@@ -112,14 +135,17 @@ class CaptureService:
             except FileExistsError as exc:
                 self._state = "EXPORT_FAILED"
                 self._error = "export_file_exists"
+                LOGGER.warning("capture export failed aisle=%s reason=file_exists", self._aisle_code)
                 raise CaptureError(self._error) from exc
             except OSError as exc:
                 self._state = "EXPORT_FAILED"
                 self._error = f"export_write_failed: {type(exc).__name__}: {exc}"
+                LOGGER.exception("capture export failed aisle=%s", self._aisle_code)
                 raise CaptureError(self._error) from exc
             self._state = "FINISHED"
             self._filename = filename
             self._error = None
+            LOGGER.info("capture export succeeded aisle=%s filename=%s", self._aisle_code, filename)
             return self._snapshot_locked()
 
     def snapshot(self) -> dict[str, object]:
@@ -135,8 +161,10 @@ class CaptureService:
             "supplier_id": selection.get("supplier_id"),
             "selection_mode": selection.get("selection_mode"),
             "accepted_count": self._accepted_count,
+            "physical_count": self._physical_count,
             "f2_accepted_count": self._f2_accepted_count,
             "rejected_count": self._rejected_count,
+            "not_exportable_count": self._not_exportable_count,
             "started_at": self._started_at,
             "filename": self._filename,
             "error": self._error,

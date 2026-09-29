@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import threading
 from http import HTTPStatus
@@ -22,6 +23,7 @@ from scanner_service import Reading, ScannerSession, SerialLineReader
 
 
 ROOT = Path(__file__).resolve().parent
+LOGGER = logging.getLogger(__name__)
 
 
 def settings_from_environment() -> tuple[str | None, int, int]:
@@ -235,6 +237,7 @@ def make_handler(
                         scanner_state = session.start()
                         if not scanner_state["scanning"]:
                             capture_service.abort_start("scanner_not_started")
+                            LOGGER.error("scanner start failed during capture start")
                             raise CaptureError("scanner_not_started")
                 except CaptureError as exc:
                     self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -377,6 +380,7 @@ def run_config_auto_sync(
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     default_device, default_baud_rate, default_max_readings = (
         settings_from_environment()
     )

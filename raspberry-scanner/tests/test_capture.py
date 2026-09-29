@@ -73,15 +73,20 @@ class CaptureServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(CaptureError, "client_selection_required"):
             CaptureService(FakeRecognition(client_id=None), self.directory).start("A1")
 
-    def test_rejected_all_raw_and_v1_position_do_not_become_txt_records(self) -> None:
+    def test_all_raw_and_nonexportable_positions_finish_without_txt(self) -> None:
         self.capture.start("A1")
         self.capture.record(Reading(1, "raw", 0, {"accepted": False, "classification": "REJECTED"}))
         self.capture.record(Reading(2, "raw", 0, {"accepted": True, "classification": "RAW", "recognition": {}}))
         self.capture.record(Reading(3, "v1", 0, {"accepted": True, "classification": "POSITION", "recognition": {"results": {"POSITION": {"status": "VALID", "source": "DINAMIC", "position_id": "P"}}}}))
-        self.assertEqual(self.capture.snapshot()["accepted_count"], 0)
-        self.assertEqual(self.capture.snapshot()["rejected_count"], 3)
-        with self.assertRaisesRegex(CaptureError, "no_exportable_readings"):
-            self.capture.finish()
+        state = self.capture.snapshot()
+        self.assertEqual(state["physical_count"], 3)
+        self.assertEqual(state["f2_accepted_count"], 2)
+        self.assertEqual(state["accepted_count"], 0)
+        self.assertEqual(state["rejected_count"], 1)
+        self.assertEqual(state["not_exportable_count"], 2)
+        finished = self.capture.finish()
+        self.assertEqual(finished["state"], "FINISHED")
+        self.assertIsNone(finished["filename"])
         from src.application.services.dinamic_scanner_txt_parser import parse_dinamic_scanner_txt
         parsed = parse_dinamic_scanner_txt(b"unclassified-all-raw\n")
         self.assertEqual(parsed.products, ())
@@ -125,6 +130,27 @@ class CaptureServiceTests(unittest.TestCase):
         rolled_back = self.capture.abort_start("scanner_not_started")
         self.assertEqual(rolled_back["state"], "IDLE")
         self.assertEqual(rolled_back["error"], "scanner_not_started")
+
+    def test_empty_capture_finishes_without_txt(self) -> None:
+        self.capture.start("EMPTY")
+        result = self.capture.finish()
+        self.assertEqual(result["state"], "FINISHED")
+        self.assertIsNone(result["filename"])
+        self.assertEqual(result["physical_count"], 0)
+
+    def test_all_raw_reaches_capture_but_is_not_txt_exportable(self) -> None:
+        capture = CaptureService(FakeRecognition(supplier_id=None), self.directory / "all")
+        capture.start("ALL")
+        capture.record(Reading(1, "raw scanner payload", 0, {
+            "accepted": True,
+            "classification": "RAW",
+            "recognition": {"selection_mode": "ALL"},
+        }))
+        state = capture.snapshot()
+        self.assertEqual(state["physical_count"], 1)
+        self.assertEqual(state["f2_accepted_count"], 1)
+        self.assertEqual(state["not_exportable_count"], 1)
+        self.assertEqual(capture.finish()["state"], "FINISHED")
 
 
 if __name__ == "__main__":

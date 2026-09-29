@@ -15,7 +15,7 @@
     <h1>Scanner local</h1>
     <section aria-label="Selección de reconocimiento">
       <label>Cliente <select id="client"><option value="">Seleccionar cliente…</option></select></label>
-      <label>Proveedor <select id="supplier" disabled><option value="">Todos</option></select></label>
+      <label>Modo / Proveedor <select id="supplier" disabled><option value="">Sin validación (escanear todo)</option></select></label>
       <p class="muted" id="selection">Sin selección de cliente.</p>
     </section>
     <section aria-label="Captura de pasillo">
@@ -23,7 +23,6 @@
       <button id="capture-start">Iniciar captura</button><button id="capture-finish">Finalizar y exportar</button>
       <p class="muted" id="capture">Sin captura activa.</p>
     </section>
-    <button id="start">Iniciar escaneo</button><button id="stop">Detener escaneo</button>
     <p class="state">Estado: <strong id="state">cargando…</strong></p>
     <p id="error" class="error" role="alert"></p>
     <h2>Lecturas: <span id="count">0</span></h2>
@@ -41,7 +40,7 @@
         client.value = selected || '';
       }
       async function loadSuppliers(clientId, selected) {
-        supplier.replaceChildren(new Option('Todos', ''));
+        supplier.replaceChildren(new Option('Sin validación (escanear todo)', ''));
         supplier.disabled = !clientId;
         if (!clientId) return;
         const data = await json(`/api/config/clients/${encodeURIComponent(clientId)}/suppliers`);
@@ -51,7 +50,7 @@
       async function applySelection(clientId, supplierId) {
         const data = await json('/api/selection', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({client_id: clientId, supplier_id: supplierId || null})});
         currentClient = data.client_id;
-        selection.textContent = `Cliente: ${data.client_id} · Proveedor: ${data.supplier_id || 'Todos'}${data.item_source ? ` · ITEM: ${data.item_source} · POSITION: ${data.position_source}` : ''}`;
+        selection.textContent = `Cliente: ${data.client_id} · Proveedor: ${data.supplier_id || 'Sin validación (escanear todo)'}${data.item_source ? ` · ITEM: ${data.item_source} · POSITION: ${data.position_source}` : ''}`;
       }
       client.onchange = async () => { try { await loadSuppliers(client.value, ''); await applySelection(client.value, null); } catch (e) { error.textContent = e.message; } };
       supplier.onchange = async () => { try { await applySelection(currentClient, supplier.value); } catch (e) { error.textContent = e.message; } };
@@ -70,12 +69,10 @@
           aisle.disabled = capturePending;
           document.querySelector('#capture-start').disabled = capturePending || data.scanning;
           document.querySelector('#capture-finish').disabled = !(captureActive || captureState.state === 'EXPORT_FAILED');
-          document.querySelector('#start').disabled = captureActive;
-          document.querySelector('#stop').disabled = captureActive;
-          capture.textContent = captureState.aisle_code ? `Captura: ${captureState.state} · Pasillo: ${captureState.aisle_code} · F2 aceptadas: ${captureState.f2_accepted_count} · Exportables: ${captureState.accepted_count} · No exportables/rechazadas: ${captureState.rejected_count}${captureState.filename ? ` · Archivo: ${captureState.filename}` : ''}${captureState.error ? ` · Error: ${captureState.error}` : ''}${captureState.listener_error ? ` · Listener: ${captureState.listener_error}` : ''}` : 'Sin captura activa.';
+          capture.textContent = captureState.aisle_code ? `Captura: ${captureState.state} · Pasillo: ${captureState.aisle_code} · Físicas: ${captureState.physical_count} · F2 aceptadas: ${captureState.f2_accepted_count} · Rechazadas: ${captureState.rejected_count} · Exportables: ${captureState.accepted_count} · No exportables: ${captureState.not_exportable_count}${captureState.filename ? ` · Archivo: ${captureState.filename}` : ''}${captureState.error ? ` · Error: ${captureState.error}` : ''}${captureState.listener_error ? ` · Listener: ${captureState.listener_error}` : ''}` : 'Sin captura activa.';
           const policy = data.recognition;
           if (policy.client_id && policy.client_id !== currentClient) { currentClient = policy.client_id; await loadClients(policy.client_id); await loadSuppliers(policy.client_id, policy.supplier_id); }
-          selection.textContent = policy.client_id ? `Cliente: ${policy.client_id} · Proveedor: ${policy.supplier_id || 'Todos'}${policy.item_source ? ` · ITEM: ${policy.item_source} · POSITION: ${policy.position_source}` : ''}` : 'Sin selección de cliente.';
+          selection.textContent = policy.client_id ? `Cliente: ${policy.client_id} · Proveedor: ${policy.supplier_id || 'Sin validación (escanear todo)'}${policy.item_source ? ` · ITEM: ${policy.item_source} · POSITION: ${policy.position_source}` : ''}` : 'Sin selección de cliente.';
           document.querySelector('#count').textContent = data.count;
           document.querySelector('#readings').replaceChildren(...data.readings.map(r => {
             const item = document.createElement('li'), value = document.createElement('code');
@@ -84,8 +81,6 @@
         } catch (_) { state.textContent = 'sin conexión con el servidor'; }
       }
       async function action(path) { await fetch(path, {method: 'POST'}); await update(); }
-      document.querySelector('#start').onclick = () => action('/api/scanning/start');
-      document.querySelector('#stop').onclick = () => action('/api/scanning/stop');
       document.querySelector('#capture-start').onclick = async () => { try { await json('/api/capture/start', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({aisle_code: aisle.value})}); await update(); } catch (e) { error.textContent = e.message; } };
       document.querySelector('#capture-finish').onclick = async () => { try { await json('/api/capture/finish', {method: 'POST'}); await update(); } catch (e) { error.textContent = e.message; await update(); } };
       (async () => { try { await loadClients(); } catch (e) { error.textContent = e.message; } await update(); })(); setInterval(update, 1000);
