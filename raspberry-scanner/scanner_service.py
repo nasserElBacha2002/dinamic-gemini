@@ -15,7 +15,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class ScannerReader(Protocol):
@@ -29,13 +29,17 @@ class Reading:
     sequence: int
     value: str
     received_at: float
+    decision: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "sequence": self.sequence,
             "value": self.value,
             "received_at": self.received_at,
         }
+        if self.decision is not None:
+            result.update(self.decision)
+        return result
 
 
 class SerialLineReader:
@@ -95,7 +99,7 @@ class SerialLineReader:
 
 
 class ScannerSession:
-    def __init__(self, reader_factory: Callable[[], ScannerReader] | None, max_readings: int = 100) -> None:
+    def __init__(self, reader_factory: Callable[[], ScannerReader] | None, max_readings: int = 100, reading_policy: Callable[[str], dict[str, object]] | None = None, reading_listener: Callable[[Reading], None] | None = None) -> None:
         if max_readings < 1:
             raise ValueError("max_readings must be at least 1")
         self._reader_factory = reader_factory
@@ -108,6 +112,8 @@ class ScannerSession:
         self._scanner_state = "not_configured" if reader_factory is None else "stopped"
         self._error: str | None = None
         self._sequence = 0
+        self._reading_policy = reading_policy
+        self._reading_listener = reading_listener
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -202,4 +208,21 @@ class ScannerSession:
                 return
             for value in values:
                 self._sequence += 1
-                self._readings.append(Reading(self._sequence, value, now))
+                decision: dict[str, object] | None = None
+                if self._reading_policy is not None:
+                    try:
+                        decision = self._reading_policy(value)
+                    except Exception as exc:
+                        decision = {
+                            "accepted": False,
+                            "classification": "TECHNICAL_ERROR",
+                            "recognition": {"error": f"{type(exc).__name__}: {exc}"},
+                        }
+                reading = Reading(self._sequence, value, now, decision)
+                self._readings.append(reading)
+                if self._reading_listener is not None:
+                    try:
+                        self._reading_listener(reading)
+                    except Exception:
+                        # A capture observer is not allowed to interrupt UART.
+                        pass

@@ -6,13 +6,23 @@
     <title>Dinamic · Scanner local</title>
     <style>
       body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 44rem; padding: 0 1rem; color: #172033; }
-      button { padding: .65rem 1rem; margin-right: .5rem; font-size: 1rem; } .state { margin: 1rem 0; }
+      button, select, input { padding: .65rem 1rem; margin-right: .5rem; font-size: 1rem; } .state { margin: 1rem 0; }
       .error { color: #b42318; } li { padding: .45rem 0; border-bottom: 1px solid #ddd; overflow-wrap: anywhere; }
-      code { font-size: 1rem; } .muted { color: #5b6475; }
+      code { font-size: 1rem; } .muted { color: #5b6475; } label { display: block; margin: .75rem 0; }
     </style>
   </head>
   <body>
     <h1>Scanner local</h1>
+    <section aria-label="Selección de reconocimiento">
+      <label>Cliente <select id="client"><option value="">Seleccionar cliente…</option></select></label>
+      <label>Proveedor <select id="supplier" disabled><option value="">Todos</option></select></label>
+      <p class="muted" id="selection">Sin selección de cliente.</p>
+    </section>
+    <section aria-label="Captura de pasillo">
+      <label>Pasillo <input id="aisle" autocomplete="off" placeholder="PASILLO_04"></label>
+      <button id="capture-start">Iniciar captura</button><button id="capture-finish">Finalizar y exportar</button>
+      <p class="muted" id="capture">Sin captura activa.</p>
+    </section>
     <button id="start">Iniciar escaneo</button><button id="stop">Detener escaneo</button>
     <p class="state">Estado: <strong id="state">cargando…</strong></p>
     <p id="error" class="error" role="alert"></p>
@@ -21,11 +31,46 @@
     <ol id="readings"></ol>
     <script>
       const state = document.querySelector('#state'), error = document.querySelector('#error');
+      const client = document.querySelector('#client'), supplier = document.querySelector('#supplier'), selection = document.querySelector('#selection');
+      const aisle = document.querySelector('#aisle'), capture = document.querySelector('#capture');
+      let currentClient = '';
+      async function json(path, options) { const response = await fetch(path, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'request_failed'); return data; }
+      async function loadClients(selected) {
+        const data = await json('/api/config/clients');
+        client.replaceChildren(new Option('Seleccionar cliente…', ''), ...data.items.map(item => new Option(item.name, item.client_id)));
+        client.value = selected || '';
+      }
+      async function loadSuppliers(clientId, selected) {
+        supplier.replaceChildren(new Option('Todos', ''));
+        supplier.disabled = !clientId;
+        if (!clientId) return;
+        const data = await json(`/api/config/clients/${encodeURIComponent(clientId)}/suppliers`);
+        supplier.append(...data.items.map(item => new Option(item.name, item.client_supplier_id)));
+        supplier.value = selected || '';
+      }
+      async function applySelection(clientId, supplierId) {
+        const data = await json('/api/selection', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({client_id: clientId, supplier_id: supplierId || null})});
+        currentClient = data.client_id;
+        selection.textContent = `Cliente: ${data.client_id} · Proveedor: ${data.supplier_id || 'Todos'}${data.item_source ? ` · ITEM: ${data.item_source} · POSITION: ${data.position_source}` : ''}`;
+      }
+      client.onchange = async () => { try { await loadSuppliers(client.value, ''); await applySelection(client.value, null); } catch (e) { error.textContent = e.message; } };
+      supplier.onchange = async () => { try { await applySelection(currentClient, supplier.value); } catch (e) { error.textContent = e.message; } };
       async function update() {
         try {
-          const data = await (await fetch('/api/state', {cache: 'no-store'})).json();
+          const data = await json('/api/state', {cache: 'no-store'});
           state.textContent = data.scanner_state;
           error.textContent = data.error || '';
+          client.disabled = data.scanning;
+          supplier.disabled = data.scanning || !client.value;
+          const captureState = data.capture;
+          const captureActive = captureState.state === 'ACTIVE';
+          aisle.disabled = captureActive;
+          document.querySelector('#capture-start').disabled = captureActive || data.scanning;
+          document.querySelector('#capture-finish').disabled = !captureActive;
+          capture.textContent = captureState.aisle_code ? `Captura: ${captureState.state} · Pasillo: ${captureState.aisle_code} · Exportables: ${captureState.accepted_count} · No exportables: ${captureState.rejected_count}${captureState.filename ? ` · Archivo: ${captureState.filename}` : ''}${captureState.error ? ` · Error: ${captureState.error}` : ''}` : 'Sin captura activa.';
+          const policy = data.recognition;
+          if (policy.client_id && policy.client_id !== currentClient) { currentClient = policy.client_id; await loadClients(policy.client_id); await loadSuppliers(policy.client_id, policy.supplier_id); }
+          selection.textContent = policy.client_id ? `Cliente: ${policy.client_id} · Proveedor: ${policy.supplier_id || 'Todos'}${policy.item_source ? ` · ITEM: ${policy.item_source} · POSITION: ${policy.position_source}` : ''}` : 'Sin selección de cliente.';
           document.querySelector('#count').textContent = data.count;
           document.querySelector('#readings').replaceChildren(...data.readings.map(r => {
             const item = document.createElement('li'), value = document.createElement('code');
@@ -36,7 +81,9 @@
       async function action(path) { await fetch(path, {method: 'POST'}); await update(); }
       document.querySelector('#start').onclick = () => action('/api/scanning/start');
       document.querySelector('#stop').onclick = () => action('/api/scanning/stop');
-      update(); setInterval(update, 1000);
+      document.querySelector('#capture-start').onclick = async () => { try { await json('/api/capture/start', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({aisle_code: aisle.value})}); await update(); } catch (e) { error.textContent = e.message; } };
+      document.querySelector('#capture-finish').onclick = async () => { try { await json('/api/capture/finish', {method: 'POST'}); await update(); } catch (e) { error.textContent = e.message; await update(); } };
+      (async () => { try { await loadClients(); } catch (e) { error.textContent = e.message; } await update(); })(); setInterval(update, 1000);
     </script>
   </body>
 </html>
