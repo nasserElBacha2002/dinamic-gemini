@@ -12,7 +12,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from config.repository import SnapshotRepository
 from config.service import ConfigService
@@ -38,6 +38,7 @@ def make_handler(
     config_service: ConfigService,
     recognition_service: RecognitionService,
     capture_service: CaptureService,
+    export_directory: Path | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     selection_operation_lock = threading.Lock()
 
@@ -76,6 +77,10 @@ def make_handler(
 
             if path == "/api/capture":
                 self._send_json(HTTPStatus.OK, capture_service.snapshot())
+                return
+
+            if path == "/api/capture/download":
+                self._send_capture_download()
                 return
 
             if path == "/api/config/clients":
@@ -287,6 +292,54 @@ def make_handler(
                 "Content-Length",
                 str(len(content)),
             )
+            self.end_headers()
+            self.wfile.write(content)
+
+        def _send_capture_download(self) -> None:
+            snapshot = capture_service.snapshot()
+            filename = snapshot.get("filename")
+            if (
+                snapshot.get("state") != "FINISHED"
+                or not isinstance(filename, str)
+                or export_directory is None
+            ):
+                self._send_json(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "capture_download_unavailable"},
+                )
+                return
+
+            try:
+                directory = export_directory.resolve()
+                file_path = (directory / filename).resolve()
+                if Path(filename).name != filename or not filename.endswith(".txt"):
+                    raise ValueError("invalid capture filename")
+                file_path.relative_to(directory)
+                if not file_path.is_file():
+                    raise FileNotFoundError(file_path)
+                content = file_path.read_bytes()
+            except (OSError, ValueError) as exc:
+                LOGGER.warning(
+                    "capture download unavailable filename=%r reason=%s: %s",
+                    filename,
+                    type(exc).__name__,
+                    exc,
+                )
+                self._send_json(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "capture_download_unavailable"},
+                )
+                return
+
+            escaped_filename = filename.replace("\\", "\\\\").replace('"', '\\"')
+            disposition = (
+                f'attachment; filename="{escaped_filename}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Disposition", disposition)
+            self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
 
@@ -508,6 +561,7 @@ def main() -> None:
             config_service,
             recognition_service,
             capture_service,
+            export_directory,
         ),
     )
 

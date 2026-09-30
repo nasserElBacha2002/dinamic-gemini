@@ -20,7 +20,7 @@
     </section>
     <section aria-label="Captura de pasillo">
       <label>Pasillo <input id="aisle" autocomplete="off" placeholder="PASILLO_04"></label>
-      <button id="capture-start">Iniciar captura</button><button id="capture-finish">Finalizar y exportar</button>
+      <button id="capture-start">Iniciar captura</button><button id="capture-finish">Finalizar y exportar</button><button id="capture-download" disabled>Descargar TXT</button>
       <p class="muted" id="capture">Sin captura activa.</p>
     </section>
     <p class="state">Estado: <strong id="state">cargando…</strong></p>
@@ -69,6 +69,7 @@
           aisle.disabled = capturePending;
           document.querySelector('#capture-start').disabled = capturePending || data.scanning;
           document.querySelector('#capture-finish').disabled = !(captureActive || captureState.state === 'EXPORT_FAILED');
+          document.querySelector('#capture-download').disabled = !captureState.filename;
           capture.textContent = captureState.aisle_code ? `Captura: ${captureState.state} · Pasillo: ${captureState.aisle_code} · Físicas: ${captureState.physical_count} · F2 aceptadas: ${captureState.f2_accepted_count} · Rechazadas: ${captureState.rejected_count} · Exportables: ${captureState.accepted_count} · No exportables: ${captureState.not_exportable_count}${captureState.filename ? ` · Archivo: ${captureState.filename}` : ''}${captureState.error ? ` · Error: ${captureState.error}` : ''}${captureState.listener_error ? ` · Listener: ${captureState.listener_error}` : ''}` : 'Sin captura activa.';
           const policy = data.recognition;
           if (policy.client_id && policy.client_id !== currentClient) { currentClient = policy.client_id; await loadClients(policy.client_id); await loadSuppliers(policy.client_id, policy.supplier_id); }
@@ -83,6 +84,7 @@
       async function action(path) { await fetch(path, {method: 'POST'}); await update(); }
       document.querySelector('#capture-start').onclick = async () => { try { await json('/api/capture/start', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({aisle_code: aisle.value})}); await update(); } catch (e) { error.textContent = e.message; } };
       document.querySelector('#capture-finish').onclick = async () => { try { await json('/api/capture/finish', {method: 'POST'}); await update(); } catch (e) { error.textContent = e.message; await update(); } };
+      document.querySelector('#capture-download').onclick = () => { window.location.assign('/api/capture/download'); };
       (async () => { try { await loadClients(); } catch (e) { error.textContent = e.message; } await update(); })(); setInterval(update, 1000);
     </script>
   </body>

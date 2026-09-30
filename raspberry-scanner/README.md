@@ -137,6 +137,12 @@ para que el importador los valide con el perfil backend. El TXT no transporta
 posterior del importador puede resultar ambigua; la Raspberry no inventa un
 header ni consulta/crea pasillos remotamente.
 
+Tras una exportación exitosa, `GET /api/capture/download` entrega únicamente
+el archivo final asociado a la captura actual como attachment. No acepta
+paths ni nombres de archivo del cliente y sigue el mismo modelo sin
+autenticación de la interfaz local; debe exponerse sólo en la red local
+prevista para el scanner.
+
 La aplicación no sincroniza automáticamente al arrancar en esta fase: una actualización
 debe dispararse explícitamente. Esto evita convertir un problema de conectividad o
 autorización en una dependencia para iniciar el scanner local.
