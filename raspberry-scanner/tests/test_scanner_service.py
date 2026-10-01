@@ -107,6 +107,65 @@ class ScannerSessionTests(unittest.TestCase):
         self.assertEqual(state["count"], 3)
         session.stop()
 
+    def test_reading_policy_is_recorded_without_changing_raw_value(self) -> None:
+        reader = FakeReader()
+        session = ScannerSession(
+            lambda: reader,
+            reading_policy=lambda value: {
+                "accepted": value == "accepted",
+                "classification": "ITEM" if value == "accepted" else "REJECTED",
+            },
+        )
+        session.start()
+        reader.values.put(["accepted", "raw rejected"])
+        self.wait_for(lambda: session.snapshot()["count"] == 2)
+        readings = session.snapshot()["readings"]
+        self.assertEqual(readings[0]["value"], "raw rejected")
+        self.assertFalse(readings[0]["accepted"])
+        self.assertTrue(readings[1]["accepted"])
+        session.stop()
+
+    def test_reading_policy_exception_is_recorded_and_reader_continues(self) -> None:
+        reader = FakeReader()
+        calls = 0
+
+        def policy(value: str) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            if value == "bad":
+                raise RuntimeError("profile error")
+            return {"accepted": True, "classification": "RAW"}
+
+        session = ScannerSession(lambda: reader, reading_policy=policy)
+        session.start()
+        reader.values.put(["bad", "good"])
+        self.wait_for(lambda: session.snapshot()["count"] == 2)
+        readings = session.snapshot()["readings"]
+        self.assertEqual(readings[1]["classification"], "TECHNICAL_ERROR")
+        self.assertEqual(readings[0]["value"], "good")
+        self.assertTrue(readings[0]["accepted"])
+        self.assertEqual(calls, 2)
+        session.stop()
+
+    def test_listener_failure_is_observable_and_reader_continues(self) -> None:
+        reader = FakeReader()
+        observed: list[str] = []
+
+        def listener(_reading: object) -> None:
+            raise RuntimeError("capture unavailable")
+
+        session = ScannerSession(
+            lambda: reader,
+            reading_listener=listener,
+            listener_error_handler=lambda exc: observed.append(str(exc)),
+        )
+        session.start()
+        reader.values.put(["one", "two"])
+        self.wait_for(lambda: session.snapshot()["count"] == 2)
+        self.assertIn("RuntimeError: capture unavailable", session.snapshot()["listener_error"])
+        self.assertEqual(observed, ["capture unavailable", "capture unavailable"])
+        session.stop()
+
     def test_disconnect_then_reconnects_and_reads_again(self) -> None:
         first = FakeReader()
         second = FakeReader()

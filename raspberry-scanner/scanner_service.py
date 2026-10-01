@@ -8,6 +8,7 @@ only the transport delimiter is removed.
 from __future__ import annotations
 
 import os
+import logging
 import select
 import termios
 import threading
@@ -15,7 +16,9 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ScannerReader(Protocol):
@@ -29,13 +32,17 @@ class Reading:
     sequence: int
     value: str
     received_at: float
+    decision: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "sequence": self.sequence,
             "value": self.value,
             "received_at": self.received_at,
         }
+        if self.decision is not None:
+            result.update(self.decision)
+        return result
 
 
 class SerialLineReader:
@@ -95,7 +102,7 @@ class SerialLineReader:
 
 
 class ScannerSession:
-    def __init__(self, reader_factory: Callable[[], ScannerReader] | None, max_readings: int = 100) -> None:
+    def __init__(self, reader_factory: Callable[[], ScannerReader] | None, max_readings: int = 100, reading_policy: Callable[[str], dict[str, object]] | None = None, reading_listener: Callable[[Reading], None] | None = None, listener_error_handler: Callable[[Exception], None] | None = None) -> None:
         if max_readings < 1:
             raise ValueError("max_readings must be at least 1")
         self._reader_factory = reader_factory
@@ -108,6 +115,10 @@ class ScannerSession:
         self._scanner_state = "not_configured" if reader_factory is None else "stopped"
         self._error: str | None = None
         self._sequence = 0
+        self._reading_policy = reading_policy
+        self._reading_listener = reading_listener
+        self._listener_error_handler = listener_error_handler
+        self._listener_error: str | None = None
 
     def start(self) -> dict[str, object]:
         with self._lock:
@@ -146,6 +157,7 @@ class ScannerSession:
             "scanning": self._requested,
             "scanner_state": self._scanner_state,
             "error": self._error,
+            "listener_error": self._listener_error,
             "count": self._sequence,
             "readings": [reading.as_dict() for reading in reversed(self._readings)],
         }
@@ -164,6 +176,7 @@ class ScannerSession:
                     reader = self._reader_factory()
                 except Exception as exc:
                     self._set_waiting_error(exc)
+                    LOGGER.warning("scanner reader open failed: %s: %s", type(exc).__name__, exc)
                     time.sleep(1)
                     continue
                 with self._lock:
@@ -178,6 +191,7 @@ class ScannerSession:
                 values = reader.read(0.25)
             except Exception as exc:
                 reader.close()
+                LOGGER.warning("scanner reader failed: %s: %s", type(exc).__name__, exc)
                 with self._lock:
                     if self._reader is reader:
                         self._reader = None
@@ -202,4 +216,30 @@ class ScannerSession:
                 return
             for value in values:
                 self._sequence += 1
-                self._readings.append(Reading(self._sequence, value, now))
+                decision: dict[str, object] | None = None
+                if self._reading_policy is not None:
+                    try:
+                        decision = self._reading_policy(value)
+                    except Exception as exc:
+                        decision = {
+                            "accepted": False,
+                            "classification": "TECHNICAL_ERROR",
+                            "recognition": {"error": f"{type(exc).__name__}: {exc}"},
+                        }
+                reading = Reading(self._sequence, value, now, decision)
+                self._readings.append(reading)
+                if self._reading_listener is not None:
+                    try:
+                        self._reading_listener(reading)
+                    except Exception as exc:
+                        # A capture observer is not allowed to interrupt UART.
+                        self._listener_error = f"{type(exc).__name__}: {exc}"
+                        LOGGER.error("scanner reading listener failed: %s", self._listener_error)
+                        if self._listener_error_handler is not None:
+                            try:
+                                self._listener_error_handler(exc)
+                            except Exception as handler_exc:
+                                self._listener_error = (
+                                    f"{type(exc).__name__}: {exc}; "
+                                    f"error_handler {type(handler_exc).__name__}: {handler_exc}"
+                                )

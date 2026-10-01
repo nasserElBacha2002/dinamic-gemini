@@ -2,8 +2,8 @@
 
 Módulo aislado para una Raspberry Pi que publica una página local, recibe
 lecturas RAW de un scanner serial y mantiene un snapshot local de configuración
-de reconocimiento por cliente/proveedor. Las lecturas todavía no son interpretadas
-ni filtradas por esas reglas; esa integración pertenece a la fase siguiente.
+de reconocimiento por cliente/proveedor. Antes de escanear se seleccionan cliente
+y proveedor (o **Todos**) exclusivamente desde ese snapshot local.
 
 ## Decisiones y alcance
 
@@ -95,20 +95,53 @@ El servicio reintenta abrir el scanner si no está conectado y tras una lectura
 que falle. Detener el escaneo desde la página cierra el dispositivo; iniciar ya
 iniciado y detener ya detenido son operaciones seguras.
 
-## Configuración offline (Fase 1)
+## Configuración offline y selección (Fases 1 y 2)
 
-El backend debe exponer `GET /api/v3/clients/{client_id}/recognition-config`. La
-Raspberry no pide usuario/contraseña en su interfaz local. La autorización de la
-sincronización sigue separada y, mientras el backend mantenga su JWT actual, puede
-provisionarse `DINAMIC_BACKEND_BEARER_TOKEN` en el archivo de entorno del servicio.
-No se almacena ni expone ese token dentro del snapshot.
+El backend expone `GET /api/v3/raspberry/recognition-config`, autenticado con
+`X-Device-Token`. La Raspberry no pide usuario/contraseña en su interfaz local y
+no almacena ni expone el token dentro del snapshot.
 
 Endpoints locales disponibles:
 
 - `GET /api/config`: estado del snapshot y última sincronización.
 - `POST /api/config/sync`: intenta actualizar; ante error conserva last-known-good.
-- `GET /api/config/suppliers`: proveedores disponibles offline.
-- `GET /api/config/suppliers/{supplier_id}`: sources y profiles ITEM/POSITION.
+- `GET /api/config/clients`, `GET /api/config/clients/{client_id}` y sus rutas
+  `/suppliers`: configuración disponible offline por cliente/proveedor.
+- `GET /api/selection` y `POST /api/selection`: selección operacional
+  `{ "client_id": "...", "supplier_id": null | "..." }`.
+
+`supplier_id: null` significa **Todos**: conserva el valor RAW y no intenta
+perfiles SUPPLIER ni autodetección. No representa DINAMIC. Con un proveedor
+específico, ITEM y POSITION se resuelven por separado: `SUPPLIER` aplica el
+perfil local determinista; `DINAMIC` usa D1 para ITEM y DINAMIC_POSITION para
+POSITION. Estructuras SUPPLIER que el scanner local no puede resolver (por
+ejemplo GS1) quedan como no resueltas y no hacen fallback a DINAMIC.
+
+La selección sólo cambia con el scanner detenido; cambiar cliente desde la UI
+restablece proveedor a Todos. La selección es deliberadamente efímera.
+
+## Captura y TXT de pasillo (Fase 3)
+
+Ingresá un código de pasillo y usá **Iniciar captura**. La captura congela la
+selección actual, conserva únicamente resultados F2 exportables en su orden de
+lectura y, al finalizar, escribe `<pasillo>.txt` de forma atómica. El directorio
+se configura con `DINAMIC_EXPORT_DIRECTORY` (por defecto,
+`/var/lib/dinamic-raspberry-scanner/exports`). Un archivo existente no se
+sobrescribe.
+
+El formato sigue el importador existente: ITEM DINAMIC conserva D1 canónico y
+POSITION DINAMIC v2 se escribe como `POSITION|label_id|pallet|side`; JSON
+`DINAMIC_POSITION` nunca se exporta. Los payloads supplier se conservan RAW
+para que el importador los valide con el perfil backend. El TXT no transporta
+`supplier_id`: para un pasillo nuevo con más de un proveedor, la resolución
+posterior del importador puede resultar ambigua; la Raspberry no inventa un
+header ni consulta/crea pasillos remotamente.
+
+Tras una exportación exitosa, `GET /api/capture/download` entrega únicamente
+el archivo final asociado a la captura actual como attachment. No acepta
+paths ni nombres de archivo del cliente y sigue el mismo modelo sin
+autenticación de la interfaz local; debe exponerse sólo en la red local
+prevista para el scanner.
 
 La aplicación no sincroniza automáticamente al arrancar en esta fase: una actualización
 debe dispararse explícitamente. Esto evita convertir un problema de conectividad o

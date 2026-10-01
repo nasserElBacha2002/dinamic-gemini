@@ -5,21 +5,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from config.repository import SnapshotRepository
 from config.service import ConfigService
 from config.sync import BackendSnapshotClient
-from scanner_service import ScannerSession, SerialLineReader
+from capture import CaptureError, CaptureService
+from recognition import RecognitionService, SelectionError
+from scanner_service import Reading, ScannerSession, SerialLineReader
 
 
 ROOT = Path(__file__).resolve().parent
+LOGGER = logging.getLogger(__name__)
 
 
 def settings_from_environment() -> tuple[str | None, int, int]:
@@ -32,7 +36,12 @@ def settings_from_environment() -> tuple[str | None, int, int]:
 def make_handler(
     session: ScannerSession,
     config_service: ConfigService,
+    recognition_service: RecognitionService,
+    capture_service: CaptureService,
+    export_directory: Path | None = None,
 ) -> type[BaseHTTPRequestHandler]:
+    selection_operation_lock = threading.Lock()
+
     class RequestHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
             path = self.path.split("?", 1)[0]
@@ -47,6 +56,8 @@ def make_handler(
             if path == "/api/state":
                 state = session.snapshot()
                 state["config"] = config_service.status()
+                state["recognition"] = recognition_service.selection()
+                state["capture"] = capture_service.snapshot()
                 self._send_json(
                     HTTPStatus.OK,
                     state,
@@ -58,6 +69,18 @@ def make_handler(
                     HTTPStatus.OK,
                     config_service.status(),
                 )
+                return
+
+            if path == "/api/selection":
+                self._send_json(HTTPStatus.OK, recognition_service.selection())
+                return
+
+            if path == "/api/capture":
+                self._send_json(HTTPStatus.OK, capture_service.snapshot())
+                return
+
+            if path == "/api/capture/download":
+                self._send_capture_download()
                 return
 
             if path == "/api/config/clients":
@@ -160,17 +183,23 @@ def make_handler(
             path = self.path.split("?", 1)[0]
 
             if path == "/api/scanning/start":
-                self._send_json(
-                    HTTPStatus.OK,
-                    session.start(),
-                )
+                # Serialize start against selection updates so one session never
+                # begins with a selection concurrently being replaced.
+                with selection_operation_lock:
+                    if capture_service.snapshot()["state"] == "ACTIVE":
+                        self._send_json(HTTPStatus.CONFLICT, {"error": "capture_controls_scanner"})
+                        return
+                    state = session.start()
+                self._send_json(HTTPStatus.OK, state)
                 return
 
             if path == "/api/scanning/stop":
-                self._send_json(
-                    HTTPStatus.OK,
-                    session.stop(),
-                )
+                with selection_operation_lock:
+                    if capture_service.snapshot()["state"] == "ACTIVE":
+                        self._send_json(HTTPStatus.CONFLICT, {"error": "capture_controls_scanner"})
+                        return
+                    state = session.stop()
+                self._send_json(HTTPStatus.OK, state)
                 return
 
             if path == "/api/config/sync":
@@ -178,6 +207,61 @@ def make_handler(
                     HTTPStatus.OK,
                     config_service.sync(),
                 )
+                return
+
+            if path == "/api/selection":
+                try:
+                    payload = self._read_json_body()
+                    with selection_operation_lock:
+                        if capture_service.snapshot()["state"] == "ACTIVE":
+                            raise SelectionError("selection_locked_while_capture_active")
+                        selection = recognition_service.select(
+                            payload.get("client_id"),
+                            payload.get("supplier_id"),
+                            scanning=bool(session.snapshot()["scanning"]),
+                        )
+                except SelectionError as exc:
+                    self._send_json(HTTPStatus.CONFLICT if str(exc) in {"selection_locked_while_scanning", "selection_locked_while_capture_active"} else HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
+                    return
+                self._send_json(HTTPStatus.OK, selection)
+                return
+
+            if path == "/api/capture/start":
+                try:
+                    payload = self._read_json_body()
+                    with selection_operation_lock:
+                        session_before = session.snapshot()
+                        if session_before["scanner_state"] == "not_configured":
+                            raise CaptureError("scanner_not_configured")
+                        if session_before["scanning"]:
+                            raise CaptureError("scanner_already_active")
+                        capture = capture_service.start(payload.get("aisle_code"))
+                        scanner_state = session.start()
+                        if not scanner_state["scanning"]:
+                            capture_service.abort_start("scanner_not_started")
+                            LOGGER.error("scanner start failed during capture start")
+                            raise CaptureError("scanner_not_started")
+                except CaptureError as exc:
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
+                    return
+                self._send_json(HTTPStatus.OK, capture)
+                return
+
+            if path == "/api/capture/finish":
+                try:
+                    with selection_operation_lock:
+                        session.stop()
+                        capture = capture_service.finish()
+                except CaptureError as exc:
+                    self._send_json(HTTPStatus.CONFLICT, {"error": str(exc), "capture": capture_service.snapshot()})
+                    return
+                self._send_json(HTTPStatus.OK, capture)
                 return
 
             self._send_json(
@@ -210,6 +294,63 @@ def make_handler(
             )
             self.end_headers()
             self.wfile.write(content)
+
+        def _send_capture_download(self) -> None:
+            snapshot = capture_service.snapshot()
+            filename = snapshot.get("filename")
+            if (
+                snapshot.get("state") != "FINISHED"
+                or not isinstance(filename, str)
+                or export_directory is None
+            ):
+                self._send_json(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "capture_download_unavailable"},
+                )
+                return
+
+            try:
+                directory = export_directory.resolve()
+                file_path = (directory / filename).resolve()
+                if Path(filename).name != filename or not filename.endswith(".txt"):
+                    raise ValueError("invalid capture filename")
+                file_path.relative_to(directory)
+                if not file_path.is_file():
+                    raise FileNotFoundError(file_path)
+                content = file_path.read_bytes()
+            except (OSError, ValueError) as exc:
+                LOGGER.warning(
+                    "capture download unavailable filename=%r reason=%s: %s",
+                    filename,
+                    type(exc).__name__,
+                    exc,
+                )
+                self._send_json(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "capture_download_unavailable"},
+                )
+                return
+
+            escaped_filename = filename.replace("\\", "\\\\").replace('"', '\\"')
+            disposition = (
+                f'attachment; filename="{escaped_filename}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Disposition", disposition)
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+
+        def _read_json_body(self) -> dict[str, object]:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 1 or length > 4096:
+                raise ValueError("invalid request body")
+            value = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError("request body must be an object")
+            return value
 
         def _send_json(
             self,
@@ -246,6 +387,9 @@ def build_session(
     device: str | None,
     baud_rate: int,
     max_readings: int,
+    reading_policy: Callable[[str], dict[str, object]] | None = None,
+    reading_listener: Callable[[Reading], None] | None = None,
+    listener_error_handler: Callable[[Exception], None] | None = None,
 ) -> ScannerSession:
     factory: Callable[[], SerialLineReader] | None = None
 
@@ -255,12 +399,14 @@ def build_session(
                 device,
                 baud_rate,
             )
-
         factory = create_reader
 
     return ScannerSession(
         factory,
         max_readings=max_readings,
+        reading_policy=reading_policy,
+        reading_listener=reading_listener,
+        listener_error_handler=listener_error_handler,
     )
 
 
@@ -287,6 +433,7 @@ def run_config_auto_sync(
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     default_device, default_baud_rate, default_max_readings = (
         settings_from_environment()
     )
@@ -327,12 +474,6 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-
-    session = build_session(
-        args.device,
-        args.baud_rate,
-        args.max_readings,
-    )
 
     config_path = Path(
         os.environ.get(
@@ -382,6 +523,22 @@ def main() -> None:
         SnapshotRepository(config_path),
         backend_client,
     )
+    recognition_service = RecognitionService(config_service)
+    export_directory = Path(
+        os.environ.get(
+            "DINAMIC_EXPORT_DIRECTORY",
+            "/var/lib/dinamic-raspberry-scanner/exports",
+        )
+    )
+    capture_service = CaptureService(recognition_service, export_directory)
+    session = build_session(
+        args.device,
+        args.baud_rate,
+        args.max_readings,
+        recognition_service.process,
+        capture_service.record,
+        capture_service.report_listener_error,
+    )
 
     sync_stop_event = threading.Event()
 
@@ -402,6 +559,9 @@ def main() -> None:
         make_handler(
             session,
             config_service,
+            recognition_service,
+            capture_service,
+            export_directory,
         ),
     )
 
