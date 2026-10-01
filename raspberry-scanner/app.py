@@ -256,7 +256,7 @@ def build_session(
                 baud_rate,
             )
 
-    factory = create_reader
+        factory = create_reader
 
     return ScannerSession(
         factory,
