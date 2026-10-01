@@ -713,10 +713,11 @@ def test_preview_raspberry_pipe_items_without_preexisting_aisle() -> None:
 
 def test_preview_invalid_d1_then_valid_same_label_id_keeps_good_importable() -> None:
     """BAD D1 + GOOD D1 same LABEL_ID: invalid must not claim secondary_key identity."""
-    from src.domain.local_csv_import.statuses import LOCAL_CSV_IMPORT_STATUS_PREVIEWED
-    from src.domain.product_labels.format import build_product_label_payload
     import json
     from pathlib import Path
+
+    from src.domain.local_csv_import.statuses import LOCAL_CSV_IMPORT_STATUS_PREVIEWED
+    from src.domain.product_labels.format import build_product_label_payload
 
     vectors_path = (
         Path(__file__).resolve().parents[3]
