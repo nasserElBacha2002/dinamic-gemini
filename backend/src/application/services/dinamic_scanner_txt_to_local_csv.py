@@ -88,6 +88,14 @@ def build_parsed_local_csv_from_scanner_txt(
         position_payload_raw, payload_errors = _position_payload_raw(product)
         errors = tuple(dict.fromkeys((*product.errors, *payload_errors)))
         scan_ref = _scan_row_ref(export_id, product.line_number)
+        # Invalid scanner reads must not claim physical LABEL_ID for CSV
+        # secondary_key uniqueness (photo:scan_ref remains unique per line).
+        # Preserve the observed id in notes only — audit trail, never claimable.
+        observed_label_id = (product.label_id or "").strip()
+        claim_label_id = "" if errors else observed_label_id
+        notes = "dinamic-scanner-txt"
+        if errors and observed_label_id:
+            notes = f"dinamic-scanner-txt; observed_label_id={observed_label_id}"
         values: dict[str, str] = {
             "schema_version": SCHEMA_VERSION_WITH_LABEL_ID,
             "export_id": export_id,
@@ -108,8 +116,8 @@ def build_parsed_local_csv_from_scanner_txt(
             "source": LOCAL_CODE_SCAN_DETECTION_SOURCE,
             "requires_review": "false",
             "error_code": "",
-            "notes": "dinamic-scanner-txt",
-            "label_id": product.label_id,
+            "notes": notes,
+            "label_id": claim_label_id,
             "position_label_id": position_label_id,
             "position_payload_raw": position_payload_raw,
         }

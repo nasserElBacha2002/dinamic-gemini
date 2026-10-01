@@ -70,6 +70,7 @@ def issue_product_labels(
             )
         )
     except Exception as exc:
+        # ProductLabelIssueValidationError → mapped 422; other unexpected errors propagate.
         reraise_if_mapped(exc)
         raise
 

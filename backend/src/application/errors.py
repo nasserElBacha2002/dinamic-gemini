@@ -667,6 +667,16 @@ class ProductLabelClaimRepositoryUnavailableError(RuntimeError):
     """Fail-closed: claim repository required when persisting D1 label_id."""
 
 
+class ProductLabelIssueValidationError(Exception):
+    """Client-facing validation failure when minting product labels (not internal bugs)."""
+
+    def __init__(
+        self, message: str, *, code: str = "PRODUCT_LABEL_ISSUE_INVALID"
+    ) -> None:
+        self.code = code
+        super().__init__(message)
+
+
 class ClientPositionLabelAccessDeniedError(Exception):
     def __init__(self, message: str = "Position label access denied") -> None:
         self.code = "POSITION_LABEL_ACCESS_DENIED"

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Protocol
 
 from src.application.errors import ProductLabelIdCollisionError
@@ -26,6 +26,13 @@ class _IssuedProductLabelRow(Protocol):
     payload: object
     created_at: datetime
     created_by: object | None
+
+
+def _as_sql_datetime(value: datetime) -> datetime:
+    """DATETIME2 is timezone-naive; strip tz after normalizing to UTC."""
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
 
 
 class SqlIssuedProductLabelRepository(IssuedProductLabelRepository):
@@ -52,7 +59,7 @@ class SqlIssuedProductLabelRepository(IssuedProductLabelRepository):
                         row.format_version,
                         row.checksum,
                         row.payload,
-                        row.created_at,
+                        _as_sql_datetime(row.created_at),
                         row.created_by,
                     ),
                 )
@@ -99,6 +106,9 @@ class SqlIssuedProductLabelRepository(IssuedProductLabelRepository):
 
     @staticmethod
     def _map(row: _IssuedProductLabelRow) -> IssuedProductLabel:
+        created = row.created_at
+        if created is not None and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
         return IssuedProductLabel(
             id=str(row.id),
             client_id=str(row.client_id),
@@ -108,6 +118,6 @@ class SqlIssuedProductLabelRepository(IssuedProductLabelRepository):
             format_version=str(row.format_version),
             checksum=str(row.checksum),
             payload=str(row.payload),
-            created_at=row.created_at,
+            created_at=created,
             created_by=str(row.created_by) if row.created_by is not None else None,
         )

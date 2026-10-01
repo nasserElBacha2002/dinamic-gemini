@@ -35,6 +35,28 @@ def test_txt_supplier_simple_item_and_position() -> None:
     assert not parsed.products[0].errors
 
 
+def test_txt_supplier_unique_lpn_duplicate_deduped() -> None:
+    """MINIMAL LPN identity is a unique instance — second identical label is skipped."""
+    item = minimal_supplier_item_configuration(
+        expected_prefix="PRD",
+        exact_length=10,
+        character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+    )
+    position = minimal_supplier_position_configuration(
+        expected_prefix="LOC",
+        exact_length=10,
+        character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+    )
+    parsed = parse_dinamic_scanner_txt(
+        b"LOC-A01-02\nPRD-123456\nPRD-123456\n",
+        item_configuration=item,
+        position_configuration=position,
+    )
+    assert len(parsed.products) == 1
+    assert parsed.products[0].label_id == "PRD-123456"
+    assert any("duplicate_unique_label_id" in w for w in parsed.parse_warnings)
+
+
 def test_txt_without_profiles_keeps_unknown_record() -> None:
     parsed = parse_dinamic_scanner_txt(b"LOC-A01-02\nPRD-123456\n")
     assert parsed.positions == ()

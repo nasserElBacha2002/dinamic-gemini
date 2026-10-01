@@ -1109,4 +1109,24 @@ export class CaptureRepository {
     );
     return new Set(rows.map((r) => r.asset_id));
   }
+
+  /**
+   * Asset ids claimed by other *open* capture sessions (not completed/cancelled).
+   * Prevents aisle B from re-admitting gallery photos still bound to aisle A's
+   * in-progress work, without forever-blocking historical completed sessions.
+   */
+  async claimedAssetIdsExcludingSession(sessionId: string): Promise<Set<string>> {
+    const placeholders = OPEN_CAPTURE_SESSION_STATUSES.map(() => '?').join(', ');
+    const rows = await this.db.getAllAsync<{ asset_id: string }>(
+      `SELECT DISTINCT p.asset_id
+       FROM capture_photos p
+       INNER JOIN capture_sessions s ON s.id = p.capture_session_id
+       WHERE p.capture_session_id IS NOT NULL
+         AND p.capture_session_id != ?
+         AND s.status IN (${placeholders});`,
+      sessionId,
+      ...OPEN_CAPTURE_SESSION_STATUSES,
+    );
+    return new Set(rows.map((r) => r.asset_id));
+  }
 }

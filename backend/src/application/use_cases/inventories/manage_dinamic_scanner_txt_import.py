@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Protocol
 
+from src.application.errors import InventoryNotFoundError
 from src.application.ports.clock import Clock
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.repositories import InventoryRepository
@@ -15,6 +16,7 @@ from src.application.services.dinamic_scanner_aisle_resolver import DinamicScann
 from src.application.services.dinamic_scanner_txt_parser import (
     aisle_code_from_txt_filename,
     parse_dinamic_scanner_txt,
+    scanner_txt_has_pipe_item_transport,
 )
 from src.application.services.dinamic_scanner_txt_to_local_csv import (
     build_parsed_local_csv_from_scanner_txt,
@@ -105,7 +107,12 @@ class PreviewDinamicScannerTxtImport:
         inventory_id: str,
         aisle: Aisle | None,
     ):
-        """Resolve effective SUPPLIER profiles for the aisle when available."""
+        """Resolve effective SUPPLIER profiles for the aisle when available.
+
+        When the aisle does not exist yet (will be created on confirm), try the
+        inventory's sole client supplier so ITEM ``id|qty`` lines can be validated
+        with the same profiles used after aisle creation.
+        """
         if self._label_profile_resolver is None or self._extraction_profile_repo is None:
             return None
         inventory: Inventory | _InventoryClient | None = self._inventory_repo.get_by_id(
@@ -115,6 +122,13 @@ class PreviewDinamicScannerTxtImport:
             return None
         client_id = inventory.client_id
         supplier_id = aisle.client_supplier_id if aisle is not None else None
+        if not supplier_id:
+            try:
+                supplier_id = self._aisle_resolver.resolve_client_supplier_id(
+                    inventory_id=inventory_id
+                )
+            except (DinamicScannerTxtImportError, InventoryNotFoundError):
+                supplier_id = None
         if not client_id or not supplier_id:
             return None
         from src.application.services.label_profile_resolver import LabelProfileResolutionContext
@@ -156,6 +170,15 @@ class PreviewDinamicScannerTxtImport:
             inventory_id=inventory_id,
             aisle=existing_aisle,
         )
+        if validation_ctx is None and scanner_txt_has_pipe_item_transport(content):
+            # Pipe ITEM transport requires profile validation — never silent-accept.
+            # Prefer existing supplier resolution errors; if a sole supplier exists but the
+            # ITEM profile context still cannot be built, fail closed with the supplier-required code.
+            self._aisle_resolver.resolve_client_supplier_id(inventory_id=inventory_id)
+            raise DinamicScannerTxtImportError(
+                "DINAMIC_SCANNER_TXT_CLIENT_SUPPLIER_REQUIRED",
+                "Supplier ITEM profile is required to validate identifier|quantity lines",
+            )
         parsed_txt = parse_dinamic_scanner_txt(
             content,
             max_lines=self._max_lines,

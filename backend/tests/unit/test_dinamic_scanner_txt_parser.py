@@ -164,6 +164,230 @@ def test_aisle_code_rejects_path_traversal() -> None:
         aisle_code_from_txt_filename("../secret.txt")
 
 
+def test_parser_pipe_item_without_validation_context_is_not_accepted() -> None:
+    """Transport recognition alone must not invent a valid ITEM without profiles."""
+    parsed = parse_dinamic_scanner_txt(
+        _txt(
+            "ASI-DDWDD8|48",
+            "ASI-LDFMEE|10",
+            "ASI-U59KNU|8",
+        )
+    )
+    assert parsed.products == ()
+    assert any("pipe_item_requires_validation_context" in w for w in parsed.parse_warnings)
+
+
+def _product_sku_pipe_item_config(*, expected_prefix: str):
+    from dataclasses import replace
+
+    from src.domain.client_supplier.extraction_profile import (
+        CharacterSetPolicy,
+        DeterministicBarcodeRules,
+        FieldMappingRule,
+        FieldMappingSource,
+        ItemLabelSemanticType,
+        QuantityExtractionRules,
+        QuantityPresence,
+        RecognitionMode,
+        minimal_supplier_item_configuration,
+    )
+
+    return replace(
+        minimal_supplier_item_configuration(
+            expected_prefix=expected_prefix,
+            character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+        ),
+        recognition_mode=RecognitionMode.FULL,
+        required_fields=("sku",),
+        semantic_type=ItemLabelSemanticType.PRODUCT_SKU.value,
+        quantity_rules=QuantityExtractionRules(
+            required=False,
+            minimum=1,
+            expected_presence=QuantityPresence.OPTIONAL,
+        ),
+        deterministic=DeterministicBarcodeRules(
+            expected_prefix=expected_prefix,
+            character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+            field_mappings=(FieldMappingRule("sku", FieldMappingSource.WHOLE, None),),
+        ),
+    )
+
+
+def test_parser_real_raspberry_pipe_items_without_position_via_profile() -> None:
+    """Real Raspberry file shape: identifier|qty only — no POSITION header."""
+    from src.domain.client_supplier.extraction_profile import (
+        CharacterSetPolicy,
+        minimal_supplier_position_configuration,
+    )
+
+    item = _product_sku_pipe_item_config(expected_prefix="ASI-")
+    position = minimal_supplier_position_configuration(
+        expected_prefix="LOC",
+        exact_length=10,
+        character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+    )
+    parsed = parse_dinamic_scanner_txt(
+        _txt(
+            "ASI-DDWDD8|48",
+            "ASI-LDFMEE|10",
+            "ASI-U59KNU|8",
+        ),
+        item_configuration=item,
+        position_configuration=position,
+    )
+    assert parsed.positions == ()
+    assert len(parsed.products) == 3
+    assert parsed.products[0].internal_code == "ASI-DDWDD8"
+    assert parsed.products[0].quantity == 48
+    assert parsed.products[0].label_id == ""
+    assert "product:no_valid_active_position" not in parsed.products[0].errors
+    assert parsed.products[0].errors == ()
+    assert parsed.products[1].internal_code == "ASI-LDFMEE"
+    assert parsed.products[2].internal_code == "ASI-U59KNU"
+
+
+def test_parser_pipe_item_validated_via_supplier_profile_identifier() -> None:
+    """Profile validates identifier; pipe quantity is transport (no hardcoded ASI rules)."""
+    from src.domain.client_supplier.extraction_profile import (
+        CharacterSetPolicy,
+        minimal_supplier_position_configuration,
+    )
+
+    item = _product_sku_pipe_item_config(expected_prefix="ASI-")
+    position = minimal_supplier_position_configuration(
+        expected_prefix="LOC",
+        exact_length=10,
+        character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+    )
+    parsed = parse_dinamic_scanner_txt(
+        _txt("LOC-A01-02", "ASI-DDWDD8|48", "ASI-DDWDD8|12"),
+        item_configuration=item,
+        position_configuration=position,
+    )
+    assert len(parsed.positions) == 1
+    assert len(parsed.products) == 2
+    assert all(p.label_id == "" for p in parsed.products)
+    assert parsed.products[0].internal_code == "ASI-DDWDD8"
+    assert parsed.products[0].quantity == 48
+    assert parsed.products[1].internal_code == "ASI-DDWDD8"
+    assert parsed.products[1].quantity == 12
+
+
+def test_parser_invalid_pipe_identifier_rejected_via_profile() -> None:
+    from src.domain.client_supplier.extraction_profile import (
+        CharacterSetPolicy,
+        minimal_supplier_position_configuration,
+    )
+
+    item = _product_sku_pipe_item_config(expected_prefix="ASI-")
+    position = minimal_supplier_position_configuration(
+        expected_prefix="LOC",
+        exact_length=10,
+        character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+    )
+    parsed = parse_dinamic_scanner_txt(
+        _txt("ASI-DDWDD8|48", "WRONG-CODE|10"),
+        item_configuration=item,
+        position_configuration=position,
+    )
+    assert len(parsed.products) == 1
+    assert parsed.products[0].internal_code == "ASI-DDWDD8"
+    assert any("pipe_identifier" in w for w in parsed.parse_warnings)
+
+
+def test_parser_repeated_sku_not_deduped_product_sku_semantic() -> None:
+    from src.domain.client_supplier.extraction_profile import (
+        CharacterSetPolicy,
+        minimal_supplier_position_configuration,
+    )
+
+    item = _product_sku_pipe_item_config(expected_prefix="SKU")
+    position = minimal_supplier_position_configuration(
+        expected_prefix="LOC",
+        exact_length=10,
+        character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+    )
+    parsed = parse_dinamic_scanner_txt(
+        _txt("LOC-A01-02", "SKU-111|5", "SKU-111|7"),
+        item_configuration=item,
+        position_configuration=position,
+    )
+    assert len(parsed.products) == 2
+    assert parsed.products[0].internal_code == "SKU-111"
+    assert parsed.products[1].internal_code == "SKU-111"
+
+
+def test_parser_duplicate_unique_label_id_deduped_once() -> None:
+    line = _valid_d1_line(label_id="A1B2C3D4E5", sku="SKU001", qty=100)
+    parsed = parse_dinamic_scanner_txt(
+        _txt("POSITION|POS001|04|RIGHT", line, line)
+    )
+    assert len(parsed.products) == 1
+    assert parsed.products[0].label_id == "A1B2C3D4E5"
+    assert any("duplicate_unique_label_id" in w for w in parsed.parse_warnings)
+
+
+def test_parser_same_label_id_different_sku_is_conflict() -> None:
+    a = _valid_d1_line(label_id="A1B2C3D4E5", sku="SKU001", qty=100)
+    b = _valid_d1_line(label_id="A1B2C3D4E5", sku="SKU002", qty=100)
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", a, b))
+    assert len(parsed.products) == 2
+    assert parsed.products[0].errors == ()
+    assert "unique_label_id:identity_conflict" in parsed.products[1].errors
+    assert any("unique_label_id_identity_conflict" in w for w in parsed.parse_warnings)
+
+
+def test_parser_same_label_id_different_quantity_is_conflict() -> None:
+    a = _valid_d1_line(label_id="A1B2C3D4E5", sku="SKU001", qty=100)
+    b = _valid_d1_line(label_id="A1B2C3D4E5", sku="SKU001", qty=50)
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", a, b))
+    assert len(parsed.products) == 2
+    assert parsed.products[0].errors == ()
+    assert "unique_label_id:identity_conflict" in parsed.products[1].errors
+
+
+def test_parser_invalid_d1_does_not_reserve_label_id_for_later_valid() -> None:
+    vectors = _load_vectors()
+    bad = next(
+        v["tampered_payload"]
+        for v in vectors["vectors"]
+        if v["name"] == "checksum-fail-tampered-qty"
+    )
+    # Ensure bad and good share the same label_id when possible; rebuild good from bad parts.
+    parts = bad.split("|")
+    assert len(parts) >= 4
+    label_id = parts[1]
+    good = _valid_d1_line(label_id=label_id, sku="SKU001", qty=100)
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", bad, good))
+    assert len(parsed.products) == 2
+    assert "d1:checksum_failed" in parsed.products[0].errors
+    assert parsed.products[1].errors == ()
+    assert parsed.products[1].label_id == label_id.upper()
+    assert not any("duplicate_unique_label_id" in w for w in parsed.parse_warnings)
+
+
+def test_parser_same_sku_distinct_d1_label_ids_kept() -> None:
+    a = _valid_d1_line(label_id="A1B2C3D4E5", sku="SKU001", qty=100)
+    b = _valid_d1_line(label_id="FGHJKMNPQR", sku="SKU001", qty=50)
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", a, b))
+    assert len(parsed.products) == 2
+    assert parsed.products[0].label_id == "A1B2C3D4E5"
+    assert parsed.products[1].label_id == "FGHJKMNPQR"
+    assert parsed.products[0].internal_code == "SKU001"
+    assert parsed.products[1].internal_code == "SKU001"
+
+
+def test_parser_existing_position_format_still_works() -> None:
+    parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", _valid_d1_line()))
+    assert parsed.positions[0].label_id == "POS001"
+    assert parsed.products[0].errors == ()
+
+
+def test_parser_d1_without_position_still_errors() -> None:
+    parsed = parse_dinamic_scanner_txt(_txt(_valid_d1_line()))
+    assert "product:no_valid_active_position" in parsed.products[0].errors
+
+
 def test_txt_valid_d1_accepted() -> None:
     line = _valid_d1_line()
     parsed = parse_dinamic_scanner_txt(_txt("POSITION|POS001|04|RIGHT", line))

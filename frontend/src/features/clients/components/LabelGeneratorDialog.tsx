@@ -13,6 +13,7 @@ import {
 import type { ClientSupplier } from '../../../api/types';
 import { issueProductLabels } from '../../../api/productLabelsApi';
 import BaseDialog from '../../../components/ui/BaseDialog';
+import { getApiErrorMessage } from '../../../utils/apiErrors';
 import LabelPrintSheet, { LabelPrintPortal } from './LabelPrintSheet';
 import {
   isValidLabelCode,
@@ -26,6 +27,7 @@ import {
   LABEL_COPIES_MIN,
   type LabelSheetData,
 } from './labelPrintUtils';
+import { parseProductLabelPayload } from './productLabelPayload';
 
 export interface LabelGeneratorDialogProps {
   open: boolean;
@@ -213,6 +215,12 @@ export default function LabelGeneratorDialog({
         count: copies,
       });
       const payloads = minted.items.map((item) => item.payload);
+      for (const payload of payloads) {
+        const parsed = parseProductLabelPayload(payload);
+        if (parsed.status !== 'VALID' || !parsed.labelId) {
+          throw new Error(t('clients.labels.issue_failed', { defaultValue: 'No se pudieron emitir las etiquetas.' }));
+        }
+      }
       flushSync(() => {
         setIssuedPayloads(payloads);
       });
@@ -235,8 +243,15 @@ export default function LabelGeneratorDialog({
       window.addEventListener('afterprint', restoreTitle, { once: true });
       window.print();
       window.setTimeout(restoreTitle, 1000);
-    } catch {
-      setIssueError(t('clients.labels.issue_failed', { defaultValue: 'No se pudieron emitir las etiquetas.' }));
+    } catch (error) {
+      const detail = getApiErrorMessage(error, '');
+      setIssueError(
+        detail.trim()
+          ? detail
+          : t('clients.labels.issue_failed', {
+              defaultValue: 'No se pudieron emitir las etiquetas.',
+            })
+      );
     } finally {
       setIssuing(false);
     }
@@ -310,6 +325,7 @@ export default function LabelGeneratorDialog({
             value={code}
             onChange={(e) => {
               setCode(e.target.value);
+              setIssuedPayloads(null);
               if (codeError) setCodeError('');
             }}
             required
@@ -323,6 +339,7 @@ export default function LabelGeneratorDialog({
             value={quantity}
             onChange={(e) => {
               setQuantity(e.target.value);
+              setIssuedPayloads(null);
               if (quantityError) setQuantityError('');
             }}
             required
@@ -366,7 +383,10 @@ export default function LabelGeneratorDialog({
             label={t('clients.labels.copies')}
             type="number"
             value={copiesInput}
-            onChange={(e) => setCopiesInput(e.target.value)}
+            onChange={(e) => {
+              setCopiesInput(e.target.value);
+              setIssuedPayloads(null);
+            }}
             onBlur={handleCopiesBlur}
             inputProps={{ min: LABEL_COPIES_MIN, max: LABEL_COPIES_MAX }}
             required
