@@ -325,6 +325,20 @@ class FakeRepo {
     return new Set((await this.listPhotos(sessionId)).map((p) => p.asset_id));
   }
 
+  async claimedAssetIdsExcludingSession(sessionId: string) {
+    return new Set(
+      Array.from(this.photos.values())
+        .filter((p) => {
+          if (p.capture_session_id === sessionId) return false;
+          const session = this.sessions.get(p.capture_session_id);
+          if (!session) return false;
+          // Mirror repo: only open (non-terminal) sessions block re-admission.
+          return session.status !== 'completed' && session.status !== 'cancelled';
+        })
+        .map((p) => p.asset_id),
+    );
+  }
+
   async updateScanCursor(id: string, cursor: CompositeCursor) {
     const row = this.sessions.get(id);
     if (row) {
@@ -485,6 +499,127 @@ describe('CaptureService corrections', () => {
     expect(exclusive[0]?.aisle_id).toBe('aisle-2');
     const paused = (await repo.listActivitySessions()).find((s) => s.aisle_id === 'aisle-1');
     expect(paused?.status).toBe('paused');
+  });
+
+  it('switching aisles does not re-admit photos already claimed by the previous session', async () => {
+    let id = 0;
+    const repo = new FakeRepo();
+    // Gallery still contains aisle-1 photos after the aisle change (same-second / delayed index).
+    const gallery: GalleryImage[] = [
+      {
+        ...image,
+        assetId: 'a1-photo',
+        mediaStoreNumericId: 200,
+        dateAdded: 2000,
+        uri: 'file://a1-photo.jpg',
+        displayName: 'a1-photo.jpg',
+      },
+      {
+        ...image,
+        assetId: 'floor',
+        mediaStoreNumericId: 100,
+        dateAdded: 1000,
+        uri: 'file://floor.jpg',
+        displayName: 'floor.jpg',
+      },
+    ];
+    const service = track(
+      new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+        mediaStore: mediaStore(gallery),
+        stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
+        createId: () => `session-${++id}`,
+      }),
+    );
+    const base = {
+      inventoryId: 'inv-1',
+      inventoryName: 'Inventario',
+      permission: { granted: true, limited: false, canAskAgain: true },
+    };
+
+    await service.start({ ...base, aisleId: 'aisle-1', aisleName: 'A1' });
+    const session1 = service.getSnapshot().session?.id;
+    expect(session1).toBeTruthy();
+    // Simulate photos already admitted for aisle 1 (drone batch).
+    await repo.upsertPhoto(session1!, gallery[0]!, 'stable');
+
+    service.prepareNewCapture(
+      {
+        inventoryId: 'inv-1',
+        inventoryName: 'Inventario',
+        aisleId: 'aisle-2',
+        aisleName: 'A2',
+      },
+      { forceClear: true },
+    );
+    expect(service.getSnapshot().photos).toEqual([]);
+
+    await service.startNewSession(
+      { ...base, aisleId: 'aisle-2', aisleName: 'A2' },
+      { pauseOtherAisle: true },
+    );
+    const session2 = service.getSnapshot().session?.id;
+    expect(session2).toBeTruthy();
+    expect(session2).not.toBe(session1);
+    expect(service.getSnapshot().context?.aisleId).toBe('aisle-2');
+    expect(service.getSnapshot().photos.map((p) => p.asset_id)).not.toContain('a1-photo');
+
+    await service.requestScan();
+    expect(service.getSnapshot().photos.map((p) => p.asset_id)).not.toContain('a1-photo');
+    expect((await repo.listPhotos(session1!)).map((p) => p.asset_id)).toContain('a1-photo');
+  });
+
+  it('completed historical sessions do not forever-block gallery assets', async () => {
+    let id = 0;
+    const repo = new FakeRepo();
+    // Session starts with only the floor marker as most-recent; the historically
+    // completed asset becomes a post-start candidate (delayed / re-index).
+    const gallery: GalleryImage[] = [
+      {
+        ...image,
+        assetId: 'floor',
+        mediaStoreNumericId: 100,
+        dateAdded: 1000,
+        uri: 'file://floor.jpg',
+        displayName: 'floor.jpg',
+      },
+    ];
+    const historical: GalleryImage = {
+      ...image,
+      assetId: 'old-photo',
+      mediaStoreNumericId: 300,
+      dateAdded: 3000,
+      uri: 'file://old-photo.jpg',
+      displayName: 'old-photo.jpg',
+    };
+    const completed = session({
+      id: 'session-old',
+      status: 'completed',
+      aisle_id: 'aisle-old',
+      aisle_name: 'Old',
+    });
+    repo.sessions.set(completed.id, completed);
+    await repo.upsertPhoto(completed.id, historical, 'stable');
+
+    const service = track(
+      new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+        mediaStore: mediaStore(gallery),
+        stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
+        createId: () => `session-${++id}`,
+      }),
+    );
+    await service.start({
+      inventoryId: 'inv-1',
+      inventoryName: 'Inventario',
+      aisleId: 'aisle-new',
+      aisleName: 'New',
+      permission: { granted: true, limited: false, canAskAgain: true },
+    });
+    const claimed = await repo.claimedAssetIdsExcludingSession(service.getSnapshot().session!.id);
+    expect(claimed.has('old-photo')).toBe(false);
+
+    gallery.unshift(historical);
+    await service.requestScan();
+    expect(service.getSnapshot().photos.map((p) => p.asset_id)).toContain('old-photo');
   });
 
   it('restores an interrupted active session as paused with persisted context', async () => {

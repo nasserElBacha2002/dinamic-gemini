@@ -123,12 +123,20 @@ export function InventoryLabel({ data, headerDate, onBarcodeValidityChange }: In
         <div className="label-header-main">
           <div className="label-title">{LABEL_PRINT_TITLE}</div>
           <div className="label-header-meta">
-            {visibleLabelId ? (
-              <div className="label-id-band" data-testid="label-visible-id">
-                <span className="label-id-band__label">ID ETIQUETA:</span>
-                <span className="label-id-band__value">{visibleLabelId}</span>
-              </div>
-            ) : null}
+            <div className="label-id-band" data-testid="label-visible-id">
+              <span className="label-id-band__label">ID ETIQUETA:</span>
+              <span
+                className={[
+                  'label-id-band__value',
+                  visibleLabelId ? '' : 'label-id-band__value--pending',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                data-testid="label-id-value"
+              >
+                {visibleLabelId ?? 'Se genera al emitir'}
+              </span>
+            </div>
             <LabelRow label="CLIENTE:" value={data.clientName} rowClassName="label-row--compact" />
             <LabelRow label="PROVEEDOR:" value={data.supplierName} rowClassName="label-row--compact" />
             {data.countedBy?.trim() ? (

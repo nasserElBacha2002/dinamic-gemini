@@ -8,17 +8,28 @@ import { LABEL_PRINT_TITLE } from '../src/features/clients/components/labelPrint
 
 vi.mock('../src/api/productLabelsApi', () => ({
   issueProductLabels: vi.fn(async (_clientId: string, body: { count?: number; internal_code: string; quantity: number }) => {
+    const { buildProductLabelPayload } = await import(
+      '../src/features/clients/components/productLabelPayload'
+    );
     const count = body.count ?? 1;
     return {
-      items: Array.from({ length: count }, (_, i) => ({
-        label_id: `A1B2C3D4E${i}`,
-        internal_code: body.internal_code,
-        quantity: body.quantity,
-        format_version: 'D1',
-        checksum: '6',
-        payload: `D1|A1B2C3D4E${i}|${body.internal_code}|${body.quantity}|6`,
-        created_at: '2026-05-15T12:00:00Z',
-      })),
+      items: Array.from({ length: count }, (_, i) => {
+        const labelId = `A1B2C3D4E${i}`;
+        const payload = buildProductLabelPayload({
+          labelId,
+          internalCode: body.internal_code,
+          quantity: body.quantity,
+        });
+        return {
+          label_id: labelId,
+          internal_code: body.internal_code,
+          quantity: body.quantity,
+          format_version: 'D1',
+          checksum: payload.split('|').at(-1)!,
+          payload,
+          created_at: '2026-05-15T12:00:00Z',
+        };
+      }),
     };
   }),
 }));
@@ -396,6 +407,148 @@ describe('LabelGeneratorDialog', () => {
     await waitFor(() => {
       expect(window.print).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('shows ID ETIQUETA pending before mint and backend LABEL_ID after issue', async () => {
+    renderDialog();
+    fillRequiredFields();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^imprimir$/i })).toBeEnabled();
+    });
+    const preview = getPreviewSheet();
+    const pendingBand = within(preview).getByTestId('label-visible-id');
+    expect(pendingBand).toHaveTextContent(/ID ETIQUETA/i);
+    expect(within(pendingBand).getByTestId('label-id-value')).toHaveTextContent(
+      'Se genera al emitir'
+    );
+    expect(within(pendingBand).getByTestId('label-id-value')).not.toHaveTextContent(/A1B2C3D4E/);
+    expect(preview.querySelector('.label-card')?.getAttribute('data-label-id')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
+    await waitFor(() => {
+      expect(window.print).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(within(getPreviewSheet()).getByTestId('label-id-value')).toHaveTextContent(
+        'A1B2C3D4E0'
+      );
+    });
+    const printCard = getPrintRoot()?.querySelector('.label-card');
+    expect(printCard?.getAttribute('data-label-id')).toBe('A1B2C3D4E0');
+    expect(printCard?.getAttribute('data-scan-payload') ?? '').toMatch(/^D1\|A1B2C3D4E0\|/);
+  });
+
+  it('assigns distinct LABEL_IDs and matching D1 payloads per print copy', async () => {
+    renderDialog();
+    fillRequiredFields();
+    fireEvent.change(screen.getByRole('spinbutton', { name: /copias/i }), {
+      target: { value: '3' },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^imprimir$/i })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
+    await waitFor(() => {
+      expect(window.print).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      const cards = getPrintRoot()?.querySelectorAll('.label-card') ?? [];
+      expect(cards).toHaveLength(3);
+    });
+    const cards = Array.from(getPrintRoot()?.querySelectorAll('.label-card') ?? []);
+    const ids = cards.map((card) => card.getAttribute('data-label-id'));
+    expect(ids).toEqual(['A1B2C3D4E0', 'A1B2C3D4E1', 'A1B2C3D4E2']);
+    expect(new Set(ids).size).toBe(3);
+    for (const card of cards) {
+      const labelId = card.getAttribute('data-label-id');
+      const payload = card.getAttribute('data-scan-payload') ?? '';
+      expect(payload).toMatch(new RegExp(`^D1\\|${labelId}\\|`));
+      expect(within(card as HTMLElement).getByTestId('label-id-value')).toHaveTextContent(
+        labelId ?? ''
+      );
+    }
+  });
+
+  it('invalidates issued LABEL_IDs when code, quantity, or copies change', async () => {
+    renderDialog();
+    fillRequiredFields();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^imprimir$/i })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
+    await waitFor(() => {
+      expect(within(getPreviewSheet()).getByTestId('label-id-value')).toHaveTextContent(
+        'A1B2C3D4E0'
+      );
+    });
+
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
+      target: { value: '1931039' },
+    });
+    expect(within(getPreviewSheet()).getByTestId('label-id-value')).toHaveTextContent(
+      'Se genera al emitir'
+    );
+    expect(getPreviewSheet().querySelector('.label-card')?.getAttribute('data-label-id')).toBeNull();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^imprimir$/i })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
+    await waitFor(() => {
+      expect(within(getPreviewSheet()).getByTestId('label-id-value')).toHaveTextContent(
+        'A1B2C3D4E0'
+      );
+    });
+
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
+      target: { value: '5' },
+    });
+    expect(within(getPreviewSheet()).getByTestId('label-id-value')).toHaveTextContent(
+      'Se genera al emitir'
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^imprimir$/i })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
+    await waitFor(() => {
+      expect(within(getPreviewSheet()).getByTestId('label-id-value')).toHaveTextContent(
+        'A1B2C3D4E0'
+      );
+    });
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /copias/i }), {
+      target: { value: '2' },
+    });
+    const pendingValues = within(getPreviewSheet()).getAllByTestId('label-id-value');
+    expect(pendingValues).toHaveLength(2);
+    for (const value of pendingValues) {
+      expect(value).toHaveTextContent('Se genera al emitir');
+    }
+    expect(
+      Array.from(getPreviewSheet().querySelectorAll('.label-card')).every(
+        (card) => card.getAttribute('data-label-id') == null
+      )
+    ).toBe(true);
+  });
+
+  it('surfaces real API error when mint fails', async () => {
+    const { issueProductLabels } = await import('../src/api/productLabelsApi');
+    const { ApiError } = await import('../src/api/types');
+    vi.mocked(issueProductLabels).mockRejectedValueOnce(
+      new ApiError('invalid quantity', 422, { detail: 'invalid quantity' }),
+    );
+
+    renderDialog();
+    fillRequiredFields();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^imprimir$/i })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('label-issue-error')).toHaveTextContent(/invalid quantity/i);
+    });
+    expect(window.print).not.toHaveBeenCalled();
   });
 
   it('sets document title before print for suggested PDF filename', async () => {

@@ -246,7 +246,8 @@ export class CaptureService {
   /**
    * Clears in-memory snapshot when navigating to a different aisle, or when the
    * caller explicitly starts a brand-new capture (forceClear), so UI does not
-   * show photos/cursors from another capture.
+   * show photos/cursors from another capture. Does not delete persisted sessions
+   * or drafts of other aisles.
    */
   prepareNewCapture(context: CaptureContext, options: { forceClear?: boolean } = {}): void {
     const current = this.session;
@@ -254,6 +255,10 @@ export class CaptureService {
       current &&
       (current.inventory_id !== context.inventoryId || current.aisle_id !== context.aisleId);
     if (options.forceClear || aisleChanged) {
+      if (current) {
+        // Drop only this session's in-memory position cursor; other sessions stay intact.
+        resetPositionSession(current.id);
+      }
       this.clearCurrentSession();
       this.warning = null;
       this.emit();
@@ -430,7 +435,11 @@ export class CaptureService {
     this.scanCursor = cursorFromMarker(marker);
     this.floorCursor = this.scanCursor;
     this.lastValidCursor = this.scanCursor;
-    this.inspectedIds = new Set(recent?.assetId ? [recent.assetId] : []);
+    const claimedElsewhere = await this.repo.claimedAssetIdsExcludingSession(result.session.id);
+    this.inspectedIds = new Set(claimedElsewhere);
+    if (recent?.assetId) {
+      this.inspectedIds.add(recent.assetId);
+    }
     try {
       await this.startForeground();
       await this.repo.updateSessionStatus(result.session.id, 'active');
@@ -948,7 +957,7 @@ export class CaptureService {
     const isCurrent = session.id === this.session?.id;
     const scanCursor = isCurrent ? this.scanCursor : cursorFromSession(session, 'scan');
     const floorCursor = isCurrent ? this.floorCursor : cursorFromInitialMarker(session);
-    const inspectedIds = await this.repo.inspectedAssetIds(sessionId);
+    const inspectedIds = await this.scanInspectedAssetIds(sessionId);
     const { images } = await this.mediaStore.queryNewPhotosSince({
       scanCursor,
       floorCursor,
@@ -1181,6 +1190,18 @@ export class CaptureService {
     this.listeners.clear();
   }
 
+  private async scanInspectedAssetIds(sessionId: string): Promise<Set<string>> {
+    const [own, others] = await Promise.all([
+      this.repo.inspectedAssetIds(sessionId),
+      this.repo.claimedAssetIdsExcludingSession(sessionId),
+    ]);
+    const merged = new Set<string>(own);
+    for (const id of others) {
+      merged.add(id);
+    }
+    return merged;
+  }
+
   private async runScanOnce(sessionId = this.session?.id, allowFinishing = false): Promise<void> {
     if (!sessionId) return;
     const session = await this.repo.getSession(sessionId);
@@ -1192,7 +1213,7 @@ export class CaptureService {
     // Anchor scanning to the FIXED session start (floor), not the advancing scan cursor:
     // batch/same-second downloads and out-of-order indexing stay discoverable across scans.
     const floorCursor = isCurrent ? this.floorCursor : cursorFromInitialMarker(session);
-    const inspectedIds = await this.repo.inspectedAssetIds(sessionId);
+    const inspectedIds = await this.scanInspectedAssetIds(sessionId);
     const { images, metrics } = await this.mediaStore.queryNewPhotosSince({
       scanCursor,
       floorCursor,

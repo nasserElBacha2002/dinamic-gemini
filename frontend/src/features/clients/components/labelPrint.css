@@ -487,6 +487,15 @@
   line-height: 1.1;
 }
 
+.label-id-band__value--pending {
+  font-family: inherit;
+  font-size: 10pt;
+  font-weight: 600;
+  letter-spacing: 0;
+  opacity: 0.75;
+  text-transform: none;
+}
+
 .label-additional-item.label-primary-row {
   align-items: baseline;
   column-gap: 3mm;

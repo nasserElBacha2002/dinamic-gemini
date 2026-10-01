@@ -76,6 +76,60 @@ def test_issue_batch_unique_label_ids() -> None:
         assert repo.get_by_label_id(item.label_id) is not None
 
 
+def test_issue_single_creates_d1_payload_with_label_id_roundtrip() -> None:
+    from src.domain.product_labels.format import (
+        ProductLabelValidationStatus,
+        parse_product_label_payload,
+    )
+
+    repo = MemoryIssuedProductLabelRepository()
+    uc = IssueProductLabelsUseCase(client_repo=_Clients(), issued_repo=repo, clock=_Clock())
+    result = uc.execute(
+        IssueProductLabelsCommand(
+            client_id="client-1",
+            internal_code="12901904",
+            quantity=192904,
+            count=1,
+            principal=_platform(),
+        )
+    )
+    assert len(result.items) == 1
+    item = result.items[0]
+    assert item.label_id
+    assert item.internal_code == "12901904"
+    assert item.quantity == 192904
+    parts = item.payload.split("|")
+    assert parts[0] == "D1"
+    assert parts[1] == item.label_id
+    assert parts[2] == "12901904"
+    assert parts[3] == "192904"
+    parsed = parse_product_label_payload(item.payload)
+    assert parsed.status is ProductLabelValidationStatus.VALID
+    assert parsed.label_id == item.label_id
+    assert parsed.internal_code == "12901904"
+    assert parsed.quantity == 192904
+    stored = repo.get_by_label_id(item.label_id)
+    assert stored is not None
+    assert stored.payload == item.payload
+
+
+def test_issue_invalid_internal_code_raises() -> None:
+    from src.application.errors import ProductLabelIssueValidationError
+
+    repo = MemoryIssuedProductLabelRepository()
+    uc = IssueProductLabelsUseCase(client_repo=_Clients(), issued_repo=repo, clock=_Clock())
+    with pytest.raises(ProductLabelIssueValidationError, match="invalid internal_code"):
+        uc.execute(
+            IssueProductLabelsCommand(
+                client_id="client-1",
+                internal_code="bad|code",
+                quantity=1,
+                count=1,
+                principal=_platform(),
+            )
+        )
+
+
 def test_company_principal_denied_for_other_client() -> None:
     repo = MemoryIssuedProductLabelRepository()
     uc = IssueProductLabelsUseCase(client_repo=_Clients(), issued_repo=repo, clock=_Clock())

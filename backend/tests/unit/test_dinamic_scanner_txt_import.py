@@ -338,7 +338,8 @@ def test_supplier_ambiguous_on_confirm_when_multiple_suppliers() -> None:
     assert exc.value.code == TXT_SUPPLIER_AMBIGUOUS
 
 
-def test_duplicate_label_id_in_file_is_rejected_on_preview() -> None:
+def test_duplicate_label_id_in_file_is_omitted_once() -> None:
+    """Unique instance label_id repeats keep a single product within the TXT scope."""
     inventory_repo, aisle_repo, supplier_repo, inventory_id, supplier_ids = _seed_inventory_with_client()
     aisle_repo.save(
         Aisle(
@@ -352,18 +353,426 @@ def test_duplicate_label_id_in_file_is_rejected_on_preview() -> None:
         )
     )
     preview, _, _, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    from src.domain.product_labels.format import build_product_label_payload
+
+    line = build_product_label_payload(
+        label_id="A1B2C3D4E5", internal_code="SKU001", quantity=100
+    )
     result = preview.execute(
         inventory_id=inventory_id,
         content=_txt(
             "POSITION|POS001|04|RIGHT",
-            "D1|A1B2C3D4E5|SKU001|100|E",
-            "D1|A1B2C3D4E5|SKU002|50|E",
+            line,
+            line,
         ),
         filename="Aisle.txt",
     )
-    rejected = [row for row in result.csv_import.rows if row.status == "REJECTED"]
-    assert len(rejected) == 1
-    assert "secondary_key:duplicate_in_file" in rejected[0].validation_errors
+    assert result.products_imported == 1
+    assert len(result.csv_import.rows) == 1
+    assert any("duplicate_unique_label_id" in w for w in result.parse_warnings)
+
+
+def test_pipe_item_without_supplier_does_not_bypass_validation() -> None:
+    """identifier|quantity requires resolvable supplier/profile — no silent accept."""
+    inventory_repo = MemoryInventoryRepository()
+    inventory_id = "inv-no-supplier"
+    inventory_repo.save(
+        Inventory(
+            id=inventory_id,
+            name="Inventory",
+            status=InventoryStatus.DRAFT,
+            created_at=NOW,
+            updated_at=NOW,
+            client_id="client-1",
+        )
+    )
+    supplier_repo = MemoryClientSupplierRepository()
+    aisle_repo = MemoryAisleRepository()
+    preview, _, _, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    with pytest.raises(DinamicScannerTxtImportError) as exc:
+        preview.execute(
+            inventory_id=inventory_id,
+            content=_txt("ASI-DDWDD8|48"),
+            filename="Pasillo_Raw.txt",
+        )
+    assert exc.value.code == "DINAMIC_SCANNER_TXT_CLIENT_SUPPLIER_REQUIRED"
+
+
+def test_preview_raspberry_pipe_items_without_position_end_to_end() -> None:
+    """Real Raspberry TXT (no POSITION) through PreviewDinamicScannerTxtImport + ITEM profile."""
+    from dataclasses import replace
+
+    from src.application.services.label_profile_resolver import LabelProfileResolver
+    from src.domain.client_supplier.extraction_profile import (
+        CharacterSetPolicy,
+        DeterministicBarcodeRules,
+        ExtractionProfileStatus,
+        FieldMappingRule,
+        FieldMappingSource,
+        ItemLabelSemanticType,
+        QuantityExtractionRules,
+        QuantityPresence,
+        RecognitionMode,
+        SupplierExtractionProfile,
+        minimal_supplier_item_configuration,
+    )
+    from src.domain.label_profiles.entities import ClientSupplierLabelProfile
+    from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
+    from src.domain.local_csv_import.statuses import LOCAL_CSV_IMPORT_STATUS_PREVIEWED
+    from src.infrastructure.repositories.memory_client_supplier_label_profile_repository import (
+        MemoryClientSupplierLabelProfileRepository,
+    )
+    from src.infrastructure.repositories.memory_supplier_extraction_profile_repository import (
+        MemorySupplierExtractionProfileRepository,
+    )
+
+    inventory_repo, aisle_repo, supplier_repo, inventory_id, supplier_ids = (
+        _seed_inventory_with_client()
+    )
+    supplier_id = supplier_ids[0]
+    aisle_repo.save(
+        Aisle(
+            id="aisle-raw",
+            inventory_id=inventory_id,
+            code="Pasillo_Raw",
+            status=AisleStatus.CREATED,
+            created_at=NOW,
+            updated_at=NOW,
+            client_supplier_id=supplier_id,
+        )
+    )
+
+    item_cfg = replace(
+        minimal_supplier_item_configuration(
+            expected_prefix="ASI-",
+            character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+        ),
+        recognition_mode=RecognitionMode.FULL,
+        required_fields=("sku",),
+        semantic_type=ItemLabelSemanticType.PRODUCT_SKU.value,
+        quantity_rules=QuantityExtractionRules(
+            required=False,
+            minimum=1,
+            expected_presence=QuantityPresence.OPTIONAL,
+        ),
+        deterministic=DeterministicBarcodeRules(
+            expected_prefix="ASI-",
+            character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+            field_mappings=(FieldMappingRule("sku", FieldMappingSource.WHOLE, None),),
+        ),
+    )
+    extraction_repo = MemorySupplierExtractionProfileRepository()
+    extraction_repo.save(
+        SupplierExtractionProfile(
+            id="ext-item-asi",
+            client_id="client-1",
+            supplier_id=supplier_id,
+            profile_key="default",
+            version=1,
+            status=ExtractionProfileStatus.ACTIVE,
+            configuration=item_cfg,
+            visual_notes=None,
+            created_by=None,
+            created_at=NOW,
+            updated_at=NOW,
+            label_kind=LabelKind.ITEM,
+        )
+    )
+    label_profiles = MemoryClientSupplierLabelProfileRepository()
+    label_profiles.upsert(
+        ClientSupplierLabelProfile(
+            id="cfg-item",
+            client_supplier_id=supplier_id,
+            label_kind=LabelKind.ITEM,
+            source=LabelProfileSource.SUPPLIER,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    resolver = LabelProfileResolver(
+        label_profile_repo=label_profiles,
+        client_supplier_repo=supplier_repo,
+        extraction_profile_repo=extraction_repo,
+    )
+
+    import_repo = MemoryLocalCsvImportRepository()
+    csv_preview = PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=import_repo,
+        clock=FixedClock(),
+        enabled=True,
+    )
+    create_aisle = CreateAisleUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        clock=FixedClock(),
+        status_reconciler=InventoryStatusReconciler(
+            inventory_repo, aisle_repo, FixedClock()
+        ),
+    )
+    aisle_resolver = DinamicScannerAisleResolver(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        create_aisle=create_aisle,
+    )
+    preview = PreviewDinamicScannerTxtImport(
+        inventory_repo=inventory_repo,
+        aisle_resolver=aisle_resolver,
+        import_repo=import_repo,
+        csv_preview=csv_preview,
+        clock=FixedClock(),
+        enabled=True,
+        max_lines=10_000,
+        max_line_length=512,
+        label_profile_resolver=resolver,
+        extraction_profile_repo=extraction_repo,
+    )
+
+    result = preview.execute(
+        inventory_id=inventory_id,
+        content=_txt(
+            "ASI-DDWDD8|48",
+            "ASI-LDFMEE|10",
+            "ASI-U59KNU|8",
+        ),
+        filename="Pasillo_Raw.txt",
+    )
+
+    assert result.products_imported == 3
+    assert result.positions_imported == 0
+    assert len(result.csv_import.rows) == 3
+    assert result.csv_import.status == LOCAL_CSV_IMPORT_STATUS_PREVIEWED
+    codes = [row.internal_code for row in result.csv_import.rows]
+    qtys = [row.quantity for row in result.csv_import.rows]
+    assert codes == ["ASI-DDWDD8", "ASI-LDFMEE", "ASI-U59KNU"]
+    assert qtys == [48, 10, 8]
+    assert all(not (row.label_id or "").strip() for row in result.csv_import.rows)
+    assert all(row.requires_review is True for row in result.csv_import.rows)
+    assert all(row.status != "REJECTED" for row in result.csv_import.rows)
+    assert all(not (row.position_code or "").strip() for row in result.csv_import.rows)
+
+
+def test_preview_raspberry_pipe_items_without_preexisting_aisle() -> None:
+    """Raspberry TXT without preexisting aisle: sole supplier + pending aisle staging."""
+    from dataclasses import replace
+
+    from src.application.services.label_profile_resolver import LabelProfileResolver
+    from src.domain.client_supplier.extraction_profile import (
+        CharacterSetPolicy,
+        DeterministicBarcodeRules,
+        ExtractionProfileStatus,
+        FieldMappingRule,
+        FieldMappingSource,
+        ItemLabelSemanticType,
+        QuantityExtractionRules,
+        QuantityPresence,
+        RecognitionMode,
+        SupplierExtractionProfile,
+        minimal_supplier_item_configuration,
+    )
+    from src.domain.label_profiles.entities import ClientSupplierLabelProfile
+    from src.domain.label_profiles.kinds import LabelKind, LabelProfileSource
+    from src.domain.local_csv_import.statuses import LOCAL_CSV_IMPORT_STATUS_PREVIEWED
+    from src.infrastructure.repositories.memory_client_supplier_label_profile_repository import (
+        MemoryClientSupplierLabelProfileRepository,
+    )
+    from src.infrastructure.repositories.memory_supplier_extraction_profile_repository import (
+        MemorySupplierExtractionProfileRepository,
+    )
+
+    inventory_repo, aisle_repo, supplier_repo, inventory_id, supplier_ids = (
+        _seed_inventory_with_client()
+    )
+    supplier_id = supplier_ids[0]
+    assert len(aisle_repo.list_by_inventory(inventory_id)) == 0
+
+    item_cfg = replace(
+        minimal_supplier_item_configuration(
+            expected_prefix="ASI-",
+            character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+        ),
+        recognition_mode=RecognitionMode.FULL,
+        required_fields=("sku",),
+        semantic_type=ItemLabelSemanticType.PRODUCT_SKU.value,
+        quantity_rules=QuantityExtractionRules(
+            required=False,
+            minimum=1,
+            expected_presence=QuantityPresence.OPTIONAL,
+        ),
+        deterministic=DeterministicBarcodeRules(
+            expected_prefix="ASI-",
+            character_set=CharacterSetPolicy.ALPHANUMERIC_WITH_HYPHEN,
+            field_mappings=(FieldMappingRule("sku", FieldMappingSource.WHOLE, None),),
+        ),
+    )
+    extraction_repo = MemorySupplierExtractionProfileRepository()
+    extraction_repo.save(
+        SupplierExtractionProfile(
+            id="ext-item-asi-pending",
+            client_id="client-1",
+            supplier_id=supplier_id,
+            profile_key="default",
+            version=1,
+            status=ExtractionProfileStatus.ACTIVE,
+            configuration=item_cfg,
+            visual_notes=None,
+            created_by=None,
+            created_at=NOW,
+            updated_at=NOW,
+            label_kind=LabelKind.ITEM,
+        )
+    )
+    label_profiles = MemoryClientSupplierLabelProfileRepository()
+    label_profiles.upsert(
+        ClientSupplierLabelProfile(
+            id="cfg-item-pending",
+            client_supplier_id=supplier_id,
+            label_kind=LabelKind.ITEM,
+            source=LabelProfileSource.SUPPLIER,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    resolver = LabelProfileResolver(
+        label_profile_repo=label_profiles,
+        client_supplier_repo=supplier_repo,
+        extraction_profile_repo=extraction_repo,
+    )
+
+    import_repo = MemoryLocalCsvImportRepository()
+    csv_preview = PreviewLocalCsvImport(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        import_repo=import_repo,
+        clock=FixedClock(),
+        enabled=True,
+    )
+    create_aisle = CreateAisleUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        clock=FixedClock(),
+        status_reconciler=InventoryStatusReconciler(
+            inventory_repo, aisle_repo, FixedClock()
+        ),
+    )
+    aisle_resolver = DinamicScannerAisleResolver(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        create_aisle=create_aisle,
+    )
+    preview = PreviewDinamicScannerTxtImport(
+        inventory_repo=inventory_repo,
+        aisle_resolver=aisle_resolver,
+        import_repo=import_repo,
+        csv_preview=csv_preview,
+        clock=FixedClock(),
+        enabled=True,
+        max_lines=10_000,
+        max_line_length=512,
+        label_profile_resolver=resolver,
+        extraction_profile_repo=extraction_repo,
+    )
+
+    result = preview.execute(
+        inventory_id=inventory_id,
+        content=_txt(
+            "ASI-DDWDD8|48",
+            "ASI-LDFMEE|10",
+            "ASI-U59KNU|8",
+        ),
+        filename="Pasillo_Raw.txt",
+    )
+
+    assert result.aisle_will_be_created is True
+    assert result.aisle_created is False
+    assert result.aisle_id == ""
+    assert len(aisle_repo.list_by_inventory(inventory_id)) == 0
+    assert result.products_imported == 3
+    assert result.positions_imported == 0
+    assert result.csv_import.status == LOCAL_CSV_IMPORT_STATUS_PREVIEWED
+    assert len(result.csv_import.rows) == 3
+    assert all(row.aisle_id == SCANNER_TXT_PENDING_AISLE_ID for row in result.csv_import.rows)
+    codes = [row.internal_code for row in result.csv_import.rows]
+    qtys = [row.quantity for row in result.csv_import.rows]
+    assert codes == ["ASI-DDWDD8", "ASI-LDFMEE", "ASI-U59KNU"]
+    assert qtys == [48, 10, 8]
+    assert all(not (row.label_id or "").strip() for row in result.csv_import.rows)
+    assert all(row.requires_review is True for row in result.csv_import.rows)
+    assert all(row.status != "REJECTED" for row in result.csv_import.rows)
+    assert all(not (row.position_code or "").strip() for row in result.csv_import.rows)
+    metadata = DinamicScannerTxtImportMetadata.from_json(result.csv_import.source_metadata_json)
+    assert metadata is not None
+    assert metadata.aisle_code == "Pasillo_Raw"
+    assert metadata.aisle_will_be_created is True
+
+
+def test_preview_invalid_d1_then_valid_same_label_id_keeps_good_importable() -> None:
+    """BAD D1 + GOOD D1 same LABEL_ID: invalid must not claim secondary_key identity."""
+    from src.domain.local_csv_import.statuses import LOCAL_CSV_IMPORT_STATUS_PREVIEWED
+    from src.domain.product_labels.format import build_product_label_payload
+    import json
+    from pathlib import Path
+
+    vectors_path = (
+        Path(__file__).resolve().parents[3]
+        / "contracts"
+        / "product-labels"
+        / "v1"
+        / "checksum-vectors.json"
+    )
+    vectors = json.loads(vectors_path.read_text(encoding="utf-8"))
+    bad = next(
+        v["tampered_payload"]
+        for v in vectors["vectors"]
+        if v["name"] == "checksum-fail-tampered-qty"
+    )
+    label_id = bad.split("|")[1]
+    good = build_product_label_payload(
+        label_id=label_id, internal_code="SKU001", quantity=100
+    )
+
+    inventory_repo, aisle_repo, supplier_repo, inventory_id, supplier_ids = (
+        _seed_inventory_with_client()
+    )
+    aisle_repo.save(
+        Aisle(
+            id="aisle-1",
+            inventory_id=inventory_id,
+            code="Pasillo_A_04",
+            status=AisleStatus.CREATED,
+            created_at=NOW,
+            updated_at=NOW,
+            client_supplier_id=supplier_ids[0],
+        )
+    )
+    preview, _, _, _, _, _ = _build_preview_confirm(inventory_repo, aisle_repo, supplier_repo)
+    result = preview.execute(
+        inventory_id=inventory_id,
+        content=_txt(
+            "POSITION|POS001|04|RIGHT",
+            bad,
+            good,
+        ),
+        filename="Pasillo_A_04.txt",
+    )
+
+    assert result.csv_import.status == LOCAL_CSV_IMPORT_STATUS_PREVIEWED
+    assert len(result.csv_import.rows) == 2
+    bad_row, good_row = result.csv_import.rows
+    assert "d1:checksum_failed" in bad_row.validation_errors
+    assert bad_row.status == "REJECTED"
+    # Invalid D1 must not claim label_id, but notes keep observed id for audit.
+    assert not (bad_row.label_id or "").strip()
+    assert f"OBSERVED_LABEL_ID={label_id.upper()}" in (bad_row.notes or "").upper()
+    assert "secondary_key:duplicate_in_file" not in good_row.validation_errors
+    assert good_row.status != "REJECTED"
+    assert (good_row.label_id or "").upper() == label_id.upper()
+    assert result.products_imported == 1
 
 
 def test_confirm_applies_txt_results_without_image() -> None:

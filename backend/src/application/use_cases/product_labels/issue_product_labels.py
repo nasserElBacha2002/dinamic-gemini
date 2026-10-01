@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from src.application.dto.access_principal import AccessPrincipal
-from src.application.errors import ProductLabelIdCollisionError
+from src.application.errors import (
+    ProductLabelIdCollisionError,
+    ProductLabelIssueValidationError,
+)
 from src.application.ports.clock import Clock
 from src.application.ports.issued_product_label_repository import (
     IssuedProductLabel,
@@ -76,12 +79,12 @@ class IssueProductLabelsUseCase:
 
         code = (command.internal_code or "").strip()
         if not code or "|" in code or len(code) > 48:
-            raise ValueError("invalid internal_code")
+            raise ProductLabelIssueValidationError("invalid internal_code")
         if not isinstance(command.quantity, int) or command.quantity < 1 or command.quantity > 99_999_999:
-            raise ValueError("invalid quantity")
+            raise ProductLabelIssueValidationError("invalid quantity")
         count = int(command.count)
         if count < 1 or count > _MAX_BATCH:
-            raise ValueError(f"count must be 1..{_MAX_BATCH}")
+            raise ProductLabelIssueValidationError(f"count must be 1..{_MAX_BATCH}")
 
         now = self._clock.now()
         issued: list[IssuedProductLabelView] = []

@@ -448,6 +448,7 @@ from src.application.errors import (
     ProcessingProviderNotConfiguredError,
     ProcessingRejectedUnsealedSessionError,
     ProductNotFoundError,
+    ProductLabelIssueValidationError,
     ReviewMutationNotAllowedError,
     SourceAssetNotFoundForAisleError,
     StrategyDisabledError,
@@ -1186,6 +1187,12 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         403,
         error_code=POSITION_LABEL_ACCESS_DENIED,
         detail=HTTP_DETAIL_POSITION_LABEL_ACCESS_DENIED,
+    ),
+    ProductLabelIssueValidationError: _structured_detail_with_exc_code(
+        422,
+        default_error_code="PRODUCT_LABEL_ISSUE_INVALID",
+        allowed_codes=frozenset({"PRODUCT_LABEL_ISSUE_INVALID"}),
+        detail=lambda e: str(e) or "invalid product label request",
     ),
     ClientPositionLabelConflictError: _structured_detail_with_exc_code(
         409,
