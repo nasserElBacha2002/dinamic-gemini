@@ -248,7 +248,10 @@ def test_api_dependency_returns_container_owned_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     container = _container()
-    monkeypatch.setattr(dependencies, "get_app_container", lambda: container)
+    monkeypatch.setattr(
+        "src.api.deps.infrastructure.get_app_container",
+        lambda: container,
+    )
 
     service = dependencies.get_position_materialization_service(
         inventory_repo=container.get_inventory_repo(),

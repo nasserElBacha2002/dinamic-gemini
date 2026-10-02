@@ -66,7 +66,6 @@ class InMemoryJobRepo(JobRepositoryTestBase):
         return []
 
 
-
     def list_jobs_for_targets(
         self,
         target_type: str,

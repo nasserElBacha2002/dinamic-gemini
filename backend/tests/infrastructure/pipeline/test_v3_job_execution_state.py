@@ -53,7 +53,6 @@ class _MemJobRepo(JobRepositoryTestBase):
         return []
 
 
-
     def list_jobs_for_targets(
         self,
         target_type: str,
