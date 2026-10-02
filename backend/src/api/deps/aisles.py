@@ -15,6 +15,7 @@ from src.api.deps.infrastructure import (
     get_client_supplier_label_profile_repo,
     get_inventory_status_reconciler,
     get_job_stale_reconciler,
+    get_position_materialization_service,
     get_result_context_resolver,
     get_supplier_extraction_profile_repo,
     get_worker_launch_service_dep,
@@ -363,17 +364,6 @@ def get_list_aisle_assets_use_case(
         asset_repo=asset_repo,
         access_policy=access_policy,
     )
-
-
-def get_position_materialization_service(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    clock: Clock = Depends(get_clock),
-):
-    """Return the container-owned materializer shared with worker paths."""
-    _ = (inventory_repo, aisle_repo, clock)
-    container = get_app_container()
-    return container.get_position_materialization_service()
 
 
 def get_upsert_preliminary_detection_use_case(

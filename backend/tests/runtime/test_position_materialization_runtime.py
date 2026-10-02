@@ -249,7 +249,7 @@ def test_api_dependency_returns_container_owned_service(
 ) -> None:
     container = _container()
     monkeypatch.setattr(
-        "src.api.deps.aisles.get_app_container",
+        "src.api.deps.infrastructure.get_app_container",
         lambda: container,
     )
 

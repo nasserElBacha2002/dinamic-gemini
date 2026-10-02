@@ -746,7 +746,7 @@ class AppContainer:
 
     def get_local_csv_import_recovery_service(self) -> LocalCsvImportRecoveryService:
         if self._local_csv_import_recovery_service is None:
-            from src.api.dependencies import build_confirm_local_csv_import
+            from src.runtime.import_composition import build_confirm_local_csv_import
 
             settings = self._settings
             confirm = build_confirm_local_csv_import(

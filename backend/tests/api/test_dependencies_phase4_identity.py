@@ -23,7 +23,6 @@ AISLE_SYMBOLS = (
     "get_retry_aisle_job_use_case",
     "get_upload_aisle_assets_use_case",
     "get_list_aisle_assets_use_case",
-    "get_position_materialization_service",
     "get_upsert_preliminary_detection_use_case",
     "get_persist_authoritative_local_code_scan_use_case",
     "get_evaluate_authoritative_aisle_readiness",

@@ -23,6 +23,7 @@ from src.application.services.operational_execution_config_resolver import (
     OperationalExecutionConfigResolver,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
+from src.auth.schemas import AuthUser
 from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
     get_aisle_repo,
@@ -238,3 +239,34 @@ def get_client_position_label_repo():
 
 def get_manual_position_override_repo():
     return get_app_container().get_manual_position_override_repo()
+
+
+def get_position_materialization_service(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    clock: Clock = Depends(get_clock),
+):
+    """Return the container-owned materializer shared with worker paths."""
+    _ = (inventory_repo, aisle_repo, clock)
+    container = get_app_container()
+    return container.get_position_materialization_service()
+
+
+def get_observability_inventory_guard(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+):
+    """Company-scope check without injecting ``Depends(get_*_repo)`` into route signatures."""
+    from src.application.services.observability_access import (
+        ObservabilityAccessContext,
+        assert_inventory_client_scope,
+    )
+    from src.domain.inventory.entities import Inventory
+
+    def _guard(inventory_id: str, user: AuthUser) -> Inventory:
+        return assert_inventory_client_scope(
+            inventory_repo,
+            inventory_id=inventory_id,
+            access=ObservabilityAccessContext.from_user(user),
+        )
+
+    return _guard

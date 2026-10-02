@@ -89,7 +89,7 @@ def test_raspberry_device_guard_keeps_missing_and_invalid_token_behavior(
 def test_app_container_deferred_csv_recovery_import_still_constructs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exercise the intentional AppContainer -> API lazy import without moving it."""
+    """CSV recovery still constructs through the shared confirm builder."""
     monkeypatch.setattr(config_module, "_settings", None)
     container = AppContainer(load_settings())
 
