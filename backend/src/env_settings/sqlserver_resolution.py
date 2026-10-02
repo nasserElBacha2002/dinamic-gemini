@@ -71,7 +71,6 @@ def _sqlserver_trust_server_certificate_keyword() -> str:
     return trust_server_certificate_odbc_keyword()
 
 
-
 def _is_loopback_host_only(host: str) -> bool:
     h = host.strip()
     if h.startswith("[") and "]" in h:

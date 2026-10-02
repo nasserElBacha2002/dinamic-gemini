@@ -107,7 +107,6 @@ class StubJobRepo(JobRepositoryTestBase):
         return candidates[:n]
 
 
-
     def list_jobs_for_targets(
         self,
         target_type: str,

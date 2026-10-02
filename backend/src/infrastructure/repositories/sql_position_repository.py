@@ -40,7 +40,6 @@ def _creation_source_from_row(row: Any, position_id: str = "?") -> PositionCreat
         return PositionCreationSource.AUTOMATIC
 
 
-
 def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None

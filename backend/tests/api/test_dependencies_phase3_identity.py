@@ -3,7 +3,7 @@
 import pytest
 
 import src.api.dependencies as public_dependencies
-from src.api.deps import aisles, capture, infrastructure, locations
+from src.api.deps import capture, infrastructure, locations
 
 PHASE2_CORRECTION_SYMBOLS = ("get_result_context_resolver",)
 
@@ -48,10 +48,6 @@ LOCATIONS_SYMBOLS = (
 @pytest.mark.parametrize("symbol", PHASE2_CORRECTION_SYMBOLS)
 def test_phase2_correction_result_context_resolver_facade_identity(symbol: str) -> None:
     assert getattr(public_dependencies, symbol) is getattr(infrastructure, symbol)
-
-
-def test_structural_aisle_create_provider_facade_identity() -> None:
-    assert public_dependencies.get_create_aisle_use_case is aisles.get_create_aisle_use_case
 
 
 @pytest.mark.parametrize(

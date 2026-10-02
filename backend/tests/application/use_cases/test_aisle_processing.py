@@ -139,8 +139,6 @@ class StubJobRepo(MemoryJobRepository):
     """Memory job repo used by aisle processing use-case tests."""
 
 
-
-
 class StubWorkerLaunchService(WorkerLaunchService):
     def __init__(self) -> None:
         self.launched: list[str] = []

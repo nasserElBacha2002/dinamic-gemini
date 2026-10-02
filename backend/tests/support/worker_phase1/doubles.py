@@ -354,7 +354,6 @@ class PartialFailingJobRepository(JobRepositoryTestBase):
         return self._inner.list_jobs_for_target(target_type, target_id, limit=limit)
 
 
-
     def list_jobs_for_targets(
         self,
         target_type: str,

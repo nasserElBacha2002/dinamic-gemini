@@ -224,7 +224,6 @@ class ExtractionValidationRules:
     quantity_integer_only: bool = True
 
 
-
 CONFIGURATION_SCHEMA_VERSION_V1 = 1
 CONFIGURATION_SCHEMA_VERSION_V2 = 2
 
