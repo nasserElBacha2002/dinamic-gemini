@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import type { ComponentProps } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ClientSupplier } from '../src/api/types';
 import LabelGeneratorDialog from '../src/features/clients/components/LabelGeneratorDialog';
@@ -79,7 +79,20 @@ function fillRequiredFields() {
 
 describe('LabelGeneratorDialog', () => {
   beforeEach(() => {
-    vi.spyOn(window, 'print').mockImplementation(() => {});
+    // Browsers emit afterprint when the print dialog closes. Simulating that
+    // lifecycle prevents fallback title-restoration timers from leaking into
+    // later tests and racing with their own document.title assertions.
+    vi.spyOn(window, 'print').mockImplementation(() => {
+      window.dispatchEvent(new Event('afterprint'));
+    });
+  });
+
+  afterEach(() => {
+    // Keep global browser state isolated even when a test fails before its
+    // local fake-timer/mock cleanup runs.
+    window.dispatchEvent(new Event('afterprint'));
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('renders Spanish dialog title and prefilled client', () => {

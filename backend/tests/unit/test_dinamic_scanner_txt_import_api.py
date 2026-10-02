@@ -176,7 +176,11 @@ def test_confirm_route_returns_persisted_metadata(monkeypatch: pytest.MonkeyPatc
     try:
         response = client.post(
             "/api/v3/inventories/inventory-1/dinamic-scanner-txt-imports/confirm",
-            json={"export_id": "scanner-txt-abc", "conflict_policy": "SKIP"},
+            json={
+                "export_id": "scanner-txt-abc",
+                "conflict_policy": "SKIP",
+                "client_supplier_id": "supplier-2",
+            },
         )
     finally:
         app.dependency_overrides.pop(get_confirm_dinamic_scanner_txt_import_use_case, None)
@@ -185,3 +189,10 @@ def test_confirm_route_returns_persisted_metadata(monkeypatch: pytest.MonkeyPatc
     data = response.json()
     assert data["aisle_created"] is True
     assert data["parse_warnings"] == ["line 9: unknown_record"]
+    mock_confirm.execute.assert_called_once_with(
+        inventory_id="inventory-1",
+        export_id="scanner-txt-abc",
+        conflict_policy="SKIP",
+        confirmed_by_user_id="test-user",
+        client_supplier_id="supplier-2",
+    )

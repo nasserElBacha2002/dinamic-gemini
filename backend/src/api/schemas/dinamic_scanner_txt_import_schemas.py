@@ -12,6 +12,7 @@ from src.api.schemas.local_csv_import_schemas import LocalCsvImportResponse
 class ConfirmDinamicScannerTxtImportRequest(BaseModel):
     export_id: str = Field(..., min_length=1)
     conflict_policy: Literal["SKIP", "REJECT"] = "SKIP"
+    client_supplier_id: str | None = Field(default=None, min_length=1)
 
 
 class DinamicScannerTxtImportResponse(BaseModel):

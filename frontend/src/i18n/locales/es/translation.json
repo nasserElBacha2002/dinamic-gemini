@@ -1290,6 +1290,13 @@
       "previewing": "Validando…",
       "confirm": "Confirmar importación",
       "confirming": "Importando…",
+      "supplier_label": "Proveedor del pasillo",
+      "supplier_placeholder": "Seleccionar proveedor…",
+      "supplier_helper": "Se asociará al nuevo pasillo. El backend valida que pertenezca al cliente del inventario.",
+      "supplier_required": "Seleccioná el proveedor para crear el pasillo.",
+      "supplier_loading": "Cargando proveedores…",
+      "supplier_load_error": "No se pudieron cargar los proveedores del cliente.",
+      "supplier_empty": "El cliente no tiene proveedores disponibles.",
       "preview_error": "No se pudo validar el archivo de importación.",
       "confirm_error": "No se pudo confirmar la importación.",
       "errors": {

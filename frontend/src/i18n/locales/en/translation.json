@@ -1110,6 +1110,13 @@
       "previewing": "Validating…",
       "confirm": "Confirm import",
       "confirming": "Importing…",
+      "supplier_label": "Aisle supplier",
+      "supplier_placeholder": "Select supplier…",
+      "supplier_helper": "This supplier will be assigned to the new aisle. The backend validates that it belongs to the inventory client.",
+      "supplier_required": "Select the supplier before creating the aisle.",
+      "supplier_loading": "Loading suppliers…",
+      "supplier_load_error": "Could not load the client's suppliers.",
+      "supplier_empty": "The client has no available suppliers.",
       "preview_error": "Could not validate the import file.",
       "confirm_error": "Could not confirm the import.",
       "errors": {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -6,6 +6,7 @@ import {
   Button,
   CircularProgress,
   FormControl,
+  FormHelperText,
   InputLabel,
   MenuItem,
   Select,
@@ -30,10 +31,12 @@ import type {
 import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import BaseDialog from '../../../components/ui/BaseDialog';
+import { useClientSuppliers } from '../../../hooks/useClients';
 
 export interface ImportLocalInventoryPackageDialogProps {
   open: boolean;
   inventoryId: string;
+  inventoryClientId?: string | null;
   /** Optional map of aisle_id → display label (usually aisle code). */
   aisleLabelById?: Record<string, string>;
   onClose: () => void;
@@ -53,6 +56,7 @@ function invalidImportFile(file: File): boolean {
 export default function ImportLocalInventoryPackageDialog({
   open,
   inventoryId,
+  inventoryClientId,
   aisleLabelById,
   onClose,
   onSuccess,
@@ -64,6 +68,18 @@ export default function ImportLocalInventoryPackageDialog({
   const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>('SKIP');
   const [busy, setBusy] = useState<'preview' | 'confirm' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [supplierValidationError, setSupplierValidationError] = useState('');
+  const clientId = inventoryClientId?.trim() || undefined;
+  const suppliersQuery = useClientSuppliers(
+    clientId,
+    { page: 1, page_size: 200 },
+    { enabled: open && Boolean(clientId) }
+  );
+  const suppliers = useMemo(
+    () => suppliersQuery.data?.items ?? [],
+    [suppliersQuery.data?.items]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -72,8 +88,21 @@ export default function ImportLocalInventoryPackageDialog({
     setConflictPolicy('SKIP');
     setBusy(null);
     setError(null);
+    setSelectedSupplierId('');
+    setSupplierValidationError('');
     if (inputRef.current) inputRef.current.value = '';
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (suppliers.length === 1) {
+      setSelectedSupplierId(suppliers[0].id);
+      return;
+    }
+    if (selectedSupplierId && !suppliers.some((supplier) => supplier.id === selectedSupplierId)) {
+      setSelectedSupplierId('');
+    }
+  }, [open, selectedSupplierId, suppliers]);
 
   const handleClose = () => {
     if (busy) return;
@@ -130,9 +159,14 @@ export default function ImportLocalInventoryPackageDialog({
     setBusy('confirm');
     try {
       if (preview.kind === 'txt') {
+        if (preview.data.aisle_will_be_created && !selectedSupplierId) {
+          setSupplierValidationError(t('inventory.import_package.supplier_required'));
+          return;
+        }
         const result = await confirmDinamicScannerTxtImport(inventoryId, {
           export_id: preview.data.csv_import.export_id,
           conflict_policy: conflictPolicy,
+          client_supplier_id: selectedSupplierId || undefined,
         });
         onSuccess?.({ kind: 'txt', data: result });
       } else {
@@ -233,6 +267,8 @@ export default function ImportLocalInventoryPackageDialog({
               const next = e.target.files?.[0] ?? null;
               setFile(next);
               setPreview(null);
+              setSelectedSupplierId('');
+              setSupplierValidationError('');
               setError(
                 next && invalidImportFile(next)
                   ? t('inventory.import_package.invalid_file_type')
@@ -288,6 +324,46 @@ export default function ImportLocalInventoryPackageDialog({
                   ))}
                 </Box>
               </Alert>
+            ) : null}
+            {preview.kind === 'txt' && preview.data.aisle_will_be_created ? (
+              <FormControl
+                fullWidth
+                size="small"
+                sx={{ mb: 1.5 }}
+                error={suppliersQuery.isError || Boolean(supplierValidationError)}
+              >
+                <InputLabel id="import-txt-supplier">
+                  {t('inventory.import_package.supplier_label')}
+                </InputLabel>
+                <Select
+                  labelId="import-txt-supplier"
+                  label={t('inventory.import_package.supplier_label')}
+                  value={selectedSupplierId}
+                  onChange={(e) => {
+                    setSelectedSupplierId(e.target.value);
+                    setSupplierValidationError('');
+                  }}
+                  disabled={Boolean(busy) || suppliersQuery.isLoading || suppliersQuery.isError}
+                >
+                  <MenuItem value="" disabled>
+                    {t('inventory.import_package.supplier_placeholder')}
+                  </MenuItem>
+                  {suppliers.map((supplier) => (
+                    <MenuItem key={supplier.id} value={supplier.id}>
+                      {supplier.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <FormHelperText>
+                  {supplierValidationError || (suppliersQuery.isLoading
+                    ? t('inventory.import_package.supplier_loading')
+                    : suppliersQuery.isError
+                      ? t('inventory.import_package.supplier_load_error')
+                      : suppliers.length === 0
+                        ? t('inventory.import_package.supplier_empty')
+                        : t('inventory.import_package.supplier_helper'))}
+                </FormHelperText>
+              </FormControl>
             ) : null}
             <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
               <InputLabel id="import-conflict-policy">

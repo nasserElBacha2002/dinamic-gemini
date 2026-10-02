@@ -43,7 +43,12 @@ class DinamicScannerAisleResolver:
             )
         return self._aisle_repo.get_by_inventory_and_code(inventory_id, code)
 
-    def resolve_client_supplier_id(self, *, inventory_id: str) -> str:
+    def resolve_client_supplier_id(
+        self,
+        *,
+        inventory_id: str,
+        client_supplier_id: str | None = None,
+    ) -> str:
         inventory = self._inventory_repo.get_by_id(inventory_id)
         if inventory is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
@@ -53,6 +58,20 @@ class DinamicScannerAisleResolver:
                 "DINAMIC_SCANNER_TXT_INVENTORY_CLIENT_REQUIRED",
                 "Inventory must be associated with a client before creating aisles",
             )
+        requested_supplier_id = (client_supplier_id or "").strip()
+        if requested_supplier_id:
+            supplier = self._client_supplier_repo.get_by_id(requested_supplier_id)
+            if supplier is None:
+                raise DinamicScannerTxtImportError(
+                    "DINAMIC_SCANNER_TXT_CLIENT_SUPPLIER_NOT_FOUND",
+                    "Selected client supplier does not exist",
+                )
+            if supplier.client_id != client_id:
+                raise DinamicScannerTxtImportError(
+                    "DINAMIC_SCANNER_TXT_CLIENT_SUPPLIER_MISMATCH",
+                    "Selected client supplier does not belong to the inventory client",
+                )
+            return supplier.id
         suppliers = self._client_supplier_repo.list_by_client(client_id)
         if len(suppliers) == 0:
             raise DinamicScannerTxtImportError(
@@ -66,7 +85,13 @@ class DinamicScannerAisleResolver:
             )
         return suppliers[0].id
 
-    def create_for_confirm(self, *, inventory_id: str, aisle_code: str) -> tuple[Aisle, bool]:
+    def create_for_confirm(
+        self,
+        *,
+        inventory_id: str,
+        aisle_code: str,
+        client_supplier_id: str | None = None,
+    ) -> tuple[Aisle, bool]:
         """Create aisle on confirm, or return existing on idempotent retry / race."""
         code = (aisle_code or "").strip()
         if not code:
@@ -77,7 +102,10 @@ class DinamicScannerAisleResolver:
         if existing is not None:
             return existing, False
 
-        supplier_id = self.resolve_client_supplier_id(inventory_id=inventory_id)
+        supplier_id = self.resolve_client_supplier_id(
+            inventory_id=inventory_id,
+            client_supplier_id=client_supplier_id,
+        )
         try:
             created = self._create_aisle.execute(
                 CreateAisleCommand(
