@@ -16,10 +16,138 @@ environment where the default is wrong for your deployment.
 from __future__ import annotations
 
 import logging
-import secrets
 from typing import TYPE_CHECKING
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends
+
+from src.api.deps.aisles import get_create_aisle_use_case  # noqa: F401
+from src.api.deps.analytics import (  # noqa: F401
+    get_analytics_cost_summary_service,
+    get_analytics_query_service,
+    get_compare_aisle_runs_use_case,
+    get_compare_many_aisle_runs_use_case,
+    get_export_aisle_benchmark_compare_csv_use_case,
+    get_export_aisle_benchmark_run_csv_use_case,
+    get_promote_aisle_operational_job_use_case,
+)
+from src.api.deps.capture import (  # noqa: F401
+    get_assign_capture_session_group_to_existing_aisle_use_case,
+    get_cancel_capture_session_use_case,
+    get_capture_staging_time_metadata_extractor,
+    get_close_capture_session_use_case,
+    get_compute_capture_session_assignment_preview_use_case,
+    get_compute_capture_session_groups_use_case,
+    get_compute_materialized_capture_session_group_preview_use_case,
+    get_create_aisle_and_assign_capture_session_group_use_case,
+    get_create_capture_session_use_case,
+    get_create_ordered_capture_session_use_case,
+    get_get_capture_session_detail_use_case,
+    get_get_capture_session_groups_use_case,
+    get_get_ordered_capture_session_use_case,
+    get_list_capture_sessions_use_case,
+    get_materialize_capture_session_group_use_case,
+    get_materialize_capture_session_use_case,
+    get_seal_ordered_capture_session_use_case,
+    get_update_capture_session_clock_offset_use_case,
+    get_upload_capture_session_staging_items_use_case,
+)
+from src.api.deps.infrastructure import (  # noqa: F401
+    get_aisle_location_label_artifact_repo,
+    get_artifact_manifest_store,
+    get_artifact_publication_outbox_store,
+    get_artifact_storage,
+    get_client_position_label_repo,
+    get_client_supplier_label_profile_repo,
+    get_finalization_assessment_service,
+    get_image_position_label_detection_repo,
+    get_inventory_status_reconciler,
+    get_job_artifact_catalog_service,
+    get_job_image_coverage_repo,
+    get_job_retry_chain_service,
+    get_job_source_asset_repo,
+    get_job_stale_reconciler,
+    get_manual_image_coverage_repo,
+    get_manual_image_result_uow_factory,
+    get_manual_position_override_repo,
+    get_materialized_position_identity_reader,
+    get_observability_metrics_service,
+    get_operational_execution_config_resolver,
+    get_position_reconciliation_repo,
+    get_processing_event_repo,
+    get_result_context_resolver,
+    get_result_evidence_query_service,
+    get_result_evidence_repo,
+    get_run_auditability_service,
+    get_supplier_extraction_profile_repo,
+    get_worker_launch_service_dep,
+)
+from src.api.deps.inventory import (  # noqa: F401
+    get_activate_supplier_extraction_profile_version_use_case,
+    get_activate_supplier_prompt_config_version_use_case,
+    get_client_recognition_config_use_case,
+    get_clone_supplier_extraction_profile_use_case,
+    get_create_client_supplier_use_case,
+    get_create_client_use_case,
+    get_create_inventory_use_case,
+    get_create_supplier_extraction_profile_version_use_case,
+    get_create_supplier_prompt_config_version_use_case,
+    get_delete_supplier_reference_image_use_case,
+    get_export_aisle_business_csv_use_case,
+    get_export_aisle_results_csv_use_case,
+    get_export_inventory_package_zip_use_case,
+    get_export_inventory_results_use_case,
+    get_export_inventory_summary_csv_use_case,
+    get_get_active_supplier_extraction_profile_use_case,
+    get_get_active_supplier_prompt_config_use_case,
+    get_get_client_supplier_use_case,
+    get_get_client_use_case,
+    get_get_inventory_metrics_use_case,
+    get_get_inventory_use_case,
+    get_get_supplier_extraction_profile_by_version_use_case,
+    get_get_supplier_prompt_config_use_case,
+    get_get_supplier_reference_image_use_case,
+    get_inventory_recognition_config_use_case,
+    get_list_client_supplier_label_profiles_use_case,
+    get_list_client_suppliers_use_case,
+    get_list_clients_use_case,
+    get_list_inventories_use_case,
+    get_list_inventory_list_items_use_case,
+    get_list_supplier_extraction_profiles_use_case,
+    get_list_supplier_prompt_configs_use_case,
+    get_list_supplier_reference_annotations_use_case,
+    get_list_supplier_reference_images_use_case,
+    get_raspberry_recognition_config_use_case,
+    get_replace_supplier_reference_annotations_use_case,
+    get_soft_delete_inventories_use_case,
+    get_test_label_recognition_code_use_case,
+    get_update_client_use_case,
+    get_update_inventory_name_use_case,
+    get_upload_supplier_reference_images_use_case,
+    get_upsert_client_supplier_label_profile_use_case,
+)
+from src.api.deps.locations import (  # noqa: F401
+    get_batch_render_aisle_location_labels_use_case,
+    get_create_aisle_location_use_case,
+    get_download_aisle_location_label_use_case,
+    get_get_aisle_location_label_use_case,
+    get_get_aisle_location_use_case,
+    get_invalidate_aisle_location_label_use_case,
+    get_issue_aisle_location_label_use_case,
+    get_list_aisle_location_labels_use_case,
+    get_list_aisle_locations_use_case,
+    get_render_aisle_location_label_use_case,
+    get_replace_aisle_location_label_use_case,
+    get_update_aisle_location_use_case,
+)
+from src.api.deps.security import (  # noqa: F401
+    get_access_principal,
+    get_capture_session_access_policy,
+    get_inventory_access_policy,
+    require_capture_session_upload_scope,
+    require_client_scope,
+    require_inventory_client_scope,
+    require_raspberry_device_token,
+)
 
 if TYPE_CHECKING:
     from src.application.use_cases.recovery.recover_aisle_processing import (
@@ -30,12 +158,6 @@ if TYPE_CHECKING:
     )
 
 from src.application.dto.access_principal import AccessPrincipal
-from src.application.ports.capture_repositories import (
-    CaptureSessionConfirmIdempotencyRepository,
-    CaptureSessionGroupRepository,
-    CaptureSessionItemRepository,
-    CaptureSessionRepository,
-)
 from src.application.ports.clock import Clock
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.repositories import (
@@ -50,26 +172,19 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
     SourceAssetRepository,
     SupplierPromptConfigRepository,
-    SupplierReferenceImageRepository,
 )
-from src.application.ports.services import MetricsCalculator, WorkerLaunchService
+from src.application.ports.services import WorkerLaunchService
 from src.application.ports.supplier_extraction_profile_repository import (
     SupplierExtractionProfileRepository,
 )
-from src.application.services.access_principal_factory import access_principal_from_auth_user
 from src.application.services.aisle_identification_configuration_query import (
     AisleIdentificationConfigurationQuery,
 )
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
-from src.application.services.analytics_query_service import AnalyticsQueryService
-from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.inventory_access_policy import InventoryAccessPolicy
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import JobStaleReconciler
-from src.application.services.operational_execution_config_resolver import (
-    OperationalExecutionConfigResolver,
-)
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.aisles.activate_aisle import ActivateAisleUseCase
 from src.application.use_cases.aisles.cancel_aisle_job import CancelAisleJobUseCase
@@ -86,9 +201,6 @@ from src.application.use_cases.aisles.list_aisle_assets import ListAisleAssetsUs
 from src.application.use_cases.aisles.list_aisle_jobs import ListAisleJobsUseCase
 from src.application.use_cases.aisles.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.application.use_cases.aisles.list_aisles_with_status import ListAislesWithStatusUseCase
-from src.application.use_cases.aisles.promote_aisle_operational_job import (
-    PromoteAisleOperationalJobUseCase,
-)
 from src.application.use_cases.aisles.resolve_aisle_job_for_inventory_read import (
     ResolveAisleJobForInventoryReadUseCase,
 )
@@ -97,22 +209,6 @@ from src.application.use_cases.aisles.run_aisle_merge import RunAisleMergeUseCas
 from src.application.use_cases.aisles.start_aisle_processing import StartAisleProcessingUseCase
 from src.application.use_cases.aisles.update_aisle_code import UpdateAisleCodeUseCase
 from src.application.use_cases.aisles.upload_aisle_assets import UploadAisleAssetsUseCase
-from src.application.use_cases.analytics.compare_aisle_runs import CompareAisleRunsUseCase
-from src.application.use_cases.analytics.compare_many_aisle_runs import CompareManyAisleRunsUseCase
-from src.application.use_cases.analytics.export_aisle_benchmark import (
-    ExportAisleBenchmarkCompareCsvUseCase,
-    ExportAisleBenchmarkRunCsvUseCase,
-)
-from src.application.use_cases.clients.create_client import CreateClientUseCase
-from src.application.use_cases.clients.get_client import GetClientUseCase
-from src.application.use_cases.clients.get_client_recognition_config import (
-    GetClientRecognitionConfigUseCase,
-)
-from src.application.use_cases.clients.get_raspberry_recognition_config import (
-    GetRaspberryRecognitionConfigUseCase,
-)
-from src.application.use_cases.clients.list_clients import ListClientsUseCase
-from src.application.use_cases.clients.update_client import UpdateClientUseCase
 from src.application.use_cases.code_scans.export_aisle_code_scans import ExportAisleCodeScansUseCase
 from src.application.use_cases.code_scans.get_aisle_code_scan_review_signals import (
     GetAisleCodeScanReviewSignalsUseCase,
@@ -125,26 +221,6 @@ from src.application.use_cases.code_scans.run_aisle_code_scan import RunAisleCod
 from src.application.use_cases.code_scans.summarize_aisle_code_scans import (
     SummarizeAisleCodeScansUseCase,
 )
-from src.application.use_cases.inventories.create_inventory import CreateInventoryUseCase
-from src.application.use_cases.inventories.export_inventory_business import (
-    ExportAisleBusinessCsvUseCase,
-    ExportInventoryPackageZipUseCase,
-    ExportInventorySummaryCsvUseCase,
-)
-from src.application.use_cases.inventories.export_inventory_results import (
-    ExportAisleResultsCsvUseCase,
-    ExportInventoryResultsUseCase,
-)
-from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
-from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
-from src.application.use_cases.inventories.list_inventories import ListInventoriesUseCase
-from src.application.use_cases.inventories.list_inventory_list_items import (
-    ListInventoryListItemsUseCase,
-)
-from src.application.use_cases.inventories.soft_delete_inventories import (
-    SoftDeleteInventoriesUseCase,
-)
-from src.application.use_cases.inventories.update_inventory_name import UpdateInventoryNameUseCase
 from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.positions.delete_position import DeletePositionUseCase
 from src.application.use_cases.positions.get_position_code_scan_evidence import (
@@ -160,36 +236,11 @@ from src.application.use_cases.positions.mark_position_unknown import MarkPositi
 from src.application.use_cases.positions.update_position_code import UpdatePositionCodeUseCase
 from src.application.use_cases.positions.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.positions.update_product_sku import UpdateProductSkuUseCase
-from src.application.use_cases.suppliers.create_client_supplier import CreateClientSupplierUseCase
-from src.application.use_cases.suppliers.get_client_supplier import GetClientSupplierUseCase
-from src.application.use_cases.suppliers.list_client_suppliers import ListClientSuppliersUseCase
-from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
-    ActivateSupplierPromptConfigVersionUseCase,
-    CreateSupplierPromptConfigVersionUseCase,
-    GetActiveSupplierPromptConfigUseCase,
-    GetSupplierPromptConfigUseCase,
-    ListSupplierPromptConfigsUseCase,
-)
-from src.application.use_cases.suppliers.manage_supplier_reference_images import (
-    DeleteSupplierReferenceImageUseCase,
-    GetSupplierReferenceImageUseCase,
-)
-from src.application.use_cases.suppliers.upload_supplier_reference_images import (
-    ListSupplierReferenceImagesUseCase,
-    UploadSupplierReferenceImagesUseCase,
-)
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
-    get_aisle_location_label_repo,
-    get_aisle_location_repo,
     get_aisle_repo,
-    get_analytics_repo,
-    get_capture_session_confirm_repo,
-    get_capture_session_group_repo,
-    get_capture_session_item_repo,
-    get_capture_session_repo,
     get_client_repo,
     get_client_supplier_repo,
     get_clock,
@@ -198,7 +249,6 @@ from src.runtime.v3_deps import (
     get_final_count_repo,
     get_inventory_repo,
     get_job_repo,
-    get_metrics_calculator,
     get_mobile_preliminary_detection_repo,
     get_ordered_capture_processing_reservation,
     get_ordered_capture_session_repo,
@@ -209,521 +259,89 @@ from src.runtime.v3_deps import (
     get_review_action_repo,
     get_source_asset_repo,
     get_supplier_prompt_config_repo,
-    get_supplier_reference_image_repo,
-    get_worker_launch_service,
-)
-from src.runtime.v3_deps import (
-    get_artifact_manifest_store as _get_artifact_manifest_store,
-)
-from src.runtime.v3_deps import (
-    get_artifact_publication_outbox_store as _get_artifact_publication_outbox_store,
-)
-from src.runtime.v3_deps import (
-    get_finalization_assessment_service as _get_finalization_assessment_service,
-)
-from src.runtime.v3_deps import (
-    get_result_evidence_repo as _get_result_evidence_repo,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def get_artifact_storage():
-    """Return configured artifact storage adapter (local or S3) via the app composition root."""
-    return get_app_container().get_artifact_storage()
 
 
-def get_worker_launch_service_dep() -> WorkerLaunchService:
-    return get_worker_launch_service()
 
 
-def get_job_stale_reconciler(
-    job_repo: JobRepository = Depends(get_job_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    clock: Clock = Depends(get_clock),
-) -> JobStaleReconciler:
-    from src.config import load_settings
 
-    settings = load_settings()
-    outbox_store = None
-    try:
-        outbox_store = _get_artifact_publication_outbox_store()
-    except Exception:
-        outbox_store = None
-    return JobStaleReconciler(
-        job_repo=job_repo,
-        aisle_repo=aisle_repo,
-        clock=clock,
-        stale_after_seconds=int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0),
-        artifact_publication_outbox=outbox_store,
-    )
 
 
-def get_finalization_assessment_service() -> FinalizationAssessmentService:
-    return _get_finalization_assessment_service()
-
-
-def get_artifact_publication_outbox_store():
-    return _get_artifact_publication_outbox_store()
-
-
-def get_artifact_manifest_store():
-    return _get_artifact_manifest_store()
-
-
-def get_supplier_extraction_profile_repo() -> SupplierExtractionProfileRepository:
-    return get_app_container().get_supplier_extraction_profile_repo()
-
-
-def get_client_supplier_label_profile_repo():
-
-    return get_app_container().get_client_supplier_label_profile_repo()
-
-
-def get_result_evidence_repo():
-    return _get_result_evidence_repo()
-
-
-def get_result_evidence_query_service(
-    result_evidence_repo=Depends(get_result_evidence_repo),
-    source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
-    manifest_store=Depends(get_artifact_manifest_store),
-    artifact_storage=Depends(get_artifact_storage),
-):
-    from src.api.services.v3_stored_artifact_access import resolve_source_asset_image_display
-    from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
-
-    return ResultEvidenceQueryService(
-        result_evidence_repo=result_evidence_repo,
-        source_asset_repo=source_asset_repo,
-        manifest_store=manifest_store,
-        artifact_store=artifact_storage,
-        image_url_resolver=resolve_source_asset_image_display,
-    )
-
-
-def get_operational_execution_config_resolver() -> OperationalExecutionConfigResolver:
-    return OperationalExecutionConfigResolver()
-
-
-def require_inventory_client_scope(
-    inventory_id: str,
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    user: AuthUser = Depends(get_current_admin),
-) -> AccessPrincipal:
-    """FastAPI dependency: enforce actor→client→inventory; return AccessPrincipal.
-
-    Raised as a **dependency** (before the route body runs), so failures here are not
-    caught by a route's own ``try/except reraise_if_mapped``. Map them explicitly —
-    otherwise an unmapped ``InventoryNotFoundError`` raised during dependency resolution
-    escapes FastAPI's registered exception handlers and surfaces as a 500, not the
-    intended 404 (verified: ``ServerErrorMiddleware`` sits outside ``ExceptionMiddleware``,
-    so only ``StructuredApiHttpError``/``HTTPException`` raised here become the documented
-    client-facing status).
-    """
-    from src.api.errors import reraise_if_mapped
-
-    principal = access_principal_from_auth_user(user)
-    try:
-        InventoryAccessPolicy(inventory_repo).require_inventory(inventory_id, principal)
-    except Exception as e:
-        reraise_if_mapped(e)
-        raise
-    return principal
-
-
-def require_client_scope(
-    client_id: str,
-    client_repo: ClientRepository = Depends(get_client_repo),
-    user: AuthUser = Depends(get_current_admin),
-) -> AccessPrincipal:
-    """FastAPI dependency: enforce actor→client; return AccessPrincipal (404 cross-tenant)."""
-    from src.api.errors import reraise_if_mapped
-    from src.application.services.client_access_policy import ClientAccessPolicy
-
-    principal = access_principal_from_auth_user(user)
-    try:
-        ClientAccessPolicy(client_repo).require_client(client_id, principal)
-    except Exception as e:
-        reraise_if_mapped(e)
-        raise
-    return principal
-
-
-def require_raspberry_device_token(
-    x_device_token: str | None = Header(default=None, alias="X-Device-Token"),
-) -> None:
-    from src.config import load_settings
-
-    expected_token = (load_settings().raspberry_device_token or "").strip()
-    if not expected_token or not x_device_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Raspberry device authentication is not configured or missing",
-            headers={"WWW-Authenticate": "Device-Token"},
-        )
-    if not secrets.compare_digest(
-        x_device_token.encode("utf-8"), expected_token.encode("utf-8")
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Raspberry device token",
-            headers={"WWW-Authenticate": "Device-Token"},
-        )
-
-
-def get_access_principal(
-    user: AuthUser = Depends(get_current_admin),
-) -> AccessPrincipal:
-    """FastAPI dependency: AuthUser → AccessPrincipal (no inventory scope check)."""
-    return access_principal_from_auth_user(user)
-
-
-def get_inventory_access_policy(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-) -> InventoryAccessPolicy:
-    return InventoryAccessPolicy(inventory_repo, aisle_repo=aisle_repo)
-
-
-def get_capture_session_access_policy(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    capture_session_repo=Depends(get_capture_session_repo),
-) -> InventoryAccessPolicy:
-    return InventoryAccessPolicy(
-        inventory_repo,
-        aisle_repo=aisle_repo,
-        capture_session_repo=capture_session_repo,
-    )
-
-
-def require_capture_session_upload_scope(
-    inventory_id: str,
-    session_id: str,
-    aisle_id: str | None = None,
-    access_policy: InventoryAccessPolicy = Depends(get_capture_session_access_policy),
-    user: AuthUser = Depends(get_current_admin),
-) -> AccessPrincipal:
-    """Validate inventory→session→aisle hierarchy before multipart staging spool.
-
-    Runs as a **dependency**, ahead of ``files: File(...)`` in the route signature, so a
-    denial here means Starlette/FastAPI never invokes the route body's own upload-spool
-    call. Domain errors (``InventoryNotFoundError`` / ``CaptureSessionNotFoundError`` /
-    ``AisleNotFoundError`` / ``CaptureSessionNotAcceptingUploadsError``) must be mapped to
-    HTTP here explicitly: raised unmapped from a dependency, they bypass every route's
-    ``try/except reraise_if_mapped`` and reach only the global ``Exception`` handler,
-    which is wired to Starlette's outer ``ServerErrorMiddleware`` — producing a 500
-    instead of the documented 404/409, even though the security check itself ran correctly.
-    """
-    from src.api.errors import reraise_if_mapped
-
-    principal = access_principal_from_auth_user(user)
-    try:
-        access_policy.require_capture_session_for_staging_upload(
-            inventory_id=inventory_id,
-            session_id=session_id,
-            principal=principal,
-            aisle_id=aisle_id,
-        )
-    except Exception as e:
-        reraise_if_mapped(e)
-        raise
-    return principal
-
-
-def get_create_inventory_use_case(
-    repo: InventoryRepository = Depends(get_inventory_repo),
-    client_repo: ClientRepository = Depends(get_client_repo),
-    clock: Clock = Depends(get_clock),
-    operational_resolver: OperationalExecutionConfigResolver = Depends(
-        get_operational_execution_config_resolver
-    ),
-) -> CreateInventoryUseCase:
-    from src.config import load_settings as _load_settings
-
-    return CreateInventoryUseCase(
-        inventory_repo=repo,
-        client_repo=client_repo,
-        clock=clock,
-        operational_resolver=operational_resolver,
-        settings_loader=_load_settings,
-    )
-
-
-def get_update_inventory_name_use_case(
-    repo: InventoryRepository = Depends(get_inventory_repo),
-    clock: Clock = Depends(get_clock),
-) -> UpdateInventoryNameUseCase:
-    return UpdateInventoryNameUseCase(inventory_repo=repo, clock=clock)
-
-
-def get_soft_delete_inventories_use_case(
-    repo: InventoryRepository = Depends(get_inventory_repo),
-    clock: Clock = Depends(get_clock),
-) -> SoftDeleteInventoriesUseCase:
-    return SoftDeleteInventoriesUseCase(inventory_repo=repo, clock=clock)
-
-
-def get_create_client_use_case(
-    repo: ClientRepository = Depends(get_client_repo),
-    clock: Clock = Depends(get_clock),
-) -> CreateClientUseCase:
-    return CreateClientUseCase(client_repo=repo, clock=clock)
-
-
-def get_update_client_use_case(
-    repo: ClientRepository = Depends(get_client_repo),
-    clock: Clock = Depends(get_clock),
-) -> UpdateClientUseCase:
-    return UpdateClientUseCase(client_repo=repo, clock=clock)
-
-
-def get_create_client_supplier_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    clock: Clock = Depends(get_clock),
-) -> CreateClientSupplierUseCase:
-    return CreateClientSupplierUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        clock=clock,
-    )
-
-
-def get_list_inventories_use_case(
-    repo: InventoryRepository = Depends(get_inventory_repo),
-) -> ListInventoriesUseCase:
-    return ListInventoriesUseCase(inventory_repo=repo)
-
-
-def get_list_clients_use_case(
-    repo: ClientRepository = Depends(get_client_repo),
-) -> ListClientsUseCase:
-    return ListClientsUseCase(client_repo=repo)
-
-
-def get_list_client_suppliers_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-) -> ListClientSuppliersUseCase:
-    return ListClientSuppliersUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-    )
-
-
-def get_list_inventory_list_items_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    client_repo: ClientRepository = Depends(get_client_repo),
-) -> ListInventoryListItemsUseCase:
-    return ListInventoryListItemsUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        position_repo=position_repo,
-        client_repo=client_repo,
-    )
-
-
-def get_result_context_resolver(
-    job_repo: JobRepository = Depends(get_job_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-) -> ResultContextResolver:
-    return ResultContextResolver(job_repo=job_repo, position_repo=position_repo)
-
-
-def get_inventory_recognition_config_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    extraction_profile_repo: SupplierExtractionProfileRepository = Depends(
-        get_supplier_extraction_profile_repo
-    ),
-    label_profile_repo=Depends(get_client_supplier_label_profile_repo),
-):
-    from src.application.use_cases.inventories.get_inventory_recognition_config import (
-        GetInventoryRecognitionConfigUseCase,
-    )
-
-    return GetInventoryRecognitionConfigUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        extraction_profile_repo=extraction_profile_repo,
-        label_profile_repo=label_profile_repo,
-    )
-
-
-def get_client_recognition_config_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    extraction_profile_repo: SupplierExtractionProfileRepository = Depends(
-        get_supplier_extraction_profile_repo
-    ),
-    label_profile_repo=Depends(get_client_supplier_label_profile_repo),
-) -> GetClientRecognitionConfigUseCase:
-    return GetClientRecognitionConfigUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        extraction_profile_repo=extraction_profile_repo,
-        label_profile_repo=label_profile_repo,
-    )
-
-def get_raspberry_recognition_config_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_recognition_use_case: GetClientRecognitionConfigUseCase = Depends(
-        get_client_recognition_config_use_case
-    ),
-) -> GetRaspberryRecognitionConfigUseCase:
-    return GetRaspberryRecognitionConfigUseCase(
-        client_repo=client_repo,
-        client_recognition_use_case=client_recognition_use_case,
-    )
-
-def get_get_inventory_use_case(
-    repo: InventoryRepository = Depends(get_inventory_repo),
-) -> GetInventoryUseCase:
-    return GetInventoryUseCase(inventory_repo=repo)
-
-
-def get_get_client_use_case(
-    repo: ClientRepository = Depends(get_client_repo),
-) -> GetClientUseCase:
-    return GetClientUseCase(client_repo=repo)
-
-
-def get_get_client_supplier_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-) -> GetClientSupplierUseCase:
-    return GetClientSupplierUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-    )
-
-
-def get_export_inventory_results_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
-    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
-) -> ExportInventoryResultsUseCase:
-    return ExportInventoryResultsUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        position_repo=position_repo,
-        product_record_repo=product_record_repo,
-        result_context_resolver=result_context_resolver,
-        reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
-        override_repo=get_app_container().get_manual_position_override_repo(),
-        label_repo=get_app_container().get_client_position_label_repo(),
-    )
-
-
-def get_export_aisle_results_csv_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
-    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
-) -> ExportAisleResultsCsvUseCase:
-    return ExportAisleResultsCsvUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        position_repo=position_repo,
-        product_record_repo=product_record_repo,
-        result_context_resolver=result_context_resolver,
-        reconciliation_repo=get_app_container().get_position_reconciliation_repo(),
-        override_repo=get_app_container().get_manual_position_override_repo(),
-        label_repo=get_app_container().get_client_position_label_repo(),
-    )
-
-
-def get_export_inventory_summary_csv_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
-    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    job_repo: JobRepository = Depends(get_job_repo),
-) -> ExportInventorySummaryCsvUseCase:
-    return ExportInventorySummaryCsvUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        position_repo=position_repo,
-        product_record_repo=product_record_repo,
-        result_context_resolver=result_context_resolver,
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        job_repo=job_repo,
-    )
-
-
-def get_export_inventory_package_zip_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
-    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    job_repo: JobRepository = Depends(get_job_repo),
-) -> ExportInventoryPackageZipUseCase:
-    return ExportInventoryPackageZipUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        position_repo=position_repo,
-        product_record_repo=product_record_repo,
-        result_context_resolver=result_context_resolver,
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        job_repo=job_repo,
-    )
-
-
-def get_export_aisle_business_csv_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
-    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-) -> ExportAisleBusinessCsvUseCase:
-    return ExportAisleBusinessCsvUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        position_repo=position_repo,
-        product_record_repo=product_record_repo,
-        result_context_resolver=result_context_resolver,
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-    )
-
-
-def get_get_inventory_metrics_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    metrics_calculator: MetricsCalculator = Depends(get_metrics_calculator),
-) -> GetInventoryMetricsUseCase:
-    return GetInventoryMetricsUseCase(
-        inventory_repo=inventory_repo,
-        metrics_calculator=metrics_calculator,
-    )
-
-
-def get_inventory_status_reconciler(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    clock: Clock = Depends(get_clock),
-) -> InventoryStatusReconciler:
-    return InventoryStatusReconciler(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        clock=clock,
-    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def get_aisle_review_lifecycle_sync(
@@ -735,22 +353,6 @@ def get_aisle_review_lifecycle_sync(
     return AisleReviewLifecycleSync(
         aisle_repo=aisle_repo,
         position_repo=position_repo,
-        clock=clock,
-        status_reconciler=status_reconciler,
-    )
-
-
-def get_create_aisle_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    clock: Clock = Depends(get_clock),
-    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
-) -> CreateAisleUseCase:
-    return CreateAisleUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        client_supplier_repo=client_supplier_repo,
         clock=clock,
         status_reconciler=status_reconciler,
     )
@@ -1790,190 +1392,44 @@ def get_export_aisle_code_scans_use_case(
     )
 
 
-def get_upload_supplier_reference_images_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    reference_repo: SupplierReferenceImageRepository = Depends(get_supplier_reference_image_repo),
-    artifact_storage=Depends(get_artifact_storage),
-    clock: Clock = Depends(get_clock),
-) -> UploadSupplierReferenceImagesUseCase:
-    return UploadSupplierReferenceImagesUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        reference_repo=reference_repo,
-        artifact_storage=artifact_storage,
-        clock=clock,
-    )
 
 
-def get_list_supplier_reference_images_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    reference_repo: SupplierReferenceImageRepository = Depends(get_supplier_reference_image_repo),
-) -> ListSupplierReferenceImagesUseCase:
-    return ListSupplierReferenceImagesUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        reference_repo=reference_repo,
-    )
 
 
-def get_get_supplier_reference_image_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    reference_repo: SupplierReferenceImageRepository = Depends(get_supplier_reference_image_repo),
-) -> GetSupplierReferenceImageUseCase:
-    return GetSupplierReferenceImageUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        reference_repo=reference_repo,
-    )
 
 
-def get_delete_supplier_reference_image_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    reference_repo: SupplierReferenceImageRepository = Depends(get_supplier_reference_image_repo),
-    artifact_storage=Depends(get_artifact_storage),
-) -> DeleteSupplierReferenceImageUseCase:
-    return DeleteSupplierReferenceImageUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        reference_repo=reference_repo,
-        artifact_storage=artifact_storage,
-    )
 
 
-def get_list_supplier_prompt_configs_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
-) -> ListSupplierPromptConfigsUseCase:
-    from src.config import load_settings
-
-    return ListSupplierPromptConfigsUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        prompt_config_repo=prompt_config_repo,
-        settings=load_settings(),
-    )
 
 
-def get_create_supplier_prompt_config_version_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
-    clock: Clock = Depends(get_clock),
-) -> CreateSupplierPromptConfigVersionUseCase:
-    from src.config import load_settings
-
-    return CreateSupplierPromptConfigVersionUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        prompt_config_repo=prompt_config_repo,
-        clock=clock,
-        settings=load_settings(),
-    )
 
 
-def get_get_active_supplier_prompt_config_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
-) -> GetActiveSupplierPromptConfigUseCase:
-    from src.config import load_settings
-
-    return GetActiveSupplierPromptConfigUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        prompt_config_repo=prompt_config_repo,
-        settings=load_settings(),
-    )
 
 
-def get_activate_supplier_prompt_config_version_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
-) -> ActivateSupplierPromptConfigVersionUseCase:
-    return ActivateSupplierPromptConfigVersionUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        prompt_config_repo=prompt_config_repo,
-    )
 
 
-def get_get_supplier_prompt_config_use_case(
-    client_repo: ClientRepository = Depends(get_client_repo),
-    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
-    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
-) -> GetSupplierPromptConfigUseCase:
-    return GetSupplierPromptConfigUseCase(
-        client_repo=client_repo,
-        client_supplier_repo=client_supplier_repo,
-        prompt_config_repo=prompt_config_repo,
-    )
 
 
-def get_list_supplier_extraction_profiles_use_case():
-    return get_app_container().get_list_supplier_extraction_profiles_use_case()
 
 
-def get_get_active_supplier_extraction_profile_use_case():
-    return get_app_container().get_get_active_supplier_extraction_profile_use_case()
 
 
-def get_get_supplier_extraction_profile_by_version_use_case():
-    return get_app_container().get_get_supplier_extraction_profile_by_version_use_case()
 
 
-def get_create_supplier_extraction_profile_version_use_case():
-    return get_app_container().get_create_supplier_extraction_profile_version_use_case()
 
 
-def get_activate_supplier_extraction_profile_version_use_case():
-    return get_app_container().get_activate_supplier_extraction_profile_version_use_case()
 
 
-def get_test_label_recognition_code_use_case():
-    return get_app_container().get_test_label_recognition_code_use_case()
 
 
-def get_clone_supplier_extraction_profile_use_case():
-    return get_app_container().get_clone_supplier_extraction_profile_use_case()
 
 
-def get_list_supplier_reference_annotations_use_case():
-    return get_app_container().get_list_supplier_reference_annotations_use_case()
 
 
-def get_replace_supplier_reference_annotations_use_case():
-    return get_app_container().get_replace_supplier_reference_annotations_use_case()
 
 
-def get_list_client_supplier_label_profiles_use_case():
-    from src.application.use_cases.suppliers.manage_client_supplier_label_profiles import (
-        ListClientSupplierLabelProfilesUseCase,
-    )
-
-    container = get_app_container()
-    return ListClientSupplierLabelProfilesUseCase(
-        client_supplier_repo=container.get_client_supplier_repo(),
-        label_profile_repo=container.get_client_supplier_label_profile_repo(),
-    )
 
 
-def get_upsert_client_supplier_label_profile_use_case():
-    from src.application.use_cases.suppliers.manage_client_supplier_label_profiles import (
-        UpsertClientSupplierLabelProfileUseCase,
-    )
-
-    container = get_app_container()
-    return UpsertClientSupplierLabelProfileUseCase(
-        client_supplier_repo=container.get_client_supplier_repo(),
-        label_profile_repo=container.get_client_supplier_label_profile_repo(),
-        clock=container.get_clock(),
-    )
 
 
 def get_list_aisle_positions_use_case(
@@ -2335,22 +1791,6 @@ def get_observability_inventory_guard(
     return _guard
 
 
-def get_job_source_asset_repo():
-    return get_app_container().get_job_source_asset_repo()
-
-
-def get_manual_image_coverage_repo():
-    return get_app_container().get_manual_image_coverage_repo()
-
-
-def get_job_image_coverage_repo():
-    return get_app_container().get_job_image_coverage_repo()
-
-
-def get_manual_image_result_uow_factory():
-    return get_app_container().get_manual_image_result_uow_factory()
-
-
 def get_list_job_image_results_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
@@ -2372,10 +1812,6 @@ def get_list_job_image_results_use_case(
         product_record_repo=product_record_repo,
         detection_repo=get_app_container().get_image_position_label_detection_repo(),
     )
-
-
-def get_processing_event_repo():
-    return get_app_container().get_processing_event_repo()
 
 
 def _build_processing_scope_validator(c):
@@ -2565,667 +2001,6 @@ def get_create_manual_image_result_use_case(
         clock=clock,
         unit_of_work_factory=unit_of_work_factory,
     )
-
-
-def get_job_artifact_catalog_service(
-    manifest_store=Depends(get_artifact_manifest_store),
-    job_source_asset_repo=Depends(get_job_source_asset_repo),
-):
-    from src.application.services.job_artifact_catalog_service import JobArtifactCatalogService
-
-    return JobArtifactCatalogService(
-        manifest_store=manifest_store,
-        job_source_asset_repo=job_source_asset_repo,
-    )
-
-
-def get_job_retry_chain_service(
-    job_repo: JobRepository = Depends(get_job_repo),
-):
-    from src.application.services.job_retry_chain_service import JobRetryChainService
-
-    return JobRetryChainService(job_repo=job_repo)
-
-
-def get_run_auditability_service(
-    job_repo: JobRepository = Depends(get_job_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    artifact_storage=Depends(get_artifact_storage),
-):
-    """Read-only job auditability aggregation (Phase H2)."""
-    from src.application.services.run_auditability_service import RunAuditabilityService
-    from src.infrastructure.artifacts.run_audit_execution_log_loader import (
-        DefaultRunAuditExecutionLogLoader,
-    )
-    from src.infrastructure.artifacts.stored_artifact_reader import DefaultStoredArtifactReader
-
-    return RunAuditabilityService(
-        job_repo=job_repo,
-        aisle_repo=aisle_repo,
-        inventory_repo=inventory_repo,
-        stored_artifact_reader=DefaultStoredArtifactReader(job_repo, artifact_storage),
-        execution_log_loader=DefaultRunAuditExecutionLogLoader(artifact_storage),
-    )
-
-
-def get_observability_metrics_service(
-    job_repo: JobRepository = Depends(get_job_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-):
-    """Read-only observability metrics (Phase H5)."""
-    from src.application.services.observability_metrics_service import ObservabilityMetricsService
-
-    return ObservabilityMetricsService(
-        job_repo=job_repo,
-        aisle_repo=aisle_repo,
-        inventory_repo=inventory_repo,
-    )
-
-
-def get_compare_aisle_runs_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    job_repo: JobRepository = Depends(get_job_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-) -> CompareAisleRunsUseCase:
-    from src.config import load_settings
-
-    return CompareAisleRunsUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        job_repo=job_repo,
-        position_repo=position_repo,
-        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
-    )
-
-
-def get_compare_many_aisle_runs_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    job_repo: JobRepository = Depends(get_job_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-) -> CompareManyAisleRunsUseCase:
-    from src.config import load_settings
-
-    return CompareManyAisleRunsUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        job_repo=job_repo,
-        position_repo=position_repo,
-        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
-    )
-
-
-def get_promote_aisle_operational_job_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    job_repo: JobRepository = Depends(get_job_repo),
-) -> PromoteAisleOperationalJobUseCase:
-    from src.runtime.v3_deps import get_app_container
-
-    return PromoteAisleOperationalJobUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        job_repo=job_repo,
-        operational_promotion_service=get_app_container().build_operational_result_promotion_service(
-            aisle_repo=aisle_repo,
-            job_repo=job_repo,
-        ),
-    )
-
-
-def get_export_aisle_benchmark_run_csv_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    job_repo: JobRepository = Depends(get_job_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
-) -> ExportAisleBenchmarkRunCsvUseCase:
-    from src.config import load_settings
-
-    return ExportAisleBenchmarkRunCsvUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        job_repo=job_repo,
-        position_repo=position_repo,
-        product_record_repo=product_record_repo,
-        positions_aisle_raw_cap=load_settings().v3_positions_aisle_raw_cap,
-    )
-
-
-def get_export_aisle_benchmark_compare_csv_use_case(
-    compare_uc: CompareAisleRunsUseCase = Depends(get_compare_aisle_runs_use_case),
-) -> ExportAisleBenchmarkCompareCsvUseCase:
-    return ExportAisleBenchmarkCompareCsvUseCase(compare_uc=compare_uc)
-
-
-def get_analytics_query_service(
-    repo=Depends(get_analytics_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-) -> AnalyticsQueryService:
-    return AnalyticsQueryService(repo, aisle_repo)
-
-
-def get_analytics_cost_summary_service(
-    job_repo: JobRepository = Depends(get_job_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
-    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
-):
-    from src.application.services.analytics_cost_counted_quantity import (
-        AnalyticsCostCountedQuantityService,
-    )
-    from src.application.services.analytics_cost_summary_service import AnalyticsCostSummaryService
-
-    return AnalyticsCostSummaryService(
-        job_repo=job_repo,
-        aisle_repo=aisle_repo,
-        inventory_repo=inventory_repo,
-        counted_quantity_service=AnalyticsCostCountedQuantityService(
-            inventory_repo=inventory_repo,
-            aisle_repo=aisle_repo,
-            position_repo=position_repo,
-            product_record_repo=product_record_repo,
-            job_repo=job_repo,
-            result_context_resolver=result_context_resolver,
-        ),
-    )
-
-
-def get_create_capture_session_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.create_capture_session import (
-        CreateCaptureSessionUseCase,
-    )
-    from src.config import load_settings
-
-    s = load_settings()
-    return CreateCaptureSessionUseCase(
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        session_repo=session_repo,
-        clock=clock,
-        max_open_sessions_per_aisle=s.v3_capture_max_open_sessions_per_aisle,
-    )
-
-
-def get_close_capture_session_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.close_capture_session import (
-        CloseCaptureSessionUseCase,
-    )
-
-    return CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock)
-
-
-def get_cancel_capture_session_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-    artifact_storage=Depends(get_artifact_storage),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.cancel_capture_session import (
-        CancelCaptureSessionUseCase,
-    )
-
-    return CancelCaptureSessionUseCase(
-        session_repo=session_repo,
-        item_repo=item_repo,
-        artifact_storage=artifact_storage,
-        clock=clock,
-    )
-
-
-def get_list_capture_sessions_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-):
-    from src.application.use_cases.capture_sessions.list_capture_sessions import (
-        ListCaptureSessionsUseCase,
-    )
-    from src.config import load_settings
-
-    s = load_settings()
-    return ListCaptureSessionsUseCase(
-        inventory_repo=inventory_repo,
-        session_repo=session_repo,
-        default_page_size=s.v3_capture_session_list_default_page_size,
-        max_page_size=s.v3_capture_session_list_max_page_size,
-    )
-
-
-def get_get_capture_session_detail_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-):
-    from src.application.use_cases.capture_sessions.get_capture_session_detail import (
-        GetCaptureSessionDetailUseCase,
-    )
-
-    return GetCaptureSessionDetailUseCase(
-        inventory_repo=inventory_repo,
-        session_repo=session_repo,
-        item_repo=item_repo,
-    )
-
-
-def get_capture_staging_time_metadata_extractor():
-    from src.application.services.capture_staging_time_metadata import (
-        PillowCaptureStagingTimeMetadataExtractor,
-    )
-    from src.config import load_settings
-
-    s = load_settings()
-    return PillowCaptureStagingTimeMetadataExtractor(
-        confidence_exif=s.v3_capture_time_confidence_exif,
-        confidence_mtime=s.v3_capture_time_confidence_mtime,
-        confidence_fallback=s.v3_capture_time_confidence_fallback,
-    )
-
-
-def get_upload_capture_session_staging_items_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-    artifact_storage=Depends(get_artifact_storage),
-    clock: Clock = Depends(get_clock),
-    time_metadata_extractor=Depends(get_capture_staging_time_metadata_extractor),
-    access_policy: InventoryAccessPolicy = Depends(get_capture_session_access_policy),
-):
-    from src.application.services.upload_request_limits import UploadRequestLimitPolicy
-    from src.application.use_cases.capture_sessions.upload_capture_session_staging_items import (
-        UploadCaptureSessionStagingItemsUseCase,
-    )
-    from src.config import load_settings
-
-    s = load_settings()
-    policy = UploadRequestLimitPolicy.from_settings(s)
-    return UploadCaptureSessionStagingItemsUseCase(
-        session_repo=session_repo,
-        item_repo=item_repo,
-        artifact_storage=artifact_storage,
-        clock=clock,
-        staging_prefix=s.v3_capture_staging_storage_prefix,
-        max_upload_bytes=policy.max_file_size_bytes,
-        time_metadata_extractor=time_metadata_extractor,
-        access_policy=access_policy,
-        upload_policy=policy,
-    )
-
-
-def get_update_capture_session_clock_offset_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.update_capture_session_clock_offset import (
-        UpdateCaptureSessionClockOffsetUseCase,
-    )
-    from src.config import load_settings
-
-    s = load_settings()
-    return UpdateCaptureSessionClockOffsetUseCase(
-        session_repo=session_repo,
-        item_repo=item_repo,
-        clock=clock,
-        min_offset_seconds=s.v3_capture_clock_offset_min_seconds,
-        max_offset_seconds=s.v3_capture_clock_offset_max_seconds,
-    )
-
-
-def get_compute_capture_session_assignment_preview_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.compute_capture_session_assignment_preview import (
-        ComputeCaptureSessionAssignmentPreviewUseCase,
-    )
-    from src.config import load_settings
-
-    s = load_settings()
-    return ComputeCaptureSessionAssignmentPreviewUseCase(
-        session_repo=session_repo,
-        item_repo=item_repo,
-        position_repo=position_repo,
-        clock=clock,
-        preview_max_positions=s.v3_capture_preview_max_positions,
-    )
-
-
-def get_compute_capture_session_groups_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.compute_capture_session_groups import (
-        ComputeCaptureSessionGroupsUseCase,
-    )
-    from src.config import load_settings
-
-    s = load_settings()
-    return ComputeCaptureSessionGroupsUseCase(
-        session_repo=session_repo,
-        item_repo=item_repo,
-        group_repo=group_repo,
-        clock=clock,
-        max_time_gap_seconds=s.v3_capture_grouping_max_gap_seconds,
-    )
-
-
-def get_get_capture_session_groups_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
-):
-    from src.application.use_cases.capture_sessions.get_capture_session_groups import (
-        GetCaptureSessionGroupsUseCase,
-    )
-
-    return GetCaptureSessionGroupsUseCase(session_repo=session_repo, group_repo=group_repo)
-
-
-def get_assign_capture_session_group_to_existing_aisle_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.assign_capture_session_group_to_existing_aisle import (
-        AssignCaptureSessionGroupToExistingAisleUseCase,
-    )
-
-    return AssignCaptureSessionGroupToExistingAisleUseCase(
-        session_repo=session_repo,
-        group_repo=group_repo,
-        aisle_repo=aisle_repo,
-        clock=clock,
-    )
-
-
-def get_create_aisle_and_assign_capture_session_group_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
-    create_aisle: CreateAisleUseCase = Depends(get_create_aisle_use_case),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.create_aisle_and_assign_capture_session_group import (
-        CreateAisleAndAssignCaptureSessionGroupUseCase,
-    )
-
-    return CreateAisleAndAssignCaptureSessionGroupUseCase(
-        session_repo=session_repo,
-        group_repo=group_repo,
-        create_aisle=create_aisle,
-        clock=clock,
-    )
-
-
-def get_compute_materialized_capture_session_group_preview_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
-):
-    from src.application.use_cases.capture_sessions.compute_materialized_capture_session_group_preview import (
-        ComputeMaterializedCaptureSessionGroupPreviewUseCase,
-    )
-    from src.config import load_settings
-
-    s = load_settings()
-    return ComputeMaterializedCaptureSessionGroupPreviewUseCase(
-        session_repo=session_repo,
-        group_repo=group_repo,
-        item_repo=item_repo,
-        position_repo=position_repo,
-        asset_repo=asset_repo,
-        preview_max_positions=s.v3_capture_preview_max_positions,
-    )
-
-
-def get_materialize_capture_session_group_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
-    artifact_storage=Depends(get_artifact_storage),
-    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.materialize_capture_session_group import (
-        MaterializeCaptureSessionGroupUseCase,
-    )
-
-    return MaterializeCaptureSessionGroupUseCase(
-        session_repo=session_repo,
-        group_repo=group_repo,
-        item_repo=item_repo,
-        aisle_repo=aisle_repo,
-        asset_repo=asset_repo,
-        artifact_storage=artifact_storage,
-        status_reconciler=status_reconciler,
-        clock=clock,
-    )
-
-
-def get_materialize_capture_session_use_case(
-    session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
-    item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
-    confirm_repo: CaptureSessionConfirmIdempotencyRepository = Depends(
-        get_capture_session_confirm_repo
-    ),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
-    artifact_storage=Depends(get_artifact_storage),
-    status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.capture_sessions.materialize_capture_session import (
-        MaterializeCaptureSessionUseCase,
-    )
-
-    return MaterializeCaptureSessionUseCase(
-        session_repo=session_repo,
-        item_repo=item_repo,
-        confirm_repo=confirm_repo,
-        aisle_repo=aisle_repo,
-        asset_repo=asset_repo,
-        artifact_storage=artifact_storage,
-        status_reconciler=status_reconciler,
-        clock=clock,
-    )
-
-
-def get_create_ordered_capture_session_use_case(
-    session_repo=Depends(get_ordered_capture_session_repo),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.ordered_capture.manage_ordered_capture_session import (
-        CreateOrderedCaptureSessionUseCase,
-    )
-
-    return CreateOrderedCaptureSessionUseCase(
-        session_repo=session_repo,
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        access_policy=access_policy,
-        clock=clock,
-    )
-
-
-def get_get_ordered_capture_session_use_case(
-    session_repo=Depends(get_ordered_capture_session_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-):
-    from src.application.use_cases.ordered_capture.manage_ordered_capture_session import (
-        GetOrderedCaptureSessionUseCase,
-    )
-
-    return GetOrderedCaptureSessionUseCase(
-        session_repo=session_repo,
-        access_policy=access_policy,
-    )
-
-
-def get_seal_ordered_capture_session_use_case(
-    session_repo=Depends(get_ordered_capture_session_repo),
-    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.ordered_capture.manage_ordered_capture_session import (
-        SealOrderedCaptureSessionUseCase,
-    )
-
-    return SealOrderedCaptureSessionUseCase(
-        session_repo=session_repo,
-        asset_repo=asset_repo,
-        access_policy=access_policy,
-        clock=clock,
-    )
-
-
-def get_create_aisle_location_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    aisle_repo: AisleRepository = Depends(get_aisle_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
-        CreateAisleLocationUseCase,
-    )
-
-    return CreateAisleLocationUseCase(
-        location_repo=location_repo,
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        access_policy=access_policy,
-        clock=clock,
-    )
-
-
-def get_list_aisle_locations_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-):
-    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
-        ListAisleLocationsUseCase,
-    )
-
-    return ListAisleLocationsUseCase(
-        location_repo=location_repo,
-        access_policy=access_policy,
-    )
-
-
-def get_get_aisle_location_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-):
-    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
-        GetAisleLocationUseCase,
-    )
-
-    return GetAisleLocationUseCase(
-        location_repo=location_repo,
-        access_policy=access_policy,
-    )
-
-
-def get_update_aisle_location_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
-        UpdateAisleLocationUseCase,
-    )
-
-    return UpdateAisleLocationUseCase(
-        location_repo=location_repo,
-        access_policy=access_policy,
-        clock=clock,
-    )
-
-
-def get_issue_aisle_location_label_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    label_repo=Depends(get_aisle_location_label_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.services.positioning_label_signing import (
-        PositioningLabelSigningConfig,
-        PositioningLabelSigningService,
-        parse_previous_secrets,
-    )
-    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
-        IssueAisleLocationLabelUseCase,
-    )
-    from src.config import load_settings
-
-    settings = load_settings()
-    signing = PositioningLabelSigningService(
-        PositioningLabelSigningConfig(
-            secret=settings.positioning_label_hmac_secret or None,
-            key_version=int(settings.positioning_label_hmac_key_version),
-            previous_secrets=parse_previous_secrets(
-                settings.positioning_label_hmac_previous_secrets
-            ),
-            required=bool(settings.positioning_label_signing_required),
-        )
-    )
-    return IssueAisleLocationLabelUseCase(
-        location_repo=location_repo,
-        label_repo=label_repo,
-        access_policy=access_policy,
-        clock=clock,
-        signing=signing,
-    )
-
-
-def get_aisle_location_label_artifact_repo():
-    return get_app_container().get_aisle_location_label_artifact_repo()
-
-
-def get_image_position_label_detection_repo():
-    return get_app_container().get_image_position_label_detection_repo()
-
-
-def get_position_reconciliation_repo():
-    return get_app_container().get_position_reconciliation_repo()
-
-
-def get_materialized_position_identity_reader():
-    return get_app_container().get_materialized_position_identity_reader()
-
-
-def get_client_position_label_repo():
-    return get_app_container().get_client_position_label_repo()
-
-
-def get_manual_position_override_repo():
-    return get_app_container().get_manual_position_override_repo()
-
-
 def get_position_override_scope_resolver(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
@@ -3465,187 +2240,4 @@ def get_reprocess_aisle_positioning_use_case(
         override_repo=override_repo,
         reconciliation_repo=reconciliation_repo,
         reprocessing_enabled=settings.position_reprocessing_enabled,
-    )
-
-
-def get_render_aisle_location_label_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    label_repo=Depends(get_aisle_location_label_repo),
-    artifact_repo=Depends(get_aisle_location_label_artifact_repo),
-    inventory_repo=Depends(get_inventory_repo),
-    aisle_repo=Depends(get_aisle_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.services.positioning_label_renderer import PositioningLabelRenderer
-    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
-        RenderAisleLocationLabelUseCase,
-    )
-
-    container = get_app_container()
-    return RenderAisleLocationLabelUseCase(
-        location_repo=location_repo,
-        label_repo=label_repo,
-        artifact_repo=artifact_repo,
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        artifact_store=container.get_artifact_store(),
-        renderer=PositioningLabelRenderer(),
-        access_policy=access_policy,
-        clock=clock,
-    )
-
-
-def get_download_aisle_location_label_use_case(
-    render_uc=Depends(get_render_aisle_location_label_use_case),
-    label_repo=Depends(get_aisle_location_label_repo),
-):
-    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
-        DownloadAisleLocationLabelUseCase,
-    )
-
-    return DownloadAisleLocationLabelUseCase(
-        render_use_case=render_uc,
-        label_repo=label_repo,
-        artifact_store=get_app_container().get_artifact_store(),
-    )
-
-
-def get_get_aisle_location_label_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    label_repo=Depends(get_aisle_location_label_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-):
-    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
-        GetAisleLocationLabelUseCase,
-    )
-
-    return GetAisleLocationLabelUseCase(
-        location_repo=location_repo,
-        label_repo=label_repo,
-        access_policy=access_policy,
-    )
-
-
-def get_replace_aisle_location_label_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    label_repo=Depends(get_aisle_location_label_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.ports.aisle_location_repository import (
-        AisleLocationLabelReplaceUnitOfWork,
-    )
-    from src.application.services.positioning_label_signing import (
-        PositioningLabelSigningConfig,
-        PositioningLabelSigningService,
-        parse_previous_secrets,
-    )
-    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
-        ReplaceAisleLocationLabelUseCase,
-    )
-    from src.config import load_settings
-    from src.infrastructure.persistence.sql_aisle_location_label_replace_uow import (
-        MemoryAisleLocationLabelReplaceUnitOfWork,
-        SqlAisleLocationLabelReplaceUnitOfWork,
-    )
-    from src.infrastructure.repositories.memory_aisle_location_repository import (
-        MemoryAisleLocationLabelRepository,
-    )
-
-    settings = load_settings()
-    signing = PositioningLabelSigningService(
-        PositioningLabelSigningConfig(
-            secret=settings.positioning_label_hmac_secret or None,
-            key_version=int(settings.positioning_label_hmac_key_version),
-            previous_secrets=parse_previous_secrets(
-                settings.positioning_label_hmac_previous_secrets
-            ),
-            required=bool(settings.positioning_label_signing_required),
-        )
-    )
-    container = get_app_container()
-    replace_uow: AisleLocationLabelReplaceUnitOfWork
-    if container.is_sql_repository_backend():
-        replace_uow = SqlAisleLocationLabelReplaceUnitOfWork(container._get_v3_sql_client())
-    else:
-        if not isinstance(label_repo, MemoryAisleLocationLabelRepository):
-            raise RuntimeError("Memory replace UoW requires MemoryAisleLocationLabelRepository")
-        replace_uow = MemoryAisleLocationLabelReplaceUnitOfWork(label_repo)
-    return ReplaceAisleLocationLabelUseCase(
-        location_repo=location_repo,
-        label_repo=label_repo,
-        replace_uow=replace_uow,
-        access_policy=access_policy,
-        clock=clock,
-        signing=signing,
-    )
-
-
-def get_batch_render_aisle_location_labels_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    label_repo=Depends(get_aisle_location_label_repo),
-    issue_uc=Depends(get_issue_aisle_location_label_use_case),
-    inventory_repo=Depends(get_inventory_repo),
-    aisle_repo=Depends(get_aisle_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.services.positioning_label_renderer import PositioningLabelRenderer
-    from src.application.use_cases.aisle_locations.render_aisle_location_labels import (
-        BatchRenderAisleLocationLabelsUseCase,
-    )
-    from src.config import load_settings
-
-    settings = load_settings()
-    max_batch = min(
-        int(settings.position_label_max_batch_size),
-        int(settings.position_label_batch_sync_limit),
-    )
-    return BatchRenderAisleLocationLabelsUseCase(
-        location_repo=location_repo,
-        label_repo=label_repo,
-        issue_use_case=issue_uc,
-        access_policy=access_policy,
-        renderer=PositioningLabelRenderer(),
-        inventory_repo=inventory_repo,
-        aisle_repo=aisle_repo,
-        artifact_store=get_app_container().get_artifact_store(),
-        clock=clock,
-        max_batch_size=max_batch,
-        max_pdf_bytes=int(settings.position_label_max_pdf_bytes),
-    )
-
-
-def get_list_aisle_location_labels_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    label_repo=Depends(get_aisle_location_label_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-):
-    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
-        ListAisleLocationLabelsUseCase,
-    )
-
-    return ListAisleLocationLabelsUseCase(
-        location_repo=location_repo,
-        label_repo=label_repo,
-        access_policy=access_policy,
-    )
-
-
-def get_invalidate_aisle_location_label_use_case(
-    location_repo=Depends(get_aisle_location_repo),
-    label_repo=Depends(get_aisle_location_label_repo),
-    access_policy: InventoryAccessPolicy = Depends(get_inventory_access_policy),
-    clock: Clock = Depends(get_clock),
-):
-    from src.application.use_cases.aisle_locations.manage_aisle_locations import (
-        InvalidateAisleLocationLabelUseCase,
-    )
-
-    return InvalidateAisleLocationLabelUseCase(
-        location_repo=location_repo,
-        label_repo=label_repo,
-        access_policy=access_policy,
-        clock=clock,
     )
