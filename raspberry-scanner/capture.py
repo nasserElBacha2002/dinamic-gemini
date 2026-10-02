@@ -47,6 +47,7 @@ class CaptureService:
         self._listener_error: str | None = None
         self._started_at: str | None = None
         self._filename: str | None = None
+        self._archived_filename: str | None = None
         self._error: str | None = None
 
     def start(self, aisle_code: object) -> dict[str, object]:
@@ -68,6 +69,7 @@ class CaptureService:
             self._not_exportable_count = 0
             self._started_at = datetime.now(timezone.utc).isoformat()
             self._filename = None
+            self._archived_filename = None
             self._error = None
             self._listener_error = None
             LOGGER.info("capture started aisle=%s", code)
@@ -131,12 +133,11 @@ class CaptureService:
             filename = f"{self._aisle_code}.txt"
             content = "\n".join(record.line for record in self._records) + "\n"
             try:
-                _write_new_atomic(self._export_directory, filename, content)
-            except FileExistsError as exc:
-                self._state = "EXPORT_FAILED"
-                self._error = "export_file_exists"
-                LOGGER.warning("capture export failed aisle=%s reason=file_exists", self._aisle_code)
-                raise CaptureError(self._error) from exc
+                archived_filename = _write_atomic_preserving_existing(
+                    self._export_directory,
+                    filename,
+                    content,
+                )
             except OSError as exc:
                 self._state = "EXPORT_FAILED"
                 self._error = f"export_write_failed: {type(exc).__name__}: {exc}"
@@ -144,8 +145,14 @@ class CaptureService:
                 raise CaptureError(self._error) from exc
             self._state = "FINISHED"
             self._filename = filename
+            self._archived_filename = archived_filename
             self._error = None
-            LOGGER.info("capture export succeeded aisle=%s filename=%s", self._aisle_code, filename)
+            LOGGER.info(
+                "capture export succeeded aisle=%s filename=%s archived_filename=%s",
+                self._aisle_code,
+                filename,
+                archived_filename,
+            )
             return self._snapshot_locked()
 
     def snapshot(self) -> dict[str, object]:
@@ -167,6 +174,7 @@ class CaptureService:
             "not_exportable_count": self._not_exportable_count,
             "started_at": self._started_at,
             "filename": self._filename,
+            "archived_filename": self._archived_filename,
             "error": self._error,
             "listener_error": self._listener_error,
         }
@@ -224,20 +232,49 @@ def _export_line(raw: str, decision: dict[str, object]) -> str | None:
     return None
 
 
-def _write_new_atomic(directory: Path, filename: str, content: str) -> None:
+def _write_atomic_preserving_existing(
+    directory: Path,
+    filename: str,
+    content: str,
+) -> str | None:
+    """Publish ``filename`` atomically and archive a previous export first.
+
+    The canonical filename must remain ``<aisle>.txt`` because the backend uses
+    it to identify the aisle. A hard link snapshots an existing export without
+    removing it; only after that succeeds is the canonical path atomically
+    replaced. Therefore a failed replacement still leaves the old export at
+    both its canonical path and its archived path.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     final_path = directory / filename
-    if final_path.exists():
-        raise FileExistsError(final_path)
     fd, temp_name = tempfile.mkstemp(prefix=f".{filename}.", dir=directory)
     temp_path = Path(temp_name)
+    archived_filename: str | None = None
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        # link(2) is atomic and refuses to overwrite a competing final path.
-        os.link(temp_path, final_path)
+
+        if final_path.exists():
+            archive_directory = directory / ".archive"
+            archive_directory.mkdir(parents=True, exist_ok=True)
+            stem = Path(filename).stem
+            suffix = Path(filename).suffix
+            sequence = 1
+            while True:
+                archive_name = f"{stem}.{sequence}{suffix}"
+                archive_path = archive_directory / archive_name
+                try:
+                    # link(2) snapshots the exact previous bytes and refuses to
+                    # overwrite an archive created by an earlier capture.
+                    os.link(final_path, archive_path)
+                    archived_filename = str(Path(".archive") / archive_name)
+                    break
+                except FileExistsError:
+                    sequence += 1
+
+        os.replace(temp_path, final_path)
         try:
             directory_fd = os.open(directory, os.O_RDONLY)
             try:
@@ -251,3 +288,4 @@ def _write_new_atomic(directory: Path, filename: str, content: str) -> None:
             temp_path.unlink()
         except FileNotFoundError:
             pass
+    return archived_filename

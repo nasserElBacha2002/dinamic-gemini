@@ -126,8 +126,10 @@ Ingresá un código de pasillo y usá **Iniciar captura**. La captura congela la
 selección actual, conserva únicamente resultados F2 exportables en su orden de
 lectura y, al finalizar, escribe `<pasillo>.txt` de forma atómica. El directorio
 se configura con `DINAMIC_EXPORT_DIRECTORY` (por defecto,
-`/var/lib/dinamic-raspberry-scanner/exports`). Un archivo existente no se
-sobrescribe.
+`/var/lib/dinamic-raspberry-scanner/exports`). Si ya existe el TXT canónico del
+pasillo, la versión anterior se conserva bajo `.archive/` y la captura nueva se
+publica atómicamente con el mismo nombre. Mantener `<pasillo>.txt` es necesario
+porque el importador obtiene el código de pasillo desde el nombre del archivo.
 
 El formato sigue el importador existente: ITEM DINAMIC conserva D1 canónico y
 POSITION DINAMIC v2 se escribe como `POSITION|label_id|pallet|side`; JSON

@@ -92,19 +92,36 @@ class CaptureServiceTests(unittest.TestCase):
         self.assertEqual(finished["state"], "FINISHED")
         self.assertIsNone(finished["filename"])
 
-    def test_existing_file_is_preserved_and_write_error_keeps_capture(self) -> None:
+    def test_existing_file_is_archived_and_new_export_keeps_canonical_name(self) -> None:
         target = self.directory / "A1.txt"
         target.write_text("existing", encoding="utf-8")
         self.capture.start("A1")
         self.capture.record(position_reading(1))
-        with self.assertRaisesRegex(CaptureError, "export_file_exists"):
-            self.capture.finish()
-        self.assertEqual(target.read_text(encoding="utf-8"), "existing")
-        self.assertEqual(self.capture.snapshot()["state"], "EXPORT_FAILED")
+        result = self.capture.finish()
+        self.assertEqual(result["state"], "FINISHED")
+        self.assertEqual(result["filename"], "A1.txt")
+        self.assertEqual(result["archived_filename"], ".archive/A1.1.txt")
+        self.assertEqual(target.read_text(encoding="utf-8"), "POSITION|POS1|04|RIGHT\n")
+        self.assertEqual(
+            (self.directory / ".archive" / "A1.1.txt").read_text(encoding="utf-8"),
+            "existing",
+        )
+
+        second = CaptureService(FakeRecognition(), self.directory)
+        second.start("A1")
+        second.record(item_reading(1, "D1|A|B|1|C"))
+        second_result = second.finish()
+        self.assertEqual(second_result["archived_filename"], ".archive/A1.2.txt")
+        self.assertEqual(
+            (self.directory / ".archive" / "A1.2.txt").read_text(encoding="utf-8"),
+            "POSITION|POS1|04|RIGHT\n",
+        )
+
+    def test_write_error_keeps_capture_for_retry(self) -> None:
         fresh = CaptureService(FakeRecognition(), self.directory / "other")
         fresh.start("A2")
         fresh.record(position_reading(1))
-        with patch("capture._write_new_atomic", side_effect=OSError("disk full")):
+        with patch("capture._write_atomic_preserving_existing", side_effect=OSError("disk full")):
             with self.assertRaisesRegex(CaptureError, "export_write_failed"):
                 fresh.finish()
         self.assertFalse((self.directory / "other" / "A2.txt").exists())
@@ -113,13 +130,13 @@ class CaptureServiceTests(unittest.TestCase):
         self.capture.start("A1")
         self.capture.record(position_reading(1))
         self.capture.record(item_reading(2, "D1|A|B|1|C"))
-        with patch("capture._write_new_atomic", side_effect=OSError("temporary")):
+        with patch("capture._write_atomic_preserving_existing", side_effect=OSError("temporary")):
             with self.assertRaisesRegex(CaptureError, "export_write_failed"):
                 self.capture.finish()
         before = self.capture.snapshot()
         with self.assertRaisesRegex(CaptureError, "capture_requires_resolution"):
             self.capture.start("A2")
-        with patch("capture._write_new_atomic") as write:
+        with patch("capture._write_atomic_preserving_existing") as write:
             self.capture.finish()
         content = write.call_args.args[2]
         self.assertEqual(before["aisle_code"], "A1")
