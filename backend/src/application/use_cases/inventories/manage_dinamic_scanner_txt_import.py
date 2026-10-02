@@ -255,6 +255,7 @@ class ConfirmDinamicScannerTxtImport:
         export_id: str,
         conflict_policy: str = "SKIP",
         confirmed_by_user_id: str | None = None,
+        client_supplier_id: str | None = None,
     ) -> DinamicScannerTxtConfirmResult:
         if not self._enabled:
             raise DinamicScannerTxtImportDisabledError()
@@ -278,6 +279,7 @@ class ConfirmDinamicScannerTxtImport:
             created_aisle, aisle_created = self._aisle_resolver.create_for_confirm(
                 inventory_id=inventory_id,
                 aisle_code=metadata.aisle_code,
+                client_supplier_id=client_supplier_id,
             )
             target_aisle_id = created_aisle.id
         else:

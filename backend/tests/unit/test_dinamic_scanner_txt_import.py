@@ -338,6 +338,71 @@ def test_supplier_ambiguous_on_confirm_when_multiple_suppliers() -> None:
     assert exc.value.code == TXT_SUPPLIER_AMBIGUOUS
 
 
+def test_confirm_uses_explicit_supplier_when_multiple_suppliers() -> None:
+    inventory_repo, aisle_repo, supplier_repo, inventory_id, supplier_ids = (
+        _seed_inventory_with_client(supplier_count=2)
+    )
+    preview, confirm, _, _, _, _ = _build_preview_confirm(
+        inventory_repo, aisle_repo, supplier_repo
+    )
+    staged = preview.execute(
+        inventory_id=inventory_id,
+        content=_txt(
+            "POSITION|POS001|04|RIGHT",
+            "D1|A1B2C3D4E5|SKU001|100|E",
+        ),
+        filename="P1.txt",
+    )
+
+    confirmed = confirm.execute(
+        inventory_id=inventory_id,
+        export_id=staged.csv_import.export_id,
+        client_supplier_id=supplier_ids[1],
+    )
+
+    aisle = aisle_repo.get_by_inventory_and_code(inventory_id, "P1")
+    assert confirmed.aisle_created is True
+    assert aisle is not None
+    assert aisle.client_supplier_id == supplier_ids[1]
+
+
+def test_confirm_rejects_explicit_supplier_from_another_client() -> None:
+    inventory_repo, aisle_repo, supplier_repo, inventory_id, _ = _seed_inventory_with_client(
+        supplier_count=2
+    )
+    supplier_repo.save(
+        ClientSupplier(
+            id="foreign-supplier",
+            client_id="another-client",
+            name="Foreign",
+            status=ClientSupplierStatus.ACTIVE,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    preview, confirm, _, _, _, _ = _build_preview_confirm(
+        inventory_repo, aisle_repo, supplier_repo
+    )
+    staged = preview.execute(
+        inventory_id=inventory_id,
+        content=_txt(
+            "POSITION|POS001|04|RIGHT",
+            "D1|A1B2C3D4E5|SKU001|100|E",
+        ),
+        filename="P1.txt",
+    )
+
+    with pytest.raises(DinamicScannerTxtImportError) as exc:
+        confirm.execute(
+            inventory_id=inventory_id,
+            export_id=staged.csv_import.export_id,
+            client_supplier_id="foreign-supplier",
+        )
+
+    assert exc.value.code == "DINAMIC_SCANNER_TXT_CLIENT_SUPPLIER_MISMATCH"
+    assert aisle_repo.get_by_inventory_and_code(inventory_id, "P1") is None
+
+
 def test_duplicate_label_id_in_file_is_omitted_once() -> None:
     """Unique instance label_id repeats keep a single product within the TXT scope."""
     inventory_repo, aisle_repo, supplier_repo, inventory_id, supplier_ids = _seed_inventory_with_client()

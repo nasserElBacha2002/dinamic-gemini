@@ -210,6 +210,7 @@ def confirm_dinamic_scanner_txt_import(
             export_id=body.export_id,
             conflict_policy=body.conflict_policy,
             confirmed_by_user_id=principal.actor_id or None,
+            client_supplier_id=body.client_supplier_id,
         )
         return _response(result, duplicate=result.duplicate)
     except DinamicScannerTxtImportDisabledError as exc:

@@ -30,7 +30,11 @@ export async function previewDinamicScannerTxtImport(
 /** POST …/dinamic-scanner-txt-imports/confirm */
 export async function confirmDinamicScannerTxtImport(
   inventoryId: string,
-  body: { export_id: string; conflict_policy?: 'SKIP' | 'REJECT' },
+  body: {
+    export_id: string;
+    conflict_policy?: 'SKIP' | 'REJECT';
+    client_supplier_id?: string;
+  },
   signal?: AbortSignal
 ): Promise<DinamicScannerTxtImportResponse> {
   return apiRequestJson<DinamicScannerTxtImportResponse>(`${txtImportsBase(inventoryId)}/confirm`, {
@@ -39,6 +43,7 @@ export async function confirmDinamicScannerTxtImport(
     body: {
       export_id: body.export_id,
       conflict_policy: body.conflict_policy ?? 'SKIP',
+      ...(body.client_supplier_id ? { client_supplier_id: body.client_supplier_id } : {}),
     },
     signal,
   });

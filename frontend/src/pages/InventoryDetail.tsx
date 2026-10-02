@@ -227,6 +227,7 @@ export default function InventoryDetail() {
       <ImportLocalInventoryPackageDialog
         open={importPackageOpen}
         inventoryId={inventoryId ?? ''}
+        inventoryClientId={inventory?.client_id ?? null}
         aisleLabelById={Object.fromEntries(aisles.map((a) => [a.id, a.code || a.id]))}
         onClose={() => setImportPackageOpen(false)}
         onSuccess={(result: ImportInventorySuccess) => {
