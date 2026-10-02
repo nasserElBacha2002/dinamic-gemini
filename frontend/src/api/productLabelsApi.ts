@@ -5,6 +5,8 @@
 import { V3_CLIENTS_BASE } from '../constants/v3ApiPaths';
 import { apiRequestJson } from './request';
 
+const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
+
 export interface IssuedProductLabel {
   label_id: string;
   internal_code: string;
@@ -32,7 +34,7 @@ export async function issueProductLabels(
   // Pass a plain object: apiRequestJson stringifies and sets Content-Type.
   // Pre-stringifying skips Content-Type and FastAPI returns 422 on the body.
   return apiRequestJson<IssueProductLabelsResponse>(
-    `${V3_CLIENTS_BASE}/${encodeURIComponent(clientId)}/product-labels`,
+    `${API_BASE}${V3_CLIENTS_BASE}/${encodeURIComponent(clientId)}/product-labels`,
     {
       method: 'POST',
       body: {
