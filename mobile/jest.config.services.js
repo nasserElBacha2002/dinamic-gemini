@@ -46,6 +46,8 @@ module.exports = {
     '<rootDir>/tests/catalogSyncCorrections.test.ts',
     '<rootDir>/tests/localAislePhase3.test.ts',
     '<rootDir>/tests/offlineAislePackageSchema.test.ts',
+    '<rootDir>/tests/offlineAisleExportInstrumentation.test.ts',
+    '<rootDir>/tests/benchmarkOfflineAisle.test.ts',
     '<rootDir>/tests/appBootstrapLifecycle.test.ts',
     '<rootDir>/tests/exportPrepExportSkipScan.test.ts',
     '<rootDir>/tests/exportPrepStreamingZip.test.ts',

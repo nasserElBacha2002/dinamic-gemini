@@ -69,6 +69,8 @@ module.exports = {
     '<rootDir>/tests/benchmarkFixtureOrder.test.ts',
     '<rootDir>/tests/benchmarkCorrectness.test.ts',
     '<rootDir>/tests/benchmarkDualCorrectness.test.ts',
+    '<rootDir>/tests/benchmarkOfflineAisleSource.test.ts',
+    '<rootDir>/tests/benchmarkPipelineOfflineAisle.test.ts',
     '<rootDir>/tests/jobsSnapshotFence.test.ts',
     '<rootDir>/tests/localCodeScanStrategy.test.ts',
     '<rootDir>/tests/phase3bLightStrongIntegrity.test.ts',

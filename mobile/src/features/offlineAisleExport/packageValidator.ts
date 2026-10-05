@@ -311,6 +311,41 @@ async function validatePackageModelV2(model: OfflineAislePackageModel): Promise<
   await validateIntegrityBlock(model);
 }
 
+const LEGACY_V1_AISLE_PATH = 'aisle.json';
+const LEGACY_V1_PROFILES_PATH = 'recognition/profiles.json';
+const LEGACY_V1_CAPTURES_PREFIX = 'captures/';
+
+/**
+ * Contract check for v2 ZIP entry names. Does not parse file contents —
+ * `validatePackageModel` remains the semantic validator.
+ */
+export function assertOfflineAisleV2ZipLayout(entryPaths: readonly string[]): void {
+  const names = new Set(entryPaths);
+  if (!names.has('manifest.json')) {
+    throw new OfflineAisleExportError('PACKAGE_HASH_FAILED', 'falta manifest.json');
+  }
+  if (!names.has(OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH)) {
+    throw new OfflineAisleExportError(
+      'PACKAGE_HASH_FAILED',
+      `falta ${OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH}`,
+    );
+  }
+  for (const path of entryPaths) {
+    if (path === LEGACY_V1_AISLE_PATH || path === LEGACY_V1_PROFILES_PATH) {
+      throw new OfflineAisleExportError(
+        'PACKAGE_HASH_FAILED',
+        `path legacy prohibido en schema v2: ${path}`,
+      );
+    }
+    if (path.startsWith(LEGACY_V1_CAPTURES_PREFIX) && path.endsWith('.json')) {
+      throw new OfflineAisleExportError(
+        'PACKAGE_HASH_FAILED',
+        `path legacy prohibido en schema v2: ${path}`,
+      );
+    }
+  }
+}
+
 export async function validatePackageModel(model: OfflineAislePackageModel): Promise<void> {
   if (model.manifest.format !== OFFLINE_AISLE_FORMAT) {
     throw new OfflineAisleExportError('PACKAGE_HASH_FAILED', 'format inválido');

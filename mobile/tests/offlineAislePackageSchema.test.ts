@@ -14,6 +14,7 @@ import {
   computePackageIntegrity,
   buildExpectedIntegrityPaths,
   buildPackagePayloadV2,
+  assertOfflineAisleV2ZipLayout,
 } from '../src/features/offlineAisleExport/packageValidator';
 import {
   OFFLINE_AISLE_FORMAT,
@@ -1330,6 +1331,7 @@ describe('offline aisle package schema v2', () => {
       })),
     );
     expect(zip.byteLength).toBeGreaterThan(0);
+    expect(() => assertOfflineAisleV2ZipLayout(zipEntryPaths)).not.toThrow();
     expect(zipEntryPaths.filter((p) => p.endsWith('.json'))).toEqual([
       'manifest.json',
       OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH,
@@ -1337,6 +1339,23 @@ describe('offline aisle package schema v2', () => {
     expect(zipEntryPaths).not.toContain('aisle.json');
     expect(zipEntryPaths).not.toContain('recognition/profiles.json');
     expect(zipEntryPaths.some((p) => p.startsWith('captures/'))).toBe(false);
+    expect(() =>
+      assertOfflineAisleV2ZipLayout(['manifest.json', 'aisle-package.json', 'aisle.json']),
+    ).toThrow(/aisle\.json/);
+    expect(() =>
+      assertOfflineAisleV2ZipLayout([
+        'manifest.json',
+        'aisle-package.json',
+        'recognition/profiles.json',
+      ]),
+    ).toThrow(/recognition\/profiles\.json/);
+    expect(() =>
+      assertOfflineAisleV2ZipLayout([
+        'manifest.json',
+        'aisle-package.json',
+        'captures/cap-item.json',
+      ]),
+    ).toThrow(/captures\//);
   });
 
   it('v2 rejects capture_count mismatch', async () => {

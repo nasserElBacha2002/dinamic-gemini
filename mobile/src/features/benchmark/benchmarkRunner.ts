@@ -11,6 +11,13 @@ import type { AisleService } from '../aisles/aisleService';
 import { CaptureFreezeService } from '../capture/captureFreezeService';
 import type { ExportPrepQueue } from '../exportPrep/exportPrepQueue';
 import type { LocalCsvExportService } from '../localCsv/localCsvExportService';
+import type { OfflineAisleExportService } from '../offlineAisleExport/offlineAisleExportService';
+import { OFFLINE_AISLE_EXPORT_SCHEMA_VERSION } from '../offlineAisleExport/constants';
+import {
+  offlineAisleInstrumentationInvalid,
+  runBenchmarkExportSequence,
+  runBenchmarkOfflineAisleExport,
+} from './benchmarkOfflineAisle';
 import type { LocalLabelProfileResolver } from '../offlineRecognition/localLabelProfileResolver';
 import type { SessionArtifactPurgeCoordinator } from '../exportPrep/sessionArtifactPurgeCoordinator';
 import {
@@ -110,6 +117,11 @@ export interface BenchmarkCommand {
   readonly datasetSha?: string;
   readonly commitSha?: string;
   readonly deviceSerial?: string;
+  /**
+   * When true, also measure Offline Aisle schema v2 after exportSession.
+   * Default omitted/false preserves historical CSV-only behavior.
+   */
+  readonly offlineAisle?: boolean;
 }
 
 export interface BenchmarkStatusDocument {
@@ -140,6 +152,7 @@ export interface BenchmarkRunnerDeps {
   readonly aisles: AisleService;
   readonly exportPrepQueue: ExportPrepQueue | null;
   readonly localCsvExport: LocalCsvExportService | null;
+  readonly offlineAisleExport: OfflineAisleExportService | null;
   readonly profileResolver: LocalLabelProfileResolver;
   readonly sessionPurge: SessionArtifactPurgeCoordinator | null;
   readonly documentDirectory: string;
@@ -637,40 +650,70 @@ export class BenchmarkRunner {
         },
       });
 
-      const exported = await this.deps.localCsvExport!.exportSession(sessionId, {
-        onExportPhase: (phase) => {
-          const exec =
-            phase.extras && phase.extras.executionContext === 'native'
-              ? 'native'
-              : phase.extras && phase.extras.executionContext === 'js'
-                ? 'js'
-                : phase.phase === 'strong_validation_hash' ||
-                    phase.phase === 'strong_validation'
-                    ? 'native'
-                    : 'unknown';
-          sink.emit({
+      let sessionExported: Awaited<
+        ReturnType<LocalCsvExportService['exportSession']>
+      > | null = null;
+      const offlineAisleSummary = await runBenchmarkExportSequence({
+        exportSession: () =>
+          this.deps.localCsvExport!.exportSession(sessionId, {
+            onExportPhase: (phase) => {
+              const exec =
+                phase.extras && phase.extras.executionContext === 'native'
+                  ? 'native'
+                  : phase.extras && phase.extras.executionContext === 'js'
+                    ? 'js'
+                    : phase.phase === 'strong_validation_hash' ||
+                        phase.phase === 'strong_validation'
+                      ? 'native'
+                      : 'unknown';
+              sink.emit({
+                sessionId,
+                photoId: phase.photoId ?? null,
+                sequence: phase.sequence ?? null,
+                stage: phase.phase,
+                monotonicStartMs: phase.monotonicStartMs,
+                durationMs: phase.durationMs,
+                executionContext: exec,
+                success: phase.success,
+                errorCode: phase.errorCode ?? null,
+                inputBytes:
+                  typeof phase.extras?.inputBytes === 'number'
+                    ? phase.extras.inputBytes
+                    : typeof phase.extras?.bytesHashed === 'number'
+                      ? phase.extras.bytesHashed
+                      : null,
+                outputBytes:
+                  typeof phase.extras?.outputBytes === 'number' ? phase.extras.outputBytes : null,
+                ...(phase.extras ? { extras: phase.extras } : {}),
+              });
+            },
+          }).then((result) => {
+            sessionExported = result;
+            return result;
+          }),
+        exportOfflineAisle: () =>
+          runBenchmarkOfflineAisleExport({
+            enabled: command.offlineAisle === true,
+            offlineAisleExport: this.deps.offlineAisleExport,
+            inventoryId: hostInventoryId,
+            aisleId: aisle.id,
             sessionId,
-            photoId: phase.photoId ?? null,
-            sequence: phase.sequence ?? null,
-            stage: phase.phase,
-            monotonicStartMs: phase.monotonicStartMs,
-            durationMs: phase.durationMs,
-            executionContext: exec,
-            success: phase.success,
-            errorCode: phase.errorCode ?? null,
-            inputBytes:
-              typeof phase.extras?.inputBytes === 'number'
-                ? phase.extras.inputBytes
-                : typeof phase.extras?.bytesHashed === 'number'
-                  ? phase.extras.bytesHashed
-                  : null,
-            outputBytes:
-              typeof phase.extras?.outputBytes === 'number' ? phase.extras.outputBytes : null,
-            ...(phase.extras ? { extras: phase.extras } : {}),
-          });
-        },
+            expectedCaptureCount: command.fixtures.length,
+            outputDirectory: `${this.deps.documentDirectory}${BENCHMARK_NAMESPACE_PREFIX}/${runId}`,
+            sink,
+          }),
       });
-      registry.exportIds.push(exported.exportId);
+      if (!sessionExported) {
+        throw Object.assign(new Error('SESSION_EXPORT_RESULT_MISSING'), {
+          code: 'SESSION_EXPORT_RESULT_MISSING',
+        });
+      }
+      const sessionExportResult = sessionExported as Awaited<
+        ReturnType<LocalCsvExportService['exportSession']>
+      >;
+      registry.exportIds.push(sessionExportResult.exportId);
+
+      const offlineAisleEnabled = command.offlineAisle === true;
 
       const drafts = await this.deps.draftRepo.listForSession(sessionId);
       const draftByPhoto = canonicalizeDraftsByPhoto(drafts);
@@ -837,6 +880,16 @@ export class BenchmarkRunner {
           exportPrepMaxWorkers,
           scannerConcurrency,
           ...summarizeHashCounters(sink.events),
+          ...(offlineAisleSummary
+            ? {
+                offlineAisleSchemaVersion: offlineAisleSummary.schemaVersion,
+                includeAssets: offlineAisleSummary.includeAssets,
+                requireAssets: offlineAisleSummary.requireAssets,
+                payloadBytes: offlineAisleSummary.payloadBytes,
+                zipBytes: offlineAisleSummary.zipBytes,
+                zipEntryCount: offlineAisleSummary.zipEntryCount,
+              }
+            : {}),
         },
       });
 
@@ -942,6 +995,10 @@ export class BenchmarkRunner {
       }
 
       const dualRowCountOk = dualRows.length === command.fixtures.length;
+      const offlineAisleOk = !offlineAisleInstrumentationInvalid(
+        offlineAisleEnabled,
+        sink.events,
+      );
 
       const instrumentationInvalid =
         missingFixture ||
@@ -952,7 +1009,8 @@ export class BenchmarkRunner {
         !hashOk ||
         !draftLookupOk ||
         !exportResolutionOk ||
-        !dualRowCountOk;
+        !dualRowCountOk ||
+        !offlineAisleOk;
 
       const maxObservedScannerConcurrency =
         this.deps.localCodeScan?.getMaxObservedConcurrency() ?? 0;
@@ -978,6 +1036,22 @@ export class BenchmarkRunner {
           maxObservedNativeScannerConcurrency,
           nativeStatsAvailable: nativeStats.available,
           ...flattenDualSummaryExtras(dualSummary),
+          ...(offlineAisleEnabled
+            ? {
+                offlineAisleSchemaVersion: OFFLINE_AISLE_EXPORT_SCHEMA_VERSION,
+                includeAssets: true,
+                requireAssets: true,
+                ...(offlineAisleSummary
+                  ? {
+                      payloadBytes: offlineAisleSummary.payloadBytes,
+                      zipBytes: offlineAisleSummary.zipBytes,
+                      zipEntryCount: offlineAisleSummary.zipEntryCount,
+                      offlineCaptureCount: offlineAisleSummary.captureCount,
+                      offlineAssetCount: offlineAisleSummary.assetCount,
+                    }
+                  : {}),
+              }
+            : {}),
         },
       });
       const envPath = `${this.deps.documentDirectory}${BENCHMARK_NAMESPACE_PREFIX}/${runId}/environment.json`;
@@ -1002,7 +1076,7 @@ export class BenchmarkRunner {
               ? 'SMOKE_FAILED_INSTRUMENTATION_INVALID'
               : null,
         errorDetail: instrumentationInvalid
-          ? `fixtureMissing=${missingFixture};zipEntry=${hasZipEntry};finalize=${hasZipFinalize};validation=${hasZipValidation};positionOk=${positionOk};hashOk=${hashOk};base64=${hashCounters.base64FullFileHashCount};strongNative=${strongNative};draftLookupOk=${draftLookupOk};exportResolutionOk=${exportResolutionOk};dualRowCountOk=${dualRowCountOk}`
+          ? `fixtureMissing=${missingFixture};zipEntry=${hasZipEntry};finalize=${hasZipFinalize};validation=${hasZipValidation};positionOk=${positionOk};hashOk=${hashOk};base64=${hashCounters.base64FullFileHashCount};strongNative=${strongNative};draftLookupOk=${draftLookupOk};exportResolutionOk=${exportResolutionOk};dualRowCountOk=${dualRowCountOk};offlineAisleOk=${offlineAisleOk}`
           : null,
         profile: {
           resolvedClientId: preflight.resolvedClientId,
@@ -1016,7 +1090,7 @@ export class BenchmarkRunner {
           hostInventoryId: preflight.hostInventoryId,
           fallbackUsed: preflight.fallbackUsed,
         },
-        exportId: exported.exportId,
+        exportId: sessionExportResult.exportId,
         sessionId,
         metricsPath: this.metricsPath(runId),
         extras: {
@@ -1031,6 +1105,26 @@ export class BenchmarkRunner {
           fixtureOrderVersion: command.fixtureOrderVersion ?? null,
           dualCorrectnessSummary: dualSummary,
           dualCorrectnessRows: dualRows,
+          ...(offlineAisleEnabled
+            ? {
+                offlineAisle: true,
+                offlineAisleSchemaVersion: OFFLINE_AISLE_EXPORT_SCHEMA_VERSION,
+                includeAssets: true,
+                requireAssets: true,
+                itemProfileVersion: preflight.itemProfileVersion,
+                positionProfileVersion: preflight.positionProfileVersion,
+                ...(offlineAisleSummary
+                  ? {
+                      offlineAisleFileName: offlineAisleSummary.fileName,
+                      payloadBytes: offlineAisleSummary.payloadBytes,
+                      zipBytes: offlineAisleSummary.zipBytes,
+                      zipEntryCount: offlineAisleSummary.zipEntryCount,
+                      offlineCaptureCount: offlineAisleSummary.captureCount,
+                      offlineAssetCount: offlineAisleSummary.assetCount,
+                    }
+                  : {}),
+              }
+            : {}),
         },
       };
     } finally {

@@ -56,5 +56,11 @@ export {
   resetAllBenchmarkFixturesForTests,
 } from './benchmarkFixtureMap';
 export { BenchmarkRunner, createBenchmarkProcessId } from './benchmarkRunner';
+export {
+  runBenchmarkExportSequence,
+  runBenchmarkOfflineAisleExport,
+  offlineAisleInstrumentationInvalid,
+  BENCHMARK_OFFLINE_AISLE_STAGES,
+} from './benchmarkOfflineAisle';
 export { startBenchmarkCommandWatch, isBenchmarkWatchAllowed } from './benchmarkCommandWatch';
 export { createBenchmarkMetricsSink, sanitizeEvent } from './benchmarkMetrics';

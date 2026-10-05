@@ -31,24 +31,25 @@ export function startBenchmarkCommandWatch(
   if (!isBenchmarkWatchAllowed(services.config)) {
     return () => undefined;
   }
-  const doc = FileSystem.documentDirectory;
-  if (!doc) {
-    return () => undefined;
-  }
 
   const processId = createBenchmarkProcessId();
   let stopped = false;
   let busy = false;
   let timer: ReturnType<typeof setInterval> | null = null;
-  const inboxPath = `${doc}${INBOX_RELATIVE}`;
 
   const tick = async () => {
     if (stopped || busy) return;
+    const doc = FileSystem.documentDirectory;
+    if (!doc) return;
+    const inboxPath = `${doc}${INBOX_RELATIVE}`;
     busy = true;
     try {
-      const info = await FileSystem.getInfoAsync(inboxPath);
-      if (!info.exists) return;
-      const raw = await FileSystem.readAsStringAsync(inboxPath);
+      let raw: string;
+      try {
+        raw = await FileSystem.readAsStringAsync(inboxPath);
+      } catch {
+        return;
+      }
       const command = JSON.parse(raw) as BenchmarkCommand;
       await FileSystem.deleteAsync(inboxPath, { idempotent: true });
       const runner = new BenchmarkRunner({
@@ -62,6 +63,7 @@ export function startBenchmarkCommandWatch(
         aisles: services.aisles,
         exportPrepQueue: services.exportPrepQueue,
         localCsvExport: services.localCsvExport,
+        offlineAisleExport: services.offlineAisleExport,
         profileResolver: services.offlineRecognition.resolver,
         sessionPurge: hooks.sessionPurge,
         documentDirectory: doc,

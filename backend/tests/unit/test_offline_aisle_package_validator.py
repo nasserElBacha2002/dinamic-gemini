@@ -5,7 +5,10 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import subprocess
+import sys
 import zipfile
+from pathlib import Path
 
 from src.application.services.offline_aisle_package_validator import (
     AISLE_PACKAGE_PAYLOAD_PATH,
@@ -18,6 +21,20 @@ from src.application.services.offline_aisle_package_validator import (
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _run_package_validator_cli(package_path: Path) -> subprocess.CompletedProcess[str]:
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "validate_offline_aisle_package.py"
+    )
+    return subprocess.run(
+        [sys.executable, str(script), str(package_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _item_provenance(raw: str, profile_id: str = "prof-item", version: int = 10) -> dict:
@@ -536,6 +553,30 @@ def test_validate_golden_package_v2_ok() -> None:
     assert result.errors == ()
     assert result.manifest is not None
     assert result.manifest["schema_version"] == OFFLINE_AISLE_SCHEMA_VERSION_V2
+
+
+def test_validator_cli_accepts_final_v2_zip(tmp_path: Path) -> None:
+    package = tmp_path / "package.dinamic"
+    package.write_bytes(_golden_package_v2())
+
+    result = _run_package_validator_cli(package)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["valid"] is True
+    assert payload["manifest"]["schema_version"] == OFFLINE_AISLE_SCHEMA_VERSION_V2
+
+
+def test_validator_cli_rejects_corrupt_zip(tmp_path: Path) -> None:
+    package = tmp_path / "corrupt.dinamic"
+    package.write_bytes(b"not-a-zip")
+
+    result = _run_package_validator_cli(package)
+
+    assert result.returncode != 0
+    payload = json.loads(result.stdout)
+    assert payload["valid"] is False
+    assert "bad_zip" in payload["errors"]
 
 
 def test_v2_rejects_invalid_payload_json() -> None:
