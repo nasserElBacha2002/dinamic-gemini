@@ -4,8 +4,9 @@
  * Contract notes (schema v1 / v1.1):
  * - `source` = detection provenance (LOCAL_CODE_SCAN, LOCAL_PENDING, …)
  * - Server assigns ingestion_source=LOCAL_CSV_IMPORT; clients must not declare it as `source`
- * - Extra headers (company_id, …) are allowed; backend required set is a subset
+ * - Extra headers are allowed on import; backend required set is a subset of this export
  * - Schema 1.1 adds optional `label_id` (D1 physical sticker; empty for legacy PIPE/DI1)
+ * - Session ZIP manifest.json holds photo/integrity/freeze metadata only (not inventory rows)
  * - `row_count` (CSV records) may exceed included photo count: 1 photo → 0..N product rows
  * - Position-only photos emit `source=LOCAL_POSITION_LABEL` with empty product fields
  */
@@ -19,24 +20,14 @@ export const LOCAL_CSV_HEADERS = [
   'export_id',
   'exported_at',
   'device_id',
-  'company_id',
-  'client_id',
   'inventory_id',
-  'inventory_name',
   'aisle_id',
-  'aisle_code',
   'capture_session_id',
   'capture_photo_id',
   'client_file_id',
   'capture_order',
   'captured_at',
   'position_code',
-  'position_status',
-  'pallet',
-  'side',
-  'level',
-  'marker_index',
-  'marker_total',
   'position_label_id',
   'position_payload_raw',
   'internal_code',
@@ -44,16 +35,10 @@ export const LOCAL_CSV_HEADERS = [
   'quantity',
   'quantity_status',
   'detection_status',
-  'detector_version',
-  'parser_version',
-  'prepared_asset_fingerprint',
   'source',
   'requires_review',
-  'confirmed_manually',
   'error_code',
   'notes',
-  'freeze_id',
-  'freeze_generation',
 ] as const;
 
 export type LocalCsvHeader = (typeof LOCAL_CSV_HEADERS)[number];

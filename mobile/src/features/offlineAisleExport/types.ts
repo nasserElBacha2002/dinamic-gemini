@@ -1,4 +1,12 @@
-import type { OFFLINE_AISLE_FORMAT, OFFLINE_AISLE_SCHEMA_VERSION } from './constants';
+import type {
+  OFFLINE_AISLE_FORMAT,
+  OFFLINE_AISLE_SCHEMA_VERSION,
+  OFFLINE_AISLE_SCHEMA_VERSION_V2,
+} from './constants';
+
+export type OfflineAisleSchemaVersion =
+  | typeof OFFLINE_AISLE_SCHEMA_VERSION
+  | typeof OFFLINE_AISLE_SCHEMA_VERSION_V2;
 
 export type CaptureLabelKind = 'ITEM' | 'POSITION' | 'UNRECOGNIZED';
 export type CaptureResultKind =
@@ -77,9 +85,15 @@ export interface OfflineAisleProfileEntryV1 {
   readonly snapshot?: Record<string, unknown> | null;
 }
 
+export interface OfflineAislePackagePayloadV2 {
+  readonly aisle: OfflineAisleDocumentV1;
+  readonly profiles: readonly OfflineAisleProfileEntryV1[];
+  readonly captures: readonly OfflineAisleCaptureV1[];
+}
+
 export interface OfflineAisleManifestV1 {
   readonly format: typeof OFFLINE_AISLE_FORMAT;
-  readonly schema_version: typeof OFFLINE_AISLE_SCHEMA_VERSION;
+  readonly schema_version: OfflineAisleSchemaVersion;
   readonly export_id: string;
   readonly created_at: string;
   readonly app_version: string;

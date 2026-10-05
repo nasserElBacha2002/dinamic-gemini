@@ -12,6 +12,7 @@ def test_mobile_contract_csv_is_accepted_by_backend_parser() -> None:
 
     assert parsed.export_id == "export-contract-1"
     assert parsed.inventory_id == "inventory-1"
+    assert parsed.schema_version == "1.1"
     assert len(parsed.rows) == 1
     row = parsed.rows[0]
     assert row.detection_source == "LOCAL_CODE_SCAN"

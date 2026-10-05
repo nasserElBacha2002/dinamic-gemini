@@ -235,3 +235,6 @@ mobile-processing-mode-status.txt
 
 # Legacy review dump (prefer .review/)
 review-working-tree.txt
+
+# Andes Benchmark files
+andes_benchmark_300/

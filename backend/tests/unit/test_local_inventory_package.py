@@ -219,6 +219,57 @@ def test_parse_accepts_complete_package() -> None:
     assert parsed.photos[0].sha256 == hashlib.sha256(JPEG_BYTES).hexdigest()
 
 
+def test_parse_accepts_technical_manifest_with_csv_envelope() -> None:
+    """Session exports may omit business ids from manifest when results.csv carries them."""
+    export_id = "export-slim-manifest"
+    photo_id = "photo-slim"
+    client_file_id = "file-slim"
+    csv_bytes = _csv_bytes(
+        export_id=export_id, photo_id=photo_id, client_file_id=client_file_id
+    )
+    file_name = f"0001_{photo_id}.jpg"
+    photo_bytes = JPEG_BYTES
+    sha = hashlib.sha256(photo_bytes).hexdigest()
+    manifest = {
+        "package_kind": "DINAMIC_LOCAL_AISLE_EXPORT",
+        "package_version": 2,
+        "status": "COMPLETE",
+        "schema_version": "1.1",
+        "freeze_id": "freeze-1",
+        "freeze_generation": 1,
+        "expected_photo_count": 1,
+        "included_photo_count": 1,
+        "missing_photos": [],
+        "csv_checksum_sha256": hashlib.sha256(csv_bytes).hexdigest(),
+        "checksum_algorithm": "sha256",
+        "package_checksum_sha256": "abc",
+        "photos": [
+            {
+                "capture_photo_id": photo_id,
+                "client_file_id": client_file_id,
+                "sequence_number": 1,
+                "file_name": file_name,
+                "mime_type": "image/jpeg",
+                "size_bytes": len(photo_bytes),
+                "sha256": sha,
+                "width": 1,
+                "height": 1,
+                "asset_variant": "ORIGINAL",
+            }
+        ],
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr("results.csv", csv_bytes)
+        zf.writestr("manifest.json", json.dumps(manifest))
+        zf.writestr(f"photos/{file_name}", photo_bytes)
+    parsed = parse_local_inventory_package(buf.getvalue())
+    assert parsed.export_id == export_id
+    assert parsed.inventory_id == "inventory-1"
+    assert parsed.aisle_id == "aisle-1"
+    assert parsed.capture_session_id == "session-1"
+
+
 def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
     inventory_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()

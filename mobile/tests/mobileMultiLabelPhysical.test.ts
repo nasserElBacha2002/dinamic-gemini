@@ -151,7 +151,7 @@ describe('mobile multi-label physical corrections', () => {
     expect(rows.map((r) => r.label_id)).toEqual(['6YD0S6WVMM', '6FYR11RPXS']);
     expect(rows.map((r) => r.quantity)).toEqual(['1000', '1100']);
     expect(rows.every((r) => r.capture_photo_id === 'photo-6')).toBe(true);
-    expect(rows.every((r) => r.position_status === 'FROM_SNAPSHOT')).toBe(true);
+    expect(rows.every((r) => r.position_code === '04 RIGHT N1 02/02')).toBe(true);
     expect(rows[0]!.position_payload_raw).toContain('"signature":"abc"');
     expect(rows[0]!.position_payload_raw).toContain('"key_version":1');
   });
@@ -188,7 +188,7 @@ describe('mobile multi-label physical corrections', () => {
     });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.source).toBe('LOCAL_CODE_SCAN');
-    expect(rows[0]!.position_status).toBe('LABEL_DETECTED');
+    expect(rows[0]!.position_code).toBeTruthy();
     expect(rows[0]!.label_id).toBe('LABEL-P');
     expect(rows[0]!.position_payload_raw).toBe(rawPos);
   });

@@ -5,17 +5,36 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import subprocess
+import sys
 import zipfile
+from pathlib import Path
 
 from src.application.services.offline_aisle_package_validator import (
+    AISLE_PACKAGE_PAYLOAD_PATH,
     OFFLINE_AISLE_FORMAT,
     OFFLINE_AISLE_SCHEMA_VERSION,
+    OFFLINE_AISLE_SCHEMA_VERSION_V2,
     validate_offline_aisle_package_bytes,
 )
 
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _run_package_validator_cli(package_path: Path) -> subprocess.CompletedProcess[str]:
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "validate_offline_aisle_package.py"
+    )
+    return subprocess.run(
+        [sys.executable, str(script), str(package_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _item_provenance(raw: str, profile_id: str = "prof-item", version: int = 10) -> dict:
@@ -393,3 +412,614 @@ def test_raw_used_as_sku_guard() -> None:
 def test_product_with_position_contract_accepted() -> None:
     result = validate_offline_aisle_package_bytes(_golden_package())
     assert result.ok is True
+
+
+def _golden_payload_v2() -> tuple[dict, list, list]:
+    aisle = {
+        "id": "aisle-golden",
+        "inventory_id": "inv-1",
+        "client_supplier_id": "sup-b",
+        "name": "Pasillo A",
+        "created_offline_at": "2026-01-01T00:00:00.000Z",
+        "completed_at": None,
+        "origin": "LOCAL",
+        "sync_status": "LOCAL_ONLY",
+    }
+    profiles = [
+        {
+            "profile_ref": "item:prof-item:v10",
+            "label_kind": "ITEM",
+            "client_supplier_id": "sup-b",
+            "source": "SUPPLIER",
+            "profile_id": "prof-item",
+            "profile_version": 10,
+        },
+        {
+            "profile_ref": "position:prof-pos:v3",
+            "label_kind": "POSITION",
+            "client_supplier_id": "sup-b",
+            "source": "SUPPLIER",
+            "profile_id": "prof-pos",
+            "profile_version": 3,
+        },
+    ]
+    item_raw = "LPNA000184|SKU773421|24"
+    pos_raw = "A04-R-02|04|RIGHT|02"
+    item_capture = {
+        "capture_id": "cap-item",
+        "capture_session_id": "sess-1",
+        "aisle_id": "aisle-golden",
+        "label_kind": "ITEM",
+        "result_kind": "PRODUCT",
+        "status": "RESOLVED",
+        "error_code": None,
+        "requires_review": False,
+        "recognitions": {"item": _item_provenance(item_raw), "position": None},
+        "result": {
+            "product": {"label_id": "LPNA000184", "sku": "SKU773421", "quantity": 24},
+            "position": None,
+        },
+        "asset": {"included": False, "asset_id": "a1", "path": None},
+        "recognition_profile_snapshot_json": '{"item":{}}',
+    }
+    pos_capture = {
+        "capture_id": "cap-pos",
+        "capture_session_id": "sess-1",
+        "aisle_id": "aisle-golden",
+        "label_kind": "POSITION",
+        "result_kind": "POSITION_ONLY",
+        "status": "DETECTED_UNVERIFIED",
+        "error_code": "POSITION_LABEL_DETECTED",
+        "requires_review": False,
+        "recognitions": {"item": None, "position": _position_provenance(pos_raw)},
+        "result": {
+            "product": None,
+            "position": {
+                "position_id": "A04-R-02",
+                "pallet": "04",
+                "side": "RIGHT",
+                "level": "02",
+            },
+        },
+        "asset": {"included": False, "asset_id": "a2", "path": None},
+        "recognition_profile_snapshot_json": '{"position":{}}',
+    }
+    mixed_capture = {
+        "capture_id": "cap-mixed",
+        "capture_session_id": "sess-1",
+        "aisle_id": "aisle-golden",
+        "label_kind": "ITEM",
+        "result_kind": "PRODUCT_WITH_POSITION",
+        "status": "RESOLVED",
+        "error_code": None,
+        "requires_review": False,
+        "recognitions": {
+            "item": _item_provenance(item_raw),
+            "position": _position_provenance(pos_raw),
+        },
+        "result": {
+            "product": {"label_id": "LPNA000184", "sku": "SKU773421", "quantity": 24},
+            "position": {
+                "position_id": "A04-R-02",
+                "pallet": "04",
+                "side": "RIGHT",
+                "level": "02",
+            },
+        },
+        "asset": {"included": False, "asset_id": "a3", "path": None},
+        "recognition_profile_snapshot_json": '{"item":{},"position":{}}',
+    }
+    captures = [item_capture, pos_capture, mixed_capture]
+    return aisle, profiles, captures
+
+
+def _golden_package_v2() -> bytes:
+    aisle, profiles, captures = _golden_payload_v2()
+    payload = {"aisle": aisle, "profiles": profiles, "captures": captures}
+    payload_json = json.dumps(payload, indent=2) + "\n"
+    integrity = {AISLE_PACKAGE_PAYLOAD_PATH: _sha256_text(payload_json)}
+    manifest = {
+        "format": OFFLINE_AISLE_FORMAT,
+        "schema_version": OFFLINE_AISLE_SCHEMA_VERSION_V2,
+        "export_id": "export-golden-v2",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "app_version": "0.3.0",
+        "inventory": {"id": "inv-1", "name": "Inv", "client_id": "client-1"},
+        "aisle": {
+            "id": "aisle-golden",
+            "name": "Pasillo A",
+            "origin": "LOCAL",
+            "sync_status": "LOCAL_ONLY",
+            "operational_status": "local_completed",
+        },
+        "supplier": {"client_supplier_id": "sup-b", "name": "pruebas b"},
+        "capture_count": len(captures),
+        "asset_count": 0,
+        "include_assets": False,
+        "completeness": "COMPLETE",
+        "integrity": {"algorithm": "sha256", "files": integrity},
+    }
+    manifest_json = json.dumps(manifest, indent=2) + "\n"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("manifest.json", manifest_json)
+        zf.writestr(AISLE_PACKAGE_PAYLOAD_PATH, payload_json)
+    return buf.getvalue()
+
+
+def test_validate_golden_package_v2_ok() -> None:
+    result = validate_offline_aisle_package_bytes(_golden_package_v2())
+    assert result.ok is True
+    assert result.errors == ()
+    assert result.manifest is not None
+    assert result.manifest["schema_version"] == OFFLINE_AISLE_SCHEMA_VERSION_V2
+
+
+def test_validator_cli_accepts_final_v2_zip(tmp_path: Path) -> None:
+    package = tmp_path / "package.dinamic"
+    package.write_bytes(_golden_package_v2())
+
+    result = _run_package_validator_cli(package)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["valid"] is True
+    assert payload["manifest"]["schema_version"] == OFFLINE_AISLE_SCHEMA_VERSION_V2
+
+
+def test_validator_cli_rejects_corrupt_zip(tmp_path: Path) -> None:
+    package = tmp_path / "corrupt.dinamic"
+    package.write_bytes(b"not-a-zip")
+
+    result = _run_package_validator_cli(package)
+
+    assert result.returncode != 0
+    payload = json.loads(result.stdout)
+    assert payload["valid"] is False
+    assert "bad_zip" in payload["errors"]
+
+
+def test_v2_rejects_invalid_payload_json() -> None:
+    data = _golden_package_v2()
+    buf = io.BytesIO(data)
+    out = io.BytesIO()
+    with zipfile.ZipFile(buf, "r") as zin, zipfile.ZipFile(out, "w") as zout:
+        for item in zin.infolist():
+            content = zin.read(item.filename)
+            if item.filename == AISLE_PACKAGE_PAYLOAD_PATH:
+                content = b"not-json\n"
+            zout.writestr(item, content)
+    result = validate_offline_aisle_package_bytes(out.getvalue())
+    assert result.ok is False
+    assert any("payload_parse_error" in e for e in result.errors)
+
+
+def test_v2_capture_count_mismatch() -> None:
+    data = _golden_package_v2()
+    buf = io.BytesIO(data)
+    out = io.BytesIO()
+    with zipfile.ZipFile(buf, "r") as zin, zipfile.ZipFile(out, "w") as zout:
+        for item in zin.infolist():
+            content = zin.read(item.filename)
+            if item.filename == "manifest.json":
+                manifest = json.loads(content.decode("utf-8"))
+                manifest["capture_count"] = 99
+                content = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
+            zout.writestr(item, content)
+    result = validate_offline_aisle_package_bytes(out.getvalue())
+    assert result.ok is False
+    assert any("capture_count_mismatch" in e for e in result.errors)
+
+
+def test_v2_capture_aisle_mismatch() -> None:
+    data = _golden_package_v2()
+    buf = io.BytesIO(data)
+    out = io.BytesIO()
+    with zipfile.ZipFile(buf, "r") as zin, zipfile.ZipFile(out, "w") as zout:
+        for item in zin.infolist():
+            content = zin.read(item.filename)
+            if item.filename == AISLE_PACKAGE_PAYLOAD_PATH:
+                payload = json.loads(content.decode("utf-8"))
+                payload["captures"][0]["aisle_id"] = "other-aisle"
+                content = (json.dumps(payload, indent=2) + "\n").encode("utf-8")
+            zout.writestr(item, content)
+    result = validate_offline_aisle_package_bytes(out.getvalue())
+    assert result.ok is False
+    assert any("capture_aisle_mismatch" in e for e in result.errors)
+
+
+def test_v2_hash_mismatch_on_payload() -> None:
+    data = _golden_package_v2()
+    buf = io.BytesIO(data)
+    out = io.BytesIO()
+    with zipfile.ZipFile(buf, "r") as zin, zipfile.ZipFile(out, "w") as zout:
+        for item in zin.infolist():
+            content = zin.read(item.filename)
+            if item.filename == AISLE_PACKAGE_PAYLOAD_PATH:
+                content = b"{}\n"
+            zout.writestr(item, content)
+    result = validate_offline_aisle_package_bytes(out.getvalue())
+    assert result.ok is False
+    assert any("hash_mismatch" in e for e in result.errors)
+
+
+def test_v2_rejects_legacy_v1_paths() -> None:
+    data = _golden_package_v2()
+    buf = io.BytesIO(data)
+    out = io.BytesIO()
+    with zipfile.ZipFile(buf, "r") as zin, zipfile.ZipFile(out, "w") as zout:
+        for item in zin.infolist():
+            zout.writestr(item, zin.read(item.filename))
+        zout.writestr("aisle.json", b"{}\n")
+    result = validate_offline_aisle_package_bytes(out.getvalue())
+    assert result.ok is False
+    assert any("unexpected_entry:aisle.json" in e for e in result.errors)
+
+
+def _v2_asset_manifest_base(integrity: dict[str, str], capture_count: int = 1) -> dict:
+    return {
+        "format": OFFLINE_AISLE_FORMAT,
+        "schema_version": OFFLINE_AISLE_SCHEMA_VERSION_V2,
+        "export_id": "export-asset",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "app_version": "0.3.0",
+        "inventory": {"id": "inv-1", "name": "Inv", "client_id": "client-1"},
+        "aisle": {
+            "id": "aisle-golden",
+            "name": "Pasillo A",
+            "origin": "LOCAL",
+            "sync_status": "LOCAL_ONLY",
+            "operational_status": "local_completed",
+        },
+        "supplier": {"client_supplier_id": "sup-b", "name": None},
+        "capture_count": capture_count,
+        "asset_count": 1,
+        "include_assets": True,
+        "completeness": "COMPLETE",
+        "integrity": {"algorithm": "sha256", "files": integrity},
+    }
+
+
+def test_v2_missing_aisle_package_json_no_key_error() -> None:
+    manifest = _v2_asset_manifest_base({})
+    manifest["capture_count"] = 0
+    manifest["asset_count"] = 0
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("manifest.json", (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
+    result = validate_offline_aisle_package_bytes(buf.getvalue())
+    assert result.ok is False
+    assert any(e == f"missing_required:{AISLE_PACKAGE_PAYLOAD_PATH}" for e in result.errors)
+
+
+def test_v2_rejects_empty_capture_object() -> None:
+    aisle, profiles, _ = _golden_payload_v2()
+    payload = {"aisle": aisle, "profiles": profiles, "captures": [{}]}
+    payload_json = json.dumps(payload, indent=2) + "\n"
+    integrity = {AISLE_PACKAGE_PAYLOAD_PATH: _sha256_text(payload_json)}
+    manifest = _v2_asset_manifest_base(integrity)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("manifest.json", (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
+        zf.writestr(AISLE_PACKAGE_PAYLOAD_PATH, payload_json.encode("utf-8"))
+    result = validate_offline_aisle_package_bytes(buf.getvalue())
+    assert result.ok is False
+    assert any("invalid_capture_structure" in e for e in result.errors)
+
+
+def test_v2_rejects_aisle_without_id() -> None:
+    aisle, profiles, captures = _golden_payload_v2()
+    bad_aisle = {**aisle, "id": ""}
+    payload = {"aisle": bad_aisle, "profiles": profiles, "captures": captures}
+    payload_json = json.dumps(payload, indent=2) + "\n"
+    integrity = {AISLE_PACKAGE_PAYLOAD_PATH: _sha256_text(payload_json)}
+    manifest = _v2_asset_manifest_base(integrity, capture_count=len(captures))
+    manifest["asset_count"] = 0
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("manifest.json", (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
+        zf.writestr(AISLE_PACKAGE_PAYLOAD_PATH, payload_json.encode("utf-8"))
+    result = validate_offline_aisle_package_bytes(buf.getvalue())
+    assert result.ok is False
+    assert any("invalid_payload_aisle_id" in e for e in result.errors)
+
+
+def test_v2_capture_asset_sha256_metadata_mismatch() -> None:
+    aisle, profiles, captures = _golden_payload_v2()
+    asset_bytes = b"JPEG"
+    asset_hash = _sha256_text(asset_bytes.decode("latin-1"))
+    cap = {
+        **captures[0],
+        "asset": {
+            "included": True,
+            "asset_id": "a1",
+            "path": "assets/cap-item.jpg",
+            "mime_type": "image/jpeg",
+            "size_bytes": 4,
+            "sha256": "deadbeef",
+        },
+    }
+    payload = {"aisle": aisle, "profiles": profiles, "captures": [cap]}
+    payload_json = json.dumps(payload, indent=2) + "\n"
+    integrity = {
+        AISLE_PACKAGE_PAYLOAD_PATH: _sha256_text(payload_json),
+        "assets/cap-item.jpg": asset_hash,
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "manifest.json",
+            (json.dumps(_v2_asset_manifest_base(integrity), indent=2) + "\n").encode("utf-8"),
+        )
+        zf.writestr(AISLE_PACKAGE_PAYLOAD_PATH, payload_json.encode("utf-8"))
+        zf.writestr("assets/cap-item.jpg", asset_bytes)
+    result = validate_offline_aisle_package_bytes(buf.getvalue())
+    assert result.ok is False
+    assert any("capture_asset_sha256_mismatch" in e for e in result.errors)
+    assert not any("hash_mismatch:assets/cap-item.jpg" in e for e in result.errors)
+
+
+def test_v2_asset_manifest_hash_mismatch() -> None:
+    aisle, profiles, captures = _golden_payload_v2()
+    asset_bytes = b"JPEG"
+    asset_hash = _sha256_text(asset_bytes.decode("latin-1"))
+    cap = {
+        **captures[0],
+        "asset": {
+            "included": True,
+            "asset_id": "a1",
+            "path": "assets/cap-item.jpg",
+            "mime_type": "image/jpeg",
+            "size_bytes": 4,
+            "sha256": asset_hash,
+        },
+    }
+    payload = {"aisle": aisle, "profiles": profiles, "captures": [cap]}
+    payload_json = json.dumps(payload, indent=2) + "\n"
+    integrity = {
+        AISLE_PACKAGE_PAYLOAD_PATH: _sha256_text(payload_json),
+        "assets/cap-item.jpg": "deadbeef",
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "manifest.json",
+            (json.dumps(_v2_asset_manifest_base(integrity), indent=2) + "\n").encode("utf-8"),
+        )
+        zf.writestr(AISLE_PACKAGE_PAYLOAD_PATH, payload_json.encode("utf-8"))
+        zf.writestr("assets/cap-item.jpg", asset_bytes)
+    result = validate_offline_aisle_package_bytes(buf.getvalue())
+    assert result.ok is False
+    assert any("capture_asset_sha256_mismatch" in e for e in result.errors)
+    assert any("hash_mismatch:assets/cap-item.jpg" in e for e in result.errors)
+
+
+def test_v2_asset_zip_bytes_mismatch() -> None:
+    aisle, profiles, captures = _golden_payload_v2()
+    asset_bytes = b"JPEG"
+    asset_hash = _sha256_text(asset_bytes.decode("latin-1"))
+    cap = {
+        **captures[0],
+        "asset": {
+            "included": True,
+            "asset_id": "a1",
+            "path": "assets/cap-item.jpg",
+            "mime_type": "image/jpeg",
+            "size_bytes": 4,
+            "sha256": asset_hash,
+        },
+    }
+    payload = {"aisle": aisle, "profiles": profiles, "captures": [cap]}
+    payload_json = json.dumps(payload, indent=2) + "\n"
+    integrity = {
+        AISLE_PACKAGE_PAYLOAD_PATH: _sha256_text(payload_json),
+        "assets/cap-item.jpg": asset_hash,
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "manifest.json",
+            (json.dumps(_v2_asset_manifest_base(integrity), indent=2) + "\n").encode("utf-8"),
+        )
+        zf.writestr(AISLE_PACKAGE_PAYLOAD_PATH, payload_json.encode("utf-8"))
+        zf.writestr("assets/cap-item.jpg", b"WRONG")
+    result = validate_offline_aisle_package_bytes(buf.getvalue())
+    assert result.ok is False
+    assert any("hash_mismatch:assets/cap-item.jpg" in e for e in result.errors)
+    assert not any("capture_asset_sha256_mismatch" in e for e in result.errors)
+
+
+def test_v2_asset_triple_hash_invariant_ok() -> None:
+    aisle, profiles, captures = _golden_payload_v2()
+    asset_bytes = b"JPEG"
+    asset_hash = _sha256_text(asset_bytes.decode("latin-1"))
+    cap = {
+        **captures[0],
+        "asset": {
+            "included": True,
+            "asset_id": "a1",
+            "path": "assets/cap-item.jpg",
+            "mime_type": "image/jpeg",
+            "size_bytes": 4,
+            "sha256": asset_hash,
+        },
+    }
+    payload = {"aisle": aisle, "profiles": profiles, "captures": [cap]}
+    payload_json = json.dumps(payload, indent=2) + "\n"
+    integrity = {
+        AISLE_PACKAGE_PAYLOAD_PATH: _sha256_text(payload_json),
+        "assets/cap-item.jpg": asset_hash,
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            "manifest.json",
+            (json.dumps(_v2_asset_manifest_base(integrity), indent=2) + "\n").encode("utf-8"),
+        )
+        zf.writestr(AISLE_PACKAGE_PAYLOAD_PATH, payload_json.encode("utf-8"))
+        zf.writestr("assets/cap-item.jpg", asset_bytes)
+    result = validate_offline_aisle_package_bytes(buf.getvalue())
+    assert result.ok is True
+
+
+def test_v2_invalid_profile_ref() -> None:
+    aisle, profiles, captures = _golden_payload_v2()
+    bad_cap = {
+        **captures[0],
+        "recognitions": {
+            "item": _item_provenance("LPNA000184|SKU773421|24", profile_id="missing"),
+            "position": None,
+        },
+    }
+    payload = {"aisle": aisle, "profiles": profiles, "captures": [bad_cap]}
+    payload_json = json.dumps(payload, indent=2) + "\n"
+    integrity = {AISLE_PACKAGE_PAYLOAD_PATH: _sha256_text(payload_json)}
+    manifest = {
+        "format": OFFLINE_AISLE_FORMAT,
+        "schema_version": OFFLINE_AISLE_SCHEMA_VERSION_V2,
+        "export_id": "export-bad-ref",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "app_version": "0.3.0",
+        "inventory": {"id": "inv-1", "name": "Inv", "client_id": "client-1"},
+        "aisle": {
+            "id": "aisle-golden",
+            "name": "Pasillo A",
+            "origin": "LOCAL",
+            "sync_status": "LOCAL_ONLY",
+            "operational_status": "local_completed",
+        },
+        "supplier": {"client_supplier_id": "sup-b", "name": None},
+        "capture_count": 1,
+        "asset_count": 0,
+        "include_assets": False,
+        "completeness": "COMPLETE",
+        "integrity": {"algorithm": "sha256", "files": integrity},
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("manifest.json", (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
+        zf.writestr(AISLE_PACKAGE_PAYLOAD_PATH, payload_json.encode("utf-8"))
+    result = validate_offline_aisle_package_bytes(buf.getvalue())
+    assert result.ok is False
+    assert any("invalid_profile_ref" in e for e in result.errors)
+
+
+def _v2_zip_with_captures(captures: list[dict]) -> bytes:
+    aisle, profiles, _ = _golden_payload_v2()
+    payload = {"aisle": aisle, "profiles": profiles, "captures": captures}
+    payload_json = json.dumps(payload, indent=2) + "\n"
+    integrity = {AISLE_PACKAGE_PAYLOAD_PATH: _sha256_text(payload_json)}
+    manifest = _v2_asset_manifest_base(integrity, capture_count=len(captures))
+    manifest["asset_count"] = 0
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("manifest.json", (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
+        zf.writestr(AISLE_PACKAGE_PAYLOAD_PATH, payload_json.encode("utf-8"))
+    return buf.getvalue()
+
+
+def test_v2_rejects_list_recognitions_without_exception() -> None:
+    _, _, captures = _golden_payload_v2()
+    bad = {**captures[0], "recognitions": []}
+    result = validate_offline_aisle_package_bytes(_v2_zip_with_captures([bad]))
+    assert result.ok is False
+    assert any("invalid_capture_structure" in e and ":recognitions" in e for e in result.errors)
+
+
+def test_v2_rejects_list_result_without_exception() -> None:
+    _, _, captures = _golden_payload_v2()
+    bad = {**captures[0], "result": []}
+    result = validate_offline_aisle_package_bytes(_v2_zip_with_captures([bad]))
+    assert result.ok is False
+    assert any("invalid_capture_structure" in e and ":result" in e for e in result.errors)
+
+
+def test_v2_rejects_string_asset_without_exception() -> None:
+    _, _, captures = _golden_payload_v2()
+    bad = {**captures[0], "asset": "invalid"}
+    result = validate_offline_aisle_package_bytes(_v2_zip_with_captures([bad]))
+    assert result.ok is False
+    assert any("invalid_capture_structure" in e and ":asset" in e for e in result.errors)
+
+
+def test_v2_valid_capture_still_accepted_after_structural_gate() -> None:
+    _, _, captures = _golden_payload_v2()
+    result = validate_offline_aisle_package_bytes(_v2_zip_with_captures([captures[0]]))
+    assert result.ok is True
+
+
+def test_v1_historical_asset_without_capture_sha256_metadata_still_ok() -> None:
+    aisle = {
+        "id": "aisle-golden",
+        "inventory_id": "inv-1",
+        "client_supplier_id": "sup-b",
+        "name": "Pasillo A",
+        "created_offline_at": "2026-01-01T00:00:00.000Z",
+        "completed_at": None,
+        "origin": "LOCAL",
+        "sync_status": "LOCAL_ONLY",
+    }
+    item_raw = "LPNA000184|SKU773421|24"
+    asset_bytes = b"JPEG"
+    asset_hash = _sha256_text(asset_bytes.decode("latin-1"))
+    item_capture = {
+        "capture_id": "cap-item",
+        "capture_session_id": "sess-1",
+        "aisle_id": "aisle-golden",
+        "label_kind": "ITEM",
+        "result_kind": "PRODUCT",
+        "status": "RESOLVED",
+        "error_code": None,
+        "requires_review": False,
+        "recognitions": {"item": _item_provenance(item_raw), "position": None},
+        "result": {
+            "product": {"label_id": "LPNA000184", "sku": "SKU773421", "quantity": 24},
+            "position": None,
+        },
+        "asset": {
+            "included": True,
+            "asset_id": "a1",
+            "path": "assets/cap-item.jpg",
+            "mime_type": "image/jpeg",
+            "size_bytes": len(asset_bytes),
+            "sha256": None,
+        },
+    }
+    item_json = json.dumps(item_capture, indent=2) + "\n"
+    integrity = {
+        "aisle.json": _sha256_text(json.dumps(aisle, indent=2) + "\n"),
+        "recognition/profiles.json": _sha256_text(json.dumps([], indent=2) + "\n"),
+        "captures/cap-item.json": _sha256_text(item_json),
+        "assets/cap-item.jpg": asset_hash,
+    }
+    manifest = {
+        "format": OFFLINE_AISLE_FORMAT,
+        "schema_version": OFFLINE_AISLE_SCHEMA_VERSION,
+        "export_id": "export-v1-asset",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "app_version": "0.3.0",
+        "inventory": {"id": "inv-1", "name": "Inv", "client_id": "client-1"},
+        "aisle": {
+            "id": "aisle-golden",
+            "name": "Pasillo A",
+            "origin": "LOCAL",
+            "sync_status": "LOCAL_ONLY",
+            "operational_status": "local_completed",
+        },
+        "supplier": {"client_supplier_id": "sup-b", "name": None},
+        "capture_count": 1,
+        "asset_count": 1,
+        "include_assets": True,
+        "completeness": "COMPLETE",
+        "integrity": {"algorithm": "sha256", "files": integrity},
+    }
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("manifest.json", (json.dumps(manifest, indent=2) + "\n").encode("utf-8"))
+        zf.writestr("aisle.json", (json.dumps(aisle, indent=2) + "\n").encode("utf-8"))
+        zf.writestr("recognition/profiles.json", (json.dumps([], indent=2) + "\n").encode("utf-8"))
+        zf.writestr("captures/cap-item.json", item_json.encode("utf-8"))
+        zf.writestr("assets/cap-item.jpg", asset_bytes)
+    result = validate_offline_aisle_package_bytes(buf.getvalue())
+    assert result.ok is True
+    assert not any("capture_asset_sha256_mismatch" in e for e in result.errors)

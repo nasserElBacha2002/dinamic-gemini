@@ -5,6 +5,7 @@
  *
  * Usage:
  *   npm run benchmark:pipeline -- --input ../../andes_benchmark_50 --device R58N30GNF2T --photos 3
+ *   npm run benchmark:pipeline -- --input ../../andes_benchmark_50 --device SERIAL --photos 3 --offline-aisle
  */
 'use strict';
 
@@ -33,6 +34,11 @@ const {
   buildPerformanceBandRows,
   performanceBandsToCsv,
 } = require('./lib/andesDualCorrectness.cjs');
+const {
+  OFFLINE_AISLE_SCHEMA_VERSION,
+  collectOfflineAisleMetrics,
+  assertOfflineAisleRun,
+} = require('./lib/offlineAisleBenchmark.cjs');
 
 /** Phase 4 A/B: ExportPrep workers stay fixed at 2 (feed); only scannerConcurrency varies. */
 const PHASE4_EXPORT_PREP_MAX_WORKERS = 2;
@@ -49,6 +55,65 @@ function die(code, message) {
   process.exit(1);
 }
 
+function assertOfflineAisleHostPrerequisites() {
+  const unzip = spawnSync('unzip', ['-v'], { encoding: 'utf8' });
+  if (unzip.error || unzip.status !== 0) {
+    die('OFFLINE_AISLE_UNZIP_MISSING', 'unzip is required for Offline Aisle package inspection');
+  }
+}
+
+function resolveOfflineAisleValidatorPython() {
+  const candidates = [
+    process.env.BENCHMARK_PYTHON,
+    path.resolve(__dirname, '../../backend/.venv/bin/python'),
+    'python3',
+  ].filter(Boolean);
+  const wrapper = path.resolve(__dirname, '../../backend/scripts/validate_offline_aisle_package.py');
+  for (const candidate of candidates) {
+    if (candidate !== 'python3' && !fs.existsSync(candidate)) continue;
+    const importProbe = spawnSync(candidate, ['-c', 'import sys'], { encoding: 'utf8' });
+    if (importProbe.error || importProbe.status !== 0) continue;
+    if (!fs.existsSync(wrapper)) continue;
+    const wrapperProbe = spawnSync(candidate, [wrapper], { encoding: 'utf8' });
+    if (wrapperProbe.error) continue;
+    try {
+      const parsed = JSON.parse(String(wrapperProbe.stdout || ''));
+      if (parsed && parsed.valid === false && Array.isArray(parsed.errors)) return candidate;
+    } catch {
+      // try next candidate
+    }
+  }
+  die(
+    'OFFLINE_AISLE_VALIDATOR_UNAVAILABLE',
+    'backend validator Python is unavailable; set BENCHMARK_PYTHON or create backend/.venv',
+  );
+}
+
+function validateOfflineAislePackageWithBackend(packagePath) {
+  const python = resolveOfflineAisleValidatorPython();
+  const wrapper = path.resolve(__dirname, '../../backend/scripts/validate_offline_aisle_package.py');
+  const result = spawnSync(python, [wrapper, packagePath], {
+    encoding: 'utf8',
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  let parsed;
+  try {
+    parsed = JSON.parse(String(result.stdout || ''));
+  } catch {
+    parsed = {
+      valid: false,
+      errors: [
+        `validator_process:${result.error?.message || result.stderr || `exit=${result.status}`}`,
+      ],
+    };
+  }
+  return {
+    ...parsed,
+    validatorExitCode: result.status,
+    validatorStderr: String(result.stderr || '').trim() || null,
+  };
+}
+
 function parseArgs(argv) {
   const out = {
     input: null,
@@ -63,6 +128,9 @@ function parseArgs(argv) {
     scannerConcurrency: 1,
     interleave: true,
     compareCorrectness: null,
+    offlineAisle: false,
+    installDebug: true,
+    repairBenchmarkSupplier: true,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -87,6 +155,10 @@ function parseArgs(argv) {
     } else if (a === '--compare-correctness') {
       out.compareCorrectness = next();
     } else if (a === '--no-interleave') out.interleave = false;
+    else if (a === '--offline-aisle') out.offlineAisle = true;
+    else if (a === '--install-debug') out.installDebug = true;
+    else if (a === '--no-install-debug') out.installDebug = false;
+    else if (a === '--no-repair-benchmark-supplier') out.repairBenchmarkSupplier = false;
     else if (a === '--help' || a === '-h') {
       console.log(`See mobile/scripts/benchmark-pipeline.mjs header`);
       process.exit(0);
@@ -496,6 +568,46 @@ function pullViaTmp(device, remoteRelUnderFiles, localPath) {
   adb(device, ['shell', 'rm', '-f', tmp], { allowFail: true });
 }
 
+function listDinamicZipEntries(localPath) {
+  const listed = spawnSync('unzip', ['-Z', '-1', localPath], { encoding: 'utf8' });
+  if (listed.status !== 0) {
+    die(
+      'OFFLINE_AISLE_ZIP',
+      `unzip listing failed: ${(listed.stderr || listed.stdout || '').slice(0, 200)}`,
+    );
+  }
+  return String(listed.stdout || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function copyOfflineAislePackage({ device, runId, status, outRoot, runLabel }) {
+  const fileName = status?.extras?.offlineAisleFileName;
+  if (!fileName || !/^[A-Za-z0-9._-]+\.dinamic$/.test(String(fileName))) {
+    die('OFFLINE_AISLE_PACKAGE_MISSING', `invalid offlineAisleFileName=${fileName}`);
+  }
+  const localPath = path.join(outRoot, `${runLabel}-offline-aisle.dinamic`);
+  const remoteRel = `benchmark/${runId}/${fileName}`;
+  const tmp = `/data/local/tmp/dinamic-bench-offline-${Date.now()}.dinamic`;
+  const dump = adb(
+    device,
+    ['shell', `run-as ${PACKAGE} cat files/${remoteRel} > ${tmp}`],
+    { allowFail: true },
+  );
+  if (dump.status !== 0) {
+    die('OFFLINE_AISLE_PACKAGE_MISSING', `device package not readable: ${remoteRel}`);
+  }
+  fs.mkdirSync(path.dirname(localPath), { recursive: true });
+  const pulled = adb(device, ['pull', tmp, localPath], { allowFail: true });
+  adb(device, ['shell', 'rm', '-f', tmp], { allowFail: true });
+  if (pulled.status !== 0 || !fs.existsSync(localPath) || fs.statSync(localPath).size <= 0) {
+    die('OFFLINE_AISLE_PACKAGE_MISSING', `adb pull failed for ${remoteRel}`);
+  }
+  runAs(device, `rm -f "files/${remoteRel}"`, { allowFail: true });
+  return { localPath, zipEntries: [], fileName, bytes: fs.statSync(localPath).size };
+}
+
 function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
@@ -687,13 +799,7 @@ function writeDualCorrectnessArtifacts(outRoot, label, status, events, options =
   return { rows, summary, absoluteGate };
 }
 
-function devicePreflightSqlite(device) {
-  const tmpDb = path.join(require('os').tmpdir(), `dinamic-bench-preflight-${Date.now()}.db`);
-  adb(device, [
-    'shell',
-    `run-as ${PACKAGE} cat files/SQLite/dinamic_mobile.db`,
-  ]);
-  // pull via stdout redirect is awkward; use adb exec-out
+function pullDeviceSqlite(device, tmpDb) {
   const buf = execFileSync(
     'adb',
     device
@@ -702,6 +808,60 @@ function devicePreflightSqlite(device) {
     { maxBuffer: 50 * 1024 * 1024 },
   );
   fs.writeFileSync(tmpDb, buf);
+}
+
+function repairBenchmarkDeviceCatalog(device) {
+  const hostInv = 'f00e01a8-1514-46a4-a5b9-711ead486509';
+  adb(device, ['shell', 'am', 'force-stop', PACKAGE]);
+  sleep(1500);
+  const tmpDb = path.join(require('os').tmpdir(), `dinamic-bench-repair-${Date.now()}.db`);
+  pullDeviceSqlite(device, tmpDb);
+  const hasRecognition = execFileSync(
+    'sqlite3',
+    [
+      tmpDb,
+      `SELECT 1 FROM offline_supplier_recognition_config WHERE inventory_id='${hostInv}' AND client_supplier_id='${AUTHORIZED_SUPPLIER}' LIMIT 1;`,
+    ],
+    { encoding: 'utf8' },
+  ).trim();
+  if (hasRecognition !== '1') {
+    fs.unlinkSync(tmpDb);
+    die(
+      'BENCHMARK_REPAIR_CATALOG_UNAVAILABLE',
+      `missing offline recognition config for inventory ${hostInv} and supplier ${AUTHORIZED_SUPPLIER}`,
+    );
+  }
+  execFileSync('sqlite3', [
+    tmpDb,
+    `UPDATE local_client_suppliers SET active=1 WHERE id='${AUTHORIZED_SUPPLIER}';`,
+  ]);
+  execFileSync('sqlite3', [tmpDb, `UPDATE local_inventories SET active=1 WHERE id='${hostInv}';`]);
+  pushViaTmp(device, tmpDb, 'SQLite/dinamic_mobile.db');
+  fs.unlinkSync(tmpDb);
+  runAs(
+    device,
+    'rm -f files/SQLite/dinamic_mobile.db-wal files/SQLite/dinamic_mobile.db-shm',
+  );
+  console.log('BENCHMARK_REPAIR_CATALOG', {
+    supplierId: AUTHORIZED_SUPPLIER,
+    hostInventoryId: hostInv,
+  });
+  adb(device, [
+    'shell',
+    'monkey',
+    '-p',
+    PACKAGE,
+    '-c',
+    'android.intent.category.LAUNCHER',
+    '1',
+  ]);
+  sleep(6000);
+  return true;
+}
+
+function devicePreflightSqlite(device) {
+  const tmpDb = path.join(require('os').tmpdir(), `dinamic-bench-preflight-${Date.now()}.db`);
+  pullDeviceSqlite(device, tmpDb);
   const sql = (q) =>
     execFileSync('sqlite3', [tmpDb, q], { encoding: 'utf8' }).trim();
   const row = sql(
@@ -722,7 +882,28 @@ function devicePreflightSqlite(device) {
   }
   if (String(active) !== '1') {
     fs.unlinkSync(tmpDb);
-    return { ok: false, code: 'BENCHMARK_PROFILE_PREFLIGHT_FAILED', detail: 'inactive' };
+    return { ok: false, code: 'BENCHMARK_PROFILE_PREFLIGHT_FAILED', detail: 'supplier_inactive' };
+  }
+  const inv = 'f00e01a8-1514-46a4-a5b9-711ead486509';
+  const invRow = sql(
+    `SELECT id, active FROM local_inventories WHERE id='${inv}';`,
+  );
+  if (!invRow) {
+    fs.unlinkSync(tmpDb);
+    return {
+      ok: false,
+      code: 'BENCHMARK_PROFILE_PREFLIGHT_FAILED',
+      detail: 'host_inventory_missing',
+    };
+  }
+  const [, invActive] = invRow.split('|');
+  if (String(invActive) !== '1') {
+    fs.unlinkSync(tmpDb);
+    return {
+      ok: false,
+      code: 'BENCHMARK_PROFILE_PREFLIGHT_FAILED',
+      detail: 'host_inventory_inactive',
+    };
   }
   if (String(name).toLowerCase() !== EXPECTED_PROFILE) {
     fs.unlinkSync(tmpDb);
@@ -732,7 +913,6 @@ function devicePreflightSqlite(device) {
       detail: `profile name ${name}`,
     };
   }
-  const inv = 'f00e01a8-1514-46a4-a5b9-711ead486509';
   const sources = sql(
     `SELECT item_source, position_source FROM offline_supplier_recognition_config WHERE inventory_id='${inv}' AND client_supplier_id='${AUTHORIZED_SUPPLIER}';`,
   );
@@ -768,15 +948,82 @@ function devicePreflightSqlite(device) {
   };
 }
 
-function ensureDebuggable(device) {
-  const flags = adb(device, [
-    'shell',
-    'dumpsys',
-    'package',
-    PACKAGE,
-  ]).stdout;
-  if (!/DEBUGGABLE/.test(flags)) {
-    die('RELEASE_BLOCKED', 'installed app is not DEBUGGABLE');
+const EXPO_DEV_CLIENT_URL =
+  'exp+dinamic-inventory-mobile://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081';
+
+function isMetroBundlerUp() {
+  const probe = spawnSync('curl', ['-sf', 'http://127.0.0.1:8081/status'], {
+    encoding: 'utf8',
+    timeout: 3000,
+  });
+  return !probe.error && probe.status === 0;
+}
+
+function ensureDevClientMetro(device) {
+  if (!isMetroBundlerUp()) {
+    console.warn(
+      'BENCHMARK_METRO_HINT: start Metro (cd mobile && npm start) so the dev-client loads JS before the run',
+    );
+    return;
+  }
+  adb(device, ['reverse', 'tcp:8081', 'tcp:8081'], { allowFail: true });
+  adb(
+    device,
+    [
+      'shell',
+      'am',
+      'start',
+      '-a',
+      'android.intent.action.VIEW',
+      '-d',
+      EXPO_DEV_CLIENT_URL,
+    ],
+    { allowFail: true },
+  );
+  sleep(12000);
+}
+
+function isInstalledPackageDebuggable(device) {
+  const flags = adb(device, ['shell', 'dumpsys', 'package', PACKAGE]).stdout;
+  return /DEBUGGABLE/.test(flags);
+}
+
+function installLocalDebugApk(device) {
+  const androidDir = path.resolve(__dirname, '../android');
+  const gradlew = path.join(androidDir, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
+  if (!fs.existsSync(gradlew)) {
+    die(
+      'BENCHMARK_INSTALL_DEBUG_UNAVAILABLE',
+      'android/ gradlew missing; run: cd mobile && npm run prebuild:android',
+    );
+  }
+  console.log('BENCHMARK_INSTALL_DEBUG', { device, androidDir });
+  const env = { ...process.env, ANDROID_SERIAL: device };
+  const result = spawnSync(gradlew, ['installDebug'], {
+    cwd: androidDir,
+    env,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.status !== 0) {
+    const detail = [result.stderr, result.stdout].filter(Boolean).join('\n').slice(0, 4000);
+    die('BENCHMARK_INSTALL_DEBUG_FAILED', detail || 'gradlew installDebug failed');
+  }
+}
+
+function ensureDebuggable(device, opts = {}) {
+  const installDebug = opts.installDebug !== false;
+  if (!isInstalledPackageDebuggable(device)) {
+    if (!installDebug) {
+      die(
+        'RELEASE_BLOCKED',
+        'installed app is not DEBUGGABLE; reinstall with debug (npm run android) or omit --no-install-debug',
+      );
+    }
+    installLocalDebugApk(device);
+    if (!isInstalledPackageDebuggable(device)) {
+      die('RELEASE_BLOCKED', 'installed app is not DEBUGGABLE after installDebug');
+    }
   }
   const pid = adb(device, ['shell', 'pidof', PACKAGE], { allowFail: true }).stdout.trim();
   if (!pid) {
@@ -828,7 +1075,7 @@ function readJsonl(filePath) {
  * Mac-side instrumentation gate for smoke acceptance.
  * Pipeline COMPLETED alone is not enough — instrumentation criteria must pass.
  */
-function validateSmokeInstrumentation(events, status) {
+function validateSmokeInstrumentation(events, status, opts = {}) {
   const failures = [];
   if (status.status !== 'COMPLETED') {
     failures.push(`status=${status.status}`);
@@ -1056,6 +1303,29 @@ function validateSmokeInstrumentation(events, status) {
     failures.push('cleanup_failed_or_missing');
   }
 
+  if (opts.offlineAisle) {
+    if (opts.offlineCheck != null) {
+      if (!opts.offlineCheck.ok) {
+        for (const failure of opts.offlineCheck.failures || []) {
+          failures.push(`offline_${failure}`);
+        }
+      }
+    } else if (status.status === 'COMPLETED') {
+      failures.push('offline_gate_missing');
+    } else {
+      const offline = assertOfflineAisleRun({
+        events,
+        status,
+        zipEntries: opts.offlineZipEntries || [],
+      });
+      if (!offline.ok) {
+        for (const failure of offline.failures) {
+          failures.push(`offline_${failure}`);
+        }
+      }
+    }
+  }
+
   return {
     ok: failures.length === 0,
     failures,
@@ -1206,6 +1476,9 @@ function writeFinalReport(outRoot, summary, body) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.offlineAisle) {
+    assertOfflineAisleHostPrerequisites();
+  }
   if (args.clientId !== AUTHORIZED_CLIENT || args.supplierId !== AUTHORIZED_SUPPLIER) {
     die('UNAUTHORIZED_IDS', 'client/supplier must match authorized Andes IDs');
   }
@@ -1232,11 +1505,14 @@ async function main() {
   }
   acquireDeviceLock(device);
 
-  ensureDebuggable(device);
+  ensureDebuggable(device, { installDebug: args.installDebug });
   if (args.scannerConcurrency === 2) {
     assertNativeScannerConcurrencyCapability(device);
   }
-  const preflight = devicePreflightSqlite(device);
+  if (args.repairBenchmarkSupplier === true) {
+    repairBenchmarkDeviceCatalog(device);
+  }
+  let preflight = devicePreflightSqlite(device);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const outRoot = path.resolve(
     __dirname,
@@ -1271,6 +1547,10 @@ async function main() {
         deviceSerial: device,
         commitSha,
         datasetSha,
+        offlineAisle: args.offlineAisle === true,
+        offlineAisleSchemaVersion: args.offlineAisle ? OFFLINE_AISLE_SCHEMA_VERSION : null,
+        includeAssets: args.offlineAisle ? true : null,
+        requireAssets: args.offlineAisle ? true : null,
       },
       null,
       2,
@@ -1372,6 +1652,10 @@ async function main() {
     gitSha,
     dirty,
     uploadHttpEnabled: false,
+    offlineAisle: args.offlineAisle === true,
+    offlineAisleSchemaVersion: args.offlineAisle ? OFFLINE_AISLE_SCHEMA_VERSION : null,
+    includeAssets: args.offlineAisle ? true : null,
+    requireAssets: args.offlineAisle ? true : null,
     concurrency: {
       exportPrepMaxWorkers: PHASE4_EXPORT_PREP_MAX_WORKERS,
       scannerConcurrency: args.scannerConcurrency,
@@ -1403,11 +1687,27 @@ async function main() {
     runLabel: 'smoke',
     scannerConcurrency: args.scannerConcurrency,
     sourceMetadata: { campaignId, datasetSha, commitSha, deviceSerial: device },
+    offlineAisle: args.offlineAisle === true,
   });
 
   const smokeEventsPath = path.join(outRoot, 'smoke-events.jsonl');
   const smokeEvents = readJsonl(smokeEventsPath);
-  const instr = validateSmokeInstrumentation(smokeEvents, smokeStatus);
+  let smokeOfflineCheck = null;
+  if (args.offlineAisle && smokeStatus.status === 'COMPLETED') {
+    const offlineArtifacts = finalizeOfflineAisleArtifacts({
+      device,
+      status: smokeStatus,
+      events: smokeEvents,
+      outRoot,
+      runLabel: 'smoke',
+      expectedCaptureCount: smokeStatus.expectedCount,
+    });
+    smokeOfflineCheck = offlineArtifacts.check;
+  }
+  const instr = validateSmokeInstrumentation(smokeEvents, smokeStatus, {
+    offlineAisle: args.offlineAisle === true,
+    offlineCheck: smokeOfflineCheck,
+  });
 
   // Merge device environment if present
   try {
@@ -1642,6 +1942,7 @@ async function main() {
       runLabel: `run${i + 1}`,
       scannerConcurrency: args.scannerConcurrency,
       sourceMetadata: { campaignId, datasetSha, commitSha, deviceSerial: device },
+      offlineAisle: args.offlineAisle === true,
     });
     const dur = Date.now() - t0;
     runDurations.push(dur);
@@ -1650,6 +1951,16 @@ async function main() {
     );
     const eventsPath = path.join(outRoot, `run${i + 1}-events.jsonl`);
     const events = fs.existsSync(eventsPath) ? readJsonl(eventsPath) : [];
+    if (args.offlineAisle && st.status === 'COMPLETED') {
+      finalizeOfflineAisleArtifacts({
+        device,
+        status: st,
+        events,
+        outRoot,
+        runLabel: `run${i + 1}`,
+        expectedCaptureCount: st.expectedCount,
+      });
+    }
     const dual = writeDualCorrectnessArtifacts(outRoot, `run${i + 1}`, st, events, {
       sourceMetadata: {
         concurrency: args.scannerConcurrency,
@@ -1752,6 +2063,10 @@ async function main() {
     scannerConcurrency: args.scannerConcurrency,
     dualCorrectness: aggregateDualSummary,
     nonDeterminism,
+    offlineAisle: args.offlineAisle === true,
+    offlineAisleSchemaVersion: args.offlineAisle ? OFFLINE_AISLE_SCHEMA_VERSION : null,
+    includeAssets: args.offlineAisle ? true : null,
+    requireAssets: args.offlineAisle ? true : null,
     scale300:
       fullPhotoCount === 300
         ? {
@@ -1787,8 +2102,10 @@ async function runOne({
   runLabel,
   scannerConcurrency = 1,
   sourceMetadata,
+  offlineAisle = false,
 }) {
   waitForDeviceIdle(device, timeoutMs);
+  ensureDevClientMetro(device);
   const runId = crypto.randomUUID();
   const relFixtures = `benchmark/${runId}/fixtures`;
   runAs(
@@ -1834,6 +2151,7 @@ async function runOne({
     fixtureOrderVersion: BENCHMARK_FIXTURE_ORDER_VERSION,
     fixtureOrderSeed: BENCHMARK_FIXTURE_ORDER_SEED,
     ...sourceMetadata,
+    ...(offlineAisle ? { offlineAisle: true } : {}),
   };
   const cmdLocal = path.join(outRoot, `${runLabel}-command.json`);
   fs.writeFileSync(cmdLocal, JSON.stringify(command, null, 2));
@@ -1865,7 +2183,72 @@ async function runOne({
   return status;
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+function finalizeOfflineAisleArtifacts({
+  device,
+  status,
+  events,
+  outRoot,
+  runLabel,
+  expectedCaptureCount,
+}) {
+  const copied = copyOfflineAislePackage({
+    device,
+    runId: status.benchmarkRunId,
+    status,
+    outRoot,
+    runLabel,
+  });
+  const validatorResult = validateOfflineAislePackageWithBackend(copied.localPath);
+  const zipEntries = validatorResult.valid ? listDinamicZipEntries(copied.localPath) : [];
+  const check = assertOfflineAisleRun({
+    events,
+    status,
+    expectedCaptureCount,
+    validatorResult,
+    zipEntries,
+  });
+  const metrics = collectOfflineAisleMetrics(events);
+  fs.writeFileSync(
+    path.join(outRoot, `${runLabel}-offline-aisle.json`),
+    JSON.stringify(
+      {
+        fileName: copied.fileName,
+        bytes: copied.bytes,
+        zipEntryCount: zipEntries.length,
+        zipEntries,
+        validatorResult,
+        metrics,
+        check,
+      },
+      null,
+      2,
+    ),
+  );
+  if (!check.ok) {
+    die('OFFLINE_AISLE_VALIDATION_FAILED', check.failures.join('; '));
+  }
+  return {
+    copied: { ...copied, zipEntries },
+    zipEntries,
+    metrics,
+    check,
+    validatorResult,
+  };
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  parseArgs,
+  validateSmokeInstrumentation,
+  copyOfflineAislePackage,
+  listDinamicZipEntries,
+  finalizeOfflineAisleArtifacts,
+  assertOfflineAisleHostPrerequisites,
+  validateOfflineAislePackageWithBackend,
+};

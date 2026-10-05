@@ -19,12 +19,15 @@ import {
 } from './captureMapper';
 import {
   OFFLINE_AISLE_EXPORT_DIR,
+  OFFLINE_AISLE_EXPORT_SCHEMA_VERSION,
   OFFLINE_AISLE_FORMAT,
-  OFFLINE_AISLE_SCHEMA_VERSION,
+  OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH,
 } from './constants';
 import { OfflineAisleExportError } from './errors';
 import {
+  assertOfflineAisleV2ZipLayout,
   buildManifestWithIntegrity,
+  buildPackagePayloadV2,
   computePackageIntegrity,
   stableJson,
   validatePackageModel,
@@ -44,11 +47,44 @@ export interface OfflineAisleExportServiceDeps {
   readonly enabled?: boolean;
 }
 
+export type OfflineAisleExportPhaseName =
+  | 'offline_prepare'
+  | 'offline_asset_prepare'
+  | 'offline_payload_build'
+  | 'offline_integrity'
+  | 'offline_validation'
+  | 'offline_zip'
+  | 'offline_total_export';
+
+export interface OfflineAisleExportPhaseEvent {
+  readonly phase: OfflineAisleExportPhaseName;
+  readonly monotonicStartMs: number;
+  readonly durationMs: number;
+  readonly success: boolean;
+  readonly errorCode?: string | null;
+  readonly extras?: Readonly<Record<string, number | string | boolean | null>>;
+}
+
 export interface ExportAisleOptions {
   readonly inventoryId: string;
   readonly aisleId: string;
   readonly includeAssets?: boolean;
   readonly requireAssets?: boolean;
+  /**
+   * Optional timing observer (benchmark / diagnostics). No-op when unset —
+   * does not alter export behavior.
+   */
+  readonly onExportPhase?: (event: OfflineAisleExportPhaseEvent) => void;
+  /**
+   * Optional destination directory. Defaults to `offline-aisle-exports/`
+   * under the app document directory. Benchmark uses the isolated run namespace.
+   */
+  readonly outputDirectory?: string;
+  /**
+   * When true, skip `prepareSessionForExport` (CODE_SCAN / staging catch-up).
+   * Use only when the caller already prepared the session (e.g. after exportSession).
+   */
+  readonly skipSessionPrepare?: boolean;
 }
 
 export interface ExportedOfflineAisle {
@@ -58,6 +94,15 @@ export interface ExportedOfflineAisle {
   readonly captureCount: number;
   readonly assetCount: number;
   readonly completeness: PackageCompleteness;
+  readonly payloadBytes: number;
+  readonly zipBytes: number;
+  readonly zipEntryCount: number;
+  readonly schemaVersion: typeof OFFLINE_AISLE_EXPORT_SCHEMA_VERSION;
+}
+
+function monoNow(): number {
+  const p = (globalThis as { performance?: { now(): number } }).performance;
+  return typeof p?.now === 'function' ? p.now() : Date.now();
 }
 
 function utf8Encode(text: string): Uint8Array {
@@ -117,109 +162,182 @@ export class OfflineAisleExportService {
   ): Promise<ExportedOfflineAisle> {
     const includeAssets = options.includeAssets !== false;
     const requireAssets = options.requireAssets === true;
+    const skipSessionPrepare = options.skipSessionPrepare === true;
 
-    const aisleRow = await this.deps.catalogRepo.getAisleById(options.inventoryId, options.aisleId);
-    if (!aisleRow) {
-      throw new OfflineAisleExportError('AISLE_NOT_FOUND', options.aisleId);
-    }
-    if (aisleRow.sync_status !== 'LOCAL_ONLY') {
-      throw new OfflineAisleExportError(
-        'AISLE_NOT_EXPORTABLE',
-        'solo pasillos LOCAL_ONLY en Fase 4',
-      );
-    }
-
-    const inventory = await this.deps.catalogRepo.getInventoryById(options.inventoryId);
-    if (!inventory) {
-      throw new OfflineAisleExportError('INVENTORY_NOT_FOUND', options.inventoryId);
-    }
-
-    let supplierName: string | null = null;
-    if (aisleRow.client_supplier_id && inventory.client_id) {
-      const supplier = await this.deps.catalogRepo.getSupplierById(
-        inventory.client_id,
-        aisleRow.client_supplier_id,
-      );
-      supplierName = supplier?.name ?? null;
-    }
-
-    const sessions = await this.deps.listSessionsForAisle(options.aisleId);
-    const sessionSnapshot = [...sessions];
-    if (sessionSnapshot.length === 0) {
-      throw new OfflineAisleExportError('NO_CAPTURES', 'sin sesiones de captura');
-    }
-
-    const photos: CapturePhotoRow[] = [];
-    const allDrafts: Awaited<ReturnType<LocalDetectionDraftRepository['listForSession']>> = [];
-
-    for (const session of sessionSnapshot) {
-      if (this.deps.sessionCsvExport) {
-        await this.deps.sessionCsvExport.prepareSessionForExport(session.id);
+    const emitPhase = (
+      phase: OfflineAisleExportPhaseName,
+      started: number,
+      extra?: {
+        readonly durationMs?: number;
+        readonly success?: boolean;
+        readonly errorCode?: string | null;
+        readonly extras?: Readonly<Record<string, number | string | boolean | null>>;
+      },
+    ) => {
+      if (!options.onExportPhase) return;
+      try {
+        options.onExportPhase({
+          phase,
+          monotonicStartMs: started,
+          durationMs: extra?.durationMs ?? monoNow() - started,
+          success: extra?.success !== false,
+          errorCode: extra?.errorCode ?? null,
+          ...(extra?.extras ? { extras: extra.extras } : {}),
+        });
+      } catch {
+        // never break export for observer errors
       }
-      let sessionPhotos = await this.deps.captureRepo.listPhotos(session.id);
-      if (session.active_freeze_id) {
-        sessionPhotos = await this.deps.captureRepo.listFreezePhotos(session.active_freeze_id);
+    };
+
+    const totalStarted = monoNow();
+    try {
+      const prepareStarted = monoNow();
+      const aisleRow = await this.deps.catalogRepo.getAisleById(options.inventoryId, options.aisleId);
+      if (!aisleRow) {
+        throw new OfflineAisleExportError('AISLE_NOT_FOUND', options.aisleId);
       }
-      for (const p of sessionPhotos.filter(
-        (ph) => ph.status !== 'excluded' && ph.status !== 'rejected',
-      )) {
-        photos.push(p);
+      if (aisleRow.sync_status !== 'LOCAL_ONLY') {
+        throw new OfflineAisleExportError(
+          'AISLE_NOT_EXPORTABLE',
+          'solo pasillos LOCAL_ONLY en Fase 4',
+        );
       }
-      const drafts = await this.deps.draftRepo.listForSession(session.id);
-      allDrafts.push(...drafts);
-    }
-    const draftByPhoto = canonicalizeDraftsByPhoto(allDrafts);
 
-    if (photos.length === 0) {
-      throw new OfflineAisleExportError('NO_CAPTURES', 'sin fotos elegibles');
-    }
+      const inventory = await this.deps.catalogRepo.getInventoryById(options.inventoryId);
+      if (!inventory) {
+        throw new OfflineAisleExportError('INVENTORY_NOT_FOUND', options.inventoryId);
+      }
 
-    const sessionById = new Map(sessionSnapshot.map((s) => [s.id, s]));
-    const mapped: OfflineAisleCaptureV1[] = [];
-    for (const photo of photos) {
-      const session = sessionById.get(photo.capture_session_id);
-      if (!session) continue;
-      mapped.push(
-        mapPhotoToCapture({
-          photo,
-          session,
-          aisleId: options.aisleId,
-          aisleClientSupplierId: aisleRow.client_supplier_id,
-          draft: draftByPhoto.get(photo.id),
-          includeAssets,
-          requireAssets,
-        }),
-      );
-    }
+      let supplierName: string | null = null;
+      if (aisleRow.client_supplier_id && inventory.client_id) {
+        const supplier = await this.deps.catalogRepo.getSupplierById(
+          inventory.client_id,
+          aisleRow.client_supplier_id,
+        );
+        supplierName = supplier?.name ?? null;
+      }
 
-    const captures = await finalizeCaptureRawHashes(sortCapturesDeterministic(mapped));
-    const profiles = collectProfileEntries(captures);
+      const sessions = await this.deps.listSessionsForAisle(options.aisleId);
+      const sessionSnapshot = [...sessions];
+      if (sessionSnapshot.length === 0) {
+        throw new OfflineAisleExportError('NO_CAPTURES', 'sin sesiones de captura');
+      }
 
-    const assetHashes: Record<string, string> = {};
-    const assetUriByPath = new Map<string, string>();
-    let assetCount = 0;
-    let anyAssetMissing = false;
-    const finalCaptures: OfflineAisleCaptureV1[] = [];
-
-    if (includeAssets) {
-      for (const cap of captures) {
-        if (!cap.asset?.path) {
-          finalCaptures.push(cap);
-          continue;
+      if (!skipSessionPrepare && this.deps.sessionCsvExport) {
+        for (const session of sessionSnapshot) {
+          await this.deps.sessionCsvExport.prepareSessionForExport(session.id);
         }
-        const photo = photos.find((p) => p.id === cap.capture_id);
-        if (!photo) {
-          finalCaptures.push(cap);
-          continue;
+      }
+
+      const photos: CapturePhotoRow[] = [];
+      const allDrafts: Awaited<ReturnType<LocalDetectionDraftRepository['listForSession']>> = [];
+
+      for (const session of sessionSnapshot) {
+        let sessionPhotos = await this.deps.captureRepo.listPhotos(session.id);
+        if (session.active_freeze_id) {
+          sessionPhotos = await this.deps.captureRepo.listFreezePhotos(session.active_freeze_id);
         }
-        try {
-          const b64 = await FileSystem.readAsStringAsync(photo.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          const bytes = base64ToUint8Array(b64);
-          if (bytes.byteLength === 0) {
+        for (const p of sessionPhotos.filter(
+          (ph) => ph.status !== 'excluded' && ph.status !== 'rejected',
+        )) {
+          photos.push(p);
+        }
+        const drafts = await this.deps.draftRepo.listForSession(session.id);
+        allDrafts.push(...drafts);
+      }
+      const draftByPhoto = canonicalizeDraftsByPhoto(allDrafts);
+
+      if (photos.length === 0) {
+        throw new OfflineAisleExportError('NO_CAPTURES', 'sin fotos elegibles');
+      }
+
+      const sessionById = new Map(sessionSnapshot.map((s) => [s.id, s]));
+      const mapped: OfflineAisleCaptureV1[] = [];
+      for (const photo of photos) {
+        const session = sessionById.get(photo.capture_session_id);
+        if (!session) continue;
+        mapped.push(
+          mapPhotoToCapture({
+            photo,
+            session,
+            aisleId: options.aisleId,
+            aisleClientSupplierId: aisleRow.client_supplier_id,
+            draft: draftByPhoto.get(photo.id),
+            includeAssets,
+            requireAssets,
+          }),
+        );
+      }
+
+      const captures = await finalizeCaptureRawHashes(sortCapturesDeterministic(mapped));
+      const profiles = collectProfileEntries(captures);
+      emitPhase('offline_prepare', prepareStarted, {
+        extras: {
+          captureCount: captures.length,
+          profileCount: profiles.length,
+        },
+      });
+
+      const assetPrepareStarted = monoNow();
+      const assetHashes: Record<string, string> = {};
+      const assetUriByPath = new Map<string, string>();
+      let assetCount = 0;
+      let anyAssetMissing = false;
+      const finalCaptures: OfflineAisleCaptureV1[] = [];
+
+      if (includeAssets) {
+        for (const cap of captures) {
+          if (!cap.asset?.path) {
+            finalCaptures.push(cap);
+            continue;
+          }
+          const photo = photos.find((p) => p.id === cap.capture_id);
+          if (!photo) {
+            finalCaptures.push(cap);
+            continue;
+          }
+          try {
+            const b64 = await FileSystem.readAsStringAsync(photo.uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            const bytes = base64ToUint8Array(b64);
+            if (bytes.byteLength === 0) {
+              if (requireAssets) {
+                throw new OfflineAisleExportError('ASSET_MISSING', cap.capture_id);
+              }
+              anyAssetMissing = true;
+              finalCaptures.push({
+                ...cap,
+                asset: {
+                  ...cap.asset,
+                  included: false,
+                  path: null,
+                  size_bytes: null,
+                  sha256: null,
+                  asset_missing: true,
+                },
+              });
+              continue;
+            }
+            const hash = sha256BytesHex(bytes);
+            assetHashes[cap.asset.path] = hash;
+            assetUriByPath.set(cap.asset.path, photo.uri);
+            assetCount += 1;
+            finalCaptures.push({
+              ...cap,
+              asset: {
+                ...cap.asset,
+                size_bytes: bytes.byteLength,
+                sha256: hash,
+              },
+            });
+          } catch (err) {
+            if (err instanceof OfflineAisleExportError) throw err;
             if (requireAssets) {
-              throw new OfflineAisleExportError('ASSET_MISSING', cap.capture_id);
+              throw new OfflineAisleExportError(
+                'ASSET_MISSING',
+                `${cap.capture_id}: ${err instanceof Error ? err.message : String(err)}`,
+              );
             }
             anyAssetMissing = true;
             finalCaptures.push({
@@ -233,159 +351,198 @@ export class OfflineAisleExportService {
                 asset_missing: true,
               },
             });
-            continue;
           }
-          const hash = sha256BytesHex(bytes);
-          assetHashes[cap.asset.path] = hash;
-          assetUriByPath.set(cap.asset.path, photo.uri);
-          assetCount += 1;
-          finalCaptures.push({
-            ...cap,
-            asset: {
-              ...cap.asset,
-              size_bytes: bytes.byteLength,
-              sha256: hash,
-            },
-          });
-        } catch (err) {
-          if (requireAssets) {
-            throw new OfflineAisleExportError(
-              'ASSET_MISSING',
-              `${cap.capture_id}: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
-          anyAssetMissing = true;
-          finalCaptures.push({
-            ...cap,
-            asset: {
-              ...cap.asset,
-              included: false,
-              path: null,
-              size_bytes: null,
-              sha256: null,
-              asset_missing: true,
-            },
-          });
         }
+      } else {
+        finalCaptures.push(...captures);
       }
-    } else {
-      finalCaptures.push(...captures);
-    }
-
-    const latestSession = selectLatestSession(sessionSnapshot);
-    const aisleDoc: OfflineAisleDocumentV1 = {
-      id: aisleRow.id,
-      inventory_id: aisleRow.inventory_id,
-      client_supplier_id: aisleRow.client_supplier_id,
-      name: aisleRow.code,
-      created_offline_at: aisleRow.created_offline_at,
-      completed_at: latestSession.finished_at ?? latestSession.capture_frozen_at,
-      origin: aisleRow.origin,
-      sync_status: aisleRow.sync_status,
-    };
-
-    const captureFiles: Record<string, string> = {};
-    for (const cap of finalCaptures) {
-      captureFiles[`captures/${cap.capture_id}.json`] = stableJson(cap);
-    }
-
-    const hasReviewIssues = finalCaptures.some(
-      (c) => c.result_kind === 'UNRECOGNIZED' || c.requires_review,
-    );
-    const completeness: PackageCompleteness =
-      hasReviewIssues || anyAssetMissing ? 'PARTIAL' : 'COMPLETE';
-
-    const manifestBase = {
-      format: OFFLINE_AISLE_FORMAT,
-      schema_version: OFFLINE_AISLE_SCHEMA_VERSION,
-      export_id: exportId,
-      created_at: new Date().toISOString(),
-      app_version: this.deps.appVersion,
-      inventory: {
-        id: inventory.id,
-        name: inventory.name,
-        client_id: inventory.client_id,
-      },
-      aisle: {
-        id: aisleRow.id,
-        name: aisleRow.code,
-        origin: aisleRow.origin,
-        sync_status: aisleRow.sync_status,
-        operational_status: latestSession.status,
-      },
-      supplier: {
-        client_supplier_id: aisleRow.client_supplier_id,
-        name: supplierName,
-      },
-      capture_count: finalCaptures.length,
-      asset_count: assetCount,
-      include_assets: includeAssets,
-      completeness,
-    };
-
-    const integrityFiles = await computePackageIntegrity({
-      manifest: buildManifestWithIntegrity(manifestBase, {}),
-      aisle: aisleDoc,
-      profiles,
-      captures: finalCaptures,
-      captureFiles,
-      assetHashes,
-    });
-
-    const manifest = buildManifestWithIntegrity(manifestBase, integrityFiles);
-    const model: OfflineAislePackageModel = {
-      manifest,
-      aisle: aisleDoc,
-      profiles,
-      captures: finalCaptures,
-      captureFiles,
-      assetHashes,
-    };
-    await validatePackageModel(model);
-
-    const zipEntries: ZipEntrySource[] = [
-      { path: 'manifest.json', getBytes: () => utf8Encode(stableJson(manifest)) },
-      { path: 'aisle.json', getBytes: () => utf8Encode(stableJson(aisleDoc)) },
-      {
-        path: 'recognition/profiles.json',
-        getBytes: () => utf8Encode(stableJson(profiles)),
-      },
-    ];
-    for (const [path, content] of Object.entries(captureFiles)) {
-      zipEntries.push({ path, getBytes: () => utf8Encode(content) });
-    }
-    for (const [path, uri] of assetUriByPath.entries()) {
-      zipEntries.push({
-        path,
-        getBytes: async () => {
-          const b64 = await FileSystem.readAsStringAsync(uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          return base64ToUint8Array(b64);
+      emitPhase('offline_asset_prepare', assetPrepareStarted, {
+        extras: {
+          captureCount: finalCaptures.length,
+          assetCount,
+          includeAssets,
+          requireAssets,
         },
       });
+
+      const latestSession = selectLatestSession(sessionSnapshot);
+      const aisleDoc: OfflineAisleDocumentV1 = {
+        id: aisleRow.id,
+        inventory_id: aisleRow.inventory_id,
+        client_supplier_id: aisleRow.client_supplier_id,
+        name: aisleRow.code,
+        created_offline_at: aisleRow.created_offline_at,
+        completed_at: latestSession.finished_at ?? latestSession.capture_frozen_at,
+        origin: aisleRow.origin,
+        sync_status: aisleRow.sync_status,
+      };
+
+      const payloadStarted = monoNow();
+      const packagePayload = buildPackagePayloadV2({
+        aisle: aisleDoc,
+        profiles,
+        captures: finalCaptures,
+      });
+      const packagePayloadJson = stableJson(packagePayload);
+      const payloadBytes = utf8Encode(packagePayloadJson).byteLength;
+      emitPhase('offline_payload_build', payloadStarted, {
+        extras: {
+          payloadBytes,
+          captureCount: finalCaptures.length,
+          assetCount,
+        },
+      });
+
+      const hasReviewIssues = finalCaptures.some(
+        (c) => c.result_kind === 'UNRECOGNIZED' || c.requires_review,
+      );
+      const completeness: PackageCompleteness =
+        hasReviewIssues || anyAssetMissing ? 'PARTIAL' : 'COMPLETE';
+
+      const manifestBase = {
+        format: OFFLINE_AISLE_FORMAT,
+        schema_version: OFFLINE_AISLE_EXPORT_SCHEMA_VERSION,
+        export_id: exportId,
+        created_at: new Date().toISOString(),
+        app_version: this.deps.appVersion,
+        inventory: {
+          id: inventory.id,
+          name: inventory.name,
+          client_id: inventory.client_id,
+        },
+        aisle: {
+          id: aisleRow.id,
+          name: aisleRow.code,
+          origin: aisleRow.origin,
+          sync_status: aisleRow.sync_status,
+          operational_status: latestSession.status,
+        },
+        supplier: {
+          client_supplier_id: aisleRow.client_supplier_id,
+          name: supplierName,
+        },
+        capture_count: finalCaptures.length,
+        asset_count: assetCount,
+        include_assets: includeAssets,
+        completeness,
+      };
+
+      const integrityStarted = monoNow();
+      const integrityFiles = await computePackageIntegrity({
+        manifest: buildManifestWithIntegrity(manifestBase, {}),
+        aisle: aisleDoc,
+        profiles,
+        captures: finalCaptures,
+        captureFiles: {},
+        packagePayloadJson,
+        assetHashes,
+      });
+      const manifest = buildManifestWithIntegrity(manifestBase, integrityFiles);
+      emitPhase('offline_integrity', integrityStarted, {
+        extras: {
+          integrityFileCount: Object.keys(integrityFiles).length,
+        },
+      });
+
+      const model: OfflineAislePackageModel = {
+        manifest,
+        aisle: aisleDoc,
+        profiles,
+        captures: finalCaptures,
+        captureFiles: {},
+        packagePayloadJson,
+        assetHashes,
+      };
+
+      const zipEntries: ZipEntrySource[] = [
+        { path: 'manifest.json', getBytes: () => utf8Encode(stableJson(manifest)) },
+        {
+          path: OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH,
+          getBytes: () => utf8Encode(packagePayloadJson),
+        },
+      ];
+      for (const [path, uri] of assetUriByPath.entries()) {
+        zipEntries.push({
+          path,
+          getBytes: async () => {
+            const b64 = await FileSystem.readAsStringAsync(uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            return base64ToUint8Array(b64);
+          },
+        });
+      }
+      const zipEntryPaths = zipEntries.map((e) => e.path);
+
+      const validationStarted = monoNow();
+      await validatePackageModel(model);
+      assertOfflineAisleV2ZipLayout(zipEntryPaths);
+      emitPhase('offline_validation', validationStarted, {
+        extras: {
+          schemaVersion: OFFLINE_AISLE_EXPORT_SCHEMA_VERSION,
+          zipEntryCount: zipEntries.length,
+        },
+      });
+
+      const zipStarted = monoNow();
+      const zipped = await buildZipBytes(zipEntries);
+      const fileName = buildDinamicArchiveFileName(aisleRow.code, aisleRow.id);
+      const defaultOutDir = `${FileSystem.documentDirectory ?? FileSystem.cacheDirectory}${OFFLINE_AISLE_EXPORT_DIR}/`;
+      const outDirRaw = options.outputDirectory?.trim() || defaultOutDir;
+      const outDir = outDirRaw.endsWith('/') ? outDirRaw : `${outDirRaw}/`;
+      await FileSystem.makeDirectoryAsync(outDir, { intermediates: true }).catch(() => undefined);
+      const fileUri = `${outDir}${fileName}`;
+      const tmpUri = `${tmpBase}.dinamic`;
+      await FileSystem.makeDirectoryAsync(tmpBase, { intermediates: true }).catch(() => undefined);
+      await FileSystem.writeAsStringAsync(tmpUri, uint8ArrayToBase64(zipped), {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => undefined);
+      await FileSystem.moveAsync({ from: tmpUri, to: fileUri });
+      emitPhase('offline_zip', zipStarted, {
+        extras: {
+          zipBytes: zipped.byteLength,
+          zipEntryCount: zipEntries.length,
+        },
+      });
+
+      const result: ExportedOfflineAisle = {
+        exportId,
+        fileUri,
+        fileName,
+        captureCount: finalCaptures.length,
+        assetCount,
+        completeness,
+        payloadBytes,
+        zipBytes: zipped.byteLength,
+        zipEntryCount: zipEntries.length,
+        schemaVersion: OFFLINE_AISLE_EXPORT_SCHEMA_VERSION,
+      };
+      emitPhase('offline_total_export', totalStarted, {
+        extras: {
+          payloadBytes: result.payloadBytes,
+          zipBytes: result.zipBytes,
+          zipEntryCount: result.zipEntryCount,
+          captureCount: result.captureCount,
+          assetCount: result.assetCount,
+          schemaVersion: result.schemaVersion,
+          includeAssets,
+          requireAssets,
+        },
+      });
+      return result;
+    } catch (error) {
+      const code =
+        error instanceof OfflineAisleExportError
+          ? error.code
+          : error && typeof error === 'object' && 'code' in error
+            ? String((error as { code?: unknown }).code ?? 'ERROR')
+            : 'ERROR';
+      emitPhase('offline_total_export', totalStarted, {
+        success: false,
+        errorCode: code.slice(0, 80),
+      });
+      throw error;
     }
-
-    const zipped = await buildZipBytes(zipEntries);
-    const fileName = buildDinamicArchiveFileName(aisleRow.code, aisleRow.id);
-    const outDir = `${FileSystem.documentDirectory ?? FileSystem.cacheDirectory}${OFFLINE_AISLE_EXPORT_DIR}/`;
-    await FileSystem.makeDirectoryAsync(outDir, { intermediates: true }).catch(() => undefined);
-    const fileUri = `${outDir}${fileName}`;
-    const tmpUri = `${tmpBase}.dinamic`;
-    await FileSystem.makeDirectoryAsync(tmpBase, { intermediates: true }).catch(() => undefined);
-    await FileSystem.writeAsStringAsync(tmpUri, uint8ArrayToBase64(zipped), {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => undefined);
-    await FileSystem.moveAsync({ from: tmpUri, to: fileUri });
-
-    return {
-      exportId,
-      fileUri,
-      fileName,
-      captureCount: finalCaptures.length,
-      assetCount,
-      completeness,
-    };
   }
 }
