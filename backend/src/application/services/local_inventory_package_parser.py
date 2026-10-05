@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import io
 import json
@@ -15,7 +16,6 @@ MAX_ZIP_ENTRIES = 5000
 MAX_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
 MAX_SINGLE_FILE_BYTES = 80 * 1024 * 1024
 REQUIRED_ROOT_FILES = frozenset({"results.csv", "manifest.json"})
-
 
 class LocalInventoryPackageError(Exception):
     def __init__(self, code: str, message: str) -> None:
@@ -59,6 +59,111 @@ class ParsedLocalInventoryPackage:
 
 def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _manifest_field_str(manifest: dict[str, Any], key: str) -> str:
+    return str(manifest.get(key) or "").strip()
+
+
+def _read_csv_envelope(csv_bytes: bytes) -> tuple[frozenset[str], dict[str, str]]:
+    """Return CSV headers and first data row for package envelope resolution."""
+    try:
+        text = csv_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise LocalInventoryPackageError(
+            "PACKAGE_CSV_INVALID_ENCODING",
+            "results.csv must be UTF-8",
+        ) from exc
+    try:
+        reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
+        fieldnames = reader.fieldnames or ()
+        headers = frozenset(str(name) for name in fieldnames if name)
+        raw = next(reader, None)
+    except csv.Error as exc:
+        raise LocalInventoryPackageError(
+            "PACKAGE_CSV_MALFORMED",
+            f"results.csv is not valid RFC 4180 CSV: {exc}",
+        ) from exc
+    if raw is None:
+        raise LocalInventoryPackageError(
+            "PACKAGE_CSV_ENVELOPE_EMPTY",
+            "results.csv must contain at least one data row for package envelope",
+        )
+    row: dict[str, str] = {}
+    for key, value in raw.items():
+        if key is None:
+            continue
+        row[str(key)] = (value or "").strip() if value is not None else ""
+    return headers, row
+
+
+def _resolve_envelope_field(
+    key: str,
+    *,
+    headers: frozenset[str],
+    row: dict[str, str],
+    manifest: dict[str, Any],
+    required: bool,
+) -> str:
+    manifest_val = _manifest_field_str(manifest, key)
+    if key in headers:
+        csv_val = row.get(key, "")
+        if manifest_val and manifest_val != csv_val:
+            raise LocalInventoryPackageError(
+                "PACKAGE_ENVELOPE_MISMATCH",
+                f"{key} in manifest does not match results.csv",
+            )
+        canonical = csv_val
+    else:
+        canonical = manifest_val
+    if required and not canonical:
+        raise LocalInventoryPackageError(
+            "PACKAGE_MANIFEST_INVALID",
+            f"package requires {key} (results.csv column or manifest)",
+        )
+    return canonical
+
+
+@dataclass(frozen=True)
+class _ResolvedPackageEnvelope:
+    export_id: str
+    inventory_id: str
+    aisle_id: str | None
+    capture_session_id: str | None
+    freeze_id: str | None
+
+
+def _resolve_package_envelope(
+    manifest: dict[str, Any],
+    csv_bytes: bytes,
+) -> _ResolvedPackageEnvelope:
+    headers, row = _read_csv_envelope(csv_bytes)
+    export_id = _resolve_envelope_field(
+        "export_id", headers=headers, row=row, manifest=manifest, required=True
+    )
+    inventory_id = _resolve_envelope_field(
+        "inventory_id", headers=headers, row=row, manifest=manifest, required=True
+    )
+    aisle_id = _resolve_envelope_field(
+        "aisle_id", headers=headers, row=row, manifest=manifest, required=False
+    )
+    capture_session_id = _resolve_envelope_field(
+        "capture_session_id",
+        headers=headers,
+        row=row,
+        manifest=manifest,
+        required=False,
+    )
+    freeze_id = _resolve_envelope_field(
+        "freeze_id", headers=headers, row=row, manifest=manifest, required=False
+    )
+    return _ResolvedPackageEnvelope(
+        export_id=export_id,
+        inventory_id=inventory_id,
+        aisle_id=aisle_id or None,
+        capture_session_id=capture_session_id or None,
+        freeze_id=freeze_id or None,
+    )
 
 
 def _safe_member_name(name: str) -> str:
@@ -190,13 +295,7 @@ def parse_local_inventory_package(
                 "PARTIAL packages are not accepted for import; re-export COMPLETE",
             )
 
-        export_id = str(manifest.get("export_id") or "").strip()
-        inventory_id = str(manifest.get("inventory_id") or "").strip()
-        if not export_id or not inventory_id:
-            raise LocalInventoryPackageError(
-                "PACKAGE_MANIFEST_INVALID",
-                "manifest requires export_id and inventory_id",
-            )
+        envelope = _resolve_package_envelope(manifest, csv_bytes)
 
         csv_checksum = str(
             manifest.get("csv_checksum_sha256") or manifest.get("checksum_sha256") or ""
@@ -312,15 +411,11 @@ def parse_local_inventory_package(
             package_kind=package_kind,
             package_version=package_version,
             status=status,
-            export_id=export_id,
-            inventory_id=inventory_id,
-            aisle_id=(str(manifest["aisle_id"]) if manifest.get("aisle_id") else None),
-            capture_session_id=(
-                str(manifest["capture_session_id"])
-                if manifest.get("capture_session_id")
-                else None
-            ),
-            freeze_id=(str(manifest["freeze_id"]) if manifest.get("freeze_id") else None),
+            export_id=envelope.export_id,
+            inventory_id=envelope.inventory_id,
+            aisle_id=envelope.aisle_id,
+            capture_session_id=envelope.capture_session_id,
+            freeze_id=envelope.freeze_id,
             csv_bytes=csv_bytes,
             csv_checksum_sha256=actual_csv_checksum,
             package_checksum_sha256=(

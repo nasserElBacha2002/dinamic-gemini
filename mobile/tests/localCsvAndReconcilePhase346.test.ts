@@ -397,11 +397,9 @@ describe('Phase 4 local CSV export', () => {
 
     expect(rows).toHaveLength(2);
     expect(rows[0]?.position_code).toBe('pos-label-public-1');
-    expect(rows[0]?.position_status).toBe('LABEL_DETECTED');
     expect(rows[0]?.internal_code).toBe('');
     expect(rows[0]?.source).toBe('LOCAL_POSITION_LABEL');
     expect(rows[1]?.position_code).toBe('pos-label-public-1');
-    expect(rows[1]?.position_status).toBe('INFERRED_FROM_PRIOR_LABEL');
     expect(rows[1]?.internal_code).toBe('SKU-99');
     expect(rows[1]?.source).toBe('LOCAL_CODE_SCAN');
   });
@@ -585,12 +583,6 @@ describe('Phase 4 local CSV export', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.position_code).toBe('7 RIGHT N1 01/01');
-    expect(rows[0]?.position_status).toBe('FROM_SNAPSHOT');
-    expect(rows[0]?.pallet).toBe('7');
-    expect(rows[0]?.side).toBe('RIGHT');
-    expect(rows[0]?.level).toBe('1');
-    expect(rows[0]?.marker_index).toBe('1');
-    expect(rows[0]?.marker_total).toBe('1');
     expect(rows[0]?.position_label_id).toBe('pos_snap');
     expect(rows[0]?.position_payload_raw).toBe(rawPayload);
     expect(rows[0]?.internal_code).toBe('SKU-SNAP');

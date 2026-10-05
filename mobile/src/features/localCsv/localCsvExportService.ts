@@ -71,7 +71,7 @@ import { getFreeDiskBytesHint } from '../exportPrep/exportStaging';
 import { buildLocalCsvExport } from './buildLocalCsvExport';
 import { isDraftExportReady } from './supplierExportSemantics';
 import { diagnoseExportBlockers } from './localCsvExportPreflight';
-import { LOCAL_PACKAGE_KIND, LOCAL_PACKAGE_VERSION } from './localPackageContract';
+import { buildSessionPackageManifest } from './sessionPackageManifest';
 
 export { LOCAL_PACKAGE_KIND, LOCAL_PACKAGE_VERSION } from './localPackageContract';
 
@@ -1294,39 +1294,32 @@ export class LocalCsvExportService {
       ({ getBytes: _g, sourceAbsolutePath: _path, ...meta }) => meta,
     );
     const packageChecksumSha256 = contentFingerprint;
-    const manifest = {
-      schema_version: built.schemaVersion,
-      package_kind: LOCAL_PACKAGE_KIND,
-      package_version: LOCAL_PACKAGE_VERSION,
-      status: 'COMPLETE',
-      export_id: built.exportId,
-      exported_at: built.exportedAt,
-      inventory_id: session.inventory_id,
-      aisle_id: session.aisle_id,
-      capture_session_id: sessionId,
-      freeze_id: freezeIdAtStart,
-      freeze_generation: freezeGenerationAtStart,
-      row_count: built.rowCount,
-      expected_photo_count: eligible.length,
-      included_photo_count: packagedPhotos.length,
-      missing_photos: [] as const,
-      csv_checksum_sha256: built.checksumSha256,
-      checksum_sha256: built.checksumSha256,
-      checksum_algorithm: built.checksumAlgorithm,
-      package_checksum_sha256: packageChecksumSha256,
-      summary: {
-        photo_count: packagedPhotos.length,
-        position_event_count: built.positionEventCount,
-        product_result_count: built.productResultCount,
-        rejected_detection_count: built.rejectedDetectionCount,
-      },
+    const manifest = buildSessionPackageManifest({
+      csvSchemaVersion: built.schemaVersion,
+      exportId: built.exportId,
+      exportedAt: built.exportedAt,
+      inventoryId: session.inventory_id,
+      aisleId: session.aisle_id,
+      captureSessionId: sessionId,
+      freezeId: freezeIdAtStart,
+      freezeGeneration: freezeGenerationAtStart,
+      rowCount: built.rowCount,
+      expectedPhotoCount: eligible.length,
+      includedPhotoCount: packagedPhotos.length,
+      csvChecksumSha256: built.checksumSha256,
+      packageChecksumSha256,
+      positionEventCount: built.positionEventCount,
+      productResultCount: built.productResultCount,
+      rejectedDetectionCount: built.rejectedDetectionCount,
       photos: photoEntries,
-    };
+    });
 
-    if (manifest.expected_photo_count !== manifest.included_photo_count) {
+    const expectedPhotoCount = eligible.length;
+    const includedPhotoCount = packagedPhotos.length;
+    if (expectedPhotoCount !== includedPhotoCount) {
       throw new ExportFromStagingError(
         'PACKAGE_VALIDATION_FAILED',
-        `expected_photo_count ${manifest.expected_photo_count} != included ${manifest.included_photo_count}`,
+        `expected_photo_count ${expectedPhotoCount} != included ${includedPhotoCount}`,
       );
     }
 
@@ -1337,7 +1330,7 @@ export class LocalCsvExportService {
       extras: {
         manifestBytes: manifestBytes.byteLength,
         csvBytes: csvBytes.byteLength,
-        expectedPhotoCount: manifest.expected_photo_count,
+        expectedPhotoCount,
       },
     });
     const zipBuildStarted = Date.now();
