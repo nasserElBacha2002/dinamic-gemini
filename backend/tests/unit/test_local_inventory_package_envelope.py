@@ -113,7 +113,30 @@ def test_rejects_manifest_csv_mismatch(field: str, manifest_value: str) -> None:
     assert exc.value.code == "PACKAGE_ENVELOPE_MISMATCH"
 
 
-def test_rejects_csv_without_data_rows() -> None:
+def test_accepts_header_only_csv_with_legacy_manifest() -> None:
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=HEADERS, lineterminator="\r\n")
+    writer.writeheader()
+    csv_bytes = output.getvalue().encode()
+    checksum = hashlib.sha256(csv_bytes).hexdigest()
+    manifest = legacy_v2_manifest(
+        export_id="export-header-only",
+        inventory_id="inventory-1",
+        aisle_id="aisle-1",
+        capture_session_id="session-1",
+        csv_checksum_sha256=checksum,
+        photos=[_photo_meta("photo-1", "file-1")],
+    )
+    parsed = parse_local_inventory_package(
+        write_session_zip(csv_bytes=csv_bytes, manifest=manifest, photo_id="photo-1")
+    )
+    assert parsed.export_id == "export-header-only"
+    assert parsed.inventory_id == "inventory-1"
+    assert parsed.aisle_id == "aisle-1"
+    assert parsed.capture_session_id == "session-1"
+
+
+def test_rejects_header_only_csv_with_slim_manifest() -> None:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=HEADERS, lineterminator="\r\n")
     writer.writeheader()
@@ -126,12 +149,13 @@ def test_rejects_csv_without_data_rows() -> None:
         capture_session_id="session-1",
         csv_checksum_sha256=checksum,
         photos=[_photo_meta("photo-1", "file-1")],
+        omit_legacy_ids=True,
     )
     with pytest.raises(LocalInventoryPackageError) as exc:
         parse_local_inventory_package(
             write_session_zip(csv_bytes=csv_bytes, manifest=manifest, photo_id="photo-1")
         )
-    assert exc.value.code == "PACKAGE_CSV_ENVELOPE_EMPTY"
+    assert exc.value.code == "PACKAGE_MANIFEST_INVALID"
 
 
 def test_rejects_malformed_csv_for_envelope() -> None:

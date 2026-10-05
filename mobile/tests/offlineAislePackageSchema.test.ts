@@ -13,8 +13,14 @@ import {
   stableJson,
   computePackageIntegrity,
   buildExpectedIntegrityPaths,
+  buildPackagePayloadV2,
 } from '../src/features/offlineAisleExport/packageValidator';
-import { OFFLINE_AISLE_FORMAT, OFFLINE_AISLE_SCHEMA_VERSION } from '../src/features/offlineAisleExport/constants';
+import {
+  OFFLINE_AISLE_FORMAT,
+  OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH,
+  OFFLINE_AISLE_SCHEMA_VERSION,
+  OFFLINE_AISLE_SCHEMA_VERSION_V2,
+} from '../src/features/offlineAisleExport/constants';
 import type { CapturePhotoRow, CaptureSessionRow } from '../src/database/schema/captureSchema';
 import type { LocalDetectionDraftRow } from '../src/database/repositories/localDetectionDraftRepository';
 
@@ -1152,5 +1158,489 @@ describe('offline aisle package schema / mapper', () => {
     expect(paths.has('recognition/profiles.json')).toBe(true);
     expect(paths.has('captures/cap-item.json')).toBe(true);
     expect(paths.has('assets/cap-item.jpg')).toBe(true);
+  });
+});
+
+function aisleDoc() {
+  return {
+    id: 'aisle-1',
+    inventory_id: 'inv-1',
+    client_supplier_id: 'sup-b',
+    name: 'A',
+    created_offline_at: null,
+    completed_at: null,
+    origin: 'LOCAL',
+    sync_status: 'LOCAL_ONLY',
+  };
+}
+
+function manifestBase(overrides: Record<string, unknown> = {}) {
+  return {
+    format: OFFLINE_AISLE_FORMAT,
+    schema_version: OFFLINE_AISLE_SCHEMA_VERSION_V2,
+    export_id: 'e1',
+    created_at: '2026-01-01T00:00:00.000Z',
+    app_version: '0.3.0',
+    inventory: { id: 'inv-1', name: 'Inv', client_id: 'c1' },
+    aisle: {
+      id: 'aisle-1',
+      name: 'A',
+      origin: 'LOCAL',
+      sync_status: 'LOCAL_ONLY',
+      operational_status: 'local_completed',
+    },
+    supplier: { client_supplier_id: 'sup-b', name: 'S' },
+    capture_count: 1,
+    asset_count: 0,
+    include_assets: false,
+    completeness: 'COMPLETE' as const,
+    ...overrides,
+  };
+}
+
+async function buildValidatedV2Model(
+  cap: NonNullable<Awaited<ReturnType<typeof finalizeCaptureRawHashes>>[0]>,
+  overrides?: {
+    manifest?: Record<string, unknown>;
+    profiles?: ReturnType<typeof collectProfileEntries>;
+    packageMutator?: (json: string) => string;
+  },
+) {
+  const aisle = aisleDoc();
+  const profiles = overrides?.profiles ?? collectProfileEntries([cap!]);
+  const captures = [cap!];
+  const packagePayloadJson = stableJson(
+    buildPackagePayloadV2({ aisle, profiles, captures }),
+  );
+  const payloadJson = overrides?.packageMutator
+    ? overrides.packageMutator(packagePayloadJson)
+    : packagePayloadJson;
+  const integrity = await computePackageIntegrity({
+    manifest: buildManifestWithIntegrity(
+      manifestBase(overrides?.manifest ?? {}) as never,
+      {},
+    ),
+    aisle,
+    profiles,
+    captures,
+    captureFiles: {},
+    packagePayloadJson: payloadJson,
+    assetHashes: {},
+  });
+  const manifest = buildManifestWithIntegrity(
+    manifestBase(overrides?.manifest ?? {}) as never,
+    integrity,
+  );
+  return {
+    manifest,
+    aisle,
+    profiles,
+    captures,
+    captureFiles: {},
+    packagePayloadJson: payloadJson,
+    assetHashes: {},
+  };
+}
+
+describe('offline aisle package schema v2', () => {
+  it('golden v1 package model still validates', async () => {
+    const cap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: false,
+      requireAssets: false,
+    });
+    const [finalCap] = await finalizeCaptureRawHashes([cap]);
+    const aisle = aisleDoc();
+    const captureFiles = { [`captures/${finalCap!.capture_id}.json`]: stableJson(finalCap) };
+    const integrity = await computePackageIntegrity({
+      manifest: buildManifestWithIntegrity(
+        {
+          ...manifestBase({ schema_version: OFFLINE_AISLE_SCHEMA_VERSION, capture_count: 1 }),
+          schema_version: OFFLINE_AISLE_SCHEMA_VERSION,
+        },
+        {},
+      ),
+      aisle,
+      profiles: [],
+      captures: [finalCap!],
+      captureFiles,
+      assetHashes: {},
+    });
+    const manifest = buildManifestWithIntegrity(
+      {
+        ...manifestBase({ schema_version: OFFLINE_AISLE_SCHEMA_VERSION, capture_count: 1 }),
+        schema_version: OFFLINE_AISLE_SCHEMA_VERSION,
+      },
+      integrity,
+    );
+    await expect(
+      validatePackageModel({
+        manifest,
+        aisle,
+        profiles: [],
+        captures: [finalCap!],
+        captureFiles,
+        assetHashes: {},
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('valid v2 package model passes validation', async () => {
+    const cap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: false,
+      requireAssets: false,
+    });
+    const [finalCap] = await finalizeCaptureRawHashes([cap]);
+    const model = await buildValidatedV2Model(finalCap!);
+    await expect(validatePackageModel(model)).resolves.toBeUndefined();
+  });
+
+  it('v2 zip layout has single consolidated payload file', async () => {
+    const cap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: false,
+      requireAssets: false,
+    });
+    const [finalCap] = await finalizeCaptureRawHashes([cap]);
+    const model = await buildValidatedV2Model(finalCap!);
+    const zipEntryPaths = [
+      'manifest.json',
+      OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH,
+    ];
+    const zip = await buildZipBytes(
+      zipEntryPaths.map((path) => ({
+        path,
+        getBytes: () =>
+          new TextEncoder().encode(
+            path === 'manifest.json' ? stableJson(model.manifest) : model.packagePayloadJson!,
+          ),
+      })),
+    );
+    expect(zip.byteLength).toBeGreaterThan(0);
+    expect(zipEntryPaths.filter((p) => p.endsWith('.json'))).toEqual([
+      'manifest.json',
+      OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH,
+    ]);
+    expect(zipEntryPaths).not.toContain('aisle.json');
+    expect(zipEntryPaths).not.toContain('recognition/profiles.json');
+    expect(zipEntryPaths.some((p) => p.startsWith('captures/'))).toBe(false);
+  });
+
+  it('v2 rejects capture_count mismatch', async () => {
+    const cap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: false,
+      requireAssets: false,
+    });
+    const [finalCap] = await finalizeCaptureRawHashes([cap]);
+    const model = await buildValidatedV2Model(finalCap!, {
+      manifest: { capture_count: 99 },
+    });
+    await expect(validatePackageModel(model)).rejects.toMatchObject({
+      code: 'PACKAGE_HASH_FAILED',
+    });
+  });
+
+  it('v2 rejects aisle/capture mismatch', async () => {
+    const cap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: false,
+      requireAssets: false,
+    });
+    const [finalCap] = await finalizeCaptureRawHashes([cap]);
+    const badCap = { ...finalCap!, aisle_id: 'other-aisle' };
+    const aisle = aisleDoc();
+    const profiles = collectProfileEntries([badCap]);
+    const packagePayloadJson = stableJson(
+      buildPackagePayloadV2({ aisle, profiles, captures: [badCap] }),
+    );
+    const integrity = await computePackageIntegrity({
+      manifest: buildManifestWithIntegrity(manifestBase() as never, {}),
+      aisle,
+      profiles,
+      captures: [badCap],
+      captureFiles: {},
+      packagePayloadJson,
+      assetHashes: {},
+    });
+    const manifest = buildManifestWithIntegrity(manifestBase() as never, integrity);
+    await expect(
+      validatePackageModel({
+        manifest,
+        aisle,
+        profiles,
+        captures: [badCap],
+        captureFiles: {},
+        packagePayloadJson,
+        assetHashes: {},
+      }),
+    ).rejects.toMatchObject({ code: 'CAPTURE_AISLE_MISMATCH' });
+  });
+
+  it('v2 rejects invalid profile_ref', async () => {
+    const cap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: false,
+      requireAssets: false,
+    });
+    const [finalCap] = await finalizeCaptureRawHashes([cap]);
+    const badCap = {
+      ...finalCap!,
+      recognitions: {
+        ...finalCap!.recognitions,
+        item: finalCap!.recognitions.item
+          ? {
+              ...finalCap!.recognitions.item,
+              profile_ref: 'item:unknown:v1',
+            }
+          : null,
+      },
+    };
+    const model = await buildValidatedV2Model(badCap, { profiles: [] });
+    await expect(validatePackageModel(model)).rejects.toMatchObject({
+      code: 'PACKAGE_HASH_FAILED',
+    });
+  });
+
+  it('v2 preserves distinct snapshots without deduplication', async () => {
+    const itemCap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: false,
+      requireAssets: false,
+    });
+    const v11Draft = {
+      ...itemDraft(),
+      capture_photo_id: 'cap-v11',
+      recognition_profile_snapshot_json: JSON.stringify({
+        client_supplier_id: 'sup-b',
+        item: {
+          status: 'VALID',
+          profile_id: 'prof-item',
+          profile_version: 11,
+          profile_source: 'SUPPLIER',
+          label_id: 'L2',
+          sku: 'S2',
+          quantity: 1,
+        },
+      }),
+    };
+    const cap11 = mapPhotoToCapture({
+      photo: photo('cap-v11'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: v11Draft,
+      includeAssets: false,
+      requireAssets: false,
+    });
+    const [finalA, finalB] = await finalizeCaptureRawHashes([itemCap, cap11]);
+    expect(finalA!.recognition_profile_snapshot_json).not.toBe(
+      finalB!.recognition_profile_snapshot_json,
+    );
+    const aisle = aisleDoc();
+    const profiles = collectProfileEntries([finalA!, finalB!]);
+    const captures = [finalA!, finalB!];
+    const packagePayloadJson = stableJson(
+      buildPackagePayloadV2({ aisle, profiles, captures }),
+    );
+    const integrity = await computePackageIntegrity({
+      manifest: buildManifestWithIntegrity(
+        manifestBase({ capture_count: 2 }) as never,
+        {},
+      ),
+      aisle,
+      profiles,
+      captures,
+      captureFiles: {},
+      packagePayloadJson,
+      assetHashes: {},
+    });
+    const manifest = buildManifestWithIntegrity(
+      manifestBase({ capture_count: 2 }) as never,
+      integrity,
+    );
+    await expect(
+      validatePackageModel({
+        manifest,
+        aisle,
+        profiles,
+        captures,
+        captureFiles: {},
+        packagePayloadJson,
+        assetHashes: {},
+      }),
+    ).resolves.toBeUndefined();
+    const payload = JSON.parse(packagePayloadJson) as {
+      captures: { recognition_profile_snapshot_json?: string }[];
+    };
+    expect(payload.captures).toHaveLength(2);
+    expect(payload.captures[0]!.recognition_profile_snapshot_json).not.toBe(
+      payload.captures[1]!.recognition_profile_snapshot_json,
+    );
+  });
+
+  it('v2 rejects capture.asset.sha256 mismatch with correct manifest asset hash', async () => {
+    const cap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: true,
+      requireAssets: false,
+    });
+    const assetPath = 'assets/cap-item.jpg';
+    const correctHash = 'a'.repeat(64);
+    const withAsset = {
+      ...cap,
+      asset: {
+        ...cap.asset!,
+        included: true,
+        path: assetPath,
+        sha256: 'deadbeef',
+      },
+    };
+    const aisle = aisleDoc();
+    const profiles = collectProfileEntries([withAsset]);
+    const packagePayloadJson = stableJson(
+      buildPackagePayloadV2({ aisle, profiles, captures: [withAsset] }),
+    );
+    const integrity = await computePackageIntegrity({
+      manifest: buildManifestWithIntegrity(
+        manifestBase({ asset_count: 1, include_assets: true }) as never,
+        {},
+      ),
+      aisle,
+      profiles,
+      captures: [withAsset],
+      captureFiles: {},
+      packagePayloadJson,
+      assetHashes: { [assetPath]: correctHash },
+    });
+    const manifest = buildManifestWithIntegrity(
+      manifestBase({ asset_count: 1, include_assets: true }) as never,
+      integrity,
+    );
+    await expect(
+      validatePackageModel({
+        manifest,
+        aisle,
+        profiles,
+        captures: [withAsset],
+        captureFiles: {},
+        packagePayloadJson,
+        assetHashes: { [assetPath]: correctHash },
+      }),
+    ).rejects.toMatchObject({ code: 'PACKAGE_HASH_FAILED' });
+  });
+
+  it('v2 accepts asset when capture.sha256 matches manifest integrity hash', async () => {
+    const cap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: true,
+      requireAssets: false,
+    });
+    const assetPath = 'assets/cap-item.jpg';
+    const assetHash = 'b'.repeat(64);
+    const withAsset = {
+      ...cap,
+      asset: {
+        ...cap.asset!,
+        included: true,
+        path: assetPath,
+        sha256: assetHash,
+      },
+    };
+    const aisle = aisleDoc();
+    const profiles = collectProfileEntries([withAsset]);
+    const packagePayloadJson = stableJson(
+      buildPackagePayloadV2({ aisle, profiles, captures: [withAsset] }),
+    );
+    const integrity = await computePackageIntegrity({
+      manifest: buildManifestWithIntegrity(
+        manifestBase({ asset_count: 1, include_assets: true }) as never,
+        {},
+      ),
+      aisle,
+      profiles,
+      captures: [withAsset],
+      captureFiles: {},
+      packagePayloadJson,
+      assetHashes: { [assetPath]: assetHash },
+    });
+    const manifest = buildManifestWithIntegrity(
+      manifestBase({ asset_count: 1, include_assets: true }) as never,
+      integrity,
+    );
+    await expect(
+      validatePackageModel({
+        manifest,
+        aisle,
+        profiles,
+        captures: [withAsset],
+        captureFiles: {},
+        packagePayloadJson,
+        assetHashes: { [assetPath]: assetHash },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('v2 integrity paths include payload and assets only', async () => {
+    const cap = mapPhotoToCapture({
+      photo: photo('cap-item'),
+      session: session(),
+      aisleId: 'aisle-1',
+      aisleClientSupplierId: 'sup-b',
+      draft: itemDraft(),
+      includeAssets: true,
+      requireAssets: false,
+    });
+    const withAsset = {
+      ...cap,
+      asset: { ...cap.asset!, included: true, path: 'assets/cap-item.jpg', sha256: 'abc' },
+    };
+    const model = await buildValidatedV2Model(withAsset, {
+      manifest: { asset_count: 1, include_assets: true },
+    });
+    const paths = buildExpectedIntegrityPaths({
+      ...model,
+      assetHashes: { 'assets/cap-item.jpg': 'abc' },
+    });
+    expect(paths.has(OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH)).toBe(true);
+    expect(paths.has('assets/cap-item.jpg')).toBe(true);
+    expect(paths.has('aisle.json')).toBe(false);
   });
 });

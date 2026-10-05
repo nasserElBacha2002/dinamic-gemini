@@ -19,12 +19,14 @@ import {
 } from './captureMapper';
 import {
   OFFLINE_AISLE_EXPORT_DIR,
+  OFFLINE_AISLE_EXPORT_SCHEMA_VERSION,
   OFFLINE_AISLE_FORMAT,
-  OFFLINE_AISLE_SCHEMA_VERSION,
+  OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH,
 } from './constants';
 import { OfflineAisleExportError } from './errors';
 import {
   buildManifestWithIntegrity,
+  buildPackagePayloadV2,
   computePackageIntegrity,
   stableJson,
   validatePackageModel,
@@ -284,10 +286,12 @@ export class OfflineAisleExportService {
       sync_status: aisleRow.sync_status,
     };
 
-    const captureFiles: Record<string, string> = {};
-    for (const cap of finalCaptures) {
-      captureFiles[`captures/${cap.capture_id}.json`] = stableJson(cap);
-    }
+    const packagePayload = buildPackagePayloadV2({
+      aisle: aisleDoc,
+      profiles,
+      captures: finalCaptures,
+    });
+    const packagePayloadJson = stableJson(packagePayload);
 
     const hasReviewIssues = finalCaptures.some(
       (c) => c.result_kind === 'UNRECOGNIZED' || c.requires_review,
@@ -297,7 +301,7 @@ export class OfflineAisleExportService {
 
     const manifestBase = {
       format: OFFLINE_AISLE_FORMAT,
-      schema_version: OFFLINE_AISLE_SCHEMA_VERSION,
+      schema_version: OFFLINE_AISLE_EXPORT_SCHEMA_VERSION,
       export_id: exportId,
       created_at: new Date().toISOString(),
       app_version: this.deps.appVersion,
@@ -328,7 +332,8 @@ export class OfflineAisleExportService {
       aisle: aisleDoc,
       profiles,
       captures: finalCaptures,
-      captureFiles,
+      captureFiles: {},
+      packagePayloadJson,
       assetHashes,
     });
 
@@ -338,22 +343,19 @@ export class OfflineAisleExportService {
       aisle: aisleDoc,
       profiles,
       captures: finalCaptures,
-      captureFiles,
+      captureFiles: {},
+      packagePayloadJson,
       assetHashes,
     };
     await validatePackageModel(model);
 
     const zipEntries: ZipEntrySource[] = [
       { path: 'manifest.json', getBytes: () => utf8Encode(stableJson(manifest)) },
-      { path: 'aisle.json', getBytes: () => utf8Encode(stableJson(aisleDoc)) },
       {
-        path: 'recognition/profiles.json',
-        getBytes: () => utf8Encode(stableJson(profiles)),
+        path: OFFLINE_AISLE_PACKAGE_PAYLOAD_PATH,
+        getBytes: () => utf8Encode(packagePayloadJson),
       },
     ];
-    for (const [path, content] of Object.entries(captureFiles)) {
-      zipEntries.push({ path, getBytes: () => utf8Encode(content) });
-    }
     for (const [path, uri] of assetUriByPath.entries()) {
       zipEntries.push({
         path,

@@ -65,8 +65,8 @@ def _manifest_field_str(manifest: dict[str, Any], key: str) -> str:
     return str(manifest.get(key) or "").strip()
 
 
-def _read_csv_envelope(csv_bytes: bytes) -> tuple[frozenset[str], dict[str, str]]:
-    """Return CSV headers and first data row for package envelope resolution."""
+def _read_csv_envelope(csv_bytes: bytes) -> tuple[frozenset[str], dict[str, str] | None]:
+    """Return CSV headers and first data row, or ``None`` when the file is header-only."""
     try:
         text = csv_bytes.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
@@ -85,10 +85,7 @@ def _read_csv_envelope(csv_bytes: bytes) -> tuple[frozenset[str], dict[str, str]
             f"results.csv is not valid RFC 4180 CSV: {exc}",
         ) from exc
     if raw is None:
-        raise LocalInventoryPackageError(
-            "PACKAGE_CSV_ENVELOPE_EMPTY",
-            "results.csv must contain at least one data row for package envelope",
-        )
+        return headers, None
     row: dict[str, str] = {}
     for key, value in raw.items():
         if key is None:
@@ -101,12 +98,12 @@ def _resolve_envelope_field(
     key: str,
     *,
     headers: frozenset[str],
-    row: dict[str, str],
+    row: dict[str, str] | None,
     manifest: dict[str, Any],
     required: bool,
 ) -> str:
     manifest_val = _manifest_field_str(manifest, key)
-    if key in headers:
+    if key in headers and row is not None:
         csv_val = row.get(key, "")
         if manifest_val and manifest_val != csv_val:
             raise LocalInventoryPackageError(
