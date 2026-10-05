@@ -401,7 +401,8 @@ def _validate_offline_aisle_package_v2(
     if payload is None:
         return
 
-    aisle_doc = payload.get("aisle") if isinstance(payload.get("aisle"), dict) else {}
+    aisle_raw = payload.get("aisle")
+    aisle_doc: dict[str, Any] = aisle_raw if isinstance(aisle_raw, dict) else {}
     _validate_v2_payload_aisle(aisle_doc, errors)
 
     captures_raw = payload.get("captures")
