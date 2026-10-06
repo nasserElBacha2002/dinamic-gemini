@@ -48,14 +48,14 @@ class InventoryContextAutoSyncTests(unittest.TestCase):
         os.environ.pop("DINAMIC_INVENTORY_CONTEXT_PATH", None)
         os.environ["DINAMIC_INVENTORY_ID"] = "inv-uuid-1"
         os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
-        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        os.environ["DINAMIC_DEVICE_TOKEN"] = "device-token"
 
     def tearDown(self) -> None:
         for key in (
             "DINAMIC_EXPORT_DIRECTORY",
             "DINAMIC_INVENTORY_ID",
             "DINAMIC_BACKEND_URL",
-            "DINAMIC_BACKEND_BEARER_TOKEN",
+            "DINAMIC_DEVICE_TOKEN",
         ):
             os.environ.pop(key, None)
 
@@ -74,7 +74,7 @@ class InventoryContextAutoSyncTests(unittest.TestCase):
         seen: list[str] = []
 
         class FakeClient:
-            def fetch_operational_config(self, inventory_id: str) -> InventoryOperationalConfig:
+            def fetch_operational_config(self, inventory_id: str, **_kwargs) -> InventoryOperationalConfig:
                 seen.append(inventory_id)
                 return expected
 
@@ -82,7 +82,7 @@ class InventoryContextAutoSyncTests(unittest.TestCase):
             "config.inventory_context_sync.InventoryContextBackendClient",
             return_value=FakeClient(),
         ):
-            config = load_inventory_operational_config()
+            config = load_inventory_operational_config(client_id="client-uuid-1")
         self.assertEqual(seen, ["inv-uuid-1"])
         self.assertEqual(config.inventory_id, "inv-uuid-1")
         persisted = InventoryContextRepository(inventory_context_path()).load()
@@ -99,14 +99,14 @@ class InventoryContextAutoSyncTests(unittest.TestCase):
         )
 
         class FakeClient:
-            def fetch_operational_config(self, _inventory_id: str) -> InventoryOperationalConfig:
+            def fetch_operational_config(self, _inventory_id: str, **_kwargs) -> InventoryOperationalConfig:
                 return expected
 
         with patch(
             "config.inventory_context_sync.InventoryContextBackendClient",
             return_value=FakeClient(),
         ):
-            resolved = resolve_inventory_aisle_for_capture("A1")
+            resolved = resolve_inventory_aisle_for_capture("A1", client_id="client-uuid-1")
         self.assertEqual(resolved.aisle_id, "aisle-uuid-a1")
 
     def test_sync_persists_to_default_path(self) -> None:
@@ -118,14 +118,14 @@ class InventoryContextAutoSyncTests(unittest.TestCase):
         )
 
         class FakeClient:
-            def fetch_operational_config(self, _inventory_id: str) -> InventoryOperationalConfig:
+            def fetch_operational_config(self, _inventory_id: str, **_kwargs) -> InventoryOperationalConfig:
                 return expected
 
         with patch(
             "config.inventory_context_sync.InventoryContextBackendClient",
             return_value=FakeClient(),
         ):
-            sync_inventory_context_from_backend()
+            sync_inventory_context_from_backend(expected_client_id="client-uuid-1")
         path = inventory_context_path()
         self.assertTrue(path.is_file())
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -139,6 +139,7 @@ class InventoryContextDynamicTests(unittest.TestCase):
         os.environ.pop("DINAMIC_INVENTORY_CONTEXT_PATH", None)
         os.environ.pop("DINAMIC_INVENTORY_ID", None)
         os.environ.pop("DINAMIC_BACKEND_URL", None)
+        os.environ.pop("DINAMIC_DEVICE_TOKEN", None)
         os.environ.pop("DINAMIC_BACKEND_BEARER_TOKEN", None)
         os.environ.pop("DINAMIC_BACKEND_TOKEN", None)
 
@@ -148,6 +149,7 @@ class InventoryContextDynamicTests(unittest.TestCase):
             "DINAMIC_INVENTORY_CONTEXT_PATH",
             "DINAMIC_INVENTORY_ID",
             "DINAMIC_BACKEND_URL",
+            "DINAMIC_DEVICE_TOKEN",
             "DINAMIC_BACKEND_BEARER_TOKEN",
             "DINAMIC_BACKEND_TOKEN",
         ):
@@ -170,19 +172,19 @@ class InventoryContextDynamicTests(unittest.TestCase):
 
     def test_missing_cache_online_without_selection_requires_inventory(self) -> None:
         os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
-        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        os.environ["DINAMIC_DEVICE_TOKEN"] = "device-token"
         with self.assertRaises(InventoryContextError) as ctx:
             load_inventory_operational_config()
         self.assertEqual(ctx.exception.code, "INVENTORY_SELECTION_REQUIRED")
 
     def test_start_without_env_or_cache_syncs_selected_inventory(self) -> None:
         os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
-        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        os.environ["DINAMIC_DEVICE_TOKEN"] = "device-token"
         expected = self._config("inventory-selected", "aisle-selected")
         seen: list[str] = []
 
         class FakeClient:
-            def fetch_operational_config(self, inventory_id: str) -> InventoryOperationalConfig:
+            def fetch_operational_config(self, inventory_id: str, **_kwargs) -> InventoryOperationalConfig:
                 seen.append(inventory_id)
                 return expected
 
@@ -208,13 +210,16 @@ class InventoryContextDynamicTests(unittest.TestCase):
             self._config("inventory-cached", "aisle-cached")
         )
         os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
-        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        os.environ["DINAMIC_DEVICE_TOKEN"] = "device-token"
 
         class FakeClient:
-            def fetch_operational_config(self, _inventory_id: str) -> InventoryOperationalConfig:
+            def fetch_operational_config(self, _inventory_id: str, **_kwargs) -> InventoryOperationalConfig:
                 from config.inventory_context_sync import InventoryContextSyncError
 
-                raise InventoryContextSyncError("backend unavailable")
+                raise InventoryContextSyncError(
+                    "backend unavailable",
+                    code="INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE",
+                )
 
         with patch(
             "config.inventory_context_sync.InventoryContextBackendClient",
@@ -229,11 +234,11 @@ class InventoryContextDynamicTests(unittest.TestCase):
             self._config("inventory-old", "aisle-old")
         )
         os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
-        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        os.environ["DINAMIC_DEVICE_TOKEN"] = "device-token"
         expected = self._config("inventory-new", "aisle-new")
 
         class FakeClient:
-            def fetch_operational_config(self, inventory_id: str) -> InventoryOperationalConfig:
+            def fetch_operational_config(self, inventory_id: str, **_kwargs) -> InventoryOperationalConfig:
                 self.last = inventory_id
                 return expected
 
@@ -277,20 +282,66 @@ class InventoryContextDynamicTests(unittest.TestCase):
 
     def test_sync_does_not_require_env_inventory_id(self) -> None:
         os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
-        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        os.environ["DINAMIC_DEVICE_TOKEN"] = "device-token"
         expected = self._config("inventory-selected", "aisle-selected")
 
         class FakeClient:
-            def fetch_operational_config(self, inventory_id: str) -> InventoryOperationalConfig:
+            def fetch_operational_config(self, inventory_id: str, **_kwargs) -> InventoryOperationalConfig:
                 return expected
 
         with patch(
             "config.inventory_context_sync.InventoryContextBackendClient",
             return_value=FakeClient(),
         ):
-            config = sync_inventory_context_from_backend(inventory_id="inventory-selected")
+            config = sync_inventory_context_from_backend(
+                inventory_id="inventory-selected",
+                expected_client_id="client-a",
+            )
         self.assertEqual(config.inventory_id, "inventory-selected")
         self.assertFalse(os.environ.get("DINAMIC_INVENTORY_ID"))
+
+    def test_url_without_device_token_is_not_offline(self) -> None:
+        os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
+        os.environ.pop("DINAMIC_DEVICE_TOKEN", None)
+        with self.assertRaises(InventoryContextError) as ctx:
+            load_inventory_operational_config(inventory_id="inventory-selected")
+        self.assertEqual(ctx.exception.code, "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED")
+
+    def test_admin_bearer_alone_does_not_authenticate_inventory_sync(self) -> None:
+        os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
+        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "admin-token"
+        os.environ.pop("DINAMIC_DEVICE_TOKEN", None)
+        with self.assertRaises(InventoryContextError) as ctx:
+            load_inventory_operational_config(inventory_id="inventory-selected")
+        self.assertEqual(ctx.exception.code, "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED")
+
+    def test_invalid_device_token_does_not_fall_back_to_cache(self) -> None:
+        InventoryContextRepository(inventory_context_path()).save(
+            self._config("inventory-cached", "aisle-cached")
+        )
+        os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
+        os.environ["DINAMIC_DEVICE_TOKEN"] = "invalid-token"
+
+        class FakeClient:
+            def fetch_operational_config(self, _inventory_id: str, **_kwargs) -> InventoryOperationalConfig:
+                from config.inventory_context_sync import InventoryContextSyncError
+
+                raise InventoryContextSyncError(
+                    "backend returned HTTP 401",
+                    http_status=401,
+                    code="INVENTORY_CONTEXT_AUTH_FAILED",
+                )
+
+        with patch(
+            "config.inventory_context_sync.InventoryContextBackendClient",
+            return_value=FakeClient(),
+        ):
+            with self.assertRaises(InventoryContextError) as ctx:
+                load_inventory_operational_config(
+                    inventory_id="inventory-cached",
+                    client_id="client-a",
+                )
+        self.assertEqual(ctx.exception.code, "INVENTORY_CONTEXT_AUTH_FAILED")
 
 
 if __name__ == "__main__":

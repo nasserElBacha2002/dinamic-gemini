@@ -61,6 +61,9 @@ from src.application.use_cases.inventories.list_inventories import ListInventori
 from src.application.use_cases.inventories.list_inventory_list_items import (
     ListInventoryListItemsUseCase,
 )
+from src.application.use_cases.inventories.list_raspberry_inventories import (
+    ListRaspberryInventoriesUseCase,
+)
 from src.application.use_cases.inventories.soft_delete_inventories import (
     SoftDeleteInventoriesUseCase,
 )
@@ -239,6 +242,16 @@ def get_raspberry_recognition_config_use_case(
     return GetRaspberryRecognitionConfigUseCase(
         client_repo=client_repo,
         client_recognition_use_case=client_recognition_use_case,
+    )
+
+
+def get_list_raspberry_inventories_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+) -> ListRaspberryInventoriesUseCase:
+    return ListRaspberryInventoriesUseCase(
+        client_repo=client_repo,
+        inventory_repo=inventory_repo,
     )
 
 

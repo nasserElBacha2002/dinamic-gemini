@@ -49,13 +49,9 @@ LOGGER = logging.getLogger(__name__)
 
 def _inventory_backend_credentials() -> tuple[str, str] | None:
     base_url = (os.environ.get("DINAMIC_BACKEND_URL") or "").strip()
-    bearer = (
-        os.environ.get("DINAMIC_BACKEND_BEARER_TOKEN")
-        or os.environ.get("DINAMIC_BACKEND_TOKEN")
-        or ""
-    ).strip()
-    if base_url and bearer:
-        return base_url, bearer
+    device_token = (os.environ.get("DINAMIC_DEVICE_TOKEN") or "").strip()
+    if base_url and device_token:
+        return base_url, device_token
     return None
 
 
@@ -581,13 +577,36 @@ def make_handler(
             query = parse_qs(urlparse(self.path).query)
             raw_client = query.get("client_id", [""])[0]
             client_id = raw_client.strip() if isinstance(raw_client, str) else ""
+            if not client_id:
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {
+                        "source": "unavailable",
+                        "items": [],
+                        "error": "INVENTORY_CLIENT_REQUIRED",
+                        "message": "seleccioná un cliente para listar inventarios",
+                    },
+                )
+                return
             credentials = _inventory_backend_credentials()
+            backend_url = (os.environ.get("DINAMIC_BACKEND_URL") or "").strip()
+            if credentials is None and backend_url:
+                self._send_json(
+                    HTTPStatus.UNAUTHORIZED,
+                    {
+                        "source": "unavailable",
+                        "items": [],
+                        "error": "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED",
+                        "message": "DINAMIC_BACKEND_URL and DINAMIC_DEVICE_TOKEN are required",
+                    },
+                )
+                return
             if credentials is not None:
-                base_url, bearer = credentials
+                base_url, device_token = credentials
                 try:
-                    entries = InventoryContextBackendClient(base_url, bearer).list_inventories(
-                        client_id=client_id or None,
-                    )
+                    entries = InventoryContextBackendClient(
+                        base_url, device_token
+                    ).list_inventories(client_id=client_id)
                     self._send_json(
                         HTTPStatus.OK,
                         {
@@ -606,12 +625,53 @@ def make_handler(
                     return
                 except InventoryContextSyncError as exc:
                     LOGGER.warning("inventory list unavailable from backend: %s", exc)
+                    if exc.code in {
+                        "INVENTORY_CONTEXT_AUTH_FAILED",
+                        "INVENTORY_CONTEXT_FORBIDDEN",
+                    }:
+                        status = (
+                            HTTPStatus.UNAUTHORIZED
+                            if exc.code == "INVENTORY_CONTEXT_AUTH_FAILED"
+                            else HTTPStatus.FORBIDDEN
+                        )
+                        self._send_json(
+                            status,
+                            {
+                                "source": "unavailable",
+                                "items": [],
+                                "error": exc.code,
+                                "message": str(exc),
+                            },
+                        )
+                        return
+                    if exc.code in {"INVENTORY_NOT_FOUND", "CLIENT_NOT_FOUND"} or exc.http_status == 404:
+                        self._send_json(
+                            HTTPStatus.NOT_FOUND,
+                            {
+                                "source": "unavailable",
+                                "items": [],
+                                "error": exc.code or "INVENTORY_NOT_FOUND",
+                                "message": str(exc),
+                            },
+                        )
+                        return
+                    if exc.code != "INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE":
+                        self._send_json(
+                            HTTPStatus.BAD_GATEWAY,
+                            {
+                                "source": "unavailable",
+                                "items": [],
+                                "error": exc.code or "INVENTORY_CONTEXT_SYNC_FAILED",
+                                "message": str(exc),
+                            },
+                        )
+                        return
             try:
                 cached = peek_inventory_operational_config()
             except InventoryContextError:
                 cached = None
             if cached is not None and (
-                not client_id or not cached.client_id or cached.client_id == client_id
+                not cached.client_id or cached.client_id == client_id
             ):
                 self._send_json(
                     HTTPStatus.OK,
