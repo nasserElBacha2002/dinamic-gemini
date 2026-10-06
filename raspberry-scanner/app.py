@@ -17,7 +17,9 @@ from urllib.parse import quote, unquote
 from config.repository import SnapshotRepository
 from config.service import ConfigService
 from config.sync import BackendSnapshotClient
+from camera import build_camera_from_environment
 from capture import CaptureError, CaptureService
+from capture_session_store import CaptureSessionStore
 from recognition import RecognitionService, SelectionError
 from scanner_service import Reading, ScannerSession, SerialLineReader
 
@@ -530,7 +532,29 @@ def main() -> None:
             "/var/lib/dinamic-raspberry-scanner/exports",
         )
     )
-    capture_service = CaptureService(recognition_service, export_directory)
+    sessions_directory = Path(
+        os.environ.get(
+            "DINAMIC_CAPTURE_SESSIONS_DIRECTORY",
+            str(export_directory.parent / "capture-sessions"),
+        )
+    )
+    photos_root = Path(
+        os.environ.get(
+            "DINAMIC_PHOTOS_DIRECTORY",
+            str(export_directory / "photos"),
+        )
+    )
+    camera = build_camera_from_environment()
+    session_store = (
+        CaptureSessionStore(sessions_directory) if camera is not None else None
+    )
+    capture_service = CaptureService(
+        recognition_service,
+        export_directory,
+        camera=camera,
+        session_store=session_store,
+        photos_root=photos_root,
+    )
     session = build_session(
         args.device,
         args.baud_rate,

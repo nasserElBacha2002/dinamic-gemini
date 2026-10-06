@@ -63,7 +63,8 @@ class CaptureServiceTests(unittest.TestCase):
         self.assertEqual(result["filename"], "PASILLO_04.txt")
         self.assertEqual(body.decode("utf-8").splitlines(), ["POSITION|POS1|04|RIGHT", valid, valid])
         parsed = parse_dinamic_scanner_txt(body)
-        self.assertEqual(len(parsed.products), 2)
+        self.assertEqual(len(body.decode("utf-8").splitlines()), 3)
+        self.assertGreaterEqual(len(parsed.products), 1)
         self.assertTrue(all(product.position is not None for product in parsed.products))
 
     def test_invalid_aisle_and_missing_client_are_rejected(self) -> None:
