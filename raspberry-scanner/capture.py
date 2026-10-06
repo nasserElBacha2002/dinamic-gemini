@@ -113,19 +113,26 @@ class CaptureService:
             self._photo_worker.start()
         self._restore_active_session_if_present()
 
-    def start(self, aisle_code: object) -> dict[str, object]:
+    def start(self, aisle_code: object, *, inventory_id: object | None = None) -> dict[str, object]:
         code = _validate_aisle_code(aisle_code)
         selection = self._recognition.selection()
         if not selection.get("client_id"):
             raise CaptureError("client_selection_required")
-        inventory_id: str | None = None
+        requested_inventory_id = (
+            inventory_id.strip() if isinstance(inventory_id, str) else None
+        )
+        bound_inventory_id: str | None = None
         aisle_id: str | None = None
         if self._session_store is not None and self._bind_inventory_context:
             try:
-                resolved = resolve_inventory_aisle_for_capture(code)
+                resolved = resolve_inventory_aisle_for_capture(
+                    code,
+                    inventory_id=requested_inventory_id,
+                    client_id=str(selection.get("client_id") or "") or None,
+                )
             except InventoryContextError as exc:
                 raise CaptureError(exc.code) from exc
-            inventory_id = resolved.inventory_id
+            bound_inventory_id = resolved.inventory_id
             aisle_id = resolved.aisle_id
         with self._lock:
             if self._state != "IDLE" and self._state != "FINISHED":
@@ -133,7 +140,7 @@ class CaptureService:
             self._state = "ACTIVE"
             self._accepting_records = True
             self._aisle_code = code
-            self._inventory_id = inventory_id
+            self._inventory_id = bound_inventory_id
             self._aisle_id = aisle_id
             self._selection = selection
             self._records = []

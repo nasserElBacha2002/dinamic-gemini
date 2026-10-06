@@ -12,15 +12,24 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
-from urllib.parse import quote, unquote
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from config.repository import SnapshotRepository
+from config.inventory_context_sync import (
+    InventoryContextBackendClient,
+    InventoryContextSyncError,
+)
 from config.service import ConfigService
 from config.sync import BackendSnapshotClient
 from camera import CameraConfigurationError, build_camera_from_environment
 from capture import CaptureError, CaptureService
 from capture_session_store import CaptureSessionStore
 from inventory_backend_client import InventoryBackendClientError
+from inventory_context import (
+    InventoryContextError,
+    inventory_context_status,
+    peek_inventory_operational_config,
+    sync_inventory_context_from_backend,
+)
 from package_upload_store import PackageUploadStore
 from recognition import RecognitionService, SelectionError
 from scanner_service import Reading, ScannerSession, SerialLineReader
@@ -35,6 +44,18 @@ from session_package_upload import (
 
 ROOT = Path(__file__).resolve().parent
 LOGGER = logging.getLogger(__name__)
+
+
+def _inventory_backend_credentials() -> tuple[str, str] | None:
+    base_url = (os.environ.get("DINAMIC_BACKEND_URL") or "").strip()
+    bearer = (
+        os.environ.get("DINAMIC_BACKEND_BEARER_TOKEN")
+        or os.environ.get("DINAMIC_BACKEND_TOKEN")
+        or ""
+    ).strip()
+    if base_url and bearer:
+        return base_url, bearer
+    return None
 
 
 def settings_from_environment() -> tuple[str | None, int, int]:
@@ -73,6 +94,7 @@ def make_handler(
                 state["config"] = config_service.status()
                 state["recognition"] = recognition_service.selection()
                 state["capture"] = capture_service.snapshot()
+                state["inventory_context"] = inventory_context_status()
                 self._send_json(
                     HTTPStatus.OK,
                     state,
@@ -196,6 +218,14 @@ def make_handler(
                         )
                     return
 
+            if path == "/api/inventories":
+                self._send_inventory_list()
+                return
+
+            if path == "/api/inventory-context":
+                self._send_json(HTTPStatus.OK, inventory_context_status())
+                return
+
             self._send_json(
                 HTTPStatus.NOT_FOUND,
                 {"error": "not_found"},
@@ -251,6 +281,46 @@ def make_handler(
                 self._send_json(HTTPStatus.OK, selection)
                 return
 
+            if path == "/api/inventory-context":
+                try:
+                    payload = self._read_json_body()
+                    inventory_id = payload.get("inventory_id")
+                    if not isinstance(inventory_id, str) or not inventory_id.strip():
+                        raise InventoryContextError(
+                            "INVENTORY_SELECTION_REQUIRED",
+                            "seleccioná un inventario para sincronizar el contexto local",
+                        )
+                    selection = recognition_service.selection()
+                    with selection_operation_lock:
+                        if capture_service.snapshot()["state"] == "ACTIVE":
+                            self._send_json(
+                                HTTPStatus.CONFLICT,
+                                {"error": "selection_locked_while_capture_active"},
+                            )
+                            return
+                        config = sync_inventory_context_from_backend(
+                            inventory_id=inventory_id.strip(),
+                            expected_client_id=str(selection.get("client_id") or "") or None,
+                        )
+                except InventoryContextError as exc:
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"error": exc.code, "message": str(exc)},
+                    )
+                    return
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
+                    return
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "inventory_id": config.inventory_id,
+                        "client_id": config.client_id,
+                        "aisle_count": len(config.aisles),
+                    },
+                )
+                return
+
             if path == "/api/capture/start":
                 try:
                     payload = self._read_json_body()
@@ -260,14 +330,21 @@ def make_handler(
                             raise CaptureError("scanner_not_configured")
                         if session_before["scanning"]:
                             raise CaptureError("scanner_already_active")
-                        capture = capture_service.start(payload.get("aisle_code"))
+                        capture = capture_service.start(
+                            payload.get("aisle_code"),
+                            inventory_id=payload.get("inventory_id"),
+                        )
                         scanner_state = session.start()
                         if not scanner_state["scanning"]:
                             capture_service.abort_start("scanner_not_started")
                             LOGGER.error("scanner start failed during capture start")
                             raise CaptureError("scanner_not_started")
                 except CaptureError as exc:
-                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    body: dict[str, object] = {"error": str(exc)}
+                    cause = exc.__cause__
+                    if isinstance(cause, InventoryContextError):
+                        body["message"] = str(cause)
+                    self._send_json(HTTPStatus.BAD_REQUEST, body)
                     return
                 except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                     self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
@@ -498,6 +575,70 @@ def make_handler(
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
+
+        def _send_inventory_list(self) -> None:
+            query = parse_qs(urlparse(self.path).query)
+            raw_client = query.get("client_id", [""])[0]
+            client_id = raw_client.strip() if isinstance(raw_client, str) else ""
+            credentials = _inventory_backend_credentials()
+            if credentials is not None:
+                base_url, bearer = credentials
+                try:
+                    entries = InventoryContextBackendClient(base_url, bearer).list_inventories(
+                        client_id=client_id or None,
+                    )
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {
+                            "source": "backend",
+                            "items": [
+                                {
+                                    "id": entry.inventory_id,
+                                    "name": entry.name,
+                                    "client_id": entry.client_id,
+                                    "status": entry.status,
+                                }
+                                for entry in entries
+                            ],
+                        },
+                    )
+                    return
+                except InventoryContextSyncError as exc:
+                    LOGGER.warning("inventory list unavailable from backend: %s", exc)
+            try:
+                cached = peek_inventory_operational_config()
+            except InventoryContextError:
+                cached = None
+            if cached is not None and (
+                not client_id or not cached.client_id or cached.client_id == client_id
+            ):
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "source": "cache",
+                        "items": [
+                            {
+                                "id": cached.inventory_id,
+                                "name": cached.inventory_id,
+                                "client_id": cached.client_id,
+                                "status": "cached",
+                            }
+                        ],
+                    },
+                )
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "source": "unavailable",
+                    "items": [],
+                    "error": "INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE",
+                    "message": (
+                        "no hay contexto de inventario disponible offline; "
+                        "sincronizá un inventario estando en línea antes de operar sin conexión"
+                    ),
+                },
+            )
 
         def _read_json_body(self) -> dict[str, object]:
             length = int(self.headers.get("Content-Length", "0"))

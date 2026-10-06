@@ -40,14 +40,17 @@ class InventoryContextRepository:
 
     def save(self, config: InventoryOperationalConfig) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        body: dict[str, object] = {
+            "inventory_id": config.inventory_id,
+            "aisles": [
+                {"aisle_id": aisle_id, "aisle_code": aisle_code}
+                for aisle_code, aisle_id in config.aisles
+            ],
+        }
+        if config.client_id:
+            body["client_id"] = config.client_id
         payload = json.dumps(
-            {
-                "inventory_id": config.inventory_id,
-                "aisles": [
-                    {"aisle_id": aisle_id, "aisle_code": aisle_code}
-                    for aisle_code, aisle_id in config.aisles
-                ],
-            },
+            body,
             ensure_ascii=True,
             sort_keys=True,
             separators=(",", ":"),
