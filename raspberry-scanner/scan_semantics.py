@@ -136,6 +136,7 @@ def build_scan_semantics(
                 "level": position.get("level"),
                 "profile_id": position.get("profile_id"),
                 "profile_version": position.get("profile_version"),
+                "normalized_payload": position.get("normalized_payload"),
             }
 
     snapshot = build_recognition_snapshot_json(
@@ -183,7 +184,11 @@ def products_from_snapshot(snapshot_json: str | None) -> list[dict[str, object]]
     ]
 
 
-def position_from_snapshot(snapshot_json: str | None) -> dict[str, str] | None:
+def position_from_snapshot(
+    snapshot_json: str | None,
+    *,
+    raw_payload: str = "",
+) -> dict[str, str] | None:
     if not snapshot_json:
         return None
     try:
@@ -201,11 +206,13 @@ def position_from_snapshot(snapshot_json: str | None) -> dict[str, str] | None:
     pallet = str(position.get("pallet") or "").strip()
     side = str(position.get("side") or "").strip().upper()
     level = str(position.get("level") or "").strip()
-    raw_payload = "|".join(part for part in (position_id, pallet, side, level) if part)
+    normalized = str(position.get("normalized_payload") or "").strip()
+    position_code = normalized or position_id
+    payload_raw = raw_payload.strip() or normalized or position_id
     return {
-        "position_code": position_id,
+        "position_code": position_code,
         "position_label_id": position_id,
-        "position_payload_raw": raw_payload if "|" in raw_payload else position_id,
+        "position_payload_raw": payload_raw,
         "pallet": pallet,
         "side": side,
     }

@@ -147,12 +147,12 @@ def _load_finished_session(
 def _session_inventory_context(
     session: CaptureSessionState,
 ) -> tuple[str, str]:
-    if session.inventory_id and session.aisle_id:
-        return session.inventory_id, session.aisle_id
-    from inventory_context import resolve_inventory_aisle_for_capture
-
-    resolved = resolve_inventory_aisle_for_capture(session.aisle_code)
-    return resolved.inventory_id, resolved.aisle_id
+    if not session.inventory_id or not session.aisle_id:
+        raise SessionPackageExportError(
+            "EXPORT_SESSION_INVENTORY_CONTEXT_MISSING",
+            "capture session has no durable inventory_id/aisle_id binding",
+        )
+    return session.inventory_id, session.aisle_id
 
 
 def _validate_session_export_context(
@@ -239,7 +239,12 @@ def _resolve_photo_assets(
                 "EXPORT_PHOTO_SHA_MISSING",
                 f"photo {photo.file_name} missing stored sha256",
             )
-        actual_sha = photo.photo_sha256.lower()
+        actual_sha = _sha256_bytes(final_path.read_bytes())
+        if photo.photo_sha256.lower() != actual_sha:
+            raise SessionPackageExportError(
+                "EXPORT_PHOTO_SHA_MISMATCH",
+                f"stored sha256 mismatch for {photo.file_name}",
+            )
         resolved.append(
             ResolvedPhotoAsset(
                 record=photo,

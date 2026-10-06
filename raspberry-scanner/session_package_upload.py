@@ -237,12 +237,6 @@ def _upload_session_package_locked(
             "INVENTORY_ID_MISMATCH",
             "configured inventory_id does not match exported package",
         )
-    zip_path = Path(record.zip_path)
-    if not zip_path.is_file():
-        raise PackageUploadError(
-            "PACKAGE_ZIP_MISSING",
-            f"exported ZIP not found at {zip_path}",
-        )
 
     if record.state == "CONFIRMED" and record.package_id:
         return SessionPackageUploadOutcome(
@@ -254,6 +248,13 @@ def _upload_session_package_locked(
             preview_skipped=True,
             confirm_duplicate=True,
             upload_state="CONFIRMED",
+        )
+
+    zip_path = Path(record.zip_path)
+    if not zip_path.is_file():
+        raise PackageUploadError(
+            "PACKAGE_ZIP_MISSING",
+            f"exported ZIP not found at {zip_path}",
         )
 
     preview_skipped = record.state == "PREVIEWED"

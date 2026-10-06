@@ -12,7 +12,6 @@ from capture_session_store import CaptureSessionState, PhotoCaptureRecord
 from local_package_contract import LOCAL_CSV_HEADERS, LOCAL_CSV_SCHEMA_VERSION
 from scan_semantics import (
     ScanSemantics,
-    is_likely_raw_segmented_payload,
     position_from_snapshot,
     products_from_snapshot,
     semantics_for_photo,
@@ -87,7 +86,10 @@ def _running_position_from_photos(
             break
         semantics = semantics_for_photo(photo)
         if semantics.classification == "POSITION":
-            supplier = position_from_snapshot(semantics.recognition_snapshot_json)
+            supplier = position_from_snapshot(
+                semantics.recognition_snapshot_json,
+                raw_payload=semantics.raw_payload,
+            )
             if supplier:
                 position_code = supplier["position_code"]
                 position_label_id = supplier["position_label_id"]
@@ -102,9 +104,7 @@ def _running_position_from_photos(
 
 def _products_for_semantics(semantics: ScanSemantics) -> list[dict[str, object]]:
     if semantics.classification == "RAW" and semantics.selection_mode == "ALL":
-        raw = semantics.raw_payload.strip()
-        if is_likely_raw_segmented_payload(raw):
-            return []
+        raw = semantics.raw_payload
         return [{"label_id": "", "internal_code": raw, "quantity": None}]
     from_snapshot = products_from_snapshot(semantics.recognition_snapshot_json)
     if from_snapshot:
@@ -134,7 +134,13 @@ def _is_position_photo(semantics: ScanSemantics) -> bool:
         return True
     if semantics.export_line.startswith("POSITION|"):
         return True
-    return position_from_snapshot(semantics.recognition_snapshot_json) is not None
+    return (
+        position_from_snapshot(
+            semantics.recognition_snapshot_json,
+            raw_payload=semantics.raw_payload,
+        )
+        is not None
+    )
 
 
 def build_local_csv_rows(
@@ -157,7 +163,10 @@ def build_local_csv_rows(
     for photo in sorted_photos:
         semantics = semantics_for_photo(photo)
         if _is_position_photo(semantics):
-            supplier = position_from_snapshot(semantics.recognition_snapshot_json)
+            supplier = position_from_snapshot(
+                semantics.recognition_snapshot_json,
+                raw_payload=semantics.raw_payload,
+            )
             if supplier:
                 running_position = (
                     supplier["position_code"],

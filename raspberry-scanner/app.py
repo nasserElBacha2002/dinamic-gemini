@@ -98,6 +98,13 @@ def make_handler(
                 self._send_capture_download()
                 return
 
+            if path in {"/api/capture/export", "/api/capture/upload"}:
+                self._send_json(
+                    HTTPStatus.METHOD_NOT_ALLOWED,
+                    {"error": "method_not_allowed", "message": "use POST"},
+                )
+                return
+
             if path == "/api/config/clients":
                 self._send_json(
                     HTTPStatus.OK,
@@ -576,6 +583,18 @@ def run_config_auto_sync(
         except Exception as exc:
             # Auto-sync must never terminate the local scanner service.
             print(f"Config auto-sync failed: {exc}")
+        try:
+            from inventory_context import (
+                InventoryContextError,
+                sync_inventory_context_from_backend,
+            )
+
+            sync_inventory_context_from_backend()
+        except InventoryContextError as exc:
+            if exc.code != "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED":
+                print(f"Inventory context auto-sync failed: {exc}")
+        except Exception as exc:
+            print(f"Inventory context auto-sync failed: {exc}")
 
         if stop_event.wait(interval_seconds):
             return

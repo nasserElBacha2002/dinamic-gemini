@@ -205,8 +205,8 @@ class SessionPackageExportTests(unittest.TestCase):
                     status=photo.status,
                     captured_at=photo.captured_at,
                     file_name=photo.file_name,
-                    photo_sha256=photo.photo_sha256,
-                    photo_size_bytes=(photo.photo_size_bytes or 0) + 1,
+                    photo_sha256="0" * 64,
+                    photo_size_bytes=photo.photo_size_bytes,
                     error=photo.error,
                 )
             )
@@ -220,7 +220,7 @@ class SessionPackageExportTests(unittest.TestCase):
                 capture_session_id=session_id,
                 context=self.context,
             )
-        self.assertEqual(ctx.exception.code, "EXPORT_PHOTO_SIZE_MISMATCH")
+        self.assertEqual(ctx.exception.code, "EXPORT_PHOTO_SHA_MISMATCH")
     def test_active_session_not_exported(self) -> None:
         install_test_inventory_context(self.root)
         store = CaptureSessionStore(self.root / "sessions")
@@ -300,6 +300,39 @@ class SessionPackageExportTests(unittest.TestCase):
                 context=self.context,
             )
         self.assertEqual(ctx.exception.code, "EXPORT_PHOTO_EVIDENCE_FAILED")
+
+    def test_legacy_session_without_durable_binding_blocks_export(self) -> None:
+        _, store, photos_root, session_id = build_finished_session(self.root)
+        session = store.load_session(session_id)
+        assert session is not None
+        session.inventory_id = None
+        session.aisle_id = None
+        store.save(session)
+        with self.assertRaises(SessionPackageExportError) as ctx:
+            export_finished_session_package(
+                session_store=store,
+                photos_root=photos_root,
+                output_directory=self.out,
+                capture_session_id=session_id,
+                context=self.context,
+            )
+        self.assertEqual(ctx.exception.code, "EXPORT_SESSION_INVENTORY_CONTEXT_MISSING")
+
+    def test_export_rejects_context_mismatch(self) -> None:
+        _, store, photos_root, session_id = build_finished_session(self.root)
+        with self.assertRaises(SessionPackageExportError) as ctx:
+            export_finished_session_package(
+                session_store=store,
+                photos_root=photos_root,
+                output_directory=self.out,
+                capture_session_id=session_id,
+                context=SessionPackageExportContext(
+                    inventory_id="inventory-1",
+                    aisle_id="other-aisle",
+                    device_id="device",
+                ),
+            )
+        self.assertEqual(ctx.exception.code, "EXPORT_SESSION_AISLE_MISMATCH")
 
     def test_missing_inventory_or_aisle_ids_fail(self) -> None:
         _, store, photos_root, session_id = build_finished_session(self.root)

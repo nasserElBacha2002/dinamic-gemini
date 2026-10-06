@@ -88,35 +88,58 @@ class InventoryOperationalConfig:
         )
 
 
-def inventory_context_path_from_environment() -> Path:
+def default_export_directory() -> Path:
+    return Path(
+        os.environ.get(
+            "DINAMIC_EXPORT_DIRECTORY",
+            "/var/lib/dinamic-raspberry-scanner/exports",
+        )
+    )
+
+
+def inventory_context_path() -> Path:
+    """Durable inventory context file; override with DINAMIC_INVENTORY_CONTEXT_PATH."""
     raw = (
         os.environ.get("DINAMIC_INVENTORY_CONTEXT_PATH")
         or os.environ.get("DINAMIC_INVENTORY_CONFIG_PATH")
         or ""
     ).strip()
-    if not raw:
-        raise InventoryContextError(
-            "INVENTORY_CONTEXT_NOT_CONFIGURED",
-            "DINAMIC_INVENTORY_CONTEXT_PATH is required to bind captures to inventory/aisle UUIDs",
-        )
-    return Path(raw)
+    if raw:
+        return Path(raw)
+    return default_export_directory().parent / "inventory-context.json"
+
+
+def inventory_context_path_from_environment() -> Path:
+    """Alias for :func:`inventory_context_path` (default path under local storage)."""
+    return inventory_context_path()
+
+
+def _inventory_sync_env_configured() -> bool:
+    inventory_id = (os.environ.get("DINAMIC_INVENTORY_ID") or "").strip()
+    base_url = (os.environ.get("DINAMIC_BACKEND_URL") or "").strip()
+    bearer = (
+        os.environ.get("DINAMIC_BACKEND_BEARER_TOKEN")
+        or os.environ.get("DINAMIC_BACKEND_TOKEN")
+        or ""
+    ).strip()
+    return bool(inventory_id and base_url and bearer)
 
 
 def load_inventory_operational_config(path: Path | None = None) -> InventoryOperationalConfig:
-    config_path = path or inventory_context_path_from_environment()
-    try:
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
+    from config.inventory_context_repository import InventoryContextRepository
+
+    config_path = path or inventory_context_path()
+    repo = InventoryContextRepository(config_path)
+    config = repo.load()
+    if config is None and path is None and _inventory_sync_env_configured():
+        sync_inventory_context_from_backend()
+        config = repo.load()
+    if config is None:
         raise InventoryContextError(
             "INVENTORY_CONTEXT_NOT_FOUND",
             f"inventory context file not found: {config_path}",
-        ) from exc
-    except (OSError, json.JSONDecodeError) as exc:
-        raise InventoryContextError(
-            "INVENTORY_CONTEXT_UNREADABLE",
-            f"cannot read inventory context: {exc}",
-        ) from exc
-    return InventoryOperationalConfig.from_dict(raw)
+        )
+    return config
 
 
 def resolve_inventory_aisle_for_capture(
@@ -126,3 +149,35 @@ def resolve_inventory_aisle_for_capture(
 ) -> ResolvedInventoryAisle:
     operational = config or load_inventory_operational_config()
     return operational.resolve_aisle(aisle_code)
+
+
+def sync_inventory_context_from_backend() -> InventoryOperationalConfig:
+    """Fetch aisle bindings from v3 recognition-config and persist locally."""
+    import os
+
+    from config.inventory_context_repository import InventoryContextRepository
+    from config.inventory_context_sync import (
+        InventoryContextBackendClient,
+        InventoryContextSyncError,
+    )
+
+    inventory_id = (os.environ.get("DINAMIC_INVENTORY_ID") or "").strip()
+    base_url = (os.environ.get("DINAMIC_BACKEND_URL") or "").strip()
+    bearer = (
+        os.environ.get("DINAMIC_BACKEND_BEARER_TOKEN")
+        or os.environ.get("DINAMIC_BACKEND_TOKEN")
+        or ""
+    ).strip()
+    if not inventory_id or not base_url or not bearer:
+        raise InventoryContextError(
+            "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED",
+            "DINAMIC_INVENTORY_ID, DINAMIC_BACKEND_URL and DINAMIC_BACKEND_BEARER_TOKEN are required",
+        )
+    path = inventory_context_path()
+    client = InventoryContextBackendClient(base_url, bearer)
+    try:
+        config = client.fetch_operational_config(inventory_id)
+    except InventoryContextSyncError as exc:
+        raise InventoryContextError("INVENTORY_CONTEXT_SYNC_FAILED", str(exc)) from exc
+    InventoryContextRepository(path).save(config)
+    return config

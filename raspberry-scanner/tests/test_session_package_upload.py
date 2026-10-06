@@ -413,6 +413,31 @@ class SessionPackageUploadTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "PACKAGE_NOT_EXPORTED")
         self.assertEqual(client.preview_calls, [])
 
+    def test_confirmed_succeeds_when_zip_file_missing(self) -> None:
+        session_id, export_id, zip_path = self._export_session()
+        zip_path.unlink()
+        self.upload_store.save(
+            PackageUploadRecord(
+                capture_session_id=session_id,
+                export_id=export_id,
+                inventory_id="inventory-1",
+                aisle_id="aisle-1",
+                zip_path=str(zip_path),
+                state="CONFIRMED",
+                package_id="pkg-confirmed",
+                error=None,
+                previewed_at="2026-01-01T00:00:00+00:00",
+                confirmed_at="2026-01-01T00:00:01+00:00",
+            )
+        )
+        outcome = upload_session_package(
+            capture_session_id=session_id,
+            inventory_id=self.context.inventory_id,
+            upload_store=self.upload_store,
+            backend_client=RecordingBackendClient(),
+        )
+        self.assertEqual(outcome.upload_state, "CONFIRMED")
+
     def test_confirmed_state_not_downgraded_by_late_failure(self) -> None:
         session_id, export_id, zip_path = self._export_session()
         self.upload_store.save(
@@ -504,9 +529,7 @@ class RaspberryPackageUseCaseIntegrationTest(unittest.TestCase):
                 PreviewLocalInventoryPackage,
             )
         except ModuleNotFoundError as exc:
-            self.skipTest(
-                f"Backend integration dependencies unavailable in this environment: {exc}"
-            )
+            self.skipTest(f"NOT_RUN: backend integration deps unavailable: {exc}")
 
         from src.application.services.aisle_source_asset_materializer import (
             AisleSourceAssetMaterializer,
@@ -710,7 +733,7 @@ class BackendHttpIntegrationTest(unittest.TestCase):
     def test_http_preview_confirm_when_env_configured(self) -> None:
         if os.environ.get("DINAMIC_RUN_BACKEND_HTTP_INTEGRATION") != "1":
             self.skipTest(
-                "Set DINAMIC_RUN_BACKEND_HTTP_INTEGRATION=1 with backend URL/token to run HTTP integration"
+                "NOT_RUN: set DINAMIC_RUN_BACKEND_HTTP_INTEGRATION=1 with backend URL/token"
             )
         from inventory_backend_client import inventory_backend_client_from_environment
         from session_package_upload import build_backend_client_from_environment

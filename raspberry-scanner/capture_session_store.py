@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from durable_io import fsync_directory
+
 PhotoStatus = Literal["CAPTURING", "COMPLETE", "PHOTO_FAILED"]
 
 _ACTIVE_FILE = "_active.json"
@@ -221,14 +223,7 @@ class CaptureSessionStore:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp_path, path)
-            try:
-                directory_fd = os.open(path.parent, os.O_RDONLY)
-                try:
-                    os.fsync(directory_fd)
-                finally:
-                    os.close(directory_fd)
-            except OSError:
-                pass
+            fsync_directory(path.parent)
         finally:
             try:
                 temp_path.unlink()

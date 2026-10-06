@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from durable_io import fsync_directory
+
 UploadState = Literal["EXPORTED", "PREVIEWED", "CONFIRMED", "FAILED"]
 
 
@@ -94,14 +96,7 @@ class PackageUploadStore:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp_path, path)
-            try:
-                directory_fd = os.open(path.parent, os.O_RDONLY)
-                try:
-                    os.fsync(directory_fd)
-                finally:
-                    os.close(directory_fd)
-            except OSError:
-                pass
+            fsync_directory(path.parent)
         finally:
             try:
                 temp_path.unlink()
