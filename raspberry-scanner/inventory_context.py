@@ -120,16 +120,33 @@ def inventory_context_path_from_environment() -> Path:
     return inventory_context_path()
 
 
-def _backend_sync_credentials() -> tuple[str, str] | None:
+def _device_sync_credentials() -> tuple[str, str] | None:
     base_url = (os.environ.get("DINAMIC_BACKEND_URL") or "").strip()
-    bearer = (
-        os.environ.get("DINAMIC_BACKEND_BEARER_TOKEN")
-        or os.environ.get("DINAMIC_BACKEND_TOKEN")
-        or ""
-    ).strip()
-    if base_url and bearer:
-        return base_url, bearer
+    device_token = (os.environ.get("DINAMIC_DEVICE_TOKEN") or "").strip()
+    if base_url and device_token:
+        return base_url, device_token
     return None
+
+
+def _backend_url_configured() -> bool:
+    return bool((os.environ.get("DINAMIC_BACKEND_URL") or "").strip())
+
+
+_AUTH_ERROR_CODES = frozenset(
+    {
+        "INVENTORY_CONTEXT_AUTH_FAILED",
+        "INVENTORY_CONTEXT_FORBIDDEN",
+    }
+)
+_NO_CACHE_FALLBACK_CODES = _AUTH_ERROR_CODES | frozenset(
+    {
+        "INVENTORY_NOT_FOUND",
+        "INVENTORY_CLIENT_MISMATCH",
+        "INVENTORY_CLIENT_REQUIRED",
+        "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED",
+        "INVENTORY_CONTEXT_SYNC_FAILED",
+    }
+)
 
 
 def _optional_env_inventory_id() -> str | None:
@@ -234,7 +251,7 @@ def load_inventory_operational_config(
     cached_usable = _cached_config_usable(
         cached, inventory_id=requested_id, client_id=requested_client
     )
-    credentials = _backend_sync_credentials()
+    credentials = _device_sync_credentials()
     target_id = requested_id
     if target_id is None and cached_usable and cached is not None:
         target_id = cached.inventory_id
@@ -247,7 +264,9 @@ def load_inventory_operational_config(
                 inventory_id=target_id,
                 expected_client_id=requested_client,
             )
-        except InventoryContextError:
+        except InventoryContextError as exc:
+            if exc.code in _NO_CACHE_FALLBACK_CODES:
+                raise
             if cached_usable and cached is not None:
                 return cached
             raise
@@ -256,6 +275,11 @@ def load_inventory_operational_config(
         return cached
 
     if credentials is None:
+        if _backend_url_configured():
+            raise InventoryContextError(
+                "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED",
+                "DINAMIC_BACKEND_URL and DINAMIC_DEVICE_TOKEN are required",
+            )
         raise _offline_unavailable_error(had_unusable_cache=cached is not None)
 
     raise InventoryContextError(
@@ -290,13 +314,13 @@ def sync_inventory_context_from_backend(
         InventoryContextSyncError,
     )
 
-    credentials = _backend_sync_credentials()
+    credentials = _device_sync_credentials()
     if credentials is None:
         raise InventoryContextError(
             "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED",
-            "DINAMIC_BACKEND_URL and DINAMIC_BACKEND_BEARER_TOKEN are required",
+            "DINAMIC_BACKEND_URL and DINAMIC_DEVICE_TOKEN are required",
         )
-    base_url, bearer = credentials
+    base_url, device_token = credentials
     target = (inventory_id or "").strip()
     if not target:
         cached = peek_inventory_operational_config()
@@ -309,11 +333,17 @@ def sync_inventory_context_from_backend(
             "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED",
             "inventory_id is required to sync inventory context",
         )
-    client = InventoryContextBackendClient(base_url, bearer)
+    client = InventoryContextBackendClient(base_url, device_token)
     try:
-        config = client.fetch_operational_config(target)
+        config = client.fetch_operational_config(
+            target,
+            client_id=(expected_client_id or "").strip() or None,
+        )
     except InventoryContextSyncError as exc:
-        raise InventoryContextError("INVENTORY_CONTEXT_SYNC_FAILED", str(exc)) from exc
+        raise InventoryContextError(
+            exc.code or "INVENTORY_CONTEXT_SYNC_FAILED",
+            str(exc),
+        ) from exc
     expected = (expected_client_id or "").strip()
     if expected and config.client_id and config.client_id != expected:
         raise InventoryContextError(

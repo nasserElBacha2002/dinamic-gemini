@@ -1,4 +1,4 @@
-"""Sync inventory aisle bindings from existing v3 recognition-config API."""
+"""Sync inventory aisle bindings from Raspberry device APIs."""
 
 from __future__ import annotations
 
@@ -13,7 +13,16 @@ from inventory_context import InventoryContextError, InventoryOperationalConfig
 
 
 class InventoryContextSyncError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        code: str | None = None,
+    ) -> None:
+        self.http_status = http_status
+        self.code = code
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -51,21 +60,35 @@ def operational_config_from_recognition_bundle(data: Any) -> InventoryOperationa
 
 
 class InventoryContextBackendClient:
+    """Device-token client for Raspberry inventory endpoints (X-Device-Token)."""
+
     def __init__(
         self,
         base_url: str,
-        bearer_token: str,
+        device_token: str,
         *,
         timeout_seconds: float = 30.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._bearer_token = bearer_token.strip()
+        self._device_token = device_token.strip()
         self._timeout_seconds = timeout_seconds
 
-    def fetch_operational_config(self, inventory_id: str) -> InventoryOperationalConfig:
+    def fetch_operational_config(
+        self,
+        inventory_id: str,
+        *,
+        client_id: str | None = None,
+    ) -> InventoryOperationalConfig:
+        wanted_client = (client_id or "").strip()
+        if not wanted_client:
+            raise InventoryContextSyncError(
+                "client_id is required to sync inventory recognition-config",
+                code="INVENTORY_CLIENT_REQUIRED",
+            )
         url = (
-            f"{self._base_url}/api/v3/inventories/"
+            f"{self._base_url}/api/v3/raspberry/inventories/"
             f"{urllib.parse.quote(inventory_id, safe='')}/recognition-config"
+            f"?{urllib.parse.urlencode({'client_id': wanted_client})}"
         )
         data = self._get_json(url)
         try:
@@ -73,36 +96,26 @@ class InventoryContextBackendClient:
         except InventoryContextError as exc:
             raise InventoryContextSyncError(str(exc)) from exc
 
-    def list_inventories(self, *, client_id: str | None = None) -> tuple[InventoryListEntry, ...]:
-        wanted = (client_id or "").strip() or None
+    def list_inventories(self, *, client_id: str) -> tuple[InventoryListEntry, ...]:
+        wanted = (client_id or "").strip()
+        if not wanted:
+            raise InventoryContextSyncError(
+                "client_id is required to list inventories",
+                code="INVENTORY_CLIENT_REQUIRED",
+            )
+        query = urllib.parse.urlencode({"client_id": wanted})
+        data = self._get_json(f"{self._base_url}/api/v3/raspberry/inventories?{query}")
+        if not isinstance(data, dict):
+            raise InventoryContextSyncError("inventory list response must be a JSON object")
+        raw_items = data.get("items")
+        if not isinstance(raw_items, list):
+            raise InventoryContextSyncError("inventory list missing items")
         items: list[InventoryListEntry] = []
-        page = 1
-        total_pages = 1
-        while page <= total_pages:
-            query = urllib.parse.urlencode({"page": page, "page_size": 200, "sort_by": "updated_at", "sort_dir": "desc"})
-            data = self._get_json(f"{self._base_url}/api/v3/inventories/?{query}")
-            if not isinstance(data, dict):
-                raise InventoryContextSyncError("inventory list response must be a JSON object")
-            raw_items = data.get("items")
-            if not isinstance(raw_items, list):
-                raise InventoryContextSyncError("inventory list missing items")
-            for row in raw_items:
-                entry = _inventory_list_entry(row)
-                if entry is None:
-                    continue
-                if wanted and entry.client_id and entry.client_id != wanted:
-                    continue
-                if wanted and not entry.client_id:
-                    continue
-                items.append(entry)
-            raw_total_pages = data.get("total_pages")
-            if isinstance(raw_total_pages, int) and raw_total_pages > 0:
-                total_pages = raw_total_pages
-            else:
-                total_pages = page
-            page += 1
-            if page > 20:
-                break
+        for row in raw_items:
+            entry = _inventory_list_entry(row)
+            if entry is None:
+                continue
+            items.append(entry)
         return tuple(items)
 
     def _get_json(self, url: str) -> Any:
@@ -110,7 +123,7 @@ class InventoryContextBackendClient:
             url,
             headers={
                 "Accept": "application/json",
-                "Authorization": f"Bearer {self._bearer_token}",
+                "X-Device-Token": self._device_token,
             },
             method="GET",
         )
@@ -118,13 +131,47 @@ class InventoryContextBackendClient:
             with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
                 body = response.read()
         except urllib.error.HTTPError as exc:
-            raise InventoryContextSyncError(f"backend returned HTTP {exc.code}") from exc
+            raise _http_sync_error(exc, url=url) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise InventoryContextSyncError(f"backend unavailable: {exc}") from exc
+            raise InventoryContextSyncError(
+                f"backend unavailable: {exc}",
+                code="INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE",
+            ) from exc
         try:
             return json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise InventoryContextSyncError("backend returned invalid JSON") from exc
+
+
+def _http_sync_error(exc: urllib.error.HTTPError, *, url: str) -> InventoryContextSyncError:
+    status = int(exc.code)
+    if status in {401, 403}:
+        code = (
+            "INVENTORY_CONTEXT_AUTH_FAILED"
+            if status == 401
+            else "INVENTORY_CONTEXT_FORBIDDEN"
+        )
+        return InventoryContextSyncError(
+            f"backend returned HTTP {status}",
+            http_status=status,
+            code=code,
+        )
+    if status == 404:
+        code = (
+            "INVENTORY_NOT_FOUND"
+            if "/recognition-config" in url
+            else "CLIENT_NOT_FOUND"
+        )
+        return InventoryContextSyncError(
+            f"backend returned HTTP {status}",
+            http_status=status,
+            code=code,
+        )
+    return InventoryContextSyncError(
+        f"backend returned HTTP {status}",
+        http_status=status,
+        code="INVENTORY_CONTEXT_SYNC_FAILED",
+    )
 
 
 def _inventory_list_entry(row: Any) -> InventoryListEntry | None:

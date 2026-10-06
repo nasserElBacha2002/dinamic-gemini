@@ -113,3 +113,20 @@ class OfflineRaspberryRecognitionBundleResponse(BaseModel):
         default_factory=list
     )
     bundle_revision: str
+
+
+class RaspberryInventoryListItemDto(BaseModel):
+    """Client-scoped inventory row for Raspberry device sync."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    name: str
+    client_id: str
+    status: str
+
+
+class RaspberryInventoryListResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    items: list[RaspberryInventoryListItemDto] = Field(default_factory=list)
