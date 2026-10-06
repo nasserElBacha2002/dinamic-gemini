@@ -12,6 +12,7 @@ from camera import CameraError, FakeCamera
 from capture import CaptureError, CaptureService
 from capture_session_store import CaptureSessionStore, PhotoCaptureRecord
 from scanner_service import Reading
+from inventory_context_fixture import install_test_inventory_context
 
 
 class FakeRecognition:
@@ -74,6 +75,10 @@ def build_capture(
     root: Path,
     camera,
 ) -> tuple[CaptureService, CaptureSessionStore, Path]:
+    install_test_inventory_context(
+        root,
+        extra_aisles=[("PASILLO_04", "aisle-p04"), ("B1", "aisle-b1")],
+    )
     export_dir = root / "exports"
     store = CaptureSessionStore(root / "sessions")
     photos_root = root / "photos"

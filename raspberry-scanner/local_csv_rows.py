@@ -10,6 +10,13 @@ from datetime import datetime, timezone
 
 from capture_session_store import CaptureSessionState, PhotoCaptureRecord
 from local_package_contract import LOCAL_CSV_HEADERS, LOCAL_CSV_SCHEMA_VERSION
+from scan_semantics import (
+    ScanSemantics,
+    is_likely_raw_segmented_payload,
+    position_from_snapshot,
+    products_from_snapshot,
+    semantics_for_photo,
+)
 
 _FORMULA_PREFIX = re.compile(r"^[=+\-@\t\r]")
 
@@ -68,21 +75,66 @@ def _parse_position_export_line(line: str) -> tuple[str, str, str, str]:
     return position_code, label_id, side, line
 
 
-def _running_position_from_records(
-    export_records: list[tuple[int, str]],
+def _running_position_from_photos(
+    photos: list[PhotoCaptureRecord],
     up_to_sequence: int,
 ) -> tuple[str, str, str]:
     position_code = ""
     position_label_id = ""
     position_payload_raw = ""
-    for seq, line in export_records:
-        if seq > up_to_sequence:
+    for photo in sorted(photos, key=lambda p: p.sequence_number):
+        if photo.sequence_number > up_to_sequence:
             break
-        if line.startswith("POSITION|"):
+        semantics = semantics_for_photo(photo)
+        if semantics.classification == "POSITION":
+            supplier = position_from_snapshot(semantics.recognition_snapshot_json)
+            if supplier:
+                position_code = supplier["position_code"]
+                position_label_id = supplier["position_label_id"]
+                position_payload_raw = supplier["position_payload_raw"]
+                continue
+        if semantics.export_line.startswith("POSITION|"):
             position_code, position_label_id, _side, position_payload_raw = (
-                _parse_position_export_line(line)
+                _parse_position_export_line(semantics.export_line)
             )
     return position_code, position_label_id, position_payload_raw
+
+
+def _products_for_semantics(semantics: ScanSemantics) -> list[dict[str, object]]:
+    if semantics.classification == "RAW" and semantics.selection_mode == "ALL":
+        raw = semantics.raw_payload.strip()
+        if is_likely_raw_segmented_payload(raw):
+            return []
+        return [{"label_id": "", "internal_code": raw, "quantity": None}]
+    from_snapshot = products_from_snapshot(semantics.recognition_snapshot_json)
+    if from_snapshot:
+        return from_snapshot
+    if semantics.classification != "ITEM":
+        return []
+    from src.domain.product_labels.format import (
+        ProductLabelValidationStatus,
+        parse_product_label_payload,
+    )
+
+    parsed = parse_product_label_payload(semantics.export_line)
+    if parsed.status != ProductLabelValidationStatus.VALID:
+        return []
+    label_id = (parsed.label_id or "").strip()
+    return [
+        {
+            "label_id": label_id,
+            "internal_code": parsed.internal_code or "",
+            "quantity": parsed.quantity,
+        }
+    ]
+
+
+def _is_position_photo(semantics: ScanSemantics) -> bool:
+    if semantics.classification == "POSITION":
+        return True
+    if semantics.export_line.startswith("POSITION|"):
+        return True
+    return position_from_snapshot(semantics.recognition_snapshot_json) is not None
 
 
 def build_local_csv_rows(
@@ -95,24 +147,36 @@ def build_local_csv_rows(
     export_id: str | None = None,
     exported_at: str | None = None,
 ) -> LocalCsvBuildResult:
-    from src.domain.product_labels.format import (
-        ProductLabelValidationStatus,
-        parse_product_label_payload,
-    )
-
     export_id_value = export_id or str(uuid.uuid4())
     exported_at_value = exported_at or _utc_now_iso()
     sorted_photos = sorted(complete_photos, key=lambda p: p.sequence_number)
     rows: list[dict[str, str]] = []
     emitted_label_ids: set[str] = set()
+    running_position: tuple[str, str, str] | None = None
 
     for photo in sorted_photos:
-        position_code, position_label_id, position_payload_raw = (
-            _running_position_from_records(
-                session.export_records,
-                photo.scanner_sequence,
+        semantics = semantics_for_photo(photo)
+        if _is_position_photo(semantics):
+            supplier = position_from_snapshot(semantics.recognition_snapshot_json)
+            if supplier:
+                running_position = (
+                    supplier["position_code"],
+                    supplier["position_label_id"],
+                    supplier["position_payload_raw"],
+                )
+            elif semantics.export_line.startswith("POSITION|"):
+                pos_code, pos_label, _side, payload = _parse_position_export_line(
+                    semantics.export_line
+                )
+                running_position = (pos_code, pos_label, payload)
+
+        if running_position:
+            position_code, position_label_id, position_payload_raw = running_position
+        else:
+            position_code, position_label_id, position_payload_raw = (
+                _running_position_from_photos(sorted_photos, photo.sequence_number)
             )
-        )
+
         base = {
             "schema_version": LOCAL_CSV_SCHEMA_VERSION,
             "export_id": export_id_value,
@@ -138,43 +202,66 @@ def build_local_csv_rows(
             "error_code": "",
             "notes": "",
         }
-        line = photo.export_line
-        if line.startswith("POSITION|"):
-            pos_code, pos_label, _side, payload = _parse_position_export_line(line)
-            row = {
-                **base,
-                "position_code": pos_code,
-                "position_label_id": pos_label,
-                "position_payload_raw": payload,
-                "quantity_status": "NOT_APPLICABLE",
-                "source": "LOCAL_POSITION_LABEL",
-            }
-            rows.append(row)
+
+        if _is_position_photo(semantics) and not _products_for_semantics(semantics):
+            pos_code = position_code
+            pos_label = position_label_id
+            payload = position_payload_raw
+            if semantics.export_line.startswith("POSITION|"):
+                pos_code, pos_label, _side, payload = _parse_position_export_line(
+                    semantics.export_line
+                )
+            rows.append(
+                {
+                    **base,
+                    "position_code": pos_code,
+                    "position_label_id": pos_label,
+                    "position_payload_raw": payload,
+                    "quantity_status": "NOT_APPLICABLE",
+                    "source": "LOCAL_POSITION_LABEL",
+                }
+            )
             continue
 
-        parsed = parse_product_label_payload(line)
-        if parsed.status != ProductLabelValidationStatus.VALID:
-            raise ValueError(f"invalid_product_export_line: {line}")
-        label_id = (parsed.label_id or "").strip()
-        if label_id and label_id in emitted_label_ids:
-            row = {
-                **base,
-                "quantity_status": "NOT_APPLICABLE",
-                "source": "LOCAL_POSITION_LABEL",
-            }
-            rows.append(row)
+        products = _products_for_semantics(semantics)
+        filtered: list[dict[str, object]] = []
+        duplicate_only = False
+        for product in products:
+            label_id = str(product.get("label_id") or "").strip()
+            if label_id and label_id in emitted_label_ids:
+                duplicate_only = True
+                continue
+            if label_id:
+                emitted_label_ids.add(label_id)
+            filtered.append(product)
+
+        if not filtered:
+            if duplicate_only and semantics.classification == "ITEM":
+                continue
+            if _is_position_photo(semantics):
+                rows.append(
+                    {
+                        **base,
+                        "quantity_status": "NOT_APPLICABLE",
+                        "source": "LOCAL_POSITION_LABEL",
+                    }
+                )
             continue
-        if label_id:
-            emitted_label_ids.add(label_id)
-        row = {
-            **base,
-            "internal_code": parsed.internal_code or "",
-            "label_id": label_id,
-            "quantity": str(parsed.quantity or ""),
-            "quantity_status": "PRESENT",
-            "source": "LOCAL_CODE_SCAN",
-        }
-        rows.append(row)
+
+        for product in filtered:
+            label_id = str(product.get("label_id") or "").strip()
+            internal_code = str(product.get("internal_code") or "").strip()
+            quantity = product.get("quantity")
+            rows.append(
+                {
+                    **base,
+                    "internal_code": internal_code,
+                    "label_id": label_id,
+                    "quantity": str(quantity) if quantity is not None else "",
+                    "quantity_status": "PRESENT" if quantity is not None else "PRESENT",
+                    "source": "LOCAL_CODE_SCAN",
+                }
+            )
 
     if not rows:
         raise ValueError("PACKAGE_EXPORT_EMPTY")

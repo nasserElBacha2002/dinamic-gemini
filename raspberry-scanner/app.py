@@ -20,8 +20,17 @@ from config.sync import BackendSnapshotClient
 from camera import CameraConfigurationError, build_camera_from_environment
 from capture import CaptureError, CaptureService
 from capture_session_store import CaptureSessionStore
+from inventory_backend_client import InventoryBackendClientError
+from package_upload_store import PackageUploadStore
 from recognition import RecognitionService, SelectionError
 from scanner_service import Reading, ScannerSession, SerialLineReader
+from session_package_upload import (
+    PackageUploadError,
+    build_backend_client_from_environment,
+    ensure_session_package_exported,
+    export_context_for_session,
+    upload_session_package,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -41,6 +50,10 @@ def make_handler(
     recognition_service: RecognitionService,
     capture_service: CaptureService,
     export_directory: Path | None = None,
+    package_session_store: CaptureSessionStore | None = None,
+    package_photos_root: Path | None = None,
+    package_export_directory: Path | None = None,
+    package_upload_store: PackageUploadStore | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     selection_operation_lock = threading.Lock()
 
@@ -266,10 +279,144 @@ def make_handler(
                 self._send_json(HTTPStatus.OK, capture)
                 return
 
+            if path == "/api/capture/export":
+                self._handle_capture_export()
+                return
+
+            if path == "/api/capture/upload":
+                self._handle_capture_upload()
+                return
+
             self._send_json(
                 HTTPStatus.NOT_FOUND,
                 {"error": "not_found"},
             )
+
+        def _handle_capture_export(self) -> None:
+            if (
+                package_session_store is None
+                or package_photos_root is None
+                or package_export_directory is None
+                or package_upload_store is None
+            ):
+                self._send_json(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    {"error": "package_export_unavailable"},
+                )
+                return
+            session_id = self._require_finished_capture_session_id()
+            if session_id is None:
+                return
+            try:
+                stored = package_session_store.load_session(session_id)
+                if stored is None:
+                    self._send_json(
+                        HTTPStatus.CONFLICT,
+                        {"error": "capture_session_not_found"},
+                    )
+                    return
+                context = export_context_for_session(stored)
+                outcome = ensure_session_package_exported(
+                    session_store=package_session_store,
+                    photos_root=package_photos_root,
+                    output_directory=package_export_directory,
+                    capture_session_id=session_id,
+                    context=context,
+                    upload_store=package_upload_store,
+                )
+            except PackageUploadError as exc:
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": exc.code, "message": str(exc)},
+                )
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "capture_session_id": outcome.capture_session_id,
+                    "export_id": outcome.export_id,
+                    "zip_path": str(outcome.zip_path),
+                    "reused_existing_zip": outcome.reused_existing_zip,
+                    "upload_state": outcome.upload_state,
+                },
+            )
+
+        def _handle_capture_upload(self) -> None:
+            if package_upload_store is None:
+                self._send_json(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    {"error": "package_upload_unavailable"},
+                )
+                return
+            session_id = self._require_finished_capture_session_id()
+            if session_id is None:
+                return
+            try:
+                stored = package_session_store.load_session(session_id)
+                if stored is None:
+                    self._send_json(
+                        HTTPStatus.CONFLICT,
+                        {"error": "capture_session_not_found"},
+                    )
+                    return
+                context = export_context_for_session(stored)
+                backend_client = build_backend_client_from_environment()
+                outcome = upload_session_package(
+                    capture_session_id=session_id,
+                    inventory_id=context.inventory_id,
+                    upload_store=package_upload_store,
+                    backend_client=backend_client,
+                )
+            except PackageUploadError as exc:
+                status = HTTPStatus.BAD_REQUEST
+                self._send_json(
+                    status,
+                    {"error": exc.code, "message": str(exc)},
+                )
+                return
+            except InventoryBackendClientError as exc:
+                status = HTTPStatus.BAD_GATEWAY
+                if exc.http_status in {401, 403}:
+                    status = HTTPStatus(exc.http_status)
+                self._send_json(
+                    status,
+                    {
+                        "error": exc.code,
+                        "message": str(exc),
+                        "http_status": exc.http_status,
+                    },
+                )
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "capture_session_id": outcome.capture_session_id,
+                    "export_id": outcome.export_id,
+                    "package_id": outcome.package_id,
+                    "inventory_id": outcome.inventory_id,
+                    "status": outcome.status,
+                    "preview_skipped": outcome.preview_skipped,
+                    "confirm_duplicate": outcome.confirm_duplicate,
+                    "upload_state": outcome.upload_state,
+                },
+            )
+
+        def _require_finished_capture_session_id(self) -> str | None:
+            snapshot = capture_service.snapshot()
+            if snapshot.get("state") != "FINISHED":
+                self._send_json(
+                    HTTPStatus.CONFLICT,
+                    {"error": "capture_not_finished"},
+                )
+                return None
+            session_id = snapshot.get("capture_session_id")
+            if not isinstance(session_id, str) or not session_id.strip():
+                self._send_json(
+                    HTTPStatus.CONFLICT,
+                    {"error": "capture_session_unavailable"},
+                )
+                return None
+            return session_id.strip()
 
         def _send_file(
             self,
@@ -558,6 +705,13 @@ def main() -> None:
         session_store=session_store,
         photos_root=photos_root,
     )
+    from session_package_upload import (
+        package_export_directory_from_environment,
+        package_upload_store_from_environment,
+    )
+
+    package_export_directory = package_export_directory_from_environment(export_directory)
+    package_upload_store = package_upload_store_from_environment(export_directory)
     session = build_session(
         args.device,
         args.baud_rate,
@@ -589,6 +743,10 @@ def main() -> None:
             recognition_service,
             capture_service,
             export_directory,
+            package_session_store=session_store,
+            package_photos_root=photos_root,
+            package_export_directory=package_export_directory,
+            package_upload_store=package_upload_store,
         ),
     )
 

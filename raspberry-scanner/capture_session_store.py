@@ -26,9 +26,10 @@ class PhotoCaptureRecord:
     photo_sha256: str | None = None
     photo_size_bytes: int | None = None
     error: str | None = None
+    scan_semantics: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "capture_photo_id": self.capture_photo_id,
             "sequence_number": self.sequence_number,
             "scanner_sequence": self.scanner_sequence,
@@ -40,9 +41,13 @@ class PhotoCaptureRecord:
             "photo_size_bytes": self.photo_size_bytes,
             "error": self.error,
         }
+        if self.scan_semantics is not None:
+            payload["scan_semantics"] = self.scan_semantics
+        return payload
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> PhotoCaptureRecord:
+        semantics = raw.get("scan_semantics")
         return cls(
             capture_photo_id=str(raw["capture_photo_id"]),
             sequence_number=int(raw["sequence_number"]),
@@ -58,6 +63,7 @@ class PhotoCaptureRecord:
                 else None
             ),
             error=raw.get("error"),
+            scan_semantics=dict(semantics) if isinstance(semantics, dict) else None,
         )
 
 
@@ -68,6 +74,8 @@ class CaptureSessionState:
     state: str
     selection: dict[str, object]
     started_at: str | None
+    inventory_id: str | None = None
+    aisle_id: str | None = None
     finished_at: str | None = None
     next_sequence_number: int = 1
     export_records: list[tuple[int, str]] = field(default_factory=list)
@@ -87,6 +95,8 @@ class CaptureSessionState:
             "state": self.state,
             "selection": self.selection,
             "started_at": self.started_at,
+            "inventory_id": self.inventory_id,
+            "aisle_id": self.aisle_id,
             "finished_at": self.finished_at,
             "next_sequence_number": self.next_sequence_number,
             "export_records": [
@@ -118,6 +128,14 @@ class CaptureSessionState:
             state=str(raw["state"]),
             selection=dict(raw.get("selection") or {}),
             started_at=raw.get("started_at"),
+            inventory_id=(
+                str(raw["inventory_id"]).strip()
+                if raw.get("inventory_id")
+                else None
+            ),
+            aisle_id=(
+                str(raw["aisle_id"]).strip() if raw.get("aisle_id") else None
+            ),
             finished_at=raw.get("finished_at"),
             next_sequence_number=int(raw.get("next_sequence_number", 1)),
             export_records=export_records,

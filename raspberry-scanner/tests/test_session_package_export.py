@@ -23,6 +23,7 @@ from session_package_export import (
     SessionPackageExportError,
     export_finished_session_package,
 )
+from inventory_context_fixture import install_test_inventory_context
 
 from src.application.services.local_inventory_package_parser import (
     parse_local_inventory_package,
@@ -65,6 +66,7 @@ def item_reading(sequence: int, raw: str) -> Reading:
 
 
 def build_finished_session(root: Path) -> tuple[CaptureService, CaptureSessionStore, Path, str]:
+    install_test_inventory_context(root)
     export_dir = root / "exports"
     store = CaptureSessionStore(root / "sessions")
     photos_root = root / "photos"
@@ -90,6 +92,7 @@ def build_finished_session(root: Path) -> tuple[CaptureService, CaptureSessionSt
 class SessionPackageExportTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
+        install_test_inventory_context(self.root)
         self.out = self.root / "packages"
         self.context = SessionPackageExportContext(
             inventory_id="inventory-1",
@@ -202,8 +205,8 @@ class SessionPackageExportTests(unittest.TestCase):
                     status=photo.status,
                     captured_at=photo.captured_at,
                     file_name=photo.file_name,
-                    photo_sha256="0" * 64,
-                    photo_size_bytes=photo.photo_size_bytes,
+                    photo_sha256=photo.photo_sha256,
+                    photo_size_bytes=(photo.photo_size_bytes or 0) + 1,
                     error=photo.error,
                 )
             )
@@ -217,8 +220,9 @@ class SessionPackageExportTests(unittest.TestCase):
                 capture_session_id=session_id,
                 context=self.context,
             )
-        self.assertEqual(ctx.exception.code, "EXPORT_PHOTO_SHA_MISMATCH")
+        self.assertEqual(ctx.exception.code, "EXPORT_PHOTO_SIZE_MISMATCH")
     def test_active_session_not_exported(self) -> None:
+        install_test_inventory_context(self.root)
         store = CaptureSessionStore(self.root / "sessions")
         photos_root = self.root / "photos"
         capture = CaptureService(
@@ -266,7 +270,8 @@ class SessionPackageExportTests(unittest.TestCase):
                 context=self.context,
             )
 
-    def test_photo_failed_excluded_like_mobile_rejected(self) -> None:
+    def test_photo_failed_blocks_strict_export(self) -> None:
+        install_test_inventory_context(self.root)
         store = CaptureSessionStore(self.root / "sessions")
         photos_root = self.root / "photos"
         capture = CaptureService(
@@ -286,22 +291,15 @@ class SessionPackageExportTests(unittest.TestCase):
         session_id = capture.snapshot()["capture_session_id"]
         assert isinstance(session_id, str)
         capture.finish()
-        result = export_finished_session_package(
-            session_store=store,
-            photos_root=photos_root,
-            output_directory=self.out,
-            capture_session_id=session_id,
-            context=self.context,
-        )
-        parsed = parse_local_inventory_package(result.zip_path.read_bytes())
-        self.assertEqual(parsed.included_photo_count, 2)
-        self.assertEqual(parsed.expected_photo_count, 2)
-        session = store.load_session(session_id)
-        assert session is not None
-        self.assertEqual(
-            sum(1 for p in session.photos if p.status == "PHOTO_FAILED"),
-            1,
-        )
+        with self.assertRaises(SessionPackageExportError) as ctx:
+            export_finished_session_package(
+                session_store=store,
+                photos_root=photos_root,
+                output_directory=self.out,
+                capture_session_id=session_id,
+                context=self.context,
+            )
+        self.assertEqual(ctx.exception.code, "EXPORT_PHOTO_EVIDENCE_FAILED")
 
     def test_missing_inventory_or_aisle_ids_fail(self) -> None:
         _, store, photos_root, session_id = build_finished_session(self.root)

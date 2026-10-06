@@ -22,7 +22,9 @@ from capture_session_store import (
     CaptureSessionStore,
     PhotoCaptureRecord,
 )
+from inventory_context import InventoryContextError, resolve_inventory_aisle_for_capture
 from recognition import RecognitionService
+from scan_semantics import build_scan_semantics
 from scanner_service import Reading
 
 LOGGER = logging.getLogger(__name__)
@@ -66,12 +68,16 @@ class CaptureService:
         camera: Camera | None = None,
         session_store: CaptureSessionStore | None = None,
         photos_root: Path | None = None,
+        bind_inventory_context: bool = True,
     ) -> None:
         self._recognition = recognition
         self._export_directory = export_directory
         self._camera = camera
         self._session_store = session_store
         self._photos_root = photos_root or (export_directory / "photos")
+        self._bind_inventory_context = bind_inventory_context
+        self._inventory_id: str | None = None
+        self._aisle_id: str | None = None
         self._lock = threading.Lock()
         self._state = "IDLE"
         self._accepting_records = True
@@ -112,12 +118,23 @@ class CaptureService:
         selection = self._recognition.selection()
         if not selection.get("client_id"):
             raise CaptureError("client_selection_required")
+        inventory_id: str | None = None
+        aisle_id: str | None = None
+        if self._session_store is not None and self._bind_inventory_context:
+            try:
+                resolved = resolve_inventory_aisle_for_capture(code)
+            except InventoryContextError as exc:
+                raise CaptureError(exc.code) from exc
+            inventory_id = resolved.inventory_id
+            aisle_id = resolved.aisle_id
         with self._lock:
             if self._state != "IDLE" and self._state != "FINISHED":
                 raise CaptureError("capture_requires_resolution")
             self._state = "ACTIVE"
             self._accepting_records = True
             self._aisle_code = code
+            self._inventory_id = inventory_id
+            self._aisle_id = aisle_id
             self._selection = selection
             self._records = []
             self._photo_records = []
@@ -175,6 +192,12 @@ class CaptureService:
                 self._not_exportable_count += 1
                 self._persist_session_locked()
                 return
+            semantics = build_scan_semantics(
+                reading.value,
+                decision,
+                export_line=line,
+            )
+            semantics_dict = semantics.to_dict() if semantics is not None else None
             self._accepted_count += 1
             self._records.append(ExportRecord(reading.sequence, line))
             if (
@@ -196,6 +219,7 @@ class CaptureService:
                         status="CAPTURING",
                         captured_at=captured_at,
                         file_name=file_name,
+                        scan_semantics=semantics_dict,
                     )
                 )
                 job_to_enqueue = _PhotoCaptureJob(
@@ -459,6 +483,7 @@ class CaptureService:
                     photo_sha256=photo_sha256,
                     photo_size_bytes=photo_size_bytes,
                     error=error,
+                    scan_semantics=record.scan_semantics,
                 )
             )
         self._photo_records = updated
@@ -479,6 +504,8 @@ class CaptureService:
             state=self._state,
             selection=self._selection or {},
             started_at=self._started_at,
+            inventory_id=self._inventory_id,
+            aisle_id=self._aisle_id,
             finished_at=self._finished_at,
             next_sequence_number=self._next_sequence_number,
             export_records=[(r.sequence, r.line) for r in self._records],
@@ -520,6 +547,7 @@ class CaptureService:
                             photo_sha256=None,
                             photo_size_bytes=None,
                             error="crash_recovery_incomplete_capture",
+                            scan_semantics=photo.scan_semantics,
                         )
                     )
                     continue
@@ -538,6 +566,7 @@ class CaptureService:
                                 photo_sha256=None,
                                 photo_size_bytes=None,
                                 error="missing_photo_file_after_restart",
+                                scan_semantics=photo.scan_semantics,
                             )
                         )
                         continue
@@ -555,6 +584,8 @@ class CaptureService:
     def _apply_session_state(self, stored: CaptureSessionState) -> None:
         self._state = stored.state
         self._aisle_code = stored.aisle_code
+        self._inventory_id = stored.inventory_id
+        self._aisle_id = stored.aisle_id
         self._selection = stored.selection
         self._capture_session_id = stored.capture_session_id
         self._next_sequence_number = stored.next_sequence_number
