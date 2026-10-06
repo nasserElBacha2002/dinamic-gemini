@@ -18,6 +18,7 @@ from config.inventory_context_sync import (
     InventoryContextBackendClient,
     InventoryContextSyncError,
 )
+from config.repository import SnapshotRepository
 from config.service import ConfigService
 from config.sync import BackendSnapshotClient
 from camera import CameraConfigurationError, build_camera_from_environment
