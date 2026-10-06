@@ -52,6 +52,22 @@ class CameraFactoryTests(unittest.TestCase):
             with self.assertRaises(CameraConfigurationError):
                 build_camera_from_environment()
 
+    def test_invalid_numeric_camera_configuration_raises_configuration_error(self) -> None:
+        invalid_values = (
+            {"DINAMIC_CAMERA_CAPTURE_DELAY_MS": "fast"},
+            {"DINAMIC_CAMERA_PROCESS_TIMEOUT_SEC": "slow"},
+            {"DINAMIC_CAMERA_WIDTH": "wide"},
+            {"DINAMIC_CAMERA_HEIGHT": "tall"},
+        )
+        for values in invalid_values:
+            with self.subTest(values=values), patch.dict(
+                os.environ,
+                {"DINAMIC_CAMERA_MODE": "rpicam", **values},
+                clear=False,
+            ):
+                with self.assertRaises(CameraConfigurationError):
+                    build_camera_from_environment()
+
     def test_unconfigured_camera_raises_camera_error(self) -> None:
         with self.assertRaises(CameraError):
             UnconfiguredCamera().capture_jpeg()

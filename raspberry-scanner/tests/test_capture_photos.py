@@ -341,6 +341,31 @@ class CapturePhotoIntegrationTests(unittest.TestCase):
         self.assertTrue(finish_done.is_set())
         self.assertEqual(finish_errors, [])
 
+    def test_persistence_failure_after_reservation_closes_pipeline(self) -> None:
+        camera = FakeCamera()
+        capture, _, _ = build_capture(self.root, camera)
+        capture.start("A1")
+
+        with patch.object(
+            capture,
+            "_persist_session_locked",
+            side_effect=OSError("metadata disk failure"),
+        ):
+            with self.assertRaisesRegex(
+                CaptureError, "capture_metadata_persistence_failed"
+            ):
+                capture.record(position_reading(1))
+
+        assert capture._photo_queue is not None
+        self.assertTrue(capture._photo_queue.empty())
+        self.assertEqual(capture._pipeline_inflight, 0)
+        self.assertIn("metadata disk failure", capture.snapshot()["error"])
+
+        started = time.monotonic()
+        with self.assertRaisesRegex(CaptureError, "capture_pipeline_fatal"):
+            capture.finish()
+        self.assertLess(time.monotonic() - started, 0.5)
+
     def test_unexpected_worker_failure_marks_pipeline_fatal(self) -> None:
         camera = FakeCamera()
         capture, _, _ = build_capture(self.root, camera)
@@ -395,6 +420,8 @@ class CapturePhotoIntegrationTests(unittest.TestCase):
         )
         (photos_root / session_id).mkdir(parents=True)
         (photos_root / session_id / ".0001_photo-crash.jpg.tmp").write_bytes(b"partial")
+        final_path = photos_root / session_id / "0001_photo-crash.jpg"
+        final_path.write_bytes(b"\xff\xd8\xff\xd9")
 
         resumed = CaptureService(
             FakeRecognition(),
@@ -410,6 +437,7 @@ class CapturePhotoIntegrationTests(unittest.TestCase):
         self.assertFalse(
             (photos_root / session_id / ".0001_photo-crash.jpg.tmp").exists()
         )
+        self.assertFalse(final_path.exists())
 
 
 if __name__ == "__main__":

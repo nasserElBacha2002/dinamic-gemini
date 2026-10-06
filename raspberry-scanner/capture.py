@@ -209,7 +209,22 @@ class CaptureService:
                 )
                 with self._pipeline_cond:
                     self._pipeline_inflight += 1
-                self._persist_session_locked()
+                try:
+                    self._persist_session_locked()
+                except Exception as exc:
+                    self._photo_records.pop()
+                    self._next_sequence_number -= 1
+                    with self._pipeline_cond:
+                        self._pipeline_inflight -= 1
+                        self._pipeline_cond.notify_all()
+                    message = f"{type(exc).__name__}: {exc}"
+                    self._pipeline_fatal_error = (
+                        f"capture_metadata_persistence_failed: {message}"
+                    )
+                    self._accepting_records = False
+                    self._error = self._pipeline_fatal_error
+                    job_to_enqueue = None
+                    raise CaptureError(self._pipeline_fatal_error) from exc
         if job_to_enqueue is not None:
             assert self._photo_queue is not None
             self._photo_queue.put(job_to_enqueue)
@@ -491,6 +506,8 @@ class CaptureService:
             for photo in self._photo_records:
                 if photo.status == "CAPTURING":
                     _cleanup_tmp_artifacts(photos_dir, photo.file_name)
+                    if photo.file_name:
+                        _safe_unlink(photos_dir / photo.file_name)
                     recovered.append(
                         PhotoCaptureRecord(
                             capture_photo_id=photo.capture_photo_id,

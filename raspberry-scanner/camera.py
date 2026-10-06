@@ -134,12 +134,21 @@ def build_camera_from_environment() -> Camera | None:
     if mode == "fake":
         return FakeCamera()
     if mode in {"rpicam", "libcamera", "enabled", "on"}:
-        capture_delay_ms = int(os.environ.get("DINAMIC_CAMERA_CAPTURE_DELAY_MS", "1"))
-        process_timeout = float(os.environ.get("DINAMIC_CAMERA_PROCESS_TIMEOUT_SEC", "30"))
         width_raw = (os.environ.get("DINAMIC_CAMERA_WIDTH") or "").strip()
         height_raw = (os.environ.get("DINAMIC_CAMERA_HEIGHT") or "").strip()
-        width = int(width_raw) if width_raw else None
-        height = int(height_raw) if height_raw else None
+        try:
+            capture_delay_ms = int(
+                os.environ.get("DINAMIC_CAMERA_CAPTURE_DELAY_MS", "1")
+            )
+            process_timeout = float(
+                os.environ.get("DINAMIC_CAMERA_PROCESS_TIMEOUT_SEC", "30")
+            )
+            width = int(width_raw) if width_raw else None
+            height = int(height_raw) if height_raw else None
+        except (TypeError, ValueError) as exc:
+            raise CameraConfigurationError(
+                "camera numeric configuration is invalid"
+            ) from exc
         command = (os.environ.get("DINAMIC_CAMERA_COMMAND") or "rpicam-still").strip()
         return RpicamStillCamera(
             command=command,
