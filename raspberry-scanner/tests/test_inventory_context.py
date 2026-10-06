@@ -132,5 +132,166 @@ class InventoryContextAutoSyncTests(unittest.TestCase):
         self.assertEqual(data["inventory_id"], "inv-uuid-1")
 
 
+class InventoryContextDynamicTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        os.environ["DINAMIC_EXPORT_DIRECTORY"] = str(self.root / "exports")
+        os.environ.pop("DINAMIC_INVENTORY_CONTEXT_PATH", None)
+        os.environ.pop("DINAMIC_INVENTORY_ID", None)
+        os.environ.pop("DINAMIC_BACKEND_URL", None)
+        os.environ.pop("DINAMIC_BACKEND_BEARER_TOKEN", None)
+        os.environ.pop("DINAMIC_BACKEND_TOKEN", None)
+
+    def tearDown(self) -> None:
+        for key in (
+            "DINAMIC_EXPORT_DIRECTORY",
+            "DINAMIC_INVENTORY_CONTEXT_PATH",
+            "DINAMIC_INVENTORY_ID",
+            "DINAMIC_BACKEND_URL",
+            "DINAMIC_BACKEND_BEARER_TOKEN",
+            "DINAMIC_BACKEND_TOKEN",
+        ):
+            os.environ.pop(key, None)
+
+    def _config(self, inventory_id: str, aisle_id: str, *, client_id: str | None = "client-a") -> InventoryOperationalConfig:
+        payload: dict[str, object] = {
+            "inventory_id": inventory_id,
+            "aisles": [{"aisle_id": aisle_id, "aisle_code": "A1"}],
+        }
+        if client_id:
+            payload["client_id"] = client_id
+        return InventoryOperationalConfig.from_dict(payload)
+
+    def test_missing_cache_without_backend_is_offline_error_not_not_found(self) -> None:
+        with self.assertRaises(InventoryContextError) as ctx:
+            load_inventory_operational_config()
+        self.assertEqual(ctx.exception.code, "INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE")
+        self.assertNotEqual(ctx.exception.code, "INVENTORY_CONTEXT_NOT_FOUND")
+
+    def test_missing_cache_online_without_selection_requires_inventory(self) -> None:
+        os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
+        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        with self.assertRaises(InventoryContextError) as ctx:
+            load_inventory_operational_config()
+        self.assertEqual(ctx.exception.code, "INVENTORY_SELECTION_REQUIRED")
+
+    def test_start_without_env_or_cache_syncs_selected_inventory(self) -> None:
+        os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
+        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        expected = self._config("inventory-selected", "aisle-selected")
+        seen: list[str] = []
+
+        class FakeClient:
+            def fetch_operational_config(self, inventory_id: str) -> InventoryOperationalConfig:
+                seen.append(inventory_id)
+                return expected
+
+        with patch(
+            "config.inventory_context_sync.InventoryContextBackendClient",
+            return_value=FakeClient(),
+        ):
+            resolved = resolve_inventory_aisle_for_capture(
+                "A1",
+                inventory_id="inventory-selected",
+                client_id="client-a",
+            )
+        self.assertEqual(seen, ["inventory-selected"])
+        self.assertEqual(resolved.inventory_id, "inventory-selected")
+        self.assertEqual(resolved.aisle_id, "aisle-selected")
+        persisted = InventoryContextRepository(inventory_context_path()).load()
+        assert persisted is not None
+        self.assertEqual(persisted.inventory_id, "inventory-selected")
+        self.assertEqual(persisted.client_id, "client-a")
+
+    def test_cached_context_is_used_when_backend_unavailable(self) -> None:
+        InventoryContextRepository(inventory_context_path()).save(
+            self._config("inventory-cached", "aisle-cached")
+        )
+        os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
+        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+
+        class FakeClient:
+            def fetch_operational_config(self, _inventory_id: str) -> InventoryOperationalConfig:
+                from config.inventory_context_sync import InventoryContextSyncError
+
+                raise InventoryContextSyncError("backend unavailable")
+
+        with patch(
+            "config.inventory_context_sync.InventoryContextBackendClient",
+            return_value=FakeClient(),
+        ):
+            resolved = resolve_inventory_aisle_for_capture("A1", client_id="client-a")
+        self.assertEqual(resolved.inventory_id, "inventory-cached")
+        self.assertEqual(resolved.aisle_id, "aisle-cached")
+
+    def test_changing_inventory_replaces_cached_aisle_bindings(self) -> None:
+        InventoryContextRepository(inventory_context_path()).save(
+            self._config("inventory-old", "aisle-old")
+        )
+        os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
+        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        expected = self._config("inventory-new", "aisle-new")
+
+        class FakeClient:
+            def fetch_operational_config(self, inventory_id: str) -> InventoryOperationalConfig:
+                self.last = inventory_id
+                return expected
+
+        client = FakeClient()
+        with patch(
+            "config.inventory_context_sync.InventoryContextBackendClient",
+            return_value=client,
+        ):
+            resolved = resolve_inventory_aisle_for_capture(
+                "A1",
+                inventory_id="inventory-new",
+                client_id="client-a",
+            )
+        self.assertEqual(client.last, "inventory-new")
+        self.assertEqual(resolved.inventory_id, "inventory-new")
+        self.assertEqual(resolved.aisle_id, "aisle-new")
+        persisted = InventoryContextRepository(inventory_context_path()).load()
+        assert persisted is not None
+        self.assertEqual(persisted.inventory_id, "inventory-new")
+        self.assertNotEqual(persisted.aisles[0][1], "aisle-old")
+
+    def test_offline_does_not_reuse_previous_inventory_cache(self) -> None:
+        InventoryContextRepository(inventory_context_path()).save(
+            self._config("inventory-old", "aisle-old")
+        )
+        with self.assertRaises(InventoryContextError) as ctx:
+            resolve_inventory_aisle_for_capture(
+                "A1",
+                inventory_id="inventory-new",
+                client_id="client-a",
+            )
+        self.assertEqual(ctx.exception.code, "INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE")
+
+    def test_offline_does_not_reuse_cache_from_another_client(self) -> None:
+        InventoryContextRepository(inventory_context_path()).save(
+            self._config("inventory-old", "aisle-old", client_id="client-a")
+        )
+        with self.assertRaises(InventoryContextError) as ctx:
+            load_inventory_operational_config(client_id="client-b")
+        self.assertEqual(ctx.exception.code, "INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE")
+
+    def test_sync_does_not_require_env_inventory_id(self) -> None:
+        os.environ["DINAMIC_BACKEND_URL"] = "https://inventory.example.com"
+        os.environ["DINAMIC_BACKEND_BEARER_TOKEN"] = "token"
+        expected = self._config("inventory-selected", "aisle-selected")
+
+        class FakeClient:
+            def fetch_operational_config(self, inventory_id: str) -> InventoryOperationalConfig:
+                return expected
+
+        with patch(
+            "config.inventory_context_sync.InventoryContextBackendClient",
+            return_value=FakeClient(),
+        ):
+            config = sync_inventory_context_from_backend(inventory_id="inventory-selected")
+        self.assertEqual(config.inventory_id, "inventory-selected")
+        self.assertFalse(os.environ.get("DINAMIC_INVENTORY_ID"))
+
+
 if __name__ == "__main__":
     unittest.main()
