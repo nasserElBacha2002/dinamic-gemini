@@ -15,6 +15,10 @@ class CameraError(RuntimeError):
     """Camera could not produce a JPEG frame."""
 
 
+class CameraConfigurationError(ValueError):
+    """Invalid or unsupported camera configuration at process startup."""
+
+
 class Camera(Protocol):
     def capture_jpeg(self) -> bytes:
         """Return a JPEG image payload."""
@@ -68,19 +72,19 @@ class RpicamStillCamera:
         self,
         *,
         command: str = "rpicam-still",
-        timeout_ms: int = 5000,
+        capture_delay_ms: int = 1,
+        process_timeout_seconds: float = 30.0,
         width: int | None = None,
         height: int | None = None,
     ) -> None:
         self._command = command
-        self._timeout_ms = max(1, int(timeout_ms))
+        # ``-t`` is capture delay before shutter (ms); keep minimal for scan sync.
+        self._capture_delay_ms = max(0, int(capture_delay_ms))
+        self._process_timeout_seconds = max(1.0, float(process_timeout_seconds))
         self._width = width
         self._height = height
-        self._process_timeout = max(5.0, (self._timeout_ms / 1000.0) + 10.0)
 
-    def capture_jpeg(self) -> bytes:
-        if shutil.which(self._command) is None:
-            raise CameraError(f"{self._command}_not_found")
+    def build_command(self) -> list[str]:
         cmd = [
             self._command,
             "-o",
@@ -88,19 +92,26 @@ class RpicamStillCamera:
             "--encoding",
             "jpg",
             "-t",
-            str(self._timeout_ms),
+            str(self._capture_delay_ms),
             "-n",
+            "--immediate",
         ]
         if self._width is not None:
             cmd.extend(["--width", str(self._width)])
         if self._height is not None:
             cmd.extend(["--height", str(self._height)])
+        return cmd
+
+    def capture_jpeg(self) -> bytes:
+        if shutil.which(self._command) is None:
+            raise CameraError(f"{self._command}_not_found")
+        cmd = self.build_command()
         try:
             completed = subprocess.run(
                 cmd,
                 check=False,
                 capture_output=True,
-                timeout=self._process_timeout,
+                timeout=self._process_timeout_seconds,
             )
         except subprocess.TimeoutExpired as exc:
             raise CameraError("camera_capture_timeout") from exc
@@ -123,7 +134,8 @@ def build_camera_from_environment() -> Camera | None:
     if mode == "fake":
         return FakeCamera()
     if mode in {"rpicam", "libcamera", "enabled", "on"}:
-        timeout_ms = int(os.environ.get("DINAMIC_CAMERA_TIMEOUT_MS", "5000"))
+        capture_delay_ms = int(os.environ.get("DINAMIC_CAMERA_CAPTURE_DELAY_MS", "1"))
+        process_timeout = float(os.environ.get("DINAMIC_CAMERA_PROCESS_TIMEOUT_SEC", "30"))
         width_raw = (os.environ.get("DINAMIC_CAMERA_WIDTH") or "").strip()
         height_raw = (os.environ.get("DINAMIC_CAMERA_HEIGHT") or "").strip()
         width = int(width_raw) if width_raw else None
@@ -131,12 +143,12 @@ def build_camera_from_environment() -> Camera | None:
         command = (os.environ.get("DINAMIC_CAMERA_COMMAND") or "rpicam-still").strip()
         return RpicamStillCamera(
             command=command,
-            timeout_ms=timeout_ms,
+            capture_delay_ms=capture_delay_ms,
+            process_timeout_seconds=process_timeout,
             width=width,
             height=height,
         )
-    LOGGER.warning("unknown DINAMIC_CAMERA_MODE=%s; camera disabled", mode)
-    return None
+    raise CameraConfigurationError(f"unsupported DINAMIC_CAMERA_MODE: {mode!r}")
 
 
 def _minimal_jpeg() -> bytes:

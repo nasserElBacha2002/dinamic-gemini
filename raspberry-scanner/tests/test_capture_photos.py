@@ -1,13 +1,15 @@
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from camera import CameraError, FakeCamera
-from capture import CaptureService
+from capture import CaptureError, CaptureService
 from capture_session_store import CaptureSessionStore, PhotoCaptureRecord
 from scanner_service import Reading
 
@@ -297,6 +299,68 @@ class CapturePhotoIntegrationTests(unittest.TestCase):
         assert persisted_a is not None
         self.assertEqual(persisted_a.state, "FINISHED")
         self.assertEqual(len(persisted_a.photos), 1)
+
+    def test_finish_waits_when_enqueue_blocked_after_inflight_reserved(self) -> None:
+        camera = FakeCamera()
+        capture, _, _ = build_capture(self.root, camera)
+        capture.start("A1")
+        gate = threading.Event()
+        assert capture._photo_queue is not None
+        real_put = capture._photo_queue.put
+
+        def gated_put(item) -> None:
+            if item is not None:
+                gate.wait(5.0)
+            real_put(item)
+
+        capture._photo_queue.put = gated_put  # type: ignore[method-assign]
+
+        record_thread = threading.Thread(target=lambda: capture.record(position_reading(1)))
+        record_thread.start()
+        time.sleep(0.05)
+
+        finish_errors: list[Exception] = []
+        finish_done = threading.Event()
+
+        def run_finish() -> None:
+            try:
+                capture.finish()
+            except Exception as exc:
+                finish_errors.append(exc)
+            finally:
+                finish_done.set()
+
+        finish_thread = threading.Thread(target=run_finish)
+        finish_thread.start()
+        time.sleep(0.1)
+        self.assertFalse(finish_done.is_set())
+        self.assertEqual(finish_errors, [])
+        gate.set()
+        finish_thread.join(timeout=3.0)
+        record_thread.join(timeout=3.0)
+        self.assertTrue(finish_done.is_set())
+        self.assertEqual(finish_errors, [])
+
+    def test_unexpected_worker_failure_marks_pipeline_fatal(self) -> None:
+        camera = FakeCamera()
+        capture, _, _ = build_capture(self.root, camera)
+        capture.start("A1")
+        with patch.object(capture, "_update_photo_record", side_effect=RuntimeError("boom")):
+            capture.record(position_reading(1))
+            time.sleep(0.3)
+        with self.assertRaisesRegex(CaptureError, "capture_pipeline_fatal"):
+            capture.finish()
+
+    def test_pipeline_wait_timeout_uses_total_deadline(self) -> None:
+        camera = FakeCamera(delay_seconds=0.5)
+        capture, _, _ = build_capture(self.root, camera)
+        capture.start("A1")
+        capture.record(position_reading(1))
+        started = time.monotonic()
+        with self.assertRaisesRegex(CaptureError, "capture_photo_pipeline_timeout"):
+            capture.wait_for_photo_pipeline_idle(timeout=0.15)
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 0.45)
 
     def test_crash_recovery_marks_capturing_as_photo_failed(self) -> None:
         store = CaptureSessionStore(self.root / "sessions")

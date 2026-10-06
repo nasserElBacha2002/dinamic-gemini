@@ -54,17 +54,20 @@ class CaptureServiceTests(unittest.TestCase):
         from src.domain.product_labels.format import build_product_label_payload
         from src.application.services.dinamic_scanner_txt_parser import parse_dinamic_scanner_txt
         valid = build_product_label_payload(label_id="A1B2C3D4E5", internal_code="SKU", quantity=1)
+        valid_dup = build_product_label_payload(label_id="C3D4E5F6G7", internal_code="SKU", quantity=1)
         self.capture.start("PASILLO_04")
         self.capture.record(position_reading(1))
         self.capture.record(item_reading(2, valid))
-        self.capture.record(item_reading(3, valid))
+        self.capture.record(item_reading(3, valid_dup))
         result = self.capture.finish()
         body = (self.directory / "PASILLO_04.txt").read_bytes()
         self.assertEqual(result["filename"], "PASILLO_04.txt")
-        self.assertEqual(body.decode("utf-8").splitlines(), ["POSITION|POS1|04|RIGHT", valid, valid])
+        self.assertEqual(
+            body.decode("utf-8").splitlines(),
+            ["POSITION|POS1|04|RIGHT", valid, valid_dup],
+        )
         parsed = parse_dinamic_scanner_txt(body)
-        self.assertEqual(len(body.decode("utf-8").splitlines()), 3)
-        self.assertGreaterEqual(len(parsed.products), 1)
+        self.assertEqual(len(parsed.products), 2)
         self.assertTrue(all(product.position is not None for product in parsed.products))
 
     def test_invalid_aisle_and_missing_client_are_rejected(self) -> None:

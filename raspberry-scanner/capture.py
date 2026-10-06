@@ -8,6 +8,7 @@ import os
 import queue
 import tempfile
 import threading
+import time
 import unicodedata
 import uuid
 from dataclasses import dataclass
@@ -95,6 +96,7 @@ class CaptureService:
         self._photo_worker: threading.Thread | None = None
         self._pipeline_cond = threading.Condition()
         self._pipeline_inflight = 0
+        self._pipeline_fatal_error: str | None = None
         if self._camera is not None and self._session_store is not None:
             self._photo_queue = queue.Queue()
             self._photo_worker = threading.Thread(
@@ -156,8 +158,9 @@ class CaptureService:
             return self._snapshot_locked()
 
     def record(self, reading: Reading) -> None:
-        job: _PhotoCaptureJob | None = None
+        job_to_enqueue: _PhotoCaptureJob | None = None
         with self._lock:
+            self._raise_if_pipeline_fatal()
             if self._state != "ACTIVE" or not self._accepting_records:
                 return
             self._physical_count += 1
@@ -195,7 +198,7 @@ class CaptureService:
                         file_name=file_name,
                     )
                 )
-                job = _PhotoCaptureJob(
+                job_to_enqueue = _PhotoCaptureJob(
                     capture_photo_id=capture_photo_id,
                     sequence_number=sequence_number,
                     scanner_sequence=reading.sequence,
@@ -204,9 +207,12 @@ class CaptureService:
                     session_id=self._capture_session_id,
                     captured_at=captured_at,
                 )
-            self._persist_session_locked()
-        if job is not None:
-            self._enqueue_photo_job(job)
+                with self._pipeline_cond:
+                    self._pipeline_inflight += 1
+                self._persist_session_locked()
+        if job_to_enqueue is not None:
+            assert self._photo_queue is not None
+            self._photo_queue.put(job_to_enqueue)
 
     def report_listener_error(self, exc: Exception) -> None:
         with self._lock:
@@ -224,6 +230,7 @@ class CaptureService:
                 raise CaptureError("capture_not_active")
             self._accepting_records = False
         self._wait_for_photo_pipeline_idle()
+        self._raise_if_pipeline_fatal()
         with self._lock:
             if self._state not in {"ACTIVE", "EXPORT_FAILED"}:
                 raise CaptureError("capture_not_active")
@@ -325,12 +332,6 @@ class CaptureService:
             "next_sequence_number": self._next_sequence_number,
         }
 
-    def _enqueue_photo_job(self, job: _PhotoCaptureJob) -> None:
-        assert self._photo_queue is not None
-        with self._pipeline_cond:
-            self._pipeline_inflight += 1
-        self._photo_queue.put(job)
-
     def _photo_worker_loop(self) -> None:
         assert self._photo_queue is not None
         while True:
@@ -340,6 +341,8 @@ class CaptureService:
                 break
             try:
                 self._execute_photo_job(job)
+            except Exception as exc:
+                self._fail_pipeline_fatal(exc)
             finally:
                 with self._pipeline_cond:
                     self._pipeline_inflight -= 1
@@ -382,15 +385,38 @@ class CaptureService:
                     error=f"{type(exc).__name__}: {exc}",
                 )
 
+    def _raise_if_pipeline_fatal(self) -> None:
+        if self._pipeline_fatal_error:
+            raise CaptureError(f"capture_pipeline_fatal: {self._pipeline_fatal_error}")
+
+    def _fail_pipeline_fatal(self, exc: BaseException) -> None:
+        message = f"{type(exc).__name__}: {exc}"
+        LOGGER.exception("capture photo worker failed: %s", message)
+        with self._lock:
+            self._accepting_records = False
+            self._pipeline_fatal_error = message
+        with self._pipeline_cond:
+            self._pipeline_cond.notify_all()
+
     def _wait_for_photo_pipeline_idle(self, timeout: float | None = None) -> None:
         if self._photo_queue is None:
+            self._raise_if_pipeline_fatal()
             return
+        deadline = None
+        if timeout is not None:
+            deadline = time.monotonic() + timeout
         with self._pipeline_cond:
-            while self._pipeline_inflight > 0 or not self._photo_queue.empty():
-                if timeout is None:
+            while True:
+                self._raise_if_pipeline_fatal()
+                if self._pipeline_inflight <= 0 and self._photo_queue.empty():
+                    return
+                if deadline is None:
                     self._pipeline_cond.wait()
-                elif not self._pipeline_cond.wait(timeout=timeout):
+                    continue
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
                     raise CaptureError("capture_photo_pipeline_timeout")
+                self._pipeline_cond.wait(timeout=remaining)
 
     def _update_photo_record(
         self,

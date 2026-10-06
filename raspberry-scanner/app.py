@@ -17,7 +17,7 @@ from urllib.parse import quote, unquote
 from config.repository import SnapshotRepository
 from config.service import ConfigService
 from config.sync import BackendSnapshotClient
-from camera import build_camera_from_environment
+from camera import CameraConfigurationError, build_camera_from_environment
 from capture import CaptureError, CaptureService
 from capture_session_store import CaptureSessionStore
 from recognition import RecognitionService, SelectionError
@@ -544,7 +544,10 @@ def main() -> None:
             str(export_directory / "photos"),
         )
     )
-    camera = build_camera_from_environment()
+    try:
+        camera = build_camera_from_environment()
+    except CameraConfigurationError as exc:
+        raise SystemExit(f"Camera configuration error: {exc}") from exc
     session_store = (
         CaptureSessionStore(sessions_directory) if camera is not None else None
     )
