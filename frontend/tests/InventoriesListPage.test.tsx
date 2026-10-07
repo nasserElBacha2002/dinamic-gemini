@@ -48,6 +48,14 @@ const {
   useSoftDeleteInventoriesMock: vi.fn(),
 }));
 
+const { downloadRaspberryOfflinePackageMock } = vi.hoisted(() => ({
+  downloadRaspberryOfflinePackageMock: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../src/api/clientsApi', () => ({
+  downloadRaspberryOfflinePackage: downloadRaspberryOfflinePackageMock,
+}));
+
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
   return {
@@ -122,6 +130,7 @@ function clickConfirmInDialog() {
 
 describe('InventoriesList page', () => {
   beforeEach(() => {
+    downloadRaspberryOfflinePackageMock.mockClear();
     useAppBreakpointMock.mockReset();
     useAppBreakpointMock.mockReturnValue(desktopBreakpoint());
     useInventoriesListMock.mockReset();
@@ -131,6 +140,21 @@ describe('InventoriesList page', () => {
     useSoftDeleteInventoriesMock.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
+    });
+  });
+
+  it('exports raspberry offline package when action is clicked', async () => {
+    useInventoriesListMock.mockReturnValue({
+      data: twoItems,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    renderPage();
+    fireEvent.click(screen.getByTestId('inventories-export-raspberry'));
+    await vi.waitFor(() => {
+      expect(downloadRaspberryOfflinePackageMock).toHaveBeenCalledTimes(1);
     });
   });
 

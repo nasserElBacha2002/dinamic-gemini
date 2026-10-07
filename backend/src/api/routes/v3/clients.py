@@ -19,6 +19,7 @@ from src.api.constants.route_paths import API_V3_CLIENTS_ROUTER_PREFIX
 from src.api.deps.inventory import get_export_raspberry_offline_package_use_case
 from src.api.dependencies import (
     get_access_principal,
+    get_client_repo,
     get_activate_supplier_extraction_profile_version_use_case,
     get_activate_supplier_prompt_config_version_use_case,
     get_artifact_storage,
@@ -77,10 +78,13 @@ from src.api.schemas.label_profile_schemas import (
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.schemas.offline_recognition_bundle_schemas import RaspberryInventoryListItemDto
 from src.api.schemas.raspberry_offline_package_schemas import RaspberryOfflinePackageResponse
+from src.application.dto.access_principal import AccessPrincipal
+from src.application.services.client_access_policy import ClientAccessPolicy
 from src.application.use_cases.raspberry.export_raspberry_offline_package import (
     ExportRaspberryOfflinePackageCommand,
     ExportRaspberryOfflinePackageUseCase,
 )
+from src.application.ports.repositories import ClientRepository
 from src.api.schemas.supplier_extraction_profile_schemas import (
     ActivateSupplierExtractionProfileRequest,
     CloneSupplierExtractionProfileRequest,
@@ -112,7 +116,6 @@ from src.api.services.v3_stored_artifact_access import (
     resolve_supplier_reference_image_display,
     resolve_supplier_reference_image_file_response,
 )
-from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import (
     DuplicateClientSupplierNameError,
     InvalidClientNameError,
@@ -410,6 +413,80 @@ def list_clients(
         page_size=page_size,
         total_items=total,
         total_pages=compute_total_pages(total, page_size),
+    )
+
+
+@router.get(
+    "/raspberry-offline-package",
+    summary="Download offline JSON package for Raspberry scanner configuration",
+)
+def download_raspberry_offline_package(
+    client_id: str | None = Query(
+        None,
+        min_length=1,
+        description="Optional client scope; omit to include all active clients.",
+    ),
+    principal: AccessPrincipal = Depends(get_access_principal),
+    client_repo: ClientRepository = Depends(get_client_repo),
+    use_case: ExportRaspberryOfflinePackageUseCase = Depends(
+        get_export_raspberry_offline_package_use_case
+    ),
+) -> Response:
+    policy = ClientAccessPolicy(client_repo)
+    scoped_client = client_id.strip() if client_id else None
+    try:
+        if scoped_client:
+            policy.require_client(scoped_client, principal)
+        else:
+            policy.require_platform(
+                principal,
+                operation="export_raspberry_offline_package",
+            )
+    except Exception as exc:
+        reraise_if_mapped(exc)
+        raise
+    try:
+        result = use_case.execute(
+            ExportRaspberryOfflinePackageCommand(
+                client_id=scoped_client,
+            )
+        )
+    except Exception as exc:
+        reraise_if_mapped(exc)
+        raise
+
+    recognition = result.recognition
+    payload = RaspberryOfflinePackageResponse(
+        package_schema_version=result.package_schema_version,
+        generated_at=result.generated_at,
+        recognition=raspberry_recognition_bundle_response(recognition),
+        inventories=[
+            RaspberryInventoryListItemDto(
+                id=inventory.id,
+                name=inventory.name,
+                client_id=inventory.client_id or "",
+                status=inventory.status.value,
+            )
+            for inventory in result.inventories
+        ],
+        inventory_recognition_configs=[
+            offline_recognition_bundle_response(bundle)
+            for bundle in result.inventory_recognition_configs
+        ],
+    )
+    body = json.dumps(
+        payload.model_dump(mode="json"),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    scope = (scoped_client or "all").strip().replace("/", "-")
+    filename = f"raspberry-offline-package-{scope}.json"
+    return Response(
+        content=body,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )
 
 
@@ -1238,62 +1315,3 @@ def upsert_client_supplier_label_profile(
     except Exception as e:
         reraise_if_mapped(e)
         raise
-
-
-@router.get(
-    "/raspberry-offline-package",
-    summary="Download offline JSON package for Raspberry scanner configuration",
-)
-def download_raspberry_offline_package(
-    client_id: str | None = Query(
-        None,
-        min_length=1,
-        description="Optional client scope; omit to include all active clients.",
-    ),
-    use_case: ExportRaspberryOfflinePackageUseCase = Depends(
-        get_export_raspberry_offline_package_use_case
-    ),
-) -> Response:
-    try:
-        result = use_case.execute(
-            ExportRaspberryOfflinePackageCommand(
-                client_id=client_id.strip() if client_id else None,
-            )
-        )
-    except Exception as exc:
-        reraise_if_mapped(exc)
-        raise
-
-    recognition = result.recognition
-    payload = RaspberryOfflinePackageResponse(
-        package_schema_version=result.package_schema_version,
-        generated_at=result.generated_at,
-        recognition=raspberry_recognition_bundle_response(recognition),
-        inventories=[
-            RaspberryInventoryListItemDto(
-                id=inventory.id,
-                name=inventory.name,
-                client_id=inventory.client_id or "",
-                status=inventory.status.value,
-            )
-            for inventory in result.inventories
-        ],
-        inventory_recognition_configs=[
-            offline_recognition_bundle_response(bundle)
-            for bundle in result.inventory_recognition_configs
-        ],
-    )
-    body = json.dumps(
-        payload.model_dump(mode="json"),
-        ensure_ascii=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    scope = (client_id or "all").strip().replace("/", "-")
-    filename = f"raspberry-offline-package-{scope}.json"
-    return Response(
-        content=body,
-        media_type="application/json; charset=utf-8",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-        },
-    )

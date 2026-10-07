@@ -3,8 +3,10 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 _root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_root))
@@ -188,6 +190,68 @@ class OfflinePackageImportTests(unittest.TestCase):
         self.assertEqual(status[0], 200)
         self.assertEqual(payload["source"], "catalog")
         self.assertEqual(payload["items"][0]["id"], "inv-1")
+
+    def test_catalog_replace_failure_restores_prior_snapshot(self) -> None:
+        seed = _sample_package()
+        self.importer.import_json_bytes(json.dumps(seed).encode("utf-8"))
+        before_snapshot = self.importer._snapshot_repository.load()
+        before_catalog = self.importer._catalog_repository.load()
+        assert before_snapshot is not None
+
+        original_replace = os.replace
+
+        def flaky_replace(src, dst, *args, **kwargs):
+            if Path(dst) == self.catalog_repo.path:
+                raise OSError("catalog replace failed")
+            return original_replace(src, dst, *args, **kwargs)
+
+        with patch("config.offline_package.os.replace", side_effect=flaky_replace):
+            with self.assertRaises(OSError):
+                self.importer.import_json_bytes(json.dumps(_sample_package()).encode("utf-8"))
+
+        after_snapshot = self.importer._snapshot_repository.load()
+        after_catalog = self.importer._catalog_repository.load()
+        self.assertEqual(before_snapshot.as_dict(), after_snapshot.as_dict())
+        self.assertEqual(before_catalog.as_dict(), after_catalog.as_dict())
+
+    def test_concurrent_imports_are_serialized(self) -> None:
+        active = 0
+        max_active = 0
+        counter_lock = threading.Lock()
+
+        original_atomic = __import__(
+            "config.offline_package", fromlist=["_atomic_replace_pair"]
+        )._atomic_replace_pair
+
+        def slow_atomic(**kwargs):
+            nonlocal active, max_active
+            with counter_lock:
+                active += 1
+                max_active = max(max_active, active)
+            try:
+                original_atomic(**kwargs)
+            finally:
+                with counter_lock:
+                    active -= 1
+
+        raw = json.dumps(_sample_package()).encode("utf-8")
+        errors: list[BaseException] = []
+
+        def run_import() -> None:
+            try:
+                self.importer.import_json_bytes(raw)
+            except BaseException as exc:
+                errors.append(exc)
+
+        with patch("config.offline_package._atomic_replace_pair", side_effect=slow_atomic):
+            threads = [threading.Thread(target=run_import) for _ in range(3)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(max_active, 1)
 
     def test_client_update_replaces_recognition_client(self) -> None:
         package = _sample_package()

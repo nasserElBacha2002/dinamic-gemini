@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
+import threading
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from config.inventory_catalog import (
@@ -26,6 +30,7 @@ from config.repository import SnapshotRepository
 
 
 OFFLINE_PACKAGE_SCHEMA_VERSION = 1
+_PACKAGE_IMPORT_LOCK = threading.Lock()
 
 
 class OfflinePackageError(ValueError):
@@ -197,6 +202,45 @@ def _merged_bundle_revision(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _atomic_replace_pair(
+    *,
+    snapshot_repository: SnapshotRepository,
+    catalog_repository: InventoryCatalogRepository,
+    merged_snapshot: RecognitionSnapshot,
+    merged_catalog: InventoryCatalogDocument,
+) -> None:
+    snapshot_path = snapshot_repository.path
+    catalog_path = catalog_repository.path
+    parent = snapshot_path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    staging_dir = parent / f".offline-import-{os.getpid()}-{threading.get_ident()}"
+    staging_dir.mkdir()
+    snap_stage = staging_dir / snapshot_path.name
+    cat_stage = staging_dir / catalog_path.name
+    snap_backup = staging_dir / f"{snapshot_path.name}.bak"
+    cat_backup = staging_dir / f"{catalog_path.name}.bak"
+    snapshot_replaced = False
+    try:
+        SnapshotRepository(snap_stage).save(merged_snapshot)
+        InventoryCatalogRepository(cat_stage).save(merged_catalog)
+        if snapshot_path.exists():
+            shutil.copy2(snapshot_path, snap_backup)
+        if catalog_path.exists():
+            shutil.copy2(catalog_path, cat_backup)
+        os.replace(snap_stage, snapshot_path)
+        snapshot_replaced = True
+        try:
+            os.replace(cat_stage, catalog_path)
+        except OSError:
+            if snap_backup.exists():
+                os.replace(snap_backup, snapshot_path)
+            elif snapshot_replaced:
+                snapshot_path.unlink(missing_ok=True)
+            raise
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+
+
 class OfflinePackageImporter:
     def __init__(
         self,
@@ -207,43 +251,39 @@ class OfflinePackageImporter:
         self._catalog_repository = catalog_repository
 
     def import_json_bytes(self, raw: bytes) -> OfflinePackageImportResult:
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise OfflinePackageError("PACKAGE_INVALID", "file is not valid JSON") from exc
+        with _PACKAGE_IMPORT_LOCK:
+            try:
+                data = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise OfflinePackageError("PACKAGE_INVALID", "file is not valid JSON") from exc
 
-        package = parse_offline_package(data)
+            package = parse_offline_package(data)
 
-        current_snapshot = self._snapshot_repository.load()
-        merged_snapshot, clients_added, clients_updated = merge_recognition_snapshots(
-            current_snapshot,
-            package.recognition,
-        )
+            current_snapshot = self._snapshot_repository.load()
+            merged_snapshot, clients_added, clients_updated = merge_recognition_snapshots(
+                current_snapshot,
+                package.recognition,
+            )
 
-        current_catalog = self._catalog_repository.load()
-        incoming_catalog = package.catalog
-        merged_catalog, catalog_stats = merge_catalog_documents(
-            current_catalog,
-            incoming_catalog,
-        )
+            current_catalog = self._catalog_repository.load()
+            incoming_catalog = package.catalog
+            merged_catalog, catalog_stats = merge_catalog_documents(
+                current_catalog,
+                incoming_catalog,
+            )
 
-        snapshot_temp = self._snapshot_repository.path.with_suffix(".import.tmp")
-        catalog_temp = self._catalog_repository.path.with_suffix(".import.tmp")
-        try:
-            SnapshotRepository(snapshot_temp).save(merged_snapshot)
-            InventoryCatalogRepository(catalog_temp).save(merged_catalog)
-            snapshot_temp.replace(self._snapshot_repository.path)
-            catalog_temp.replace(self._catalog_repository.path)
-        except Exception:
-            snapshot_temp.unlink(missing_ok=True)
-            catalog_temp.unlink(missing_ok=True)
-            raise
+            _atomic_replace_pair(
+                snapshot_repository=self._snapshot_repository,
+                catalog_repository=self._catalog_repository,
+                merged_snapshot=merged_snapshot,
+                merged_catalog=merged_catalog,
+            )
 
-        return OfflinePackageImportResult(
-            clients_added=clients_added,
-            clients_updated=clients_updated,
-            inventories_added=catalog_stats["inventories_added"],
-            inventories_updated=catalog_stats["inventories_updated"],
-            contexts_added=catalog_stats["contexts_added"],
-            contexts_updated=catalog_stats["contexts_updated"],
-        )
+            return OfflinePackageImportResult(
+                clients_added=clients_added,
+                clients_updated=clients_updated,
+                inventories_added=catalog_stats["inventories_added"],
+                inventories_updated=catalog_stats["inventories_updated"],
+                contexts_added=catalog_stats["contexts_added"],
+                contexts_updated=catalog_stats["contexts_updated"],
+            )

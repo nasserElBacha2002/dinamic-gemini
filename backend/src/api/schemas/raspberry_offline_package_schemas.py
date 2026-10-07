@@ -11,8 +11,9 @@ from src.api.schemas.offline_recognition_bundle_schemas import (
     OfflineRaspberryRecognitionBundleResponse,
     RaspberryInventoryListItemDto,
 )
-
-RASPBERRY_OFFLINE_PACKAGE_SCHEMA_VERSION = 1
+from src.application.use_cases.raspberry.offline_package_constants import (
+    RASPBERRY_OFFLINE_PACKAGE_SCHEMA_VERSION,
+)
 
 
 class RaspberryOfflinePackageResponse(BaseModel):

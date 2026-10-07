@@ -10,7 +10,10 @@ from src.application.ports.repositories import ClientRepository
 from src.application.use_cases.clients.get_raspberry_recognition_config import (
     GetRaspberryRecognitionConfigUseCase,
     OfflineRaspberryRecognitionBundle,
-    _raspberry_bundle_revision,
+    raspberry_bundle_revision,
+)
+from src.application.use_cases.raspberry.offline_package_constants import (
+    RASPBERRY_OFFLINE_PACKAGE_SCHEMA_VERSION,
 )
 from src.application.use_cases.inventories.get_inventory_recognition_config import (
     OFFLINE_BUNDLE_SCHEMA_VERSION,
@@ -57,10 +60,6 @@ class ExportRaspberryOfflinePackageUseCase:
         self,
         command: ExportRaspberryOfflinePackageCommand,
     ) -> ExportRaspberryOfflinePackageResult:
-        from src.api.schemas.raspberry_offline_package_schemas import (
-            RASPBERRY_OFFLINE_PACKAGE_SCHEMA_VERSION,
-        )
-
         scoped_client = (command.client_id or "").strip() or None
         if scoped_client and self._client_repo.get_by_id(scoped_client) is None:
             raise ClientNotFoundError(f"Client not found: {scoped_client}")
@@ -76,7 +75,7 @@ class ExportRaspberryOfflinePackageUseCase:
                 bundle_schema_version=recognition.bundle_schema_version,
                 generated_at=recognition.generated_at,
                 clients=recognition_clients,
-                bundle_revision=_raspberry_bundle_revision(
+                bundle_revision=raspberry_bundle_revision(
                     bundle_schema_version=OFFLINE_BUNDLE_SCHEMA_VERSION,
                     clients=recognition_clients,
                 ),

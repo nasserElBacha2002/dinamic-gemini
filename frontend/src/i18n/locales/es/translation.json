@@ -1272,6 +1272,8 @@
     "export_menu": "Exportar",
     "export_summary": "Resumen del inventario",
     "export_package_zip": "Inventario completo (.zip)",
+    "export_raspberry": "Exportar para Raspberry",
+    "export_raspberry_error": "No se pudo exportar la configuración para Raspberry.",
     "edit_name": "Editar nombre",
     "edit_name_title": "Editar nombre del inventario",
     "edit_name_subtitle": "Actualizá el nombre visible del inventario.",

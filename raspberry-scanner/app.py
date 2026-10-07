@@ -26,7 +26,11 @@ from camera import CameraConfigurationError, build_camera_from_environment
 from capture import CaptureError, CaptureService
 from capture_session_store import CaptureSessionStore
 from inventory_backend_client import InventoryBackendClientError
-from config.inventory_catalog import InventoryCatalogRepository, default_catalog_path
+from config.inventory_catalog import (
+    InventoryCatalogError,
+    InventoryCatalogRepository,
+    default_catalog_path,
+)
 from config.offline_package import OfflinePackageError, OfflinePackageImporter
 from inventory_context import (
     InventoryContextError,
@@ -63,7 +67,11 @@ def _catalog_inventory_entries(client_id: str) -> list[dict[str, str | None]]:
         rows = InventoryCatalogRepository(default_catalog_path()).list_for_client(
             client_id
         )
-    except Exception:
+    except InventoryCatalogError as exc:
+        LOGGER.warning("inventory catalog unavailable: %s", exc)
+        return []
+    except OSError as exc:
+        LOGGER.warning("inventory catalog unreadable: %s", exc)
         return []
     return [
         {
