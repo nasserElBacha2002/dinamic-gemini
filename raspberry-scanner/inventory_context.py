@@ -302,6 +302,74 @@ def resolve_inventory_aisle_for_capture(
     return operational.resolve_aisle(aisle_code)
 
 
+def activate_inventory_context_from_catalog(
+    inventory_id: str,
+    *,
+    expected_client_id: str | None = None,
+) -> InventoryOperationalConfig:
+    from config.inventory_catalog import (
+        InventoryCatalogRepository,
+        default_catalog_path,
+    )
+    from config.inventory_context_repository import InventoryContextRepository
+
+    target = (inventory_id or "").strip()
+    if not target:
+        raise InventoryContextError(
+            "INVENTORY_SELECTION_REQUIRED",
+            "seleccioná un inventario para cargar el contexto local",
+        )
+    catalog = InventoryCatalogRepository(default_catalog_path()).load()
+    config = catalog.contexts.get(target)
+    if config is None:
+        raise InventoryContextError(
+            "INVENTORY_CONTEXT_NOT_FOUND",
+            f"no hay contexto importado para el inventario {target}",
+        )
+    expected = (expected_client_id or "").strip()
+    if expected and config.client_id and config.client_id != expected:
+        raise InventoryContextError(
+            "INVENTORY_CLIENT_MISMATCH",
+            "el inventario no pertenece al cliente seleccionado",
+        )
+    InventoryContextRepository(inventory_context_path()).save(config)
+    return config
+
+
+_CATALOG_FALLBACK_CODES = frozenset(
+    {
+        "INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE",
+        "INVENTORY_CONTEXT_SYNC_NOT_CONFIGURED",
+        "INVENTORY_CONTEXT_SYNC_FAILED",
+        "CLIENT_NOT_FOUND",
+    }
+)
+
+
+def sync_or_load_inventory_context(
+    inventory_id: str,
+    *,
+    expected_client_id: str | None = None,
+) -> InventoryOperationalConfig:
+    if _device_sync_credentials() is None:
+        return activate_inventory_context_from_catalog(
+            inventory_id,
+            expected_client_id=expected_client_id,
+        )
+    try:
+        return sync_inventory_context_from_backend(
+            inventory_id=inventory_id,
+            expected_client_id=expected_client_id,
+        )
+    except InventoryContextError as exc:
+        if exc.code in _CATALOG_FALLBACK_CODES:
+            return activate_inventory_context_from_catalog(
+                inventory_id,
+                expected_client_id=expected_client_id,
+            )
+        raise
+
+
 def sync_inventory_context_from_backend(
     inventory_id: str | None = None,
     *,

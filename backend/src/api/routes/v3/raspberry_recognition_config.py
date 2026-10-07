@@ -218,10 +218,59 @@ def get_raspberry_inventory_recognition_config(
     except Exception as exc:
         reraise_if_mapped(exc)
         raise
-    return _offline_recognition_bundle_response(bundle)
+    return offline_recognition_bundle_response(bundle)
+
+
+def raspberry_recognition_bundle_response(
+    bundle,
+) -> OfflineRaspberryRecognitionBundleResponse:
+    return OfflineRaspberryRecognitionBundleResponse(
+        bundle_schema_version=bundle.bundle_schema_version,
+        generated_at=bundle.generated_at,
+        clients=[
+            OfflineRaspberryClientRecognitionConfigDto(
+                client_id=client.client_id,
+                name=client.name,
+                suppliers=[
+                    OfflineClientSupplierRecognitionConfigDto(
+                        client_supplier_id=supplier.client_supplier_id,
+                        name=supplier.name,
+                        item_source=supplier.item_source,  # type: ignore[arg-type]
+                        position_source=supplier.position_source,  # type: ignore[arg-type]
+                    )
+                    for supplier in client.recognition.suppliers
+                ],
+                profiles=[
+                    OfflineRecognitionProfileDto(
+                        client_supplier_id=profile.client_supplier_id,
+                        label_kind=profile.label_kind,  # type: ignore[arg-type]
+                        source="SUPPLIER",
+                        profile_id=profile.profile_id,
+                        profile_version=profile.profile_version,
+                        configuration_schema_version=(
+                            profile.configuration_schema_version
+                        ),
+                        recognition_mode=profile.recognition_mode,
+                        semantic_type=profile.semantic_type,
+                        configuration=profile.configuration,
+                    )
+                    for profile in client.recognition.profiles
+                ],
+                bundle_revision=client.recognition.bundle_revision,
+            )
+            for client in bundle.clients
+        ],
+        bundle_revision=bundle.bundle_revision,
+    )
 
 
 def _offline_recognition_bundle_response(
+    bundle: OfflineRecognitionBundle,
+) -> OfflineRecognitionBundleResponse:
+    return offline_recognition_bundle_response(bundle)
+
+
+def offline_recognition_bundle_response(
     bundle: OfflineRecognitionBundle,
 ) -> OfflineRecognitionBundleResponse:
     return OfflineRecognitionBundleResponse(

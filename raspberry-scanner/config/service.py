@@ -20,6 +20,10 @@ class ConfigService:
         self._repository = repository
         self._backend_client = backend_client
 
+    @property
+    def snapshot_repository(self) -> SnapshotRepository:
+        return self._repository
+
         self._lock = threading.Lock()
         self._sync_lock = threading.Lock()
 
@@ -91,6 +95,14 @@ class ConfigService:
     def snapshot(self) -> RecognitionSnapshot | None:
         with self._lock:
             return self._snapshot
+
+    def reload_from_repository(self) -> None:
+        with self._lock:
+            try:
+                self._snapshot = self._repository.load()
+                self._load_error = None
+            except Exception as exc:
+                self._load_error = f"{type(exc).__name__}: {exc}"
 
     def clients(self) -> list[dict[str, str]]:
         with self._lock:
