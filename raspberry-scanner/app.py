@@ -136,7 +136,7 @@ def make_handler(
                 state = session.snapshot()
                 state["config"] = config_service.status()
                 state["recognition"] = recognition_service.selection()
-                state["capture"] = capture_service.snapshot()
+                state["capture"] = self._public_capture_snapshot()
                 state["inventory_context"] = inventory_context_status()
                 self._send_json(
                     HTTPStatus.OK,
@@ -156,7 +156,7 @@ def make_handler(
                 return
 
             if path == "/api/capture":
-                self._send_json(HTTPStatus.OK, capture_service.snapshot())
+                self._send_json(HTTPStatus.OK, self._public_capture_snapshot())
                 return
 
             if path == "/api/capture/download":
@@ -403,9 +403,27 @@ def make_handler(
                 try:
                     with selection_operation_lock:
                         session.stop()
-                        capture = capture_service.finish()
+                        capture_service.finish()
+                        capture = self._export_package_after_finish()
                 except CaptureError as exc:
-                    self._send_json(HTTPStatus.CONFLICT, {"error": str(exc), "capture": capture_service.snapshot()})
+                    self._send_json(
+                        HTTPStatus.CONFLICT,
+                        {
+                            "error": str(exc),
+                            "capture": self._public_capture_snapshot(),
+                        },
+                    )
+                    return
+                except PackageUploadError as exc:
+                    capture_service.mark_export_failed(f"{exc.code}: {exc}")
+                    self._send_json(
+                        HTTPStatus.CONFLICT,
+                        {
+                            "error": exc.code,
+                            "message": str(exc),
+                            "capture": self._public_capture_snapshot(),
+                        },
+                    )
                     return
                 self._send_json(HTTPStatus.OK, capture)
                 return
@@ -423,13 +441,88 @@ def make_handler(
                 {"error": "not_found"},
             )
 
+        def _package_export_configured(self) -> bool:
+            return (
+                package_session_store is not None
+                and package_photos_root is not None
+                and package_export_directory is not None
+                and package_upload_store is not None
+            )
+
+        def _exported_zip_path(self, snapshot: dict[str, object]) -> Path | None:
+            if package_upload_store is None or package_export_directory is None:
+                return None
+            session_id = snapshot.get("capture_session_id")
+            if not isinstance(session_id, str) or not session_id.strip():
+                return None
+            record = package_upload_store.load(session_id.strip())
+            if record is None:
+                return None
+            zip_path = Path(record.zip_path)
+            try:
+                resolved = zip_path.resolve()
+                resolved.relative_to(package_export_directory.resolve())
+            except (OSError, ValueError):
+                return None
+            if resolved.suffix.lower() != ".zip" or not resolved.is_file():
+                return None
+            return resolved
+
+        def _public_capture_snapshot(self) -> dict[str, object]:
+            snapshot = dict(capture_service.snapshot())
+            zip_path = self._exported_zip_path(snapshot)
+            if zip_path is not None:
+                snapshot["filename"] = zip_path.name
+                snapshot["package_filename"] = zip_path.name
+                snapshot["archived_filename"] = None
+            elif self._package_export_configured() and snapshot.get("state") == "FINISHED":
+                filename = snapshot.get("filename")
+                if isinstance(filename, str) and filename.endswith(".txt"):
+                    snapshot["filename"] = None
+                snapshot["archived_filename"] = None
+            return snapshot
+
+        def _export_finished_session_package(self):
+            assert package_session_store is not None
+            assert package_photos_root is not None
+            assert package_export_directory is not None
+            assert package_upload_store is not None
+            snapshot = capture_service.snapshot()
+            session_id = snapshot.get("capture_session_id")
+            if not isinstance(session_id, str) or not session_id.strip():
+                raise PackageUploadError(
+                    "capture_session_unavailable",
+                    "capture session is unavailable",
+                )
+            stored = package_session_store.load_session(session_id.strip())
+            if stored is None:
+                raise PackageUploadError(
+                    "capture_session_not_found",
+                    "capture session was not persisted",
+                )
+            context = export_context_for_session(stored)
+            return ensure_session_package_exported(
+                session_store=package_session_store,
+                photos_root=package_photos_root,
+                output_directory=package_export_directory,
+                capture_session_id=session_id.strip(),
+                context=context,
+                upload_store=package_upload_store,
+            )
+
+        def _export_package_after_finish(self) -> dict[str, object]:
+            snapshot = capture_service.snapshot()
+            if snapshot.get("state") != "FINISHED":
+                return self._public_capture_snapshot()
+            if not self._package_export_configured():
+                return snapshot
+            if not snapshot.get("accepted_count"):
+                return self._public_capture_snapshot()
+            self._export_finished_session_package()
+            return self._public_capture_snapshot()
+
         def _handle_capture_export(self) -> None:
-            if (
-                package_session_store is None
-                or package_photos_root is None
-                or package_export_directory is None
-                or package_upload_store is None
-            ):
+            if not self._package_export_configured():
                 self._send_json(
                     HTTPStatus.SERVICE_UNAVAILABLE,
                     {"error": "package_export_unavailable"},
@@ -439,22 +532,7 @@ def make_handler(
             if session_id is None:
                 return
             try:
-                stored = package_session_store.load_session(session_id)
-                if stored is None:
-                    self._send_json(
-                        HTTPStatus.CONFLICT,
-                        {"error": "capture_session_not_found"},
-                    )
-                    return
-                context = export_context_for_session(stored)
-                outcome = ensure_session_package_exported(
-                    session_store=package_session_store,
-                    photos_root=package_photos_root,
-                    output_directory=package_export_directory,
-                    capture_session_id=session_id,
-                    context=context,
-                    upload_store=package_upload_store,
-                )
+                outcome = self._export_finished_session_package()
             except PackageUploadError as exc:
                 self._send_json(
                     HTTPStatus.BAD_REQUEST,
@@ -577,9 +655,25 @@ def make_handler(
 
         def _send_capture_download(self) -> None:
             snapshot = capture_service.snapshot()
+            if snapshot.get("state") != "FINISHED":
+                self._send_json(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "capture_download_unavailable"},
+                )
+                return
+
+            zip_path = self._exported_zip_path(snapshot)
+            if zip_path is not None:
+                self._send_capture_file(
+                    zip_path,
+                    zip_path.name,
+                    "application/zip",
+                )
+                return
+
             filename = snapshot.get("filename")
             if (
-                snapshot.get("state") != "FINISHED"
+                self._package_export_configured()
                 or not isinstance(filename, str)
                 or export_directory is None
             ):
@@ -597,7 +691,6 @@ def make_handler(
                 file_path.relative_to(directory)
                 if not file_path.is_file():
                     raise FileNotFoundError(file_path)
-                content = file_path.read_bytes()
             except (OSError, ValueError) as exc:
                 LOGGER.warning(
                     "capture download unavailable filename=%r reason=%s: %s",
@@ -610,14 +703,39 @@ def make_handler(
                     {"error": "capture_download_unavailable"},
                 )
                 return
+            self._send_capture_file(
+                file_path,
+                filename,
+                "text/plain; charset=utf-8",
+            )
 
+        def _send_capture_file(
+            self,
+            file_path: Path,
+            filename: str,
+            content_type: str,
+        ) -> None:
+            try:
+                content = file_path.read_bytes()
+            except OSError as exc:
+                LOGGER.warning(
+                    "capture download unavailable filename=%r reason=%s: %s",
+                    filename,
+                    type(exc).__name__,
+                    exc,
+                )
+                self._send_json(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "capture_download_unavailable"},
+                )
+                return
             escaped_filename = filename.replace("\\", "\\\\").replace('"', '\\"')
             disposition = (
                 f'attachment; filename="{escaped_filename}"; '
                 f"filename*=UTF-8''{quote(filename)}"
             )
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Disposition", disposition)
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()

@@ -26,7 +26,7 @@
     </section>
     <section aria-label="Captura de pasillo">
       <label>Pasillo <input id="aisle" autocomplete="off" placeholder="PASILLO_04"></label>
-      <button id="capture-start">Iniciar captura</button><button id="capture-finish">Finalizar y exportar</button><button id="capture-download" disabled>Descargar TXT</button>
+      <button id="capture-start">Iniciar captura</button><button id="capture-finish">Finalizar y exportar</button><button id="capture-download" disabled>Descargar ZIP</button>
       <p class="muted" id="capture">Sin captura activa.</p>
     </section>
     <p class="state">Estado: <strong id="state">cargando…</strong></p>
@@ -110,8 +110,8 @@
           aisle.disabled = capturePending;
           document.querySelector('#capture-start').disabled = capturePending || data.scanning;
           document.querySelector('#capture-finish').disabled = !(captureActive || captureState.state === 'EXPORT_FAILED');
-          document.querySelector('#capture-download').disabled = !captureState.filename;
-          capture.textContent = captureState.aisle_code ? `Captura: ${captureState.state} · Pasillo: ${captureState.aisle_code} · Físicas: ${captureState.physical_count} · F2 aceptadas: ${captureState.f2_accepted_count} · Rechazadas: ${captureState.rejected_count} · Exportables: ${captureState.accepted_count} · No exportables: ${captureState.not_exportable_count}${captureState.filename ? ` · Archivo: ${captureState.filename}` : ''}${captureState.archived_filename ? ` · Exportación anterior respaldada: ${captureState.archived_filename}` : ''}${captureState.error ? ` · Error: ${captureState.error}` : ''}${captureState.listener_error ? ` · Listener: ${captureState.listener_error}` : ''}` : 'Sin captura activa.';
+          document.querySelector('#capture-download').disabled = !captureState.package_filename;
+          capture.textContent = captureState.aisle_code ? `Captura: ${captureState.state} · Pasillo: ${captureState.aisle_code} · Físicas: ${captureState.physical_count} · F2 aceptadas: ${captureState.f2_accepted_count} · Rechazadas: ${captureState.rejected_count} · Exportables: ${captureState.accepted_count} · No exportables: ${captureState.not_exportable_count}${captureState.package_filename ? ` · Paquete: ${captureState.package_filename}` : ''}${captureState.error ? ` · Error: ${captureState.error}` : ''}${captureState.listener_error ? ` · Listener: ${captureState.listener_error}` : ''}` : 'Sin captura activa.';
           const policy = data.recognition;
           const context = data.inventory_context || {};
           if (policy.client_id && policy.client_id !== currentClient) { currentClient = policy.client_id; await loadClients(policy.client_id); await loadSuppliers(policy.client_id, policy.supplier_id); await loadInventories(policy.client_id, context.inventory_id || currentInventory); }

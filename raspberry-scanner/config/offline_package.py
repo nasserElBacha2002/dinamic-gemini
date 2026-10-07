@@ -63,6 +63,20 @@ def _required_string(value: Any, field: str) -> str:
     return value.strip()
 
 
+def _has_valid_operational_aisle(row: dict[str, Any]) -> bool:
+    raw_aisles = row.get("aisles")
+    if not isinstance(raw_aisles, list):
+        return False
+    for item in raw_aisles:
+        if not isinstance(item, dict):
+            continue
+        aisle_id = str(item.get("aisle_id") or "").strip()
+        aisle_code = str(item.get("aisle_code") or "").strip()
+        if aisle_id and aisle_code:
+            return True
+    return False
+
+
 def parse_offline_package(data: Any) -> OfflinePackage:
     if not isinstance(data, dict):
         raise OfflinePackageError("PACKAGE_INVALID", "package must be a JSON object")
@@ -120,6 +134,11 @@ def parse_offline_package(data: Any) -> OfflinePackage:
                 "PACKAGE_INVALID",
                 "inventory_recognition_configs entries must be objects",
             )
+        # Known inventories may be exported before they have aisles. Keep them
+        # in the catalog; do not build an operational context from an empty
+        # aisle list.
+        if not _has_valid_operational_aisle(row):
+            continue
         try:
             operational = operational_config_from_recognition_bundle(row)
         except Exception as exc:
