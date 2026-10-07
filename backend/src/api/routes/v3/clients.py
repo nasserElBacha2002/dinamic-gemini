@@ -20,7 +20,6 @@ from src.api.dependencies import (
     get_activate_supplier_extraction_profile_version_use_case,
     get_activate_supplier_prompt_config_version_use_case,
     get_artifact_storage,
-    get_client_repo,
     get_clone_supplier_extraction_profile_use_case,
     get_create_client_supplier_use_case,
     get_create_client_use_case,
@@ -47,6 +46,7 @@ from src.api.dependencies import (
     get_upload_supplier_reference_images_use_case,
     get_upsert_client_supplier_label_profile_use_case,
     require_client_scope,
+    require_raspberry_offline_export_scope,
 )
 from src.api.deps.inventory import get_export_raspberry_offline_package_use_case
 from src.api.errors import reraise_if_mapped
@@ -116,8 +116,6 @@ from src.application.errors import (
     SupplierExtractionProfileNotFoundError,
     SupplierPromptConfigNotFoundError,
 )
-from src.application.ports.repositories import ClientRepository
-from src.application.services.client_access_policy import ClientAccessPolicy
 from src.application.services.optional_unset import UNSET
 from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
 from src.application.use_cases.clients.get_client import GetClientUseCase
@@ -420,30 +418,11 @@ def list_clients(
     summary="Download offline JSON package for Raspberry scanner configuration",
 )
 def download_raspberry_offline_package(
-    client_id: str | None = Query(
-        None,
-        min_length=1,
-        description="Optional client scope; omit to include all active clients.",
-    ),
-    principal: AccessPrincipal = Depends(get_access_principal),
-    client_repo: ClientRepository = Depends(get_client_repo),
+    scoped_client: str | None = Depends(require_raspberry_offline_export_scope),
     use_case: ExportRaspberryOfflinePackageUseCase = Depends(
         get_export_raspberry_offline_package_use_case
     ),
 ) -> Response:
-    policy = ClientAccessPolicy(client_repo)
-    scoped_client = client_id.strip() if client_id else None
-    try:
-        if scoped_client:
-            policy.require_client(scoped_client, principal)
-        else:
-            policy.require_platform(
-                principal,
-                operation="export_raspberry_offline_package",
-            )
-    except Exception as exc:
-        reraise_if_mapped(exc)
-        raise
     try:
         result = use_case.execute(
             ExportRaspberryOfflinePackageCommand(
