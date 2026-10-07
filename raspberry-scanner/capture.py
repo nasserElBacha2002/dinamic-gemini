@@ -324,6 +324,16 @@ class CaptureService:
             )
             return self._snapshot_locked()
 
+    def mark_export_failed(self, error: str) -> dict[str, object]:
+        with self._lock:
+            if self._state not in {"ACTIVE", "FINISHED", "EXPORT_FAILED"}:
+                raise CaptureError("capture_not_active")
+            self._state = "EXPORT_FAILED"
+            self._error = error
+            self._filename = None
+            self._persist_session_locked()
+            return self._snapshot_locked()
+
     def wait_for_photo_pipeline_idle(self, timeout: float | None = 5.0) -> None:
         """Block until queued/in-flight photo captures finish (tests and finish())."""
         self._wait_for_photo_pipeline_idle(timeout=timeout)

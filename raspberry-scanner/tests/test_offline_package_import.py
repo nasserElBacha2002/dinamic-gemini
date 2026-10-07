@@ -89,6 +89,40 @@ def _sample_package(
     }
 
 
+EMPTY_AISLES_INVENTORY_ID = "2986b4e0-db88-4d88-ad87-63246d23a4d1"
+
+
+def _package_with_empty_and_valid_aisles(*, client_id: str = "client-a") -> dict:
+    valid = sample_recognition_config_bundle()
+    valid["inventory_id"] = "inv-1"
+    valid["client_id"] = client_id
+    empty_aisles = {
+        "inventory_id": EMPTY_AISLES_INVENTORY_ID,
+        "client_id": client_id,
+        "aisles": [],
+    }
+    return {
+        "package_schema_version": 1,
+        "generated_at": "2026-03-01T12:00:00+00:00",
+        "recognition": _sample_recognition_snapshot_dict(),
+        "inventories": [
+            {
+                "id": "inv-1",
+                "name": "Warehouse 1",
+                "client_id": client_id,
+                "status": "draft",
+            },
+            {
+                "id": EMPTY_AISLES_INVENTORY_ID,
+                "name": "Warehouse without aisles",
+                "client_id": client_id,
+                "status": "draft",
+            },
+        ],
+        "inventory_recognition_configs": [valid, empty_aisles],
+    }
+
+
 class OfflinePackageImportTests(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp())
@@ -262,6 +296,92 @@ class OfflinePackageImportTests(unittest.TestCase):
         snapshot = self.snapshot_repo.load()
         assert snapshot is not None
         self.assertEqual(snapshot.client("client-a").name, "Client A renamed")
+
+    def test_import_keeps_inventory_without_aisles_but_skips_its_context(self) -> None:
+        package = _package_with_empty_and_valid_aisles()
+        outcome = self.importer.import_json_bytes(json.dumps(package).encode("utf-8"))
+        self.assertEqual(outcome.inventories_added, 2)
+        self.assertEqual(outcome.contexts_added, 1)
+        catalog = self.catalog_repo.load()
+        self.assertIn("inv-1", catalog.inventories)
+        self.assertIn(EMPTY_AISLES_INVENTORY_ID, catalog.inventories)
+        self.assertIn("inv-1", catalog.contexts)
+        self.assertNotIn(EMPTY_AISLES_INVENTORY_ID, catalog.contexts)
+        self.assertEqual(len(catalog.contexts["inv-1"].aisles), 2)
+
+    def test_imported_inventory_without_aisles_is_not_operable_offline(self) -> None:
+        self.importer.import_json_bytes(
+            json.dumps(_package_with_empty_and_valid_aisles()).encode("utf-8")
+        )
+        os.environ.pop("DINAMIC_BACKEND_URL", None)
+        os.environ.pop("DINAMIC_DEVICE_TOKEN", None)
+        config_service = ConfigService(self.snapshot_repo, None)
+        recognition = RecognitionService(config_service)
+        store = CaptureSessionStore(self.root / "sessions")
+        capture = CaptureService(
+            recognition,
+            self.root / "exports",
+            camera=FakeCamera(),
+            session_store=store,
+            photos_root=self.root / "photos",
+        )
+        handler_class = make_handler(
+            ScannerSession(None),
+            config_service,
+            recognition,
+            capture,
+            self.root / "exports",
+            offline_package_importer=self.importer,
+        )
+
+        def request(method: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
+            handler = object.__new__(handler_class)
+            status: list[int] = []
+            body = io.BytesIO()
+            handler.path = path
+            handler.wfile = body
+            handler.headers = {"Content-Length": "0"}
+            handler.send_response = lambda value: status.append(int(value))
+            handler.send_header = lambda key, value: None
+            handler.end_headers = lambda: None
+            if payload is not None:
+                encoded = json.dumps(payload).encode("utf-8")
+                handler.headers = {"Content-Length": str(len(encoded))}
+                handler.rfile = io.BytesIO(encoded)
+            if method == "GET":
+                handler.do_GET()
+            else:
+                handler.do_POST()
+            raw = body.getvalue()
+            return status[0], json.loads(raw.decode("utf-8")) if raw else {}
+
+        list_status, listed = request("GET", "/api/inventories?client_id=client-a")
+        self.assertEqual(list_status, 200)
+        listed_ids = [item["id"] for item in listed["items"]]
+        self.assertIn("inv-1", listed_ids)
+        self.assertIn(EMPTY_AISLES_INVENTORY_ID, listed_ids)
+
+        empty_status, empty_payload = request(
+            "POST",
+            "/api/inventory-context",
+            {"inventory_id": EMPTY_AISLES_INVENTORY_ID},
+        )
+        self.assertEqual(empty_status, 400)
+        self.assertEqual(empty_payload["error"], "INVENTORY_CONTEXT_NOT_FOUND")
+
+        state_status, state = request("GET", "/api/state")
+        self.assertEqual(state_status, 200)
+        self.assertFalse(state["inventory_context"]["available"])
+        self.assertIsNone(state["inventory_context"]["inventory_id"])
+
+        valid_status, valid_payload = request(
+            "POST",
+            "/api/inventory-context",
+            {"inventory_id": "inv-1"},
+        )
+        self.assertEqual(valid_status, 200)
+        self.assertEqual(valid_payload["inventory_id"], "inv-1")
+        self.assertGreater(valid_payload["aisle_count"], 0)
 
 
 if __name__ == "__main__":

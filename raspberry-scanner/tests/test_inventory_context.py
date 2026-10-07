@@ -20,6 +20,20 @@ from inventory_context import (
 from recognition_config_bundle_fixture import sample_recognition_config_bundle
 
 
+class InventoryOperationalConfigTests(unittest.TestCase):
+    def test_from_dict_rejects_empty_aisles(self) -> None:
+        with self.assertRaises(InventoryContextError) as ctx:
+            InventoryOperationalConfig.from_dict(
+                {
+                    "inventory_id": "2986b4e0-db88-4d88-ad87-63246d23a4d1",
+                    "client_id": "client-a",
+                    "aisles": [],
+                }
+            )
+        self.assertEqual(ctx.exception.code, "INVENTORY_CONTEXT_INVALID")
+        self.assertIn("aisles must be a non-empty array", str(ctx.exception))
+
+
 class InventoryContextPathTests(unittest.TestCase):
     def test_default_path_under_export_storage_without_explicit_env(self) -> None:
         root = Path(tempfile.mkdtemp())
