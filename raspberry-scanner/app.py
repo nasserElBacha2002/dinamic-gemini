@@ -425,6 +425,19 @@ def make_handler(
                         },
                     )
                     return
+                except Exception as exc:
+                    capture_service.mark_export_failed(
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    self._send_json(
+                        HTTPStatus.CONFLICT,
+                        {
+                            "error": "package_export_failed",
+                            "message": str(exc),
+                            "capture": self._public_capture_snapshot(),
+                        },
+                    )
+                    return
                 self._send_json(HTTPStatus.OK, capture)
                 return
 
@@ -515,6 +528,11 @@ def make_handler(
             if snapshot.get("state") != "FINISHED":
                 return self._public_capture_snapshot()
             if not self._package_export_configured():
+                if snapshot.get("accepted_count"):
+                    raise PackageUploadError(
+                        "package_export_unavailable",
+                        "session package export is not configured",
+                    )
                 return snapshot
             if not snapshot.get("accepted_count"):
                 return self._public_capture_snapshot()
@@ -1160,9 +1178,7 @@ def main() -> None:
         camera = build_camera_from_environment()
     except CameraConfigurationError as exc:
         raise SystemExit(f"Camera configuration error: {exc}") from exc
-    session_store = (
-        CaptureSessionStore(sessions_directory) if camera is not None else None
-    )
+    session_store = CaptureSessionStore(sessions_directory)
     capture_service = CaptureService(
         recognition_service,
         export_directory,

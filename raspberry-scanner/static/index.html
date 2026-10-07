@@ -98,7 +98,7 @@
         try {
           const data = await json('/api/state', {cache: 'no-store'});
           state.textContent = data.scanner_state;
-          error.textContent = data.error || '';
+          error.textContent = (data.capture && data.capture.error) || data.error || '';
           client.disabled = data.scanning;
           supplier.disabled = data.scanning || !client.value;
           const captureState = data.capture;
@@ -109,7 +109,7 @@
           supplier.disabled = data.scanning || captureActive || !client.value;
           aisle.disabled = capturePending;
           document.querySelector('#capture-start').disabled = capturePending || data.scanning;
-          document.querySelector('#capture-finish').disabled = !(captureActive || captureState.state === 'EXPORT_FAILED');
+          document.querySelector('#capture-finish').disabled = !(captureActive || captureState.state === 'EXPORT_FAILED' || (captureState.state === 'FINISHED' && !captureState.package_filename && captureState.accepted_count));
           document.querySelector('#capture-download').disabled = !captureState.package_filename;
           capture.textContent = captureState.aisle_code ? `Captura: ${captureState.state} · Pasillo: ${captureState.aisle_code} · Físicas: ${captureState.physical_count} · F2 aceptadas: ${captureState.f2_accepted_count} · Rechazadas: ${captureState.rejected_count} · Exportables: ${captureState.accepted_count} · No exportables: ${captureState.not_exportable_count}${captureState.package_filename ? ` · Paquete: ${captureState.package_filename}` : ''}${captureState.error ? ` · Error: ${captureState.error}` : ''}${captureState.listener_error ? ` · Listener: ${captureState.listener_error}` : ''}` : 'Sin captura activa.';
           const policy = data.recognition;

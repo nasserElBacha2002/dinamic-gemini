@@ -133,6 +133,21 @@ class SessionPackageExportTests(unittest.TestCase):
             photo_names = [n for n in zf.namelist() if n.startswith("photos/")]
             self.assertEqual(len(photo_names), 2)
 
+    def test_missing_backend_parser_still_publishes_zip(self) -> None:
+        _, store, photos_root, session_id = build_finished_session(self.root)
+        with patch(
+            "session_package_export._validate_zip_with_backend_parser",
+            return_value=None,
+        ):
+            result = export_finished_session_package(
+                session_store=store,
+                photos_root=photos_root,
+                output_directory=self.out,
+                capture_session_id=session_id,
+                context=self.context,
+            )
+        self.assertTrue(result.zip_path.is_file())
+
     def test_csv_manifest_linked_by_capture_photo_id_and_sequence_order(self) -> None:
         _, store, photos_root, session_id = build_finished_session(self.root)
         result = export_finished_session_package(

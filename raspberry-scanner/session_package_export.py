@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -420,17 +421,7 @@ def export_finished_session_package(
     temp_path = Path(temp_name)
     try:
         _build_zip_file(temp_path, csv_build.csv_text, manifest, photo_assets)
-        from src.application.services.local_inventory_package_parser import (
-            parse_local_inventory_package,
-        )
-
-        try:
-            parse_local_inventory_package(temp_path.read_bytes())
-        except Exception as exc:
-            raise SessionPackageExportError(
-                "EXPORT_PACKAGE_PARSE_FAILED",
-                f"backend parser rejected package: {exc}",
-            ) from exc
+        _validate_zip_with_backend_parser(temp_path.read_bytes())
         os.replace(temp_path, final_path)
         try:
             directory_fd = os.open(output_directory, os.O_RDONLY)
@@ -455,6 +446,28 @@ def export_finished_session_package(
         package_checksum_sha256=package_checksum,
         csv_checksum_sha256=csv_build.csv_checksum_sha256,
     )
+
+
+def _validate_zip_with_backend_parser(zip_bytes: bytes) -> None:
+    backend_root = Path(__file__).resolve().parents[1] / "backend"
+    if backend_root.is_dir():
+        backend_path = str(backend_root)
+        if backend_path not in sys.path:
+            sys.path.insert(0, backend_path)
+    try:
+        from src.application.services.local_inventory_package_parser import (
+            parse_local_inventory_package,
+        )
+    except ImportError:
+        # Device deploy copies only raspberry-scanner/; still publish the ZIP.
+        return
+    try:
+        parse_local_inventory_package(zip_bytes)
+    except Exception as exc:
+        raise SessionPackageExportError(
+            "EXPORT_PACKAGE_PARSE_FAILED",
+            f"backend parser rejected package: {exc}",
+        ) from exc
 
 
 def _safe_unlink(path: Path) -> None:
