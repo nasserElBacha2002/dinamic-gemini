@@ -34,7 +34,7 @@ class OfflineRaspberryRecognitionBundle:
     bundle_revision: str
 
 
-def _raspberry_bundle_revision(
+def raspberry_bundle_revision(
     *,
     bundle_schema_version: int,
     clients: tuple[OfflineRaspberryClientConfig, ...],
@@ -107,7 +107,7 @@ class GetRaspberryRecognitionConfigUseCase:
 
         client_tuple = tuple(client_configs)
 
-        revision = _raspberry_bundle_revision(
+        revision = raspberry_bundle_revision(
             bundle_schema_version=OFFLINE_BUNDLE_SCHEMA_VERSION,
             clients=client_tuple,
         )

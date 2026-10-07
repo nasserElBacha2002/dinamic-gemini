@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import email
 import json
 import logging
 import os
@@ -25,11 +26,17 @@ from camera import CameraConfigurationError, build_camera_from_environment
 from capture import CaptureError, CaptureService
 from capture_session_store import CaptureSessionStore
 from inventory_backend_client import InventoryBackendClientError
+from config.inventory_catalog import (
+    InventoryCatalogError,
+    InventoryCatalogRepository,
+    default_catalog_path,
+)
+from config.offline_package import OfflinePackageError, OfflinePackageImporter
 from inventory_context import (
     InventoryContextError,
     inventory_context_status,
     peek_inventory_operational_config,
-    sync_inventory_context_from_backend,
+    sync_or_load_inventory_context,
 )
 from package_upload_store import PackageUploadStore
 from recognition import RecognitionService, SelectionError
@@ -55,6 +62,44 @@ def _inventory_backend_credentials() -> tuple[str, str] | None:
     return None
 
 
+def _catalog_inventory_entries(client_id: str) -> list[dict[str, str | None]]:
+    try:
+        rows = InventoryCatalogRepository(default_catalog_path()).list_for_client(
+            client_id
+        )
+    except InventoryCatalogError as exc:
+        LOGGER.warning("inventory catalog unavailable: %s", exc)
+        return []
+    except OSError as exc:
+        LOGGER.warning("inventory catalog unreadable: %s", exc)
+        return []
+    return [
+        {
+            "id": row.inventory_id,
+            "name": row.name,
+            "client_id": row.client_id,
+            "status": row.status,
+        }
+        for row in rows
+    ]
+
+
+def _extract_multipart_file(body: bytes, content_type: str) -> bytes:
+    message = email.message_from_bytes(
+        b"Content-Type: " + content_type.encode("utf-8") + b"\r\n\r\n" + body
+    )
+    for part in message.walk():
+        if part.get_content_disposition() != "form-data":
+            continue
+        filename = part.get_filename()
+        if filename is None:
+            continue
+        payload = part.get_payload(decode=True)
+        if isinstance(payload, bytes) and payload:
+            return payload
+    raise ValueError("multipart upload missing file")
+
+
 def settings_from_environment() -> tuple[str | None, int, int]:
     device = os.environ.get("SCANNER_DEVICE") or None
     baud_rate = int(os.environ.get("SCANNER_BAUD_RATE", "9600"))
@@ -72,6 +117,7 @@ def make_handler(
     package_photos_root: Path | None = None,
     package_export_directory: Path | None = None,
     package_upload_store: PackageUploadStore | None = None,
+    offline_package_importer: OfflinePackageImporter | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     selection_operation_lock = threading.Lock()
 
@@ -258,6 +304,10 @@ def make_handler(
                 )
                 return
 
+            if path == "/api/config/import":
+                self._handle_config_import(offline_package_importer)
+                return
+
             if path == "/api/selection":
                 try:
                     payload = self._read_json_body()
@@ -295,7 +345,7 @@ def make_handler(
                                 {"error": "selection_locked_while_capture_active"},
                             )
                             return
-                        config = sync_inventory_context_from_backend(
+                        config = sync_or_load_inventory_context(
                             inventory_id=inventory_id.strip(),
                             expected_client_id=str(selection.get("client_id") or "") or None,
                         )
@@ -590,7 +640,14 @@ def make_handler(
                 return
             credentials = _inventory_backend_credentials()
             backend_url = (os.environ.get("DINAMIC_BACKEND_URL") or "").strip()
+            catalog_entries = _catalog_inventory_entries(client_id)
             if credentials is None and backend_url:
+                if catalog_entries:
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {"source": "catalog", "items": catalog_entries},
+                    )
+                    return
                 self._send_json(
                     HTTPStatus.UNAUTHORIZED,
                     {
@@ -656,6 +713,15 @@ def make_handler(
                         )
                         return
                     if exc.code != "INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE":
+                        if catalog_entries:
+                            self._send_json(
+                                HTTPStatus.OK,
+                                {
+                                    "source": "catalog",
+                                    "items": catalog_entries,
+                                },
+                            )
+                            return
                         self._send_json(
                             HTTPStatus.BAD_GATEWAY,
                             {
@@ -666,6 +732,12 @@ def make_handler(
                             },
                         )
                         return
+            if catalog_entries:
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"source": "catalog", "items": catalog_entries},
+                )
+                return
             try:
                 cached = peek_inventory_operational_config()
             except InventoryContextError:
@@ -700,6 +772,57 @@ def make_handler(
                     ),
                 },
             )
+
+        def _handle_config_import(
+            importer: OfflinePackageImporter | None,
+        ) -> None:
+            if importer is None:
+                self._send_json(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    {"error": "config_import_unavailable"},
+                )
+                return
+            try:
+                payload = self._read_package_upload()
+                outcome = importer.import_json_bytes(payload)
+                config_service.reload_from_repository()
+            except OfflinePackageError as exc:
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": exc.code, "message": str(exc)},
+                )
+                return
+            except ValueError as exc:
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": "PACKAGE_INVALID", "message": str(exc)},
+                )
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "status": "imported",
+                    "clients_added": outcome.clients_added,
+                    "clients_updated": outcome.clients_updated,
+                    "inventories_added": outcome.inventories_added,
+                    "inventories_updated": outcome.inventories_updated,
+                    "contexts_added": outcome.contexts_added,
+                    "contexts_updated": outcome.contexts_updated,
+                },
+            )
+
+        def _read_package_upload(self) -> bytes:
+            length = int(self.headers.get("Content-Length", "0"))
+            max_bytes = 20 * 1024 * 1024
+            if length < 1 or length > max_bytes:
+                raise ValueError("invalid upload size")
+            body = self.rfile.read(length)
+            content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if content_type == "application/json":
+                return body
+            if content_type == "multipart/form-data":
+                return _extract_multipart_file(body, self.headers.get("Content-Type") or "")
+            raise ValueError("unsupported content type")
 
         def _read_json_body(self) -> dict[str, object]:
             length = int(self.headers.get("Content-Length", "0"))
@@ -889,9 +1012,14 @@ def main() -> None:
         else None
     )
 
+    snapshot_repository = SnapshotRepository(config_path)
     config_service = ConfigService(
-        SnapshotRepository(config_path),
+        snapshot_repository,
         backend_client,
+    )
+    offline_package_importer = OfflinePackageImporter(
+        snapshot_repository,
+        InventoryCatalogRepository(default_catalog_path()),
     )
     recognition_service = RecognitionService(config_service)
     export_directory = Path(
@@ -968,6 +1096,7 @@ def main() -> None:
             package_photos_root=photos_root,
             package_export_directory=package_export_directory,
             package_upload_store=package_upload_store,
+            offline_package_importer=offline_package_importer,
         ),
     )
 

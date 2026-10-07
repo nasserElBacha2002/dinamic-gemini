@@ -255,6 +255,28 @@ def get_list_raspberry_inventories_use_case(
     )
 
 
+def get_export_raspberry_offline_package_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    raspberry_recognition_use_case: GetRaspberryRecognitionConfigUseCase = Depends(
+        get_raspberry_recognition_config_use_case
+    ),
+    list_inventories_use_case: ListRaspberryInventoriesUseCase = Depends(
+        get_list_raspberry_inventories_use_case
+    ),
+    inventory_recognition_use_case=Depends(get_inventory_recognition_config_use_case),
+):
+    from src.application.use_cases.raspberry.export_raspberry_offline_package import (
+        ExportRaspberryOfflinePackageUseCase,
+    )
+
+    return ExportRaspberryOfflinePackageUseCase(
+        client_repo=client_repo,
+        raspberry_recognition_use_case=raspberry_recognition_use_case,
+        list_inventories_use_case=list_inventories_use_case,
+        inventory_recognition_use_case=inventory_recognition_use_case,
+    )
+
+
 def get_get_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> GetInventoryUseCase:

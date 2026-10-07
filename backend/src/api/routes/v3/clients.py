@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from io import BytesIO
 from typing import cast
@@ -45,8 +46,14 @@ from src.api.dependencies import (
     get_upload_supplier_reference_images_use_case,
     get_upsert_client_supplier_label_profile_use_case,
     require_client_scope,
+    require_raspberry_offline_export_scope,
 )
+from src.api.deps.inventory import get_export_raspberry_offline_package_use_case
 from src.api.errors import reraise_if_mapped
+from src.api.routes.v3.raspberry_recognition_config import (
+    offline_recognition_bundle_response,
+    raspberry_recognition_bundle_response,
+)
 from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
 from src.api.schemas.client_schemas import (
     ClientResponse,
@@ -68,6 +75,8 @@ from src.api.schemas.label_profile_schemas import (
     UpsertClientSupplierLabelProfileRequest,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
+from src.api.schemas.offline_recognition_bundle_schemas import RaspberryInventoryListItemDto
+from src.api.schemas.raspberry_offline_package_schemas import RaspberryOfflinePackageResponse
 from src.api.schemas.supplier_extraction_profile_schemas import (
     ActivateSupplierExtractionProfileRequest,
     CloneSupplierExtractionProfileRequest,
@@ -114,6 +123,10 @@ from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.application.use_cases.clients.update_client import (
     UpdateClientCommand,
     UpdateClientUseCase,
+)
+from src.application.use_cases.raspberry.export_raspberry_offline_package import (
+    ExportRaspberryOfflinePackageCommand,
+    ExportRaspberryOfflinePackageUseCase,
 )
 from src.application.use_cases.suppliers.create_client_supplier import (
     CreateClientSupplierCommand,
@@ -397,6 +410,61 @@ def list_clients(
         page_size=page_size,
         total_items=total,
         total_pages=compute_total_pages(total, page_size),
+    )
+
+
+@router.get(
+    "/raspberry-offline-package",
+    summary="Download offline JSON package for Raspberry scanner configuration",
+)
+def download_raspberry_offline_package(
+    scoped_client: str | None = Depends(require_raspberry_offline_export_scope),
+    use_case: ExportRaspberryOfflinePackageUseCase = Depends(
+        get_export_raspberry_offline_package_use_case
+    ),
+) -> Response:
+    try:
+        result = use_case.execute(
+            ExportRaspberryOfflinePackageCommand(
+                client_id=scoped_client,
+            )
+        )
+    except Exception as exc:
+        reraise_if_mapped(exc)
+        raise
+
+    recognition = result.recognition
+    payload = RaspberryOfflinePackageResponse(
+        package_schema_version=result.package_schema_version,
+        generated_at=result.generated_at,
+        recognition=raspberry_recognition_bundle_response(recognition),
+        inventories=[
+            RaspberryInventoryListItemDto(
+                id=inventory.id,
+                name=inventory.name,
+                client_id=inventory.client_id or "",
+                status=inventory.status.value,
+            )
+            for inventory in result.inventories
+        ],
+        inventory_recognition_configs=[
+            offline_recognition_bundle_response(bundle)
+            for bundle in result.inventory_recognition_configs
+        ],
+    )
+    body = json.dumps(
+        payload.model_dump(mode="json"),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    scope = (scoped_client or "all").strip().replace("/", "-")
+    filename = f"raspberry-offline-package-{scope}.json"
+    return Response(
+        content=body,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )
 
 

@@ -28,6 +28,7 @@ import {
   useTableState,
 } from '../hooks';
 import { DEFAULT_LIST_PAGE_SIZE, TABLE_SERVER_SEARCH_DEBOUNCE_MS } from '../constants/dataTable';
+import { downloadRaspberryOfflinePackage } from '../api/clientsApi';
 import { pathToClient, pathToInventory } from '../constants/appRoutes';
 import { INVENTORY_LIST_EMPTY_MESSAGE_KEY, INVENTORY_LIST_EMPTY_TITLE_KEY } from '../constants/uiCopy';
 
@@ -42,6 +43,7 @@ export default function InventoriesList() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [raspberryExporting, setRaspberryExporting] = useState(false);
   const {
     page,
     pageSize,
@@ -121,6 +123,17 @@ export default function InventoriesList() {
     setCreateError(null);
     showSnackbar(t('inventory.created_snackbar', { name: created.name }), 'success');
     if (created.id) navigate(pathToInventory(created.id));
+  };
+
+  const handleExportRaspberry = async () => {
+    setRaspberryExporting(true);
+    try {
+      await downloadRaspberryOfflinePackage();
+    } catch (err) {
+      showSnackbar(resolveApiErrorMessage(err, 'inventory.export_raspberry_error'), 'error');
+    } finally {
+      setRaspberryExporting(false);
+    }
   };
 
   const handleConfirmDelete = async () => {
@@ -276,6 +289,14 @@ export default function InventoriesList() {
                 {t('inventory.selected_count', { count: selectedCount })}
               </Typography>
             ) : null}
+            <Button
+              variant="outlined"
+              disabled={raspberryExporting}
+              onClick={() => void handleExportRaspberry()}
+              data-testid="inventories-export-raspberry"
+            >
+              {raspberryExporting ? t('common.exporting') : t('inventory.export_raspberry')}
+            </Button>
             <Button
               variant="outlined"
               color="error"

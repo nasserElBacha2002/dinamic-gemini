@@ -214,6 +214,7 @@ from src.api.deps.security import (  # noqa: F401
     require_client_scope,
     require_inventory_client_scope,
     require_raspberry_device_token,
+    require_raspberry_offline_export_scope,
 )
 from src.runtime.v3_deps import (
     get_aisle_repo,  # noqa: F401

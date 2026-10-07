@@ -1092,6 +1092,8 @@
     "export_menu": "Export",
     "export_summary": "Inventory summary",
     "export_package_zip": "Full inventory (.zip)",
+    "export_raspberry": "Export for Raspberry",
+    "export_raspberry_error": "Could not export Raspberry configuration.",
     "edit_name": "Edit name",
     "edit_name_title": "Edit inventory name",
     "edit_name_subtitle": "Update the inventory display name.",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import secrets
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Query, status
 
 from src.application.dto.access_principal import AccessPrincipal
 from src.application.ports.repositories import (
@@ -66,6 +66,36 @@ def require_client_scope(
         reraise_if_mapped(e)
         raise
     return principal
+
+
+def require_raspberry_offline_export_scope(
+    client_id: str | None = Query(
+        default=None,
+        min_length=1,
+        description="Optional client scope; omit to include all active clients.",
+    ),
+    user: AuthUser = Depends(get_current_admin),
+    client_repo: ClientRepository = Depends(get_client_repo),
+) -> str | None:
+    """Enforce platform or client scope for Raspberry offline package export."""
+    from src.api.errors import reraise_if_mapped
+    from src.application.services.client_access_policy import ClientAccessPolicy
+
+    principal = access_principal_from_auth_user(user)
+    policy = ClientAccessPolicy(client_repo)
+    scoped_client = client_id.strip() if client_id else None
+    try:
+        if scoped_client:
+            policy.require_client(scoped_client, principal)
+        else:
+            policy.require_platform(
+                principal,
+                operation="export_raspberry_offline_package",
+            )
+    except Exception as exc:
+        reraise_if_mapped(exc)
+        raise
+    return scoped_client
 
 
 def require_raspberry_device_token(

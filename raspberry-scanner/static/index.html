@@ -13,6 +13,11 @@
   </head>
   <body>
     <h1>Scanner local</h1>
+    <section aria-label="Configuración offline">
+      <label>Paquete JSON <input id="offline-package" type="file" accept="application/json,.json"></label>
+      <button id="offline-import" type="button">Importar configuración</button>
+      <p class="muted" id="offline-import-status"></p>
+    </section>
     <section aria-label="Selección de reconocimiento">
       <label>Cliente <select id="client"><option value="">Seleccionar cliente…</option></select></label>
       <label>Inventario <select id="inventory" disabled><option value="">Seleccionar inventario…</option></select></label>
@@ -69,6 +74,23 @@
         currentClient = data.client_id;
         selection.textContent = `Cliente: ${data.client_id} · Proveedor: ${data.supplier_id || 'Sin validación (escanear todo)'}${data.item_source ? ` · ITEM: ${data.item_source} · POSITION: ${data.position_source}` : ''}`;
       }
+      document.querySelector('#offline-import').onclick = async () => {
+        const input = document.querySelector('#offline-package');
+        const status = document.querySelector('#offline-import-status');
+        const file = input.files && input.files[0];
+        if (!file) { status.textContent = 'Seleccioná un archivo JSON.'; return; }
+        try {
+          status.textContent = 'Importando…';
+          const form = new FormData();
+          form.append('file', file, file.name);
+          const response = await fetch('/api/config/import', { method: 'POST', body: form });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || data.error || 'import_failed');
+          status.textContent = `Importado · clientes +${data.clients_added}/~${data.clients_updated} · inventarios +${data.inventories_added}/~${data.inventories_updated}`;
+          await loadClients(currentClient);
+          if (currentClient) await loadInventories(currentClient, currentInventory);
+        } catch (e) { status.textContent = ''; error.textContent = e.message; }
+      };
       client.onchange = async () => { try { error.textContent = ''; currentInventory = ''; await loadSuppliers(client.value, ''); await loadInventories(client.value, ''); await applySelection(client.value, null); } catch (e) { error.textContent = e.message; } };
       inventory.onchange = async () => { try { error.textContent = ''; await applyInventory(inventory.value); } catch (e) { error.textContent = e.message; } };
       supplier.onchange = async () => { try { await applySelection(currentClient, supplier.value); } catch (e) { error.textContent = e.message; } };
