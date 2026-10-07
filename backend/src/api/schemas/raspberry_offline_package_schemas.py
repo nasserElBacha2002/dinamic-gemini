@@ -7,8 +7,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.schemas.offline_recognition_bundle_schemas import (
-    OfflineRecognitionBundleResponse,
     OfflineRaspberryRecognitionBundleResponse,
+    OfflineRecognitionBundleResponse,
     RaspberryInventoryListItemDto,
 )
 from src.application.use_cases.raspberry.offline_package_constants import (

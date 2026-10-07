@@ -12,9 +12,6 @@ from src.application.use_cases.clients.get_raspberry_recognition_config import (
     OfflineRaspberryRecognitionBundle,
     raspberry_bundle_revision,
 )
-from src.application.use_cases.raspberry.offline_package_constants import (
-    RASPBERRY_OFFLINE_PACKAGE_SCHEMA_VERSION,
-)
 from src.application.use_cases.inventories.get_inventory_recognition_config import (
     OFFLINE_BUNDLE_SCHEMA_VERSION,
     GetInventoryRecognitionConfigCommand,
@@ -24,6 +21,9 @@ from src.application.use_cases.inventories.get_inventory_recognition_config impo
 from src.application.use_cases.inventories.list_raspberry_inventories import (
     ListRaspberryInventoriesCommand,
     ListRaspberryInventoriesUseCase,
+)
+from src.application.use_cases.raspberry.offline_package_constants import (
+    RASPBERRY_OFFLINE_PACKAGE_SCHEMA_VERSION,
 )
 from src.domain.client.entities import ClientStatus
 

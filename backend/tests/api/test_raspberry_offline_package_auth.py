@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 from passlib.context import CryptContext
 
 import src.config as config_module
-from src.api.deps.inventory import get_export_raspberry_offline_package_use_case
 from src.api.dependencies import get_client_repo
+from src.api.deps.inventory import get_export_raspberry_offline_package_use_case
 from src.api.server import app
 from src.application.use_cases.clients.get_raspberry_recognition_config import (
     OfflineRaspberryRecognitionBundle,

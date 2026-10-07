@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from io import BytesIO
 from typing import cast
-
-import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -16,13 +15,12 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
 )
 from src.api.constants.route_paths import API_V3_CLIENTS_ROUTER_PREFIX
-from src.api.deps.inventory import get_export_raspberry_offline_package_use_case
 from src.api.dependencies import (
     get_access_principal,
-    get_client_repo,
     get_activate_supplier_extraction_profile_version_use_case,
     get_activate_supplier_prompt_config_version_use_case,
     get_artifact_storage,
+    get_client_repo,
     get_clone_supplier_extraction_profile_use_case,
     get_create_client_supplier_use_case,
     get_create_client_use_case,
@@ -50,12 +48,13 @@ from src.api.dependencies import (
     get_upsert_client_supplier_label_profile_use_case,
     require_client_scope,
 )
+from src.api.deps.inventory import get_export_raspberry_offline_package_use_case
 from src.api.errors import reraise_if_mapped
-from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
 from src.api.routes.v3.raspberry_recognition_config import (
     offline_recognition_bundle_response,
     raspberry_recognition_bundle_response,
 )
+from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
 from src.api.schemas.client_schemas import (
     ClientResponse,
     CreateClientRequest,
@@ -78,13 +77,6 @@ from src.api.schemas.label_profile_schemas import (
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.schemas.offline_recognition_bundle_schemas import RaspberryInventoryListItemDto
 from src.api.schemas.raspberry_offline_package_schemas import RaspberryOfflinePackageResponse
-from src.application.dto.access_principal import AccessPrincipal
-from src.application.services.client_access_policy import ClientAccessPolicy
-from src.application.use_cases.raspberry.export_raspberry_offline_package import (
-    ExportRaspberryOfflinePackageCommand,
-    ExportRaspberryOfflinePackageUseCase,
-)
-from src.application.ports.repositories import ClientRepository
 from src.api.schemas.supplier_extraction_profile_schemas import (
     ActivateSupplierExtractionProfileRequest,
     CloneSupplierExtractionProfileRequest,
@@ -116,6 +108,7 @@ from src.api.services.v3_stored_artifact_access import (
     resolve_supplier_reference_image_display,
     resolve_supplier_reference_image_file_response,
 )
+from src.application.dto.access_principal import AccessPrincipal
 from src.application.errors import (
     DuplicateClientSupplierNameError,
     InvalidClientNameError,
@@ -123,6 +116,8 @@ from src.application.errors import (
     SupplierExtractionProfileNotFoundError,
     SupplierPromptConfigNotFoundError,
 )
+from src.application.ports.repositories import ClientRepository
+from src.application.services.client_access_policy import ClientAccessPolicy
 from src.application.services.optional_unset import UNSET
 from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
 from src.application.use_cases.clients.get_client import GetClientUseCase
@@ -130,6 +125,10 @@ from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.application.use_cases.clients.update_client import (
     UpdateClientCommand,
     UpdateClientUseCase,
+)
+from src.application.use_cases.raspberry.export_raspberry_offline_package import (
+    ExportRaspberryOfflinePackageCommand,
+    ExportRaspberryOfflinePackageUseCase,
 )
 from src.application.use_cases.suppliers.create_client_supplier import (
     CreateClientSupplierCommand,
