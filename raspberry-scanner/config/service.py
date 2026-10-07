@@ -20,10 +20,6 @@ class ConfigService:
         self._repository = repository
         self._backend_client = backend_client
 
-    @property
-    def snapshot_repository(self) -> SnapshotRepository:
-        return self._repository
-
         self._lock = threading.Lock()
         self._sync_lock = threading.Lock()
 
@@ -37,6 +33,10 @@ class ConfigService:
             self._snapshot = repository.load()
         except Exception as exc:
             self._load_error = f"{type(exc).__name__}: {exc}"
+
+    @property
+    def snapshot_repository(self) -> SnapshotRepository:
+        return self._repository
 
     def sync(self) -> dict[str, Any]:
         attempted_at = datetime.now(timezone.utc).isoformat()
