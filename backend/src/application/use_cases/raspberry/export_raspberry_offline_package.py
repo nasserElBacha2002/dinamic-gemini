@@ -26,6 +26,7 @@ from src.application.use_cases.raspberry.offline_package_constants import (
     RASPBERRY_OFFLINE_PACKAGE_SCHEMA_VERSION,
 )
 from src.domain.client.entities import ClientStatus
+from src.domain.inventory.entities import Inventory
 
 
 @dataclass(frozen=True)
@@ -37,8 +38,8 @@ class ExportRaspberryOfflinePackageCommand:
 class ExportRaspberryOfflinePackageResult:
     package_schema_version: int
     generated_at: datetime
-    recognition: object
-    inventories: tuple[object, ...]
+    recognition: OfflineRaspberryRecognitionBundle
+    inventories: tuple[Inventory, ...]
     inventory_recognition_configs: tuple[OfflineRecognitionBundle, ...]
 
 
@@ -81,7 +82,7 @@ class ExportRaspberryOfflinePackageUseCase:
                 ),
             )
 
-        inventory_rows: list[object] = []
+        inventory_rows: list[Inventory] = []
         inventory_bundles: list[OfflineRecognitionBundle] = []
 
         client_ids = (
