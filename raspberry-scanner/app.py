@@ -305,7 +305,7 @@ def make_handler(
                 return
 
             if path == "/api/config/import":
-                self._handle_config_import(offline_package_importer)
+                self._handle_config_import()
                 return
 
             if path == "/api/selection":
@@ -773,10 +773,8 @@ def make_handler(
                 },
             )
 
-        def _handle_config_import(
-            importer: OfflinePackageImporter | None,
-        ) -> None:
-            if importer is None:
+        def _handle_config_import(self) -> None:
+            if offline_package_importer is None:
                 self._send_json(
                     HTTPStatus.SERVICE_UNAVAILABLE,
                     {"error": "config_import_unavailable"},
@@ -784,7 +782,7 @@ def make_handler(
                 return
             try:
                 payload = self._read_package_upload()
-                outcome = importer.import_json_bytes(payload)
+                outcome = offline_package_importer.import_json_bytes(payload)
                 config_service.reload_from_repository()
             except OfflinePackageError as exc:
                 self._send_json(
