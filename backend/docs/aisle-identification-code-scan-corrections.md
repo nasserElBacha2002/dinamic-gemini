@@ -22,4 +22,4 @@ Set `CODE_SCAN_PROCESSING_ENABLED=false` — no redeploy of strategy code requir
 
 Keep `MAX_IMAGE_PROCESSING_CONCURRENCY=1` until SQL Server concurrency tests pass.
 
-See also `aisle-identification-mode-phase3.md` (architecture) and `aisle-identification-mode-phase4.md`.
+See also `aisle-identification-code-scan.md` (architecture) and `aisle-identification-internal-ocr.md`.

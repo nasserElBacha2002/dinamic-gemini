@@ -36,7 +36,7 @@ from src.infrastructure.repositories.memory_result_evidence_repository import (
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
-from tests.infrastructure.pipeline.test_worker_phase3_part5_artifact_outbox import (
+from tests.infrastructure.pipeline.test_artifact_publication_outbox import (
     RUN_ID,
     _build_dispatcher,
 )

@@ -175,7 +175,7 @@ Verify all of the following:
 - `backend/tests/jobs/test_run_worker_entrypoint.py`
 - `backend/tests/api/test_v3_stored_artifact_access_unit.py`
 - `backend/tests/infrastructure/pipeline/test_v3_job_executor_input_resolution.py`
-- `backend/tests/infrastructure/pipeline/test_v3_job_executor_phase5.py`
+- `backend/tests/infrastructure/pipeline/test_v3_job_executor_external_fallback.py`
 
 ## Docs
 

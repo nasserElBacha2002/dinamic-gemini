@@ -32,7 +32,7 @@ from src.domain.jobs.finalization_evidence import (
     StageStatus,
 )
 from src.jobs.artifact_publication_worker import ArtifactPublicationOutboxWorker
-from tests.infrastructure.pipeline.test_worker_phase3_part5_artifact_outbox import (
+from tests.infrastructure.pipeline.test_artifact_publication_outbox import (
     RUN_ID,
     _build_dispatcher,
 )

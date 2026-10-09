@@ -240,7 +240,7 @@ def test_full_happy_path_reaches_succeeded(tmp_path) -> None:
 def test_resume_dry_run_from_domain_committed_artifacts_missing(tmp_path) -> None:
     from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
     from src.domain.jobs.finalization_recovery import RecoveryOperation, RecoveryOutcome
-    from tests.infrastructure.pipeline.test_worker_phase3_part4_targeted_recovery import (
+    from tests.infrastructure.pipeline.test_job_finalization_targeted_recovery import (
         _build_coordinator,
         _mark_domain_complete,
     )

@@ -40,7 +40,7 @@ from src.domain.positions.entities import PositionStatus
 from src.infrastructure.persistence.memory_aisle_revision_unit_of_work import (
     MemoryAisleRevisionUnitOfWork,
 )
-from tests.application.services.test_aisle_revision_phase8 import _seed
+from tests.application.services.test_aisle_revision_lifecycle import _seed
 
 
 def _now() -> datetime:

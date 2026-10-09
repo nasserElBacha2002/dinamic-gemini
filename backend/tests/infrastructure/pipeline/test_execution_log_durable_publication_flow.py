@@ -23,7 +23,7 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     DEFAULT_V3_WORKER_RUN_SEGMENT,
 )
 from src.pipeline.execution_log import ExecutionLogWriter
-from tests.infrastructure.pipeline.test_worker_phase3_part5_artifact_outbox import (
+from tests.infrastructure.pipeline.test_artifact_publication_outbox import (
     RUN_ID,
     _build_dispatcher,
 )

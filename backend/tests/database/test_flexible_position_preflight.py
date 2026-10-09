@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-PREFLIGHT = ROOT / "scripts" / "ops" / "phase-5-flexible-position-preflight.sql"
-REVIEW_COPY = ROOT / "review" / "phase-5-flexible-position-preflight.sql"
+PREFLIGHT = ROOT / "scripts" / "ops" / "flexible-position-preflight.sql"
+REVIEW_COPY = ROOT / "review" / "flexible-position-preflight.sql"
 
 
 def test_preflight_script_exists_and_throws_on_errors() -> None:
@@ -28,7 +28,7 @@ def test_preflight_script_exists_and_throws_on_errors() -> None:
 
 
 def test_validation_status_remains_honest() -> None:
-    status = (ROOT / "scripts" / "ops" / "phase-5-flexible-position-validation.md").read_text(
+    status = (ROOT / "scripts" / "ops" / "flexible-position-validation.md").read_text(
         encoding="utf-8"
     )
     assert "PHASE_5_STATUS: IMPLEMENTED_WITH_BLOCKERS" in status

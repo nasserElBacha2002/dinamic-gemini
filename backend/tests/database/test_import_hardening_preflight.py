@@ -11,7 +11,7 @@ from tests.support.sql_migration_fixture import ensure_sql_migrations_applied
 from tests.support.sqlserver_test_connection import resolved_sqlserver_connection_string_for_tests
 
 ROOT = Path(__file__).resolve().parents[3]
-PREFLIGHT = ROOT / "scripts" / "ops" / "phase-4-import-hardening-preflight.sql"
+PREFLIGHT = ROOT / "scripts" / "ops" / "import-hardening-preflight.sql"
 
 
 def test_preflight_script_exists_and_throws_on_errors() -> None:

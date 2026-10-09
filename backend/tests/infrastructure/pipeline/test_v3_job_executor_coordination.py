@@ -19,7 +19,7 @@ from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_to_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
-from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
+from tests.infrastructure.pipeline.test_v3_job_executor_external_fallback import (
     FixedClock,
     InMemoryAisleRepo,
     InMemoryInventoryRepo,

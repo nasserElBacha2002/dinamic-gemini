@@ -40,7 +40,7 @@ from src.pipeline.contracts.analysis_context import (
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
-from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
+from tests.infrastructure.pipeline.test_v3_job_executor_external_fallback import (
     FixedClock,
     InMemoryAisleRepo,
     InMemoryInventoryRepo,

@@ -58,4 +58,4 @@ Fecha: 2026-07-17
 
 ## Qué implementa Fase 3 en código
 
-Ver `PHASE_3_IMPLEMENTATION.md`.
+Ver `PRODUCTION_HARDENING_IMPLEMENTATION.md`.

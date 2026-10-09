@@ -19,7 +19,7 @@ from src.pipeline.llm_metadata_json_safety import assert_metadata_json_serializa
 from tests.infrastructure.pipeline.test_execution_log_durable_publication_flow import (
     _write_valid_execution_log,
 )
-from tests.infrastructure.pipeline.test_worker_phase3_part5_artifact_outbox import (
+from tests.infrastructure.pipeline.test_artifact_publication_outbox import (
     RUN_ID,
     _build_dispatcher,
 )

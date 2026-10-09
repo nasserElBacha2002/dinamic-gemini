@@ -21,7 +21,7 @@ from src.infrastructure.pipeline.v3_job_preparation_service import V3JobPreparat
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
-from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import FixedClock
+from tests.infrastructure.pipeline.test_v3_job_executor_external_fallback import FixedClock
 
 
 class _FixedClock:

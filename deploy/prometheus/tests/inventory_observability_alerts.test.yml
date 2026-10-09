@@ -1,6 +1,6 @@
 # promtool test rules — Phase 5 alert expressions
 rule_files:
-  - ../dinamic-phase5-alerts.yml
+  - ../dinamic-inventory-observability-alerts.yml
 
 evaluation_interval: 1m
 

@@ -171,11 +171,11 @@ Reglas prácticas:
 
 | Doc | Contenido |
 |-----|-----------|
-| `docs/PHASE_3_AUDIT.md` | Auditoría pre-hardening |
-| `docs/PHASE_3_IMPLEMENTATION.md` | Qué se entregó / gaps |
-| `docs/PHASE_3_RUNBOOK.md` | Soporte operativo |
-| `docs/PHASE_3_CHECKLIST.md` | Checklist productivo |
-| `docs/PHASE_3_ROLLOUT.md` | Rollout / rollback |
+| `docs/PRODUCTION_HARDENING_AUDIT.md` | Auditoría pre-hardening |
+| `docs/PRODUCTION_HARDENING_IMPLEMENTATION.md` | Qué se entregó / gaps |
+| `docs/PRODUCTION_HARDENING_RUNBOOK.md` | Soporte operativo |
+| `docs/PRODUCTION_HARDENING_CHECKLIST.md` | Checklist productivo |
+| `docs/PRODUCTION_HARDENING_ROLLOUT.md` | Rollout / rollback |
 | `docs/DEVICE_MATRIX.md` | Matriz de dispositivos |
 | `docs/OEM_BACKGROUND.md` | Doze / OEM |
 | `docs/SIGNING.md` | Firma APK/AAB |
@@ -292,7 +292,7 @@ Migrar a RN CLI solo si el rebuild nativo del módulo falla de forma irrecuperab
 
 ## Fase 2
 
-Ver `docs/PHASE_2_IMPLEMENTATION.md` y `docs/PHASE_2_BACKEND_CONTRACTS.md`.
+Ver `docs/BACKGROUND_UPLOAD_IMPLEMENTATION.md` y `docs/BACKGROUND_UPLOAD_BACKEND_CONTRACTS.md`.
 
 Flujo: captura → carga progresiva (cola SQLite) → revisión de uploads → `POST .../process` → polling de job → otro pasillo en paralelo.
 

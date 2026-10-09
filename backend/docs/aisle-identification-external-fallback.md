@@ -102,7 +102,7 @@ Limitation: not shared across worker processes.
 
 - Job summary: `fallback_progress` (prefer DB aggregate from requests) + `fallback_asset_summaries`
 - Observability workspace shows counters + a short per-image fallback line
-- Full per-image attempt UX is Phase 7 — see `aisle-identification-mode-phase7.md`
+- Full per-image attempt UX is covered in processing observability — see `aisle-identification-processing-observability.md`
 
 ## Security
 

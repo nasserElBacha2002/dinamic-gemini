@@ -42,7 +42,7 @@ READY_FOR_CONTROLLED_ROLLOUT: NO
 
 - `db_migrate.py apply` → `current_version: 0111`, `compatible: true`, no pending
 - Schema spot-check: `signature_policy` columns present; `position_flexible_capabilities` + `UQ_pfc_scope_key`; backfill clean (0 bad rows)
-- `scripts/ops/phase-5-flexible-position-preflight.sql` → **PASSED** (no THROW)
+- `scripts/ops/flexible-position-preflight.sql` → **PASSED** (no THROW)
 - Local `.env`: Phase 5 validation ON (channels + auto + flexible + shadow metrics); `.env.example` remains fail-closed
 
 ## Controlled rollout thresholds (not yet measured)
