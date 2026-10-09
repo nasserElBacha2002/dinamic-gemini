@@ -1,4 +1,4 @@
-"""Phase A1: migration 0024 adds clients foundation table."""
+"""Migration 0024 adds clients foundation table."""
 
 from __future__ import annotations
 
@@ -19,6 +19,6 @@ def test_schema_sql_contains_clients_foundation_section() -> None:
     root = Path(__file__).resolve().parents[2]
     schema = root / "src/database/schema.sql"
     text = schema.read_text(encoding="utf-8").lower()
-    assert "phase a1 — clients foundation" in text
+    assert "clients foundation (mirror migrations/versions/0024_clients_foundation.sql)" in text
     assert "create table clients" in text
 
