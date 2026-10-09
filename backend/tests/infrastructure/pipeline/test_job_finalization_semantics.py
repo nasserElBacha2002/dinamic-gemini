@@ -29,7 +29,9 @@ from tests.support.worker_executor_harness.doubles import (
     RecordingPipelineRunner,
 )
 from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, FixedClock
-from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
+from tests.support.worker_persist_idempotency.recompute_doubles import (
+    FailingJobScopedRecomputeFactory,
+)
 
 
 def _assert_persist_rollback(harness: ExecutorHarness) -> None:

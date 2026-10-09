@@ -21,8 +21,13 @@ from tests.support.worker_executor_harness.doubles import (
     FailingResultEvidenceRepository,
     FailOnNthSavePositionRepository,
 )
-from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, make_entity_hybrid_report
-from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_executor_harness.executor_harness import (
+    ExecutorHarness,
+    make_entity_hybrid_report,
+)
+from tests.support.worker_persist_idempotency.persist_builders import (
+    build_persist_aisle_result_use_case,
+)
 
 
 def _manifest_composition() -> dict:

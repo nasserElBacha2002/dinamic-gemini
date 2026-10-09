@@ -8,7 +8,10 @@ from src.domain.traceability import TraceabilityStatus
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
-from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, make_entity_hybrid_report
+from tests.support.worker_executor_harness.executor_harness import (
+    ExecutorHarness,
+    make_entity_hybrid_report,
+)
 
 
 def test_pipeline_persist_structural_evidence_invalid_ref(tmp_path: Path) -> None:

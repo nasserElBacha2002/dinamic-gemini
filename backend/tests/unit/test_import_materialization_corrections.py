@@ -33,8 +33,8 @@ from src.infrastructure.repositories.memory_inventory_repository import MemoryIn
 from src.infrastructure.repositories.memory_local_csv_import_repository import (
     MemoryLocalCsvImportRepository,
 )
-from tests.unit.test_local_csv_import import FixedClock, _csv_bytes
 from tests.unit.test_import_hardening import NOW
+from tests.unit.test_local_csv_import import FixedClock, _csv_bytes
 
 
 def test_active_lease_blocks_second_owner() -> None:

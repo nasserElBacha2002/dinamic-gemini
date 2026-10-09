@@ -41,7 +41,9 @@ from tests.support.worker_persist_idempotency.duplicate_detection import (
     repeated_raw_labels_by_source_reference,
 )
 from tests.support.worker_persist_idempotency.job_scope_inspection import assert_no_row_id_overlap
-from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
+from tests.support.worker_persist_idempotency.recompute_doubles import (
+    FailingJobScopedRecomputeFactory,
+)
 from tests.support.worker_persist_idempotency.retry_flow import build_retry_flow_services
 
 

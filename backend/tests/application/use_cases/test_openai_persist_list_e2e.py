@@ -35,7 +35,9 @@ from src.infrastructure.repositories.memory_review_action_repository import (
 from src.llm.normalization.entity_normalizer import normalize_llm_response
 from src.parsing.global_analysis_parser import parse_entities
 from src.reporting.hybrid_report import build_hybrid_report
-from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_persist_idempotency.persist_builders import (
+    build_persist_aisle_result_use_case,
+)
 
 
 class FixedClock:

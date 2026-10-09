@@ -44,7 +44,9 @@ from src.pipeline.run_metadata import (
     default_empty_block,
 )
 from tests.support.inventory_repository_cas import ExplicitInventoryCompareAndSet
-from tests.support.worker_persist_idempotency.executor_persist_deps import memory_executor_persist_kwargs
+from tests.support.worker_persist_idempotency.executor_persist_deps import (
+    memory_executor_persist_kwargs,
+)
 
 
 class InMemoryJobRepo(MemoryJobRepository):

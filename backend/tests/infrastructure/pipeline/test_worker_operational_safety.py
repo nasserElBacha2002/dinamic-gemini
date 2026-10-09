@@ -100,7 +100,9 @@ def test_wkr_p1_t007_recompute_failure_after_entity_persist_marks_job_failed(
 ) -> None:
     """WKR-P1-T007: entity rows persist; recompute failure fails job; aggregates may be empty."""
     harness = ExecutorHarness.build(tmp_path)
-    from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
+    from tests.support.worker_persist_idempotency.recompute_doubles import (
+        FailingJobScopedRecomputeFactory,
+    )
 
     failing_factory = FailingJobScopedRecomputeFactory()
     executor = harness.make_executor(job_scoped_recompute_factory=failing_factory)

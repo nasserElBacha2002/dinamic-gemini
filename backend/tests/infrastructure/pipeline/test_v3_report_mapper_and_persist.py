@@ -14,7 +14,9 @@ from src.application.use_cases.pipeline.persist_aisle_result import (
 )
 from src.domain.positions.entities import PositionStatus
 from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
-from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_persist_idempotency.persist_builders import (
+    build_persist_aisle_result_use_case,
+)
 
 
 def test_map_hybrid_report_to_domain_empty_entities():

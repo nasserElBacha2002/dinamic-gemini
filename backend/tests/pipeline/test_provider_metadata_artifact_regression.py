@@ -16,12 +16,12 @@ from src.domain.traceability import TraceabilityStatus, apply_traceability_valid
 from src.parsing.global_analysis_parser import parse_entities
 from src.pipeline.execution_log_sanitizer import make_json_safe_for_execution_log
 from src.pipeline.llm_metadata_json_safety import assert_metadata_json_serializable
-from tests.infrastructure.pipeline.test_execution_log_durable_publication_flow import (
-    _write_valid_execution_log,
-)
 from tests.infrastructure.pipeline.test_artifact_publication_outbox import (
     RUN_ID,
     _build_dispatcher,
+)
+from tests.infrastructure.pipeline.test_execution_log_durable_publication_flow import (
+    _write_valid_execution_log,
 )
 from tests.support.worker_executor_harness.doubles import SizeOnlyArtifactStore
 from tests.support.worker_executor_harness.executor_harness import ExecutorHarness

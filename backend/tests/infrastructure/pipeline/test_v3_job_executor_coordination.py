@@ -27,7 +27,9 @@ from tests.infrastructure.pipeline.test_v3_job_executor_memory_fixtures import (
     NoopRepo,
     StubArtifactStorage,
 )
-from tests.support.worker_persist_idempotency.executor_persist_deps import memory_executor_persist_kwargs
+from tests.support.worker_persist_idempotency.executor_persist_deps import (
+    memory_executor_persist_kwargs,
+)
 
 
 def _replace_executor_state(executor: V3JobExecutor, spy_state: Any) -> None:

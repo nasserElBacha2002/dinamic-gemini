@@ -40,7 +40,9 @@ from tests.support.worker_persist_idempotency.duplicate_detection import (
     duplicate_positions_by_job_entity_uid,
     entity_uid_from_position,
 )
-from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_persist_idempotency.persist_builders import (
+    build_persist_aisle_result_use_case,
+)
 from tests.support.worker_persist_idempotency.sql_job_seed import (
     seed_process_aisle_job,
     sql_result_evidence_repo,
@@ -160,7 +162,9 @@ def test_p2_p2_t010_sql_rollback_after_deletion_preserves_snapshot(sql_client_or
         after_first = list(pos_repo.list_by_aisle(aisle_id, job_id=job_id))
         assert len(after_first) == 2
 
-        from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
+        from tests.support.worker_persist_idempotency.recompute_doubles import (
+            FailingJobScopedRecomputeFactory,
+        )
 
         rollback_persist = build_persist_aisle_result_use_case(
             position_repo=pos_repo,

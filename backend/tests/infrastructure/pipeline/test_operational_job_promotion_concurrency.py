@@ -45,7 +45,9 @@ from tests.support.worker_executor_harness.executor_harness import (
     FixedClock,
     make_two_entity_hybrid_report,
 )
-from tests.support.worker_persist_idempotency.promotion_builders import build_operational_promotion_service
+from tests.support.worker_persist_idempotency.promotion_builders import (
+    build_operational_promotion_service,
+)
 
 
 def _ts(base: datetime, minutes: int) -> datetime:

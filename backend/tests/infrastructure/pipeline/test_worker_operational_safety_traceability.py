@@ -397,7 +397,9 @@ def test_wkr_p1_t011b_reference_id_returned_as_provider_source_is_traceability_i
         )
     )
 
-    from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+    from tests.support.worker_persist_idempotency.persist_builders import (
+        build_persist_aisle_result_use_case,
+    )
 
     persist = build_persist_aisle_result_use_case(
         position_repo=pos_repo,
@@ -555,7 +557,9 @@ def test_wkr_p1_t013_source_image_id_preserved_through_persist_and_read_model(
         )
     )
 
-    from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+    from tests.support.worker_persist_idempotency.persist_builders import (
+        build_persist_aisle_result_use_case,
+    )
 
     persist = build_persist_aisle_result_use_case(
         position_repo=pos_repo,

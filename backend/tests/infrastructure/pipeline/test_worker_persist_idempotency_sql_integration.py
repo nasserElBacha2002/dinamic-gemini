@@ -24,13 +24,20 @@ from src.infrastructure.repositories.sql_product_record_repository import (
     SqlProductRecordRepository,
 )
 from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
-from tests.support.worker_executor_harness.executor_harness import FixedClock, make_two_entity_hybrid_report
+from tests.support.worker_executor_harness.executor_harness import (
+    FixedClock,
+    make_two_entity_hybrid_report,
+)
 from tests.support.worker_executor_harness.sql_cleanup import (
     assert_sql_integration_database_is_safe,
     cleanup_worker_executor_sql_scope,
 )
-from tests.support.worker_persist_idempotency.duplicate_detection import duplicate_positions_by_job_entity_uid
-from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_persist_idempotency.duplicate_detection import (
+    duplicate_positions_by_job_entity_uid,
+)
+from tests.support.worker_persist_idempotency.persist_builders import (
+    build_persist_aisle_result_use_case,
+)
 from tests.support.worker_persist_idempotency.sql_job_seed import (
     seed_process_aisle_job,
     sql_result_evidence_repo,

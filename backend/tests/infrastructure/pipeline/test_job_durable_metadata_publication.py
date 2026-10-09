@@ -75,7 +75,9 @@ from tests.support.worker_executor_harness.executor_harness import (
     FixedClock,
     make_entity_hybrid_report,
 )
-from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
+from tests.support.worker_persist_idempotency.recompute_doubles import (
+    FailingJobScopedRecomputeFactory,
+)
 
 
 def _cas_transition(store, *, job_id: str, stage: FinalizationStage, now: datetime, **kwargs):

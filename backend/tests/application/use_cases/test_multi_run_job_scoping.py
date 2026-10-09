@@ -78,7 +78,9 @@ def memory_stack():
     aisle_repo.save(_aisle(inv_id, aisle_id))
     clock = MagicMock()
     clock.now.return_value = datetime.now(timezone.utc)
-    from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+    from tests.support.worker_persist_idempotency.persist_builders import (
+        build_persist_aisle_result_use_case,
+    )
 
     persist = build_persist_aisle_result_use_case(
         position_repo=pos,
