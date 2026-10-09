@@ -4,11 +4,36 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
+
 
 class AdminAiConfigServerDefaults(BaseModel):
     llm_provider: str
-    hybrid_prompt_key: str
-    prompt_version: str | None = None
+    hybrid_prompt_key: str = Field(
+        ...,
+        description=(
+            "HYBRID_PROMPT env value — test-mode / catalog default when prompt_key is omitted; "
+            "does not publish or switch the protected production aisle hybrid body."
+        ),
+    )
+    prompt_version: str | None = Field(
+        None,
+        description=(
+            "PROMPT_VERSION env — optional traceability label only; does not select prompt content."
+        ),
+    )
+    effective_aisle_hybrid_profile: str = Field(
+        DEFAULT_HYBRID_PROMPT_PROFILE,
+        description="Protected hybrid profile always composed for new aisle analysis jobs.",
+    )
+    hybrid_prompt_env_selects_aisle_body: bool = Field(
+        False,
+        description="Always false: HYBRID_PROMPT does not change production aisle prompt bodies.",
+    )
+    prompt_version_env_selects_content: bool = Field(
+        False,
+        description="Always false: PROMPT_VERSION does not change composed prompt text.",
+    )
 
 
 class AdminAiConfigModelItem(BaseModel):

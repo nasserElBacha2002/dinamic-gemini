@@ -95,5 +95,10 @@ def is_valid_prompt_key(key: str, _settings: Any) -> bool:
 
 
 def default_prompt_key(settings: Any) -> str:
+    """Default profile key when a **test** process request omits ``prompt_key``.
+
+    Reads ``settings.hybrid_prompt`` (HYBRID_PROMPT env). Does **not** change the protected
+    hybrid body for production aisle runs (always ``global_v22`` via ``compose_hybrid_base``).
+    """
     raw = str(getattr(settings, "hybrid_prompt", "") or "").strip()
     return raw or DEFAULT_HYBRID_PROMPT_PROFILE

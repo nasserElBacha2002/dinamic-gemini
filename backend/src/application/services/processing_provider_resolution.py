@@ -42,7 +42,9 @@ def resolve_start_processing_request(
     * Provider: same rules as before — empty → ``normalize_pipeline_provider_key(None, settings)``
       without credential gate; explicit → registered keys + credential check per vendor.
     * Model: empty → provider default from settings/catalog; explicit → must be in catalog for provider.
-    * Prompt: empty → ``default_prompt_key(settings)`` (usually HYBRID_PROMPT); explicit → registered hybrid key.
+    * Prompt: empty → ``default_prompt_key(settings)`` (reads HYBRID_PROMPT for **test** inventories
+      and experiment defaults); explicit → registered hybrid key. **Production aisle hybrid bodies**
+      always compose ``global_v22`` regardless of this resolved key (see ``hybrid_assembly``).
     """
     raw_p = (requested_provider_name or "").strip()
     if not raw_p:
