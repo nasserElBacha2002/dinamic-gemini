@@ -1,4 +1,4 @@
-"""Phase 5 — port for single-image external label analysis (provider-agnostic)."""
+"""port for single-image external label analysis (provider-agnostic)."""
 
 from __future__ import annotations
 

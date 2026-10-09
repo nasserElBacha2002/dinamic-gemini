@@ -1,5 +1,5 @@
 """
-V3 successful job finalization — Phase 6 extraction from :class:`V3JobExecutor`.
+V3 successful job finalization — extraction from :class:`V3JobExecutor`.
 
 Persists domain results, traceability artifacts, durable worker artifacts (or outbox),
 and finalizes job/aisle success after a successful pipeline run.
@@ -131,7 +131,7 @@ class V3JobFinalizationService:
         job_id: str,
         allow_in_finalization: bool = False,
     ) -> None:
-        """Best-effort Phase 4 reconciliation after a successful job terminalization.
+        """Best-effort position reconciliation after a successful job terminalization.
 
         Used by LLM finalization and CODE_SCAN/INTERNAL_OCR success paths. When
         ``position_reconciliation_required`` is true, domain errors are re-raised.

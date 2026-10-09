@@ -186,7 +186,7 @@ def run_delete_pipeline(cur: Any) -> None:
         "preliminary_detection_reconciliations",
         # Local CSV / package confirm — FK to source_assets and inventories/aisles.
         # Required so integration tests can wipe business data without FK errors after
-        # Phase 0/1 tables; only invoked by clean_local_business_data / pytest cleanup
+        # tables; only invoked by clean_local_business_data / pytest cleanup
         # (never by application runtime). inventory_counted_product_labels also FK aisle.
         "local_csv_productive_results",
         "local_inventory_package_photos",

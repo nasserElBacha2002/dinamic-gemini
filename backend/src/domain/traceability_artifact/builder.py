@@ -1,4 +1,4 @@
-"""Phase 4.7 — deterministic traceability_manifest.json builder."""
+"""deterministic traceability_manifest.json builder."""
 
 from __future__ import annotations
 

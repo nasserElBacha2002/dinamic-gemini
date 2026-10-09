@@ -1,4 +1,4 @@
-"""Typed reader for historical aisle finalization snapshots (Phase 8 rollback).
+"""Typed reader for historical aisle finalization snapshots (rollback).
 
 Rollback needs what a *previous* finalization published. Reading it through this service keeps
 callers on public repository contracts instead of reaching into another use case's private

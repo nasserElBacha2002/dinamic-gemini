@@ -33,7 +33,7 @@ export interface AuthoritativeAisleFinalizationServiceOptions {
 }
 
 /**
- * Phase 6: operator finalization. Never marks completed until server confirms.
+ * operator finalization. Never marks completed until server confirms.
  * Persists finalization_id + offline intent in SQLite when offline queue flag is on.
  */
 export class AuthoritativeAisleFinalizationService {
@@ -201,7 +201,7 @@ export class AuthoritativeAisleFinalizationService {
   }
 
   /**
-   * Phase 9: drain durable finalization intents after reconnect / recovery.
+   * drain durable finalization intents after reconnect / recovery.
    * Resets abandoned FINALIZATION_SYNCING → PENDING then retries finalize.
    */
   async drainPending(): Promise<{ attempted: number; completed: number }> {

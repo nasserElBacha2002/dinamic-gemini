@@ -1,5 +1,5 @@
 /**
- * Minimal Phase 5 fallback_progress display helpers (unit-tested).
+ * Minimal fallback_progress display helpers (unit-tested).
  */
 import type { FallbackProgress } from '../../../api/types/responses';
 

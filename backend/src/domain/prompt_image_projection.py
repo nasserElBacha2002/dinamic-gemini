@@ -1,5 +1,5 @@
 """
-Phase 4.4 — Structured projection of image IDs emitted by prompt composition.
+Structured projection of image IDs emitted by prompt composition.
 """
 
 from __future__ import annotations

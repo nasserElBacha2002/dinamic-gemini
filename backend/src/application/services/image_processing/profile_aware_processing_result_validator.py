@@ -1,4 +1,4 @@
-"""Phase 6 — profile-aware shared validation for CODE_SCAN / OCR / EXTERNAL."""
+"""profile-aware shared validation for CODE_SCAN / OCR / EXTERNAL."""
 
 from __future__ import annotations
 

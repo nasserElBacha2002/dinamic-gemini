@@ -1,5 +1,5 @@
 /**
- * New-photo classification against a scan cursor (Fase 0 correction).
+ * New-photo classification against a scan cursor (correction).
  *
  * Separates two cursor responsibilities:
  * - `nextScanCursor`: advances past EVERY newly inspected MediaStore row (admitted OR rejected)

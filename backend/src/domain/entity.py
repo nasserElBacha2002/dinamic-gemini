@@ -58,7 +58,7 @@ class Entity:
     original_index: int = 0
     # Epic 3.1.B: image traceability (parsed from provider; validated against job images)
     manifest_entry_id: Optional[str] = None
-    #: Raw legacy ``source_image_id`` from provider before manifest resolution (Phase 4.5).
+    #: Raw legacy ``source_image_id`` from provider before manifest resolution.
     raw_source_image_id: Optional[str] = None
     source_image_id: Optional[str] = None
     resolved_manifest_entry_id: Optional[str] = None

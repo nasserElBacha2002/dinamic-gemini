@@ -1,4 +1,4 @@
-"""SQL Server JobProcessingLeaseRepository (Phase 2 corrections).
+"""SQL Server JobProcessingLeaseRepository (corrections).
 
 See :mod:`src.infrastructure.repositories.sql_job_asset_processing_state_repository` module
 docstring for the ``SqlServerClient`` cursor-only API note.

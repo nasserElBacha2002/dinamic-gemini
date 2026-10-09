@@ -290,7 +290,7 @@ class PositionRepository(ABC):
         sku_filter: when set, only positions that have at least one product_record with
         sku containing this string (substring match) are returned. In-memory impl may ignore it.
         job_id: ``JOB_ID_FILTER_UNSET`` (default) = all positions in the aisle (every run slice);
-        ``None`` = legacy ``job_id IS NULL``; ``str`` = that inventory job only. Phase 1 callers that
+        ``None`` = legacy ``job_id IS NULL``; ``str`` = that inventory job only. callers that
         need one run must pass a concrete ``job_id``."""
         ...
 
@@ -417,7 +417,7 @@ class JobRepository(ABC):
     ) -> Job | None:
         """Return the job pinned to ``(ordered_capture_session_id, sequence_version)``, or None.
 
-        Required on SqlJobRepository and MemoryJobRepository (Phase 1 ordered capture).
+        Required on SqlJobRepository and MemoryJobRepository (ordered capture).
         """
         raise NotImplementedError(
             f"{type(self).__name__}.get_by_ordered_capture_session is required "
@@ -479,7 +479,7 @@ class JobRepository(ABC):
         """Atomic STARTING → RUNNING claim with aisle PROCESSING in the same transaction.
 
         ``claim_owner_id`` must be a non-empty worker token (never ``execution_id``).
-        Phase 3: also acquires a lease (fencing token incremented, expiry set from
+        also acquires a lease (fencing token incremented, expiry set from
         ``lease_duration_seconds``) and attaches it to the returned ``JobClaimResult.lease``.
         """
 
@@ -507,7 +507,7 @@ class JobRepository(ABC):
     ) -> JobClaimResult:
         """Steal an expired RUNNING lease: new owner + fencing_token + 1.
 
-        Test / admin recovery only when production policy is stale-fail (see Phase 3 docs).
+        Test / admin recovery only when production policy is stale-fail (see docs).
         """
 
     @abstractmethod
@@ -527,7 +527,7 @@ class JobRepository(ABC):
         now: datetime,
         extension_seconds: int,
     ) -> LeaseRenewalResult:
-        """Renew lease + update ``last_heartbeat_at`` (same semantics as ``renew_lease`` for Phase 3)."""
+        """Renew lease + update ``last_heartbeat_at`` (same semantics as ``renew_lease`` )."""
         return self.renew_lease(lease, now=now, extension_seconds=extension_seconds)
 
     @abstractmethod
@@ -823,7 +823,7 @@ class SupplierPromptConfigRepository(ABC):
 
 
 class ResultEvidenceRepository(ABC):
-    """Structural entity traceability evidence rows (Phase 4.6)."""
+    """Structural entity traceability evidence rows."""
 
     @abstractmethod
     def save_many(self, records: list[ResultEvidenceRecord]) -> None:

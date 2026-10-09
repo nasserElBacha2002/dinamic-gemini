@@ -35,7 +35,7 @@ class Aisle:
     status: AisleStatus
     created_at: datetime
     updated_at: datetime
-    #: Canonical inventory_jobs row for default result reads (Phase 2); NULL = legacy aisle (null job_id rows).
+    #: Canonical inventory_jobs row for default result reads; NULL = legacy aisle (null job_id rows).
     operational_job_id: str | None = None
     client_supplier_id: str | None = None
     error_code: str | None = None
@@ -45,9 +45,9 @@ class Aisle:
     is_active: bool = True
     #: Optional identification override; null inherits inventory/client/system.
     identification_mode: AisleIdentificationMode | None = None
-    #: Phase 1 — optional ITEM label profile source override (NULL inherits supplier/default).
+    #: optional ITEM label profile source override (NULL inherits supplier/default).
     item_profile_source_override: LabelProfileSource | None = None
-    #: Phase 1 — optional POSITION label profile source override (NULL inherits supplier/default).
+    #: optional POSITION label profile source override (NULL inherits supplier/default).
     position_profile_source_override: LabelProfileSource | None = None
 
     def deactivate(self, now: datetime) -> None:

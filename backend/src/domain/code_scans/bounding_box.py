@@ -2,13 +2,13 @@
 
 Supported shapes:
 
-``rect`` (Phase 1):
+``rect``:
 
 ```json
 {"format": "rect", "unit": "pixel", "x": 120, "y": 340, "width": 180, "height": 80}
 ```
 
-``rect_polygon`` (Phase 2 pyzbar):
+``rect_polygon`` (pyzbar):
 
 ```json
 {

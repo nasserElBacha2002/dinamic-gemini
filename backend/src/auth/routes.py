@@ -1,8 +1,8 @@
 """
 Auth routes for v3.2.1 minimal administrative authentication.
 
-Phase 2 implements working /auth/login and /auth/me endpoints using the stable
-contracts introduced in Phase 1.
+implements working /auth/login and /auth/me endpoints using the stable
+contracts introduced .
 """
 
 from fastapi import APIRouter, Depends, status

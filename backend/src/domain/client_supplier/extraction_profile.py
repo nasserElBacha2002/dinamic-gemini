@@ -1,4 +1,4 @@
-"""Phase 6 — SupplierExtractionProfile domain + typed configuration."""
+"""SupplierExtractionProfile domain + typed configuration."""
 
 from __future__ import annotations
 
@@ -1144,9 +1144,9 @@ class SupplierExtractionProfile:
     superseded_at: datetime | None = None
     updated_at: datetime | None = None
     row_version: int = 1
-    #: Phase 1 — ITEM or POSITION; NULL legacy rows treated as ITEM after migration.
+    #: ITEM or POSITION; NULL legacy rows treated as ITEM after migration.
     label_kind: LabelKind | None = None
-    #: Phase 5 — Dinamic signature semantics for POSITION profiles (default REQUIRED).
+    #: Dinamic signature semantics for POSITION profiles (default REQUIRED).
     signature_policy: str = "REQUIRED"
 
     @property

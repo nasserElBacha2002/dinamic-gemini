@@ -1,8 +1,8 @@
 """
 FastAPI dependencies for v3.2.1 authentication.
 
-Phase 2 implements current-admin resolution from a bearer token. This dependency
-is intended to be reused in Phase 3 when protecting the v3 route surface.
+implements current-admin resolution from a bearer token. This dependency
+is intended to be reused in when protecting the v3 route surface.
 """
 
 from __future__ import annotations

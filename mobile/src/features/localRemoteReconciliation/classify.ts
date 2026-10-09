@@ -1,5 +1,5 @@
 /**
- * Compare local confirmed/draft results vs server-side summaries (Phase 6).
+ * Compare local confirmed/draft results vs server-side summaries.
  * Does not delete local values; only classifies outcomes.
  */
 

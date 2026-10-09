@@ -199,7 +199,7 @@ export class OfflineAisleExportService {
       if (aisleRow.sync_status !== 'LOCAL_ONLY') {
         throw new OfflineAisleExportError(
           'AISLE_NOT_EXPORTABLE',
-          'solo pasillos LOCAL_ONLY en Fase 4',
+          'solo pasillos LOCAL_ONLY ',
         );
       }
 

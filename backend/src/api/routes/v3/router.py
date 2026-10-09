@@ -1,6 +1,6 @@
 """v3 API main router: single prefix, domain-based sub-routers.
 
-v3.2.1 Phase 3: all v3 business routes require authentication via router-level
+all v3 business routes require authentication via router-level
 dependency; auth failures return the stable AuthHttpError contract.
 """
 

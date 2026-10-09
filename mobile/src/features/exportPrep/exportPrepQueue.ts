@@ -95,7 +95,7 @@ export interface ExportPrepSettleResult {
   readonly failedRetryable: number;
 }
 
-/** Phase 3 drain observation result (authoritative snapshot). */
+/** drain observation result (authoritative snapshot). */
 export type ExportPrepStructuralError =
   | 'SESSION_MISSING'
   | 'FREEZE_MISSING'
@@ -346,7 +346,7 @@ export class ExportPrepQueue {
    * Idempotent; safe for historical sessions without prep rows.
    * Does not weaken lease fencing — never touches in-flight jobs with a valid lease.
    *
-   * Phase 3B: EXPORT_PREFLIGHT READY completeness uses **light** validation
+   * EXPORT_PREFLIGHT READY completeness uses **light** validation
    * (uri/name/size/sha-format/on-disk size). Cryptographic strong rehash remains
    * mandatory once at packaging (`resolveExportPhotosFromStaging`). Optional
    * `session`+`photos` avoid re-listing canonical export photos when export already
@@ -384,7 +384,7 @@ export class ExportPrepQueue {
 
     const eligible = selectEligibleExportPrepPhotos(photos!);
     const nonProcessable = selectNonProcessableExportPhotos(photos!);
-    // Phase 3B: never double-strong. EXPORT_PREFLIGHT used to strong-validate every
+ // never double-strong. EXPORT_PREFLIGHT used to strong-validate every
     // READY job, then packaging strong-validated again. Completeness gate stays light;
     // packaging keeps the single native rehash integrity boundary.
     const readyMode: ReadyValidationMode = 'light';
@@ -699,7 +699,7 @@ export class ExportPrepQueue {
   }
 
   /**
-   * Phase 3 drain: ensure jobs after freeze, then observe until exportable,
+   * drain: ensure jobs after freeze, then observe until exportable,
    * terminal-complete, structural failure, or per-observer timeout.
    * Shared work is keyed by session+expected freeze; observers keep independent
    * progress callbacks and deadlines.
@@ -1355,7 +1355,7 @@ export class ExportPrepQueue {
     }
   }
 
-  /** @deprecated use waitUntilExportable — Phase 3 drain */
+  /** @deprecated use waitUntilExportable — drain */
   async waitUntilSettled(
     sessionId: string,
     options?: {

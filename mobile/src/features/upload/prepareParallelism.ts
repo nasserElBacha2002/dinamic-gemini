@@ -1,5 +1,5 @@
 /**
- * Network-aware prepare parallelism for UploadQueue ticks (Phase 2).
+ * Network-aware prepare parallelism for UploadQueue ticks.
  * Caps stay conservative to protect memory on mid-range Android devices.
  */
 export type PrepareNetworkClass = 'wifi' | 'ethernet' | 'cellular' | 'unknown' | 'offline';

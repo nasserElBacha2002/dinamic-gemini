@@ -1,4 +1,4 @@
-"""v3 ordered capture session API schemas (Phase 1 positioning foundation)."""
+"""v3 ordered capture session API schemas (positioning foundation)."""
 
 from __future__ import annotations
 

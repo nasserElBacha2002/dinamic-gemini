@@ -1,4 +1,4 @@
-"""Resolve client-scoped position labels after signature validation (Phase 3)."""
+"""Resolve client-scoped position labels after signature validation."""
 
 from __future__ import annotations
 

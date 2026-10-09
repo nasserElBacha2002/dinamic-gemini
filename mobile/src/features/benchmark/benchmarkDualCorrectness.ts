@@ -1,6 +1,5 @@
 /**
- * Detection vs domain correctness + absolute/regression gates for Phase 4.
- * Extends (does not replace) classifyPhotoCorrectness for backward-compatible tests.
+ * Detection vs domain correctness + absolute/regression gates for  * Extends (does not replace) classifyPhotoCorrectness for backward-compatible tests.
  */
 
 import type { BenchmarkManifestScenarioKind } from './benchmarkFixtureOrder';
@@ -585,7 +584,7 @@ export function buildPhotoCorrectnessRow(input: {
   };
 }
 
-/** Alias — preferred name in Phase 4 docs / runner. */
+/** Alias — preferred name in docs / runner. */
 export const buildDualCorrectnessRow = buildPhotoCorrectnessRow;
 
 /**

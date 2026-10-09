@@ -1,7 +1,7 @@
 /**
- * Mobile Phase 3 — encoded label payload grammar aligned with server
+ * Mobile encoded label payload grammar aligned with server
  * `parse_inventory_code_payload` + `EncodedLabelPayloadParser`.
- * Authority: contracts/code-scan/v1 + backend Phase 3 docs.
+ * Authority: contracts/code-scan/v1 + backend docs.
  */
 
 export const LABEL_PAYLOAD_PARSER_VERSION = '1.1.0';

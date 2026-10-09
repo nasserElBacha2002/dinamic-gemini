@@ -1,4 +1,4 @@
-"""Overlay Phase 4 aisle-position assignments onto operational position summaries."""
+"""Overlay aisle-position assignments onto operational position summaries."""
 
 from __future__ import annotations
 

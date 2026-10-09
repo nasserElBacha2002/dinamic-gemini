@@ -1,4 +1,4 @@
-"""SQL Server implementation of ClientRepository — Phase A1 foundation."""
+"""SQL Server implementation of ClientRepository — foundation."""
 
 from __future__ import annotations
 

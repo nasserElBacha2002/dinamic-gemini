@@ -1,4 +1,4 @@
-"""Read-only validator for DINAMIC_OFFLINE_AISLE portable packages (Phase 4 preparatory)."""
+"""Read-only validator for DINAMIC_OFFLINE_AISLE portable packages (preparatory)."""
 
 from __future__ import annotations
 

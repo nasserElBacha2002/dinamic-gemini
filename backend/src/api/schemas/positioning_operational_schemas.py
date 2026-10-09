@@ -1,4 +1,4 @@
-"""API schemas for Phase 7 positioning operational UX."""
+"""API schemas for positioning operational UX."""
 
 from __future__ import annotations
 

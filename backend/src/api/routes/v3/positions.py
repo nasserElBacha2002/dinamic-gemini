@@ -165,20 +165,20 @@ def _list_aisle_positions_query_dep(
     ),
     with_position: bool | None = Query(
         None,
-        description="Phase 5: when true/false, keep only rows with/without a published aisle position.",
+        description="when true/false, keep only rows with/without a published aisle position.",
     ),
     position_label_id: str | None = Query(
-        None, description="Phase 5: filter by published position label id."
+        None, description="filter by published position label id."
     ),
     position_assignment_status: str | None = Query(
-        None, description="Phase 5: filter by assignment status (e.g. ASSIGNED_AUTOMATIC)."
+        None, description="filter by assignment status (e.g. ASSIGNED_AUTOMATIC)."
     ),
     position_name: str | None = Query(
-        None, description="Phase 5: filter by human position name (case-insensitive)."
+        None, description="filter by human position name (case-insensitive)."
     ),
     unassigned_reason: str | None = Query(
         None,
-        description="Phase 5: filter by unassigned reason or UNASSIGNED_* status code.",
+        description="filter by unassigned reason or UNASSIGNED_* status code.",
     ),
     position_source: str | None = Query(
         None, pattern="^(AUTOMATIC|MANUAL|NONE)$"
@@ -267,7 +267,7 @@ def _position_summaries_for_list(
     manual_position_invalidated: bool | None = None,
     automatic_changed_after_override: bool | None = None,
 ) -> list[Any]:
-    """Build position summary list from list use-case result (Phase 5 enrichment)."""
+    """Build position summary list from list use-case result (enrichment)."""
     settings = load_settings()
     job_id = getattr(result, "resolved_job_id", None)
     result_ids = [p.id for p in result.primary_products if p is not None]
@@ -459,7 +459,7 @@ def list_aisle_positions_by_position(
         ),
     ),
 ) -> ResultsByPositionResponse:
-    """Group aisle results by published Phase 4 position (Phase 5). Includes 'Sin posición'."""
+    """Group aisle results by published position. Includes 'Sin posición'."""
     try:
         raw_cap = load_settings().v3_positions_aisle_raw_cap
         fetch_size = raw_cap
@@ -541,7 +541,7 @@ class _PositionDetailQuery:
 def _position_detail_query_dep(
     job_id: str | None = Query(
         None,
-        description="Optional; must match resolved result context for this position (Phase 2).",
+        description="Optional; must match resolved result context for this position.",
     ),
     exact_position: bool = Query(
         False,

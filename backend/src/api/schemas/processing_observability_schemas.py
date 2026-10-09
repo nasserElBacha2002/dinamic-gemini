@@ -1,4 +1,4 @@
-"""Phase 7 — per-asset processing observability API schemas."""
+"""per-asset processing observability API schemas."""
 
 from __future__ import annotations
 

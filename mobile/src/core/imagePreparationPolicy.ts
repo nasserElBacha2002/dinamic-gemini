@@ -1,5 +1,5 @@
 /**
- * Phase 1 — image preparation profiles (pure, testable).
+ * image preparation profiles (pure, testable).
  */
 
 import { DEFAULT_MAX_DIMENSION_PX } from '../shared/constants/photoPrepare';

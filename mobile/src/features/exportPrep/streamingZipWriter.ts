@@ -1,5 +1,5 @@
 /**
- * Bounded-memory ZIP builder for local aisle export (Phase 5).
+ * Bounded-memory ZIP builder for local aisle export.
  *
  * writeStoreZipAtomic delegates to writeBoundedStoreZip (STORE + append sink).
  * Disk append: CaptureForegroundService on Android, Node fs in tests.

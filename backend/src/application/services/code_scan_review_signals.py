@@ -1,4 +1,4 @@
-"""Build read-only review signals from latest code scan detections (Phase 6A)."""
+"""Build read-only review signals from latest code scan detections."""
 
 from __future__ import annotations
 

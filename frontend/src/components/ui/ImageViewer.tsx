@@ -34,7 +34,7 @@ export interface ImageViewerProps {
 }
 
 /**
- * Shared image viewer foundation (Phase 2 refactor).
+ * Shared image viewer foundation (refactor).
  * Provides zoom (transform-scale), fullscreen mode, and loading/error states.
  */
 export default function ImageViewer({

@@ -1,4 +1,4 @@
-"""Read scoped position-flexible rollout capabilities (Phase 5)."""
+"""Read scoped position-flexible rollout capabilities."""
 
 from __future__ import annotations
 

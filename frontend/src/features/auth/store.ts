@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { AuthUser } from './types';
 
-// Auth state and context — Phase 4: persistence, bootstrap, login/logout.
+// Auth state and context — persistence, bootstrap, login/logout.
 
 export interface AuthState {
   user: AuthUser | null;

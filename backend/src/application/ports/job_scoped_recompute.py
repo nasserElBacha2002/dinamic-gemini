@@ -1,4 +1,4 @@
-"""Transaction-bound recompute for one job scope during persist (Phase 2 Part 2)."""
+"""Transaction-bound recompute for one job scope during persist (Part 2)."""
 
 from __future__ import annotations
 

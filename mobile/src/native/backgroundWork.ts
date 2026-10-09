@@ -6,7 +6,7 @@ import {
 } from '../core/uploadLease';
 
 /**
- * Background work policy (Phase 2):
+ * Background work policy:
  * When `backgroundUploadWorker` is on, schedules real Android WorkManager unique work.
  * When off, no-op (JS UploadQueue + SQLite restore on open — legacy behavior).
  */
@@ -18,7 +18,7 @@ export interface BackgroundWorkScheduler {
   scheduleRemoteDelete(assetId: string): Promise<void>;
   cancelAllTracked(): Promise<void>;
   scheduleUploadQueue(expedited?: boolean): Promise<void>;
-  /** Phase 9: wake OfflineOpsRecoveryWorker (RUNNING→READY + upload queue). */
+  /** wake OfflineOpsRecoveryWorker (RUNNING→READY + upload queue). */
   scheduleOfflineOperations(expedited?: boolean): Promise<void>;
   /** Clear native AuthVault queuePaused and reschedule WorkManager (no-op if flag off). */
   resumeUploadQueue(): Promise<void>;

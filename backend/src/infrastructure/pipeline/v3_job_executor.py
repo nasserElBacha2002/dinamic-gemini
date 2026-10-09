@@ -779,7 +779,7 @@ class V3JobExecutor:
         lease: Any = None,
         global_fallback_ctx: _GlobalFallbackRuntimeCtx | None = None,
     ) -> bool:
-        """Phase 3 CODE_SCAN execution — deterministic per-image scan, no LLM pipeline."""
+        """CODE_SCAN execution — deterministic per-image scan, no LLM pipeline."""
         import uuid as _uuid
 
         from src.application.errors import (
@@ -819,7 +819,7 @@ class V3JobExecutor:
                 self._state.fail_job_and_aisle(
                     job_id,
                     aisle,
-                    f"Phase 3 SQL image-processing repositories unavailable: {repo_exc}",
+                    f"SQL image-processing repositories unavailable: {repo_exc}",
                     failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
                 )
                 return True
@@ -1267,7 +1267,7 @@ class V3JobExecutor:
         lease: Any = None,
         global_fallback_ctx: _GlobalFallbackRuntimeCtx | None = None,
     ) -> bool:
-        """Phase 4 INTERNAL_OCR execution — local Tesseract OCR per image, no LLM."""
+        """INTERNAL_OCR execution — local Tesseract OCR per image, no LLM."""
         import uuid as _uuid
 
         from src.application.errors import (
@@ -1321,7 +1321,7 @@ class V3JobExecutor:
                 self._state.fail_job_and_aisle(
                     job_id,
                     aisle,
-                    f"Phase 4 SQL image-processing repositories unavailable: {repo_exc}",
+                    f"SQL image-processing repositories unavailable: {repo_exc}",
                     failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
                 )
                 return True
@@ -2009,7 +2009,7 @@ class V3JobExecutor:
                             self._state.fail_job_and_aisle(
                                 job_id,
                                 aisle,
-                                f"Phase 2 SQL image-processing repositories unavailable: {repo_exc}",
+                                f"SQL image-processing repositories unavailable: {repo_exc}",
                                 failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
                             )
                             return True
@@ -2104,7 +2104,7 @@ class V3JobExecutor:
 
                     return True
 
-                # Flag off: exact pre-Phase-2 legacy path (functional equivalence).
+                # Flag off: exact pre-legacy path (functional equivalence).
                 pipeline_out = self._pipeline_execution_service.run(
                     V3PipelineExecutionRequest(
                         base_path=base_path,

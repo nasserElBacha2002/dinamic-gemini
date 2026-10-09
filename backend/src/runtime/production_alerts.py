@@ -1,4 +1,4 @@
-"""Phase 10 — catalog of production alert definitions (owner + action).
+"""catalog of production alert definitions (owner + action).
 
 These are declarative contracts for ops dashboards / paging. Wiring to a
 specific alerting backend (Prometheus, CloudWatch, etc.) is deployment-specific.

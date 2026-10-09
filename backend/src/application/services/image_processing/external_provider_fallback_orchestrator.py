@@ -1,4 +1,4 @@
-"""Phase 5 — selective per-asset external fallback (corrections: lifecycle + recovery)."""
+"""selective per-asset external fallback (corrections: lifecycle + recovery)."""
 
 from __future__ import annotations
 

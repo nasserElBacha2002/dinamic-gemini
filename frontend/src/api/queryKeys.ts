@@ -3,7 +3,7 @@
  * Keys are deterministic and domain-oriented for precise invalidation.
  */
 
-/** Default aisles table chunk on inventory detail — shared by `useAislesList` and Phase 6 aisle-list patches. */
+/** Default aisles table chunk on inventory detail — shared by `useAislesList` and aisle-list patches. */
 export const DEFAULT_AISLES_LIST_TABLE_QUERY = { page: 1, page_size: 200 } as const;
 
 export const queryKeys = {
@@ -27,7 +27,7 @@ export const queryKeys = {
     listWithParams: (params: Record<string, string | number>) =>
       [...queryKeys.inventories.list(), params] as const,
     detail: (inventoryId: string) => [...queryKeys.inventories.all, 'detail', inventoryId] as const,
-    /** Selectable pipeline providers for POST aisle process (Phase 5). */
+    /** Selectable pipeline providers for POST aisle process. */
     processingProviderOptions: (mode: 'test' | 'production' = 'test') =>
       [...queryKeys.inventories.all, 'processing-provider-options', mode] as const,
     metrics: (inventoryId: string) => [...queryKeys.inventories.all, 'metrics', inventoryId] as const,
@@ -55,7 +55,7 @@ export const queryKeys = {
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'aisle-execution-log'] as const,
     jobDetail: (inventoryId: string, aisleId: string, jobId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, aisleId, 'jobs', jobId, 'detail'] as const,
-    /** GET .../jobs/{jobId}/auditability (Phase H). */
+    /** GET .../jobs/{jobId}/auditability (run auditability). */
     jobAuditability: (inventoryId: string, aisleId: string, jobId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'jobs', jobId, 'auditability'] as const,
     mergeResults: (inventoryId: string, aisleId: string) =>
@@ -135,7 +135,7 @@ export const queryKeys = {
     /** Invalidate all benchmark-compare queries for one inventory (narrower than full `benchmark-compare` prefix). */
     benchmarkCompareInventory: (inventoryId: string) =>
       [...queryKeys.inventories.all, 'benchmark-compare', inventoryId] as const,
-    /** GET .../jobs/{jobId}/assets/processing (Phase 7). */
+    /** GET .../jobs/{jobId}/assets/processing. */
     processingAssets: (
       inventoryId: string,
       aisleId: string,

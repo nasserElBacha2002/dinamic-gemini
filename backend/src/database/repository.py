@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _legacy_stage8_writes_blocked(operation: str, table: str, **identifiers: Any) -> bool:
-    """Phase 14.1 — if True, skip mutating SQL (caller returns early)."""
+    """if True, skip mutating SQL (caller returns early)."""
     try:
         from src.config import load_settings
 

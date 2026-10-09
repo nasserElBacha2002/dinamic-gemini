@@ -39,9 +39,9 @@ class AisleIdentificationModeSource(str, Enum):
 class AisleIdentificationExecutionStrategy(str, Enum):
     """Actual execution path used by the worker.
 
-    Phase 1/2: always legacy LLM (``LEGACY_LLM`` / ``LEGACY_LLM_TEMPORARY``).
-    Phase 3: ``CODE_SCAN`` for deterministic per-image QR/barcode internal-code reading.
-    Phase 4: ``INTERNAL_OCR`` for local Tesseract OCR when the feature flag is enabled.
+    always legacy LLM (``LEGACY_LLM`` / ``LEGACY_LLM_TEMPORARY``).
+    ``CODE_SCAN`` for deterministic per-image QR/barcode internal-code reading.
+    ``INTERNAL_OCR`` for local Tesseract OCR when the feature flag is enabled.
     """
 
     LEGACY_LLM = "LEGACY_LLM"

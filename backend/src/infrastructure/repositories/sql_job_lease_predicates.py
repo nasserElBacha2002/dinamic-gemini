@@ -1,4 +1,4 @@
-"""Shared SQL fragments for active job-lease fencing (Phase 6).
+"""Shared SQL fragments for active job-lease fencing.
 
 Keep CAS predicates identical across UoW fence SELECT and lease-gated UPDATEs.
 """

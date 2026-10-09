@@ -1,4 +1,4 @@
-"""Minimal per-client OCR field-priority rules (Phase 4; not full Phase 6 admin profiles)."""
+"""Minimal per-client OCR field-priority rules (Phase 4; not full admin profiles)."""
 
 from __future__ import annotations
 

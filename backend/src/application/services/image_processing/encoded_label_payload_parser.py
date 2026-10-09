@@ -1,4 +1,4 @@
-"""Phase 3 — parse an encoded label payload (QR / CODE128) into internal_code + quantity.
+"""parse an encoded label payload (QR / CODE128) into internal_code + quantity.
 
 Thin, deterministic wrapper around
 :func:`src.application.services.code_scan_qr_payload.parse_inventory_code_payload` that adds

@@ -1,4 +1,4 @@
-"""Phase 6 — resolve reference-template annotation hints for INTERNAL_OCR.
+"""resolve reference-template annotation hints for INTERNAL_OCR.
 
 Hints boost spatial / anchor search; they never hard-crop the OCR region.
 """

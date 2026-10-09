@@ -1,4 +1,4 @@
-"""Pure mutation planner for aisle revision apply (Phase 8 corrections).
+"""Pure mutation planner for aisle revision apply (corrections).
 
 The planner reads a fully materialized view of current state and returns an immutable plan of
 the writes required to publish a new authoritative finalization. It performs **no** I/O, so the

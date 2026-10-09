@@ -1,5 +1,5 @@
 """
-Pipeline-level port for one global analysis call — vendor-neutral (Phase 4).
+Pipeline-level port for one global analysis call — vendor-neutral.
 
 Analysis strategies build ``LLMRequest`` and invoke an executor chosen from ``provider_name`` +
 settings via ``providers.registry``. Vendor SDKs stay inside executor implementations only.

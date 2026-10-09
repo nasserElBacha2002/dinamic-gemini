@@ -2457,7 +2457,7 @@
     "hub_no_inventories_message": "This client has no inventories yet.",
     "hub_aisles_error": "Could not load aisles",
     "hub_inventories_error": "Could not load inventories",
-    "phase_checklist_title": "Phase 1 and Phase 2 check",
+    "phase_checklist_title": "Positioning label readiness check",
     "check_location": "Location created",
     "check_issued": "Label issued",
     "check_payload": "Payload DINAMIC_POSITION",

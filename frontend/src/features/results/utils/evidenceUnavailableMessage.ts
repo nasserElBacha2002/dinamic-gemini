@@ -1,5 +1,5 @@
 /**
- * Phase 4.2 — User-facing messages when evidence cannot be displayed.
+ * User-facing messages when evidence cannot be displayed.
  */
 
 import type { TFunction } from 'i18next';

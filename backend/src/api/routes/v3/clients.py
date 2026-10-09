@@ -1,4 +1,4 @@
-"""v3 clients CRUD (Phase A1: create/get/list) and supplier reference images (Phase C2)."""
+"""v3 clients CRUD (create/get/list) and supplier reference images (Phase C2)."""
 
 from __future__ import annotations
 

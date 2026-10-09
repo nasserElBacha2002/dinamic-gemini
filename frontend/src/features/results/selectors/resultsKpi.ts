@@ -24,7 +24,7 @@ export interface ResultsKpi {
   withEvidence: number;
   /** Results with confidence < threshold (when confidence is present). */
   lowConfidence: number;
-  /** v3.2.5 Phase 1 UX: overall counted quantity for the aisle (sum of resolvedQty ?? detectedQty). */
+  /** UX: overall counted quantity for the aisle (sum of resolvedQty ?? detectedQty). */
   aisleTotalCounted: number;
 }
 

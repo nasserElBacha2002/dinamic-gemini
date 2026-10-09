@@ -1,4 +1,4 @@
-"""Label recognition profile domain — Phase 1 (ITEM/POSITION source selection)."""
+"""Label recognition profile domain — (ITEM/POSITION source selection)."""
 
 from src.domain.label_profiles.entities import (
     ClientSupplierLabelProfile,

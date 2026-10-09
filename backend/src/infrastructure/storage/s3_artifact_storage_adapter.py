@@ -1,5 +1,5 @@
 """
-S3-backed artifact storage adapter (Phase 1).
+S3-backed artifact storage adapter.
 """
 
 from __future__ import annotations

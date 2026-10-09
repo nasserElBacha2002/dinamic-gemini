@@ -1,4 +1,4 @@
-"""Execute / cancel server reprocess runs (Phase 7)."""
+"""Execute / cancel server reprocess runs."""
 
 from __future__ import annotations
 

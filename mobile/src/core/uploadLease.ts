@@ -1,5 +1,5 @@
 /**
- * Phase 2 — upload lease ownership + shared contracts with Kotlin UploadContracts.
+ * upload lease ownership + shared contracts with Kotlin UploadContracts.
  */
 
 export const UPLOAD_WORKER_OWNER_JS = 'js';

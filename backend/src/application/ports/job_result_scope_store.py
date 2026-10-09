@@ -1,4 +1,4 @@
-"""Job-scoped delete/count for transactional result replacement (Phase 2 Part 2)."""
+"""Job-scoped delete/count for transactional result replacement (Part 2)."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 """
-Phase 4.4 — Provider adapter / manifest execution error taxonomy.
+Provider adapter / manifest execution error taxonomy.
 
 Raised before remote provider calls when serialization or manifest parity fails.
 """

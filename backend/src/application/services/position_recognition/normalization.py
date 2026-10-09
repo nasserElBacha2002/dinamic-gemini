@@ -6,7 +6,7 @@ import unicodedata
 from dataclasses import dataclass
 
 # ``positions.corrected_position_code`` is VARCHAR(64). Imports previously
-# accepted wider values, but Phase 1 must not admit a value that cannot be
+# accepted wider values, but must not admit a value that cannot be
 # persisted by every existing position path.
 CANONICAL_POSITION_CODE_MAX_LENGTH = 64
 

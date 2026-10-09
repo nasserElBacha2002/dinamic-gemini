@@ -1,4 +1,4 @@
-"""Persisted finalization progress updates for v3 worker jobs — Phase 3.2 (lease-fenced)."""
+"""Persisted finalization progress updates for v3 worker jobs — (lease-fenced)."""
 
 from __future__ import annotations
 

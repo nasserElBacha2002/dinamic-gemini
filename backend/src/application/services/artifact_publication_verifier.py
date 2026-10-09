@@ -1,4 +1,4 @@
-"""Object verification for artifact publication — Phase 3.5 corrections."""
+"""Object verification for artifact publication — corrections."""
 
 from __future__ import annotations
 

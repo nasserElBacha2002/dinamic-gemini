@@ -1,5 +1,5 @@
 /**
- * Phase 9 — dependency resolution (pure).
+ * dependency resolution (pure).
  */
 
 import {

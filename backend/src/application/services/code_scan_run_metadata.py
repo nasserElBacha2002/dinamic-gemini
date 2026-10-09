@@ -21,7 +21,7 @@ def build_performance_metadata(
     finished_at: Any,
     processed_assets: int,
 ) -> dict[str, Any]:
-    """Elapsed time and throughput for sync scan runs (Phase 6C)."""
+    """Elapsed time and throughput for sync scan runs."""
     duration_ms = 0
     if started_at is not None and finished_at is not None:
         try:

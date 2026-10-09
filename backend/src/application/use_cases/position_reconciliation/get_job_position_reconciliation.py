@@ -1,4 +1,4 @@
-"""Read the active Phase 4 reconciliation for a job."""
+"""Read the active position reconciliation for a job."""
 
 from __future__ import annotations
 

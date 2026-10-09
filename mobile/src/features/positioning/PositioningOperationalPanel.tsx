@@ -1,5 +1,5 @@
 /**
- * Minimal Phase 7 operational positioning panel for mobile.
+ * Minimal operational positioning panel for mobile.
  * Actions are driven solely by backend allowed_actions.
  */
 

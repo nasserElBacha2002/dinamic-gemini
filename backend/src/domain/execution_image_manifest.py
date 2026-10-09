@@ -1,5 +1,5 @@
 """
-Phase 4.3 — Canonical execution image manifest for photo-based V3 runs.
+Canonical execution image manifest for photo-based V3 runs.
 
 Single immutable runtime contract describing the exact images participating in one
 provider execution. Drives prompt composition, provider payload ordering, and

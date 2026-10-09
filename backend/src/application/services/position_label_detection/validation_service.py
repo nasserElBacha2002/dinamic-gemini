@@ -1,4 +1,4 @@
-"""Validate DINAMIC_POSITION signatures (Phase 3)."""
+"""Validate DINAMIC_POSITION signatures."""
 
 from __future__ import annotations
 

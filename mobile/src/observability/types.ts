@@ -1,4 +1,4 @@
-/** Phase 0 — mobile upload/process observability types. */
+/** mobile upload/process observability types. */
 
 export type ObservabilityAttributeValue = string | number | boolean | null;
 

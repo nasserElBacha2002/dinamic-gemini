@@ -1,4 +1,4 @@
-"""Phase 4 — Internal OCR per-image processing strategy.
+"""Internal OCR per-image processing strategy.
 
 Loads one source asset, runs a bounded preprocessing + OCR variant loop, extracts fields,
 normalizes/validates, and returns an :class:`ImageProcessingResult`.

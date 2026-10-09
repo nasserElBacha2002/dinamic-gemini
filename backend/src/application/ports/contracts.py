@@ -129,7 +129,7 @@ class AisleTableQuery:
 
 
 class _PositionListJobIdUnset:
-    """Sentinel: omit job_id predicate (all slices). Phase 2 list/detail pass a resolved slice."""
+    """Sentinel: omit job_id predicate (all slices). list/detail pass a resolved slice."""
 
 
 POSITION_LIST_JOB_ID_UNSET = _PositionListJobIdUnset()

@@ -786,7 +786,7 @@ class UpsertPreliminaryDetectionUseCase:
                     "POSITION_VALIDATOR_RESULT_INVALID",
                     retryable=True,
                 )
-            # Unknown positions require Phase 5 mobile channel rollout + auto materialization.
+            # Unknown positions require mobile channel rollout + auto materialization.
             if self._auto_materialization_enabled and self._flexible_mobile_enabled:
                 return self._materialize_position(
                     command,

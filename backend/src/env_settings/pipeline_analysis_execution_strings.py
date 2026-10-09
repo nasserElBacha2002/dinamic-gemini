@@ -1,5 +1,5 @@
 """
-Phase 4 — string validation for hybrid multi-provider execution settings.
+string validation for hybrid multi-provider execution settings.
 
 Lives under ``env_settings`` so :mod:`src.env_settings.grouped_settings` can validate fields
 without importing the pipeline package (avoids circular imports via ``src.config`` → jobs).

@@ -1,4 +1,4 @@
-"""Phase 2 — LabelValidationService: single deterministic validation authority."""
+"""LabelValidationService: single deterministic validation authority."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 /**
- * Separated photo lifecycle axes (Fase 3).
+ * Separated photo lifecycle axes.
  * Persistence may still use `status` + `upload_status` columns; this module
  * documents and validates the four responsibilities without collapsing them.
  */

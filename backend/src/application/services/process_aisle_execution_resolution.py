@@ -3,7 +3,7 @@
 Keeps policy out of API routes: production honors validated provider/model selection against
 the production catalog; test uses explicit request resolution with full model lists.
 
-Phase 5: after key resolution, validates provider capabilities for visual inventory jobs
+after key resolution, validates provider capabilities for visual inventory jobs
 (aisle processing always requires vision + image binding).
 """
 

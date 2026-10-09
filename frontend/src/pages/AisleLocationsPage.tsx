@@ -1,5 +1,5 @@
 /**
- * Physical aisle locations + positioning labels (Phase 1 / Phase 2).
+ * Physical aisle locations + positioning labels.
  * Not CV positions — shelf/rack/slot labels with DINAMIC_POSITION payload.
  */
 

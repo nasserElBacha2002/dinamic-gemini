@@ -1,7 +1,6 @@
-"""Bridge Phase 2 aisle image orchestrator into V3JobExecutor (optional, flag-gated).
+"""Bridge aisle image orchestrator into V3JobExecutor (optional, flag-gated).
 
-Wiring policy: when the app has resolved a SQL repository backend, the Phase 2
-lease/state/attempt repositories must also be SQL (``require_sql=True``) — silently falling
+Wiring policy: when the app has resolved a SQL repository backend, the lease/state/attempt repositories must also be SQL (``require_sql=True``) — silently falling
 back to in-memory repositories here would break cross-worker mutual exclusion (two worker
 processes would each hold their own in-memory lease and both call the legacy provider). Callers
 that cannot resolve the SQL repos for some reason must fail fast rather than degrade silently.
@@ -109,7 +108,7 @@ def build_default_aisle_processing_orchestrator(
     external_fallback=None,
     apply_authoritative_local=None,
 ) -> AisleProcessingOrchestrator:
-    """Build the Phase 2 orchestrator from injected repos.
+    """Build the orchestrator from injected repos.
 
     ``require_sql=True`` means the caller resolved (or attempted to resolve) SQL-backed
     repositories elsewhere; any ``None`` here is treated as a hard failure
@@ -393,7 +392,7 @@ def _build_canonical_position_validator(
 
 
 def _build_position_detection_use_case(settings):
-    """Wire Phase 3 detection when enabled.
+    """Wire detection when enabled.
 
     Returns None only when detection is explicitly disabled.
     Fail-fast when the flag is true but dependencies cannot be constructed.
@@ -543,7 +542,7 @@ def build_default_code_scan_orchestrator(
     apply_authoritative_local=None,
     position_detection_repo=None,
 ) -> AisleProcessingOrchestrator:
-    """Build the Phase 3 orchestrator wired for CODE_SCAN SINGLE_ASSET processing.
+    """Build the orchestrator wired for CODE_SCAN SINGLE_ASSET processing.
 
     Reuses :class:`AisleProcessingOrchestrator` (same per-asset bookkeeping) but injects the
     code-scan strategy, result persister, reconciler, and a concurrency bound via the shared
@@ -594,7 +593,7 @@ def build_default_external_fallback_orchestrator(
     request_repo=None,
     event_publisher=None,
 ):
-    """Build Phase 5 selective external fallback (snapshot governs provider identity)."""
+    """Build selective external fallback (snapshot governs provider identity)."""
     from src.application.services.image_processing.external_concurrency_limiter import (
         ExternalConcurrencyLimiter,
     )

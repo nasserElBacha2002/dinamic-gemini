@@ -1,5 +1,5 @@
 """
-Phase 5 — canonical provider error taxonomy and legacy compatibility mapping.
+canonical provider error taxonomy and legacy compatibility mapping.
 
 Adapters may continue raising legacy ``LLMProviderError.code`` values; :class:`~src.llm.errors.LLMProviderError`
 derives ``canonical_code`` and ``retryable`` from this module automatically.

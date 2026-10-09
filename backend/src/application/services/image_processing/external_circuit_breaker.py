@@ -1,4 +1,4 @@
-"""Phase 5 — process-local circuit breaker with CLOSED / OPEN / HALF_OPEN.
+"""process-local circuit breaker with CLOSED / OPEN / HALF_OPEN.
 
 Limitation: not shared across worker processes. Key = provider + model + profile.
 """

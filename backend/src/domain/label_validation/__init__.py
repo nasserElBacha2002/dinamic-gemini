@@ -1,4 +1,4 @@
-"""Phase 2 — unified label validation contracts (recognition ≠ validation).
+"""unified label validation contracts (recognition ≠ validation).
 
 Distinct from ``domain.labels.NormalizedLabel`` (inventory merge layer).
 These types are the CODE_SCAN / future Vision/TXT validation boundary.

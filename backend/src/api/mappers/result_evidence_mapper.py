@@ -1,4 +1,4 @@
-"""Map Phase 4.8 read models to API response schemas."""
+"""Map read models to API response schemas."""
 
 from __future__ import annotations
 

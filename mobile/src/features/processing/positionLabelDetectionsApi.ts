@@ -1,5 +1,5 @@
 /**
- * Phase 3 — query job position-label detections (read-only).
+ * query job position-label detections (read-only).
  */
 
 import type { ApiClient } from '../../services/api/apiClient';

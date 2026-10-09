@@ -1,5 +1,5 @@
 """
-Phase 1 — labeled vision payloads and multimodal order metadata for global analysis.
+labeled vision payloads and multimodal order metadata for global analysis.
 
 Shared construction for OpenAI, Claude, and Gemini so primary evidence images carry explicit
 ``source_image_id`` labels and supplier references are marked REFERENCE_ONLY.
@@ -414,7 +414,7 @@ def build_openai_vision_from_serialized(
     main_prompt_text: str,
     serialized: Any,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Phase 4.4 — OpenAI content parts from serialized manifest-ordered images only."""
+    """OpenAI content parts from serialized manifest-ordered images only."""
     from src.pipeline.services.provider_payload_serialization import (
         SerializedMultimodalPayload,
         manifest_entry_label,
@@ -454,7 +454,7 @@ def build_anthropic_vision_from_serialized(
     main_prompt_text: str,
     serialized: Any,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Phase 4.4 — Anthropic content blocks from serialized manifest-ordered images."""
+    """Anthropic content blocks from serialized manifest-ordered images."""
     return build_openai_vision_from_serialized(
         main_prompt_text=main_prompt_text,
         serialized=serialized,
@@ -605,7 +605,7 @@ def build_gemini_contents_from_serialized(
     job_id: str | None = None,
     provider: str = "gemini",
 ) -> tuple[list[Any], list[dict[str, Any]]]:
-    """Phase 4.4 — Gemini interleaved contents from serialized manifest-ordered images."""
+    """Gemini interleaved contents from serialized manifest-ordered images."""
     from src.pipeline.services.provider_payload_serialization import (
         SerializedMultimodalPayload,
         manifest_entry_label,

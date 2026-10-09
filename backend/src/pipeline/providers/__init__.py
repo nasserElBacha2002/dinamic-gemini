@@ -1,4 +1,4 @@
-"""Provider registry and canonical pipeline resolution exports (Phase 8).
+"""Provider registry and canonical pipeline resolution exports.
 
 ``resolve_llm_executor_for_context`` is implemented in
 :mod:`src.pipeline.services.pipeline_provider_resolver` and re-exported here for a stable

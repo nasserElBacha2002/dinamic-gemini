@@ -1,4 +1,4 @@
-"""Get ordered positioning sequence frames for an aisle/job (Phase 7 corrections)."""
+"""Get ordered positioning sequence frames for an aisle/job (corrections)."""
 
 from __future__ import annotations
 

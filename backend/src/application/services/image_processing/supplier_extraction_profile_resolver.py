@@ -1,4 +1,4 @@
-"""Phase 6 — resolve extraction profile for job processing (snapshot-aware)."""
+"""resolve extraction profile for job processing (snapshot-aware)."""
 
 from __future__ import annotations
 

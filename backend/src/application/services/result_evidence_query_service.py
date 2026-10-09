@@ -1,4 +1,4 @@
-"""Phase 4.8 — read models for structural result_evidence and traceability artifacts."""
+"""read models for structural result_evidence and traceability artifacts."""
 
 from __future__ import annotations
 

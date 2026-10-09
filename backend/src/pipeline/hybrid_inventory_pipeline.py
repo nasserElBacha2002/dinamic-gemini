@@ -1,7 +1,7 @@
 """
 Hybrid inventory pipeline (v2.1).
 Stage 2.2.B: frames via FrameSource; v2.3.A: RunContext, InputPreparationStage; v2.3.B: AnalysisProvider; v2.3.C: staged orchestration.
-v3.2.4 Phase 5: produce run_metadata in memory (visual_reference_context) for job-level traceability.
+produce run_metadata in memory (visual_reference_context) for job-level traceability.
 """
 
 import json
@@ -40,7 +40,7 @@ from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageIn
 
 @dataclass
 class PipelineRunResult:
-    """Result of a pipeline run. Phase 5: run_metadata propagated in memory for job persistence."""
+    """Result of a pipeline run. run_metadata propagated in memory for job persistence."""
 
     exit_code: int
     run_metadata: Optional[dict[str, Any]] = None
@@ -203,7 +203,7 @@ def _build_success_run_metadata(
     analysis_result: AnalysisStageResult,
     logger: Any,
 ) -> dict[str, Any]:
-    # Phase 5–6: run_metadata in memory; Phase 6 reuses analysis_result.prompt_composition
+    # 6: run_metadata in memory; reuses analysis_result.prompt_composition
     # (same object as LLMRequest.metadata["prompt_composition"]) — no rebuild.
     run_metadata = build_run_metadata(
         context.analysis_context,
@@ -213,7 +213,7 @@ def _build_success_run_metadata(
     )
     # Run attribution: provider + effective prompt profile key for job.result_json.
     # NOTE: top-level run_metadata["prompt_version"] below is legacy "{prompt_key}@v2.1" (report schema tag).
-    # That is unrelated to prompt_composition["prompt_version"] (Phase 7 optional logical label).
+    # That is unrelated to prompt_composition["prompt_version"] (optional logical label).
     provider = (analysis_result.provider_name or "").strip() or None
     run_metadata["provider"] = provider
     prompt_key = getattr(context, "job_prompt_key", None) or getattr(
@@ -567,7 +567,7 @@ class HybridInventoryPipeline:
         return PipelineRunResult(exit_code=0, run_metadata=run_metadata)
 
     def _run_hybrid(self, video_path: str, params: _HybridRunParams) -> PipelineRunResult:
-        """Orchestrate staged pipeline; return result with exit code and run_metadata (Phase 5).
+        """Orchestrate staged pipeline; return result with exit code and run_metadata.
 
         ``job_prompt_parity_mode``: when true, OpenAI hybrid **base** uses the same ``default`` branch
         as other providers (comparison). V3 jobs set this from ``engine_params_json.prompt_parity_mode``.

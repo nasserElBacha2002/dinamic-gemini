@@ -48,7 +48,7 @@ export function selectExportPackagingPhotos(
 }
 
 /**
- * Final ZIP membership for a session snapshot (Phase 4).
+ * Final ZIP membership for a session snapshot.
  * expectedPhotos = canonical (freeze when present) − excluded − rejected.
  */
 export function selectExpectedZipPhotos(

@@ -1,5 +1,5 @@
 /**
- * Phase 9 — durable offline operation contracts (pure types / status machine).
+ * durable offline operation contracts (pure types / status machine).
  */
 
 export const OFFLINE_OPERATION_TYPES = [

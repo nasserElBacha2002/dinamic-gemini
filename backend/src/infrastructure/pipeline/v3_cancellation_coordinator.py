@@ -1,5 +1,5 @@
 """
-V3 cooperative cancellation — Phase 6 extraction from :class:`V3JobExecutor`.
+V3 cooperative cancellation — extraction from :class:`V3JobExecutor`.
 
 Creates cancellation checkpoints and handles pipeline-level cancellation requests.
 """

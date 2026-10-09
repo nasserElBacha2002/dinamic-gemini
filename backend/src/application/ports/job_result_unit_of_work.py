@@ -1,4 +1,4 @@
-"""Transactional boundary for job-scoped result persistence (Phase 2 Part 2)."""
+"""Transactional boundary for job-scoped result persistence (Part 2)."""
 
 from __future__ import annotations
 

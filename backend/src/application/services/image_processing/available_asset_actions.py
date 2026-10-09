@@ -1,4 +1,4 @@
-"""Phase 7 — compute available actions (job + snapshot + flags aware)."""
+"""compute available actions (job + snapshot + flags aware)."""
 
 from __future__ import annotations
 

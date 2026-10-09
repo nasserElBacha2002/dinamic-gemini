@@ -1,5 +1,5 @@
 /**
- * Phase 9 — development guardrails on top of Phase 8 observability events.
+ * development guardrails on top of observability events.
  * Warns on suspicious patterns; does not throw. Off in Vitest unless explicitly enabled for tests.
  *
  * Intentionally does not import `cacheMutationObservability` (avoid circular ESM with pushEvent).

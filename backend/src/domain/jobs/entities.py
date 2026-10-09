@@ -64,26 +64,26 @@ class Job:
     failure_code: str | None = None
     failure_message: str | None = None
     execution_id: str | None = None
-    #: Worker process that acquired STARTING→RUNNING (Phase 1 corrections). Distinct from execution_id.
+    #: Worker process that acquired STARTING→RUNNING (corrections). Distinct from execution_id.
     claim_owner_id: str | None = None
-    # Phase 1 — transitional indexed metadata for future multi-provider work; not a runtime provider abstraction.
+    # transitional indexed metadata for future multi-provider work; not a runtime provider abstraction.
     provider_name: str | None = None
     model_name: str | None = None
     prompt_key: str | None = None
     engine_params_json: dict[str, Any] | None = None
     #: Resolved prompt profile version / schema tag for audit (e.g. ``global_v21@v2.1``).
     prompt_version: str | None = None
-    # Phase 1 aisle identification — immutable snapshot at job creation (do not re-resolve).
+    # aisle identification — immutable snapshot at job creation (do not re-resolve).
     identification_mode: AisleIdentificationMode = AisleIdentificationMode.LEGACY_LLM
     identification_mode_source: AisleIdentificationModeSource = (
         AisleIdentificationModeSource.SYSTEM_DEFAULT
     )
     configuration_snapshot_version: int = CONFIGURATION_SNAPSHOT_VERSION
-    #: Actual worker path (Phase 1: LEGACY_LLM or LEGACY_LLM_TEMPORARY).
+    #: Actual worker path (LEGACY_LLM or LEGACY_LLM_TEMPORARY).
     execution_strategy: AisleIdentificationExecutionStrategy = (
         AisleIdentificationExecutionStrategy.LEGACY_LLM
     )
-    # Phase 3.2 — explicit finalization progress (distinct from pipeline current_stage).
+    # explicit finalization progress (distinct from pipeline current_stage).
     finalization_status: FinalizationStatus = FinalizationStatus.NOT_STARTED
     current_finalization_step: CurrentFinalizationStep | None = None
     last_completed_finalization_step: LastCompletedFinalizationStep = (
@@ -95,11 +95,11 @@ class Job:
     finalization_completed_at: datetime | None = None
     domain_persisted_at: datetime | None = None
     artifacts_published_at: datetime | None = None
-    # Phase 3 — lease fencing (monotonic token + expiry). Owner reuses claim_owner_id.
+    # lease fencing (monotonic token + expiry). Owner reuses claim_owner_id.
     lease_fencing_token: int = 0
     lease_expires_at: datetime | None = None
     lease_acquired_at: datetime | None = None
-    #: Ordered capture session pin (Phase 1); NULL for legacy process jobs.
+    #: Ordered capture session pin; NULL for legacy process jobs.
     ordered_capture_session_id: str | None = None
     #: Sequence version sealed when this job was reserved; pairs with session id.
     sequence_version: int | None = None

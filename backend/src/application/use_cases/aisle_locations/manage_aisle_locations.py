@@ -1,4 +1,4 @@
-"""CRUD + logical label emission for aisle locations (Phase 1)."""
+"""CRUD + logical label emission for aisle locations."""
 
 from __future__ import annotations
 

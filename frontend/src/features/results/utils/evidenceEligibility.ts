@@ -1,6 +1,6 @@
 /**
- * Phase 4.2 / 4.8 — Central evidence display eligibility.
- * Phase 4.8: when structural evidenceView is present, displayable is authoritative (fail-closed).
+ * 4.8 — Central evidence display eligibility.
+ * when structural evidenceView is present, displayable is authoritative (fail-closed).
  */
 
 import type { ResultEvidenceView, TraceabilityStatus } from '../types';

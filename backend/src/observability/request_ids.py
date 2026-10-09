@@ -1,4 +1,4 @@
-"""Phase 5 — request / correlation ID validation and generation."""
+"""request / correlation ID validation and generation."""
 
 from __future__ import annotations
 

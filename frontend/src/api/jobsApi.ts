@@ -47,7 +47,7 @@ export async function getExecutionLog(
   );
 }
 
-/** Path suffix (after API base) for GET job auditability (Phase H) — exposed for tests. */
+/** Path suffix (after API base) for GET job auditability — exposed for tests. */
 export function getJobAuditabilityPath(inventoryId: string, aisleId: string, jobId: string): string {
   const inv = encodeURIComponent(inventoryId);
   const aisle = encodeURIComponent(aisleId);

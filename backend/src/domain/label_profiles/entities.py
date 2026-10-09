@@ -1,4 +1,4 @@
-"""Entities for client-supplier label profile configuration (Phase 1)."""
+"""Entities for client-supplier label profile configuration."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ class ClientSupplierLabelProfile:
 def virtual_dinamic_label_profile(
     client_supplier_id: str, label_kind: LabelKind
 ) -> ClientSupplierLabelProfile:
-    """Non-persisted inherited DINAMIC — absence of row means default (Phase 1)."""
+    """Non-persisted inherited DINAMIC — absence of row means default."""
     return ClientSupplierLabelProfile(
         id="",
         client_supplier_id=client_supplier_id,

@@ -1,5 +1,5 @@
 /**
- * Phase 9 — versioned offline operation payloads (codecs + registry).
+ * versioned offline operation payloads (codecs + registry).
  */
 
 import type { OfflineOperationType } from './offlineOperationTypes';

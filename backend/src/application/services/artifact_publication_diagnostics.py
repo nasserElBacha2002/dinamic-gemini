@@ -1,4 +1,4 @@
-"""Structured diagnostics for durable artifact publication — Phase 4.4 hotfix."""
+"""Structured diagnostics for durable artifact publication — hotfix."""
 
 from __future__ import annotations
 

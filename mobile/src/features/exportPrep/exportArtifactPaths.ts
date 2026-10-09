@@ -1,5 +1,5 @@
 /**
- * Central path helpers for aisle-exports + quarantine (Phase 6).
+ * Central path helpers for aisle-exports + quarantine.
  * Do not duplicate naming conventions elsewhere.
  */
 

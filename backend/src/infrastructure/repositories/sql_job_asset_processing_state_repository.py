@@ -1,4 +1,4 @@
-"""SQL Server JobAssetProcessingStateRepository (Phase 2 corrections).
+"""SQL Server JobAssetProcessingStateRepository (corrections).
 
 ``SqlServerClient`` exposes only ``cursor()`` (pyodbc cursor context manager) — there is no
 ``query()``/``execute()`` convenience wrapper. All access here goes through

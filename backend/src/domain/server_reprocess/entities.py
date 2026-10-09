@@ -1,4 +1,4 @@
-"""Server reprocess domain types (Phase 7) — proposals never overwrite current authority."""
+"""Server reprocess domain types— proposals never overwrite current authority."""
 
 from __future__ import annotations
 

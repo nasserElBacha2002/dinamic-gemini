@@ -1,4 +1,4 @@
-"""Phase 6 manual product-position override endpoints."""
+"""manual product-position override endpoints."""
 
 from __future__ import annotations
 

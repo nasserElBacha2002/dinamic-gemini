@@ -26,7 +26,7 @@ for:
 - **Category A:** the five stable not-found rows above (fixed ``detail`` strings).
 - **Category B (structured subset):** ``JobNotFoundError``, ``JobDoesNotBelongToAisleError``,
   ``ActiveJobExistsError``, ``JobPromotionNotAllowedError``, ``BenchmarkCompareJobsMustDifferError``,
-  ``AnalyticsScopeValidationError`` — **Phase 3:** public ``detail`` is
+  ``AnalyticsScopeValidationError`` — **** public ``detail`` is
   built from **vetted templates** in this module (see ``_normalized_*`` helpers). In particular,
   ``JobNotFoundError``: if ``str(exc)`` matches the canonical ``Job not found: <id>`` pattern, that
   controlled detail (including the id) is preserved; **any other** message shape collapses to the
@@ -42,7 +42,7 @@ The app serializes structured errors as
 
 **Mixed responses across the API:** the same status code (e.g. 404) may return structured JSON
 for mapper-covered types above, but **legacy** ``{"detail": ...}`` for other failures (artifacts,
-most remaining Category B branches, route-local Phase 6 job messages, validation, etc.).
+most remaining Category B branches, route-local job messages, validation, etc.).
 **Never infer** client behavior from status code alone; do not assume ``code`` is always present.
 
 Clients that only read ``detail`` remain compatible. Category C paths and **unselected**
@@ -55,7 +55,7 @@ are set by the artifact layer per failure reason (not raw stack traces). It rema
 **Category B — structured subset vs legacy branches**
 Most Category B types remain plain ``HTTPException`` with ``detail=str(exc)``. The **structured
 job/conflict subset** (see above) uses controlled ``detail`` strings built in the mapper
-(Phase 3). **Do not extend** structured Category B without: clear semantics, multi-route use,
+. **Do not extend** structured Category B without: clear semantics, multi-route use,
 documented templates, tests, and API review.
 
 **``str(exc)`` deprecation (transitional):**
@@ -65,7 +65,7 @@ Remaining mapper branches still use ``str(exc)`` until a later phase migrates th
 
 **Category C — route-local ``HTTPException`` only**
 Some routes **must not** use the mapper alone when a **different** fixed string is required
-for regression tests, UX, or reduced information disclosure (e.g. Phase 6 job read helpers
+for regression tests, UX, or reduced information disclosure (e.g. job read helpers
 that return ``"Job not found"`` without echoing the underlying ``JobNotFoundError`` message).
 Keep those translations in the route (or a small helper) and document *why* in that helper.
 
@@ -115,8 +115,7 @@ Final v3 target contract (operating model)
 
 1. **FastAPI / Pydantic validation** — ``{"detail": [<field errors>]}`` (framework-native).
 2. **Auth** — ``{"error": {"code", "message"}}`` (separate product contract).
-3. **Category C** — selected aisle job-read helpers: fixed ``detail`` only, no ``code`` (Phase 6
-   regression / disclosure policy); see ``aisles._load_job_for_inventory_job_route``.
+3. **Category C** — selected aisle job-read helpers: fixed ``detail`` only, no ``code`` (   regression / disclosure policy); see ``aisles._load_job_for_inventory_job_route``.
 4. **``StoredArtifactAccessError``** — ``detail``-only via plain ``HTTPException`` (artifact
    layer owns copy; structuring deferred).
 5. **Remaining mapper branches** still on ``HTTPException`` + ``str(exc)`` — see *Deferred
@@ -478,7 +477,7 @@ from src.domain.label_profiles.errors import SupplierLabelProfileNotConfiguredEr
 
 logger = logging.getLogger(__name__)
 
-# --- Phase 3: controlled ``detail`` for structured Category B (known use-case shapes only) ---
+# --- controlled ``detail`` for structured Category B (known use-case shapes only) ---
 _JOB_NOT_FOUND_CANON = re.compile(r"^Job not found: (.+)$")
 _JOB_SCOPE_NOT_SCOPED = re.compile(r"^Job (.+?) is not scoped to aisle (.+)$")
 _JOB_SCOPE_DOES_NOT_BELONG = re.compile(r"^Job (.+?) does not belong to aisle (.+)$")
@@ -488,7 +487,7 @@ _JOB_PROMOTE_STATUS = re.compile(r"^Only succeeded jobs can be promoted \(status
 
 
 def _normalized_job_not_found_detail(exc: JobNotFoundError) -> str:
-    """Phase 3 ``JobNotFoundError`` → HTTP ``detail`` (mapper-only; Category C routes unchanged).
+    """``JobNotFoundError`` → HTTP ``detail`` (mapper-only; Category C routes unchanged).
 
     - **Canonical:** ``str(exc)`` matches ``^Job not found: (.+)$`` (use-case convention). The
       public detail stays ``Job not found: <id>`` — controlled dynamic segment, not arbitrary text.

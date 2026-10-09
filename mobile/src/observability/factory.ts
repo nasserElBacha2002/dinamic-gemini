@@ -24,7 +24,7 @@ export interface ObservabilityStack {
 }
 
 /**
- * Wire Phase 0 observability. When disabled, returns NoOp with zero overhead beyond a flag check.
+ * Wire observability. When disabled, returns NoOp with zero overhead beyond a flag check.
  */
 export function createObservabilityStack(input: {
   readonly enabled: boolean;

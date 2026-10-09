@@ -1,5 +1,5 @@
 """
-Phase 5 — explicit provider capability contract (authoritative for job compatibility).
+explicit provider capability contract (authoritative for job compatibility).
 
 Capabilities are declared per registered pipeline provider key and consumed by processing
 resolution, worker execution guards, admin inspection, and tests.

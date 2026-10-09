@@ -1,4 +1,4 @@
-"""Physical aisle location (shelf/rack/slot) — Phase 1 positioning foundation.
+"""Physical aisle location (shelf/rack/slot) — positioning foundation.
 
 Distinct from CV ``Position`` (detected product/pallet review unit in ``domain.positions``).
 """

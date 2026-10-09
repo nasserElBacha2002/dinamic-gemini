@@ -1,5 +1,5 @@
 /**
- * Coordinated session artifact purge (Phase 6 corrections).
+ * Coordinated session artifact purge (corrections).
  * Order: close admission → abort export → drain prep → CANCELLED → files → metadata.
  * Never deletes metadata while file delete failed; durable PURGE_PENDING for retry.
  */

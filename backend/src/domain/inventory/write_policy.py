@@ -1,6 +1,6 @@
 """Authoritative inventory write policy for late-write channels.
 
-Writable statuses match Phase 3 position materialization: draft, processing,
+Writable statuses match position materialization: draft, processing,
 and in_review. Completed and failed inventories reject mutation.
 """
 

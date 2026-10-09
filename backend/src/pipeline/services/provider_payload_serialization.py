@@ -1,5 +1,5 @@
 """
-Phase 4.4 — Centralized provider-neutral multimodal serialization and parity validation.
+Centralized provider-neutral multimodal serialization and parity validation.
 """
 
 from __future__ import annotations

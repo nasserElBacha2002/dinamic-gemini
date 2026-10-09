@@ -1,4 +1,4 @@
-"""Port for Phase 7 server reprocess persistence."""
+"""Port for server reprocess persistence."""
 
 from __future__ import annotations
 

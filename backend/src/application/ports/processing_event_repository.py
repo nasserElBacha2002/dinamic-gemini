@@ -1,4 +1,4 @@
-"""Port for Phase 7 processing_events persistence."""
+"""Port for processing_events persistence."""
 
 from __future__ import annotations
 

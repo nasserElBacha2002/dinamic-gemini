@@ -1,4 +1,4 @@
-"""Analytics repository port — aggregates for Phase 5.1."""
+"""Analytics repository port — aggregates .1."""
 
 from __future__ import annotations
 

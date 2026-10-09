@@ -1,4 +1,4 @@
-"""Create / update / cancel / list / diff aisle revisions (Phase 8)."""
+"""Create / update / cancel / list / diff aisle revisions."""
 
 from __future__ import annotations
 

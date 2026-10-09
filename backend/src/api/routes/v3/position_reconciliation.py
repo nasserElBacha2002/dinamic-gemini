@@ -1,4 +1,4 @@
-"""Phase 4 sequential position reconciliation endpoints."""
+"""sequential position reconciliation endpoints."""
 
 from __future__ import annotations
 

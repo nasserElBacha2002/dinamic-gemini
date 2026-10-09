@@ -1,4 +1,4 @@
-"""Phase 4 — configurable OCR image preprocessing variants.
+"""configurable OCR image preprocessing variants.
 
 Produces a bounded set of PreparedImage variants (never a combinatorial explosion).
 Destructive transforms are optional; the original EXIF-oriented RGB is always variant 0

@@ -1,4 +1,4 @@
-"""Discoverable models and prompt profiles for aisle processing experiments (Phase 5)."""
+"""Discoverable models and prompt profiles for aisle processing experiments."""
 
 from __future__ import annotations
 

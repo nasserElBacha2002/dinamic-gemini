@@ -1,4 +1,4 @@
-"""Phase 5 corrections — single in-process metrics registry (Prometheus text)."""
+"""corrections — single in-process metrics registry (Prometheus text)."""
 
 from __future__ import annotations
 

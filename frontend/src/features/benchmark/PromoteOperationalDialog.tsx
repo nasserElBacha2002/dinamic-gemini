@@ -1,5 +1,5 @@
 /**
- * Phase 6 — promote a succeeded run to the aisle operational pointer (no automatic correction transfer).
+ * promote a succeeded run to the aisle operational pointer (no automatic correction transfer).
  */
 
 import { useTranslation } from 'react-i18next';

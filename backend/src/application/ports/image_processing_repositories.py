@@ -1,4 +1,4 @@
-"""Ports for Phase 2 image-processing state, attempts, leases, and batch attempts."""
+"""Ports for image-processing state, attempts, leases, and batch attempts."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class JobAssetProcessingStateRepository(ABC):
     ) -> JobAssetProcessingState | None:
         """Atomically transition PENDING -> ``next_status``; return the row from the update only.
 
-        ``FAILED_TECHNICAL`` is a **terminal** status within the same job (Phase 2 corrections
+        ``FAILED_TECHNICAL`` is a **terminal** status within the same job (corrections
         policy) and must never be included in ``expected_statuses`` by callers — retries of a
         technically-failed asset require a new job, not a same-job re-acquire. Implementations
         must build the returned entity from the rows affected by the atomic UPDATE (SQL:

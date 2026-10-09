@@ -7,7 +7,7 @@
 * ``src.llm.prompts.get_hybrid_prompt`` delegates to ``compose_base`` for **tests and legacy** only.
 
 Enrichments (image IDs, product/label) live in ``enrichments`` and run only at explicit call sites
-(e.g. ``pipeline.services.hybrid_analysis_prompt``). Phase 6 traceability will attach metadata alongside
+(e.g. ``pipeline.services.hybrid_analysis_prompt``). traceability will attach metadata alongside
 that layer, not inside ``compose_base``.
 
 See ``hybrid_resolution`` for per-provider rules (OpenAI replacement, Claude supplement, default-only).

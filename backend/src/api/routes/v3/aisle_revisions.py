@@ -1,4 +1,4 @@
-"""v3 aisle revision routes (Phase 8)."""
+"""v3 aisle revision routes."""
 
 from __future__ import annotations
 

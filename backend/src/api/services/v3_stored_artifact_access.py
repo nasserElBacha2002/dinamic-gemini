@@ -1,5 +1,5 @@
 """
-Phase 4: resolve operator-facing artifacts from provider-aware metadata (S3/GCS/local ArtifactStore).
+resolve operator-facing artifacts from provider-aware metadata (S3/GCS/local ArtifactStore).
 
 Strategy:
 - **S3 / GCS** (`storage_provider` in ``s3``, ``gcs``): **307 Temporary Redirect** to a signed GET URL

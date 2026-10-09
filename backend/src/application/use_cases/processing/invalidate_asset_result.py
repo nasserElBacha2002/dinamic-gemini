@@ -1,4 +1,4 @@
-"""Transactional invalidate of active asset result (Phase 7 corrections)."""
+"""Transactional invalidate of active asset result (corrections)."""
 
 from __future__ import annotations
 

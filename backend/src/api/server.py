@@ -177,7 +177,7 @@ app.include_router(v3_admin_ai_config_router)
 app.include_router(v3_admin_storage_router)
 app.include_router(v3_admin_finalization_recovery_router)
 
-# Disposable Phase 4B lab attestation — LOCAL/TEST only, never production-like.
+# Disposable lab attestation — LOCAL/TEST only, never production-like.
 if lab_attestation_enabled():
     app.include_router(lab_attestation_router)
     logger.info("Lab attestation routes mounted (LAB_DISPOSABLE_ENABLED + local/test)")

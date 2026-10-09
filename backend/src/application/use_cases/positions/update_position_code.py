@@ -235,7 +235,7 @@ class UpdatePositionCodeUseCase:
         ):
             request_id = (materialization.request_id or "").strip()
             if request_id:
-                # Durable association for review-driven materialization (Phase 3 ports).
+                # Durable association for review-driven materialization (ports).
                 self._position_materializer.complete_association(
                     request_id,
                     success=True,

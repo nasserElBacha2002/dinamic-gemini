@@ -21,7 +21,7 @@ from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFIL
 
 logger = logging.getLogger(__name__)
 
-# Phase 7 retry lineage semantics:
+# retry lineage semantics:
 # - retry_of_job_id always points to the immediate previous attempt
 # - retries form one linear chain per aisle processing flow
 # - only the latest retryable terminal attempt may be retried

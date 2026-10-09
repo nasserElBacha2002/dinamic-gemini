@@ -1,5 +1,5 @@
 /**
- * Phase 9 corrections — central offline scheduler with claim/lease, aisle serialization,
+ * corrections — central offline scheduler with claim/lease, aisle serialization,
  * terminal dependency propagation, and parallel independent ops.
  */
 

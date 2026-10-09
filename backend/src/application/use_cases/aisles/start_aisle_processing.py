@@ -4,13 +4,13 @@ StartAisleProcessing use case — v3.0 (Épica 4).
 Creates a processing job for an aisle and enqueues it. Fails if aisle does not exist,
 aisle does not belong to the given inventory, or an active job already exists for the aisle.
 
-Phase 9: when ``resolve_execution_keys`` is true (HTTP entry), loads inventory and resolves
+when ``resolve_execution_keys`` is true (HTTP entry), loads inventory and resolves
 provider/model/prompt via ``resolve_process_aisle_execution_keys`` before launch.
 
-Phase 10: execution-key materialization and aisle scope checks are factored into small helpers
+execution-key materialization and aisle scope checks are factored into small helpers
 for readability; behavior is unchanged.
 
-Phase 1 (aisle identification): resolves hierarchical identification mode, persists an immutable
+(aisle identification): resolves hierarchical identification mode, persists an immutable
 job snapshot, and always launches the legacy LLM pipeline (temporary for non-LEGACY modes).
 """
 
@@ -139,7 +139,7 @@ class StartAisleProcessingCommand:
     idempotency_key: str | None = None
     #: Authenticated principal (required for user-facing process starts).
     principal: AccessPrincipal | None = None
-    #: When set, process requires a SEALED ordered capture session (Phase 1).
+    #: When set, process requires a SEALED ordered capture session.
     ordered_capture_session_id: str | None = None
 
 
@@ -173,7 +173,7 @@ def _materialize_execution_keys_for_start(
     inventory_repo: InventoryRepository,
     command: StartAisleProcessingCommand,
 ):
-    """Resolve provider/model/prompt for a start-process command (Phase 9/10).
+    """Resolve provider/model/prompt for a start-process command ().
 
     When ``command.resolve_execution_keys`` is false, returns the command's pre-set keys.
     """
@@ -728,7 +728,7 @@ class StartAisleProcessingUseCase:
         if execution_strategy.value in ("CODE_SCAN", "INTERNAL_OCR"):
             if bool(getattr(settings, "multi_provider_fallback_enabled", False)):
                 raise ValueError(
-                    "MULTI_PROVIDER_FALLBACK_ENABLED is not supported in Phase 5; "
+                    "MULTI_PROVIDER_FALLBACK_ENABLED is not supported ; "
                     "keep it false and use a single EXTERNAL_FALLBACK_PROVIDER."
                 )
             fallback_enabled = bool(

@@ -1,5 +1,5 @@
 """
-Anthropic (Claude) SDK adapter — Messages API + vision for hybrid global analysis v2.1 (Phase 8).
+Anthropic (Claude) SDK adapter — Messages API + vision for hybrid global analysis v2.1.
 
 Vendor-specific code stays here; pipeline uses ``LLMRequest`` / ``LLMResponse`` only.
 

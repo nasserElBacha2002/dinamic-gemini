@@ -1,5 +1,5 @@
 /**
- * Device-side stability prober (Fase 0, §13).
+ * Device-side stability prober (§13).
  *
  * Samples a file's (size, mtime) over time via expo-file-system and folds each sample into
  * the pure `stability` reducer. When the reducer reports `settled`, a final decode check

@@ -1,4 +1,4 @@
-"""Phase 5 — HTTP request ID + metrics middleware."""
+"""HTTP request ID + metrics middleware."""
 
 from __future__ import annotations
 

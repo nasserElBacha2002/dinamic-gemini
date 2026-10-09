@@ -1,5 +1,5 @@
 """
-GCS-backed artifact storage adapter (Phase 1).
+GCS-backed artifact storage adapter.
 """
 
 from __future__ import annotations

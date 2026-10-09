@@ -1,4 +1,4 @@
-"""Phase 7 server reprocess domain."""
+"""server reprocess domain."""
 
 from src.domain.server_reprocess.entities import (
     CurrentPositionSnapshot,

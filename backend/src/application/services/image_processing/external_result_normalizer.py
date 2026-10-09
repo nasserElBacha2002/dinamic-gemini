@@ -1,4 +1,4 @@
-"""Phase 5 — map ExternalAnalysisResult → ImageProcessingResult (no persistence)."""
+"""map ExternalAnalysisResult → ImageProcessingResult (no persistence)."""
 
 from __future__ import annotations
 

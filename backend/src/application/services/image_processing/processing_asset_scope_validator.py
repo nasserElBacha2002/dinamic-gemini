@@ -1,4 +1,4 @@
-"""Shared scope validation for Phase 7 processing mutations/reads."""
+"""Shared scope validation for processing mutations/reads."""
 
 from __future__ import annotations
 

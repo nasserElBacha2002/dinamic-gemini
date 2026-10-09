@@ -1,5 +1,5 @@
 /**
- * Typed failures for ZIP export from staging (Phase 4).
+ * Typed failures for ZIP export from staging.
  * Message prefix remains PACKAGE_* for existing UI mappers.
  */
 

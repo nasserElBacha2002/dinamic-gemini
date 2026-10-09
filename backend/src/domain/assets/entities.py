@@ -27,7 +27,7 @@ class SourceAsset:
     mime_type: str
     uploaded_at: datetime
     metadata_json: dict[str, Any] | None = None
-    # Phase 1+ S3: storage_path is legacy display/local-relative path under v3_uploads.
+    # S3: storage_path is legacy display/local-relative path under v3_uploads.
     # storage_key is the canonical logical ArtifactStore key; when storage_provider is set,
     # resolution must use storage_key (+ bucket) and must not infer key from storage_path.
     storage_provider: str | None = None

@@ -161,7 +161,7 @@ def _detected_summary(
     if result.source_asset_id:
         summary["source_image_id"] = result.source_asset_id
         summary["source_asset_id"] = result.source_asset_id
-        # Domain TraceabilityStatus.VALID — required for evidence display (Phase 4.8).
+        # Domain TraceabilityStatus.VALID — required for evidence display.
         summary["traceability_status"] = "valid"
         summary["has_valid_evidence"] = True
     if result.capture_order is not None:

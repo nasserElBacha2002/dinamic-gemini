@@ -1,5 +1,5 @@
 /**
- * Phase 8 — present requested/executed processing without implying unused AI execution.
+ * present requested/executed processing without implying unused AI execution.
  */
 
 import type {

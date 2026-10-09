@@ -4,7 +4,7 @@ GetPositionDetail use case — v3.0 Épica 6.
 Returns a position with its product records and evidences.
 Fails if inventory/aisle/position do not exist or do not match.
 
-Phase 2: resolves result context (explicit job / operational / legacy) and scopes consolidation fetch;
+resolves result context (explicit job / operational / legacy) and scopes consolidation fetch;
 includes run metadata for dataset-safe clients.
 """
 
@@ -66,7 +66,7 @@ class GetPositionDetailUseCase:
     list (SKU merge). With ``exact_position=True``, returns the requested storage row and its
     evidence — used for photo-accurate review alongside ``consolidate_by_sku=false`` lists.
 
-    Phase 2 (strict context): After resolving the aisle result slice (explicit ``job_id`` →
+    (strict context): After resolving the aisle result slice (explicit ``job_id`` →
     operational job → legacy null-job rows), the position row's ``job_id`` must match that slice.
     If it does not (e.g. viewing a position from another run while defaults point elsewhere),
     :class:`PositionResultContextMismatchError` is raised — the API must not return data from the

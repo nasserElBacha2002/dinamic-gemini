@@ -1,4 +1,4 @@
-"""Supplier reference image domain entity — Phase C1 foundation."""
+"""Supplier reference image domain entity — foundation."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ class SupplierReferenceImage:
     etag: str | None = None
     label: str | None = None
     description: str | None = None
-    #: Phase 1 — ITEM or POSITION association; legacy NULL rows treated as ITEM on read.
+    #: ITEM or POSITION association; legacy NULL rows treated as ITEM on read.
     label_kind: LabelKind | None = None
 
     def __post_init__(self) -> None:

@@ -1,5 +1,5 @@
 /**
- * Photos-only admission filter (Fase 0, §14).
+ * Photos-only admission filter (§14).
  *
  * Decides whether a MediaStore row is admissible into the capture flow. Every rejection
  * carries a machine-readable reason so a new video in the gallery is provably ignored:

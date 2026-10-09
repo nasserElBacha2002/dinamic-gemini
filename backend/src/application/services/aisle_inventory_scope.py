@@ -1,5 +1,5 @@
 """
-Inventory-scoped aisle row validation (Phase 8).
+Inventory-scoped aisle row validation.
 
 Centralizes two historical error-detail patterns used across use cases:
 - **strict**: missing aisle vs wrong-inventory produce different ``AisleNotFoundError`` messages.

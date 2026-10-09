@@ -241,7 +241,7 @@ def list_processing_provider_options(
         ),
     ),
 ) -> ProcessingProviderOptionsResponse:
-    """Selectable pipeline providers, models, and prompt profiles for POST aisle process (Phase 5)."""
+    """Selectable pipeline providers, models, and prompt profiles for POST aisle process."""
     settings = load_settings()
     payload = build_processing_provider_options_payload(settings, mode=mode)
     prompt_items = [

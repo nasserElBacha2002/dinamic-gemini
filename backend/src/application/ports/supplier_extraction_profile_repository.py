@@ -1,4 +1,4 @@
-"""Port for SupplierExtractionProfile persistence (Phase 6)."""
+"""Port for SupplierExtractionProfile persistence."""
 
 from __future__ import annotations
 

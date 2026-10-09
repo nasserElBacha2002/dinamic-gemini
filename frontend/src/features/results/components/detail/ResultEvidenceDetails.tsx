@@ -1,5 +1,5 @@
 /**
- * Phase 4.8 — Compact audit panel for structural result_evidence contract.
+ * Compact audit panel for structural result_evidence contract.
  */
 
 import { Box, Typography } from '@mui/material';

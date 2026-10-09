@@ -1,4 +1,4 @@
-"""Cohesive Pydantic settings groups composed into AppSettings (Phase 1 config boundaries)."""
+"""Cohesive Pydantic settings groups composed into AppSettings (config boundaries)."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ class LlmProviderSettings(BaseModel):
         le=60.0,
         description="Espera inicial entre reintentos en segundos (0.1 a 60).",
     )
-    # Stage 2.2.D / Phase 8 — default LLM provider for pipeline runs without per-job override
+    # Stage 2.2.D / default LLM provider for pipeline runs without per-job override
     llm_provider: str = Field(
         default_factory=lambda: (os.getenv("LLM_PROVIDER", "gemini") or "gemini").strip().lower(),
         description=(
@@ -181,14 +181,14 @@ class LlmProviderSettings(BaseModel):
     prompt_version: str | None = Field(
         default_factory=lambda: (os.getenv("PROMPT_VERSION") or "").strip() or None,
         description=(
-            "Phase 7 — **traceability only**: optional logical label copied into "
+            "**traceability only**: optional logical label copied into "
             "`prompt_composition['prompt_version']` for audit and future comparison (e.g. v1, experiment-A). "
             "Does **not** select prompt content; does **not** override `hybrid_prompt` / profile resolution; "
             "does **not** affect prompt hashes. Per-job `RunContext.job_prompt_version` overrides this when set. "
             "Env: PROMPT_VERSION."
         ),
     )
-    # Comma-separated lists for POST /process model pickers (Phase 5 corrections)
+    # Comma-separated lists for POST /process model pickers (corrections)
     processing_gemini_models: str = Field(
         default_factory=lambda: (
             os.getenv(
@@ -215,7 +215,7 @@ class LlmProviderSettings(BaseModel):
         ),
         description="Comma-separated Claude model ids for processing-provider-options. Env: PROCESSING_CLAUDE_MODELS.",
     )
-    # Phase 9 — DeepSeek (OpenAI-compatible Chat Completions API)
+    # DeepSeek (OpenAI-compatible Chat Completions API)
     deepseek_api_key: str = Field(
         default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""),
         description="Deprecated: DeepSeek is no longer selectable for new executions. Env: DEEPSEEK_API_KEY.",
@@ -264,7 +264,7 @@ class LlmProviderSettings(BaseModel):
             .lower()
         ),
         description=(
-            "Phase 4 — hybrid analysis provider strategy: single (default); multi_parallel "
+            "hybrid analysis provider strategy: single (default); multi_parallel "
             "(all listed providers must succeed); multi_sequential or multi_fallback (alias) "
             "for sequential fallback (first success only, not full sequential comparison). "
             "This is **not** automatic per-job runtime failover — explicit job.provider_name is "
@@ -276,7 +276,7 @@ class LlmProviderSettings(BaseModel):
             os.getenv("PIPELINE_ANALYSIS_EXTRA_PROVIDER_KEYS", "") or ""
         ).strip(),
         description=(
-            "Phase 4 — comma-separated extra logical pipeline providers after the job/settings primary "
+            "comma-separated extra logical pipeline providers after the job/settings primary "
             "(e.g. openai,claude). Used when strategy is multi_parallel or multi_sequential. "
             "Env: PIPELINE_ANALYSIS_EXTRA_PROVIDER_KEYS."
         ),
@@ -714,7 +714,7 @@ class ApiRuntimeSettings(BaseModel):
         ge=10,
         le=3600,
         description=(
-            "Phase 3: lease duration (seconds) granted on STARTING→RUNNING acquire/reacquire and "
+            "lease duration (seconds) granted on STARTING→RUNNING acquire/reacquire and "
             "extended on each renewal. Env: JOB_LEASE_DURATION_SEC."
         ),
     )
@@ -723,7 +723,7 @@ class ApiRuntimeSettings(BaseModel):
         ge=1,
         le=3600,
         description=(
-            "Phase 3: interval (seconds) at which the worker renews its lease / heartbeat while "
+            "interval (seconds) at which the worker renews its lease / heartbeat while "
             "running. Env: JOB_LEASE_HEARTBEAT_INTERVAL_SEC."
         ),
     )
@@ -732,7 +732,7 @@ class ApiRuntimeSettings(BaseModel):
         ge=0,
         le=3600,
         description=(
-            "Phase 3: safety margin (seconds) subtracted from lease_duration when deciding renewal "
+            "safety margin (seconds) subtracted from lease_duration when deciding renewal "
             "urgency (renew before expiry, not exactly at it). Env: JOB_LEASE_RENEWAL_SAFETY_MARGIN_SEC."
         ),
     )
@@ -1067,7 +1067,7 @@ class LimitsAndSchemaSettings(BaseModel):
             os.getenv("SERVER_CSV_IMPORT_ENABLED", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5: enable versioned local CSV inventory imports. "
+            "enable versioned local CSV inventory imports. "
             "Default false. Env: SERVER_CSV_IMPORT_ENABLED."
         ),
     )
@@ -1226,7 +1226,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "DEPRECATED Phase 5: compare local preliminary drafts vs remote asset results. "
+            "compare local preliminary drafts vs remote asset results. "
             "Default false. Read-only / no new productive auto-reconcile when authoritative "
             "local ingest is enabled. Env: SERVER_PRELIMINARY_RECONCILIATION."
         ),
@@ -1237,7 +1237,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "DEPRECATED Phase 5: emit aggregate server-agreement metrics for reconciliations. "
+            "emit aggregate server-agreement metrics for reconciliations. "
             "Default false. Prefer authoritative local CODE_SCAN path. "
             "Env: PRELIMINARY_RECONCILIATION_METRICS."
         ),
@@ -1270,7 +1270,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 6: enable GET authoritative-readiness and POST finalize-authoritative. "
+            "enable GET authoritative-readiness and POST finalize-authoritative. "
             "Default false. Env: SERVER_AUTHORITATIVE_AISLE_FINALIZATION."
         ),
     )
@@ -1279,7 +1279,7 @@ class LimitsAndSchemaSettings(BaseModel):
             os.getenv("SERVER_SERVER_REPROCESS", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: enable POST/GET server-reprocess (proposal runs; no overwrite). "
+            "enable POST/GET server-reprocess (proposal runs; no overwrite). "
             "Default false. Env: SERVER_SERVER_REPROCESS."
         ),
     )
@@ -1289,14 +1289,14 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: enable POST server-reprocess/{run_id}/adopt. "
+            "enable POST server-reprocess/{run_id}/adopt. "
             "Default false. Env: SERVER_SERVER_REPROCESS_ADOPTION."
         ),
     )
     server_reprocess_worker_token: str = Field(
         default_factory=lambda: (os.getenv("SERVER_REPROCESS_WORKER_TOKEN", "") or "").strip(),
         description=(
-            "Phase 7: shared secret for X-Dinamic-Internal-Worker on /server-reprocess/*/execute. "
+            "shared secret for X-Dinamic-Internal-Worker on /server-reprocess/*/execute. "
             "Empty disables the execute endpoint. Env: SERVER_REPROCESS_WORKER_TOKEN."
         ),
     )
@@ -1305,7 +1305,7 @@ class LimitsAndSchemaSettings(BaseModel):
             os.getenv("SERVER_AISLE_REVISIONS", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
-            "Phase 8: enable aisle revision create/edit/apply/history. "
+            "enable aisle revision create/edit/apply/history. "
             "Default false. Env: SERVER_AISLE_REVISIONS."
         ),
     )
@@ -1314,7 +1314,7 @@ class LimitsAndSchemaSettings(BaseModel):
             os.getenv("SERVER_AISLE_ROLLBACK", "false").strip().lower() in ("1", "true", "yes")
         ),
         description=(
-            "Phase 8: enable POST .../rollback (requires SERVER_AISLE_REVISIONS). "
+            "enable POST .../rollback (requires SERVER_AISLE_REVISIONS). "
             "Default false. Env: SERVER_AISLE_ROLLBACK."
         ),
     )
@@ -1347,8 +1347,8 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 1+ aisle identification pipeline flag. When false, processing stays on the "
-            "legacy LLM path unchanged. When true (Phase 1), modes are resolved and snapshotted "
+            "aisle identification pipeline flag. When false, processing stays on the "
+            "legacy LLM path unchanged. When true, modes are resolved and snapshotted "
             "but all modes still execute LEGACY_LLM_TEMPORARY. "
             "Env: AISLE_IDENTIFICATION_PIPELINE_ENABLED (default false)."
         ),
@@ -1359,8 +1359,8 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 2: enable AisleProcessingOrchestrator around process_aisle jobs. "
-            "When false, the worker uses the exact pre-Phase-2 legacy path. "
+            "enable AisleProcessingOrchestrator around process_aisle jobs. "
+            "When false, the worker uses the exact pre-legacy path. "
             "Env: IMAGE_PROCESSING_ORCHESTRATOR_ENABLED (default false)."
         ),
     )
@@ -1370,7 +1370,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 2: persist ProcessingAttempt rows when the image orchestrator runs. "
+            "persist ProcessingAttempt rows when the image orchestrator runs. "
             "Env: PROCESSING_ATTEMPTS_ENABLED (default false)."
         ),
     )
@@ -1379,8 +1379,8 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=1,
         le=32,
         description=(
-            "Phase 3 SINGLE_ASSET concurrency for CODE_SCAN per-image processing (ThreadPool "
-            "max_workers). Not applied to the Phase 2 AISLE_BATCH legacy path: physical LLM "
+            "SINGLE_ASSET concurrency for CODE_SCAN per-image processing (ThreadPool "
+            "max_workers). Not applied to the AISLE_BATCH legacy path: physical LLM "
             "execution remains one batch call regardless of this value. Must be >= 1. "
             "Production recommendation remains 1 until SQL concurrency tests pass; values > 1 "
             "require per-UoW connections (ManualImageResultUnitOfWorkFactory creates its own "
@@ -1393,7 +1393,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 3: when true, CODE_SCAN identification mode snapshots and runs the real "
+            "when true, CODE_SCAN identification mode snapshots and runs the real "
             "per-image QR/barcode strategy. When false (default), CODE_SCAN keeps "
             "LEGACY_LLM_TEMPORARY / LEGACY_LLM for gradual rollout and rollback. "
             "Env: CODE_SCAN_PROCESSING_ENABLED."
@@ -1404,7 +1404,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=256,
         le=8192,
         description=(
-            "Phase 3: max longest side (px) for images before code scanning (downscaled if "
+            "max longest side (px) for images before code scanning (downscaled if "
             "larger). Env: CODE_SCAN_MAX_IMAGE_SIDE."
         ),
     )
@@ -1439,7 +1439,7 @@ class LimitsAndSchemaSettings(BaseModel):
             os.getenv("CODE_SCAN_ENABLE_ROTATIONS", "true").strip().lower() in ("1", "true", "yes")
         ),
         description=(
-            "Phase 3: when true, always attempt rotated variants (90/180/270) up to "
+            "when true, always attempt rotated variants (90/180/270) up to "
             "CODE_SCAN_MAX_VARIANTS after the base (0°) pass, so labels only readable at "
             "another orientation are not lost after a partial 0° hit. "
             "Env: CODE_SCAN_ENABLE_ROTATIONS."
@@ -1451,7 +1451,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 3: reserved image preprocessing (grayscale/contrast) before scanning. "
+            "reserved image preprocessing (grayscale/contrast) before scanning. "
             "Kept simple (off) for the MVP. Env: CODE_SCAN_ENABLE_PREPROCESSING."
         ),
     )
@@ -1460,7 +1460,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=1,
         le=8,
         description=(
-            "Phase 3: max scan variants attempted per image (0/90/180/270 when rotations on). "
+            "max scan variants attempted per image (0/90/180/270 when rotations on). "
             "Env: CODE_SCAN_MAX_VARIANTS."
         ),
     )
@@ -1479,7 +1479,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=1,
         le=999_999_999,
         description=(
-            "Phase 3: max accepted positive-integer quantity parsed from a label payload. "
+            "max accepted positive-integer quantity parsed from a label payload. "
             "Values above this mark the asset PENDING_MANUAL_REVIEW. Env: CODE_SCAN_QUANTITY_MAX."
         ),
     )
@@ -1489,7 +1489,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 3: whether decimal quantities are accepted. MVP keeps this false (positive "
+            "whether decimal quantities are accepted. MVP keeps this false (positive "
             "integers only). Env: CODE_SCAN_ALLOW_DECIMAL_QUANTITY."
         ),
     )
@@ -1498,7 +1498,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=1,
         le=10,
         description=(
-            "Phase 3: max technical retries for one asset scan on transient scanner errors. "
+            "max technical retries for one asset scan on transient scanner errors. "
             "Env: CODE_SCAN_MAX_TECHNICAL_ATTEMPTS."
         ),
     )
@@ -1507,7 +1507,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=30,
         le=7200,
         description=(
-            "Phase 2 corrections: JobProcessingLease duration for one AISLE_BATCH physical "
+            "corrections: JobProcessingLease duration for one AISLE_BATCH physical "
             "run (job_id, strategy, execution_scope). A concurrent worker that fails to acquire "
             "the lease skips the provider call entirely. Env: IMAGE_PROCESSING_BATCH_LEASE_SECONDS."
         ),
@@ -1517,7 +1517,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=30,
         le=7200,
         description=(
-            "Phase 2 corrections: age (seconds, based on updated_at/lease_expires_at) after "
+            "corrections: age (seconds, based on updated_at/lease_expires_at) after "
             "which a PROCESSING asset state, its owning lease, and any STARTED attempts are "
             "considered abandoned and recovered back to PENDING/AVAILABLE. "
             "Env: IMAGE_PROCESSING_ABANDONED_TTL_SECONDS."
@@ -1544,7 +1544,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 4: when true, INTERNAL_OCR identification mode snapshots and runs the real "
+            "when true, INTERNAL_OCR identification mode snapshots and runs the real "
             "local OCR strategy. When false (default), INTERNAL_OCR keeps LEGACY_LLM_TEMPORARY. "
             "Env: INTERNAL_OCR_PROCESSING_ENABLED."
         ),
@@ -1553,7 +1553,7 @@ class LimitsAndSchemaSettings(BaseModel):
         default_factory=lambda: (
             (os.getenv("INTERNAL_OCR_ENGINE", "tesseract") or "tesseract").strip().lower()
         ),
-        description="Phase 4 OCR engine key (only tesseract supported). Env: INTERNAL_OCR_ENGINE.",
+        description="OCR engine key (only tesseract supported). Env: INTERNAL_OCR_ENGINE.",
     )
     internal_ocr_language: str = Field(
         default_factory=lambda: (
@@ -1587,7 +1587,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=1,
         le=16,
         description=(
-            "Phase 4 ThreadPool concurrency for INTERNAL_OCR (independent of CODE_SCAN). "
+            "ThreadPool concurrency for INTERNAL_OCR (independent of CODE_SCAN). "
             "Env: MAX_INTERNAL_IMAGE_PROCESSING_CONCURRENCY."
         ),
     )
@@ -1604,7 +1604,7 @@ class LimitsAndSchemaSettings(BaseModel):
         description=(
             "DEPRECATED global default for clients without a profile. Prefer "
             "INTERNAL_OCR_EAN_FIRST_CLIENT_IDS for per-client EAN→internal_code rules. "
-            "Phase 6: superseded by supplier extraction profiles when "
+            "superseded by supplier extraction profiles when "
             "CLIENT_EXTRACTION_PROFILES_ENABLED + PROFILE_AWARE_VALIDATION_ENABLED. "
             "Env: INTERNAL_OCR_PREFER_EAN_AS_INTERNAL_CODE."
         ),
@@ -1614,7 +1614,7 @@ class LimitsAndSchemaSettings(BaseModel):
         description=(
             "Comma-separated client UUIDs that map EAN→internal_code when present "
             "(MASOL-style without hardcoding client names). "
-            "DEPRECATED when Phase 6 supplier extraction profiles drive validation. "
+            "DEPRECATED when supplier extraction profiles drive validation. "
             "Env: INTERNAL_OCR_EAN_FIRST_CLIENT_IDS."
         ),
     )
@@ -1727,7 +1727,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 6: enable versioned supplier extraction profiles (admin + job snapshot). "
+            "enable versioned supplier extraction profiles (admin + job snapshot). "
             "Default false. Env: CLIENT_EXTRACTION_PROFILES_ENABLED."
         ),
     )
@@ -1737,7 +1737,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 6: when true, CODE_SCAN/INTERNAL_OCR/EXTERNAL use snapshotted supplier "
+            "when true, CODE_SCAN/INTERNAL_OCR/EXTERNAL use snapshotted supplier "
             "extraction profile for priorities/validation. Default false. "
             "Env: PROFILE_AWARE_VALIDATION_ENABLED."
         ),
@@ -1748,7 +1748,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 6.2: enable spatial annotations on supplier reference images as OCR hints. "
+            "enable spatial annotations on supplier reference images as OCR hints. "
             "Default false. Env: REFERENCE_TEMPLATE_ANNOTATIONS_ENABLED."
         ),
     )
@@ -1758,7 +1758,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: enable per-image operational processing UX and read APIs. "
+            "enable per-image operational processing UX and read APIs. "
             "Default false. Env: PROCESSING_OBSERVABILITY_ENABLED."
         ),
     )
@@ -1768,7 +1768,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: show structured processing events timeline in UI. "
+            "show structured processing events timeline in UI. "
             "Default false. Env: PROCESSING_ASSET_LOGS_UI_ENABLED."
         ),
     )
@@ -1778,7 +1778,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: allow per-asset reprocess mutations. "
+            "allow per-asset reprocess mutations. "
             "Default false. Env: PROCESSING_ASSET_REPROCESS_ENABLED."
         ),
     )
@@ -1788,7 +1788,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: allow invalidate / enhanced manual actions from processing UX. "
+            "allow invalidate / enhanced manual actions from processing UX. "
             "Default false. Env: PROCESSING_MANUAL_ACTIONS_ENABLED."
         ),
     )
@@ -1798,28 +1798,28 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: persist operational ProcessingEvent rows. "
+            "persist operational ProcessingEvent rows. "
             "Default false. Env: PROCESSING_EVENTS_PERSISTENCE_ENABLED."
         ),
     )
     external_fallback_provider: str = Field(
         default_factory=lambda: (os.getenv("EXTERNAL_FALLBACK_PROVIDER", "") or "").strip().lower(),
         description=(
-            "Phase 5 primary external provider key (gemini|openai|claude|deepseek). "
+            "primary external provider key (gemini|openai|claude|deepseek). "
             "Required when EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true; no silent default. "
             "Env: EXTERNAL_FALLBACK_PROVIDER."
         ),
     )
     external_fallback_model: str = Field(
         default_factory=lambda: (os.getenv("EXTERNAL_FALLBACK_MODEL", "") or "").strip(),
-        description="Phase 5 model override for the primary provider. Env: EXTERNAL_FALLBACK_MODEL.",
+        description="model override for the primary provider. Env: EXTERNAL_FALLBACK_MODEL.",
     )
     max_external_fallback_concurrency: int = Field(
         default_factory=lambda: int(os.getenv("MAX_EXTERNAL_FALLBACK_CONCURRENCY", "1")),
         ge=1,
         le=16,
         description=(
-            "Phase 5 process-local concurrency for external provider calls (independent of "
+            "process-local concurrency for external provider calls (independent of "
             "internal SINGLE_ASSET pools). Env: MAX_EXTERNAL_FALLBACK_CONCURRENCY."
         ),
     )
@@ -1827,14 +1827,14 @@ class LimitsAndSchemaSettings(BaseModel):
         default_factory=lambda: float(os.getenv("EXTERNAL_FALLBACK_TIMEOUT_SECONDS", "60")),
         ge=5,
         le=600,
-        description="Phase 5 wall-clock budget hint per external call. Env: EXTERNAL_FALLBACK_TIMEOUT_SECONDS.",
+        description="wall-clock budget hint per external call. Env: EXTERNAL_FALLBACK_TIMEOUT_SECONDS.",
     )
     external_fallback_max_attempts: int = Field(
         default_factory=lambda: int(os.getenv("EXTERNAL_FALLBACK_MAX_ATTEMPTS", "1")),
         ge=1,
         le=5,
         description=(
-            "Phase 5 max external attempts per asset for retryable provider errors. "
+            "max external attempts per asset for retryable provider errors. "
             "Env: EXTERNAL_FALLBACK_MAX_ATTEMPTS (default 1)."
         ),
     )
@@ -1842,7 +1842,7 @@ class LimitsAndSchemaSettings(BaseModel):
         default_factory=lambda: int(os.getenv("EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD", "5")),
         ge=1,
         le=100,
-        description="Phase 5 failures before opening the circuit. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD.",
+        description="failures before opening the circuit. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD.",
     )
     external_fallback_circuit_breaker_cooldown_seconds: float = Field(
         default_factory=lambda: float(
@@ -1850,13 +1850,13 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         ge=1,
         le=3600,
-        description="Phase 5 circuit open cooldown. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_COOLDOWN_SECONDS.",
+        description="circuit open cooldown. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_COOLDOWN_SECONDS.",
     )
     external_fallback_max_image_dimension: int = Field(
         default_factory=lambda: int(os.getenv("EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION", "2048")),
         ge=256,
         le=8192,
-        description="Phase 5 max longest image side before provider call. Env: EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION.",
+        description="max longest image side before provider call. Env: EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION.",
     )
     multi_provider_fallback_enabled: bool = Field(
         default_factory=lambda: (
@@ -1864,7 +1864,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5 reserved: multi-provider chains are NOT implemented. Must stay false. "
+            "reserved: multi-provider chains are NOT implemented. Must stay false. "
             "Env: MULTI_PROVIDER_FALLBACK_ENABLED."
         ),
     )
@@ -1949,7 +1949,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 1 positioning: enable ordered capture session create/seal API. "
+            "positioning: enable ordered capture session create/seal API. "
             "Default true; set ORDERED_CAPTURE_SESSIONS_ENABLED=false to disable rollout."
         ),
     )
@@ -1959,7 +1959,7 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description=(
             "When true, uploads without client sequence_number are rejected for new clients "
-            "(enforced on upload path, not Phase 1 API). Env: CLIENT_SEQUENCE_REQUIRED (default false)."
+            "(enforced on upload path, not ordered-capture API). Env: CLIENT_SEQUENCE_REQUIRED (default false)."
         ),
     )
     aisle_location_domain_enabled: bool = Field(
@@ -1968,7 +1968,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 1 positioning: enable aisle location CRUD API. "
+            "positioning: enable aisle location CRUD API. "
             "Env: AISLE_LOCATION_DOMAIN_ENABLED (default true)."
         ),
     )
@@ -1978,7 +1978,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 1 positioning: enable aisle location label issue/list/invalidate API. "
+            "positioning: enable aisle location label issue/list/invalidate API. "
             "Env: AISLE_LOCATION_LABELS_ENABLED (default true)."
         ),
     )
@@ -1988,7 +1988,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 2 positioning: enable label render/preview/download/batch API. "
+            "positioning: enable label render/preview/download/batch API. "
             "Env: AISLE_LOCATION_LABEL_RENDER_ENABLED (default true)."
         ),
     )
@@ -2100,7 +2100,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 3: detect DINAMIC_POSITION codes during CODE_SCAN. "
+            "detect DINAMIC_POSITION codes during CODE_SCAN. "
             "Env: POSITION_LABEL_DETECTION_ENABLED (default true)."
         ),
     )
@@ -2110,7 +2110,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 3: verify HMAC on DINAMIC_POSITION payloads. "
+            "verify HMAC on DINAMIC_POSITION payloads. "
             "Env: POSITION_LABEL_SIGNATURE_VALIDATION_ENABLED (default true)."
         ),
     )
@@ -2222,7 +2222,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Materialize TXT/CSV/ZIP import position codes via the Phase 3 canonical "
+            "Materialize TXT/CSV/ZIP import position codes via the canonical "
             "materializer. Requires POSITION_AUTO_MATERIALIZATION_ENABLED. Default false. "
             "Env: POSITION_IMPORT_MATERIALIZATION_ENABLED."
         ),
@@ -2305,7 +2305,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 3: persist image_position_label_detections rows. "
+            "persist image_position_label_detections rows. "
             "Env: POSITION_LABEL_DETECTION_PERSISTENCE_ENABLED (default true)."
         ),
     )
@@ -2314,28 +2314,28 @@ class LimitsAndSchemaSettings(BaseModel):
             os.getenv("POSITION_RECONCILIATION_ENABLED", "true").strip().lower()
             in ("1", "true", "yes")
         ),
-        description="Phase 4 reconciliation feature gate (default true).",
+        description="position reconciliation feature gate (default true).",
     )
     position_reconciliation_persistence_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("POSITION_RECONCILIATION_PERSISTENCE_ENABLED", "true").strip().lower()
             in ("1", "true", "yes")
         ),
-        description="Persist Phase 4 reconciliation revisions (default true).",
+        description="Persist position reconciliation revisions (default true).",
     )
     position_reconciliation_auto_run_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("POSITION_RECONCILIATION_AUTO_RUN_ENABLED", "true").strip().lower()
             in ("1", "true", "yes")
         ),
-        description="Run Phase 4 best-effort after successful job finalization.",
+        description="Run best-effort after successful job finalization.",
     )
     position_reconciliation_required: bool = Field(
         default_factory=lambda: (
             os.getenv("POSITION_RECONCILIATION_REQUIRED", "false").strip().lower()
             in ("1", "true", "yes")
         ),
-        description="Fail job finalization when Phase 4 reconciliation fails (default false).",
+        description="Fail job finalization when position reconciliation fails (default false).",
     )
     position_manual_overrides_enabled: bool = Field(
         default_factory=lambda: (
@@ -2343,7 +2343,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 6 manual position override write gate (default false). "
+            "manual position override write gate (default false). "
             "Existing overrides remain effective and readable when disabled."
         ),
     )
@@ -2353,7 +2353,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: aisle positioning operational view + sequence APIs. "
+            "aisle positioning operational view + sequence APIs. "
             "Env: POSITION_OPERATIONAL_UX_ENABLED (default true)."
         ),
     )
@@ -2363,7 +2363,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: aisle-level positioning reprocess action. "
+            "aisle-level positioning reprocess action. "
             "Env: POSITION_REPROCESSING_ENABLED (default true)."
         ),
     )
@@ -2373,7 +2373,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 7: expose recover as an allowed positioning action when "
+            "expose recover as an allowed positioning action when "
             "processing-state is recoverable. Env: POSITION_PROCESSING_RECOVERY_ENABLED "
             "(default true)."
         ),
@@ -2384,7 +2384,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5: expose published Phase 4 assignments on result reads. "
+            "expose published reconciliation assignments on result reads. "
             "Env: POSITION_RESULTS_ENRICHMENT_ENABLED (default true)."
         ),
     )
@@ -2394,7 +2394,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5: include position assignment columns in CSV/XLSX exports. "
+            "include position assignment columns in CSV/XLSX exports. "
             "Env: POSITION_RESULTS_EXPORT_ENABLED (default true)."
         ),
     )
@@ -2404,7 +2404,7 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5: honor with_position / position_* query filters on result lists. "
+            "honor with_position / position_* query filters on result lists. "
             "Env: POSITION_RESULTS_FILTERS_ENABLED (default true)."
         ),
     )
@@ -2594,7 +2594,7 @@ class DatabasePersistenceSettings(BaseModel):
         default_factory=lambda: os.getenv("ENGINE_VERSION", "v2.0"),
         description="Engine version identifier for job records.",
     )
-    # Phase 14.1 — Legacy Stage-8 SQL (`jobs` / `pallet_results` / `job_events`) soft freeze (optional).
+    # Legacy Stage-8 SQL (`jobs` / `pallet_results` / `job_events`) soft freeze (optional).
     legacy_stage8_sql_writes_disabled: bool = Field(
         default_factory=lambda: (
             os.getenv("LEGACY_STAGE8_SQL_WRITES_DISABLED", "").strip().lower()
@@ -2637,7 +2637,7 @@ class DebugRuntimeSettings(BaseModel):
             os.getenv("DEBUG_LOG_FULL_ANALYSIS_PROMPT", "false").lower() in ("true", "1", "yes")
         ),
         description=(
-            "Phase 6: when True, execution_log includes full analysis prompt_text on "
+            "when True, execution_log includes full analysis prompt_text on "
             "'Analysis request prepared'. Default False (hash + length only)."
         ),
     )

@@ -1,4 +1,4 @@
-"""Phase 8 — guard against new LEGACY_LLM / INTERNAL_OCR configurations and effective modes.
+"""guard against new LEGACY_LLM / INTERNAL_OCR configurations and effective modes.
 
 Historical retry policy
 -----------------------

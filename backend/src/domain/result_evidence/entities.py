@@ -1,4 +1,4 @@
-"""Phase 4.6 — structural entity traceability evidence persistence."""
+"""structural entity traceability evidence persistence."""
 
 from __future__ import annotations
 

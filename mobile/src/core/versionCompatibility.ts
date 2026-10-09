@@ -1,5 +1,5 @@
 /**
- * Phase 10 — mobile/backend payload compatibility gates (client-side).
+ * mobile/backend payload compatibility gates (client-side).
  * Reject incompatible builds with a clear Spanish message (no silent degrade).
  */
 

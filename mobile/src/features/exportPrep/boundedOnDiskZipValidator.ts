@@ -1,5 +1,5 @@
 /**
- * On-disk bounded ZIP validator (Phase 5 corrections).
+ * On-disk bounded ZIP validator (corrections).
  * Reads EOCD + central directory + small entries via range I/O.
  * Does not load the full archive or photo payloads into RAM (unless verifyCrcAll).
  */

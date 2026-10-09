@@ -1,4 +1,4 @@
-"""GetClientSupplier use case — Phase A2 foundation."""
+"""GetClientSupplier use case — foundation."""
 
 from __future__ import annotations
 

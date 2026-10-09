@@ -1,5 +1,5 @@
 """
-Phase 4 / 6 / 7 — minimal deterministic aggregation of multiple ``AnalysisResult`` values.
+— minimal deterministic aggregation of multiple ``AnalysisResult`` values.
 
 Selects a primary result for the rest of the pipeline and optionally attaches a trace blob
 to the primary's ``provider_metadata`` (see ``PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION``).

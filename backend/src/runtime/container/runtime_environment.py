@@ -1,4 +1,4 @@
-"""Runtime environment classification for repository-backend policy (Phase 2)."""
+"""Runtime environment classification for repository-backend policy."""
 
 from __future__ import annotations
 

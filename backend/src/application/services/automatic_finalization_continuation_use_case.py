@@ -1,4 +1,4 @@
-"""Continue finalization from durable state using job_id only — Phase 3.5 corrections."""
+"""Continue finalization from durable state using job_id only — corrections."""
 
 from __future__ import annotations
 

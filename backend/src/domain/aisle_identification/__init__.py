@@ -1,4 +1,4 @@
-"""Aisle identification mode — Phase 1 (config + job snapshot; no strategy switch yet)."""
+"""Aisle identification mode — (config + job snapshot; no strategy switch yet)."""
 
 from src.domain.aisle_identification.modes import (
     CONFIGURATION_SNAPSHOT_VERSION,

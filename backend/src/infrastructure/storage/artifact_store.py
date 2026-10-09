@@ -1,5 +1,5 @@
 """
-Provider-aware artifact storage abstraction (Phase 1 S3 foundation; Phase 6 contract).
+Provider-aware artifact storage abstraction (S3 foundation; contract).
 
 This abstraction is intentionally infrastructure-facing and can be implemented by
 S3, local filesystem, or composite adapters during migration.

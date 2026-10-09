@@ -10,88 +10,88 @@ export interface FeatureFlags {
   readonly advancedReconciliation: boolean;
   readonly backgroundJobPolling: boolean;
   readonly aisleDeviceLock: boolean;
-  /** Phase 0 upload/process observability (kill switch: set DINAMIC_FLAG_UPLOAD_OBS=0). */
+  /** upload/process observability (kill switch: set DINAMIC_FLAG_UPLOAD_OBS=0). */
   readonly uploadObservabilityEnabled: boolean;
-  /** Phase 0: emit capture.finish_* stage events (safe; default on). */
+  /** emit capture.finish_* stage events (safe; default on). */
   readonly captureFinishInstrumentation: boolean;
-  /** Phase 1: light MediaStore check before skipping finish rescan (default on). */
+  /** light MediaStore check before skipping finish rescan (default on). */
   readonly captureFinishSafeMediaCheck: boolean;
-  /** Phase 1: persist capture freeze watermark on finish (default on). */
+  /** persist capture freeze watermark on finish (default on). */
   readonly captureSessionFreeze: boolean;
-  /** Phase 2: debounce UploadQueue emit/refreshCachedSessions (default on). */
+  /** debounce UploadQueue emit/refreshCachedSessions (default on). */
   readonly uploadIncrementalSnapshots: boolean;
-  /** Phase 2: network-aware prepare parallelism (default on). */
+  /** network-aware prepare parallelism (default on). */
   readonly uploadPrepareParallelism: boolean;
-  /** Phase 3: allow closing capture locally without upload/process (default on). */
+  /** allow closing capture locally without upload/process (default on). */
   readonly localCompletion: boolean;
-  /** Phase 4: offline local CSV export (default on). */
+  /** offline local CSV export (default on). */
   readonly mobileCsvExport: boolean;
   /**
    * When false (default), server photo/result upload and processing flows are disabled.
    * Capture → review → local save → ZIP export only.
    */
   readonly mobileServerUpload: boolean;
-  /** Phase 5: client may call server CSV import APIs (default false until server flag on). */
+  /** client may call server CSV import APIs (default false until server flag on). */
   readonly serverCsvImport: boolean;
-  /** Phase 6: classify local vs server result conflicts (default on). */
+  /** classify local vs server result conflicts (default on). */
   readonly localRemoteReconciliation: boolean;
-  /** Phase 1: proactive max-edge dimension cap during prepare. */
+  /** proactive max-edge dimension cap during prepare. */
   readonly uploadDimensionCap: boolean;
-  /** Phase 1: profile/network JPEG quality instead of legacy fixed qualities. */
+  /** profile/network JPEG quality instead of legacy fixed qualities. */
   readonly uploadAdaptiveQuality: boolean;
-  /** Phase 1: network-aware upload concurrency (still capped). */
+  /** network-aware upload concurrency (still capped). */
   readonly uploadAdaptiveConcurrency: boolean;
-  /** Phase 1: abort in-flight multipart when cancelPhoto runs. */
+  /** abort in-flight multipart when cancelPhoto runs. */
   readonly uploadAbortEnabled: boolean;
-  /** Phase 2: native WorkManager upload worker. */
+  /** native WorkManager upload worker. */
   readonly backgroundUploadWorker: boolean;
-  /** Phase 2: promote long uploads to Foreground Service notification. */
+  /** promote long uploads to Foreground Service notification. */
   readonly backgroundUploadForegroundService: boolean;
-  /** Phase 2: allow WorkManager to resume after device reboot. */
+  /** allow WorkManager to resume after device reboot. */
   readonly backgroundUploadRebootResume: boolean;
-  /** Phase 3: local CODE_SCAN shadow detection (hard opt-in; default false). */
+  /** local CODE_SCAN shadow detection (hard opt-in; default false). */
   readonly mobileLocalCodeScan: boolean;
-  /** Phase 3: attempt shadow compare when a reliable mapping exists. */
+  /** attempt shadow compare when a reliable mapping exists. */
   readonly mobileLocalCodeScanShadowCompare: boolean;
-  /** Phase 4: sync local drafts to server as diagnostic evidence (default false). */
+  /** sync local drafts to server as diagnostic evidence (default false). */
   readonly mobilePreliminaryDetectionSync: boolean;
-  /** Phase 5: show server reconciliation outcomes (default false). */
+  /** show server reconciliation outcomes (default false). */
   readonly mobilePreliminaryReconciliationView: boolean;
-  /** Phase 5: allow JobMonitor to trigger server reconcile enqueue (default false). */
+  /** allow JobMonitor to trigger server reconcile enqueue (default false). */
   readonly mobilePreliminaryReconciliationTrigger: boolean;
   /** Authoritative local CODE_SCAN: operator-confirmed results sync (default false). */
   readonly mobileAuthoritativeLocalCodeScan: boolean;
   /** Authoritative local CODE_SCAN: review screen before upload (default false). */
   readonly mobileLocalResultReview: boolean;
-  /** Phase 6: authoritative aisle finalization without remote reprocess (default false). */
+  /** authoritative aisle finalization without remote reprocess (default false). */
   readonly mobileAuthoritativeAisleFinalization: boolean;
-  /** Phase 6: persist offline finalization intent (default false). */
+  /** persist offline finalization intent (default false). */
   readonly authoritativeFinalizationOfflineQueue: boolean;
-  /** Phase 7: optional server reprocess action (default false). */
+  /** optional server reprocess action (default false). */
   readonly mobileServerReprocess: boolean;
-  /** Phase 7: proposal review / adoption UI (default false). */
+  /** proposal review / adoption UI (default false). */
   readonly mobileServerReprocessReview: boolean;
-  /** Phase 7: persist offline reprocess request intent (default false). */
+  /** persist offline reprocess request intent (default false). */
   readonly serverReprocessOfflineQueue: boolean;
-  /** Phase 8: mobile aisle correction / revision UX (default false). */
+  /** mobile aisle correction / revision UX (default false). */
   readonly mobileAisleRevisions: boolean;
-  /** Phase 8: mobile aisle revision history screen (default false). */
+  /** mobile aisle revision history screen (default false). */
   readonly mobileAisleHistory: boolean;
-  /** Phase 8: call server aisle revision APIs (default false). */
+  /** call server aisle revision APIs (default false). */
   readonly serverAisleRevisions: boolean;
-  /** Phase 8: allow rollback from history (default false). */
+  /** allow rollback from history (default false). */
   readonly serverAisleRollback: boolean;
-  /** Phase 9: unified durable offline_operations ledger + scheduler (default false). */
+  /** unified durable offline_operations ledger + scheduler (default false). */
   readonly mobileOfflineOperations: boolean;
-  /** Phase 9: schedule WorkManager wake for offline recovery (default false). */
+  /** schedule WorkManager wake for offline recovery (default false). */
   readonly mobileOfflineWorkManager: boolean;
-  /** Phase 9: route finalization intents through offline_operations (default false). */
+  /** route finalization intents through offline_operations (default false). */
   readonly mobileOfflineFinalization: boolean;
-  /** Phase 9: route revision sync/apply through offline_operations (default false). */
+  /** route revision sync/apply through offline_operations (default false). */
   readonly mobileOfflineRevisions: boolean;
-  /** Phase 9: durable START_SERVER_PROCESSING ops (default false). */
+  /** durable START_SERVER_PROCESSING ops (default false). */
   readonly mobileOfflineServerProcessing: boolean;
-  /** Phase 9: backend idempotency helpers for offline replays (default false). */
+  /** backend idempotency helpers for offline replays (default false). */
   readonly serverOfflineIdempotencySupport: boolean;
   /** Canonical active position persistence V2 (rollout off by default). */
   readonly mobileCanonicalPositionStateEnabled: boolean;
@@ -107,7 +107,7 @@ export interface FeatureFlags {
   readonly mobileExportPrepQueue: boolean;
 }
 
-/** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
+/** Non-production defaults. upload optimizations default off in production. */
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   allowMobileDataUploads: true,
   heicConvertToJpeg: true,
@@ -230,10 +230,10 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     backgroundUploadWorker: bool('backgroundUploadWorker', optInDefault),
     backgroundUploadForegroundService: bool('backgroundUploadForegroundService', optInDefault),
     backgroundUploadRebootResume: bool('backgroundUploadRebootResume', optInDefault),
-    // Phase 3: kill-switch defaults off in every environment until explicitly enabled.
+ // kill-switch defaults off in every environment until explicitly enabled.
     mobileLocalCodeScan: bool('mobileLocalCodeScan', false),
     mobileLocalCodeScanShadowCompare: bool('mobileLocalCodeScanShadowCompare', false),
-    // Phase 4: preliminary sync — default off. JS scheduler only (no WorkManager worker).
+ // preliminary sync — default off. JS scheduler only (no WorkManager worker).
     mobilePreliminaryDetectionSync: bool('mobilePreliminaryDetectionSync', false),
     mobilePreliminaryReconciliationView: bool('mobilePreliminaryReconciliationView', false),
     mobilePreliminaryReconciliationTrigger: bool(

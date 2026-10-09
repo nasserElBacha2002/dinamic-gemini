@@ -67,7 +67,7 @@ class GeminiGlobalAnalyzer:
     ) -> dict[str, Any]:
         """Envía los frames en una sola llamada a Gemini (Structured Output v2.1) y devuelve el JSON validado.
 
-        Phase 1: interleaved text labels + images (main prompt first, then reference and primary pairs).
+        interleaved text labels + images (main prompt first, then reference and primary pairs).
         """
         if not frames:
             raise ValueError("frames no puede estar vacía")

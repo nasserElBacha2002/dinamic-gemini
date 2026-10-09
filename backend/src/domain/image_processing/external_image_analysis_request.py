@@ -1,4 +1,4 @@
-"""Durable external image-analysis request claim (Phase 5 corrections)."""
+"""Durable external image-analysis request claim (corrections)."""
 
 from __future__ import annotations
 

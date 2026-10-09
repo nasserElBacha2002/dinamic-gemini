@@ -1,6 +1,6 @@
 /**
  * Epic 4 — Review history section for Result Detail (audit list).
- * Phase 6: Human-readable change summary from before_json/after_json when available.
+ * Human-readable change summary from before_json/after_json when available.
  */
 
 import { Box, Typography, List, ListItem, ListItemText } from '@mui/material';

@@ -1,4 +1,4 @@
-"""API schemas for authoritative aisle finalization (Phase 6)."""
+"""API schemas for authoritative aisle finalization."""
 
 from __future__ import annotations
 

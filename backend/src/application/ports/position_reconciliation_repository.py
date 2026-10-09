@@ -1,4 +1,4 @@
-"""Persistence port for Phase 4 reconciliation revisions and assignments."""
+"""Persistence port for position reconciliation revisions and assignments."""
 
 from __future__ import annotations
 

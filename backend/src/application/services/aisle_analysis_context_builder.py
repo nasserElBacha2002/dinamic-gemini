@@ -1,4 +1,4 @@
-"""Build AnalysisContext for aisle analysis — v3.2.4 / Phase C7 (supplier reference images)."""
+"""Build AnalysisContext for aisle analysis — v3.2.4 / (supplier reference images)."""
 
 from __future__ import annotations
 

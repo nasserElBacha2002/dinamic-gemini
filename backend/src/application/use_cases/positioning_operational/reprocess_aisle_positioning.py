@@ -1,4 +1,4 @@
-"""Aisle positioning reprocess orchestration (Phase 7 corrections)."""
+"""Aisle positioning reprocess orchestration (corrections)."""
 
 from __future__ import annotations
 

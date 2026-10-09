@@ -9,7 +9,7 @@ class AuthSettings:
     Auth-related configuration values for v3.2.1 minimal administrative authentication.
 
     This is a thin projection over the global Settings model so the auth layer
-    has a focused view of the fields it needs. Phase 1 only defines structure;
+    has a focused view of the fields it needs. only defines structure;
     enforcement and validation happen in later phases.
 
     ``jairo_password_hash``: optional temporary second operator; empty string means disabled.

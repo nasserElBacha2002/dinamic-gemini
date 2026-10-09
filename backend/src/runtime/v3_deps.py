@@ -1,7 +1,7 @@
 """
 Shared v3 dependency getters — used by API (via Depends) and worker.
 
-Phase 1: wiring is delegated to :func:`src.runtime.app_container.get_app_container`.
+wiring is delegated to :func:`src.runtime.app_container.get_app_container`.
 This module keeps stable import paths (``get_inventory_repo``, etc.) for FastAPI overrides
 and worker bootstrap without duplicating construction logic.
 """

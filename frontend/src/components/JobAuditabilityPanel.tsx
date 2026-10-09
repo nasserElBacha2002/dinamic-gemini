@@ -1,5 +1,5 @@
 /**
- * Read-only panel: GET …/jobs/{jobId}/auditability (Phase H). Spanish copy via i18n only.
+ * Read-only panel: GET …/jobs/{jobId}/auditability. Spanish copy via i18n only.
  */
 
 import type { ReactNode } from 'react';

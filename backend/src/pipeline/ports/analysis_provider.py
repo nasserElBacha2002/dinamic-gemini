@@ -4,7 +4,7 @@ AnalysisProvider port — global product analysis (Stage 2.3.B).
 The hybrid pipeline depends on this interface only (not on vendor SDKs). Implementations are
 strategies that call a registry-resolved ``LlmGlobalAnalysisExecutor``. Contract matches the
 v2.1/v2.3 hybrid flow (single global entity analysis call, parsed JSON for entity resolution).
-v3.2.4 Phase 4: provider capabilities and provider_metadata for visual reference consumption.
+provider capabilities and provider_metadata for visual reference consumption.
 """
 
 from __future__ import annotations
@@ -17,12 +17,12 @@ import numpy as np
 
 from src.pipeline.context.run_context import RunContext
 
-# v3.2.4 Phase 4: provider capability flags
+# provider capability flags
 PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE = "visual_references_available"
 PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED = "visual_references_consumed"
 PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT = "visual_reference_count"
 PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS = "visual_reference_ids"
-# Phase 4 — optional trace when ``multi_parallel`` / ``multi_sequential`` strategies run.
+# optional trace when ``multi_parallel`` / ``multi_sequential`` strategies run.
 PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION = "multi_provider_execution"
 
 
@@ -41,9 +41,9 @@ class AnalysisResult:
     Intentionally minimal for Stage B. It currently carries only the parsed payload consumed
     by the existing pipeline (parse_entities). Future stages may extend it with metadata such
     as raw response, tokens, latency, model info, or trace IDs.
-    v3.2.4 Phase 4: provider_metadata carries visual reference usage (available/consumed/count).
-    Phase 6–7: optional ``prompt_composition`` — same dict attached to ``LLMRequest.metadata`` for
-    this call (full prompt text for job-level audit). Includes optional Phase 7 ``prompt_version``
+    provider_metadata carries visual reference usage (available/consumed/count).
+    7: optional ``prompt_composition`` — same dict attached to ``LLMRequest.metadata`` for
+    this call (full prompt text for job-level audit). Includes optional ``prompt_version``
     (logical label only; see ``prompt_traceability`` for distinction vs profile / hash). Execution
     logs use a redacted subset.
     """

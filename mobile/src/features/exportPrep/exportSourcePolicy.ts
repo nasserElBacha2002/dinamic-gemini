@@ -1,5 +1,5 @@
 /**
- * Centralized policy: when originals may be read for ZIP packaging (Phase 4).
+ * Centralized policy: when originals may be read for ZIP packaging.
  * No silent fallback — callers must pass through this decision.
  */
 

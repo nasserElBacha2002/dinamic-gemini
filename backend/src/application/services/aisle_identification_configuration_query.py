@@ -1,4 +1,4 @@
-"""Central query for hierarchical aisle identification configuration (Phase 1).
+"""Central query for hierarchical aisle identification configuration.
 
 Single source of truth for configured / effective / source fields on API responses.
 Does not handle request overrides (those apply only at job creation).

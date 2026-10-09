@@ -57,7 +57,7 @@ export function mapTraceabilityToVisible(
   return 'UNVALIDATED';
 }
 
-/** Map Phase 4.8 API structural evidence to visible model. */
+/** Map API structural evidence to visible model. */
 export function mapResultEvidenceViewResponse(
   api: ResultEvidenceViewResponse
 ): ResultEvidenceView {
@@ -89,7 +89,7 @@ export function mapResultEvidenceViewResponse(
   };
 }
 
-/** Map Phase 4.8 traceability artifact metadata to visible model. */
+/** Map traceability artifact metadata to visible model. */
 export function mapTraceabilityArtifactResponse(
   api: TraceabilityArtifactMetadataResponse
 ): TraceabilityArtifactMetadata {
@@ -276,7 +276,7 @@ export function mapEvidenceToResultEvidence(e: EvidenceSummary): ResultEvidence 
   };
 }
 
-/** Map review action to ReviewHistoryItem. Phase 6: include before/after for audit summary. */
+/** Map review action to ReviewHistoryItem. include before/after for audit summary. */
 export function mapReviewActionToHistoryItem(
   a: ReviewActionSummary
 ): ReviewHistoryItem {

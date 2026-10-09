@@ -1,4 +1,4 @@
-"""Code scanner port — Phase 1 uses noop/fake implementations; pyzbar in Phase 2."""
+"""Code scanner port — uses noop/fake implementations; pyzbar ."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class CodeScanDetectionCandidate:
 
 
 class CodeScannerPort(Protocol):
-    """Decode QR/barcodes from a source asset. Phase 1: noop returns empty list."""
+    """Decode QR/barcodes from a source asset. noop returns empty list."""
 
     @property
     def engine_name(self) -> str:

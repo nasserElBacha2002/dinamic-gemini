@@ -1,1 +1,1 @@
-"""Phase 7 positioning operational use cases."""
+"""positioning operational use cases."""

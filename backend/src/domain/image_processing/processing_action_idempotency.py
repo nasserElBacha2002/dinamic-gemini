@@ -1,4 +1,4 @@
-"""Durable mutation idempotency records (Phase 7 corrections)."""
+"""Durable mutation idempotency records (corrections)."""
 
 from __future__ import annotations
 

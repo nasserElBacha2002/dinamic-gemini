@@ -1,5 +1,5 @@
 """
-V3 worker run monitoring — Phase 6 extraction from :class:`V3JobExecutor`.
+V3 worker run monitoring — extraction from :class:`V3JobExecutor`.
 
 Sets up run directory logging, execution log writer, and cooperative heartbeat thread.
 Heartbeat proves process liveness only — a progress watchdog fails jobs stuck at

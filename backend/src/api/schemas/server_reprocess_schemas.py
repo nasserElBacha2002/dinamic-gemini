@@ -1,4 +1,4 @@
-"""API schemas for Phase 7 server reprocess."""
+"""API schemas for server reprocess."""
 
 from __future__ import annotations
 

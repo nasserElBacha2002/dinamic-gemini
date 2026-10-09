@@ -1,4 +1,4 @@
-"""CSV builders for aisle code scan exports (Phase 6B)."""
+"""CSV builders for aisle code scan exports."""
 
 from __future__ import annotations
 

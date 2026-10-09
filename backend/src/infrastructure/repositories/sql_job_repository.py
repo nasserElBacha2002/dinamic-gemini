@@ -265,7 +265,7 @@ class SqlJobRepository(JobRepository):
                 )
 
     def merge_result_json(self, job_id: str, patch: dict[str, Any]) -> Job | None:
-        """Merge top-level ``result_json`` keys under a row lock (Phase 2 asset_progress).
+        """Merge top-level ``result_json`` keys under a row lock (asset_progress).
 
         Uses ``UPDLOCK, ROWLOCK`` so a concurrent full ``save()`` of other fields cannot
         silently drop the merged keys between read and write of ``result_json``.
@@ -609,7 +609,7 @@ class SqlJobRepository(JobRepository):
     ) -> JobClaimResult:
         """CAS STARTING → RUNNING + aisle PROCESSING in one transaction.
 
-        Phase 3: also acquires a lease (fencing token incremented, expiry set from
+        also acquires a lease (fencing token incremented, expiry set from
         ``lease_duration_seconds``) attached to the returned ``JobClaimResult.lease``.
         """
         owner = (claim_owner_id or "").strip()

@@ -1,4 +1,4 @@
-/** Local + server readiness types for authoritative aisle finalization (Phase 6). */
+/** Local + server readiness types for authoritative aisle finalization. */
 
 export type AuthoritativeAisleReadinessStatus = 'READY' | 'NOT_READY' | 'BLOCKED';
 

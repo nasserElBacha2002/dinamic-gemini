@@ -1,4 +1,4 @@
-"""SQL Server compare-and-set operational promotion — Phase 2 Part 3."""
+"""SQL Server compare-and-set operational promotion — Part 3."""
 
 from __future__ import annotations
 

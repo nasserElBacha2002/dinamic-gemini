@@ -1,4 +1,4 @@
-"""Phase 6/7 — benchmark compare / compare-many / promote payloads."""
+"""— benchmark compare / compare-many / promote payloads."""
 
 from __future__ import annotations
 
@@ -103,13 +103,13 @@ class AisleBenchmarkCompareResponse(BaseModel):
 
 
 class AisleBenchmarkCompareManyRequest(BaseModel):
-    """Phase 1 compare-many payload (baseline-centric, constrained to 2-3 job ids)."""
+    """compare-many payload (baseline-centric, constrained to 2-3 job ids)."""
 
     job_ids: list[str] = Field(..., min_length=2, max_length=3)
     baseline_job_id: str = Field(..., min_length=1)
     include_diff_rows: bool = Field(
         False,
-        description="Phase 2: include lightweight baseline-vs-target diff rows.",
+        description="include lightweight baseline-vs-target diff rows.",
     )
     max_diff_rows: int | None = Field(
         None,

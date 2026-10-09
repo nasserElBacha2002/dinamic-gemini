@@ -1,4 +1,4 @@
-"""Pure helpers for Phase 6 benchmark compare (same-aisle, explicit job ids).
+"""Pure helpers for benchmark compare (same-aisle, explicit job ids).
 
 Cross-run alignment is **heuristic**, not guaranteed physical entity matching. After per-run
 SKU consolidation, each consolidated row gets a ``cross_run_match_key``: prefer normalized

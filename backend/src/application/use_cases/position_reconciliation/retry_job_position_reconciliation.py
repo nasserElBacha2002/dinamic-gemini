@@ -1,4 +1,4 @@
-"""Explicitly retry Phase 4 reconciliation with a new revision."""
+"""Explicitly retry position reconciliation with a new revision."""
 
 from __future__ import annotations
 

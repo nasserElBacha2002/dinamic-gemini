@@ -1,5 +1,5 @@
 """
-Phase 4.3 — Build canonical ExecutionImageManifest from final photo execution inputs.
+Build canonical ExecutionImageManifest from final photo execution inputs.
 """
 
 from __future__ import annotations

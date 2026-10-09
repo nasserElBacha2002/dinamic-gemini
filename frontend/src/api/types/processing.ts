@@ -1,4 +1,4 @@
-/** Phase 7 — operational asset processing observability (v3 API). */
+/** operational asset processing observability (v3 API). */
 
 export interface AvailableAssetActions {
   can_reprocess: boolean;

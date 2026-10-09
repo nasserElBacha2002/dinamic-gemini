@@ -1,6 +1,6 @@
 """Label geometry normalization — EXIF orient, crop selected region, optional deskew.
 
-Preserves Phase 6.2 helpers (`validate_normalized_polygon`, full-image EXIF normalize)
+Preserves helpers (`validate_normalized_polygon`, full-image EXIF normalize)
 and adds region crop used by INTERNAL_OCR label detection.
 """
 
@@ -73,7 +73,7 @@ class LabelGeometryNormalizer:
     def normalize(
         self, content: bytes, *, enable_perspective: bool = False
     ) -> NormalizedLabelImage:
-        """Legacy Phase 6.2 full-image EXIF orientation (never fails the pipeline)."""
+        """Legacy full-image EXIF orientation (never fails the pipeline)."""
         return self._normalize_full_image(content, enable_perspective=enable_perspective)
 
     def normalize_region(

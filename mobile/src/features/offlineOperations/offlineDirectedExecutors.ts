@@ -1,5 +1,5 @@
 /**
- * Phase 9 corrections — entity-directed executors (no global drain → COMPLETED).
+ * corrections — entity-directed executors (no global drain → COMPLETED).
  */
 
 import type { CaptureRepository } from '../../database/repositories/captureRepository';

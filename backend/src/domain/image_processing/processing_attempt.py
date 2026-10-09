@@ -1,4 +1,4 @@
-"""Auditable processing attempt for job_id + asset_id + strategy (Phase 2)."""
+"""Auditable processing attempt for job_id + asset_id + strategy."""
 
 from __future__ import annotations
 

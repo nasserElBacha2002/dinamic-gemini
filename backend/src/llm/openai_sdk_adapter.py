@@ -1,9 +1,9 @@
 """
-OpenAI SDK adapter — Chat Completions + vision for hybrid global analysis v2.1 (Phase 5).
+OpenAI SDK adapter — Chat Completions + vision for hybrid global analysis v2.1.
 
 Vendor-specific code stays here; pipeline uses ``LLMRequest`` / ``LLMResponse`` only.
 
-**Phase 9:** ``OpenAiCompatibleVendorConfig`` parameterizes this adapter for other OpenAI-compatible
+**** ``OpenAiCompatibleVendorConfig`` parameterizes this adapter for other OpenAI-compatible
 HTTP APIs (e.g. DeepSeek) without changing logical ``LLMResponse.provider`` or mixing metadata keys.
 """
 
@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 # ``product_label_bbox``) so PALLET rows persist for UNKNOWN-SKU jobs. Prefer canonical v2.1 keys
 # from the model when possible.
 
-# Phase E1: **ProviderPromptRules** — wire-level JSON root + canonical keys appended after hybrid
+# **ProviderPromptRules** — wire-level JSON root + canonical keys appended after hybrid
 # base + optional context_instruction. Must stay consistent with ``validate_global_analysis_structure_v21``
 # and ``normalize_llm_response`` expectations.
 _JSON_OBJECT_SUFFIX = (

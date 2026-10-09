@@ -1,4 +1,4 @@
-"""Phase 7 positioning operational UX routes."""
+"""positioning operational UX routes."""
 
 from __future__ import annotations
 

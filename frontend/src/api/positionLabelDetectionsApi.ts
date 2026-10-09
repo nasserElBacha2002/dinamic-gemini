@@ -1,5 +1,5 @@
 /**
- * Phase 3 — query position-label detections for a job (no product binding).
+ * query position-label detections for a job (no product binding).
  */
 
 import { apiRequestJson } from './request';

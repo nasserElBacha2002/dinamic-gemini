@@ -199,7 +199,7 @@ HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW = (
 )
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION = "Capture session group data consistency check failed; retry is not recommended until data is reviewed."
 
-# Phase 1 positioning foundation (ordered capture + aisle locations)
+# positioning foundation (ordered capture + aisle locations)
 HTTP_DETAIL_ORDERED_CAPTURE_SESSION_NOT_FOUND = "Ordered capture session not found"
 HTTP_DETAIL_ORDERED_CAPTURE_CONFLICT = "Ordered capture session conflict"
 HTTP_DETAIL_CAPTURE_SESSION_SEAL_REJECTED = "Ordered capture session seal rejected"
@@ -225,8 +225,7 @@ HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED = (
     "Supplier prompt config activation failed"
 )
 
-# Supplier extraction profiles (Phase 6)
-HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_NOT_FOUND = "Supplier extraction profile not found"
+# Supplier extraction profilesHTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_NOT_FOUND = "Supplier extraction profile not found"
 HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_INVALID_CONFIGURATION = (
     "Supplier extraction profile configuration is invalid"
 )

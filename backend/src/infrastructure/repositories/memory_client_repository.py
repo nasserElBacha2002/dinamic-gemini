@@ -1,4 +1,4 @@
-"""In-memory implementation of ClientRepository — Phase A1 foundation."""
+"""In-memory implementation of ClientRepository — foundation."""
 
 from __future__ import annotations
 

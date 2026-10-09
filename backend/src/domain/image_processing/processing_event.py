@@ -1,4 +1,4 @@
-"""Phase 7 — operational processing events (structured timeline)."""
+"""operational processing events (structured timeline)."""
 
 from __future__ import annotations
 

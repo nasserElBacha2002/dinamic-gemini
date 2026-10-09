@@ -1,4 +1,4 @@
-"""Phase 5 — operational job/aisle consistency diagnostics (read-only by default)."""
+"""operational job/aisle consistency diagnostics (read-only by default)."""
 
 from __future__ import annotations
 

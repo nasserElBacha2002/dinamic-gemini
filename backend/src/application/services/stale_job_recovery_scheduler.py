@@ -1,4 +1,4 @@
-"""Phase 5 — cooperative stale-job recovery scheduler (uses RecoverStaleJobUseCase)."""
+"""cooperative stale-job recovery scheduler (uses RecoverStaleJobUseCase)."""
 
 from __future__ import annotations
 

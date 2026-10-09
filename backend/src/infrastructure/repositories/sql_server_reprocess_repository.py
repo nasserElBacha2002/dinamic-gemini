@@ -1,4 +1,4 @@
-"""SQL Server repository for Phase 7 server reprocess (no silent memory fallback)."""
+"""SQL Server repository for server reprocess (no silent memory fallback)."""
 
 from __future__ import annotations
 

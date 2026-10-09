@@ -1,4 +1,4 @@
-"""Transactional replace for aisle location labels (Phase 2 hardening)."""
+"""Transactional replace for aisle location labels (hardening)."""
 
 from __future__ import annotations
 

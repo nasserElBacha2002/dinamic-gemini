@@ -1,4 +1,4 @@
-"""Aisle revision domain types (Phase 8) — corrections without destructive history."""
+"""Aisle revision domain types— corrections without destructive history."""
 
 from __future__ import annotations
 
@@ -107,7 +107,7 @@ class AisleRevision:
     row_version: int
     created_at: datetime
     updated_at: datetime
-    #: Canonical hash of the applied mutation payload; guards apply retries (Phase 8 corrections).
+    #: Canonical hash of the applied mutation payload; guards apply retries (corrections).
     apply_content_hash: str | None = None
 
 

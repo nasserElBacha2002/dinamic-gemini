@@ -261,7 +261,7 @@ def _diversity_select_views(
     f_min, f_max = min(frame_indices), max(frame_indices)
     n_cand = len(candidates)
 
-    # 2) Fase 1: anchors (early, mid, late)
+    # 2) anchors (early, mid, late)
     selected: list[dict[str, Any]] = []
     selected_obs: list[PalletObservation] = []
     reasons: dict[int, str] = {}
@@ -305,7 +305,7 @@ def _diversity_select_views(
             selected_obs.append(c["obs"])
             reasons[c["frame_idx"]] = c["reason"]
 
-    # 3) Fase 2: greedy diversity until target_views/max_views
+    # 3) greedy diversity until target_views/max_views
     need = min(max_views, max(min_views, target_views)) - len(selected)
 
     while need > 0:

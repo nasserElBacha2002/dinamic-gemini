@@ -1,4 +1,4 @@
-"""API schemas for preliminary vs remote reconciliation (Phase 5 corrections)."""
+"""API schemas for preliminary vs remote reconciliation (corrections)."""
 
 from __future__ import annotations
 

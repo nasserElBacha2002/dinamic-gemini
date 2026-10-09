@@ -352,7 +352,7 @@ def _load_job_for_inventory_job_route(
     Intentionally **not** delegated to :func:`reraise_if_mapped`: HTTP ``detail`` strings here
     are fixed phrases (``Job not found``, ``Job not found or does not belong to this aisle``)
     and differ from ``str(JobNotFoundError)`` / ``str(JobDoesNotBelongToAisleError)`` used
-    elsewhere — preserves Phase 6 regression contract in ``test_aisles_v3_wiring``.
+    elsewhere — preserves regression contract in ``test_aisles_v3_wiring``.
     Same exception classes can yield **structured** JSON when mapped later on other routes;
     see **Known dual-shape (same exception class)** in :mod:`src.api.errors.error_mapping`.
     """
@@ -1101,7 +1101,7 @@ def get_job_run_auditability(
     ),
     audit_svc: RunAuditabilityService = Depends(get_run_auditability_service),
 ) -> dict[str, Any]:
-    """Aggregated run observability (Phase H): job row, joins, ``result_json``, hybrid_report, execution_log."""
+    """Aggregated run observability : job row, joins, ``result_json``, hybrid_report, execution_log."""
     _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user)
     view = audit_svc.build(job_id)
     if view is None:
@@ -1904,7 +1904,7 @@ def get_aisle_merge_results(
     aisle_id: str,
     job_id: str | None = Query(
         None,
-        description="Optional inventory job id; omitted uses operational job or legacy slice (Phase 2).",
+        description="Optional inventory job id; omitted uses operational job or legacy slice.",
     ),
     use_case: GetAisleMergeResultsUseCase = Depends(get_get_aisle_merge_results_use_case),
 ) -> MergeResultsResponse:
@@ -2014,7 +2014,7 @@ def compare_aisle_benchmark_runs(
     job_b_id: str = Query(..., alias="job_b_id", min_length=1),
     use_case: CompareAisleRunsUseCase = Depends(get_compare_aisle_runs_use_case),
 ) -> AisleBenchmarkCompareResponse:
-    """Phase 6 — read-only compare metrics between two explicit runs (same aisle, same inventory).
+    """read-only compare metrics between two explicit runs (same aisle, same inventory).
 
     For **benchmark / inspection** only; does not alter operational analytics defaults.
     ``job_a_id`` and ``job_b_id`` must name two different runs.
@@ -2048,7 +2048,7 @@ def compare_many_aisle_benchmark_runs(
     body: AisleBenchmarkCompareManyRequest = Body(...),
     use_case: CompareManyAisleRunsUseCase = Depends(get_compare_many_aisle_runs_use_case),
 ) -> AisleBenchmarkCompareManyResponse:
-    """Phase 1/2 — baseline-centric compare-many for 2-3 explicit benchmark runs.
+    """— baseline-centric compare-many for 2-3 explicit benchmark runs.
 
     TODO(analytics-parity): mirror this endpoint under the analytics alias when scope/risk allows.
     Deferred intentionally to keep this rollout narrow and low-risk.

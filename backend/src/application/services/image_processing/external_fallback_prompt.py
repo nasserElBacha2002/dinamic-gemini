@@ -1,4 +1,4 @@
-"""Phase 5 — versioned prompt for single-image external label analysis."""
+"""versioned prompt for single-image external label analysis."""
 
 from __future__ import annotations
 

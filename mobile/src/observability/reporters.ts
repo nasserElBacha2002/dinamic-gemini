@@ -69,7 +69,7 @@ export class StructuredLogObservabilityReporter implements ObservabilityReporter
 
 /**
  * Prefer a dedicated log path: extend LogEvent would be cleaner long-term;
- * for Phase 0 we use `recovery` as a non-error carrier when `obs: true` is set,
+ * for we use `recovery` as a non-error carrier when `obs: true` is set,
  * avoiding polluting `error` semantics. Override with optional event name via logger.info.
  */
 export class StructuredObsLogReporter implements ObservabilityReporter {

@@ -1,4 +1,4 @@
-"""SQL Server ProcessingEventRepository (Phase 7)."""
+"""SQL Server ProcessingEventRepository."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Use cases for ClientSupplier ITEM/POSITION label profile source config (Phase 1)."""
+"""Use cases for ClientSupplier ITEM/POSITION label profile source config."""
 
 from __future__ import annotations
 

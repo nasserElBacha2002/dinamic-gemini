@@ -1,7 +1,7 @@
 """
 Provider policy overlay for hybrid registry entries (``default`` vs ``openai`` branch).
 
-**Phase E1:** These overlays are **ProviderPromptRules** (non–supplier-editable). Protected base
+**** These overlays are **ProviderPromptRules** (non–supplier-editable). Protected base
 fragments live in ``hybrid_profiles``; stable substring markers for regression tests are defined in
 ``protected_prompt_contract``.
 
@@ -14,15 +14,15 @@ fragments live in ``hybrid_profiles``; stable substring markers for regression t
 * ``prompt_parity_mode`` disables both ``openai`` and ``claude`` overlays so comparison runs share
   the same base text as Gemini.
 
-**Phase 9 — DeepSeek:** Same as Claude/Gemini for hybrid **base** text: ``deepseek`` uses the
+**DeepSeek:** Same as Claude/Gemini for hybrid **base** text: ``deepseek`` uses the
 ``default`` fragment only (OpenAI overlay is keyed solely by ``openai``).
 
-**Pre-Phase 10 — prompt parity mode:** When ``prompt_parity_mode`` is true, the ``openai`` overlay
+**prompt parity mode:** When ``prompt_parity_mode`` is true, the ``openai`` overlay
 is **not** selected even if ``provider_key == \"openai\"``; the ``default`` fragment is used so
 OpenAI matches Gemini/Claude/DeepSeek base text for fair multi-provider comparison. Default is false
 (production preserves historical OpenAI overlay behavior).
 
-**Phase 6:** prompt traceability belongs at enrichment / request-assembly layers, not here;
+**** prompt traceability belongs at enrichment / request-assembly layers, not here;
 this module stays pure string resolution.
 """
 

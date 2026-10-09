@@ -1,6 +1,6 @@
 """Map inventory_jobs SQL rows to domain Job entities.
 
-Extracted from SqlJobRepository (Phase 6) so persistence mapping is reusable
+Extracted from SqlJobRepositoryso persistence mapping is reusable
 and the repository class focuses on CAS / query / recovery operations.
 """
 

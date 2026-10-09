@@ -1,4 +1,4 @@
-"""Export latest aisle code scan data as CSV (Phase 6B)."""
+"""Export latest aisle code scan data as CSV."""
 
 from __future__ import annotations
 

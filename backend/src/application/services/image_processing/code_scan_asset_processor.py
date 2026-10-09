@@ -304,7 +304,7 @@ class SingleAssetStrategyProcessor:
         finalize_strategy = strategy_key
         finalize_attempt = attempt
 
-        # Phase 5: close the internal attempt, then optionally run EXTERNAL_PROVIDER.
+        # close the internal attempt, then optionally run EXTERNAL_PROVIDER.
         if (
             result.status is not ImageResultStatus.RESOLVED_INTERNAL
             and self._external_fallback is not None
@@ -730,7 +730,7 @@ class SingleAssetStrategyProcessor:
         )
 
 
-# Temporary aliases (Phase 3/4 compatibility)
+# Temporary aliases (compatibility)
 CodeScanAssetResult = SingleAssetProcessResult
 CodeScanAssetProcessor = SingleAssetStrategyProcessor
 

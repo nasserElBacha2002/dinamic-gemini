@@ -1,4 +1,4 @@
-"""Canonical DINAMIC_POSITION payload helpers — Phase 2 adds HMAC fields."""
+"""Canonical DINAMIC_POSITION payload helpers — adds HMAC fields."""
 
 from __future__ import annotations
 

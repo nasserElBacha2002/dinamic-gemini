@@ -147,7 +147,7 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventorie
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'primary_prompt_version')
     ALTER TABLE inventories ADD primary_prompt_version NVARCHAR(50) NULL;
 
--- Phase 1 aisle identification override on inventories (mirror 0049).
+-- aisle identification override on inventories (mirror 0049).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'identification_mode')
     ALTER TABLE inventories ADD identification_mode VARCHAR(32) NULL;
 GO
@@ -199,7 +199,7 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventorie
 GO
 
 -- Clients must exist before FK_inventories_client (clean-install / lab bootstrap).
--- Phase A1 — Clients foundation (mirror migrations/versions/0024_clients_foundation.sql).
+-- Clients foundation (mirror migrations/versions/0024_clients_foundation.sql).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'clients')
 BEGIN
     CREATE TABLE clients (
@@ -222,7 +222,7 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_clients_name' AND obje
     CREATE INDEX IX_clients_name ON clients(name);
 GO
 
--- Phase 1 aisle identification — clients.default_identification_mode (mirror 0049/0050).
+-- aisle identification — clients.default_identification_mode (mirror 0049/0050).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('clients') AND name = 'default_identification_mode')
     ALTER TABLE clients ADD default_identification_mode VARCHAR(32) NULL;
 GO
@@ -253,7 +253,7 @@ GO
 
 -- (clients foundation DDL moved above FK_inventories_client for clean installs)
 
--- Phase A2 — Client suppliers foundation (mirror migrations/versions/0025_client_suppliers_foundation.sql).
+-- Client suppliers foundation (mirror migrations/versions/0025_client_suppliers_foundation.sql).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'client_suppliers')
 BEGIN
     CREATE TABLE client_suppliers (
@@ -375,7 +375,7 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_
     ALTER TABLE inventory_jobs ADD execution_id VARCHAR(64) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'claim_owner_id')
     ALTER TABLE inventory_jobs ADD claim_owner_id VARCHAR(64) NULL;
--- Phase 3 lease fencing (mirror migrations/versions/0072_inventory_jobs_lease_fencing.sql; update both when changing).
+-- lease fencing (mirror migrations/versions/0072_inventory_jobs_lease_fencing.sql; update both when changing).
 -- Reuses claim_owner_id as the lease owner (no duplicate lease_owner_id column).
 IF COL_LENGTH('inventory_jobs', 'lease_fencing_token') IS NULL
     ALTER TABLE inventory_jobs ADD lease_fencing_token BIGINT NOT NULL
@@ -393,7 +393,7 @@ IF NOT EXISTS (
         ON inventory_jobs(status, lease_expires_at)
         WHERE lease_expires_at IS NOT NULL;
 GO
--- Phase 1 multi-run (mirror migrations/versions/0010_multi_run_job_scoping.sql; update both when changing).
+-- multi-run (mirror migrations/versions/0010_multi_run_job_scoping.sql; update both when changing).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'provider_name')
     ALTER TABLE inventory_jobs ADD provider_name NVARCHAR(128) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'model_name')
@@ -406,7 +406,7 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_
     ALTER TABLE inventory_jobs ADD prompt_version NVARCHAR(256) NULL;
 GO
 
--- Phase 1 aisle identification snapshot (mirror migrations/versions/0049_aisle_identification_mode.sql).
+-- aisle identification snapshot (mirror migrations/versions/0049_aisle_identification_mode.sql).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode')
     ALTER TABLE inventory_jobs ADD identification_mode VARCHAR(32) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode_source')
@@ -435,7 +435,7 @@ IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OB
 IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_execution_strategy')
     ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_execution_strategy DEFAULT ('LEGACY_LLM') FOR execution_strategy;
 GO
--- Phase 1 corrections — CHECK constraints (mirror 0050).
+-- corrections — CHECK constraints (mirror 0050).
 IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_identification_mode')
     ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_identification_mode
     CHECK (identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM'));
@@ -448,7 +448,7 @@ IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jo
         )
     );
 GO
--- Phase 3 (0053) + Phase 4 (0055): execution_strategy CHECK includes CODE_SCAN + INTERNAL_OCR.
+-- (0053) + (0055): execution_strategy CHECK includes CODE_SCAN + INTERNAL_OCR.
 IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_execution_strategy')
     ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_execution_strategy
     CHECK (execution_strategy IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY', 'CODE_SCAN', 'INTERNAL_OCR'));
@@ -461,7 +461,7 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_inventory_jobs_provide
     CREATE INDEX IX_inventory_jobs_provider_model_prompt ON inventory_jobs(provider_name, model_name, prompt_key);
 GO
 
--- Phase 2 — aisles.operational_job_id (mirror migrations/versions/0011_aisle_operational_job.sql).
+-- aisles.operational_job_id (mirror migrations/versions/0011_aisle_operational_job.sql).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'operational_job_id')
 BEGIN
     ALTER TABLE aisles ADD operational_job_id VARCHAR(36) NULL;
@@ -472,7 +472,7 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_operational_job
     CREATE INDEX IX_aisles_operational_job_id ON aisles(operational_job_id);
 GO
 
--- Phase A4 — aisles.client_supplier_id (nullable foundation only).
+-- aisles.client_supplier_id (nullable foundation only).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'client_supplier_id')
     ALTER TABLE aisles ADD client_supplier_id VARCHAR(36) NULL;
 GO
@@ -488,7 +488,7 @@ GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_client_supplier_id' AND object_id = OBJECT_ID('aisles'))
     CREATE INDEX IX_aisles_client_supplier_id ON aisles(client_supplier_id);
 
--- Phase 1 aisle identification override on aisles (mirror 0049/0050).
+-- aisle identification override on aisles (mirror 0049/0050).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'identification_mode')
     ALTER TABLE aisles ADD identification_mode VARCHAR(32) NULL;
 GO
@@ -554,8 +554,8 @@ END;
 GO
 -- FK_source_assets_capture_session_item deferred until capture_session_items exists (clean install).
 
--- Phase 1 positioning foundation (mirror 0074 + 0075) — ordered capture + aisle locations.
--- Single block only; do not duplicate Phase 1 positioning DDL elsewhere in this file.
+-- positioning foundation (mirror 0074 + 0075) — ordered capture + aisle locations.
+-- Single block only; do not duplicate positioning DDL elsewhere in this file.
 IF OBJECT_ID('dbo.ordered_capture_sessions', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.ordered_capture_sessions (
@@ -1303,7 +1303,7 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_normalized_labels_scop
     CREATE INDEX IX_normalized_labels_scope_job ON normalized_labels(inventory_id, aisle_id, job_id);
 GO
 
--- Phase C1 — supplier reference images (additive foundation).
+-- supplier reference images (additive foundation).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'supplier_reference_images')
 BEGIN
     CREATE TABLE supplier_reference_images (
@@ -1337,7 +1337,7 @@ IF NOT EXISTS (
         ON supplier_reference_images(client_supplier_id);
 GO
 
--- Phase D1 — supplier prompt configs (additive foundation).
+-- supplier prompt configs (additive foundation).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'supplier_prompt_configs')
 BEGIN
     CREATE TABLE supplier_prompt_configs (
@@ -1446,7 +1446,7 @@ BEGIN
 END;
 GO
 
--- Phase G1 — inventory-level capture sessions (mirror migrations/versions/0020_capture_sessions_inventory_scope.sql).
+-- inventory-level capture sessions (mirror migrations/versions/0020_capture_sessions_inventory_scope.sql).
 IF EXISTS (
     SELECT 1
     FROM sys.columns
@@ -1654,7 +1654,7 @@ BEGIN
 END;
 GO
 
--- Phase 4.6 — structural entity traceability evidence
+-- structural entity traceability evidence
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'result_evidence')
 BEGIN
     CREATE TABLE result_evidence (
@@ -1693,7 +1693,7 @@ BEGIN
 END;
 GO
 
--- Phase 2 — job asset processing states + attempts (mirror 0051).
+-- job asset processing states + attempts (mirror 0051).
 IF OBJECT_ID('job_asset_processing_states', 'U') IS NULL
 BEGIN
     CREATE TABLE job_asset_processing_states (
@@ -1804,7 +1804,7 @@ IF NOT EXISTS (
         ON processing_attempts(job_id, asset_id, attempt_number);
 GO
 
--- Phase 2 corrections — exclusive batch lease + physical batch attempts (mirror 0052).
+-- corrections — exclusive batch lease + physical batch attempts (mirror 0052).
 IF OBJECT_ID('job_processing_leases', 'U') IS NULL
 BEGIN
     CREATE TABLE job_processing_leases (
@@ -1882,7 +1882,7 @@ IF NOT EXISTS (
         ON batch_processing_attempts(job_id, strategy, execution_scope, status);
 GO
 
--- Phase 5 corrections — durable external analysis requests (mirror 0056).
+-- corrections — durable external analysis requests (mirror 0056).
 IF OBJECT_ID('external_image_analysis_requests', 'U') IS NULL
 BEGIN
     CREATE TABLE external_image_analysis_requests (
@@ -1958,7 +1958,7 @@ GO
 IF COL_LENGTH('processing_attempts', 'extra_json') IS NULL
     ALTER TABLE processing_attempts ADD extra_json NVARCHAR(MAX) NULL;
 GO
--- Phase 6 — Supplier extraction profiles + reference annotations.
+-- Supplier extraction profiles + reference annotations.
 -- Additive + idempotent. Keep aligned with backend/src/database/schema.sql.
 
 IF OBJECT_ID('supplier_extraction_profiles', 'U') IS NULL
@@ -2106,9 +2106,9 @@ IF COL_LENGTH('supplier_reference_images', 'profile_version') IS NULL
     ALTER TABLE supplier_reference_images ADD profile_version INT NULL;
 GO
 
--- end Phase 6 supplier extraction profiles
+-- end supplier extraction profiles
 
--- Phase 7 — structured operational processing events (mirror 0059_processing_events.sql).
+-- structured operational processing events (mirror 0059_processing_events.sql).
 IF OBJECT_ID('processing_events', 'U') IS NULL
 BEGIN
     CREATE TABLE processing_events (
@@ -2159,7 +2159,7 @@ IF NOT EXISTS (
         WHERE attempt_id IS NOT NULL;
 GO
 
--- Phase 7 corrections — durable commands + idempotency (mirror 0060).
+-- corrections — durable commands + idempotency (mirror 0060).
 IF OBJECT_ID('asset_processing_commands', 'U') IS NULL
 BEGIN
     CREATE TABLE asset_processing_commands (
@@ -2298,7 +2298,7 @@ GO
 GO
 
 -- ----- folded from 0031_global_prompt_configs_foundation.sql -----
--- Phase D9 — global prompt configs persistence foundation (additive only).
+-- global prompt configs persistence foundation (additive only).
 -- model_scope_key normalizes NULL model_name to a deterministic scope sentinel.
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'global_prompt_configs')
@@ -2352,7 +2352,7 @@ GO
 GO
 
 -- ----- folded from 0033_aisle_code_scans.sql -----
--- Phase 1 — Aisle QR/barcode code scan runs and detections (auxiliary flow; independent of AI worker).
+-- Aisle QR/barcode code scan runs and detections (auxiliary flow; independent of AI worker).
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'aisle_code_scan_runs')
 BEGIN
@@ -2414,7 +2414,7 @@ GO
 GO
 
 -- ----- folded from 0034_aisle_code_scan_constraints.sql -----
--- Phase 1 corrections — aisle code scan: one latest run per aisle + enum CHECK constraints.
+-- corrections — aisle code scan: one latest run per aisle + enum CHECK constraints.
 -- Safe when 0033 was applied without these constraints (idempotent).
 
 -- Replace non-unique latest index with filtered unique index (one is_latest=1 per inventory/aisle).
@@ -2482,7 +2482,7 @@ GO
 GO
 
 -- ----- folded from 0035_code_scan_detection_matching.sql -----
--- Phase 4 — read-only code scan matching fields on detections (audit snapshot).
+-- read-only code scan matching fields on detections (audit snapshot).
 
 IF COL_LENGTH('aisle_code_scan_detections', 'matched_position_id') IS NULL
 BEGIN
@@ -2537,7 +2537,7 @@ GO
 GO
 
 -- ----- folded from 0036_code_scan_matching_constraints.sql -----
--- Phase 4 corrections — CHECK constraints for code scan match fields.
+-- corrections — CHECK constraints for code scan match fields.
 -- Positions use soft-delete (status=deleted); FK kept without ON DELETE (audit snapshot).
 
 IF OBJECT_ID('aisle_code_scan_detections', 'U') IS NOT NULL
@@ -2588,7 +2588,7 @@ GO
 GO
 
 -- ----- folded from 0037_inventory_jobs_finalization_metadata.sql -----
--- Phase 3.2 — Job finalization progress metadata on inventory_jobs
+-- Job finalization progress metadata on inventory_jobs
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'finalization_status')
     ALTER TABLE inventory_jobs ADD finalization_status VARCHAR(32) NOT NULL DEFAULT 'not_started';
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'current_finalization_step')
@@ -2611,7 +2611,7 @@ GO
 GO
 
 -- ----- folded from 0038_job_finalization_stages_and_artifact_manifest.sql -----
--- Phase 3.3 — Authoritative finalization stage evidence and artifact manifest
+-- Authoritative finalization stage evidence and artifact manifest
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'job_finalization_stages')
 CREATE TABLE job_finalization_stages (
     job_id VARCHAR(64) NOT NULL,
@@ -2657,7 +2657,7 @@ GO
 GO
 
 -- ----- folded from 0039_job_finalization_recovery_attempts.sql -----
--- Phase 3.4 — Manual finalization recovery audit and lease tracking
+-- Manual finalization recovery audit and lease tracking
 -- Foreign keys omitted: job rows may be purged under retention while audit history remains.
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'job_finalization_recovery_attempts')
 CREATE TABLE job_finalization_recovery_attempts (
@@ -2690,7 +2690,7 @@ GO
 GO
 
 -- ----- folded from 0040_artifact_publication_outbox.sql -----
--- Phase 3.5 — Durable artifact publication outbox
+-- Durable artifact publication outbox
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'artifact_publication_outbox')
 CREATE TABLE artifact_publication_outbox (
     id VARCHAR(64) NOT NULL,
@@ -2735,7 +2735,7 @@ GO
 GO
 
 -- ----- folded from 0041_artifact_publication_durable_sources_and_checksums.sql -----
--- Phase 3.5 corrections — durable staging checksums and due-work indexing
+-- corrections — durable staging checksums and due-work indexing
 -- SQL Server requires separate batches: ALTER ADD column, then UPDATE referencing it.
 
 IF COL_LENGTH('artifact_publication_outbox', 'source_sha256') IS NULL
@@ -3086,7 +3086,7 @@ GO
 GO
 
 -- ----- folded from 0053_code_scan_processing_strategy.sql -----
--- Phase 3 — CODE_SCAN execution strategy.
+-- CODE_SCAN execution strategy.
 -- Additive + idempotent. Widens the inventory_jobs.execution_strategy CHECK to allow
 -- 'CODE_SCAN' and adds an optional per-attempt code-scan detections table for audit.
 -- Keep aligned with backend/src/database/schema.sql.
@@ -3145,7 +3145,7 @@ GO
 GO
 
 -- ----- folded from 0060_asset_processing_commands.sql -----
--- Phase 7 corrections: durable asset processing commands + action idempotency.
+-- corrections: durable asset processing commands + action idempotency.
 -- Additive / idempotent for SQL Server.
 
 IF OBJECT_ID('asset_processing_commands', 'U') IS NULL
@@ -3266,7 +3266,7 @@ GO
 GO
 
 -- ----- folded from 0062_mobile_preliminary_detections.sql -----
--- Phase 4: mobile preliminary CODE_SCAN drafts (diagnostic only — not authoritative).
+-- mobile preliminary CODE_SCAN drafts (diagnostic only — not authoritative).
 -- Additive / idempotent. Does not touch positions, jobs, or final results.
 -- Forward-only: disable ingest via SERVER_PRELIMINARY_DETECTION_INGEST=false.
 -- Formal rollback (dev/test only): DROP TABLE IF EXISTS mobile_preliminary_detections;
@@ -3403,7 +3403,7 @@ GO
 GO
 
 -- ----- folded from 0063_preliminary_detection_reconciliations.sql -----
--- Phase 5: preliminary vs remote reconciliation (diagnostic only).
+-- preliminary vs remote reconciliation (diagnostic only).
 -- Forward-only. Disable via SERVER_PRELIMINARY_RECONCILIATION=false.
 -- Rollback (dev/test): DROP TABLE IF EXISTS preliminary_detection_reconciliations;
 
@@ -3499,7 +3499,7 @@ GO
 GO
 
 -- ----- folded from 0064_preliminary_reconciliation_corrections.sql -----
--- Phase 5 corrections: reconciliation identity, lease/retry, revision, FKs.
+-- corrections: reconciliation identity, lease/retry, revision, FKs.
 -- Forward-only additive on 0063. Do not edit 0063 if already applied.
 -- Rollback (dev/test): drop new columns/constraints carefully or DROP TABLE.
 
@@ -3783,7 +3783,7 @@ GO
 GO
 
 -- ----- folded from 0066_authoritative_aisle_finalization.sql -----
--- Phase 6: authoritative aisle finalization (local CODE_SCAN close without remote reprocess).
+-- authoritative aisle finalization (local CODE_SCAN close without remote reprocess).
 -- Additive / idempotent. Disable via SERVER_AUTHORITATIVE_AISLE_FINALIZATION=false.
 -- Formal rollback (dev/test only):
 --   DROP TABLE IF EXISTS authoritative_aisle_finalization_items;
@@ -3945,7 +3945,7 @@ GO
 GO
 
 -- ----- folded from 0067_server_reprocess_runs.sql -----
--- Phase 7: optional server reprocess (proposals; no automatic overwrite of current results).
+-- optional server reprocess (proposals; no automatic overwrite of current results).
 -- Additive / idempotent. Disable via SERVER_SERVER_REPROCESS=false.
 -- Formal rollback (dev/test only):
 --   DROP TABLE IF EXISTS server_reprocess_adoption_items;
@@ -4214,7 +4214,7 @@ GO
 GO
 
 -- ----- folded from 0068_server_reprocess_adoption_content_hash.sql -----
--- Phase 7 corrections: adoption content_hash for idempotent payload replay.
+-- corrections: adoption content_hash for idempotent payload replay.
 -- Additive. Do not alter 0067 if already applied.
 -- Formal rollback (dev/test only):
 --   ALTER TABLE server_reprocess_adoptions DROP CONSTRAINT UQ_sra_adoption_hash;
@@ -4251,7 +4251,7 @@ GO
 GO
 
 -- ----- folded from 0069_aisle_revisions_phase8.sql -----
--- Phase 8: aisle revisions, position versions, finalization lineage.
+-- aisle revisions, position versions, finalization lineage.
 -- Additive / idempotent. Disable via SERVER_AISLE_REVISIONS=false.
 -- Formal rollback (dev/test only):
 --   DROP TABLE IF EXISTS aisle_revision_items;
@@ -4479,7 +4479,7 @@ GO
 GO
 
 -- ----- folded from 0070_aisle_revision_corrections.sql -----
--- Phase 8 corrections: apply content hash, position CAS columns, uniqueness constraints.
+-- corrections: apply content hash, position CAS columns, uniqueness constraints.
 -- Additive / idempotent. Requires 0069_aisle_revisions_phase8.
 -- Formal rollback (dev/test only):
 --   ALTER TABLE aisle_revisions DROP COLUMN apply_content_hash;
@@ -4520,7 +4520,7 @@ IF OBJECT_ID('aisle_revisions', 'U') IS NOT NULL
         WHERE apply_id IS NOT NULL;
 GO
 
--- One current exclusion per asset (Phase 6 table; reinforce if missing).
+-- One current exclusion per asset (table; reinforce if missing).
 IF OBJECT_ID('authoritative_aisle_excluded_assets', 'U') IS NOT NULL
    AND NOT EXISTS (
         SELECT 1 FROM sys.indexes

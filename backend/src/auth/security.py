@@ -1,7 +1,7 @@
 """
 Security helpers for v3.2.1 minimal administrative authentication.
 
-Phase 2 implements:
+implements:
 - password hash verification (no plaintext comparison)
 - signed access token creation
 - token decode/validation (including expiration)

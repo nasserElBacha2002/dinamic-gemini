@@ -12,7 +12,7 @@ export type TraceabilityStatus =
   | 'INVALID'
   | 'UNVALIDATED';
 
-/** Phase 4.8 — structural evidence traceability (includes legacy / artifact unavailable). */
+/** structural evidence traceability (includes legacy / artifact unavailable). */
 export type EvidenceTraceabilityStatus =
   | 'valid'
   | 'invalid'
@@ -28,7 +28,7 @@ export type EvidenceSourceKind =
 
 export type ImageAccessStatus = 'available' | 'url_unavailable' | 'not_allowed';
 
-/** Phase 4.8 — durable traceability_manifest metadata (safe subset). */
+/** durable traceability_manifest metadata (safe subset). */
 export interface TraceabilityArtifactMetadata {
   kind: string;
   published: boolean;
@@ -40,7 +40,7 @@ export interface TraceabilityArtifactMetadata {
   publishedAt?: string | null;
 }
 
-/** Phase 4.8 — mapped from API ResultEvidenceViewResponse. */
+/** mapped from API ResultEvidenceViewResponse. */
 export interface ResultEvidenceView {
   displayable: boolean;
   traceabilityStatus: EvidenceTraceabilityStatus | string;
@@ -94,12 +94,12 @@ export interface ResultSummary {
   id: string;
   sku: string | null;
   positionCode: string | null;
-  /** Phase 4: true when an aisle position label was assigned to this result. */
+  /** true when an aisle position label was assigned to this result. */
   aislePositionAssigned?: boolean;
-  /** Phase 5: human aisle position name from published assignments (null = sin posición). */
+  /** human aisle position name from published assignments (null = sin posición). */
   aislePositionId?: string | null;
   aislePositionName?: string | null;
-  /** Phase 5: assignment status code (ASSIGNED_AUTOMATIC | UNASSIGNED_* | NO_RECONCILIATION). */
+  /** assignment status code (ASSIGNED_AUTOMATIC | UNASSIGNED_* | NO_RECONCILIATION). */
   positionAssignmentStatus?: string | null;
   positionAssignmentReason?: string | null;
   positionAssignmentSource?: string | null;
@@ -136,7 +136,7 @@ export interface ResultSummary {
   updatedAt: string;
   /** Crop row exists (primary_evidence_id); not the same as validated display evidence. */
   hasEvidence: boolean;
-  /** Phase 4.2: true only when traceability is VALID and backend confirms display eligibility. */
+  /** true only when traceability is VALID and backend confirms display eligibility. */
   hasValidEvidence: boolean;
   /** Product label public id when this row is one ProductRecord (D1). */
   labelId?: string | null;
@@ -163,7 +163,7 @@ export interface ResultEvidence {
   thumbnailUrl?: string | null;
 }
 
-/** One review history entry (audit). Phase 6: before/after for human-readable change summary. */
+/** One review history entry (audit). before/after for human-readable change summary. */
 export interface ReviewHistoryItem {
   id: string;
   action: string;
@@ -199,7 +199,7 @@ export interface ResultDetail {
   correctedQty: number | null;
   /** v3.2.2: resolved qty = corrected_quantity ?? qty (backend contract). */
   resolvedQty: number | null;
-  /** v3.2.5 Phase 6: system-resolved qty (backend qty) for display when corrected_quantity is set. Mapper always sets this (position.qty ?? null). */
+  /** system-resolved qty (backend qty) for display when corrected_quantity is set. Mapper always sets this (position.qty ?? null). */
   systemQty: number | null;
   qtySource?:
     | 'detected'
@@ -219,11 +219,11 @@ export interface ResultDetail {
   updatedAt: string;
   sourceImageId: string | null;
   sourceFileName: string | null;
-  /** Phase 4.2: validated display eligibility from API traceability.has_valid_evidence. */
+  /** validated display eligibility from API traceability.has_valid_evidence. */
   hasValidEvidence: boolean;
-  /** Phase 4.8: structural evidence contract from detail API (authoritative when present). */
+  /** structural evidence contract from detail API (authoritative when present). */
   evidenceView?: ResultEvidenceView | null;
-  /** Phase 4.8: durable traceability_manifest metadata for resolved job context. */
+  /** durable traceability_manifest metadata for resolved job context. */
   traceabilityArtifact?: TraceabilityArtifactMetadata | null;
   /** Operational diagnostic from API (may be shown in technical/expandable UI). */
   traceabilityWarning?: string | null;

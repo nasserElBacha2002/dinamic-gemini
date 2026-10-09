@@ -27,7 +27,7 @@ class UploadedFile:
     size_bytes: int | None = None
     #: SHA-256 hex digest when computed during spool/ingest (optional).
     content_sha256: str | None = None
-    #: Ordered capture session id (Phase 1 positioning foundation).
+    #: Ordered capture session id (positioning foundation).
     ordered_capture_session_id: str | None = None
     #: Logical 1-based capture sequence within the ordered session.
     sequence_number: int | None = None

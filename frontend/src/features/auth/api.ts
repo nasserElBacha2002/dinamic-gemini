@@ -1,5 +1,5 @@
 /**
- * Auth API client for v3.2.1 — Phase 4 implementation.
+ * Auth API client for v3.2.1 — implementation.
  * Calls POST /auth/login and GET /auth/me; parses stable auth error envelope.
  */
 

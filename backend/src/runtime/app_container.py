@@ -1,5 +1,5 @@
 """
-Explicit composition root for v3 runtime wiring (Phase 1).
+Explicit composition root for v3 runtime wiring.
 
 Authoritative construction of shared repos, SQL client, artifact storage, and small services
 used by both the FastAPI layer and background workers. API `dependencies.py` and
@@ -372,7 +372,7 @@ class AppContainer:
         return is_production_like_runtime()
 
     def _v3_allow_in_memory_fallback(self) -> bool:
-        """Whether SQL probe failure may resolve to ``MEMORY_FALLBACK`` (Phase 2 policy).
+        """Whether SQL probe failure may resolve to ``MEMORY_FALLBACK`` (policy).
 
         Hosted / unknown environments never allow fallback — even if
         ``V3_ALLOW_IN_MEMORY_FALLBACK=true`` (override is ignored there).
@@ -530,7 +530,7 @@ class AppContainer:
             return None
 
     def _get_repository_backend_resolution(self) -> RepositoryBackendResolution:
-        """Resolve and cache SQL vs memory backend once per container (Phase C1 foundation)."""
+        """Resolve and cache SQL vs memory backend once per container (foundation)."""
         if self._repository_backend_resolution is not None:
             return self._repository_backend_resolution
         policy_allow = self._v3_allow_in_memory_fallback()
@@ -572,7 +572,7 @@ class AppContainer:
         return self._get_repository_backend_resolution().mode.value
 
     def get_repository_backend_status(self) -> RepositoryBackendStatus:
-        """Public, secret-free repository backend status for ``/health`` and ``/ready`` (Phase 2).
+        """Public, secret-free repository backend status for ``/health`` and ``/ready``.
 
         Reuses the cached resolution via :meth:`_get_repository_backend_resolution`. Callers
         (API layer) must use this method instead of touching the resolution cache directly —
@@ -622,7 +622,7 @@ class AppContainer:
     def is_sql_repository_backend(self) -> bool:
         """True when this container's resolved backend is SQL (not memory-only/fallback).
 
-        Callers that build optional collaborators (e.g. the Phase 2 image-processing bridge)
+        Callers that build optional collaborators (e.g. the image-processing bridge)
         use this to decide whether an in-memory repository fallback would be inconsistent
         with the rest of the app's persistence (``require_sql``).
         """
@@ -1638,7 +1638,7 @@ class AppContainer:
         return self._processing_attempt_repo
 
     def get_external_image_analysis_request_repo(self):
-        """Durable external fallback claims (Phase 5 corrections — SQL when available)."""
+        """Durable external fallback claims (corrections — SQL when available)."""
         if getattr(self, "_external_image_analysis_request_repo", None) is not None:
             return self._external_image_analysis_request_repo
         from src.infrastructure.repositories.memory_external_image_analysis_request_repository import (
@@ -1680,7 +1680,7 @@ class AppContainer:
         return self._global_fallback_batch_request_repo
 
     def get_processing_event_repo(self):
-        """Phase 7 structured processing events (memory or SQL)."""
+        """structured processing events (memory or SQL)."""
         if getattr(self, "_processing_event_repo", None) is not None:
             return self._processing_event_repo
         from src.infrastructure.repositories.memory_processing_event_repository import (

@@ -1,5 +1,5 @@
 """
-Phase 4.3 corrections — bind provider request image inputs from ExecutionImageManifest.
+corrections — bind provider request image inputs from ExecutionImageManifest.
 
 The manifest is the sole authority for which images are sent and in what order.
 """

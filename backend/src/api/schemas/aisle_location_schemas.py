@@ -1,4 +1,4 @@
-"""v3 aisle location + positioning label API schemas (Phase 1)."""
+"""v3 aisle location + positioning label API schemas."""
 
 from __future__ import annotations
 

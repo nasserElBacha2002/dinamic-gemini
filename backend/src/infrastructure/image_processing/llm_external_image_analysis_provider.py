@@ -1,4 +1,4 @@
-"""Phase 5 — ExternalImageAnalysisProvider for single-label fallback (not hybrid aisle schema).
+"""ExternalImageAnalysisProvider for single-label fallback (not hybrid aisle schema).
 
 Critical contract: external fallback must NOT route through GeminiGlobalAnalyzer /
 GlobalEntityResponseV21. That hybrid schema is for multi-entity aisle analysis and caused

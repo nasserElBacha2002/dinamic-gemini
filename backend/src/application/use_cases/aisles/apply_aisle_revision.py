@@ -1,4 +1,4 @@
-"""Apply aisle revision and rollback (Phase 8) — always creates new versions.
+"""Apply aisle revision and rollback— always creates new versions.
 
 Apply is all-or-nothing: the mutation planner builds an immutable plan; a Unit of Work
 executes every write on a single connection/transaction. Mid-flight failures roll back

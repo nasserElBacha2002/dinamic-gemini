@@ -1,4 +1,4 @@
-"""Phase 2 — unified label validation application services."""
+"""unified label validation application services."""
 
 from src.application.services.label_validation.gs1_payload_parser import Gs1PayloadParser
 from src.application.services.label_validation.job_validation_context import (

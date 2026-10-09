@@ -1,4 +1,4 @@
-"""Phase 10 — configurable production cutover / alert thresholds.
+"""configurable production cutover / alert thresholds.
 
 Thresholds are env-driven so ops can agree SLOs without code changes.
 Defaults are conservative starting points, not hard product SLAs.

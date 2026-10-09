@@ -1,4 +1,4 @@
-"""Phase 2 use cases: render, download, replace, batch for positioning labels."""
+"""use cases: render, download, replace, batch for positioning labels."""
 
 from __future__ import annotations
 

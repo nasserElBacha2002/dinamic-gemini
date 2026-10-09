@@ -103,7 +103,7 @@ class EntityV21(BaseModel):
     confidence: float = Field(..., ge=0, le=1, description="Confianza de la detección en [0,1].")
     manifest_entry_id: str | None = Field(
         None,
-        description="Phase 4.4: canonical evidence ID (IMG_001, IMG_002, …). Preferred.",
+        description="canonical evidence ID (IMG_001, IMG_002, …). Preferred.",
     )
     source_image_id: str | None = Field(
         None,

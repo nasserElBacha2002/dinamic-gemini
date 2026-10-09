@@ -1,4 +1,4 @@
-"""Autonomous artifact publication outbox worker — Phase 3.5 corrections."""
+"""Autonomous artifact publication outbox worker — corrections."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Domain errors for label profile resolution (Phase 1)."""
+"""Domain errors for label profile resolution."""
 
 
 class SupplierLabelProfileNotConfiguredError(Exception):

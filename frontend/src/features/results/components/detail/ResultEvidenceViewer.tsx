@@ -1,6 +1,6 @@
 /**
  * Sprint 4.3 — Evidence viewer: inline primary preview + generic fullscreen dialog.
- * Phase 4.8: When structural evidenceView exists, use backend imageUrl (no legacy asset loader).
+ * When structural evidenceView exists, use backend imageUrl (no legacy asset loader).
  * Supports result-detail mode and asset mode (manual image coverage drawer).
  */
 

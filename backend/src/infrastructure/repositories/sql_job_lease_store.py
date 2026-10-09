@@ -1,4 +1,4 @@
-"""SQL Server job-lease CAS operations (Phase 6 extract).
+"""SQL Server job-lease CAS operations (extract).
 
 Internal collaborator for ``SqlJobRepository`` — keeps lease-gated UPDATE predicates
 identical across fence SELECT and terminal writes.

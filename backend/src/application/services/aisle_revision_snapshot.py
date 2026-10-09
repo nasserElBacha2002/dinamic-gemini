@@ -1,4 +1,4 @@
-"""Snapshot + diff helpers for aisle revisions (Phase 8)."""
+"""Snapshot + diff helpers for aisle revisions."""
 
 from __future__ import annotations
 

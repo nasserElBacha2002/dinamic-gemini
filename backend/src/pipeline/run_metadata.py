@@ -1,8 +1,7 @@
 """
 Run metadata for job-level traceability — v3.2.4 Phase 5.
 
-Builds the visual_reference_context block from the shared AnalysisContext (Phase 3)
-and provider metadata (Phase 4). Sanitizes counts and reference_ids for consistency.
+Builds the visual_reference_context block from the shared AnalysisContextand provider metadata. Sanitizes counts and reference_ids for consistency.
 Provider-agnostic; used by pipeline to produce run_metadata in memory and by
 executor to persist into job.result_json.
 """
@@ -25,13 +24,12 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
 
-# Job-level block key (Phase 5)
-RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT = "visual_reference_context"
-# Phase 6 — optional prompt traceability block (backward compatible when absent)
+# Job-level block keyRUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT = "visual_reference_context"
+# optional prompt traceability block (backward compatible when absent)
 RUN_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
-# Phase 10 — provider-agnostic one-call usage/pricing/cost snapshot
+# provider-agnostic one-call usage/pricing/cost snapshot
 RUN_METADATA_KEY_LLM_COST_SNAPSHOT = "llm_cost_snapshot"
-# Phase H4 — compact persisted audit snapshot (safe metadata only; no prompt bodies)
+# compact persisted audit snapshot (safe metadata only; no prompt bodies)
 RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT = "run_audit_snapshot"
 
 
@@ -161,7 +159,7 @@ def build_run_metadata(
     """
     Build the full run metadata dict (for in-memory propagation to executor).
     Contains visual_reference_context for job-level traceability.
-    Phase 6: optional ``prompt_composition`` — when provided, the same dict object SHOULD be the
+    optional ``prompt_composition`` — when provided, the same dict object SHOULD be the
     one from ``AnalysisResult`` / ``LLMRequest.metadata`` (no re-serialization) so job
     ``result_json`` matches the analysis call exactly.
     Omitted when ``None`` for backward compatibility.

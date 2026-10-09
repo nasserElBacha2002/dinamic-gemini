@@ -368,7 +368,7 @@ export function applySubmitReviewActionCacheEffects({
     return;
   }
 
-  // Default behavior (Phase 3 compatibility) for call sites that do not pass a strategy.
+ // Default behavior (compatibility) for call sites that do not pass a strategy.
   recordReviewActionCacheObs({
     strategy: 'default',
     scope: { inventoryId, aisleId, positionId },

@@ -2,7 +2,7 @@
 
 Provider-agnostic representation of primary evidence and optional inventory
 visual references. Strategies can later decide how to consume it.
-Phase 4 corrective: resolved_path on VisualReferenceContext; analysis_context_from_dict for deserialization.
+corrective: resolved_path on VisualReferenceContext; analysis_context_from_dict for deserialization.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class VisualReferenceContext:
     mime_type: str
     role: str = "inventory_reference"
     created_at: datetime | None = None
-    # Phase 4: when set, provider uses this path instead of reconstructing from storage layout.
+    # when set, provider uses this path instead of reconstructing from storage layout.
     resolved_path: str | None = None
 
 

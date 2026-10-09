@@ -170,7 +170,7 @@ export interface UploadsScreenProps {
   onError: (message: string | null) => void;
   /** Optional: open local confirm screen when authoritative review is enabled. */
   onLocalReview?: () => void;
-  /** Phase 6: open authoritative finalize summary. */
+  /** open authoritative finalize summary. */
   onAuthoritativeFinalize?: () => void;
   onViewAisleResults?: () => void;
   onExcludedPhotos?: () => void;

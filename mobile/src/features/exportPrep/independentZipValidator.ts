@@ -1,5 +1,5 @@
 /**
- * Independent STORE ZIP structure validator (Phase 5).
+ * Independent STORE ZIP structure validator.
  * Hand-parses LFH / central directory / EOCD — does not share code with boundedZipWriter.
  * Used to verify packages produced by the writer without circular trust.
  */

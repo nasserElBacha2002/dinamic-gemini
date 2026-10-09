@@ -1,5 +1,5 @@
 /**
- * Phase 7 — aisle positioning operational summary driven by backend authority.
+ * aisle positioning operational summary driven by backend authority.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

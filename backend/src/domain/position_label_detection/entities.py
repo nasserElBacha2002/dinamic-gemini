@@ -1,4 +1,4 @@
-"""Image-level position label detections (Phase 3) — no product↔position binding."""
+"""Image-level position label detections— no product↔position binding."""
 
 from __future__ import annotations
 

@@ -29,7 +29,7 @@ function isDefaultAislesListQueryKey(queryKey: QueryKey, inventoryId: string): b
 }
 
 /**
- * Conservative Phase 6 patch: add the created aisle to the default inventory-detail aisle list only.
+ * Conservative patch: add the created aisle to the default inventory-detail aisle list only.
  * We skip filtered/paginated variants to avoid inventing membership/sort semantics.
  */
 export function patchCreateAisleIntoAislesLists(
@@ -118,7 +118,7 @@ export function patchAisleInAislesLists(
 }
 
 /**
- * Conservative Phase 6 patch: update only operational pointer metadata on cached aisle jobs lists.
+ * Conservative patch: update only operational pointer metadata on cached aisle jobs lists.
  * Job status, timing, and other run fields remain server-authoritative.
  */
 export function patchPromoteOperationalJobInAisleJobs(

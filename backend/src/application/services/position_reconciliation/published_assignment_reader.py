@@ -1,4 +1,4 @@
-"""Batch reader for published Phase 4 assignments (Phase 5 enrichment SoT)."""
+"""Batch reader for published reconciliation assignments (enrichment SoT)."""
 
 from __future__ import annotations
 

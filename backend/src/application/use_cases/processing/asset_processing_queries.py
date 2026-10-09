@@ -1,4 +1,4 @@
-"""Phase 7 — list / detail read models for per-asset processing observability."""
+"""list / detail read models for per-asset processing observability."""
 
 from __future__ import annotations
 

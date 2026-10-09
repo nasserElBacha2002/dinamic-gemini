@@ -1,4 +1,4 @@
-"""API schemas for mobile preliminary detection sync (Phase 4)."""
+"""API schemas for mobile preliminary detection sync."""
 
 from __future__ import annotations
 

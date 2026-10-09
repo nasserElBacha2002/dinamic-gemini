@@ -1,4 +1,4 @@
-"""Phase 5 — structured logging helpers (JSON lines, secret-safe)."""
+"""structured logging helpers (JSON lines, secret-safe)."""
 
 from __future__ import annotations
 

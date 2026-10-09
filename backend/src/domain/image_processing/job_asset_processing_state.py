@@ -1,4 +1,4 @@
-"""Persisted per-asset processing state for a job (Phase 2)."""
+"""Persisted per-asset processing state for a job."""
 
 from __future__ import annotations
 

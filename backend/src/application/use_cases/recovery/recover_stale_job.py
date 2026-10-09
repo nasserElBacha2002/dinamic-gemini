@@ -1,4 +1,4 @@
-"""Phase 5 — recover a stale job by stale-fail + new attempt (idempotent)."""
+"""recover a stale job by stale-fail + new attempt (idempotent)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Phase 7 corrections — queue durable asset processing commands (not PENDING alone)."""
+"""corrections — queue durable asset processing commands (not PENDING alone)."""
 
 from __future__ import annotations
 

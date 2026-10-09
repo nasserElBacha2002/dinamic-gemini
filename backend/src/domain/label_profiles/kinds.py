@@ -1,4 +1,4 @@
-"""Strong domain types for label recognition profile selection (Phase 1)."""
+"""Strong domain types for label recognition profile selection."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class LabelProfileSource(str, Enum):
 
 
 def effective_label_kind(stored: LabelKind | None) -> LabelKind:
-    """Legacy NULL rows and unset writes default to ITEM (Phase 1)."""
+    """Legacy NULL rows and unset writes default to ITEM."""
     return stored if stored is not None else LabelKind.ITEM
 
 

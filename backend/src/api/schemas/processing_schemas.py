@@ -16,7 +16,7 @@ from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 
 
 class ProcessAisleRequest(BaseModel):
-    """Optional body for POST .../aisles/{aisle_id}/process (Phase 5)."""
+    """Optional body for POST .../aisles/{aisle_id}/process."""
 
     provider_name: Optional[str] = Field(
         None,
@@ -131,7 +131,7 @@ class ProcessAisleResponse(BaseModel):
 
 
 class AssetProgressResponse(BaseModel):
-    """Derived counts from job_asset_processing_states (Phase 2)."""
+    """Derived counts from job_asset_processing_states."""
 
     total: int = 0
     pending: int = 0
@@ -144,7 +144,7 @@ class AssetProgressResponse(BaseModel):
 
 
 class FallbackProgressResponse(BaseModel):
-    """Phase 5 selective external-fallback counters (from ``result_json.fallback_progress``)."""
+    """selective external-fallback counters (from ``result_json.fallback_progress``)."""
 
     fallback_requested: int = 0
     fallback_skipped: int = 0
@@ -260,19 +260,19 @@ class JobSummary(BaseModel):
     current_finalization_step: Optional[str] = None
     last_completed_finalization_step: Optional[str] = None
     finalization_error_code: Optional[str] = None
-    #: True when this job is the aisle ``operational_job_id`` pointer (Phase 6 run browser).
+    #: True when this job is the aisle ``operational_job_id`` pointer (run browser).
     is_operational: bool = False
     #: Optional LLM cost snapshot from ``result_json`` (sanitized; additive for run pickers).
     llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
-    #: Phase 2 additive per-asset progress (absent for legacy jobs / orchestrator off).
+    #: additive per-asset progress (absent for legacy jobs / orchestrator off).
     asset_progress: Optional[AssetProgressResponse] = None
-    #: Phase 5 selective external fallback counters (absent when fallback never ran).
+    #: selective external fallback counters (absent when fallback never ran).
     fallback_progress: Optional[FallbackProgressResponse] = None
     #: GLOBAL_BATCH aisle-level fallback summary (absent when mode is PER_ASSET / unused).
     global_fallback: Optional[GlobalFallbackSummaryResponse] = None
-    #: Phase 5 per-asset sanitized fallback rows (derived from durable requests).
+    #: per-asset sanitized fallback rows (derived from durable requests).
     fallback_asset_summaries: Optional[list[AssetFallbackSummaryResponse]] = None
-    #: Immutable identification execution snapshot from ``engine_params_json`` (Phase 3/4/5).
+    #: Immutable identification execution snapshot from ``engine_params_json`` ().
     identification_execution: Optional[dict[str, Any]] = None
     client_id: Optional[str] = None
 
@@ -289,7 +289,7 @@ class FinalizationStageAssessmentItem(BaseModel):
 
 
 class FinalizationAssessmentBlock(BaseModel):
-    """Read-only finalization assessment (Phase 3.3)."""
+    """Read-only finalization assessment."""
 
     outcome: str
     technical_result_status: str
@@ -386,7 +386,7 @@ class RecoverAisleProcessingResponse(BaseModel):
 
 
 class AisleJobsListResponse(BaseModel):
-    """Response for GET .../aisles/{aisle_id}/jobs (Phase 2 run browser)."""
+    """Response for GET .../aisles/{aisle_id}/jobs (run browser)."""
 
     operational_job_id: Optional[str] = None
     jobs: list[JobSummary] = Field(default_factory=list)

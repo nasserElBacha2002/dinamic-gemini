@@ -4,7 +4,7 @@ Módulo de configuración del sistema.
 Carga y valida la configuración desde variables de entorno,
 con valores por defecto sensatos.
 
-Phase 1: field definitions live in cohesive Pydantic mixins under
+field definitions live in cohesive Pydantic mixins under
 ``src.env_settings.grouped_settings``; :class:`AppSettings` composes them. ``Settings`` remains a
 backward-compatible alias for ``AppSettings``.
 """
@@ -215,14 +215,14 @@ class AppSettings(
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatible type alias (Phase 1 migration bridge)
+# Backward-compatible type alias (migration bridge)
 #
 # ``Settings`` is **not** a distinct model: it is the same class object as
 # ``AppSettings``. Existing imports (`from src.config import Settings`) and
 # annotations keep working while call sites migrate.
 #
 # **New code** should prefer ``AppSettings`` for clarity. This alias remains until
-# a later phase retires it after bulk import updates.
+# a future release retires it after bulk import updates.
 # ---------------------------------------------------------------------------
 Settings = AppSettings
 

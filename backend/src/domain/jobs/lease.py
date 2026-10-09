@@ -1,4 +1,4 @@
-"""Job lease fencing (Phase 3) — ownership + monotonic fencing token + expiry."""
+"""Job lease fencing— ownership + monotonic fencing token + expiry."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class LeaseRenewalOutcome(str, Enum):
 
 @dataclass(frozen=True)
 class JobLease:
-    """Active exclusive lease for a running inventory job (Phase 3).
+    """Active exclusive lease for a running inventory job.
 
     ``owner_id`` is the worker token (same value as ``Job.claim_owner_id``).
     ``fencing_token`` is assigned by persistence on acquire/reacquire — never invented by callers.

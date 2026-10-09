@@ -1,4 +1,4 @@
-"""v3 analytics API — Phase 5.1 (metrics / quality aggregates)."""
+"""v3 analytics API — (metrics / quality aggregates)."""
 
 from __future__ import annotations
 
@@ -477,7 +477,7 @@ def analytics_benchmark_compare_aisle_runs(
     job_b_id: str = Query(..., alias="job_b_id", min_length=1),
     use_case: CompareAisleRunsUseCase = Depends(get_compare_aisle_runs_use_case),
 ) -> AisleBenchmarkCompareResponse:
-    """Phase 6 — same payload as ``GET /api/v3/inventories/.../benchmark/compare`` (benchmark-only).
+    """same payload as ``GET /api/v3/inventories/.../benchmark/compare`` (benchmark-only).
 
     Exposed under ``/analytics`` so operational KPI routes stay conceptually separate from
     explicit multi-run inspection workflows.

@@ -1,15 +1,15 @@
 """
 Hybrid global-analysis prompt assembly (provider-neutral).
 
-**Phase E1 / E4:** The string returned here is the **ProtectedSystemContractBlock** (hybrid base from
+**/ E4:** The string returned here is the **ProtectedSystemContractBlock** (hybrid base from
 ``compose_hybrid_base``) plus optional **image-id enrichments**, then (Phase E4) an optional
 **supplier-editable** block from ``EffectivePromptComposer`` when ``RunContext.supplier_prompt_resolution``
 is set by the v3 executor. Fallback/error resolution never replaces the protected contract text.
 
 Uses ``prompt_composer.hybrid_assembly`` for profile + base composition; applies photo enrichments
-once here (step 4 of the Phase 5 flow).
+once here (step 4 of the flow).
 
-**Profile vs Phase 7 version (see also ``prompt_traceability`` module doc):**
+**Profile vs version (see also ``prompt_traceability`` module doc):**
 
 - **Profile:** ``DEFAULT_HYBRID_PROMPT_PROFILE`` (``global_v22``) + ``compose_hybrid_base`` determine prompt **content** (hard-bound; cannot drift to v21 on stale partial deploys).
   Recorded in composition as ``profile_name``, ``job_prompt_key``, ``settings_hybrid_prompt_key``.
@@ -121,7 +121,7 @@ def build_hybrid_analysis_prompt_with_traceability(
     execution_manifest: ExecutionImageManifest | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """
-    Same prompt text as legacy assembly, plus JSON-serializable composition metadata (Phase 6).
+    Same prompt text as legacy assembly, plus JSON-serializable composition metadata.
 
     Prompt construction order is unchanged: profile → provider → base → optional image-id enrichment.
     Returns ``(prompt_text, composition)`` where ``composition`` is the **construction-only** slice;
@@ -203,7 +203,7 @@ def build_hybrid_analysis_prompt_with_traceability(
     job_prompt_key_opt = jpk.strip() if isinstance(jpk, str) and jpk.strip() else None
     shp = getattr(settings, "hybrid_prompt", None)
     settings_prompt_opt = shp.strip() if isinstance(shp, str) and shp.strip() else None
-    # Phase 7: optional traceability label only (not profile selection). job_prompt_version wins over settings.prompt_version.
+    # optional traceability label only (not profile selection). job_prompt_version wins over settings.prompt_version.
     jpv = getattr(context, "job_prompt_version", None)
     prompt_version_opt = None
     if isinstance(jpv, str) and jpv.strip():

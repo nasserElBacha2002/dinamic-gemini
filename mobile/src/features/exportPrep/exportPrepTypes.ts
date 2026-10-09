@@ -92,7 +92,7 @@ export interface EnsureExportPrepJobsResult {
   readonly durationMs: number;
   /**
    * READY completeness check mode used during ensure.
-   * Phase 3B: EXPORT_PREFLIGHT uses `light` (existence/size/format); packaging
+   * EXPORT_PREFLIGHT uses `light` (existence/size/format); packaging
    * always performs `strong` native rehash once. Other ensure reasons keep light.
    */
   readonly readyValidationMode?: 'light' | 'strong';

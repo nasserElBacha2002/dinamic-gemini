@@ -1,4 +1,4 @@
-"""Resolve per-asset coverage of an AISLE_BATCH legacy run from persisted evidence (Phase 2).
+"""Resolve per-asset coverage of an AISLE_BATCH legacy run from persisted evidence.
 
 The legacy hybrid pipeline runs once per aisle and produces ``result_evidence`` /
 ``evidence`` rows keyed by ``source_asset_id`` (when the provider/consolidation could link a
@@ -32,7 +32,7 @@ class AssetResultCoverageStatus(str, Enum):
 class AssetResultCoverageResolver:
     """Coverage decision for one asset within one job, built from three signals in order:
 
-    1. ``result_evidence.source_asset_id`` (Phase 4.6 structural traceability rows for the job).
+    1. ``result_evidence.source_asset_id`` (structural traceability rows for the job).
     2. ``evidence.source_asset_id`` linked to a ``position`` that belongs to the job (aisle
        positions scoped by ``job_id``).
     3. Absence of *any* traceability signal for the whole job (batch may not have synced

@@ -1,6 +1,6 @@
 """Pydantic schemas for auth-related requests and responses (v3.2.1).
 
-Phase 1 defines contracts only; behavior is implemented in later phases.
+defines contracts only; behavior is implemented in later phases.
 """
 
 from __future__ import annotations

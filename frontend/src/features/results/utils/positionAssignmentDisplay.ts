@@ -1,5 +1,5 @@
 /**
- * Phase 5 — human labels for published position assignment statuses.
+ * human labels for published position assignment statuses.
  */
 
 import type { TFunction } from 'i18next';

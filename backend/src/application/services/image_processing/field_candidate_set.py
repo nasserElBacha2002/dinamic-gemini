@@ -1,4 +1,4 @@
-"""Shared field-candidate contract for CODE_SCAN / OCR / EXTERNAL (Phase 6 corrections)."""
+"""Shared field-candidate contract for CODE_SCAN / OCR / EXTERNAL (corrections)."""
 
 from __future__ import annotations
 

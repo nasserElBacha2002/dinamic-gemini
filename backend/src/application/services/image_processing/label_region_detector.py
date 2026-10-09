@@ -1,4 +1,4 @@
-"""Label region detection for INTERNAL_OCR (Phase 4 corrections).
+"""Label region detection for INTERNAL_OCR (corrections).
 
 Locates an inventory label inside a full pallet photo using contour geometry
 and optional light OCR anchor matching. Coordinates are normalized [0,1].

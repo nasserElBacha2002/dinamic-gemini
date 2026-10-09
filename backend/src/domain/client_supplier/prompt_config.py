@@ -1,4 +1,4 @@
-"""Supplier prompt config domain entity — Phase D2 foundation."""
+"""Supplier prompt config domain entity — foundation."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ class SupplierPromptConfig:
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    #: Phase 1 — ITEM or POSITION scope for future recognition profiles.
+    #: ITEM or POSITION scope for future recognition profiles.
     label_kind: LabelKind | None = None
 
     def __post_init__(self) -> None:

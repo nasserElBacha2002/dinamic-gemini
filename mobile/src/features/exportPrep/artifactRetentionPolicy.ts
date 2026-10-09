@@ -1,5 +1,5 @@
 /**
- * Retention / ownership policy for export artifacts (Phase 6).
+ * Retention / ownership policy for export artifacts.
  * Decisions combine persisted state + lease + TTL — never age alone.
  */
 

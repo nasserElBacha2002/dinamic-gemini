@@ -1,4 +1,4 @@
-"""Materialize capture-session staged media into SourceAsset rows (Phase 4 bridge)."""
+"""Materialize capture-session staged media into SourceAsset rows (bridge)."""
 
 from __future__ import annotations
 
@@ -68,11 +68,11 @@ class _MaterializeCommitContext:
 
 
 class MaterializeCaptureSessionUseCase:
-    """Idempotent Phase 4 materialization from staging items to SourceAsset rows.
+    """Idempotent materialization from staging items to SourceAsset rows.
 
     State gate: only ``ASSIGNMENT_PROPOSED`` can materialize.
     Item gate: only ``IMPORTED`` + ``PROPOSED`` rows are eligible.
-    Phase-4 meaning of ``CONFIRMING``: the session is already materialized to ``SourceAsset``
+    meaning of ``CONFIRMING``: the session is already materialized to ``SourceAsset``
     and locked for additional preview/materialization attempts while future phases define
     final confirmation semantics.
     """
@@ -206,7 +206,7 @@ class MaterializeCaptureSessionUseCase:
                 item.updated_at = now
                 self._item_repo.save(item)
                 linked_items.append(item)
-            # Phase 4: CONFIRMING means "materialized + locked", not final business confirmation.
+            # CONFIRMING means "materialized + locked", not final business confirmation.
             session.status = CaptureSessionStatus.CONFIRMING
             session.updated_at = now
             self._session_repo.save(session)

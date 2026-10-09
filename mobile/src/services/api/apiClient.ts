@@ -232,7 +232,7 @@ export class ApiClient {
           refreshExpiresIn: payload.refresh_expires_in,
         };
         await this.options.tokenStorage.saveTokens(tokens);
-        // Phase 9: successful refresh restores auth for blocked offline ops.
+ // successful refresh restores auth for blocked offline ops.
         try {
           // Lazy require to avoid cycles with offline module graph.
           // eslint-disable-next-line @typescript-eslint/no-require-imports

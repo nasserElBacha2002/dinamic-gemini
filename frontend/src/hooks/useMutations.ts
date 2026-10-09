@@ -459,7 +459,7 @@ export interface ReviewMutationOptions {
 /**
  * Manual merge for one aisle/run. Positions are invalidated here so all subscribers refetch.
  * Merge-results GET is refreshed only from `AislePositionsPage` via `queryClient.fetchQuery` after
- * `mutateAsync` — avoids duplicate network when combined with TanStack invalidation (Phase 1).
+ * `mutateAsync` — avoids duplicate network when combined with TanStack invalidation.
  */
 export function useRunAisleMerge(inventoryId: string) {
   const queryClient = useQueryClient();
@@ -572,7 +572,7 @@ export function useDeleteAisleSourceAsset(inventoryId: string, aisleId: string) 
   });
 }
 
-/** Phase 6 — point operational_job_id at a succeeded run (benchmark → operational). */
+/** point operational_job_id at a succeeded run (benchmark → operational). */
 export function usePromoteAisleOperationalJob(inventoryId: string, aisleId: string) {
   const queryClient = useQueryClient();
   return useMutation({

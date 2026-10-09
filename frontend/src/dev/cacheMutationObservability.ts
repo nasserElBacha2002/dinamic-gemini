@@ -1,5 +1,5 @@
 /**
- * Phase 8 — lightweight dev observability for TanStack Query cache / invalidation / patching.
+ * lightweight dev observability for TanStack Query cache / invalidation / patching.
  * No production analytics; no vendor SDKs. When inactive, all record* calls are O(1) no-ops.
  */
 

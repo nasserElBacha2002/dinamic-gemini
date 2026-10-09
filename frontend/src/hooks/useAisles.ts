@@ -1,8 +1,8 @@
 /**
  * TanStack Query hooks for inventory metrics and aisles.
  *
- * **Query keys (Phase 2 / 7):** `useAislesList` uses `queryKeys.inventories.aislesListTable` and
- * `useAisleJobsList` uses `queryKeys.inventories.aisleJobsList` — same shapes Phase 6 patch helpers expect.
+ * **Query keys (7):** `useAislesList` uses `queryKeys.inventories.aislesListTable` and
+ * `useAisleJobsList` uses `queryKeys.inventories.aisleJobsList` — same shapes patch helpers expect.
  * Analytics and other domains use their own `queryKeys` trees; they are not required to share list canonicalizers.
  */
 
@@ -41,7 +41,7 @@ export function useAislesList(inventoryId: string | undefined, options?: { enabl
   });
 }
 
-/** Pipeline provider keys for POST aisle process (Phase 5). */
+/** Pipeline provider keys for POST aisle process. */
 export function useProcessingProviderOptions(options?: {
   enabled?: boolean;
   mode?: 'test' | 'production';
@@ -108,7 +108,7 @@ export function useAisleJobDetail(
   });
 }
 
-/** Phase H — aggregated job audit metadata (read-only). */
+/** Aggregated job audit metadata (read-only). */
 export function useJobAuditability(
   inventoryId: string | undefined,
   aisleId: string | undefined,
@@ -123,7 +123,7 @@ export function useJobAuditability(
   });
 }
 
-/** Jobs for an aisle, newest first — run selector on Aisle Results (Phase 3). */
+/** Jobs for an aisle, newest first — run selector on Aisle Results. */
 export function useAisleJobsList(
   inventoryId: string | undefined,
   aisleId: string | undefined,

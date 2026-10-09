@@ -1,4 +1,4 @@
-"""Phase 5 — wire operational metrics collector and recovery scheduler at API startup."""
+"""wire operational metrics collector and recovery scheduler at API startup."""
 
 from __future__ import annotations
 

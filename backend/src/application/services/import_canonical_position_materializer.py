@@ -1,4 +1,4 @@
-"""Bridge import productive rows to Phase 3 canonical position materialization."""
+"""Bridge import productive rows to canonical position materialization."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ class ImportCanonicalMaterializationSummary:
 
 
 class ImportCanonicalPositionMaterializer:
-    """Materialize unique aisle positions via Phase 3 service (no second creator)."""
+    """Materialize unique aisle positions via service (no second creator)."""
 
     def __init__(
         self,
@@ -179,7 +179,7 @@ def _source_for(result: LocalCsvProductiveResult) -> PositionRecognitionSource:
 
 
 def materialization_capture_id(result: LocalCsvProductiveResult) -> str:
-    """Fit Phase 3 ``capture_id`` (max 36) while keeping mobile/TXT ids stable.
+    """Fit ``capture_id`` (max 36) while keeping mobile/TXT ids stable.
 
     Prefer ``source_asset_id`` when the package already created a UUID asset.
     Mobile ZIP photos use ``{session_id}:{media_store_id}`` (~47 chars). TXT imports
@@ -203,7 +203,7 @@ def materialization_capture_id(result: LocalCsvProductiveResult) -> str:
 def _aisle_client_supplier_id(
     aisle_repo: AisleRepository | None, aisle_id: str
 ) -> str | None:
-    """Mirror aisle supplier onto recognition so Phase 3 scope checks pass.
+    """Mirror aisle supplier onto recognition so scope checks pass.
 
     Package/CSV productive rows do not carry ``client_supplier_id``; the aisle is
     the durable scope owner used by materialization UoW.

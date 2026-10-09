@@ -1,7 +1,7 @@
 """
 Local filesystem artifact adapter.
 
-Phase 1 keeps this adapter as legacy/local mode while adding provider-aware
+keeps this adapter as legacy/local mode while adding provider-aware
 operations for future S3-first flows.
 """
 

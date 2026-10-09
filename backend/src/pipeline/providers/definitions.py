@@ -8,7 +8,7 @@ specs, and API labels. Adding a provider should start here, then wire ``resolve_
 This is **not** a plugin framework — only declarative metadata to reduce drift between registry,
 ``processing_experiment_catalog``, ``processing_provider_resolution``, and API option text.
 
-**Provider contract (Phase 5):** capabilities in :mod:`src.pipeline.providers.capabilities` are
+**Provider contract:** capabilities in :mod:`src.pipeline.providers.capabilities` are
 authoritative for visual-inventory job compatibility. Runtime failover between vendors is **not**
 implemented unless ``pipeline_analysis_execution_strategy`` enables multi-provider fallback in settings.
 
@@ -44,7 +44,7 @@ class PipelineProviderSpec:
 
     @property
     def capabilities(self) -> ProviderCapabilitySpec | None:
-        """Declared capabilities for this provider (Phase 5 contract)."""
+        """Declared capabilities for this provider (contract)."""
         return pipeline_provider_capabilities(self.key)
 
 
