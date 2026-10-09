@@ -1,4 +1,4 @@
-"""Shared SQL seed helpers for worker Phase 2 integration tests."""
+"""Shared SQL seed helpers for persist idempotency integration tests."""
 
 from __future__ import annotations
 

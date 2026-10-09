@@ -36,8 +36,8 @@ from tests.infrastructure.pipeline.test_worker_phase3_part5_artifact_outbox impo
     RUN_ID,
     _build_dispatcher,
 )
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
+from tests.support.worker_executor_harness.doubles import ArtifactUploadSpy
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, FixedClock
 
 
 def _seed_domain_complete(harness: ExecutorHarness) -> None:

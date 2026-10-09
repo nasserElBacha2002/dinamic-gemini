@@ -1,4 +1,4 @@
-"""Duplicate vs repetition detection for Phase 2 idempotency characterization."""
+"""Duplicate vs repetition detection for persist idempotency characterization."""
 
 from __future__ import annotations
 

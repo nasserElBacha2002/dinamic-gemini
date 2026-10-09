@@ -1,4 +1,4 @@
-"""Promotion service builders for Phase 2 Part 3 tests."""
+"""Promotion service builders for operational-job promotion tests."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from src.application.services.operational_result_promotion_service import (
 from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
     MemoryOperationalJobPromotionRepository,
 )
-from tests.support.worker_phase1.executor_harness import ExecutorHarness
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness
 
 
 def build_operational_promotion_service(

@@ -1,4 +1,4 @@
-"""Targeted SQL Server cleanup for worker Phase 1 integration tests."""
+"""Targeted SQL Server cleanup for executor-harness integration tests."""
 
 from __future__ import annotations
 
@@ -11,14 +11,14 @@ def assert_sql_integration_database_is_safe() -> None:
     assert_pytest_sqlserver_database_is_safe()
 
 
-def cleanup_worker_phase1_sql_scope(
+def cleanup_worker_executor_sql_scope(
     client: SqlServerClient,
     *,
     inventory_id: str,
     aisle_id: str,
     job_id: str,
 ) -> None:
-    """Delete rows created by a worker Phase 1 SQL test in FK-safe order."""
+    """Delete rows created by an executor-harness SQL test in FK-safe order."""
     with client.cursor() as cur:
         cur.execute(
             "DELETE FROM evidences WHERE entity_id IN (SELECT id FROM positions WHERE aisle_id = ? AND job_id = ?)",

@@ -17,12 +17,12 @@ from src.domain.traceability import TraceabilityStatus
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
-from tests.support.worker_phase1.doubles import (
+from tests.support.worker_executor_harness.doubles import (
     FailingResultEvidenceRepository,
     FailOnNthSavePositionRepository,
 )
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, make_entity_hybrid_report
-from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, make_entity_hybrid_report
+from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
 
 
 def _manifest_composition() -> dict:
@@ -73,7 +73,7 @@ def test_persist_writes_structural_evidence_rows(tmp_path: Path) -> None:
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
         clock=__import__(
-            "tests.support.worker_phase1.executor_harness", fromlist=["FixedClock"]
+            "tests.support.worker_executor_harness.executor_harness", fromlist=["FixedClock"]
         ).FixedClock(harness.now),
     )
     uc.execute(
@@ -106,7 +106,7 @@ def test_retry_replaces_evidence_rows(tmp_path: Path) -> None:
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
         clock=__import__(
-            "tests.support.worker_phase1.executor_harness", fromlist=["FixedClock"]
+            "tests.support.worker_executor_harness.executor_harness", fromlist=["FixedClock"]
         ).FixedClock(harness.now),
     )
     cmd = PersistAisleResultCommand(
@@ -151,7 +151,7 @@ def test_position_failure_rolls_back_evidence(tmp_path: Path) -> None:
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
         clock=__import__(
-            "tests.support.worker_phase1.executor_harness", fromlist=["FixedClock"]
+            "tests.support.worker_executor_harness.executor_harness", fromlist=["FixedClock"]
         ).FixedClock(harness.now),
     )
     with pytest.raises(RuntimeError):
@@ -191,7 +191,7 @@ def test_unlabeled_pallet_unknown_zero_persists_for_operator_review(tmp_path: Pa
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
         clock=__import__(
-            "tests.support.worker_phase1.executor_harness", fromlist=["FixedClock"]
+            "tests.support.worker_executor_harness.executor_harness", fromlist=["FixedClock"]
         ).FixedClock(harness.now),
     )
     uc.execute(
@@ -233,7 +233,7 @@ def test_result_evidence_failure_rolls_back_all_writes(tmp_path: Path) -> None:
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
         clock=__import__(
-            "tests.support.worker_phase1.executor_harness", fromlist=["FixedClock"]
+            "tests.support.worker_executor_harness.executor_harness", fromlist=["FixedClock"]
         ).FixedClock(harness.now),
     )
     with pytest.raises(RuntimeError, match="result evidence write failed"):

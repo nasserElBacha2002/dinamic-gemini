@@ -20,7 +20,7 @@ from src.infrastructure.persistence.memory_operational_job_promotion_repository 
 from src.infrastructure.pipeline.finalization_errors import ArtifactPublishPartialError
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
-from tests.support.worker_phase1.doubles import (
+from tests.support.worker_executor_harness.doubles import (
     ArtifactUploadSpy,
     FailingArtifactStore,
     FailOnNthSavePositionRepository,
@@ -28,8 +28,8 @@ from tests.support.worker_phase1.doubles import (
     PartialFailingJobRepository,
     RecordingPipelineRunner,
 )
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
-from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, FixedClock
+from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
 
 
 def _assert_persist_rollback(harness: ExecutorHarness) -> None:

@@ -9,7 +9,7 @@ import pytest
 from src.domain.jobs.finalization import CurrentFinalizationStep
 from src.domain.jobs.lease import JobLeaseLostError
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, FixedClock
 
 
 def test_stale_begin_rejected(tmp_path) -> None:

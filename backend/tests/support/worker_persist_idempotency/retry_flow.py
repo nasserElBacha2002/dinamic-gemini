@@ -1,4 +1,4 @@
-"""Production-level retry wiring for Phase 2 characterization tests."""
+"""Production-level retry wiring for persist idempotency characterization tests."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from src.application.services.aisle_job_launch_service import AisleJobLaunchServ
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.use_cases.aisles.retry_aisle_job import RetryAisleJobUseCase
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, FixedClock
 
 
 @dataclass

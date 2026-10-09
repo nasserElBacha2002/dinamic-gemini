@@ -1,4 +1,4 @@
-"""Test doubles for JobResultScopeStore (Phase 2 Part 2 corrections)."""
+"""Test doubles for JobResultScopeStore."""
 
 from __future__ import annotations
 

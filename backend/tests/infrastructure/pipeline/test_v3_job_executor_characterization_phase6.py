@@ -48,9 +48,9 @@ from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
     NoopRepo,
     StubArtifactStorage,
 )
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy
-from tests.support.worker_phase1.executor_harness import ExecutorHarness
-from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
+from tests.support.worker_executor_harness.doubles import ArtifactUploadSpy
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness
+from tests.support.worker_persist_idempotency.executor_persist_deps import memory_executor_persist_kwargs
 
 
 def _replace_executor_state(executor: V3JobExecutor, spy_state: Any) -> None:

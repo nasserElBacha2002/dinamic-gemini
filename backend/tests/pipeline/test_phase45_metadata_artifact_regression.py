@@ -23,8 +23,8 @@ from tests.infrastructure.pipeline.test_worker_phase3_part5_artifact_outbox impo
     RUN_ID,
     _build_dispatcher,
 )
-from tests.support.worker_phase1.doubles import SizeOnlyArtifactStore
-from tests.support.worker_phase1.executor_harness import ExecutorHarness
+from tests.support.worker_executor_harness.doubles import SizeOnlyArtifactStore
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness
 
 
 def test_phase45_entity_fields_json_safe_in_run_metadata() -> None:

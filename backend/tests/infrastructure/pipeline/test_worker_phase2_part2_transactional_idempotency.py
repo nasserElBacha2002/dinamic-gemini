@@ -15,21 +15,21 @@ from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsUseCase,
 )
 from src.domain.jobs.entities import JobStatus
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy, FailOnNthSavePositionRepository
-from tests.support.worker_phase1.executor_harness import (
+from tests.support.worker_executor_harness.doubles import ArtifactUploadSpy, FailOnNthSavePositionRepository
+from tests.support.worker_executor_harness.executor_harness import (
     ExecutorHarness,
     make_entity_hybrid_report,
     make_two_entity_hybrid_report,
 )
-from tests.support.worker_phase2.duplicate_detection import (
+from tests.support.worker_persist_idempotency.duplicate_detection import (
     duplicate_positions_by_job_entity_uid,
     entity_uid_from_position,
     repeated_final_counts_by_job_sku,
 )
-from tests.support.worker_phase2.job_scope_inspection import assert_no_row_id_overlap
-from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
-from tests.support.worker_phase2.retry_flow import build_retry_flow_services
-from tests.support.worker_phase2.uow_doubles import HookingMemoryJobResultUnitOfWorkFactory
+from tests.support.worker_persist_idempotency.job_scope_inspection import assert_no_row_id_overlap
+from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
+from tests.support.worker_persist_idempotency.retry_flow import build_retry_flow_services
+from tests.support.worker_persist_idempotency.uow_doubles import HookingMemoryJobResultUnitOfWorkFactory
 
 
 def _abc_report(

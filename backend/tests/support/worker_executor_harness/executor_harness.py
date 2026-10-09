@@ -1,4 +1,4 @@
-"""Executor harness for worker Phase 1 operational safety tests."""
+"""Executor harness for v3 job worker operational-safety and fencing tests."""
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ from src.infrastructure.repositories.memory_supplier_reference_image_repository 
 )
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 from src.pipeline.run_metadata import RUN_METADATA_KEY_PROMPT_COMPOSITION
-from tests.support.worker_phase2.job_scope_inspection import (
+from tests.support.worker_persist_idempotency.job_scope_inspection import (
     JobScopeSnapshot,
     evidence_for_job,
     final_counts_for_job,
@@ -268,7 +268,7 @@ class ExecutorHarness:
             inventory_repo.save(
                 Inventory(
                     id=inventory_id,
-                    name="Phase1 Inv",
+                    name="Harness Inv",
                     status=InventoryStatus.PROCESSING,
                     created_at=now,
                     updated_at=now,
@@ -375,7 +375,7 @@ class ExecutorHarness:
         )
 
     def lease(self) -> JobLease:
-        """Return the harness job's active Phase-3 lease (seeded on create)."""
+        """Return the harness job's active processing lease (seeded on create)."""
         from src.domain.jobs.entities import JobStatus
 
         job = self.job_repo.get_by_id(self.job_id)

@@ -27,25 +27,25 @@ from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabel
 from src.infrastructure.repositories.sql_result_evidence_repository import (
     SqlResultEvidenceRepository,
 )
-from tests.support.worker_phase1.executor_harness import (
+from tests.support.worker_executor_harness.executor_harness import (
     FixedClock,
     make_entity_hybrid_report,
     make_two_entity_hybrid_report,
 )
-from tests.support.worker_phase1.sql_cleanup import (
+from tests.support.worker_executor_harness.sql_cleanup import (
     assert_sql_integration_database_is_safe,
-    cleanup_worker_phase1_sql_scope,
+    cleanup_worker_executor_sql_scope,
 )
-from tests.support.worker_phase2.duplicate_detection import (
+from tests.support.worker_persist_idempotency.duplicate_detection import (
     duplicate_positions_by_job_entity_uid,
     entity_uid_from_position,
 )
-from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
-from tests.support.worker_phase2.sql_job_seed import (
+from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_persist_idempotency.sql_job_seed import (
     seed_process_aisle_job,
     sql_result_evidence_repo,
 )
-from tests.support.worker_phase2.sql_verification import verify_sql_scope_fully_removed
+from tests.support.worker_persist_idempotency.sql_verification import verify_sql_scope_fully_removed
 
 
 @pytest.fixture
@@ -160,7 +160,7 @@ def test_p2_p2_t010_sql_rollback_after_deletion_preserves_snapshot(sql_client_or
         after_first = list(pos_repo.list_by_aisle(aisle_id, job_id=job_id))
         assert len(after_first) == 2
 
-        from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
+        from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
 
         rollback_persist = build_persist_aisle_result_use_case(
             position_repo=pos_repo,
@@ -181,7 +181,7 @@ def test_p2_p2_t010_sql_rollback_after_deletion_preserves_snapshot(sql_client_or
         assert len(after_fail) == 2
         assert duplicate_positions_by_job_entity_uid(after_fail) == {}
     finally:
-        cleanup_worker_phase1_sql_scope(
+        cleanup_worker_executor_sql_scope(
             client, inventory_id=inv_id, aisle_id=aisle_id, job_id=job_id
         )
         verify_sql_scope_fully_removed(
@@ -223,7 +223,7 @@ def test_p2_p2_t011_sql_identical_re_persist_is_idempotent(sql_client_or_skip) -
         assert len(positions) == 2
         assert duplicate_positions_by_job_entity_uid(positions) == {}
     finally:
-        cleanup_worker_phase1_sql_scope(
+        cleanup_worker_executor_sql_scope(
             client, inventory_id=inv_id, aisle_id=aisle_id, job_id=job_id
         )
         verify_sql_scope_fully_removed(
@@ -279,7 +279,7 @@ def test_p2_p2_t012_sql_changed_report_replaces_snapshot(sql_client_or_skip) -> 
             products.extend(prod_repo.list_by_position(pos.id))
         assert {p.sku for p in products} == {"SKU-A", "SKU-C"}
     finally:
-        cleanup_worker_phase1_sql_scope(
+        cleanup_worker_executor_sql_scope(
             client, inventory_id=inv_id, aisle_id=aisle_id, job_id=job_id
         )
         verify_sql_scope_fully_removed(
@@ -366,6 +366,6 @@ def test_p2_p2_c013_polymorphic_evidence_preserved_sql(sql_client_or_skip) -> No
         assert ev_repo.get_by_id(f"ev-pos-{suffix}") is None
         assert ev_repo.get_by_id(f"ev-other-{suffix}") is not None
     finally:
-        cleanup_worker_phase1_sql_scope(
+        cleanup_worker_executor_sql_scope(
             client, inventory_id=inv_id, aisle_id=aisle_id, job_id=job_id
         )

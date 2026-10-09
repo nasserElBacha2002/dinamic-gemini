@@ -48,8 +48,8 @@ from src.infrastructure.persistence.memory_operational_job_promotion_repository 
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     DEFAULT_V3_WORKER_RUN_SEGMENT,
 )
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
+from tests.support.worker_executor_harness.doubles import ArtifactUploadSpy
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, FixedClock
 
 
 def _cas_transition(store, *, job_id: str, stage: FinalizationStage, now: datetime, **kwargs):

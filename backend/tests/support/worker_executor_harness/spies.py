@@ -1,4 +1,4 @@
-"""Execution spies for worker Phase 1 cancellation and finalization tests."""
+"""Execution spies for executor cancellation and finalization tests."""
 
 from __future__ import annotations
 

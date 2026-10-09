@@ -69,13 +69,13 @@ from src.infrastructure.repositories.memory_raw_label_repository import MemoryRa
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy
-from tests.support.worker_phase1.executor_harness import (
+from tests.support.worker_executor_harness.doubles import ArtifactUploadSpy
+from tests.support.worker_executor_harness.executor_harness import (
     ExecutorHarness,
     FixedClock,
     make_entity_hybrid_report,
 )
-from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
+from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
 
 
 def _cas_transition(store, *, job_id: str, stage: FinalizationStage, now: datetime, **kwargs):

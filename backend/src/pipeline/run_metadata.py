@@ -24,7 +24,8 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
 )
 
-# Job-level block keyRUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT = "visual_reference_context"
+# Job-level block key for visual reference consumption in result_json.
+RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT = "visual_reference_context"
 # optional prompt traceability block (backward compatible when absent)
 RUN_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
 # provider-agnostic one-call usage/pricing/cost snapshot

@@ -1,4 +1,4 @@
-"""Test doubles for JobResultUnitOfWork (Phase 2 Part 2 corrections)."""
+"""Test doubles for JobResultUnitOfWork."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from src.application.ports.job_result_unit_of_work import (
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWork,
 )
-from tests.support.worker_phase2.scope_store_doubles import (
+from tests.support.worker_persist_idempotency.scope_store_doubles import (
     AfterDeleteHook,
     HookingJobResultScopeStore,
     SpyJobResultScopeStore,

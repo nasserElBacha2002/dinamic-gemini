@@ -1,4 +1,4 @@
-"""Deterministic test doubles for worker Phase 1 operational safety characterization."""
+"""Deterministic test doubles for executor-harness operational safety characterization."""
 
 from __future__ import annotations
 

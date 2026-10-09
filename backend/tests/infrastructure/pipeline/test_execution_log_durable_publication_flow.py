@@ -27,8 +27,8 @@ from tests.infrastructure.pipeline.test_worker_phase3_part5_artifact_outbox impo
     RUN_ID,
     _build_dispatcher,
 )
-from tests.support.worker_phase1.doubles import SizeOnlyArtifactStore
-from tests.support.worker_phase1.executor_harness import ExecutorHarness
+from tests.support.worker_executor_harness.doubles import SizeOnlyArtifactStore
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness
 
 
 def _write_valid_execution_log(run_dir) -> None:

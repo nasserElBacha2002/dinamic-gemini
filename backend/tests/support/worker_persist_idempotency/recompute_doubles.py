@@ -1,4 +1,4 @@
-"""Test doubles for job-scoped recompute factory (Phase 2 Part 2 corrections)."""
+"""Test doubles for job-scoped recompute factory."""
 
 from __future__ import annotations
 

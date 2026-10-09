@@ -10,7 +10,7 @@ from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import FinalizationStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
-from tests.support.worker_phase1.executor_harness import FixedClock
+from tests.support.worker_executor_harness.executor_harness import FixedClock
 
 
 def _job(*, status: JobStatus, heartbeat_age_sec: int, finalization=FinalizationStatus.NOT_STARTED) -> Job:

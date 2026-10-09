@@ -1,6 +1,6 @@
-"""Shared doubles and harness for worker Phase 1 operational safety tests."""
+"""Shared doubles and harness for v3 job executor operational-safety tests."""
 
-from tests.support.worker_phase1.doubles import (
+from tests.support.worker_executor_harness.doubles import (
     ArtifactUploadSpy,
     FailingArtifactStore,
     FailingRecomputeUseCase,
@@ -9,7 +9,7 @@ from tests.support.worker_phase1.doubles import (
     PartialFailingJobRepository,
     RecordingPipelineRunner,
 )
-from tests.support.worker_phase1.executor_harness import (
+from tests.support.worker_executor_harness.executor_harness import (
     ExecutorHarness,
     build_recompute_use_case,
     make_two_entity_hybrid_report,

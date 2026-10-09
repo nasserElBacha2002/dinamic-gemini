@@ -40,12 +40,12 @@ from src.infrastructure.repositories.memory_client_supplier_repository import (
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
-from tests.support.worker_phase1.executor_harness import (
+from tests.support.worker_executor_harness.executor_harness import (
     ExecutorHarness,
     FixedClock,
     make_two_entity_hybrid_report,
 )
-from tests.support.worker_phase2.promotion_builders import build_operational_promotion_service
+from tests.support.worker_persist_idempotency.promotion_builders import build_operational_promotion_service
 
 
 def _ts(base: datetime, minutes: int) -> datetime:

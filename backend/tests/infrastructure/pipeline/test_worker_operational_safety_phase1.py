@@ -26,7 +26,7 @@ from src.infrastructure.repositories.memory_position_repository import MemoryPos
 from src.llm.deepseek_sdk_adapter import DeepSeekSdkAdapter
 from src.llm.errors import LLMProviderError
 from src.llm.types import LLMRequest
-from tests.support.worker_phase1.doubles import (
+from tests.support.worker_executor_harness.doubles import (
     ArtifactUploadSpy,
     FailingArtifactStore,
     FailOnNthSavePositionRepository,
@@ -34,12 +34,12 @@ from tests.support.worker_phase1.doubles import (
     PartialFailingJobRepository,
     RecordingPipelineRunner,
 )
-from tests.support.worker_phase1.executor_harness import (
+from tests.support.worker_executor_harness.executor_harness import (
     ExecutorHarness,
     FixedClock,
     make_two_entity_hybrid_report,
 )
-from tests.support.worker_phase1.spies import ExecutionSpy
+from tests.support.worker_executor_harness.spies import ExecutionSpy
 
 # --- Block 1: WKR-P1-T001 -----------------------------------------------------
 
@@ -100,7 +100,7 @@ def test_wkr_p1_t007_recompute_failure_after_entity_persist_marks_job_failed(
 ) -> None:
     """WKR-P1-T007: entity rows persist; recompute failure fails job; aggregates may be empty."""
     harness = ExecutorHarness.build(tmp_path)
-    from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
+    from tests.support.worker_persist_idempotency.recompute_doubles import FailingJobScopedRecomputeFactory
 
     failing_factory = FailingJobScopedRecomputeFactory()
     executor = harness.make_executor(job_scoped_recompute_factory=failing_factory)

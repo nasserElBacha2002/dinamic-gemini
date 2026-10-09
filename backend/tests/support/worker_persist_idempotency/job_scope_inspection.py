@@ -1,4 +1,4 @@
-"""Inspect job-scoped persistence layers for Phase 2 characterization tests."""
+"""Inspect job-scoped persistence layers for persist/idempotency characterization tests."""
 
 from __future__ import annotations
 

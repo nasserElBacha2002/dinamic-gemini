@@ -1,6 +1,6 @@
-"""Shared helpers for worker Phase 2 idempotency and ownership characterization tests."""
+"""Shared helpers for aisle-result persist idempotency and job-scope characterization tests."""
 
-from tests.support.worker_phase2.duplicate_detection import (
+from tests.support.worker_persist_idempotency.duplicate_detection import (
     duplicate_evidence_by_scope,
     duplicate_final_counts,
     duplicate_normalized_labels,
@@ -14,7 +14,7 @@ from tests.support.worker_phase2.duplicate_detection import (
     repeated_products_by_job_sku,
     repeated_raw_labels_by_source_reference,
 )
-from tests.support.worker_phase2.job_scope_inspection import (
+from tests.support.worker_persist_idempotency.job_scope_inspection import (
     JobScopeSnapshot,
     assert_no_row_id_overlap,
     evidence_for_job,

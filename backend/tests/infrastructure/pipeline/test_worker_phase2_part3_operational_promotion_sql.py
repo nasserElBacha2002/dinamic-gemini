@@ -24,9 +24,9 @@ from src.infrastructure.persistence.sql_operational_job_promotion_repository imp
 from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from src.infrastructure.repositories.sql_job_repository import SqlJobRepository
-from tests.support.worker_phase1.sql_cleanup import (
+from tests.support.worker_executor_harness.sql_cleanup import (
     assert_sql_integration_database_is_safe,
-    cleanup_worker_phase1_sql_scope,
+    cleanup_worker_executor_sql_scope,
 )
 
 
@@ -102,10 +102,10 @@ def test_p2_p3_t014_sql_compare_and_set_promotion(sql_client_or_skip) -> None:
         assert stale.outcome == PromotionOutcome.REJECTED_STALE
         assert aisle_repo.get_by_id(aisle_id).operational_job_id == job_new
     finally:
-        cleanup_worker_phase1_sql_scope(
+        cleanup_worker_executor_sql_scope(
             client, inventory_id=inv_id, aisle_id=aisle_id, job_id=job_old
         )
-        cleanup_worker_phase1_sql_scope(
+        cleanup_worker_executor_sql_scope(
             client, inventory_id=inv_id, aisle_id=aisle_id, job_id=job_new
         )
 
@@ -182,6 +182,6 @@ def test_p2_p3_t016_sql_cleanup_protects_operational_job(sql_client_or_skip) -> 
         )
         assert result.outcome == CleanupJobResultsOutcome.REJECTED_OPERATIONAL_JOB
     finally:
-        cleanup_worker_phase1_sql_scope(
+        cleanup_worker_executor_sql_scope(
             client, inventory_id=inv_id, aisle_id=aisle_id, job_id=job_id
         )

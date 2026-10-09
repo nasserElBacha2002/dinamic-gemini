@@ -24,18 +24,18 @@ from src.infrastructure.repositories.sql_product_record_repository import (
     SqlProductRecordRepository,
 )
 from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
-from tests.support.worker_phase1.executor_harness import FixedClock, make_two_entity_hybrid_report
-from tests.support.worker_phase1.sql_cleanup import (
+from tests.support.worker_executor_harness.executor_harness import FixedClock, make_two_entity_hybrid_report
+from tests.support.worker_executor_harness.sql_cleanup import (
     assert_sql_integration_database_is_safe,
-    cleanup_worker_phase1_sql_scope,
+    cleanup_worker_executor_sql_scope,
 )
-from tests.support.worker_phase2.duplicate_detection import duplicate_positions_by_job_entity_uid
-from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
-from tests.support.worker_phase2.sql_job_seed import (
+from tests.support.worker_persist_idempotency.duplicate_detection import duplicate_positions_by_job_entity_uid
+from tests.support.worker_persist_idempotency.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_persist_idempotency.sql_job_seed import (
     seed_process_aisle_job,
     sql_result_evidence_repo,
 )
-from tests.support.worker_phase2.sql_verification import verify_sql_scope_fully_removed
+from tests.support.worker_persist_idempotency.sql_verification import verify_sql_scope_fully_removed
 
 
 @pytest.fixture
@@ -113,7 +113,7 @@ def test_p2_t001_sql_positions_same_job_identical_persist_is_idempotent(
         after_third = list(pos_repo.list_by_aisle(aisle_id, job_id=job_id))
         assert len(after_third) == 2
     finally:
-        cleanup_worker_phase1_sql_scope(
+        cleanup_worker_executor_sql_scope(
             client,
             inventory_id=inv_id,
             aisle_id=aisle_id,

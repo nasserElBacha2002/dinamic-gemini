@@ -31,8 +31,8 @@ from src.infrastructure.pipeline.job_finalization_tracker import JobFinalization
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     DEFAULT_V3_WORKER_RUN_SEGMENT,
 )
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
+from tests.support.worker_executor_harness.doubles import ArtifactUploadSpy
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, FixedClock
 
 
 def _build_dispatcher(harness: ExecutorHarness, *, artifact_store=None, max_attempts: int = 5):

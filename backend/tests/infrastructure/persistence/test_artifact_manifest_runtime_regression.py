@@ -32,8 +32,8 @@ from src.infrastructure.persistence.memory_artifact_manifest_store import (
 from src.infrastructure.persistence.sql_artifact_manifest_store import SqlArtifactManifestStore
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
+from tests.support.worker_executor_harness.doubles import ArtifactUploadSpy
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness, FixedClock
 
 
 def test_artifact_manifest_runtime_modules_import() -> None:

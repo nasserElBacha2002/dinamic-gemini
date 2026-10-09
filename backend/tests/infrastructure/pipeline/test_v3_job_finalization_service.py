@@ -35,8 +35,8 @@ from src.infrastructure.pipeline.v3_job_finalization_service import (
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import FixedClock
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy
-from tests.support.worker_phase1.executor_harness import ExecutorHarness
+from tests.support.worker_executor_harness.doubles import ArtifactUploadSpy
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness
 
 
 def _build_finalize_request(
