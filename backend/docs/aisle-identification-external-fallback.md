@@ -1,4 +1,4 @@
-# Aisle identification — Phase 5 (selective external fallback)
+# Aisle identification — selective external fallback
 
 ## Enable / rollback
 

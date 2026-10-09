@@ -1,4 +1,4 @@
-"""Regression coverage for Phase 5 position/processing dependency facade."""
+"""Regression coverage for position/processing dependency facade."""
 
 import pytest
 

@@ -4,7 +4,7 @@ Cliente móvil **solo fotografías** para acelerar la carga de imágenes de inve
 con dron. Usa **exclusivamente el backend existente** (`/auth` + `/api/v3`). No crea backend,
 base de datos, worker ni flujo de procesamiento paralelo.
 
-> Estado: **Fase 3 — hardening / observabilidad (parcialmente validada)**.  
+> Estado: **production hardening / observabilidad (parcialmente validada)**.  
 > **Lista solo para rollout limitado**: CI mobile, flags, timeouts HTTPS, diagnóstico, FlatList, cleanup, WorkManager wake bridge.  
 > **No** producción general: falta matriz física firmada, firma release con secretos CI, crash reporting con DSN, ProGuard validado en release real.
 
@@ -79,7 +79,7 @@ Se pagina hasta encontrar una fila `<= scanCursor`; solo esas candidatas nuevas 
 | Pasillos | `src/features/aisles/aisleService.ts` |
 | SQLite + migraciones | `src/database/` |
 | Captura persistente | `src/features/capture/captureService.ts` |
-| UI Fase 1 | `App.tsx` |
+| UI captura ordenada | `App.tsx` |
 
 ### Flujo de sesión
 
@@ -167,7 +167,7 @@ Reglas prácticas:
 
 ---
 
-## Documentación Fase 3
+## Documentación production hardening
 
 | Doc | Contenido |
 |-----|-----------|
@@ -192,13 +192,13 @@ En `.env` / CI:
 - `DINAMIC_FLAG_RECONCILE=0` — reconciliación avanzada off
 - `DINAMIC_FLAG_BG_POLL=0` — no schedule job-monitor wake
 - `DINAMIC_FLAG_AISLE_LOCK=1` — reservado (off por defecto)
-- `DINAMIC_FLAG_UPLOAD_OBS=0` — desactivar observabilidad Phase 0 (upload/prepare/process)
-- Phase 1 (opt-in en **production**; ON por defecto en development/staging):
+- `DINAMIC_FLAG_UPLOAD_OBS=0` — desactivar observabilidad de upload (upload/prepare/process)
+- Captura/upload adaptativo (opt-in en **production**; ON por defecto en development/staging):
   - `DINAMIC_FLAG_UPLOAD_DIM_CAP=1|0` — límite proactivo de dimensión
   - `DINAMIC_FLAG_UPLOAD_ADAPTIVE_QUALITY=1|0` — calidades JPEG por perfil/red
   - `DINAMIC_FLAG_UPLOAD_ADAPTIVE_CONCURRENCY=1|0` — concurrencia adaptativa (cap legacy 2 si off)
   - `DINAMIC_FLAG_UPLOAD_ABORT=1|0` — cancelPhoto aborta multipart en vuelo
-- Phase 2 (opt-in en **production**; ON por defecto en development/staging):
+- Carga en background (opt-in en **production**; ON por defecto en development/staging):
   - `DINAMIC_FLAG_BG_UPLOAD_WORKER=1|0` — WorkManager nativo de carga
   - `DINAMIC_FLAG_BG_UPLOAD_FGS=1|0` — Foreground Service de progreso de upload
   - `DINAMIC_FLAG_BG_UPLOAD_REBOOT=1|0` — reanudación tras reboot (vía WorkManager)
@@ -225,7 +225,7 @@ cd android && ./gradlew installDebug
 
 ---
 
-Resultado local Fase 1:
+Resultado local (captura ordenada):
 
 - `npm ci`: pasa (npm reporta vulnerabilidades transitivas existentes).
 - `npm run verify`: pasa (39 tests).
@@ -236,7 +236,7 @@ Resultado local Fase 1:
 
 ---
 
-## Validado en dispositivo (obligatorio para aprobar Fase 1)
+## Validado en dispositivo (obligatorio para aprobar captura ordenada)
 
 Plantilla: `docs/DEVICE_EVIDENCE.md`.
 
@@ -249,7 +249,7 @@ Checklist pendiente:
 5. Sin duplicados · estables = 20 (si todas estabilizan).
 6. Finalizar · notificación desaparece.
 
-Mientras no exista evidencia firmada en `docs/DEVICE_EVIDENCE.md`, la Fase 1 permanece **parcialmente validada**.
+Mientras no exista evidencia firmada en `docs/DEVICE_EVIDENCE.md`, la captura ordenada permanece **parcialmente validada**.
 
 ---
 
@@ -286,11 +286,11 @@ Migrar a RN CLI solo si el rebuild nativo del módulo falla de forma irrecuperab
 | `npm run typecheck:core` | tsc sobre lógica pura |
 | `npm run lint` | ESLint local |
 | `npm run test:core` | Jest puro |
-| `npm test` | Jest Fase 1+2 |
+| `npm test` | Jest core + servicios |
 | `npm run verify` | typecheck + typecheck:core + lint + test:core + test |
 | `npm run prebuild:android` | genera `android/` (solo si hace falta regenerar nativo) |
 
-## Fase 2
+## Carga en background
 
 Ver `docs/BACKGROUND_UPLOAD_IMPLEMENTATION.md` y `docs/BACKGROUND_UPLOAD_BACKEND_CONTRACTS.md`.
 

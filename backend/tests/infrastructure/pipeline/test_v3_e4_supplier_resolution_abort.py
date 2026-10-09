@@ -17,7 +17,7 @@ from src.infrastructure.pipeline.v3_pipeline_execution_service import (
 )
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import AnalysisContext
-from tests.infrastructure.pipeline.test_v3_job_executor_external_fallback import (
+from tests.infrastructure.pipeline.test_v3_job_executor_memory_fixtures import (
     FixedClock,
     InMemoryAisleRepo,
     InMemoryInventoryRepo,

@@ -1,4 +1,4 @@
-"""Regression coverage for the Phase 1 dependency compatibility facade."""
+"""Regression coverage for the v3 infrastructure dependency compatibility facade."""
 
 from types import SimpleNamespace
 

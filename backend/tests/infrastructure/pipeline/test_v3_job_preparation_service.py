@@ -1,4 +1,4 @@
-"""Unit tests for :class:`V3JobPreparationService` (Phase 6 Step 2)."""
+"""Unit tests for :class:`V3JobPreparationService` (claim, inputs, preparation)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.claim import JobClaimOutcome, JobClaimResult
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_preparation_service import V3JobPreparationService
-from tests.infrastructure.pipeline.test_v3_job_executor_external_fallback import (
+from tests.infrastructure.pipeline.test_v3_job_executor_memory_fixtures import (
     FixedClock,
     InMemoryAisleRepo,
     InMemoryJobRepo,

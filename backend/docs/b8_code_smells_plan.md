@@ -420,7 +420,7 @@ Re-ejecutar localmente / en CI:
 
 - `ruff check --select PLR` en archivos tocados: OK.
 - `mypy` en `v3_job_executor.py`, `v3_report_mapper.py`, `stored_artifact_reader.py`: OK.
-- `pytest tests/infrastructure/pipeline/test_v3_report_mapper_and_persist.py` y suite `tests/infrastructure/pipeline/test_v3_job_executor_*.py` (phase5, input_resolution, coordination, analysis_context): OK.
+- `pytest tests/infrastructure/pipeline/test_v3_report_mapper_and_persist.py` y suite `tests/infrastructure/pipeline/test_v3_job_executor_*.py` (memory_fixtures, input_resolution, coordination, analysis_context): OK.
 
 ### Repositories / otros
 

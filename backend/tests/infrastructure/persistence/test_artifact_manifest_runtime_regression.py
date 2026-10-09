@@ -1,4 +1,4 @@
-"""Regression tests for ArtifactManifestStatus runtime references — Phase 3 corrections."""
+"""Regression tests for ArtifactManifestStatus runtime references."""
 
 from __future__ import annotations
 

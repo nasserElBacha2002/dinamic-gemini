@@ -1,4 +1,4 @@
-"""Phase 4 corrections — lease, canonical rejects, published visibility."""
+"""Import materialization corrections — lease, canonical rejects, published visibility."""
 
 from __future__ import annotations
 

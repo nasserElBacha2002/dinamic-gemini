@@ -1,4 +1,4 @@
-# promtool test rules — Phase 5 alert expressions
+# promtool test rules — inventory observability alert expressions
 rule_files:
   - ../dinamic-inventory-observability-alerts.yml
 

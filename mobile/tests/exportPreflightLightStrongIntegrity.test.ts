@@ -67,7 +67,7 @@ function readyJob() {
   };
 }
 
-describe('phase3b light/strong integrity', () => {
+describe('export preflight light/strong integrity', () => {
   beforeEach(() => {
     const { stagingFileExists } = jest.requireMock(
       '../src/features/exportPrep/exportStaging',

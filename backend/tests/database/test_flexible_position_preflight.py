@@ -1,4 +1,4 @@
-"""Fail-closed Phase 5 flexible position preflight script checks."""
+"""Fail-closed flexible-position preflight script checks."""
 
 from __future__ import annotations
 

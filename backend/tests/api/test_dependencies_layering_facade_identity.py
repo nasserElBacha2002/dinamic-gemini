@@ -1,4 +1,4 @@
-"""Regression coverage for Phase 6 layering cleanup and facade simplification."""
+"""Regression coverage for API layering cleanup and facade simplification."""
 
 from __future__ import annotations
 

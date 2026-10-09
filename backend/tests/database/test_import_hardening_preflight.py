@@ -1,4 +1,4 @@
-"""Fail-closed Phase 4 import hardening preflight script checks."""
+"""Fail-closed import-hardening preflight script checks."""
 
 from __future__ import annotations
 

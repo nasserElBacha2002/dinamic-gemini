@@ -1,4 +1,4 @@
-"""Phase 4.7 — traceability_manifest durable publication tests."""
+"""Traceability manifest durable publication tests."""
 
 from __future__ import annotations
 

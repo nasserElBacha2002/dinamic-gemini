@@ -1,4 +1,4 @@
-"""Scope and authority guards for aisle revisions (Phase 8 corrections).
+"""Scope and authority guards for aisle revisions.
 
 Covers the capabilities use case (which used to answer from feature flags alone, ignoring the
 inventory/aisle it was asked about) and server proposal adoption (where the client used to be

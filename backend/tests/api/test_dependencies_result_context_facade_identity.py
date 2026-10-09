@@ -1,4 +1,4 @@
-"""Regression coverage for Phase 2 correction and Phase 3 dependency facade."""
+"""Regression coverage for result-context dependency facade."""
 
 import pytest
 

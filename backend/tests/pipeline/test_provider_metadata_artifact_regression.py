@@ -1,4 +1,4 @@
-"""Phase 4.5 regression — normalization metadata must not break artifact hotfixes."""
+"""Regression: provider normalization metadata must not break artifact hotfixes."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from tests.support.worker_executor_harness.doubles import SizeOnlyArtifactStore
 from tests.support.worker_executor_harness.executor_harness import ExecutorHarness
 
 
-def test_phase45_entity_fields_json_safe_in_run_metadata() -> None:
+def test_provider_entity_fields_json_safe_in_run_metadata() -> None:
     payload = {
         "total_entities_detected": 1,
         "entities": [
@@ -78,11 +78,11 @@ def test_phase45_entity_fields_json_safe_in_run_metadata() -> None:
     }
     safe = make_json_safe_for_execution_log(run_metadata)
     json.dumps(safe)
-    assert_metadata_json_serializable(safe, context="phase45_run_metadata")
+    assert_metadata_json_serializable(safe, context="provider_run_metadata")
     assert entities[0].traceability_status == TraceabilityStatus.VALID.value
 
 
-def test_phase45_durable_execution_log_publication_still_succeeds(tmp_path: Path) -> None:
+def test_provider_metadata_durable_execution_log_publication_still_succeeds(tmp_path: Path) -> None:
     store = SizeOnlyArtifactStore()
     harness = ExecutorHarness.build(tmp_path, artifact_store=store)
     dispatcher, tracker, _, _ = _build_dispatcher(harness, artifact_store=store)

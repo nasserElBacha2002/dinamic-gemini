@@ -1,4 +1,4 @@
-"""Phase 8 correction tests: planner, exclude/restore, atomicity, apply hash."""
+"""Aisle revision correction tests: planner, exclude/restore, atomicity, apply hash."""
 
 from __future__ import annotations
 

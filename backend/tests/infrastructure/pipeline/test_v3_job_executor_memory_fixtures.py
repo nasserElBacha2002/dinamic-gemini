@@ -1,4 +1,4 @@
-"""Tests for V3JobExecutor Phase 5 — job-level visual reference metadata persistence."""
+"""V3JobExecutor in-memory doubles and lifecycle/result_json characterization tests."""
 
 from __future__ import annotations
 
@@ -255,7 +255,7 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
     assert (
         updated.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT) == default_empty_block()
     )
-    # Phase 7: provider key always present; None when run_metadata absent
+    # Provider key always present in result_json; None when run_metadata absent
     assert "provider" in updated.result_json
     assert updated.result_json["provider"] is None
 
@@ -692,7 +692,7 @@ def test_heartbeat_reads_job_once_and_updates_timestamp() -> None:
 
 
 def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
-    """Phase 7: Successful job result_json includes provider and prompt_key when present in run_metadata."""
+    """Successful job result_json includes provider and prompt_key when present in run_metadata."""
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_repo = InMemoryJobRepo()
     job = Job(
@@ -814,7 +814,7 @@ def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
     assert vrc["resolved_count"] == 2
     assert vrc["provider_consumed"] is True
     assert vrc["provider_consumed_count"] == 2
-    # Phase 7: provider and prompt_key persisted for run attribution
+    # Provider and prompt_key persisted for run attribution
     assert updated.result_json.get("provider") == "test-provider"
     assert updated.result_json.get("prompt_key") == "global_v21"
 
@@ -1193,7 +1193,7 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
 
 
 def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
-    """Phase 4: When persist use case raises, job and aisle fail with error_message starting with 'Persist: '."""
+    """When persist use case raises, job and aisle fail with error_message starting with 'Persist: '."""
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_id = "j-persist-fail"
     aisle_id = "aisle-1"
@@ -1291,7 +1291,7 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
     assert updated_job.status == JobStatus.FAILED
     assert updated_job.error_message is not None
     assert updated_job.error_message.startswith("Persist:"), (
-        "Phase 4: persist failures must prefix error_message with 'Persist: ' for diagnosability"
+        "Persist failures must prefix error_message with 'Persist: ' for diagnosability"
     )
     assert "simulated persist error" in updated_job.error_message
 
@@ -1546,7 +1546,7 @@ def test_run_context_cancellation_uses_injected_checkpoint_not_metadata_flag() -
 
 
 def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
-    """Phase 3B: failed artifact upload must not mark job succeeded or write durable metadata."""
+    """Failed durable artifact upload must not mark job succeeded or write durable metadata."""
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_id = "j-upload-fail"
     aisle_id = "aisle-1"

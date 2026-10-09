@@ -77,8 +77,8 @@ function readyJob(photoId: string) {
   };
 }
 
-describe('phase3b export_resolution redundancy reduction', () => {
-  test('EnsureExportPrepJobsResult defaults include phase3b fields', () => {
+describe('export preflight export_resolution redundancy reduction', () => {
+  test('EnsureExportPrepJobsResult defaults include preflight resolution fields', () => {
     const empty = emptyEnsureExportPrepJobsResult('s1', 'EXPORT_PREFLIGHT');
     expect(empty.readyValidationMode).toBe('light');
     expect(empty.readyValidatedCount).toBe(0);

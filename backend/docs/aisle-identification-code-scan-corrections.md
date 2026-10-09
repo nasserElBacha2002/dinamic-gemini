@@ -1,4 +1,4 @@
-# Aisle identification — Phase 3 (CODE_SCAN) corrections note
+# Aisle identification — CODE_SCAN corrections note
 
 ## Feature flag (required for production rollout)
 

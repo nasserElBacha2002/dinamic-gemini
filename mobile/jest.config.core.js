@@ -1,5 +1,5 @@
 /**
- * Fase 0 sandbox validation config: pure-core logic only (no React Native / Expo).
+ * Core sandbox validation config: pure-core logic only (no React Native / Expo).
  * The device-dependent adapters (src/native, app) require the Expo dev toolchain and
  * are excluded here. Use `jest.config.js` (react-native preset) for on-device suites.
  */

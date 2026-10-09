@@ -1,4 +1,4 @@
-"""Regression coverage for the Phase 2 dependency compatibility facade."""
+"""Regression coverage for the orchestrator dependency compatibility facade."""
 
 import pytest
 

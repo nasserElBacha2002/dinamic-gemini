@@ -1,4 +1,4 @@
-# Phase 5 — Flexible position validation status (corrections)
+# Flexible position validation status (corrections)
 
 ```
 PHASE_5_STATUS: IMPLEMENTED_WITH_BLOCKERS
@@ -43,7 +43,7 @@ READY_FOR_CONTROLLED_ROLLOUT: NO
 - `db_migrate.py apply` → `current_version: 0111`, `compatible: true`, no pending
 - Schema spot-check: `signature_policy` columns present; `position_flexible_capabilities` + `UQ_pfc_scope_key`; backfill clean (0 bad rows)
 - `scripts/ops/flexible-position-preflight.sql` → **PASSED** (no THROW)
-- Local `.env`: Phase 5 validation ON (channels + auto + flexible + shadow metrics); `.env.example` remains fail-closed
+- Local `.env`: flexible-position validation ON (channels + auto + flexible + shadow metrics); `.env.example` remains fail-closed
 
 ## Controlled rollout thresholds (not yet measured)
 
@@ -56,8 +56,8 @@ Declare YES only after measured evidence for:
 
 ## Validation executed this pass
 
-- Targeted pytest (phase5 + bridge + migration smoke + preflight script): **34 passed** (prior correction pass)
+- Targeted pytest (flexible position + bridge + migration smoke + preflight script): **34 passed** (prior correction pass)
 - Ruff on touched modules: **passed** (prior correction pass)
 - Migration 0111 apply + validate + status: **passed** (this apply)
-- Live Phase 5 preflight: **PASSED** (this apply)
+- Live flexible-position preflight: **PASSED** (this apply)
 - Full backend / frontend / mobile / Device E2E: **NOT RUN**

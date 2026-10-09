@@ -1,4 +1,4 @@
-"""Focused tests for :class:`V3JobFinalizationService` (Phase 6 Step 6)."""
+"""Focused tests for :class:`V3JobFinalizationService` (success/failure finalization paths)."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from src.infrastructure.pipeline.v3_job_finalization_service import (
 )
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
-from tests.infrastructure.pipeline.test_v3_job_executor_external_fallback import FixedClock
+from tests.infrastructure.pipeline.test_v3_job_executor_memory_fixtures import FixedClock
 from tests.support.worker_executor_harness.doubles import ArtifactUploadSpy
 from tests.support.worker_executor_harness.executor_harness import ExecutorHarness
 
