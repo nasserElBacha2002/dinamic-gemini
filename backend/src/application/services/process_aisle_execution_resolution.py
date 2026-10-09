@@ -3,7 +3,11 @@
 Keeps policy out of API routes: production honors validated provider/model selection against
 the production catalog; test uses explicit request resolution with full model lists.
 
-after key resolution, validates provider capabilities for visual inventory jobs
+Production returns ``prompt_key=global_v22`` (protected aisle profile). Request ``prompt_key`` and
+``HYBRID_PROMPT`` do not change composed hybrid bodies; they may still affect test inventories,
+job metadata hints, and traceability fields.
+
+After key resolution, validates provider capabilities for visual inventory jobs
 (aisle processing always requires vision + image binding).
 """
 

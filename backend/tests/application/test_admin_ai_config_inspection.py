@@ -34,6 +34,9 @@ def test_build_admin_ai_config_stable_shape_and_no_secret_attrs() -> None:
     assert "secret_gemini_should_not_appear" not in blob
     assert len(payload["providers"]) == 4
     assert payload["server_defaults"]["llm_provider"] == "gemini"
+    assert payload["server_defaults"]["effective_aisle_hybrid_profile"] == "global_v22"
+    assert payload["server_defaults"]["hybrid_prompt_env_selects_aisle_body"] is False
+    assert payload["server_defaults"]["prompt_version_env_selects_content"] is False
     assert "composed_prompt_text" not in blob
     gemini = next(p for p in payload["providers"] if p["key"] == "gemini")
     assert isinstance(gemini["prompt_variant_summaries"], list)

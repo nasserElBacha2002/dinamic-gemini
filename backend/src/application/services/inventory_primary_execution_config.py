@@ -1,4 +1,10 @@
-"""Rules for when an inventory exposes its primary execution config to clients."""
+"""Rules for when an inventory exposes its primary execution config to clients.
+
+``primary_prompt_key`` / ``primary_prompt_version`` are **creation-time snapshots** for API
+traceability (provider/model/prompt lineage). They do not override runtime aisle composition:
+new jobs always persist ``global_v22`` and compose that protected profile regardless of
+``HYBRID_PROMPT`` or inventory snapshot values that predate policy alignment.
+"""
 
 from __future__ import annotations
 

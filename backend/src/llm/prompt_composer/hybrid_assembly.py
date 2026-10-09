@@ -7,8 +7,8 @@
   ``compose_hybrid_base(profile, effective_provider_key)`` — same as
   ``pipeline.services.hybrid_analysis_prompt`` does after ``normalize_pipeline_provider_key``.
 * **SDK adapters** (empty ``LLMRequest.prompt``, have ``settings``): call only
-  ``compose_hybrid_base_from_settings`` — it resolves profile from settings (optional job key) and
-  delegates composition; **no enrichments**, **no extra fallbacks** beyond profile + composer.
+  ``compose_hybrid_base_from_settings`` — profile is always ``global_v22`` (job key / HYBRID_PROMPT
+  are ignored for body selection); **no enrichments**, **no extra fallbacks** beyond composer.
 * **Legacy / unit tests**: ``src.llm.prompts.get_hybrid_prompt`` remains a thin wrapper around
   ``default_hybrid_composer.compose_base``; do not add new production call sites there.
 
