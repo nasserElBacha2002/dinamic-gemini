@@ -1,4 +1,4 @@
-"""Inventory client-scope authorization helpers (Phase 2).
+"""Inventory client-scope authorization helpers.
 
 Prefer :class:`~src.application.services.inventory_access_policy.InventoryAccessPolicy`
 for new call sites. These thin wrappers remain for Observability-era callers.

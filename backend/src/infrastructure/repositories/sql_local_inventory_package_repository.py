@@ -282,7 +282,7 @@ class SqlLocalInventoryPackageRepository:
         planning_record: LocalCsvImport | None = None
         planning_rows: tuple[LocalCsvImportRow, ...] = ()
 
-        # Phase 1: short planning TX — resolve rows under lock, then rollback.
+        # short planning TX — resolve rows under lock, then rollback.
         with self._client.begin_transaction() as planning_txn:  # type: ignore[attr-defined]
             with sql_repository_cursor(
                 self._client, connection=planning_txn.connection
@@ -345,10 +345,10 @@ class SqlLocalInventoryPackageRepository:
 
         assert planning_pkg is not None and planning_record is not None
 
-        # Phase 2: stage evidence outside SQL locks.
+        # stage evidence outside SQL locks.
         stage_evidence(planning_pkg, planning_record, planning_rows)
 
-        # Phase 3: apply TX — confirm under lock and commit once.
+        # apply TX — confirm under lock and commit once.
         with self._client.begin_transaction() as apply_txn:  # type: ignore[attr-defined]
             confirmed, duplicate = self._confirm_under_lock(
                 inventory_id=inventory_id,

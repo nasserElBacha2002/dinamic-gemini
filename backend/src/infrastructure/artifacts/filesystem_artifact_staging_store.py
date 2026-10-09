@@ -1,4 +1,4 @@
-"""Filesystem durable artifact staging — Phase 3.5 corrections."""
+"""Filesystem durable artifact staging — corrections."""
 
 from __future__ import annotations
 

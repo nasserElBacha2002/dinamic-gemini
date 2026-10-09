@@ -9,7 +9,7 @@ from src.llm.types import LLMRequest, LLMResponse
 class GeminiProvider:
     """LLM provider that uses Gemini (same prompt/schema/retry as before).
 
-    SDK calls are centralized in ``GeminiSdkAdapter`` (Phase 4) so the pipeline and ``llm``
+    SDK calls are centralized in ``GeminiSdkAdapter``so the pipeline and ``llm``
     package share one implementation path.
     """
 

@@ -1,4 +1,4 @@
-"""Phase 4 — deterministic OCR field extraction from text blocks / full text.
+"""deterministic OCR field extraction from text blocks / full text.
 
 Does not invent values. Ambiguous equally-plausible candidates are reported, not auto-picked.
 Produces candidates + evidence; does not decide final ImageResultStatus.

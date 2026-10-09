@@ -17,14 +17,16 @@ from src.infrastructure.pipeline.v3_pipeline_execution_service import (
 )
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import AnalysisContext
-from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
+from tests.infrastructure.pipeline.test_v3_job_executor_memory_fixtures import (
     FixedClock,
     InMemoryAisleRepo,
     InMemoryInventoryRepo,
     InMemoryJobRepo,
     NoopRepo,
 )
-from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
+from tests.support.worker_persist_idempotency.executor_persist_deps import (
+    memory_executor_persist_kwargs,
+)
 
 
 def test_v3_hybrid_run_aborts_before_pipeline_when_resolver_errors(tmp_path: Path) -> None:

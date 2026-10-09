@@ -1,4 +1,4 @@
-"""Port for aisle revisions and position versions (Phase 8)."""
+"""Port for aisle revisions and position versions."""
 
 from __future__ import annotations
 

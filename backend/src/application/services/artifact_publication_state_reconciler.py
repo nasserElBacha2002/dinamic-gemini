@@ -1,4 +1,4 @@
-"""Reconcile manifest/outbox split writes after crash windows — Phase 3.5 corrections."""
+"""Reconcile manifest/outbox split writes after crash windows — corrections."""
 
 from __future__ import annotations
 

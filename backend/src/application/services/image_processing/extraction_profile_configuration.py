@@ -1,4 +1,4 @@
-"""Parse / serialize ExtractionProfileConfiguration JSON (Phase 6)."""
+"""Parse / serialize ExtractionProfileConfiguration JSON."""
 
 from __future__ import annotations
 

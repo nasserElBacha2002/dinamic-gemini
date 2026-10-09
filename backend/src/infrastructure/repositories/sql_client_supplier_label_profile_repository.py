@@ -1,4 +1,4 @@
-"""SQL Server ClientSupplierLabelProfile repository (Phase 1)."""
+"""SQL Server ClientSupplierLabelProfile repository."""
 
 from __future__ import annotations
 

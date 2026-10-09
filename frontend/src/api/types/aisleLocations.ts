@@ -1,5 +1,5 @@
 /**
- * Aisle locations (physical positioning) + positioning labels — Phase 1 wire types.
+ * Aisle locations (physical positioning) + positioning labels — wire types.
  * Distinct from CV “positions” (detected product review units).
  */
 
@@ -49,7 +49,7 @@ export interface UpdateAisleLocationRequest {
   status?: AisleLocationStatus | null;
 }
 
-/** DINAMIC_POSITION payload (Phase 1 — no item/SKU fields). */
+/** DINAMIC_POSITION payload (no item/SKU fields). */
 export interface PositioningLabelPayload {
   type: string;
   version: number;

@@ -1,4 +1,4 @@
-"""Map auth-layer AuthUser → application AccessPrincipal (Phase 2 corrections)."""
+"""Map auth-layer AuthUser → application AccessPrincipal (corrections)."""
 
 from __future__ import annotations
 

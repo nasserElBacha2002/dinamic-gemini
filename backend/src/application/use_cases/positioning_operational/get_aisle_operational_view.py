@@ -1,4 +1,4 @@
-"""Get aisle positioning operational view (Phase 7 corrections)."""
+"""Get aisle positioning operational view (corrections)."""
 
 from __future__ import annotations
 

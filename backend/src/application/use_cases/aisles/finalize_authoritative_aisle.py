@@ -1,4 +1,4 @@
-"""Finalize an aisle using local authoritative CODE_SCAN results (Phase 6).
+"""Finalize an aisle using local authoritative CODE_SCAN results.
 
 Does not enqueue remote CODE_SCAN / OCR / fallback. Requires every photo asset to be
 CONFIRMED_AND_APPLIED or EXCLUDED (backend readiness). Idempotent on finalization_id.

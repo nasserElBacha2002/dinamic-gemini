@@ -1,5 +1,5 @@
 /**
- * Phase 4 — query read-only product position assignments for a job.
+ * query read-only product position assignments for a job.
  */
 
 import type { ApiClient } from '../../services/api/apiClient';
@@ -26,7 +26,7 @@ export interface ProductPositionAssignmentDto {
   readonly assignment_source: string | null;
   readonly reconciliation_id: string;
   readonly reconciliation_version: string;
-  /** Phase 6 enrichment when the server returns the effective result assignment. */
+  /** enrichment when the server returns the effective result assignment. */
   readonly position?: {
     readonly id: string | null;
     readonly name: string | null;

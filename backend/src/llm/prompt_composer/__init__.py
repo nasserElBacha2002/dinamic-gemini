@@ -1,5 +1,5 @@
 """
-Hybrid prompt composition (Phase 4–5).
+Hybrid prompt composition (5).
 
 **Base text (production):** ``hybrid_assembly`` only. ``HybridPromptComposer.compose_base`` is internal
 to that stack plus ``get_hybrid_prompt`` (legacy/tests).

@@ -177,7 +177,7 @@ export interface AppServices {
   /** Local-first catalog hydration + background sync coordination. */
   readonly catalog: CatalogSyncCoordinator;
   readonly catalogRepo: LocalCatalogRepository;
-  /** Phase 9: null when `mobileOfflineOperations` is off. */
+  /** null when `mobileOfflineOperations` is off. */
   readonly offlineOperations: OfflineOperationFacade | null;
   readonly offlineScheduler: OfflineOperationScheduler | null;
   exportDiagnostic(): Promise<DiagnosticBundle>;
@@ -388,7 +388,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
       message: error instanceof Error ? error.message : String(error),
     });
   });
-  // Bounded Phase 6 reconcile (temps, stale attempts, missing READY) — single-flight.
+ // Bounded reconcile (temps, stale attempts, missing READY) — single-flight.
   void exportArtifactReconciler.runBounded().catch((error) => {
     logger.warn('recovery', {
       where: 'export_artifact_reconcile_bootstrap',
@@ -582,7 +582,7 @@ async function buildAppServices(onAuthExpired: () => void): Promise<AppServices>
     },
     onPhotoStable: (sessionId, photoId) => {
       // Serialize producers: parallel fire-and-forget stampedes SQLite during finish.
-      // CaptureService awaits this Promise inside activeValidations; Phase 3 also waits
+ // CaptureService awaits this Promise inside activeValidations; also waits
       // the per-session producer barrier after the final scan.
       const work = photoStableChain.then(() =>
         runPhotoStableProducers({

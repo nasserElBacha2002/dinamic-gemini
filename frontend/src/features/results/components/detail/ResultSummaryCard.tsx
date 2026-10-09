@@ -1,6 +1,6 @@
 /**
  * Epic 4 — Summary section for Result Detail (quantity, origin, status, traceability, confidence).
- * Revised in Phase 3 & Polished in Phase 4: Cohesive "Current State" visual block.
+ * Revised in Polished in Cohesive "Current State" visual block.
  */
 
 import { Typography, Box } from '@mui/material';

@@ -1,4 +1,4 @@
-"""Unit of Work for atomic aisle revision apply (Phase 8 corrections).
+"""Unit of Work for atomic aisle revision apply (corrections).
 
 Every write of an apply (result versions, position versions, exclusions, the new finalization and
 the revision row itself) must land in a single transaction so a mid-flight failure can never

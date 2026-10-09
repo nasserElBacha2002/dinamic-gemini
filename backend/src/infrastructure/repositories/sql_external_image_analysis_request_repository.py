@@ -1,4 +1,4 @@
-"""SQL Server ExternalImageAnalysisRequestRepository (Phase 5 corrections)."""
+"""SQL Server ExternalImageAnalysisRequestRepository (corrections)."""
 
 from __future__ import annotations
 

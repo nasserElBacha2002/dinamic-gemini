@@ -9,8 +9,7 @@ export interface ImagePreviewDialogProps extends ImageViewerProps {
 }
 
 /**
- * Shared image preview dialog shell for Phase 2.
- * Wraps the rich ImageViewer foundation.
+ * Shared image preview dialog shell for  * Wraps the rich ImageViewer foundation.
  */
 export default function ImagePreviewDialog({
   open,

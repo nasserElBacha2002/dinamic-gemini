@@ -1,4 +1,4 @@
-"""Artifact publication dispatcher — Phase 3.5 corrections."""
+"""Artifact publication dispatcher — corrections."""
 
 from __future__ import annotations
 

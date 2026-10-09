@@ -80,7 +80,7 @@ def is_resolved_position_detection(
     """True when the row can establish a position cursor (status + durable id).
 
     Durable id is catalog ``position_label_id`` or materialized ``aisle_location_id``
-    (Phase 5 flexible / vision paths materialize without catalog label rows).
+    (flexible / vision paths materialize without catalog label rows).
     """
     status = normalize_detection_status(detection.detection_status)
     label_id = (detection.position_label_id or "").strip()

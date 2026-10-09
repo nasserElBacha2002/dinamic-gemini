@@ -1,5 +1,5 @@
 """
-Phase E3 — **EffectivePromptComposer**: deterministic assembly of protected hybrid base + optional supplier text.
+**EffectivePromptComposer**: deterministic assembly of protected hybrid base + optional supplier text.
 
 Pure service: no repositories, no LLM calls, no adapter or profile mutations. Production wiring is E4+.
 """

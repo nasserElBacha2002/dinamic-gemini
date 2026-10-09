@@ -5,7 +5,7 @@ Maps a hybrid pipeline report to v3 domain entities and persists them.
 v3.2.3: Also persists raw_labels and runs job-scoped recompute so
 final quantity comes from normalized/final_count layer.
 
-Phase 2 Part 2: delete-and-replace by ``job_id`` inside a transactional Unit of Work.
+Part 2: delete-and-replace by ``job_id`` inside a transactional Unit of Work.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ class PersistAisleResultCommand:
     model_name: str | None = None
     prompt_composition: dict | None = None
     input_type: str | None = None
-    #: When set (modern Phase-3 workers), domain writes are fenced inside the UoW.
+    #: When set (modern workers), domain writes are fenced inside the UoW.
     lease: JobLease | None = None
 
 

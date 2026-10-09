@@ -1,4 +1,4 @@
-"""Phase 4 position reconciliation services."""
+"""position reconciliation services."""
 
 from src.application.services.position_reconciliation.fingerprint import (
     PositionReconciliationInputSnapshot,

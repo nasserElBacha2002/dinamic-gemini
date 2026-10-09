@@ -1,4 +1,4 @@
-"""Phase 4 — Tesseract-backed InternalLabelReader (infrastructure).
+"""Tesseract-backed InternalLabelReader (infrastructure).
 
 Uses pytesseract with a real per-call ``timeout`` that terminates the tesseract subprocess
 (not a soft logical timeout that leaves work running). Thread-safe lazy engine probe.

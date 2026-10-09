@@ -1,4 +1,4 @@
-"""SQL Server repository for preliminary_detection_reconciliations (Phase 5 corrections)."""
+"""SQL Server repository for preliminary_detection_reconciliations (corrections)."""
 
 from __future__ import annotations
 

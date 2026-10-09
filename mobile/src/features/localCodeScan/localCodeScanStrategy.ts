@@ -137,7 +137,7 @@ export class LocalCodeScanStrategy {
     this.timeoutMs = deps.timeoutMs ?? LOCAL_CODE_SCAN_TIMEOUT_MS;
   }
 
-  /** Bounded JS scanner concurrency for Phase 4 benchmarks: strictly 1 or 2. */
+  /** Bounded JS scanner concurrency for benchmarks: strictly 1 or 2. */
   setMaxConcurrency(n: number): void {
     if (n !== 1 && n !== 2) {
       throw Object.assign(new Error('LOCAL_SCAN_MAX_CONCURRENCY_INVALID'), {
@@ -160,7 +160,7 @@ export class LocalCodeScanStrategy {
     return this.maxObservedConcurrency;
   }
 
-  /** Phase 4: clear per-run JS concurrency evidence only while idle. */
+  /** clear per-run JS concurrency evidence only while idle. */
   resetConcurrencyStats(): void {
     if (this.active !== 0) {
       throw Object.assign(new Error('LOCAL_SCAN_CONCURRENCY_RESET_WHILE_ACTIVE'), {

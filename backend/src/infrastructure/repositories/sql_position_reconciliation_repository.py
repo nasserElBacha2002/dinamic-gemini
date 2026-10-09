@@ -1,4 +1,4 @@
-"""SQL Server repository for Phase 4 reconciliation revisions."""
+"""SQL Server repository for position reconciliation revisions."""
 
 from __future__ import annotations
 

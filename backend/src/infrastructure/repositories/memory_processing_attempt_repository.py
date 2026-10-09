@@ -1,4 +1,4 @@
-"""In-memory ProcessingAttemptRepository (Phase 2 corrections)."""
+"""In-memory ProcessingAttemptRepository (corrections)."""
 
 from __future__ import annotations
 

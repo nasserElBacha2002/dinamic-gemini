@@ -1,4 +1,4 @@
-"""Resolve and validate explicit processing selection: provider, model, prompt (Phase 5)."""
+"""Resolve and validate explicit processing selection: provider, model, prompt."""
 
 from __future__ import annotations
 

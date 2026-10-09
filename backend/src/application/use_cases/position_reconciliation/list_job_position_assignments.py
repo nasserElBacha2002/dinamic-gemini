@@ -1,4 +1,4 @@
-"""List active assigned or unassigned Phase 4 product results."""
+"""List active assigned or unassigned product results."""
 
 from __future__ import annotations
 

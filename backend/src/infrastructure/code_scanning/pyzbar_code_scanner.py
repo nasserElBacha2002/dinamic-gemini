@@ -1,4 +1,4 @@
-"""Real QR/barcode scanner using pyzbar (Phase 2)."""
+"""Real QR/barcode scanner using pyzbar."""
 
 from __future__ import annotations
 

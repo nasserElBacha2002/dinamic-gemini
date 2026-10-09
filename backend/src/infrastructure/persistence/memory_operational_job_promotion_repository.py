@@ -1,4 +1,4 @@
-"""In-memory compare-and-set operational promotion — Phase 2 Part 3."""
+"""In-memory compare-and-set operational promotion — Part 3."""
 
 from __future__ import annotations
 

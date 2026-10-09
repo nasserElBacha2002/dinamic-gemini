@@ -1,4 +1,4 @@
-"""Atomic job claim outcomes (Phase 1 corrections).
+"""Atomic job claim outcomes (corrections).
 
 ``execution_id`` identifies the persisted attempt row.
 ``claim_owner_id`` identifies the concrete worker process that acquired RUNNING.
@@ -47,7 +47,7 @@ class JobClaimResult:
     reason: str | None = None
     previous_status: str | None = None
     claim_owner_id: str | None = None
-    #: Phase 3 — lease acquired/current on ACQUIRED or ALREADY_OWNED outcomes. None otherwise.
+    #: lease acquired/current on ACQUIRED or ALREADY_OWNED outcomes. None otherwise.
     lease: JobLease | None = None
 
     @property

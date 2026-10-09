@@ -1,5 +1,5 @@
 /**
- * Phase 7 — minimal mobile operational positioning client (allowed_actions from backend).
+ * minimal mobile operational positioning client (allowed_actions from backend).
  */
 
 import type { ApiClient } from '../../services/api/apiClient';

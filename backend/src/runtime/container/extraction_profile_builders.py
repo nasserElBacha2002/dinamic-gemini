@@ -1,4 +1,4 @@
-"""Supplier extraction profile use-case construction (Phase 6)."""
+"""Supplier extraction profile use-case construction."""
 
 from __future__ import annotations
 

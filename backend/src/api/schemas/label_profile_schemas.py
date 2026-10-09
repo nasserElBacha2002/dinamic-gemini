@@ -1,4 +1,4 @@
-"""API schemas for ClientSupplier label profile configuration (Phase 1)."""
+"""API schemas for ClientSupplier label profile configuration."""
 
 from __future__ import annotations
 

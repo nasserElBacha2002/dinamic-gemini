@@ -1,5 +1,5 @@
 """
-Phase 7 — explicit shapes for ``provider_metadata['multi_provider_execution']`` trace payloads.
+explicit shapes for ``provider_metadata['multi_provider_execution']`` trace payloads.
 
 Runtime values are plain ``dict`` instances compatible with job JSON and execution logs; these
 ``TypedDict`` definitions document invariants for maintainers and static checkers.

@@ -1,5 +1,5 @@
 """
-Phase 3 / 5 — **compatibility** mapping for per-job model name on ``LLMRequest.metadata``.
+— **compatibility** mapping for per-job model name on ``LLMRequest.metadata``.
 
 ``LLMRequest`` stays provider-neutral at the type level; adapters still read **legacy** keys
 (``gemini_model_name``, ``openai_model_name``, ``claude_model_name``, ``deepseek_model_name``).
@@ -41,7 +41,7 @@ def apply_job_model_name_to_llm_request_metadata(
     Returns the stripped model string for prompt composition / traceability, or ``None`` when there
     is no job model. For an unknown ``resolved_provider_key`` (not in the registered adapter set
     above), returns the stripped model without mutating ``metadata`` — same behavior as the
-    pre–Phase 5 branch layout.
+    pre–branch layout.
     """
     jm = _strip_job_model_name(job_model_name)
     if not jm:

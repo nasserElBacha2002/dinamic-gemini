@@ -1,4 +1,4 @@
-"""v3 authoritative aisle finalization routes (Phase 6)."""
+"""v3 authoritative aisle finalization routes."""
 
 from __future__ import annotations
 

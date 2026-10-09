@@ -1,5 +1,5 @@
 /**
- * Phase 9 — auth state fan-out for offline ops (login / restore / refresh / vault).
+ * auth state fan-out for offline ops (login / restore / refresh / vault).
  */
 
 export type AuthState = 'authenticated' | 'unauthenticated';

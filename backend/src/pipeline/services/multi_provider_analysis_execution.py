@@ -1,5 +1,5 @@
 """
-Phase 4 / 6 / 7 — multi-provider analysis execution (parallel, sequential fallback).
+— multi-provider analysis execution (parallel, sequential fallback).
 
 **Coordinator role:** this module runs ``analyze_once`` per provider key and attaches execution
 trace metadata to the primary ``AnalysisResult``. It does **not** build prompts or resolve
@@ -17,7 +17,7 @@ no partial-success merge of parsed outputs in this phase.
 **``multi_sequential``:** tries keys in order and returns on the first success (fallback). It does
 *not* run every provider for side-by-side comparison; see ``_execute_sequential_fallback``.
 
-Default single-provider runs do not enter this module (fast path preserves Phase 1–3 behavior).
+Default single-provider runs do not enter this module (fast path preserves 3 behavior).
 """
 
 from __future__ import annotations

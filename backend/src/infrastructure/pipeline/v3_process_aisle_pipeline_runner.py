@@ -1,7 +1,7 @@
 """
 Pipeline input construction and hybrid pipeline invocation for v3 ``process_aisle`` jobs.
 
-Phase 2: extracted from :class:`~src.infrastructure.pipeline.v3_job_executor.V3JobExecutor` so provider
+extracted from :class:`~src.infrastructure.pipeline.v3_job_executor.V3JobExecutor` so provider
 and pipeline boundaries stay out of the top-level executor. The executor still constructs
 :class:`~src.pipeline.hybrid_inventory_pipeline.HybridInventoryPipeline` where tests patch it.
 """

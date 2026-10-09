@@ -1,4 +1,4 @@
-"""v3 aisle code scan API schemas — Phase 1 backend foundation."""
+"""v3 aisle code scan API schemas — backend foundation."""
 
 from __future__ import annotations
 

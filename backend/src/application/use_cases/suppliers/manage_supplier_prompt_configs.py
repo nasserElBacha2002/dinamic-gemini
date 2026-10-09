@@ -1,4 +1,4 @@
-"""Supplier prompt-config use cases — Phase D3 application layer."""
+"""Supplier prompt-config use cases — application layer."""
 
 from __future__ import annotations
 

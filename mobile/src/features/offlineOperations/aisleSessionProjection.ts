@@ -1,5 +1,5 @@
 /**
- * Phase 9 — aisle session projection + primary action (UI-facing).
+ * aisle session projection + primary action (UI-facing).
  */
 
 import type { OfflineOperationRow } from './offlineOperationTypes';

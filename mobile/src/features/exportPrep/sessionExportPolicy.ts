@@ -1,5 +1,5 @@
 /**
- * Classify whether a session may export/drain without freeze (Phase 4 corrections).
+ * Classify whether a session may export/drain without freeze (corrections).
  * Never infer legacy solely from freezeId == null.
  */
 

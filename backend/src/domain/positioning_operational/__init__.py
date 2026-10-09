@@ -1,1 +1,1 @@
-"""Phase 7 positioning operational domain package."""
+"""positioning operational domain package."""

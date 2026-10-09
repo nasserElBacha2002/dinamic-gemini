@@ -1,4 +1,4 @@
-"""Create / seal ordered capture sessions (Phase 1 positioning foundation)."""
+"""Create / seal ordered capture sessions (positioning foundation)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Phase 4.8 — fail-closed API displayability rules for structural result_evidence."""
+"""fail-closed API displayability rules for structural result_evidence."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""SQL Server Unit of Work for atomic aisle revision apply (Phase 8 corrections)."""
+"""SQL Server Unit of Work for atomic aisle revision apply (corrections)."""
 
 from __future__ import annotations
 

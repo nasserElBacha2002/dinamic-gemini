@@ -1,4 +1,4 @@
-"""Phase 4 — normalize OCR field candidates into a single validated label result.
+"""normalize OCR field candidates into a single validated label result.
 
 Applies client field-priority rules (e.g. prefer EAN as internal_code) without hardcoding
 client names in the orchestrator. Ambiguity is never resolved silently.

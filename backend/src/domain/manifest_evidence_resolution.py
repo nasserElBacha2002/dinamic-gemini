@@ -1,5 +1,5 @@
 """
-Phase 4.5 — Manifest-aware evidence identifier resolution.
+Manifest-aware evidence identifier resolution.
 
 Central resolver for provider-returned ``manifest_entry_id`` and legacy ``source_image_id``.
 """
@@ -443,7 +443,7 @@ def merge_evidence_resolution_results(
     left: EvidenceResolutionResult,
     right: EvidenceResolutionResult,
 ) -> EvidenceResolutionResult:
-    """Deterministic merge policy for duplicate entity evidence (Phase 4.5)."""
+    """Deterministic merge policy for duplicate entity evidence."""
 
     def _rank(result: EvidenceResolutionResult) -> int:
         status = result.traceability_status

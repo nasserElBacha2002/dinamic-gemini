@@ -1,4 +1,4 @@
-"""Supplier extraction profile use cases — Phase 6 application layer."""
+"""Supplier extraction profile use cases — application layer."""
 
 from __future__ import annotations
 

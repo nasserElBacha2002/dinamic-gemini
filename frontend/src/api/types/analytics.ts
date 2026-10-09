@@ -1,4 +1,4 @@
-/** Phase 5.1 — /api/v3/analytics responses. */
+/** /api/v3/analytics responses. */
 
 export interface AnalyticsSummaryResponse {
   auto_acceptance_rate: number | null;

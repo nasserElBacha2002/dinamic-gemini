@@ -1,5 +1,5 @@
 """
-Phase E1 — **Protected hybrid prompt contract** (terminology + stable regression markers).
+**Protected hybrid prompt contract** (terminology + stable regression markers).
 
 This module does **not** assemble prompts and is **not** imported by hot-path adapters to avoid
 cycles. It exists so tests and audits share one definition of:
@@ -17,7 +17,7 @@ cycles. It exists so tests and audits share one definition of:
 
 Changing ``PROTECTED_PROMPT_CONTRACT_KEY`` / ``PROTECTED_PROMPT_CONTRACT_VERSION`` is a deliberate
 audit action when the protected *meaning* of the hybrid contract is versioned for persistence
-(E6). They must not be confused with ``prompt_composition``'s Phase 7 ``prompt_version`` label.
+(E6). They must not be confused with ``prompt_composition``'s ``prompt_version`` label.
 """
 
 from __future__ import annotations

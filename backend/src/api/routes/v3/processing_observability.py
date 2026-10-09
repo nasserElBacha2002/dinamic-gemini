@@ -1,4 +1,4 @@
-"""Phase 7 — per-asset processing observability routes (corrections)."""
+"""per-asset processing observability routes (corrections)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Port for image position label detections (Phase 3)."""
+"""Port for image position label detections."""
 
 from __future__ import annotations
 

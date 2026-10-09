@@ -1,5 +1,5 @@
 /**
- * Photos-only allowlist for the mobile capture client (Fase 0).
+ * Photos-only allowlist for the mobile capture client.
  *
  * Aligned with the audited backend behavior:
  *  - Aisle asset upload accepts any `image/*` MIME (materializer `_detect_asset_type`), but

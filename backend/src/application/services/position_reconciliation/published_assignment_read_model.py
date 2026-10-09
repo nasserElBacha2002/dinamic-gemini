@@ -1,4 +1,4 @@
-"""Phase 5 — published Phase 4 assignment read model (single source of truth)."""
+"""published assignment read model (single source of truth)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class PositionReadAvailability(str, Enum):
 
 @dataclass(frozen=True)
 class PublishedPositionRef:
-    """Human aisle position from the published Phase 4 assignment snapshot."""
+    """Human aisle position from the published assignment snapshot."""
 
     id: str | None
     name: str | None
@@ -59,7 +59,7 @@ def map_assignment_to_view(
     *,
     reconciliation_status: ReconciliationStatus | str | None,
 ) -> PublishedPositionAssignmentView:
-    """Map one active assignment row to the Phase 5 read contract."""
+    """Map one active assignment row to the read contract."""
     status_raw = reconciliation_status
     if isinstance(status_raw, ReconciliationStatus):
         status_value = status_raw.value

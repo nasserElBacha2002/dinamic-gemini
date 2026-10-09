@@ -1,4 +1,4 @@
-"""Read-only review signals for the latest aisle code scan (Phase 6A)."""
+"""Read-only review signals for the latest aisle code scan."""
 
 from __future__ import annotations
 

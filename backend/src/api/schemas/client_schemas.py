@@ -1,4 +1,4 @@
-"""v3 Client API schemas (Phase A1 foundation)."""
+"""v3 Client API schemas (foundation)."""
 
 from __future__ import annotations
 

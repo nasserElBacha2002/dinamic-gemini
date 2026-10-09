@@ -1,5 +1,5 @@
 /**
- * Phase 3 / Phase 6 — run picker for multi-run aisles (test inventories).
+ * run picker for multi-run aisles (test inventories).
  *
  * Prefer explicit `valueJobId`, else operational. Never defaults to `jobs[0]`.
  */

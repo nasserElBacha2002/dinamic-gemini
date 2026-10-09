@@ -1,4 +1,4 @@
-"""Operational job promotion port — Phase 2 Part 3."""
+"""Operational job promotion port — Part 3."""
 
 from __future__ import annotations
 

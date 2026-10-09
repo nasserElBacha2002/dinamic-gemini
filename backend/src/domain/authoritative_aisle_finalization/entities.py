@@ -1,4 +1,4 @@
-"""Authoritative aisle finalization domain types (Phase 6)."""
+"""Authoritative aisle finalization domain types."""
 
 from __future__ import annotations
 
@@ -73,9 +73,9 @@ class AuthoritativeAisleFinalization:
     row_version: int
     created_at: datetime
     updated_at: datetime
-    #: Phase 8 lineage — prior current finalization this version supersedes (never mutate history).
+    #: lineage — prior current finalization this version supersedes (never mutate history).
     supersedes_finalization_id: str | None = None
-    #: Phase 8 — revision that produced this finalization, when applicable.
+    #: revision that produced this finalization, when applicable.
     revision_id: str | None = None
 
 

@@ -1,7 +1,7 @@
 """
 In-memory implementation of JobRepository — v3.0 (Épica 4).
 
-Phase 1 corrections: claim_owner_id CAS and transactional stale reclaim (lock-emulated).
+corrections: claim_owner_id CAS and transactional stale reclaim (lock-emulated).
 """
 
 from __future__ import annotations
@@ -613,7 +613,7 @@ class MemoryJobRepository(JobRepository):
         now: datetime,
         extension_seconds: int,
     ) -> LeaseRenewalResult:
-        """Renew lease + update ``last_heartbeat_at`` (same as renew for Phase 3)."""
+        """Renew lease + update ``last_heartbeat_at`` (same as renew )."""
         return self.renew_lease(lease, now=now, extension_seconds=extension_seconds)
 
     def assert_lease(self, lease: JobLease, *, now: datetime) -> LeaseWriteResult:

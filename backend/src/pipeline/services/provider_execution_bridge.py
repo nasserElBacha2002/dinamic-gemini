@@ -1,5 +1,5 @@
 """
-Phase 4.4 — Bridge ProviderExecutionRequest to legacy LLMRequest list parameters.
+Bridge ProviderExecutionRequest to legacy LLMRequest list parameters.
 
 Centralized compatibility projection only; no independent image-selection decisions.
 """

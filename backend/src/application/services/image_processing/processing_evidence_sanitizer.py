@@ -1,4 +1,4 @@
-"""Phase 7 — allowlist sanitization by disclosure level."""
+"""allowlist sanitization by disclosure level."""
 
 from __future__ import annotations
 

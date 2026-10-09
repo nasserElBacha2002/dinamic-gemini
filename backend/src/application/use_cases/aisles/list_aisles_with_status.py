@@ -3,7 +3,7 @@ ListAislesWithStatus use case — v3.0 (Épica 4 correction).
 
 Returns aisles for an inventory with latest job per aisle in one batch.
 Sprint 1.3: per-aisle rollups (positions/pending_review use the same default result slice as
-``ListAislePositions`` — operational, legacy, or latest succeeded per Phase 2). Sprint 1.4: search, status filter, sort, pagination.
+``ListAislePositions`` — operational, legacy, or latest succeeded per result-context policy). Sprint 1.4: search, status filter, sort, pagination.
 
 Supplier names are resolved with ``get_by_client_and_ids`` scoped to the inventory client so
 cross-tenant suppliers never appear in ``client_supplier_name``.
@@ -73,7 +73,7 @@ def _positions_in_default_result_slice(
     all_for_aisle: Sequence[Position],
     resolver: ResultContextResolver,
 ) -> list[Position]:
-    """Filter to the same job slice as list/detail/merge default reads (Phase 2 + transitional)."""
+    """Filter to the same job slice as list/detail/merge default reads (+ transitional)."""
     ctx = resolver.resolve(aisle=aisle, explicit_job_id=None)
     jid = ctx.job_id_for_slice
     if jid is None:

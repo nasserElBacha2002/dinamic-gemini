@@ -1,4 +1,4 @@
-"""Repository persistence backend resolution (Phase C1 + Phase 2 policy).
+"""Repository persistence backend resolution (policy).
 
 Pure resolution logic lives here; :class:`~src.runtime.app_container.AppContainer` wires
 settings, SQL probe, and env-driven fallback policy without importing concrete repositories.
@@ -42,7 +42,7 @@ class RepositoryBackendResolution:
 
 @dataclass(frozen=True)
 class RepositoryBackendStatus:
-    """Public, secret-free repository backend status for health/ready endpoints (Phase 2).
+    """Public, secret-free repository backend status for health/ready endpoints.
 
     Unlike :class:`RepositoryBackendResolution` (internal, may carry a raw exception summary
     in ``reason``), this type is safe to serialize directly in an HTTP response: ``reason_code``

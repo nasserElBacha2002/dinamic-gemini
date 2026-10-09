@@ -1,7 +1,7 @@
 """
 GetAisleProcessingStatus use case — v3.0 (Épica 4).
 
-Returns the aisle, latest job, operational pointer, and recent jobs for status / run browsing (Phase 2).
+Returns the aisle, latest job, operational pointer, and recent jobs for status / run browsing.
 """
 
 from __future__ import annotations

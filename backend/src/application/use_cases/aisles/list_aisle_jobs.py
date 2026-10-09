@@ -1,4 +1,4 @@
-"""List inventory jobs for one aisle (run browser / Phase 2)."""
+"""List inventory jobs for one aisle (run browser / multi-run selector)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Durable idempotency helper for Phase 7 processing mutations."""
+"""Durable idempotency helper for processing mutations."""
 
 from __future__ import annotations
 

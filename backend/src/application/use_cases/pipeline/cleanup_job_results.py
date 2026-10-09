@@ -1,4 +1,4 @@
-"""Explicit job-scoped result cleanup — Phase 2 Part 3."""
+"""Explicit job-scoped result cleanup — Part 3."""
 
 from __future__ import annotations
 

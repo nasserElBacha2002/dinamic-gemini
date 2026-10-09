@@ -1,5 +1,5 @@
 /**
- * GET /api/v3/observability/metrics — Phase H5 read-only operational metrics.
+ * GET /api/v3/observability/metrics — read-only operational metrics.
  */
 
 import { V3_OBSERVABILITY_BASE } from '../constants/v3ApiPaths';

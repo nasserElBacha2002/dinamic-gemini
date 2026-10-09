@@ -1,4 +1,4 @@
-"""Thread-safe in-memory Phase 4 reconciliation repository."""
+"""Thread-safe in-memory position reconciliation repository."""
 
 from __future__ import annotations
 

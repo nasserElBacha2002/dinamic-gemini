@@ -1,5 +1,5 @@
 """
-Phase 7 — narrow settings surface for :mod:`src.pipeline.services.provider_analysis_execution_config`.
+narrow settings surface for :mod:`src.pipeline.services.provider_analysis_execution_config`.
 
 **Intentionally not** full :class:`~src.config.Settings`: helpers use ``getattr`` defensively for
 tests and partial doubles; this :class:`typing.Protocol` documents the attributes that *must* be

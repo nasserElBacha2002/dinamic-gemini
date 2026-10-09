@@ -1,4 +1,4 @@
-"""v3 observability API — Phase H5 read-only metrics."""
+"""v3 observability API — read-only metrics."""
 
 from __future__ import annotations
 

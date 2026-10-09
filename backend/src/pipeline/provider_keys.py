@@ -1,4 +1,4 @@
-"""Pipeline provider key normalization and explicit job-provider resolution (Phase 5)."""
+"""Pipeline provider key normalization and explicit job-provider resolution."""
 
 from __future__ import annotations
 

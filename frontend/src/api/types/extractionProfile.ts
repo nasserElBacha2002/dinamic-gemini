@@ -1,5 +1,5 @@
 /**
- * Supplier extraction profile DTOs — aligned with backend Phase 6 schemas.
+ * Supplier extraction profile DTOs — aligned with backend schemas.
  */
 
 export type ExtractionProfileStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'SUPERSEDED';

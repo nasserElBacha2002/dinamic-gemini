@@ -1,5 +1,5 @@
 """
-Upload durable worker outputs (Phase 3B) through ArtifactStore.
+Upload durable worker outputsthrough ArtifactStore.
 
 Temp run_dir files remain the execution workspace; this module copies required
 artifacts to the configured provider and returns metadata for job.result_json.
@@ -84,7 +84,7 @@ def worker_output_storage_keys(
         job_id: v3 inventory job id.
         run_segment: Run directory name under the job folder (normally
             :data:`DEFAULT_V3_WORKER_RUN_SEGMENT`).
-        fencing_token: Optional Phase-3 lease fencing token for token-scoped keys.
+        fencing_token: Optional lease fencing token for token-scoped keys.
     """
     base = worker_durable_artifact_key_prefix(
         job_id, run_segment, fencing_token=fencing_token

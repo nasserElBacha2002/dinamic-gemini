@@ -299,8 +299,8 @@ El cierre de hotspots adicionales está documentado en **«B8.2 — Cierre Appli
 ### Tests ejecutados
 
 - `pytest tests/application/use_cases/test_list_review_queue.py`
-- `pytest tests/application/test_analytics_phase51.py`
-- `pytest tests/application/use_cases/test_capture_session_materialize_phase4.py`
+- `pytest tests/application/test_analytics_cost_summary.py`
+- `pytest tests/application/use_cases/test_capture_session_materialize_use_case.py`
 - `pytest tests/application/use_cases/test_capture_sessions_sprint2.py`
 - `mypy` en los cuatro archivos modificados: **OK**
 - **Python:** dominio con `dataclass(kw_only=True)` → tests que importan dominio conviene **Python ≥ 3.10** (igual que notas previas de B8.2).
@@ -420,7 +420,7 @@ Re-ejecutar localmente / en CI:
 
 - `ruff check --select PLR` en archivos tocados: OK.
 - `mypy` en `v3_job_executor.py`, `v3_report_mapper.py`, `stored_artifact_reader.py`: OK.
-- `pytest tests/infrastructure/pipeline/test_v3_report_mapper_and_persist.py` y suite `tests/infrastructure/pipeline/test_v3_job_executor_*.py` (phase5, input_resolution, coordination, analysis_context): OK.
+- `pytest tests/infrastructure/pipeline/test_v3_report_mapper_and_persist.py` y suite `tests/infrastructure/pipeline/test_v3_job_executor_*.py` (memory_fixtures, input_resolution, coordination, analysis_context): OK.
 
 ### Repositories / otros
 

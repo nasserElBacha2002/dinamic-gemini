@@ -1,4 +1,4 @@
-"""In-memory JobAssetProcessingStateRepository (Phase 2 corrections)."""
+"""In-memory JobAssetProcessingStateRepository (corrections)."""
 
 from __future__ import annotations
 

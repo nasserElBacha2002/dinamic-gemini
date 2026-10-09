@@ -1471,10 +1471,10 @@ class ProcessingResultPersister:
     def _channel_materialization_enabled(self, result: ImageProcessingResult) -> bool:
         """Gate auto-materialization; keep CODE_SCAN vs VISION independent when flexible.
 
-        Phase 3: ``position_auto_materialization_enabled`` alone enables materialization of
+        ``position_auto_materialization_enabled`` alone enables materialization of
         already-validated detections (legacy preexistence path).
 
-        Phase 5: when the flexible master is on, each channel must also be enabled —
+        when the flexible master is on, each channel must also be enabled —
         Vision ON must not enable CODE_SCAN materialization and vice versa.
         """
         if not self._position_auto_materialization_enabled:

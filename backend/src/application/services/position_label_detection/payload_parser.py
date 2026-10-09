@@ -1,4 +1,4 @@
-"""Parse DINAMIC_POSITION payloads without repository access (Phase 3)."""
+"""Parse DINAMIC_POSITION payloads without repository access."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ _LEGACY_KEYS = frozenset(
         "job_id",
         "session_id",
         "result_id",
-        "position_id",  # aisle-scoped legacy — unsupported for Phase 3 client path
+        "position_id",  # aisle-scoped legacy — unsupported for client path
     }
 )
 

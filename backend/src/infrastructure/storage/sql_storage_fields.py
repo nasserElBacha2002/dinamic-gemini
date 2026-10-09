@@ -1,5 +1,5 @@
 """
-Phase 6: consistent mapping from SQL columns to domain storage fields.
+consistent mapping from SQL columns to domain storage fields.
 
 ``storage_path`` remains the legacy relative path under ``v3_uploads`` (and similar layouts).
 ``storage_key`` is the canonical logical object key for ArtifactStore (must not duplicate

@@ -1,5 +1,5 @@
 /**
- * Canonical package content fingerprint for ZIP reuse (Phase 4 corrections).
+ * Canonical package content fingerprint for ZIP reuse (corrections).
  */
 
 import { sha256Hex } from '../localCsv/csvFormat';

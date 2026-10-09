@@ -1,5 +1,5 @@
 /**
- * Phase 9 — exponential backoff with jitter (pure).
+ * exponential backoff with jitter (pure).
  */
 
 const DEFAULT_SCHEDULE_MS = [

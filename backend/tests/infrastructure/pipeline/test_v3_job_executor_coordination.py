@@ -1,4 +1,4 @@
-"""Coordinator tests: :class:`V3JobExecutor` delegates to Phase 2 collaborators (spies, not full E2E)."""
+"""Coordinator tests: :class:`V3JobExecutor` delegates to preparation/finalization collaborators (spies, not full E2E)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_to_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
-from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
+from tests.infrastructure.pipeline.test_v3_job_executor_memory_fixtures import (
     FixedClock,
     InMemoryAisleRepo,
     InMemoryInventoryRepo,
@@ -27,7 +27,9 @@ from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
     NoopRepo,
     StubArtifactStorage,
 )
-from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
+from tests.support.worker_persist_idempotency.executor_persist_deps import (
+    memory_executor_persist_kwargs,
+)
 
 
 def _replace_executor_state(executor: V3JobExecutor, spy_state: Any) -> None:

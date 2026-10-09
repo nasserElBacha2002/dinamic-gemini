@@ -1,5 +1,5 @@
 /**
- * Phase 9 corrections — typed domain outcomes for offline executors.
+ * corrections — typed domain outcomes for offline executors.
  * Success is never inferred from "no throw".
  */
 

@@ -1,4 +1,4 @@
-"""Per (job, strategy, execution_scope) exclusive lease for batch processing (Phase 2 corrections).
+"""Per (job, strategy, execution_scope) exclusive lease for batch processing (corrections).
 
 Prevents two concurrent workers from re-running the same legacy AISLE_BATCH call for the
 same job. One row per ``UNIQUE(job_id, strategy, execution_scope)``.

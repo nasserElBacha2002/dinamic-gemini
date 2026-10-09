@@ -218,7 +218,7 @@ def _extract_representative_frames_optimized(
     hash_threshold: int,
     blur_threshold: float,
 ) -> tuple[list[np.ndarray], list[int]]:
-    """Phase A: base candidates (uniform, 4x max_frames, step >= min_gap). Phase B: filter blur + redundancy. Fallback to uniform if < MIN_FRAMES_FALLBACK."""
+    """Pass A: base candidates (uniform, 4x max_frames, step >= min_gap). Pass B: filter blur + redundancy. Fallback to uniform if < MIN_FRAMES_FALLBACK."""
     num_candidates = min(4 * max_frames, total_frames)
     step = max(min_gap_frames, total_frames // num_candidates) if num_candidates else 1
     candidate_indices: list[int] = []

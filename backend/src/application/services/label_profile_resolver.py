@@ -1,4 +1,4 @@
-"""Resolve effective ITEM/POSITION label profile sources (Phase 1 — no runtime consumption)."""
+"""Resolve effective ITEM/POSITION label profile sources (no runtime consumption)."""
 
 from __future__ import annotations
 

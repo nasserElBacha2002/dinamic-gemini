@@ -1,4 +1,4 @@
-"""Evaluate authoritative aisle readiness for local-authority apply/finalize (Phase 6).
+"""Evaluate authoritative aisle readiness for local-authority apply/finalize.
 
 Single policy surface:
 - can_apply: every PHOTO has a current authoritative row (or is excluded)

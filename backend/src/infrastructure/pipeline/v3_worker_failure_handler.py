@@ -1,5 +1,5 @@
 """
-V3 generic worker failure handling — Phase 6 extraction from :class:`V3JobExecutor`.
+V3 generic worker failure handling — extraction from :class:`V3JobExecutor`.
 
 Handles unexpected exceptions during pipeline execution or finalization (not cooperative cancel).
 """

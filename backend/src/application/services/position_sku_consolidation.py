@@ -55,7 +55,7 @@ def consolidate_positions_by_sku(
     When ``enabled`` is False, returns raw positions in list order (no merge) — used for photo-focused
     aisle review so rows stay one-to-one with detections.
 
-    ``partition_key_by_position_id`` (Phase 5): when provided, positions with the same SKU but
+    ``partition_key_by_position_id``: when provided, positions with the same SKU but
     different aisle-position assignments stay separate (key includes the partition string).
     """
     if not enabled:

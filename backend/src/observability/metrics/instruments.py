@@ -1,4 +1,4 @@
-"""Phase 5 — named metrics instruments (single registry)."""
+"""named metrics instruments (single registry)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ JOBS_IN_STATE = "jobs_in_state"
 JOB_PROCESSING_DURATION_SECONDS = "job_processing_duration_seconds"
 JOB_QUEUE_WAIT_DURATION_SECONDS = "job_queue_wait_duration_seconds"
 
-# Leases (aligned with Phase 3 names)
+# Leases (aligned with names)
 JOB_LEASE_ACQUIRE_TOTAL = "job_lease_acquire_total"
 JOB_LEASE_RENEW_TOTAL = "job_lease_renew_total"
 JOB_LEASE_LOST_TOTAL = "job_lease_lost_total"
@@ -85,8 +85,7 @@ JOB_FINALIZATION_FAILURES_TOTAL = "job_finalization_failures_total"
 JOB_RECOVERY_TOTAL = "job_recovery_total"
 JOB_RECOVERY_DURATION_SECONDS = "job_recovery_duration_seconds"
 
-# Positioning module (Phase 8)
-POSITION_LABEL_DETECTION_TOTAL = "position_label_detection_total"
+# Positioning modulePOSITION_LABEL_DETECTION_TOTAL = "position_label_detection_total"
 POSITION_LABEL_DETECTION_DURATION_SECONDS = "position_label_detection_duration_seconds"
 POSITION_LABEL_INVALID_SIGNATURE_TOTAL = "position_label_invalid_signature_total"
 POSITION_RECONCILIATION_TOTAL = "position_reconciliation_total"
@@ -317,7 +316,7 @@ def observe_http_request(
 
 
 def inc_lease_metric(name: str, *, operation: str = "default", outcome: str = "ok") -> None:
-    """Bridge used by Phase 3 callers — single registry."""
+    """Bridge used by callers — single registry."""
     help_map = {
         JOB_LEASE_ACQUIRE_TOTAL: "Job lease acquire attempts",
         JOB_LEASE_RENEW_TOTAL: "Job lease renew attempts",

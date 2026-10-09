@@ -21,7 +21,9 @@ from src.infrastructure.repositories.sql_external_image_analysis_request_reposit
 def sql_client_or_skip():
     from src.env_settings.sqlserver_resolution import resolve_sqlserver_connection_config
     from tests.support.sql_integration import sql_server_client_or_skip
-    from tests.support.worker_phase1.sql_cleanup import assert_sql_integration_database_is_safe
+    from tests.support.worker_executor_harness.sql_cleanup import (
+        assert_sql_integration_database_is_safe,
+    )
 
     try:
         assert_sql_integration_database_is_safe()

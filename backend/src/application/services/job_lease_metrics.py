@@ -1,6 +1,6 @@
-"""In-process counters for Phase 3 job lease fencing (low-cardinality labels only).
+"""In-process counters for job lease fencing (low-cardinality labels only).
 
-Phase 5: delegates to the single observability metrics registry (public APIs only).
+delegates to the single observability metrics registry (public APIs only).
 """
 
 from __future__ import annotations

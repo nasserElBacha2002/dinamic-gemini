@@ -1,4 +1,4 @@
-"""Phase 6 — promote a succeeded benchmark run to the aisle operational pointer."""
+"""promote a succeeded benchmark run to the aisle operational pointer."""
 
 from __future__ import annotations
 

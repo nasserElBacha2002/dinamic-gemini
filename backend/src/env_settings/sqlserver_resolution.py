@@ -1,4 +1,4 @@
-"""SQL Server ODBC connection resolution (split from the monolithic config module for Phase 1 boundaries)."""
+"""SQL Server ODBC connection resolution (split from the monolithic config module for boundaries)."""
 
 from __future__ import annotations
 

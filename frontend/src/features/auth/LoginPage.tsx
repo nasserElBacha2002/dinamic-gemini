@@ -10,7 +10,7 @@ import { useAuth } from './store';
 import { setStoredSession } from './storage';
 
 /**
- * LoginPage — Phase 4 implementation.
+ * LoginPage — implementation.
  *
  * Submits credentials to POST /auth/login; on success stores token and user
  * via AuthProvider and navigates to home. Shows loading and error state.

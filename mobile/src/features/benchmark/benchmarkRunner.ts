@@ -105,9 +105,9 @@ export interface BenchmarkCommand {
   readonly skipUpload: true;
   readonly timeoutMs?: number;
   /**
-   * Phase 4 experimental knob — strictly 1 or 2.
+   * experimental knob — strictly 1 or 2.
    * Controls LocalCodeScanStrategy + native ML Kit slots only.
-   * Does NOT change ExportPrepQueue workers (fixed at 2 feed workers for Phase 4 A/B).
+   * Does NOT change ExportPrepQueue workers (fixed at 2 feed workers for A/B).
    * Default 1 (production-safe). Does not change the app default unless command sets 2.
    */
   readonly scannerConcurrency?: 1 | 2;
@@ -137,7 +137,7 @@ export interface BenchmarkStatusDocument {
   readonly exportId: string | null;
   readonly sessionId: string | null;
   readonly metricsPath: string | null;
-  /** Optional Phase 4 dual-correctness / concurrency extras. */
+  /** Optional dual-correctness / concurrency extras. */
   readonly extras?: Record<string, unknown> | null;
 }
 
@@ -156,7 +156,7 @@ export interface BenchmarkRunnerDeps {
   readonly profileResolver: LocalLabelProfileResolver;
   readonly sessionPurge: SessionArtifactPurgeCoordinator | null;
   readonly documentDirectory: string;
-  /** Optional: apply JS scan concurrency for Phase 4 A/B. */
+  /** Optional: apply JS scan concurrency for A/B. */
   readonly localCodeScan?: import('../localCodeScan/localCodeScanStrategy').LocalCodeScanStrategy | null;
 }
 
@@ -392,7 +392,7 @@ export class BenchmarkRunner {
 
     const scannerConcurrency: 1 | 2 =
       command.scannerConcurrency === 2 ? 2 : 1;
-    // Phase 4 A/B: ExportPrepQueue workers are held constant at 2 for BOTH arms.
+ // A/B: ExportPrepQueue workers are held constant at 2 for BOTH arms.
     // Local ML Kit scans only run inside processJob; with workers=1 the scanner
     // slot pool can never reach concurrency 2 (feed-starved). Holding workers=2
     // isolates the measured variable to scannerConcurrency (1 vs 2). Staging/hash

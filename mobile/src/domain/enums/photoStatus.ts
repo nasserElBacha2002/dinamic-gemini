@@ -13,7 +13,7 @@ export type SpikePhotoStatus = CapturePhotoStatus;
 
 /**
  * Capture + post-capture session lifecycle.
- * Fase 1 statuses kept; Fase 2 adds upload/processing states.
+ * statuses kept; adds upload/processing states.
  * Only CAPTURE_EXCLUSIVE statuses block starting another capture.
  */
 export type CaptureSessionStatus =
@@ -22,7 +22,7 @@ export type CaptureSessionStatus =
   | 'paused'
   | 'finishing'
   | 'review'
-  /** Local aisle closed without requiring upload /process (Phase 3). */
+  /** Local aisle closed without requiring upload /process. */
   | 'local_completed'
   | 'uploading'
   | 'upload_review'

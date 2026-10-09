@@ -1,4 +1,4 @@
-"""Application service — build and write durable traceability_manifest.json (Phase 4.7)."""
+"""Application service — build and write durable traceability_manifest.json."""
 
 from __future__ import annotations
 

@@ -1,1 +1,1 @@
-"""Phase 4 OCR infrastructure package."""
+"""OCR infrastructure package."""

@@ -1,4 +1,4 @@
-"""In-memory JobProcessingLeaseRepository (Phase 2 corrections)."""
+"""In-memory JobProcessingLeaseRepository (corrections)."""
 
 from __future__ import annotations
 

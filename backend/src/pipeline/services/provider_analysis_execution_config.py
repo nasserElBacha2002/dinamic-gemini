@@ -1,8 +1,8 @@
 """
-Phase 4 / 6 / 7 — explicit multi-provider analysis execution **configuration** (policy inputs only).
+— explicit multi-provider analysis execution **configuration** (policy inputs only).
 
 Resolves strategy name and ordered provider keys from ``RunContext`` (per-job) and
-``LlmProviderSettings`` (defaults). Keeps Phase 3 resolution rules: primary key via
+``LlmProviderSettings`` (defaults). Keeps resolution rules: primary key via
 :class:`~src.pipeline.services.pipeline_provider_resolver.PipelineProviderResolver`.
 
 **Does not execute** LLM calls or choose per-branch outcomes — that belongs in the hybrid strategy

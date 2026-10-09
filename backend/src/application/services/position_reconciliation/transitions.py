@@ -1,4 +1,4 @@
-"""Centralized Phase 4 position transition policy."""
+"""Centralized position transition policy."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ _SET_STATUSES = frozenset(
 def resolve_position_transition(
     detection_status: str | Enum,
 ) -> PositionTransitionAction:
-    """Return the state transition for a normalized Phase 3 detection status."""
+    """Return the state transition for a normalized detection status."""
 
     raw = detection_status.value if isinstance(detection_status, Enum) else detection_status
     status = str(raw).strip().upper()

@@ -20,9 +20,9 @@ from src.domain.prompt_image_projection import (
 )
 from src.jobs.image_identity import JobImage
 
-# Traceability id for Phase 6 metadata (when ``enrich_prompt_with_image_ids`` applies).
+# Traceability id for metadata (when ``enrich_prompt_with_image_ids`` applies).
 IMAGE_ID_TRACEABILITY_ENRICHMENT_ID = "image_id_traceability_v31"
-# Phase E4: supplier-editable block appended after protected hybrid + optional image IDs (metadata only).
+# supplier-editable block appended after protected hybrid + optional image IDs (metadata only).
 SUPPLIER_EDITABLE_INSTRUCTIONS_ENRICHMENT_ID = "supplier_editable_instructions_e4"
 
 # Epic 3.1.A — image ID traceability
@@ -66,7 +66,7 @@ def enrich_prompt_with_sent_image_ids(
     sent_image_ids: list[str],
 ) -> str:
     """
-    Append traceability list for primary evidence frames actually sent to the model (Phase 1).
+    Append traceability list for primary evidence frames actually sent to the model.
 
     Preserves every ID in ``sent_image_ids`` in order. IDs without ``JobImage`` metadata use
     the ID-only line format.
@@ -104,7 +104,7 @@ def enrich_prompt_with_image_id_strings(
 
 _MANIFEST_TRACEABILITY_INSTRUCTION: str = f"""
 
-TRACEABILITY (Phase 4.4): Only PRIMARY EVIDENCE images may be returned as {EVIDENCE_RETURN_IDENTIFIER_FIELD}.
+TRACEABILITY: Only PRIMARY EVIDENCE images may be returned as {EVIDENCE_RETURN_IDENTIFIER_FIELD}.
 REFERENCE images are classification context only — never use them as evidence.
 Return the exact {EVIDENCE_RETURN_IDENTIFIER_FIELD} from the PRIMARY EVIDENCE section for each result (e.g. IMG_001).
 Legacy {LEGACY_EVIDENCE_RETURN_FIELD} is accepted for compatibility but {EVIDENCE_RETURN_IDENTIFIER_FIELD} is preferred.

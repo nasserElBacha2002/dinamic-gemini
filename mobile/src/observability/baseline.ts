@@ -1,5 +1,5 @@
 /**
- * Percentile helpers for Phase 0 baseline export (no external deps).
+ * Percentile helpers for baseline export (no external deps).
  */
 
 export function percentile(sortedAscending: readonly number[], p: number): number | null {
@@ -171,7 +171,7 @@ export function buildBaselineReport(
     errorCounts,
     finishExtra,
     notes: [
-      'Phase 0/1 baseline — finish stage events + upload prepare/upload.',
+      '/1 baseline — finish stage events + upload prepare/upload.',
       'Enable captureFinishInstrumentation (default on).',
       'Device S10+ manual runs should be attached separately when available.',
     ],

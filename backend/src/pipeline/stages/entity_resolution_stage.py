@@ -3,7 +3,7 @@ EntityResolutionStage — parse analysis payload and run entity validation/trans
 
 Parses v2.1 analysis JSON into entities, then applies existing deterministic ordering,
 enrichment, and derived-field logic (sort, resolve_pallet_id, assign_count_status,
-compute_entity_quality_score). Epic 3.1.B / Phase 4.2: validates source_image_id against
+compute_entity_quality_score). Epic 3.1.B / validates source_image_id against
 the final primary frames sent to the model (never the full preliminary manifest).
 """
 

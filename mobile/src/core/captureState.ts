@@ -47,7 +47,7 @@ export const CAPTURE_EXCLUSIVE_SESSION_STATUSES: readonly CaptureSessionStatus[]
   'finishing',
 ];
 
-/** @deprecated Prefer CAPTURE_EXCLUSIVE + activity listing. Kept for Fase 1 callers. */
+/** @deprecated Prefer CAPTURE_EXCLUSIVE + activity listing. Kept for callers. */
 export const OPEN_CAPTURE_SESSION_STATUSES: readonly CaptureSessionStatus[] = [
   ...CAPTURE_EXCLUSIVE_SESSION_STATUSES,
   'paused',

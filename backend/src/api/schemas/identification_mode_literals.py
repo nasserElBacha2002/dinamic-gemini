@@ -1,4 +1,4 @@
-"""Shared API Literal aliases for aisle identification mode (Phase 1)."""
+"""Shared API Literal aliases for aisle identification mode."""
 
 from __future__ import annotations
 

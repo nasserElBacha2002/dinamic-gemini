@@ -1,4 +1,4 @@
-"""Phase 5 observability package."""
+"""observability package."""
 
 from src.observability.context import (
     bind_correlation_id,

@@ -1,4 +1,4 @@
-"""Aisle-level orchestrator — lease, batch attempt, per-asset bookkeeping (Phase 2 corrections).
+"""Aisle-level orchestrator — lease, batch attempt, per-asset bookkeeping (corrections).
 
 Coordinates one physical AISLE_BATCH legacy run behind an exclusive
 :class:`JobProcessingLease` (so two concurrent workers never re-run the same batch for the
@@ -112,7 +112,7 @@ class AisleOrchestratorOutcome:
 
 @dataclass(frozen=True)
 class CodeScanAisleOutcome:
-    """Outcome of a Phase 3 CODE_SCAN per-asset run (no legacy LLM batch)."""
+    """Outcome of a CODE_SCAN per-asset run (no legacy LLM batch)."""
 
     ok: bool
     cancelled: bool
@@ -537,7 +537,7 @@ class AisleProcessingOrchestrator:
         )
 
     # ------------------------------------------------------------------
-    # Phase 3 — CODE_SCAN per-asset processing (no lease, no LLM)
+    # CODE_SCAN per-asset processing (no lease, no LLM)
     # ------------------------------------------------------------------
 
     def process_with_code_scan(
@@ -746,7 +746,7 @@ class AisleProcessingOrchestrator:
         merge_progress: Callable[[AssetProgressCounts], None] | None = None,
         progress_merge_interval: int = 10,
     ) -> CodeScanAisleOutcome:
-        """Phase 4 — process each PENDING asset via local INTERNAL_OCR (no LLM).
+        """process each PENDING asset via local INTERNAL_OCR (no LLM).
 
         Reuses the CODE_SCAN SINGLE_ASSET run loop, persister, reconciler, and job-outcome
         policy. The injected ``code_scan_strategy`` collaborator must be an

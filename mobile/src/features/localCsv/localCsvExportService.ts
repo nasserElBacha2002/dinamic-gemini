@@ -133,14 +133,14 @@ export interface LocalCsvExportServiceDeps {
           }
       >)
     | null;
-  /** Active export-prep workers for a session (Phase 4 snapshot fence). */
+  /** Active export-prep workers for a session (snapshot fence). */
   readonly getExportPrepActiveWorkers?: ((sessionId: string) => number) | null;
-  /** Session jobs mutation revision (Phase 4 snapshot fence). */
+  /** Session jobs mutation revision (snapshot fence). */
   readonly getExportPrepSessionJobsRevision?: ((sessionId: string) => number) | null;
   /** Soft limit for sum of staged bytes before ZIP build. */
   readonly maxExportUncompressedBytes?: number;
   readonly onZipProgress?: (done: number, total: number) => void;
-  /** Phase 6 durable export attempt catalog. */
+  /** durable export attempt catalog. */
   readonly attemptRepo?: LocalExportAttemptRepository | null;
 }
 
@@ -199,9 +199,9 @@ export interface ExportedLocalCsv {
   readonly reused: boolean;
   /** Observability: whether catch-up CODE_SCAN ran. */
   readonly scanMode?: ExportScanMode;
-  /** Phase 4: photos read from validated staging. */
+  /** photos read from validated staging. */
   readonly stagingPhotoCount?: number;
-  /** Phase 4: photos read via controlled original fallback. */
+  /** photos read via controlled original fallback. */
   readonly originalFallbackCount?: number;
   readonly fallbackReason?: OriginalFallbackReason | null;
 }

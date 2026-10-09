@@ -1,4 +1,4 @@
-"""Create a server reprocess run with immutable scope snapshot (Phase 7)."""
+"""Create a server reprocess run with immutable scope snapshot."""
 
 from __future__ import annotations
 

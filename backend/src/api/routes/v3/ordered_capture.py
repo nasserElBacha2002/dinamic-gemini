@@ -1,4 +1,4 @@
-"""v3 ordered capture sessions — Phase 1 positioning foundation (create / get / seal)."""
+"""v3 ordered capture sessions — positioning foundation (create / get / seal)."""
 
 from __future__ import annotations
 

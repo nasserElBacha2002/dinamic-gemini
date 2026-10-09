@@ -1,5 +1,5 @@
 /**
- * File-stability state machine (Fase 0, §13).
+ * File-stability state machine (§13).
  *
  * A drone photo may still be written to disk when MediaStore first reports it. We must not
  * queue an image until it stops changing. This module is a pure reducer over successive

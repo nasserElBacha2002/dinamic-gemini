@@ -71,7 +71,7 @@ def _operational_result_slice_predicate(p_alias: str = "p", a_alias: str = "a") 
 
 
 def _unknown_resolution_expr(alias: str = "p") -> str:
-    # Historical rows can remain NULL until touched by the Phase 4 review flow.
+    # Historical rows can remain NULL until touched by the review flow.
     # Unknown analytics count only explicit persisted unknown terminal resolutions.
     return f"{alias}.review_resolution = N'unknown'"
 

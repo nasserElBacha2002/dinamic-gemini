@@ -1,4 +1,4 @@
-"""Deterministic semantic fingerprint for Phase 4 inputs."""
+"""Deterministic semantic fingerprint for inputs."""
 
 from __future__ import annotations
 

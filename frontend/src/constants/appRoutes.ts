@@ -32,7 +32,7 @@ export const ROUTE_PATH = {
   observabilidad: 'observabilidad',
   clients: 'clientes',
   clientDetail: 'clientes/:clientId',
-  /** Detalle de proveedor del cliente (Phase F). */
+  /** Detalle de proveedor del cliente. */
   clientSupplierDetail: 'clientes/:clientId/proveedores/:supplierId',
   ingestionSessions: 'ingestion-sessions',
   adminAiConfig: 'admin/ai-config',

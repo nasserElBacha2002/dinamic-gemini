@@ -1,4 +1,4 @@
-"""DTOs for analytics cost-summary aggregates (Phase 3)."""
+"""DTOs for analytics cost-summary aggregates."""
 
 from __future__ import annotations
 

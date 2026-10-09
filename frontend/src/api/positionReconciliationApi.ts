@@ -1,5 +1,5 @@
 /**
- * Phase 4 — read-only product position assignments and reconciliation diagnostics.
+ * read-only product position assignments and reconciliation diagnostics.
  */
 
 import { apiRequestJson } from './request';

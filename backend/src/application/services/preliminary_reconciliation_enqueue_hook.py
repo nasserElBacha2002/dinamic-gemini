@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def try_enqueue_preliminary_reconciliations(*, job_id: str, aisle_id: str, inventory_id: str) -> None:
     """DEPRECATED — productive path disabled when authoritative local ingest is on.
 
-    Phase 5 auto-reconcile remains opt-in and must not run alongside authoritative local
+    auto-reconcile remains opt-in and must not run alongside authoritative local
     CODE_SCAN. Tables stay for historical read-only access.
     """
     try:

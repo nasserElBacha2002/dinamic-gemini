@@ -1,4 +1,4 @@
-"""In-memory SupplierExtractionProfileRepository (Phase 6)."""
+"""In-memory SupplierExtractionProfileRepository."""
 
 from __future__ import annotations
 

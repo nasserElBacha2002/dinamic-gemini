@@ -44,14 +44,14 @@ class LLMRequest:
         self.frame_refs = list(frame_refs)
         self.prompt = prompt
         self.schema_version = schema_version
-        # Shallow copy; nested values (e.g. Phase 6 ``metadata["prompt_composition"]``) keep object identity.
+        # Shallow copy; nested values (e.g. ``metadata["prompt_composition"]``) keep object identity.
         self.metadata = dict(metadata) if metadata else {}
         # Optional in-memory frames (e.g. BGR ndarray) to avoid re-loading from disk.
         self.frames_nd: list[Any] | None = list(frames_nd) if frames_nd else None
         # Optional operator/inventory context (e.g. instructions + reference images) before primary frames.
         self.context_instruction: str | None = context_instruction
         self.context_images: list[Any] | None = list(context_images) if context_images else None
-        # Phase 4.4: runtime-only adapter context (excluded from JSON metadata persistence).
+        # runtime-only adapter context (excluded from JSON metadata persistence).
         self.provider_execution_request = provider_execution_request
         self.canonical_provider_payload_required = bool(canonical_provider_payload_required)
         self.image_execution_contract = image_execution_contract

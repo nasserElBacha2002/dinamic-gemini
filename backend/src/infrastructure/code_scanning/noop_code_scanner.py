@@ -1,4 +1,4 @@
-"""Phase 1 noop code scanner — no image decoding."""
+"""noop code scanner — no image decoding."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ NOOP_SCANNER_ENGINE = "noop"
 
 
 class NoopCodeScanner:
-    """Production Phase 1 wiring: returns no detections."""
+    """Production wiring: returns no detections."""
 
     @property
     def engine_name(self) -> str:

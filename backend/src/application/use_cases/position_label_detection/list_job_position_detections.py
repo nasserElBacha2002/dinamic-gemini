@@ -1,4 +1,4 @@
-"""List position-label detections for a job / asset (Phase 3)."""
+"""List position-label detections for a job / asset."""
 
 from __future__ import annotations
 

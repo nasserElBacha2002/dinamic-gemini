@@ -1,4 +1,4 @@
-"""Disposable lab attestation endpoint (Phase 4B).
+"""Disposable lab attestation endpoint.
 
 Mounted only when ``LAB_DISPOSABLE_ENABLED`` is true and the runtime is LOCAL/TEST
 (not production-like). Fail-closed: 404 when disabled; 503 when invariants fail.

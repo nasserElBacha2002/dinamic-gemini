@@ -1,7 +1,7 @@
 """Launch process-aisle jobs for v3.
 
-Phase 1 stores placeholder provider/prompt fields on ``Job`` for indexing and future tuning;
-selection of multiple providers is out of scope until Phase 2+.
+stores placeholder provider/prompt fields on ``Job`` for indexing and future tuning;
+selection of multiple providers is out of scope until multi-provider selection is implemented.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Phase 4 — port for internal (local) OCR label reading.
+"""port for internal (local) OCR label reading.
 
 Domain/application depend on this Protocol only — never on pytesseract / Tesseract SDK.
 """

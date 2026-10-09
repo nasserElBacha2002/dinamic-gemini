@@ -1,7 +1,7 @@
 import type { ObservabilityErrorCode } from './types';
 
 /**
- * Map operational / HTTP errors to the Phase 0 normalized catalog.
+ * Map operational / HTTP errors to the normalized catalog.
  * Never embeds tokens or payloads.
  */
 export function normalizeObservabilityError(input: {

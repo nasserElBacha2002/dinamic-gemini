@@ -1,4 +1,4 @@
-"""Auditable physical execution attempt for one AISLE_BATCH run (Phase 2 corrections).
+"""Auditable physical execution attempt for one AISLE_BATCH run (corrections).
 
 Distinct from ``ProcessingAttempt`` (logical, per-asset bookkeeping): one
 ``BatchProcessingAttempt`` row corresponds to one physical legacy batch runner invocation.

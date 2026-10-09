@@ -161,17 +161,17 @@ class PositionTraceabilityBlock(BaseModel):
         False,
         description=(
             "True only when ``status`` is ``valid`` and ``source_image_id`` is present — "
-            "safe to display as operator evidence (Phase 4.2)."
+            "safe to display as operator evidence."
         ),
     )
     traceability_warning: Optional[str] = Field(
         None,
-        description="Operational diagnostic when traceability is not valid (Phase 4.2).",
+        description="Operational diagnostic when traceability is not valid.",
     )
 
 
 class ResultPositionRefResponse(BaseModel):
-    """Human aisle position label from published Phase 4 assignment (Phase 5)."""
+    """Human aisle position label from published assignment."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -186,7 +186,7 @@ class ResultPositionRefResponse(BaseModel):
 
 
 class ResultPositionAssignmentResponse(BaseModel):
-    """Assignment status for a result row (Phase 5 read contract)."""
+    """Assignment status for a result row (read contract)."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -317,21 +317,21 @@ class PositionSummaryResponse(BaseModel):
     aisle_position_assigned: bool = Field(
         False,
         description=(
-            "True when Phase 4 reconciliation assigned an aisle position label to this result. "
+            "True when position reconciliation assigned an aisle position label to this result. "
             "When true, ``position_code`` is the human aisle position name (e.g. 01/02)."
         ),
     )
     position: Optional[ResultPositionRefResponse] = Field(
         None,
         description=(
-            "Phase 5: published aisle position from Phase 4 assignments. "
+            "published aisle position from assignments. "
             "Null when unassigned, no reconciliation, or enrichment disabled."
         ),
     )
     position_assignment: Optional[ResultPositionAssignmentResponse] = Field(
         None,
         description=(
-            "Phase 5: assignment metadata from the published Phase 4 revision. "
+            "assignment metadata from the published reconciliation revision. "
             "Null when enrichment is disabled."
         ),
     )
@@ -356,7 +356,7 @@ class PositionSummaryResponse(BaseModel):
 
 
 class PositionRunContextResponse(BaseModel):
-    """Phase 2: which result slice the payload belongs to (align with list/merge)."""
+    """which result slice the payload belongs to (align with list/merge)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -407,7 +407,7 @@ class PositionListResponse(PageMeta):
 
 
 class ResultsByPositionGroupResponse(BaseModel):
-    """One group in GET …/positions/by-position (Phase 5)."""
+    """One group in GET …/positions/by-position."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -419,7 +419,7 @@ class ResultsByPositionGroupResponse(BaseModel):
 
 
 class ResultsByPositionResponse(BaseModel):
-    """Grouped aisle results by published Phase 4 position."""
+    """Grouped aisle results by published position."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -501,15 +501,15 @@ class PositionDetailResponse(BaseModel):
     review_actions: list[ReviewActionResponse] = Field(default_factory=list)
     run_context: PositionRunContextResponse = Field(
         ...,
-        description="Phase 2: run identity for this row so clients do not mix multi-run datasets.",
+        description="run identity for this row so clients do not mix multi-run datasets.",
     )
     evidence: Optional[ResultEvidenceViewResponse] = Field(
         None,
-        description="Phase 4.8 structural evidence contract (authoritative for display eligibility).",
+        description="structural evidence contract (authoritative for display eligibility).",
     )
     traceability_artifact: Optional[TraceabilityArtifactMetadataResponse] = Field(
         None,
-        description="Phase 4.8 durable traceability_manifest metadata for the resolved job context.",
+        description="durable traceability_manifest metadata for the resolved job context.",
     )
 
 

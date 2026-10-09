@@ -1,4 +1,4 @@
-"""Ordered capture session — Phase 1 positioning foundation.
+"""Ordered capture session — positioning foundation.
 
 Distinct from web ingestion ``capture_sessions``: this entity is the mobile/drone
 spine that carries explicit ``sequence_number`` assignment and seal-before-process.

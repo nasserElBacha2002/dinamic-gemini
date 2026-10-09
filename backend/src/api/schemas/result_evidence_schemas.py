@@ -1,4 +1,4 @@
-"""Phase 4.8 — API schemas for structural result_evidence contract."""
+"""API schemas for structural result_evidence contract."""
 
 from __future__ import annotations
 

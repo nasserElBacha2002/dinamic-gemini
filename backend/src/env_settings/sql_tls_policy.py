@@ -1,4 +1,4 @@
-"""SQL Server TLS / TrustServerCertificate policy (Phase 4 corrections)."""
+"""SQL Server TLS / TrustServerCertificate policy (corrections)."""
 
 from __future__ import annotations
 

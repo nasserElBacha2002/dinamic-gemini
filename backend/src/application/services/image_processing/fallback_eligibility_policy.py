@@ -92,7 +92,7 @@ class FallbackDecision:
     next_strategy: str | None = None
 
 
-# Backward-compatible alias (Phase 5 tests / imports).
+# Backward-compatible alias (tests / imports).
 FallbackEligibilityDecision = FallbackDecision
 
 

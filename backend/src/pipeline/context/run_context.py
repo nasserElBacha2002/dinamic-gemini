@@ -57,23 +57,23 @@ class RunContext:
     execution_log: ExecutionLogWriter | None = None
     execution_observer: JobExecutionObserver | None = None
     cancellation_checkpoint: JobCancellationCheckpoint | None = None
-    # Phase 3/4/5: typed, provider-agnostic analysis context prepared upstream.
+    # typed, provider-agnostic analysis context prepared upstream.
     # This is *input* to analysis, not a stage output; avoids relying on raw metadata dicts.
     analysis_context: AnalysisContext | None = None
-    # Phase 4: logical LLM provider from job (e.g. inventory_jobs.provider_name); None = use settings.llm_provider.
+    # logical LLM provider from job (e.g. inventory_jobs.provider_name); None = use settings.llm_provider.
     pipeline_provider_name: str | None = None
-    # Phase 5: per-job model + prompt profile key (inventory_jobs.model_name / prompt_key) — selects profile family.
+    # per-job model + prompt profile key (inventory_jobs.model_name / prompt_key) — selects profile family.
     job_model_name: str | None = None
     job_prompt_key: str | None = None
-    # Phase 7: optional traceability label from inventory_jobs.prompt_version at run start; overrides
+    # optional traceability label from inventory_jobs.prompt_version at run start; overrides
     # settings.prompt_version for composition metadata only; does not select prompt bodies.
     job_prompt_version: str | None = None
-    # Pre-Phase 10: when true, OpenAI hybrid base uses the ``default`` fragment (fair comparison).
+    # when true, OpenAI hybrid base uses the ``default`` fragment (fair comparison).
     job_prompt_parity_mode: bool = False
-    # Phase 4 — multi-provider analysis execution (optional; unset = use settings defaults).
+    # multi-provider analysis execution (optional; unset = use settings defaults).
     analysis_execution_strategy: str | None = None
     analysis_extra_provider_keys: tuple[str, ...] | None = None
-    # Phase E4: supplier prompt resolution from v3 executor (repositories). None = skip effective compose.
+    # supplier prompt resolution from v3 executor (repositories). None = skip effective compose.
     supplier_prompt_resolution: SupplierPromptResolution | None = None
 
     def _execution_log_inventory_aisle_ids(self) -> tuple[str | None, str | None]:

@@ -1,5 +1,5 @@
 """
-Analytics DTOs — Phase 5.1 (v336).
+Analytics DTOs — (v336).
 
 Internal dataclasses for analytics service/repository. API layer maps these to Pydantic responses.
 

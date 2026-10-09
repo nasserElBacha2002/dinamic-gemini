@@ -1,4 +1,4 @@
-"""Phase 1/2 — baseline-centric compare-many for 2-3 explicit aisle runs."""
+"""— baseline-centric compare-many for 2-3 explicit aisle runs."""
 
 from __future__ import annotations
 
@@ -255,7 +255,7 @@ class CompareManyAisleRunsUseCase:
         raw_flags = []
         for job_id in job_ids:
             run = run_data[job_id]
-            # Phase 3 keeps metadata aligned with existing job_metadata_dict fields.
+            # keeps metadata aligned with existing job_metadata_dict fields.
             # TODO(phase4-metadata): add richer run metadata only when supported without extra data reads.
             jobs_payload.append(
                 {

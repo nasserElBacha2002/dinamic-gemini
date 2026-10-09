@@ -87,7 +87,7 @@ export interface CaptureServiceAdapters {
   /** Called after a photo becomes stable (progressive upload hook). */
   readonly onPhotoStable?: (sessionId: string, photoId: string) => void | Promise<void>;
   /**
-   * Optional per-session producer barrier (Phase 3).
+   * Optional per-session producer barrier.
    * Closed when finish begins; waited after stability validations.
    */
   readonly producerBarrier?: {
@@ -97,7 +97,7 @@ export interface CaptureServiceAdapters {
   } | null;
   /** Timeout for producer barrier wait (default 120s). */
   readonly producerBarrierTimeoutMs?: number;
-  /** Phase 0 observability (optional; never required for capture). */
+  /** observability (optional; never required for capture). */
   readonly observability?: {
     readonly reporter: import('../../observability').ObservabilityReporter;
     readonly marks: import('../../observability').TimingMarkStore;
@@ -110,7 +110,7 @@ export interface CaptureServiceAdapters {
   readonly sessionFreeze?: boolean;
   readonly positionActiveStateRestoreEnabled?: boolean;
   /**
-   * Phase 6: called after session status is cancelled — purge sandbox + prep rows.
+   * called after session status is cancelled — purge sandbox + prep rows.
    * Must not delete MediaStore originals.
    */
   readonly onSessionCancelled?: (sessionId: string) => void | Promise<void>;

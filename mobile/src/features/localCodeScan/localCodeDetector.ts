@@ -111,7 +111,7 @@ export async function detectLocalBarcodes(uri: string): Promise<DetectedCodeCand
     }));
 }
 
-/** Phase 4: configure native ML Kit concurrent scan slots (1|2). */
+/** configure native ML Kit concurrent scan slots (1|2). */
 export async function setNativeBarcodeScanConcurrency(n: 1 | 2): Promise<{
   readonly configured: number;
   readonly applied: boolean;
@@ -134,7 +134,7 @@ export async function setNativeBarcodeScanConcurrency(n: 1 | 2): Promise<{
   };
 }
 
-/** Phase 4: read native concurrent-scan stats when the module exposes them. */
+/** read native concurrent-scan stats when the module exposes them. */
 export async function getNativeBarcodeScanConcurrencyStats(): Promise<{
   readonly available: boolean;
   readonly configured: number | null;
@@ -158,7 +158,7 @@ export async function getNativeBarcodeScanConcurrencyStats(): Promise<{
   }
 }
 
-/** Phase 4: reset native peak counters before every isolated run. */
+/** reset native peak counters before every isolated run. */
 export async function resetNativeBarcodeScanConcurrencyStats(): Promise<{
   readonly available: boolean;
   readonly configured: number | null;

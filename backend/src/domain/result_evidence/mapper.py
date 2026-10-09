@@ -1,4 +1,4 @@
-"""Map hybrid report entities to structural result evidence records (Phase 4.6)."""
+"""Map hybrid report entities to structural result evidence records."""
 
 from __future__ import annotations
 

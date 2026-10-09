@@ -1,4 +1,4 @@
-"""Phase 7 aisle positioning operational read model (UX authority)."""
+"""aisle positioning operational read model (UX authority)."""
 
 from __future__ import annotations
 

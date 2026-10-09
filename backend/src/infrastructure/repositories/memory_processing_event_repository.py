@@ -1,4 +1,4 @@
-"""In-memory ProcessingEventRepository (Phase 7)."""
+"""In-memory ProcessingEventRepository."""
 
 from __future__ import annotations
 

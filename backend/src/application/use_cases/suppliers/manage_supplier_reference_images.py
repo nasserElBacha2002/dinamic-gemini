@@ -1,4 +1,4 @@
-"""Supplier reference image read/delete — Phase C1 foundation + Phase C2 API."""
+"""Supplier reference image read/delete — foundation + API."""
 
 from __future__ import annotations
 

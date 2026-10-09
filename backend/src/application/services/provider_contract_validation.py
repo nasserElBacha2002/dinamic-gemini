@@ -1,5 +1,5 @@
 """
-Phase 5 — provider contract validation for visual inventory (aisle) processing.
+provider contract validation for visual inventory (aisle) processing.
 
 Visual inventory jobs require ``supports_vision`` and ``supports_image_binding`` on the selected
 provider and model. Validation runs at job creation and defensively at worker execution resolution.

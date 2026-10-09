@@ -1,4 +1,4 @@
-"""API schemas for image position label detections (Phase 3)."""
+"""API schemas for image position label detections."""
 
 from __future__ import annotations
 

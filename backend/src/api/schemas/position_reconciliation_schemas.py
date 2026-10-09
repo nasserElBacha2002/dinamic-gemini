@@ -1,4 +1,4 @@
-"""API schemas for Phase 4 position reconciliation."""
+"""API schemas for position reconciliation."""
 
 from __future__ import annotations
 

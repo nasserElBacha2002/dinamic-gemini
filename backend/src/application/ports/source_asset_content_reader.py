@@ -1,4 +1,4 @@
-"""Port for loading source asset bytes from artifact storage (code scan Phase 2)."""
+"""Port for loading source asset bytes from artifact storage (code scan)."""
 
 from __future__ import annotations
 

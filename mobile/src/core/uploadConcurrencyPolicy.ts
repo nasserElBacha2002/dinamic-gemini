@@ -1,5 +1,5 @@
 /**
- * Phase 1 — bounded upload concurrency policy (pure).
+ * bounded upload concurrency policy (pure).
  */
 
 import type { NormalizedNetworkType } from '../observability/types';

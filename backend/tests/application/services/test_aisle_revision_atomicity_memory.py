@@ -22,7 +22,7 @@ from src.application.use_cases.aisles.manage_aisle_revisions import (
 )
 from src.domain.aisle_revision.entities import AisleRevisionStatus
 from src.domain.positions.entities import PositionStatus
-from tests.application.services.test_aisle_revision_phase8 import _seed
+from tests.application.services.test_aisle_revision_lifecycle import _seed
 
 
 def _now() -> datetime:

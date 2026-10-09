@@ -1,4 +1,4 @@
-"""Phase 5 — request / correlation context (contextvars)."""
+"""request / correlation context (contextvars)."""
 
 from __future__ import annotations
 

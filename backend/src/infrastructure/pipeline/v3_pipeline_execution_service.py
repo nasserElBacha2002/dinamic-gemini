@@ -1,5 +1,5 @@
 """
-V3 hybrid pipeline execution — Phase 6 extraction from :class:`V3JobExecutor`.
+V3 hybrid pipeline execution — extraction from :class:`V3JobExecutor`.
 
 Runs the hybrid pipeline, resolves supplier prompts, and loads ``hybrid_report.json``.
 """

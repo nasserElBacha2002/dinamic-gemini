@@ -1,5 +1,5 @@
 /**
- * Reconcile sandbox files ↔ SQLite for export artifacts (Phase 6).
+ * Reconcile sandbox files ↔ SQLite for export artifacts.
  * Prefer validate → recover → quarantine → delete-only-when-safe.
  */
 

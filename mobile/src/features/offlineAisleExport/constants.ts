@@ -1,4 +1,4 @@
-/** Portable offline aisle package — format identity (Phase 4). */
+/** Portable offline aisle package — format identity. */
 
 export const OFFLINE_AISLE_FORMAT = 'DINAMIC_OFFLINE_AISLE' as const;
 /** Historical schema v1 layout (aisle.json, profiles, per-capture files). */

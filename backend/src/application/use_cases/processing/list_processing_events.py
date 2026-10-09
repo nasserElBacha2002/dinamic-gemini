@@ -1,4 +1,4 @@
-"""Phase 7 — list processing events for an asset."""
+"""list processing events for an asset."""
 
 from __future__ import annotations
 

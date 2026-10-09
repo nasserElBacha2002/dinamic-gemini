@@ -1,5 +1,5 @@
 """
-V3 process_aisle job preparation — Phase 6 extraction from :class:`V3JobExecutor`.
+V3 process_aisle job preparation — extraction from :class:`V3JobExecutor`.
 
 Loads job/aisle/assets, applies dispatch gate semantics, and marks STARTING jobs RUNNING.
 """

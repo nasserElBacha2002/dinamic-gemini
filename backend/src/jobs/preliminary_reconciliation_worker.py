@@ -1,4 +1,4 @@
-"""Autonomous preliminary reconciliation worker (Phase 5 corrections)."""
+"""Autonomous preliminary reconciliation worker (corrections)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Run a synchronous aisle code scan (Phase 2: pyzbar scanner + storage reads)."""
+"""Run a synchronous aisle code scan (pyzbar scanner + storage reads)."""
 
 from __future__ import annotations
 

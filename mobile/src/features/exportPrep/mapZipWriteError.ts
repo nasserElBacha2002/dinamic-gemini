@@ -1,5 +1,5 @@
 /**
- * Map ZipWriteError → ExportFromStagingError (Phase 5).
+ * Map ZipWriteError → ExportFromStagingError.
  */
 
 import { ZipWriteError, type ZipWriteFailure } from './zipWriteError';

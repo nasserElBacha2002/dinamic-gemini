@@ -1,4 +1,4 @@
-"""Orchestrate Phase 4 sequential position reconciliation for one job."""
+"""Orchestrate sequential position reconciliation for one job."""
 
 from __future__ import annotations
 

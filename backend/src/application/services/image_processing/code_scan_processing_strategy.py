@@ -1,11 +1,11 @@
-"""Phase 3 — deterministic per-image CODE_SCAN processing strategy.
+"""deterministic per-image CODE_SCAN processing strategy.
 
 Reads a single source asset, scans it for QR/CODE128 payloads (pyzbar via the existing
 ``CodeScannerPort``), parses ``internal_code|quantity`` labels, consolidates repeated
 detections into one logical label, and returns an :class:`ImageProcessingResult`.
 
 Hard constraints (no OCR, no LLM fallback):
-- Position labels remain separate (Phase 3 position detection); ≥2 VALID positions → ambiguous.
+- Position labels remain separate (position detection); ≥2 VALID positions → ambiguous.
 - Product labels (format D1): ONE image → 0..N physical products (dedupe by label_id).
 - Legacy PIPE/DI1 without label_id: at most ONE logical product (prior semantics).
 - RESOLVED_INTERNAL when ≥1 valid product with positive-integer quantity.
@@ -14,7 +14,7 @@ Hard constraints (no OCR, no LLM fallback):
 - Technical problems (missing file, corrupt image, scanner unavailable, timeout) →
   FAILED_TECHNICAL.
 
-Supplier CODE_SCAN custom rules (Phase 2) are applied via ``LabelValidationService`` when
+Supplier CODE_SCAN custom rulesare applied via ``LabelValidationService`` when
 the job snapshot selects SUPPLIER for ITEM/POSITION. Dinamic D1 / DINAMIC_POSITION keep
 their existing parsers and fail-closed integrity. OCR profile rules remain INTERNAL_OCR-only.
 """
@@ -1085,7 +1085,7 @@ class CodeScanProcessingStrategy:
                 and not item_candidates
                 and consolidated.status is CodeConsolidationStatus.NO_DETECTIONS
             )
-            # Position QR(s) consumed by Phase 3 — not a product-code miss; do not drive
+            # Position QR(s) consumed by not a product-code miss; do not drive
             # GLOBAL_EXTERNAL_FALLBACK with a misleading NO_CODE_SYMBOL_FOUND.
             if position_only and position_meta is not None:
                 statuses = position_meta.get("position_statuses") or []

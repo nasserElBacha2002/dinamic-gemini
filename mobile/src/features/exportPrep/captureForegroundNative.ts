@@ -1,6 +1,6 @@
 /**
  * Shared binding to CaptureForegroundService for ZIP append / random-access I/O.
- * Barcode + FGS use the same module; ZIP needs appendBase64File (Phase 5+).
+ * Barcode + FGS use the same module; ZIP needs appendBase64File ().
  */
 
 export type CaptureForegroundAppendNative = {
@@ -103,7 +103,7 @@ export function getNativeBinaryCapabilities(): NativeBinaryCapabilities {
   };
 }
 
-/** Android ZIP append APIs, or null if this native binary is missing Phase 5 methods. */
+/** Android ZIP append APIs, or null if this native binary is missing methods. */
 export function resolveNativeBinaryAppend(): CaptureForegroundAppendNative | null {
   const mod = resolveCaptureForegroundNative();
   if (!mod || !isFn(mod.appendBase64File)) {

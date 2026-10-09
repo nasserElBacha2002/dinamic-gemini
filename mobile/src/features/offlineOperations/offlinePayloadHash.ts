@@ -1,5 +1,5 @@
 /**
- * Phase 9 — canonical payload hash for idempotency conflict detection.
+ * canonical payload hash for idempotency conflict detection.
  */
 
 import { sha256Hex } from '../../core/payloadFingerprint';

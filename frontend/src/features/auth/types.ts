@@ -1,5 +1,5 @@
-// Auth types for v3.2.1 — Minimal Administrative Authentication (Phase 1).
-// Contracts mirror the backend auth schemas. Phase 1 defines shape only.
+// Auth types for v3.2.1 — Minimal Administrative Authentication.
+// Contracts mirror the backend auth schemas. defines shape only.
 
 export type AuthRole = 'administrator';
 

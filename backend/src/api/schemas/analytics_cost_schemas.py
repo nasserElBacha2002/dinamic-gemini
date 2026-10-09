@@ -1,4 +1,4 @@
-"""Pydantic schemas for analytics cost-summary (Phase 3)."""
+"""Pydantic schemas for analytics cost-summary."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 /**
  * Epic 4 / Sprint 4.3 — Review actions: confirm (primary), corrections (progressive), destructive (danger zone).
- * Revised in Phase 3 for a focused decision-oriented workflow.
+ * Revised in for a focused decision-oriented workflow.
  */
 
 import { useState, useLayoutEffect, useRef } from 'react';

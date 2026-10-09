@@ -1,10 +1,10 @@
 """
-Traceability of counted results to source images (Epic 3.1.B, Phase 4.2).
+Traceability of counted results to source images (Epic 3.1.B).
 
 Validates source_image_id against primary frames actually sent to the model and
 assigns a structured traceability status to each entity.
 
-Phase 4.2 policy:
+policy:
 - ``traceability_warning`` is persisted in ``detected_summary_json`` and exposed via API.
 - Only ``traceability_status == valid`` with a present ``source_image_id`` may be
   treated as displayable evidence (see :func:`is_traceability_evidence_displayable`).
@@ -174,7 +174,7 @@ def apply_traceability_validation(
     - source_image_id present but reference-only -> invalid
     - source_image_id present but not in valid_image_ids -> invalid (warning set)
 
-  ``valid_image_ids`` must be the primary frames actually sent to the model (Phase 1).
+  ``valid_image_ids`` must be the primary frames actually sent to the model.
     When ``manifest_image_ids`` is provided, IDs in the manifest but not in ``valid_image_ids``
     receive a distinct warning (not part of model input frames).
 

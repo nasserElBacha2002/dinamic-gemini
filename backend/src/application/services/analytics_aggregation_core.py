@@ -199,8 +199,7 @@ def compute_review_outcome_counts(
 ) -> ReviewOutcomeCounts:
     """Unique reviewed-position counts plus backward-compatible settling action count.
 
-    Review outcome semantics for Phase 2:
-    - reviewed_positions_count: unique positions with at least one settling action in period
+    Review outcome semantics for     - reviewed_positions_count: unique positions with at least one settling action in period
     - auto_accepted_positions_count: reviewed positions with confirm actions only
     - manually_corrected_positions_count: reviewed positions with any quantity/SKU correction
 

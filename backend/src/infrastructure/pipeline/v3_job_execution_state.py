@@ -1,7 +1,7 @@
 """
-Job and aisle lifecycle transitions for v3 ``process_aisle`` execution (Phase 2 split).
+Job and aisle lifecycle transitions for v3 ``process_aisle`` execution (split).
 
-Phase 3.2: finalization progress metadata and specific error taxonomy for post-pipeline steps.
+finalization progress metadata and specific error taxonomy for post-pipeline steps.
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ class V3JobExecutionStateService:
         claim_owner_id: str,
         lease_duration_seconds: int = 60,
     ) -> JobClaimResult:
-        """Atomic STARTING → RUNNING claim + aisle PROCESSING (Phase 1 + Phase 3 lease).
+        """Atomic STARTING → RUNNING claim + aisle PROCESSING (lease).
 
         Requires a non-empty ``claim_owner_id`` unique to this worker invocation.
         Callers must only execute the pipeline when ``result.may_execute`` is True.
@@ -399,7 +399,7 @@ class V3JobExecutionStateService:
     def finalize_code_scan_success(
         self, job_id: str, aisle: Aisle, *, lease: JobLease | None = None
     ) -> None:
-        """Phase 3 lightweight finalize for CODE_SCAN jobs (no LLM pipeline report).
+        """lightweight finalize for CODE_SCAN jobs (no LLM pipeline report).
 
         Positions are already persisted per asset by the code-scan persister. This marks the
         job SUCCEEDED, promotes the operational result for production inventories, marks the
@@ -687,7 +687,7 @@ class V3JobExecutionStateService:
         self._job_repo.save(job)
 
     def heartbeat(self, job_id: str) -> Job | None:
-        """Unfenced heartbeat (legacy). Prefer :meth:`heartbeat_with_lease` for Phase 3 workers."""
+        """Unfenced heartbeat (legacy). Prefer :meth:`heartbeat_with_lease` for workers."""
         job = self._job_repo.get_by_id(job_id)
         if job is None or job.status not in (
             JobStatus.STARTING,

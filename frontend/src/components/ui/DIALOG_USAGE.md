@@ -86,8 +86,7 @@ Raw MUI `Dialog` is allowed only when:
 - Disable submit buttons during pending mutations.
 - Preserve field-level validation errors inside forms (do not move validation copy out of the form).
 
-## Declarative `actionItems` API (Phase 4)
-
+## Declarative `actionItems` API
 **Decision: DEFERRED.**
 
 `actions?: ReactNode` remains the supported extension point: dialog footers vary (single close, cancel+submit, extra tertiary actions, custom spacing). A declarative `actionItems[]` API would duplicate MUI `Button` props and still need escape hatches for non-standard layouts.

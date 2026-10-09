@@ -1,4 +1,4 @@
-"""Phase 5 — typed error classes for retry / recovery decisions."""
+"""typed error classes for retry / recovery decisions."""
 
 from __future__ import annotations
 

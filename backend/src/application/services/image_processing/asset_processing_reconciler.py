@@ -1,4 +1,4 @@
-"""Phase 3 corrections — reconcile per-asset state against already-persisted results.
+"""corrections — reconcile per-asset state against already-persisted results.
 
 Before (re)scanning an asset, and before recovering an abandoned PROCESSING state back to
 PENDING, we must not lose the fact that a *complete* result already exists for

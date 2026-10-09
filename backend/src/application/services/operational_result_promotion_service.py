@@ -1,4 +1,4 @@
-"""Validates and promotes operational job pointers — Phase 2 Part 3."""
+"""Validates and promotes operational job pointers — Part 3."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ class OperationalResultPromotionService:
                 previous_job_id=aisle.operational_job_id,
                 operational_job_id=aisle.operational_job_id,
             )
-        # Phase 3: require a completed lease-backed terminalization (token >= 1).
+        # require a completed lease-backed terminalization (token >= 1).
         # Stale workers that never held / lost the lease cannot promote.
         if int(job.lease_fencing_token or 0) < 1:
             logger.warning(

@@ -1,7 +1,7 @@
 """
-Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–6).
+Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B–6).
 
-**Phase E1 / E4:** ``LLMRequest.prompt`` carries the **ProtectedSystemContractBlock** (hybrid base +
+**/ E4:** ``LLMRequest.prompt`` carries the **ProtectedSystemContractBlock** (hybrid base +
 image enrichments + optional supplier-editable block from ``build_hybrid_analysis_prompt_with_traceability``
 when v3 passes ``RunContext.supplier_prompt_resolution``). ``context_instruction`` remains
 non-protected context (e.g. reference copy). OpenAI JSON suffix is still appended only in the adapter.
@@ -10,11 +10,11 @@ Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and de
 call to ``LlmGlobalAnalysisExecutor`` resolved by :mod:`src.pipeline.services.pipeline_provider_resolver`
 (Gemini, OpenAI, Claude, DeepSeek).
 
-Phase 4 adds optional multi-provider execution (parallel or sequential fallback) behind explicit
+adds optional multi-provider execution (parallel or sequential fallback) behind explicit
 strategy settings or per-run ``RunContext`` fields; default ``single`` preserves the historical
 one-call behavior.
 
-Phase 6: visual-reference / instruction assembly for the LLM request is isolated in
+visual-reference / instruction assembly for the LLM request is isolated in
 :func:`_prepare_hybrid_llm_visual_bundle` so ``_analyze_once`` coordinates resolver + prompt + request
 without owning the full visual-reference branching policy inline.
 """
@@ -209,7 +209,7 @@ class HybridGlobalAnalysisStrategy:
     """
     Default pipeline analysis strategy: assembles hybrid context and runs the resolved LLM executor.
 
-    **Coordinator (Phase 6):** ``analyze`` chooses single vs multi-provider dispatch; ``_analyze_once``
+    **Coordinator:** ``analyze`` chooses single vs multi-provider dispatch; ``_analyze_once``
     resolves the executor, composes prompt + ``LLMRequest``, emits structured logs, and maps the
     response to :class:`~src.pipeline.ports.analysis_provider.AnalysisResult`. Visual-reference
     branching lives in :func:`_prepare_hybrid_llm_visual_bundle`; multi-provider fan-out lives in
@@ -415,7 +415,7 @@ class HybridGlobalAnalysisStrategy:
             metadata=req_meta,
         )
 
-        # Phase 6: linear propagation — one dict after execution-layer merge is the source of truth
+        # linear propagation — one dict after execution-layer merge is the source of truth
         # for LLMRequest, AnalysisResult, run_metadata, and (redacted) execution_log summary.
         prompt_composition = apply_execution_layer_to_composition(
             composition_base,

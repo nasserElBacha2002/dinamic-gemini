@@ -1,4 +1,4 @@
-"""Phase 6 — explicit benchmark exports (single run slice or compare table)."""
+"""explicit benchmark exports (single run slice or compare table)."""
 
 from __future__ import annotations
 

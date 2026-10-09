@@ -1,4 +1,4 @@
-"""Logical positioning label emission — Phase 1 (render deferred to later phases)."""
+"""Logical positioning label emission — (render deferred to later phases)."""
 
 from __future__ import annotations
 

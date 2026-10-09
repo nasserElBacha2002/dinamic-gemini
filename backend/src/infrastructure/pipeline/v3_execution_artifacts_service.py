@@ -1,5 +1,5 @@
 """
-Durable worker artifact upload for v3 runs (Phase 2 split).
+Durable worker artifact upload for v3 runs (split).
 
 Keeps ``publish_worker_durable_artifacts`` and the "artifact store required" policy in one place
 so :class:`~src.infrastructure.pipeline.v3_job_executor.V3JobExecutor` stays a coordinator.

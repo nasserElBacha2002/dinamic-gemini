@@ -59,7 +59,7 @@ export function allowOfflineUploadForPhotoStable(input: {
 /**
  * Runs upload enqueue + optional offline auto-enqueue + independent export-prep enqueue.
  * Callers must await the returned Promise (CaptureService does).
- * Phase 2 does **not** drain the prep queue; finish only awaits this enqueue work.
+ * does **not** drain the prep queue; finish only awaits this enqueue work.
  */
 export async function runPhotoStableProducers(deps: PhotoStableProducerDeps): Promise<void> {
   const barrier = deps.producerBarrier;

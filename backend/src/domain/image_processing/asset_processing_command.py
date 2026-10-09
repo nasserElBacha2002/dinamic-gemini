@@ -1,4 +1,4 @@
-"""Durable per-asset processing commands (Phase 7 corrections)."""
+"""Durable per-asset processing commands (corrections)."""
 
 from __future__ import annotations
 

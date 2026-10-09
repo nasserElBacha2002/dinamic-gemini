@@ -29,7 +29,7 @@ class GetAisleMergeResultsResult:
 
 
 class GetAisleMergeResultsUseCase:
-    """Final_count rows for one resolved result context (Phase 2 — no aisle-wide ``all`` slice)."""
+    """Final_count rows for one resolved result context (no aisle-wide ``all`` slice)."""
 
     def __init__(
         self,

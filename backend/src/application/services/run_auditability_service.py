@@ -1,4 +1,4 @@
-"""Aggregate persisted job audit metadata (Phase H1 read model; Phase H4 snapshot merge)."""
+"""Aggregate persisted job audit metadata (read model; snapshot merge)."""
 
 from __future__ import annotations
 

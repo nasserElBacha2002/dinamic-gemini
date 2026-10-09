@@ -1,4 +1,4 @@
-"""Apply published Phase 4 assignment views onto position summaries (Phase 5)."""
+"""Apply published assignment views onto position summaries."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from src.domain.products.entities import ProductRecord
 def partition_key_from_assignment_view(
     view: PublishedPositionAssignmentView | EffectiveProductPositionView | None,
 ) -> str:
-    """Stable SKU-consolidation partition from published Phase 4 assignment fields."""
+    """Stable SKU-consolidation partition from published assignment fields."""
     if view is None:
         return ""
     if isinstance(view, EffectiveProductPositionView):
@@ -57,7 +57,7 @@ def build_partition_key_by_position_id(
     override_repo: ManualPositionOverrideRepository | None = None,
     label_repo: ClientPositionLabelRepository | None = None,
 ) -> dict[str, str]:
-    """Map each position id to a partition key for SKU merge (Phase 5)."""
+    """Map each position id to a partition key for SKU merge."""
     if not enrichment_enabled or reconciliation_repo is None or not job_id or not positions:
         return {}
     batch = product_record_repo.list_by_position_ids([p.id for p in positions])
@@ -176,7 +176,7 @@ def apply_published_assignment_to_summary(
     primary_product_id: str | None,
     views_by_result_id: dict[str, PublishedPositionAssignmentView | EffectiveProductPositionView],
 ) -> Any:
-    """Enrich a PositionSummary-like object from the Phase 5 read model.
+    """Enrich a PositionSummary-like object from the read model.
 
     Also mirrors aisle name onto ``position_code`` / ``aisle_position_assigned`` for
     backward-compatible clients (does not invent position from detections).
@@ -241,7 +241,7 @@ def matches_position_filters(
     manual_position_invalidated: bool | None = None,
     automatic_changed_after_override: bool | None = None,
 ) -> bool:
-    """Return True when the view satisfies optional Phase 5 list filters."""
+    """Return True when the view satisfies optional list filters."""
     if isinstance(view, EffectiveProductPositionView):
         effective = view.effective_position
         if with_position is True and (effective is None or not effective.name):

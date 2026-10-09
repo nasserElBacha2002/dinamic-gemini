@@ -1,4 +1,4 @@
-"""Classify decoded codes as POSITION / ITEM / UNKNOWN (Phase 3)."""
+"""Classify decoded codes as POSITION / ITEM / UNKNOWN."""
 
 from __future__ import annotations
 

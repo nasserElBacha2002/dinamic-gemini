@@ -1,4 +1,4 @@
-"""v3 server reprocess routes (Phase 7) — proposals; no automatic overwrite."""
+"""v3 server reprocess routes— proposals; no automatic overwrite."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Shared helpers for logical capture order (Phase 1 positioning foundation)."""
+"""Shared helpers for logical capture order (positioning foundation)."""
 
 from __future__ import annotations
 

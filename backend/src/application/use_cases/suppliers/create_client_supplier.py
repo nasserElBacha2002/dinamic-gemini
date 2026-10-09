@@ -1,4 +1,4 @@
-"""CreateClientSupplier use case — Phase A2 foundation."""
+"""CreateClientSupplier use case — foundation."""
 
 from __future__ import annotations
 

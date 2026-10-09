@@ -3,7 +3,7 @@ Structured, low-volume logging for legacy Stage-8 SQL repositories.
 
 Logger name ``dinamic.legacy_sql`` is stable for log routing / filtering in staging and prod.
 
-Phase 12.5 — Operational signals
+Operational signals
 ---------------------------------
 * ``legacy_sql_access`` (existing): one INFO line per repository operation (``jobs``,
   ``pallet_results``, ``job_events``), including ``path_kind`` (typically ``legacy_jobs`` when
@@ -98,7 +98,7 @@ def reset_legacy_sql_repositories_materialization_flag() -> None:
 
 
 def log_legacy_sql_bridge_bypassed_once_per_process(*, reason: str) -> None:
-    """Emit once per process when ``job_store._db_repos()`` skips SQL repos (Phase 14.1 bridge disable)."""
+    """Emit once per process when ``job_store._db_repos()`` skips SQL repos (bridge disable)."""
     global _LEGACY_SQL_BRIDGE_BYPASS_LOGGED
     if _LEGACY_SQL_BRIDGE_BYPASS_LOGGED:
         return
@@ -121,7 +121,7 @@ def log_legacy_sql_write_blocked(
     table: str,
     identifiers: Mapping[str, Any] | None = None,
 ) -> None:
-    """Phase 14.1 — a mutating legacy SQL operation was skipped (writes-disabled flag)."""
+    """a mutating legacy SQL operation was skipped (writes-disabled flag)."""
     parts: list[str] = []
     if identifiers:
         for k, v in identifiers.items():

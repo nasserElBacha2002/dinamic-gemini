@@ -1,4 +1,4 @@
-"""Scope and authority guards for aisle revisions (Phase 8 corrections).
+"""Scope and authority guards for aisle revisions.
 
 Covers the capabilities use case (which used to answer from feature flags alone, ignoring the
 inventory/aisle it was asked about) and server proposal adoption (where the client used to be
@@ -23,7 +23,7 @@ from src.application.use_cases.aisles.manage_aisle_revisions import (
     UpdateAisleRevisionItemCommand,
 )
 from src.domain.aisle_revision.entities import AisleRevisionProposalSource
-from tests.application.services.test_aisle_revision_phase8 import _seed
+from tests.application.services.test_aisle_revision_lifecycle import _seed
 
 
 def _now() -> datetime:

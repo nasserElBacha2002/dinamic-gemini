@@ -1,4 +1,4 @@
-"""Idempotent image position-label detection from already-decoded codes (Phase 3)."""
+"""Idempotent image position-label detection from already-decoded codes."""
 
 from __future__ import annotations
 

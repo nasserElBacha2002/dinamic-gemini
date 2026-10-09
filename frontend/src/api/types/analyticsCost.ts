@@ -1,4 +1,4 @@
-/** GET /api/v3/analytics/cost-summary — Phase 3 backend contract. */
+/** GET /api/v3/analytics/cost-summary — backend contract. */
 
 export interface AnalyticsCostSummaryParams {
   date_from?: string;

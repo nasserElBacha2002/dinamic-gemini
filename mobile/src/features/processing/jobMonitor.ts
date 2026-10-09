@@ -35,7 +35,7 @@ export interface JobMonitorOptions {
   readonly observability?: JobMonitorObservability | null;
   readonly flags?: FeatureFlags;
   readonly localDrafts?: LocalDetectionDraftRepository | null;
-  /** Phase 5: server-side reconciliation (never invents mapping in UI). */
+  /** server-side reconciliation (never invents mapping in UI). */
   readonly reconciliation?: ReconciliationQueryService | null;
 }
 
@@ -299,7 +299,7 @@ export class JobMonitor {
   }
 
   /**
-   * Phase 5: prefer server reconciliation (asset-mapped). Phase 3 shadow path stays
+   * prefer server reconciliation (asset-mapped). shadow path stays
    * NOT_COMPARABLE without inventing order matching.
    */
   private async maybeReconcileOrShadowCompare(

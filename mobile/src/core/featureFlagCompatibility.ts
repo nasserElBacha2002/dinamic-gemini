@@ -16,7 +16,7 @@ export interface FlagCompatibilityReport {
 }
 
 /**
- * Phase 10 — fail-fast matrix for incompatible / dangerous flag combinations.
+ * fail-fast matrix for incompatible / dangerous flag combinations.
  * Dual productive schedulers for the same work class are hard errors.
  */
 export function evaluateFeatureFlagCompatibility(flags: FeatureFlags): FlagCompatibilityReport {
@@ -59,7 +59,7 @@ export function evaluateFeatureFlagCompatibility(flags: FeatureFlags): FlagCompa
     });
   }
 
-  // Dual durable offline queues for the same concern (legacy intent tables + Phase 9 ledger).
+ // Dual durable offline queues for the same concern (legacy intent tables + ledger).
   if (
     flags.mobileOfflineOperations &&
     flags.authoritativeFinalizationOfflineQueue &&

@@ -34,7 +34,7 @@ export interface CaptureSessionRow {
   readonly last_processing_error: string | null;
   /** Preparation profile hint: CODE_SCAN | INTERNAL_OCR | LEGACY_LLM | UNKNOWN */
   readonly preparation_processing_mode: string;
-  /** Backend ordered-capture session id (Phase 1 positioning). */
+  /** Backend ordered-capture session id (positioning). */
   readonly backend_ordered_capture_session_id: string | null;
   /** Durable process attempt identity (survives app restart). */
   readonly process_attempt_id: string | null;
@@ -51,7 +51,7 @@ export interface CaptureSessionRow {
   /** Active freeze snapshot id (exact photo set for CSV/upload). */
   readonly active_freeze_id: string | null;
   /**
-   * Export packaging policy for this session (Phase 4 corrections).
+   * Export packaging policy for this session (corrections).
    * - STAGING_REQUIRED: modern finish with freeze; missing freeze is an error
    * - LEGACY_ORIGINALS: historical / explicit originals path
    * - null: pre-migration row — classify via freeze signals
@@ -106,7 +106,7 @@ export interface CapturePhotoRow {
   readonly local_transform_uri: string | null;
   readonly original_size: number | null;
   readonly upload_size: number | null;
-  /** Phase 2: `js` | `native` while a lease is held. */
+  /** `js` | `native` while a lease is held. */
   readonly upload_worker_owner: string | null;
   readonly upload_lease_token: string | null;
   readonly upload_lease_expires_at: string | null;

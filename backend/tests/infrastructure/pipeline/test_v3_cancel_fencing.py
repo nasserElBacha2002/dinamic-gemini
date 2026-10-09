@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from src.domain.jobs.entities import JobStatus
 from src.domain.jobs.lease import LeaseWriteOutcome
-from tests.support.worker_phase1.executor_harness import ExecutorHarness
+from tests.support.worker_executor_harness.executor_harness import ExecutorHarness
 
 
 def test_external_cancel_request_does_not_need_lease(tmp_path) -> None:

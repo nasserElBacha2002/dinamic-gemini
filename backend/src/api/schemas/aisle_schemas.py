@@ -115,7 +115,7 @@ class AisleResponse(BaseModel):
     error_code: str | None = None
     error_message: str | None = None
     operational_job_id: str | None = Field(
-        None, description="Canonical run for default result reads (Phase 2); null = legacy aisle."
+        None, description="Canonical run for default result reads; null = legacy aisle."
     )
     client_supplier_id: str | None = None
     client_supplier_name: str | None = Field(

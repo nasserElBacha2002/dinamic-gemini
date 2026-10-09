@@ -1,5 +1,5 @@
 """
-Phase 5 — **official production entrypoint** for hybrid **base** prompt text (no enrichments).
+**official production entrypoint** for hybrid **base** prompt text (no enrichments).
 
 **Which API to use**
 
@@ -29,7 +29,7 @@ Phase 5 — **official production entrypoint** for hybrid **base** prompt text (
 3. Compose base — ``compose_hybrid_base`` → ``HybridPromptComposer.compose_base`` →
    ``resolve_hybrid_entry_for_provider`` only.
 4. Apply enrichments — exclusively at explicit call sites (e.g. ``hybrid_analysis_prompt`` for photo
-   image IDs). Phase 6 (traceability) will extend this layer, not the composer.
+   image IDs). (traceability) will extend this layer, not the composer.
 
 **Provider overlay (temporary, parity-driven)**
 

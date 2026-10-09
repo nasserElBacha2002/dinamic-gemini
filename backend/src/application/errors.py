@@ -255,7 +255,7 @@ class LegacyProcessingModeNotAllowedError(ValueError):
 
 
 class ProcessingObservabilityDisabledError(Exception):
-    """Raised when Phase 7 observability mutations are disabled."""
+    """Raised when observability mutations are disabled."""
 
 
 class IdempotencyKeyReusedError(Exception):
@@ -335,7 +335,7 @@ class InvalidProcessingPromptKeyError(Exception):
 
 
 class ProcessingProviderIncompatibleWithJobError(Exception):
-    """Raised when provider/model capabilities do not satisfy the job type (Phase 5)."""
+    """Raised when provider/model capabilities do not satisfy the job type."""
 
     def __init__(
         self,
@@ -521,7 +521,7 @@ class ManualResultNotAllowedForAssetTypeError(Exception):
 
 
 class ImageProcessingRepositoryUnavailableError(Exception):
-    """Raised when Phase 2 image-processing SQL repos are required but unavailable.
+    """Raised when image-processing SQL repos are required but unavailable.
 
     Fail-fast policy: when the app resolves a SQL repository backend, the image-processing
     bridge must not silently fall back to in-memory lease/state/attempt repositories (that
@@ -548,7 +548,7 @@ class JobProcessingLeaseNotAcquiredError(Exception):
 class CodeScanPipelineMisconfiguredError(Exception):
     """Raised when the CODE_SCAN path is entered without a required collaborator.
 
-    Phase 3 corrections: ``AisleProcessingOrchestrator.process_with_code_scan`` must never
+    corrections: ``AisleProcessingOrchestrator.process_with_code_scan`` must never
     run without both a configured code-scan strategy AND a result persister — otherwise a
     RESOLVED_INTERNAL scan could never create a position (silent data loss) or the run would
     crash mid-loop. The executor catches this and fails the job/aisle deterministically.
@@ -591,7 +591,7 @@ class AuthoritativeSessionNotReadyError(Exception):
         self.reasons = reasons
 
 
-# --- Phase 1 positioning foundation (ordered capture + aisle locations) ---
+# --- positioning foundation (ordered capture + aisle locations) ---
 
 
 class OrderedCaptureSessionNotFoundError(Exception):
@@ -684,7 +684,7 @@ class ClientPositionLabelAccessDeniedError(Exception):
 
 
 class PositionLabelDetectionError(Exception):
-    """Hard Phase 3 contract / context failure (not soft detection status rows)."""
+    """Hard contract / context failure (not soft detection status rows)."""
 
     def __init__(self, message: str, *, code: str) -> None:
         self.code = code
@@ -704,7 +704,7 @@ class PositionLabelDetectionConfigurationError(PositionLabelDetectionError):
 
 
 class PositionReconciliationError(Exception):
-    """Base error for Phase 4 reconciliation operations."""
+    """Base error for position reconciliation operations."""
 
     code = "POSITION_RECONCILIATION_FAILED"
 

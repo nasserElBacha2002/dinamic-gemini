@@ -1,4 +1,4 @@
-"""Phase 4.7 — traceability artifact generation errors."""
+"""traceability artifact generation errors."""
 
 
 class TraceabilityArtifactError(Exception):

@@ -134,7 +134,7 @@ def position_to_operational_export_row_dict(
     )
     updated: datetime = position.updated_at
     enrichment = export_fields_from_view(position_assignment)
-    # Prefer published Phase 4 name for position_code when assigned (same SoT as API).
+    # Prefer published name for position_code when assigned (same SoT as API).
     position_code = export_position_code(position)
     if enrichment.get("position_name"):
         position_code = str(enrichment["position_name"])

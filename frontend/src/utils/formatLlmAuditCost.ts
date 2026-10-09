@@ -1,5 +1,5 @@
 /**
- * Formatting helpers for LLM cost snapshots in observability / auditability (Phase H5).
+ * Formatting helpers for LLM cost snapshots in observability / auditability ().
  */
 
 const ES_AR = 'es-AR';

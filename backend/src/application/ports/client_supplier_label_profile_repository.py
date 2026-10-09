@@ -1,4 +1,4 @@
-"""Port for ClientSupplier label profile source configuration (Phase 1)."""
+"""Port for ClientSupplier label profile source configuration."""
 
 from __future__ import annotations
 

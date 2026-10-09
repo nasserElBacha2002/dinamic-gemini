@@ -579,7 +579,7 @@ def build_authoritative_aisle_finalization_repository(
 
 
 def build_server_reprocess_repository(build_repo: BuildSqlOrMemory):
-    """Phase 7: SQL when backend is SQL; memory only for explicit memory/test backends."""
+    """SQL when backend is SQL; memory only for explicit memory/test backends."""
 
     def _sql(client: SqlServerClient):
         from src.infrastructure.repositories.sql_server_reprocess_repository import (
@@ -604,7 +604,7 @@ def build_server_reprocess_repository(build_repo: BuildSqlOrMemory):
 
 
 def build_aisle_revision_repository(build_repo: BuildSqlOrMemory):
-    """Phase 8: aisle revisions + position versions."""
+    """aisle revisions + position versions."""
 
     def _sql(client: SqlServerClient):
         from src.infrastructure.repositories.sql_aisle_revision_repository import (
@@ -656,7 +656,7 @@ def build_preliminary_detection_reconciliation_repository(
 def build_ordered_capture_session_repository(
     build_repo: BuildSqlOrMemory,
 ):
-    """Phase 1 positioning: ordered capture sessions (mobile sequence spine)."""
+    """positioning: ordered capture sessions (mobile sequence spine)."""
 
     def _sql(client: SqlServerClient):
         from src.infrastructure.repositories.sql_ordered_capture_session_repository import (
@@ -683,7 +683,7 @@ def build_ordered_capture_session_repository(
 def build_aisle_location_repository(
     build_repo: BuildSqlOrMemory,
 ):
-    """Phase 1 positioning: physical aisle locations."""
+    """positioning: physical aisle locations."""
 
     def _sql(client: SqlServerClient):
         from src.infrastructure.repositories.sql_aisle_location_repository import (
@@ -710,7 +710,7 @@ def build_aisle_location_repository(
 def build_aisle_location_label_repository(
     build_repo: BuildSqlOrMemory,
 ):
-    """Phase 1 positioning: aisle location labels."""
+    """positioning: aisle location labels."""
 
     def _sql(client: SqlServerClient):
         from src.infrastructure.repositories.sql_aisle_location_repository import (
@@ -737,7 +737,7 @@ def build_aisle_location_label_repository(
 def build_aisle_location_label_artifact_repository(
     build_repo: BuildSqlOrMemory,
 ):
-    """Phase 2 positioning: rendered label artifacts."""
+    """positioning: rendered label artifacts."""
 
     def _sql(client: SqlServerClient):
         from src.infrastructure.repositories.sql_aisle_location_repository import (

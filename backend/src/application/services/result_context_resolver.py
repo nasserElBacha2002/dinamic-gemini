@@ -1,5 +1,5 @@
 """
-Result Context Resolver — Phase 2 multi-run reads.
+Result Context Resolver — multi-run reads.
 
 Resolves which job slice (or legacy null-job slice) applies for aisle-scoped result APIs:
 

@@ -1,5 +1,5 @@
 /**
- * Bounded-memory ZIP STORE writer (Phase 5).
+ * Bounded-memory ZIP STORE writer.
  *
  * Strategy A (incremental): write local headers + entry bytes + central directory
  * via BinaryAppendSink. Peak ≈ one entry Uint8Array + small framing + CD metadata.

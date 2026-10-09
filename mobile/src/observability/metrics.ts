@@ -1,7 +1,7 @@
 import type { NormalizedNetworkType } from './types';
 
 /**
- * Normalize NetInfo / connectivity types to the Phase 0 catalog.
+ * Normalize NetInfo / connectivity types to the catalog.
  * Never includes SSID, operator, IP, or MAC.
  */
 export function normalizeNetworkType(input: {

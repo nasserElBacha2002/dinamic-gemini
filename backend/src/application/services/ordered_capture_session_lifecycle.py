@@ -1,4 +1,4 @@
-"""Sync ordered capture session terminal status from job outcomes (Phase 1)."""
+"""Sync ordered capture session terminal status from job outcomes."""
 
 from __future__ import annotations
 

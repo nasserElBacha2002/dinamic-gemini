@@ -23,11 +23,11 @@ export type BenchmarkEnvironmentSnapshot = {
   readonly totalFixtureBytes: number | null;
   readonly fixtureCount: number | null;
   /**
-   * ExportPrepQueue worker slots. Phase 4 A/B keeps this at 1 while varying
+   * ExportPrepQueue worker slots. A/B keeps this at 1 while varying
    * scannerConcurrency independently — do not couple the two knobs.
    */
   readonly exportPrepMaxWorkers: number | null;
-  /** Local/native barcode scan concurrency (Phase 4 A/B variable). */
+  /** Local/native barcode scan concurrency (A/B variable). */
   readonly scannerConcurrency: number | null;
   /** Peak JS LocalCodeScanStrategy in-flight scans observed during the run. */
   readonly maxObservedScannerConcurrency: number | null;

@@ -1,11 +1,11 @@
 """
-Phase 6 — prompt composition traceability (JSON-serializable, audit-friendly metadata).
+prompt composition traceability (JSON-serializable, audit-friendly metadata).
 
 **Persistence vs execution logs**
 
 - The full ``prompt_composition`` dict (including ``base_prompt_text`` and ``final_prompt_text``) is
   attached to ``LLMRequest.metadata`` and, after analysis, copied into job ``run_metadata`` for
-  **audit replay and debugging**. That choice is intentional for Phase 6; a later phase may trim
+  **audit replay and debugging**. That choice is intentional ; a later phase may trim
   or externalize large text while keeping hashes.
 - **Execution logs** (``ExecutionLogWriter``) intentionally omit full prompt bodies by default and
   only record hashes, lengths, and a redacted summary — see
@@ -20,8 +20,8 @@ Attached to ``LLMRequest.metadata`` and job ``run_metadata`` without changing pr
   ``profile_name`` (the hybrid registry key used for the composed **default** body; aisle analysis
   hard-binds ``global_v22``). ``job_prompt_key`` and ``settings_hybrid_prompt_key`` record
   configuration hints only. Top-level job ``run_metadata["prompt_key"]`` prefers the composed profile
-  when present. None of this is the same as Phase 7 ``prompt_version``.
-- **``prompt_version`` (Phase 7, optional):** A logical label for traceability, comparison, and
+  when present. None of this is the same as ``prompt_version``.
+- **``prompt_version`` (optional):** A logical label for traceability, comparison, and
   future A/B work. It **does not** select prompt bodies, **does not** change ``DEFAULT_HYBRID_PROMPT_PROFILE``,
   **does not** alter prompt text, and **is not** an input to ``prompt_hash`` / ``base_prompt_hash``.
 - **``prompt_hash`` / ``base_prompt_hash``:** SHA-256 of UTF-8 ``final_prompt_text`` / ``base_prompt_text``
@@ -29,7 +29,7 @@ Attached to ``LLMRequest.metadata`` and job ``run_metadata`` without changing pr
 
 **Top-level ``run_metadata["prompt_version"]`` (legacy)** in ``hybrid_inventory_pipeline`` is the
 string ``{prompt_key}@v2.1`` for job ``result_json``. That is **not** the same field as
-``run_metadata["prompt_composition"]["prompt_version"]`` (Phase 7 optional label).
+``run_metadata["prompt_composition"]["prompt_version"]`` (optional label).
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 # Stable key on ``LLMRequest.metadata`` and job-level run_metadata (optional block).
 LLM_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
-# Pre-Phase 10 — comparison parity + canonical identity (also mirrored inside ``prompt_composition``).
+# comparison parity + canonical identity (also mirrored inside ``prompt_composition``).
 LLM_METADATA_KEY_PROMPT_PARITY_MODE = "prompt_parity_mode"
 LLM_IDENTITY_METADATA_KEY = "llm_identity"
 
@@ -80,7 +80,7 @@ COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER = "normalize_pipeline_provider"
 COMPOSITION_STEP_COMPOSE_HYBRID_BASE = "compose_hybrid_base"
 COMPOSITION_STEP_ENRICH_IMAGE_IDS = "enrich_image_ids"
 COMPOSITION_STEP_PROMPT_PARITY_MODE = "prompt_parity_mode"
-# Phase E4: optional supplier-editable block appended after protected hybrid + enrichments (metadata only).
+# optional supplier-editable block appended after protected hybrid + enrichments (metadata only).
 COMPOSITION_STEP_EFFECTIVE_SUPPLIER_PROMPT = "effective_supplier_prompt"
 
 
@@ -107,15 +107,15 @@ class PromptCompositionMetadata:
       model name for the call. These do not change prompt *text*; they describe *who ran* the
       prompt.
 
-    Consumers should treat the whole dict as the Phase 6+7 contract while understanding which keys
+    Consumers should treat the whole dict as the contract while understanding which keys
     are authoritative for “how the prompt was built” vs “how it was executed”.
 
-    **Phase 7 — ``prompt_version``:** Optional logical label (e.g. ``"v1"``, ``"2026-04-10"``) for
+    **``prompt_version``:** Optional logical label (e.g. ``"v1"``, ``"2026-04-10"``) for
     audit and future comparison. It is **not** the profile selector (that is ``profile_name`` /
     ``job_prompt_key`` / ``hybrid_prompt``), **not** derived from ``prompt_hash``, does **not** affect
     prompt text, and is **not** used to pick prompt content in this phase.
 
-    **Pre-Phase 10 — ``prompt_parity_mode``:** When true, hybrid **base** text for OpenAI uses the
+    **``prompt_parity_mode``:** When true, hybrid **base** text for OpenAI uses the
     ``default`` fragment (same as Gemini/Claude/DeepSeek) for fair comparison; recorded for audit.
 
     **``llm_identity``:** Canonical ``provider_name`` + ``model_name`` (set in
@@ -370,7 +370,7 @@ def prompt_composition_summary_for_execution_log(
         "base_prompt_char_len": base_len,
         "timestamp": full_composition.get("timestamp"),
     }
-    # Phase 7 label only; omit from log payload when unset (noise / backward compat).
+    # label only; omit from log payload when unset (noise / backward compat).
     pv = full_composition.get("prompt_version")
     if isinstance(pv, str) and pv.strip():
         out["prompt_version"] = pv.strip()

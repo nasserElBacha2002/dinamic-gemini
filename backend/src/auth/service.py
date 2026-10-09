@@ -7,7 +7,7 @@ Provisioning policy (temporary second user):
 - ``AUTH_JAIRO_PASSWORD_HASH`` is optional; when absent/empty, Jairo is disabled.
 - This is not multi-user product support: no registration, no DB users, no RBAC.
 
-Phase 2 implements:
+implements:
 - admin credential validation (primary env admin + optional temporary \"Jairo\" operator)
 - login response building (token + principal)
 """

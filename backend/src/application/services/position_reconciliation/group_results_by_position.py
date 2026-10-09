@@ -1,4 +1,4 @@
-"""Group enriched results by published aisle position (Phase 5)."""
+"""Group enriched results by published aisle position."""
 
 from __future__ import annotations
 

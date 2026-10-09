@@ -1,5 +1,5 @@
 /**
- * Phase 9 offline operations — public exports.
+ * offline operations — public exports.
  */
 
 export {

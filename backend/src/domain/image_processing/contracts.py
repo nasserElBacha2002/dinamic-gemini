@@ -1,4 +1,4 @@
-"""Shared contracts for per-image processing strategies (Phase 2)."""
+"""Shared contracts for per-image processing strategies."""
 
 from __future__ import annotations
 
@@ -94,11 +94,11 @@ class ImageProcessingContext:
     attempt_number: int
     execution_scope: ExecutionScope = ExecutionScope.SINGLE_ASSET
     asset_reference: str | None = None
-    # Phase 6 — immutable profile snapshot + feature flags from job engine_params.
+    # immutable profile snapshot + feature flags from job engine_params.
     supplier_extraction_profile: dict[str, Any] | None = None
     profile_aware_validation_enabled: bool = False
     reference_template_annotations_enabled: bool = False
-    # Phase 2 — label profile snapshot + prebuilt validation context (job-scoped).
+    # label profile snapshot + prebuilt validation context (job-scoped).
     label_profiles: dict[str, Any] | None = None
     label_validation_context: LabelValidationContext | None = None
 
@@ -134,7 +134,7 @@ class ImageProcessingResult:
 class ProcessingStrategy(Protocol):
     """Provider-agnostic strategy for processing one logical asset context.
 
-    Phase 2 ``LegacyLlmProcessingStrategy`` may execute as AISLE_BATCH and still
+    ``LegacyLlmProcessingStrategy`` may execute as AISLE_BATCH and still
     emit logical per-asset results after the batch completes.
     """
 

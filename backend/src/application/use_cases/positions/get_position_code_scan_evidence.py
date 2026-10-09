@@ -1,4 +1,4 @@
-"""Read code scan detections linked to a position (Phase 5 evidence enrichment)."""
+"""Read code scan detections linked to a position (evidence enrichment)."""
 
 from __future__ import annotations
 

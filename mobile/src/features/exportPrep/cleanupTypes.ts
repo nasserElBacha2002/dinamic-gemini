@@ -1,5 +1,5 @@
 /**
- * Structured cleanup / reconcile results (Phase 6).
+ * Structured cleanup / reconcile results.
  */
 
 export type CleanupArtifactType =

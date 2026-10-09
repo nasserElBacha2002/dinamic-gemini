@@ -29,7 +29,7 @@ export PYTHONPATH="${ROOT}:${ROOT}/backend${PYTHONPATH:+:${PYTHONPATH}}"
 release_log_stage "E2E pytest suite (SQL + fake provider scenarios)"
 set +e
 "${RELEASE_PY}" -m pytest \
-  backend/tests/release/test_phase7_e2e_release.py \
+  backend/tests/release/test_e2e_release_validation.py \
   -q --no-cov -m release_e2e
 E2E_EC=$?
 set -e

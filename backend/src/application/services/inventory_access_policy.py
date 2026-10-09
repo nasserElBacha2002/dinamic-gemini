@@ -1,4 +1,4 @@
-"""Inventory access policy for inventory-rooted application operations (Phase 2).
+"""Inventory access policy for inventory-rooted application operations.
 
 Platform principals may access any inventory. Company-scoped principals must match
 ``inventory.client_id``. Mismatch / missing → ``InventoryNotFoundError`` (HTTP 404 path).

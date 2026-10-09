@@ -1,4 +1,4 @@
-"""Application-layer access principal (Phase 2 corrections).
+"""Application-layer access principal (corrections).
 
 Auth adapters map JWT ``AuthUser`` into this DTO. Use cases must not import AuthUser.
 """

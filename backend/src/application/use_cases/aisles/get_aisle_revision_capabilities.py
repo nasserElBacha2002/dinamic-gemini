@@ -1,4 +1,4 @@
-"""Resolve aisle revision capabilities for a concrete inventory/aisle (Phase 8 corrections).
+"""Resolve aisle revision capabilities for a concrete inventory/aisle (corrections).
 
 The route used to ignore the path parameters and answer from feature flags alone, which leaked
 capability information for inventories and aisles the caller may not address. This use case

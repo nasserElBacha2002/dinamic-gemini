@@ -1,4 +1,4 @@
-"""Phase 5 — retry / backoff policy (typed, bounded)."""
+"""retry / backoff policy (typed, bounded)."""
 
 from __future__ import annotations
 

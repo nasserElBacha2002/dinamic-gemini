@@ -1,4 +1,4 @@
-"""SQL Server aisle revision repository (Phase 8)."""
+"""SQL Server aisle revision repository."""
 
 from __future__ import annotations
 

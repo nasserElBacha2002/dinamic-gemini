@@ -60,7 +60,7 @@ export interface ClientSuppliersListResponse {
   total_pages: number;
 }
 
-/** Supplier-scoped reference images (Phase C — not used by CV pipeline until explicitly wired). */
+/** Supplier-scoped reference images (not used by CV pipeline until explicitly wired). */
 export interface SupplierReferenceImage {
   id: string;
   client_supplier_id: string;
@@ -264,7 +264,7 @@ export interface ProcessAisleResponse {
   processing_mode?: AisleProcessingMode | string | null;
 }
 
-/** GET /api/v3/inventories/processing-provider-options (Phase 5). */
+/** GET /api/v3/inventories/processing-provider-options. */
 export interface ProcessingModelOption {
   id: string;
   label: string;
@@ -447,19 +447,19 @@ export interface JobSummary {
   domain_persisted_at?: string | null;
   artifacts_published_at?: string | null;
   finalization_assessment?: FinalizationAssessment | null;
-  /** True when this job is the aisle operational pointer (Phase 6 jobs list). */
+  /** True when this job is the aisle operational pointer (jobs list). */
   is_operational?: boolean;
   /** Present when ``result_json`` includes a validated LLM cost snapshot (list jobs; additive). */
   llm_cost_snapshot?: LlmCostSnapshot | null;
-  /** Phase 2 additive per-asset progress when orchestrator ran. */
+  /** additive per-asset progress when orchestrator ran. */
   asset_progress?: AssetProgress | null;
-  /** Phase 5 selective external fallback counters. */
+  /** selective external fallback counters. */
   fallback_progress?: FallbackProgress | null;
   /** GLOBAL_BATCH aisle-level fallback summary. */
   global_fallback?: GlobalFallbackSummary | null;
-  /** Phase 5 per-asset sanitized external fallback summaries. */
+  /** per-asset sanitized external fallback summaries. */
   fallback_asset_summaries?: AssetFallbackSummary[] | null;
-  /** Immutable identification execution snapshot from job engine_params (Phase 3/4/5). */
+  /** Immutable identification execution snapshot from job engine_params . */
   identification_execution?: Record<string, unknown> | null;
   client_id?: string | null;
 }
@@ -559,7 +559,7 @@ export interface AisleJobsListResponse {
   jobs: JobSummary[];
 }
 
-/** Phase 6 — GET .../benchmark/compare (read-only, explicit job pair). */
+/** GET .../benchmark/compare (read-only, explicit job pair). */
 export interface BenchmarkRunSliceMetrics {
   raw_rows_considered: number;
   consolidated_positions: number;
@@ -746,7 +746,7 @@ export interface PromoteOperationalJobResponse {
   operational_job_id: string;
 }
 
-/** GET .../jobs/{job_id}/auditability — Phase H read model (snake_case matches backend `to_jsonable`). */
+/** GET .../jobs/{job_id}/auditability — run auditability read model (snake_case matches backend `to_jsonable`). */
 export interface RunAuditMetadataSources {
   job_row: boolean;
   result_json: boolean;
@@ -807,11 +807,11 @@ export interface RunAuditabilityView {
   metadata_sources: RunAuditMetadataSources;
   missing_metadata: string[];
   legacy_mode: boolean;
-  /** Validated LLM cost snapshot from ``result_json.llm_cost_snapshot`` (Phase H5). */
+  /** Validated LLM cost snapshot from ``result_json.llm_cost_snapshot`` (). */
   cost_snapshot?: LlmCostSnapshot | null;
 }
 
-/** GET /api/v3/observability/metrics — Phase H5 (snake_case matches backend). */
+/** GET /api/v3/observability/metrics — . */
 export interface ObservabilityMetricsRange {
   from: string;
   to: string;
@@ -1180,7 +1180,7 @@ export interface PositionTraceabilityBlock {
   source_image_original_filename?: string | null;
   primary_evidence_id?: string | null;
   has_evidence: boolean;
-  /** Phase 4.2: safe to display as operator evidence. */
+  /** safe to display as operator evidence. */
   has_valid_evidence?: boolean;
   traceability_warning?: string | null;
 }
@@ -1235,14 +1235,14 @@ export interface PositionSummary {
   created_at: string;
   updated_at: string;
   position_code: string;
-  /** Phase 4: true when reconciliation assigned an aisle position label (01/02…). */
+  /** true when reconciliation assigned an aisle position label (01/02…). */
   aisle_position_assigned?: boolean;
-  /** Phase 5: published aisle position from Phase 4 assignments (null when unassigned / absent). */
+  /** published aisle position from assignments (null when unassigned / absent). */
   position?: {
     id?: string | null;
     name?: string | null;
   } | null;
-  /** Phase 5: assignment metadata from the published Phase 4 revision. */
+  /** assignment metadata from the published reconciliation revision. */
   position_assignment?: {
     status?: string | null;
     source?: 'AUTOMATIC' | 'MANUAL' | 'NONE' | string | null;
@@ -1292,7 +1292,7 @@ export interface PositionSummary {
   /** Epic 3.1.B: optional; summary-level traceability status when backend provides it. */
   /** @deprecated Prefer `traceability.status`. */
   traceability_status?: ApiTraceabilityStatus | null;
-  /** v3.2.5 Phase 2 Block 4: guaranteed boolean in active v3 contract; backend always sends it. */
+  /** guaranteed boolean in active v3 contract; backend always sends it. */
   /** @deprecated Prefer `traceability.has_evidence`. */
   has_evidence: boolean;
   /** Multi-run: storage row job id; null = legacy. Used for review drawer / detail `job_id` query. */
@@ -1324,7 +1324,7 @@ export interface PositionListResponse {
   total_items: number;
   total_pages: number;
   raw_fetch_truncated: boolean;
-  /** Resolved job slice for this response (same semantics as list/detail/merge Phase 2). */
+  /** Resolved job slice for this response (same semantics as list/detail/merge run context). */
   result_job_id?: string | null;
   /** explicit | operational | legacy */
   result_context_source?: string | null;
@@ -1462,7 +1462,7 @@ export interface ReviewActionSummary {
   job_id?: string | null;
 }
 
-/** Phase 4.8 — fail-closed structural evidence contract (authoritative for display eligibility). */
+/** fail-closed structural evidence contract (authoritative for display eligibility). */
 export type EvidenceTraceabilityStatusLiteral =
   | 'valid'
   | 'invalid'
@@ -1547,7 +1547,7 @@ export interface JobTraceabilityResponse {
   entities: JobTraceabilityEntityResponse[];
 }
 
-/** Phase 2 / 5: slice + provider metadata for this row (matches list/merge resolver semantics). */
+/** 5: slice + provider metadata for this row (matches list/merge resolver semantics). */
 export interface PositionRunContextSummary {
   job_id?: string | null;
   result_context_source: string;
@@ -1563,12 +1563,12 @@ export interface PositionDetailResponse {
   position: PositionSummary;
   technical_snapshot?: PositionTechnicalSnapshot | null;
   evidences: EvidenceSummary[];
-  /** Review audit history — Épica 8. v3.2.5 Phase 8: required; backend sends list (default_factory=list). */
+  /** Review audit history — Épica 8. required; backend sends list (default_factory=list). */
   review_actions: ReviewActionSummary[];
   run_context: PositionRunContextSummary;
-  /** Phase 4.8: structural evidence contract (authoritative for display eligibility). */
+  /** structural evidence contract (authoritative for display eligibility). */
   evidence?: ResultEvidenceViewResponse | null;
-  /** Phase 4.8: durable traceability_manifest metadata for resolved job context. */
+  /** durable traceability_manifest metadata for resolved job context. */
   traceability_artifact?: TraceabilityArtifactMetadataResponse | null;
 }
 

@@ -1,5 +1,5 @@
 """
-DeepSeek — Phase 9 provider using **Option A (OpenAI-compatible API)**.
+DeepSeek — provider using **Option A (OpenAI-compatible API)**.
 
 DeepSeek exposes a Chat Completions–compatible HTTPS API. We use the official ``openai`` Python
 client with ``base_url`` pointing at DeepSeek and ``DEEPSEEK_API_KEY`` for auth.

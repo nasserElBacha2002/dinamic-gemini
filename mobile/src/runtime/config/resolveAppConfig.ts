@@ -20,7 +20,7 @@ export interface AppConfig {
   readonly gitSha: string;
   readonly buildTime: string;
   readonly flags: FeatureFlags;
-  /** Phase 10: configurable rollout / alert thresholds. */
+  /** configurable rollout / alert thresholds. */
   readonly cutover: ProductionCutoverThresholds;
 }
 
@@ -112,7 +112,7 @@ export function validateAppConfig(config: AppConfig): string | null {
   } catch {
     return 'DINAMIC_API_BASE_URL no es una URL válida.';
   }
-  // Phase 10: incompatible flag combos fail-fast in all environments.
+ // incompatible flag combos fail-fast in all environments.
   const flagErrors = formatFlagCompatibilityErrors(evaluateFeatureFlagCompatibility(config.flags));
   if (flagErrors) {
     return `Configuración de feature flags incompatible: ${flagErrors}`;

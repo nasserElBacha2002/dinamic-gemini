@@ -11,7 +11,7 @@ interface AuthProviderProps {
 }
 
 /**
- * AuthProvider — Phase 4 implementation.
+ * AuthProvider — implementation.
  *
  * Holds user + token; persists token in localStorage; bootstraps session on mount
  * via stored token + GET /auth/me. Login/logout persist or clear token.

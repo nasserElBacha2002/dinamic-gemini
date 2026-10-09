@@ -1,4 +1,4 @@
-"""Phase 5 — bounded concurrency for external fallback calls."""
+"""bounded concurrency for external fallback calls."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 """
-Phase 3 / 5 / 7 — normalize ``LLMResponse`` into :class:`~src.pipeline.ports.analysis_provider.AnalysisResult`.
+— normalize ``LLMResponse`` into :class:`~src.pipeline.ports.analysis_provider.AnalysisResult`.
 
 Provider-specific parsing stays inside LLM adapters; this helper only maps the neutral
 ``LLMResponse`` contract into the pipeline ``AnalysisResult`` shape and attaches pricing snapshot.
@@ -35,7 +35,7 @@ def build_analysis_result_from_llm_response(
 
     ``prompt_composition`` and ``provider_metadata`` are typed as :class:`~typing.Mapping` to signal
     the helper does not mutate them. When the caller passes a plain ``dict``, that same object is
-    stored on ``AnalysisResult`` (identity preserved for Phase 6 traceability). Other ``Mapping``
+    stored on ``AnalysisResult`` (identity preserved for traceability). Other ``Mapping``
     types are copied to a new ``dict``.
 
     ``settings`` remains ``Any`` (same contract as :func:`resolve_llm_executor_for_context` and

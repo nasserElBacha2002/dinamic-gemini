@@ -1,5 +1,5 @@
 """
-Gemini SDK adapter — encapsulates GeminiClient / GeminiGlobalAnalyzer (Phase 4).
+Gemini SDK adapter — encapsulates GeminiClient / GeminiGlobalAnalyzer.
 
 Used by ``GeminiProvider`` and the pipeline provider registry. Keeps vendor types out of
 pipeline strategies except through ``LLMRequest`` / ``LLMResponse``.

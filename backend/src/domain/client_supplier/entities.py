@@ -1,4 +1,4 @@
-"""Client supplier domain entity — Phase A2 foundation."""
+"""Client supplier domain entity — foundation."""
 
 from __future__ import annotations
 

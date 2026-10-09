@@ -1,7 +1,7 @@
 /**
  * Epic 4 — Evidence panel for Result Detail.
- * Phase 6: Primary vs supporting evidence clearly labeled for operator hierarchy.
- * Phase 4.8: Display image only when backend structural evidenceView.displayable is true
+ * Primary vs supporting evidence clearly labeled for operator hierarchy.
+ * Display image only when backend structural evidenceView.displayable is true
  * and use backend-provided imageUrl (no legacy asset loader when evidenceView exists).
  */
 

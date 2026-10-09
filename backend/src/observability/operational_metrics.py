@@ -1,4 +1,4 @@
-"""Phase 5 — SQL-backed operational gauges with short TTL cache."""
+"""SQL-backed operational gauges with short TTL cache."""
 
 from __future__ import annotations
 

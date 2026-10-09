@@ -1,10 +1,10 @@
 """
-Phase 3 / 8 — explicit pipeline provider resolution boundary.
+— explicit pipeline provider resolution boundary.
 
 Centralizes how a worker run chooses the logical LLM vendor (Gemini, OpenAI, Claude, DeepSeek)
 and the corresponding :class:`~src.pipeline.ports.llm_execution.LlmGlobalAnalysisExecutor`.
 
-**Phase 5 contract:** explicit ``job.provider_name`` is never silently remapped. Visual inventory
+**contract:** explicit ``job.provider_name`` is never silently remapped. Visual inventory
 jobs are validated for vision + image-binding capabilities before executor selection.
 
 **Runtime failover is not implemented** unless ``pipeline_analysis_execution_strategy`` enables

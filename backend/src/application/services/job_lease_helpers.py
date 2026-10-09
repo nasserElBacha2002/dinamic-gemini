@@ -1,4 +1,4 @@
-"""Shared helpers for Phase 3 lease-conditioned CAS classification.
+"""Shared helpers for lease-conditioned CAS classification.
 
 Both ``SqlJobRepository`` and ``MemoryJobRepository`` use these helpers so renewal /
 write-rejection reasons stay consistent across implementations.

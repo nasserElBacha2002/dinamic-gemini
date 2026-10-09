@@ -34,7 +34,7 @@ def _identification_block(job_engine_params: dict[str, Any] | None) -> dict[str,
 def load_resolved_label_profiles_from_job(
     job_engine_params: dict[str, Any] | None,
 ) -> ResolvedLabelProfiles | None:
-    """Return Phase 1 snapshot or None for legacy jobs (no label_profiles)."""
+    """Return snapshot or None for legacy jobs (no label_profiles)."""
     block = _identification_block(job_engine_params)
     raw = block.get("label_profiles")
     if not isinstance(raw, dict):

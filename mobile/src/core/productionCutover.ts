@@ -1,5 +1,5 @@
 /**
- * Phase 10 — configurable cutover / pause thresholds (no hardcoded ops SLOs).
+ * configurable cutover / pause thresholds (no hardcoded ops SLOs).
  * Values come from Expo `extra.cutover` or process.env in tests/CI.
  */
 

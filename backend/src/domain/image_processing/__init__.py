@@ -1,7 +1,7 @@
-"""Phase 2 — per-image processing domain (state, attempts, strategy contracts).
+"""per-image processing domain (state, attempts, strategy contracts).
 
 Legacy productive path remains AISLE_BATCH: one hybrid LLM call for the aisle.
-Per-asset rows are logical traceability until Phase 3 runs true per-image strategies.
+Per-asset rows are logical traceability until runs true per-image strategies.
 """
 
 from __future__ import annotations

@@ -81,9 +81,9 @@ export interface UploadQueueOptions {
   readonly flags?: FeatureFlags;
   readonly backgroundWork?: BackgroundWorkScheduler | null;
   readonly observability?: UploadQueueObservability | null;
-  /** Phase 3 shadow local CODE_SCAN — never blocks upload authority path. */
+  /** shadow local CODE_SCAN — never blocks upload authority path. */
   readonly localCodeScan?: LocalCodeScanStrategy | null;
-  /** Phase 4 preliminary sync — never blocks upload or /process. */
+  /** preliminary sync — never blocks upload or /process. */
   readonly preliminarySync?: {
     enqueuePhotoAfterUpload(photoId: string): Promise<void>;
   } | null;
@@ -91,11 +91,11 @@ export interface UploadQueueOptions {
   readonly authoritativeSync?: {
     enqueuePhotoAfterUpload(photoId: string, backendAssetId: string): Promise<void>;
   } | null;
-  /** Phase 1 ordered capture — create backend session before uploads. */
+  /** ordered capture — create backend session before uploads. */
   readonly orderedCapture?: {
     createSession(inventoryId: string, aisleId: string): Promise<{ readonly id: string }>;
   } | null;
-  /** Phase 6: persist explicit exclusion before remote delete (best-effort). */
+  /** persist explicit exclusion before remote delete (best-effort). */
   readonly authoritativeExclusion?: {
     recordExclusion(input: {
       inventoryId: string;
@@ -150,7 +150,7 @@ export class UploadQueue {
   private readonly cancelledWhileUploading = new Set<string>();
   /** Transforms deferred until batch settlement. */
   private readonly pendingTransformCleanup = new Set<string>();
-  /** Debounce timer for emit → refreshCachedSessions (Phase 2 incremental snapshots). */
+  /** Debounce timer for emit → refreshCachedSessions (incremental snapshots). */
   private emitDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   /** Coalesce concurrent ordered-capture ensure calls per capture session. */
   private readonly orderedEnsureInflight = new Map<
@@ -1610,7 +1610,7 @@ export class UploadQueue {
             await cleanupTransformUri(photo.local_transform_uri);
             this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
             void this.options.preliminarySync?.enqueuePhotoAfterUpload(photo.id).catch(() => {
-              // Phase 4: sync must never block upload completion
+ // sync must never block upload completion
             });
             void this.options.authoritativeSync
               ?.enqueuePhotoAfterUpload(photo.id, ok.asset_id)

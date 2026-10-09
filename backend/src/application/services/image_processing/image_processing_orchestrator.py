@@ -1,4 +1,4 @@
-"""Image-level orchestrator — acquire, attempt, strategy, persist state (Phase 2)."""
+"""Image-level orchestrator — acquire, attempt, strategy, persist state."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ class ImageProcessingOrchestrator:
                 state.status.value if state else None,
             )
             return None
-        # FAILED_TECHNICAL is terminal within the same job (Phase 2 policy) — never re-acquired
+        # FAILED_TECHNICAL is terminal within the same job (policy) — never re-acquired
         # here; only PENDING assets are eligible for (re-)acquisition.
         acquired = self._state_repo.try_acquire(
             job_id,
@@ -194,7 +194,7 @@ class ImageProcessingOrchestrator:
         result: ImageProcessingResult,
         duration_ms: int | None = None,
     ) -> None:
-        """Close one attempt without finalizing asset state (Phase 5 internal→external handoff)."""
+        """Close one attempt without finalizing asset state (internal→external handoff)."""
         if not self._attempts_enabled:
             return
         now = self._clock.now()

@@ -5,9 +5,9 @@ interface ProtectedRouteProps {
 }
 
 /**
- * ProtectedRoute — Phase 1 placeholder.
+ * ProtectedRoute — placeholder.
  *
- * Phase 1 does not implement route protection yet. This component is an explicit
+ * does not implement route protection yet. This component is an explicit
  * placeholder that simply renders the provided element.
  *
  * Later phases will:

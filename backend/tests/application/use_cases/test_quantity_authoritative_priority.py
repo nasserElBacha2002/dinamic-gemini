@@ -84,7 +84,9 @@ def test_explicit_qty_preserved_after_persist_flow() -> None:
     raw_repo = MemoryRawLabelRepository()
     norm_repo = MemoryNormalizedLabelRepository()
     final_repo = MemoryFinalCountRepository()
-    from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+    from tests.support.worker_persist_idempotency.persist_builders import (
+        build_persist_aisle_result_use_case,
+    )
 
     uc = build_persist_aisle_result_use_case(
         position_repo=position_repo,

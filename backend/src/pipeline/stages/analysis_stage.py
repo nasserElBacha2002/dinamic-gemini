@@ -2,8 +2,8 @@
 AnalysisStage — delegate to AnalysisProvider and return structured result (v2.3.C).
 
 Performs the global analysis call only; no entity parsing.
-v3.2.4 Phase 4: passes through provider_metadata (visual reference usage) for callers to persist.
-Phase 5: normalizes ``parsed_json`` (e.g. OpenAI quantity aliases) before entity resolution.
+passes through provider_metadata (visual reference usage) for callers to persist.
+normalizes ``parsed_json`` (e.g. OpenAI quantity aliases) before entity resolution.
 """
 
 from __future__ import annotations
@@ -109,9 +109,9 @@ class AnalysisStageResult:
     parsed_json: dict[str, Any]
     provider_name: str
     provider_metadata: dict[str, Any] | None = None
-    # Phase 6: pass-through of AnalysisResult.prompt_composition for run_metadata persistence.
+    # pass-through of AnalysisResult.prompt_composition for run_metadata persistence.
     prompt_composition: dict[str, Any] | None = None
-    # Phase 9: pass-through of provider-agnostic usage+pricing snapshot for run_metadata persistence.
+    # pass-through of provider-agnostic usage+pricing snapshot for run_metadata persistence.
     llm_cost_snapshot: dict[str, Any] | None = None
 
 

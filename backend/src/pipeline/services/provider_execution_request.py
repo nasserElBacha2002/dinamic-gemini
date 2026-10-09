@@ -1,5 +1,5 @@
 """
-Phase 4.4 — Provider-neutral execution request bound to ExecutionImageManifest.
+Provider-neutral execution request bound to ExecutionImageManifest.
 
 Single authoritative input contract for all active visual provider adapters.
 """

@@ -1,4 +1,4 @@
-"""Pre-persistence invariants for structural result evidence rows (Phase 4.6)."""
+"""Pre-persistence invariants for structural result evidence rows."""
 
 from __future__ import annotations
 

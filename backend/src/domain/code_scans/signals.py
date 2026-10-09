@@ -1,4 +1,4 @@
-"""Read-only review signal types for aisle code scan operationalization (Phase 6A)."""
+"""Read-only review signal types for aisle code scan operationalization."""
 
 from __future__ import annotations
 

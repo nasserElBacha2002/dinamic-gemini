@@ -3,7 +3,7 @@ Resolve a ``Job`` row in the context of an inventory-scoped aisle (read-only API
 
 Used by GET ``.../jobs/{job_id}``, execution-log, execution-log.txt, hybrid-report,
 auditability, artifacts, retry-chain, and related Observability routes so validation
-stays in the application layer (Phase 6 + Observability company scope).
+stays in the application layer (+ Observability company scope).
 """
 
 from __future__ import annotations

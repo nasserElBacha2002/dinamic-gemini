@@ -1,4 +1,4 @@
-"""Local CSV/TXT/ZIP import header status machine (Phase 4).
+"""Local CSV/TXT/ZIP import header status machine.
 
 PREVIEWED → MATERIALIZING → CONFIRMED
 

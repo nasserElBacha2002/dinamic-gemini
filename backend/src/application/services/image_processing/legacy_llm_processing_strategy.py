@@ -1,4 +1,4 @@
-"""Legacy LLM strategy — wraps aisle-batch hybrid pipeline (Phase 2).
+"""Legacy LLM strategy — wraps aisle-batch hybrid pipeline.
 
 Physical execution remains AISLE_BATCH. Logical per-asset results are synthesized
 after the batch from coverage (evidence / positions), not from separate LLM calls.
@@ -56,7 +56,7 @@ class LegacyLlmProcessingStrategy:
     strategy_key = STRATEGY_KEY
 
     def process(self, context: ImageProcessingContext) -> ImageProcessingResult:
-        """Single-asset entry (Phase 3+). Phase 2 aisle path uses ``process_aisle_batch``."""
+        """Single-asset entry (Phase 3+). aisle path uses ``process_aisle_batch``."""
         return ImageProcessingResult(
             job_id=context.job_id,
             asset_id=context.asset_id,
@@ -70,7 +70,7 @@ class LegacyLlmProcessingStrategy:
             execution_scope=ExecutionScope.AISLE_BATCH,
             logical_asset_attempt=True,
             warnings=[
-                "Phase 2: per-asset process() is bookkeeping-only; "
+                "per-asset process() is bookkeeping-only; "
                 "physical LLM execution is AISLE_BATCH via process_aisle_batch."
             ],
         )

@@ -1,4 +1,4 @@
-"""Phase 5 — estimate monetary cost for one external fallback call (informational)."""
+"""estimate monetary cost for one external fallback call (informational)."""
 
 from __future__ import annotations
 

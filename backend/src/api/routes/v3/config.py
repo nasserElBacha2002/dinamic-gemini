@@ -51,7 +51,7 @@ def get_upload_limits() -> UploadLimitsResponse:
     response_model=ExtractionProfileCapabilitiesResponse,
 )
 def get_extraction_profile_capabilities() -> ExtractionProfileCapabilitiesResponse:
-    """Real feature-flag capabilities for Phase 6 supplier extraction profiles."""
+    """Real feature-flag capabilities for supplier extraction profiles."""
     settings = load_settings()
     return ExtractionProfileCapabilitiesResponse(
         client_extraction_profiles_enabled=bool(
@@ -79,7 +79,7 @@ class ProcessingObservabilityCapabilitiesResponse(BaseModel):
     response_model=ProcessingObservabilityCapabilitiesResponse,
 )
 def get_processing_observability_capabilities() -> ProcessingObservabilityCapabilitiesResponse:
-    """Phase 7 feature-flag capabilities for operational processing UX."""
+    """feature-flag capabilities for operational processing UX."""
     settings = load_settings()
     return ProcessingObservabilityCapabilitiesResponse(
         processing_observability_enabled=bool(

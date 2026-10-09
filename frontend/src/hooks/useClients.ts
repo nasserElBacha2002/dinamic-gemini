@@ -1,5 +1,5 @@
 /**
- * TanStack Query hooks for clients and client suppliers (Phase A7.2).
+ * TanStack Query hooks for clients and client suppliers (.2).
  */
 
 import { useQuery } from '@tanstack/react-query';

@@ -1,4 +1,4 @@
-"""Phase 5 — recovery helpers for durable external fallback requests."""
+"""recovery helpers for durable external fallback requests."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Phase 6 — read-only compare of two explicit aisle runs (benchmark workflow)."""
+"""read-only compare of two explicit aisle runs (benchmark workflow)."""
 
 from __future__ import annotations
 

@@ -3032,7 +3032,7 @@
     "hub_no_inventories_message": "Este cliente todavía no tiene inventarios.",
     "hub_aisles_error": "No se pudieron cargar los pasillos",
     "hub_inventories_error": "No se pudieron cargar los inventarios",
-    "phase_checklist_title": "Prueba de Fase 1 y Fase 2",
+    "phase_checklist_title": "Prueba de preparación de etiquetas de posición",
     "check_location": "Posición creada",
     "check_issued": "Etiqueta emitida",
     "check_payload": "Payload DINAMIC_POSITION",

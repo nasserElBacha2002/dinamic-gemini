@@ -26,7 +26,7 @@ export function resolveZipWritePlatform(): ZipWritePlatform {
 
 /**
  * Dinamic Captura is Android-only. Fail before starting ZIP I/O on unsupported platforms.
- * On Android, also require CaptureForegroundService.appendBase64File (Phase 5 native build).
+ * On Android, also require CaptureForegroundService.appendBase64File (native build).
  */
 export function assertZipWritePlatformSupported(): void {
   const platform = resolveZipWritePlatform();

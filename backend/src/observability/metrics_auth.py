@@ -1,4 +1,4 @@
-"""Phase 5 — authorization for GET /metrics."""
+"""authorization for GET /metrics."""
 
 from __future__ import annotations
 

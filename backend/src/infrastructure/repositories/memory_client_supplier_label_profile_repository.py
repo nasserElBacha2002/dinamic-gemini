@@ -1,4 +1,4 @@
-"""In-memory ClientSupplierLabelProfile repository (Phase 1)."""
+"""In-memory ClientSupplierLabelProfile repository."""
 
 from __future__ import annotations
 

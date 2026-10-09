@@ -1,4 +1,4 @@
-"""Processing event publisher (Phase 7 corrections).
+"""Processing event publisher (corrections).
 
 Observability semantics (chosen): **A — best-effort telemetry**.
 
