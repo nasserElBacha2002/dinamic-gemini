@@ -225,7 +225,8 @@ HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED = (
     "Supplier prompt config activation failed"
 )
 
-# Supplier extraction profilesHTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_NOT_FOUND = "Supplier extraction profile not found"
+# Supplier extraction profiles
+HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_NOT_FOUND = "Supplier extraction profile not found"
 HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_INVALID_CONFIGURATION = (
     "Supplier extraction profile configuration is invalid"
 )
