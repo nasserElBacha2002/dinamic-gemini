@@ -230,6 +230,7 @@ def confirm_local_inventory_package(
             export_id=body.export_id,
             conflict_policy=body.conflict_policy,
             confirmed_by_user_id=principal.actor_id or None,
+            client_supplier_id=body.client_supplier_id,
         )
         return _response(record, duplicate=duplicate)
     except LocalInventoryPackageImportError as exc:

@@ -14,6 +14,7 @@ from src.application.ports.clock import Clock
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.repositories import (
     AisleRepository,
+    ClientRepository,
     ClientSupplierRepository,
     InventoryRepository,
     PositionRepository,
@@ -29,6 +30,7 @@ from src.runtime.import_composition import (
 )
 from src.runtime.v3_deps import (
     get_aisle_repo,
+    get_client_repo,
     get_client_supplier_repo,
     get_clock,
     get_inventory_repo,
@@ -131,6 +133,7 @@ def get_get_local_csv_import_use_case():
 def get_preview_local_inventory_package_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    client_repo: ClientRepository = Depends(get_client_repo),
     clock: Clock = Depends(get_clock),
 ):
     from pathlib import Path
@@ -155,6 +158,7 @@ def get_preview_local_inventory_package_use_case(
     return PreviewLocalInventoryPackage(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        client_repo=client_repo,
         csv_import_repo=csv_repo,
         package_repo=container.get_local_inventory_package_repo(),
         csv_preview=csv_preview,
@@ -166,6 +170,9 @@ def get_preview_local_inventory_package_use_case(
 
 def get_confirm_local_inventory_package_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    create_aisle: CreateAisleUseCase = Depends(get_create_aisle_use_case),
+    client_repo: ClientRepository = Depends(get_client_repo),
     asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
     artifact_storage=Depends(get_artifact_storage),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
@@ -211,12 +218,24 @@ def get_confirm_local_inventory_package_use_case(
             required=bool(settings.positioning_label_signing_required),
         )
     )
+    from src.application.services.dinamic_scanner_aisle_resolver import (
+        DinamicScannerAisleResolver,
+    )
+
+    aisle_resolver = DinamicScannerAisleResolver(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=client_supplier_repo,
+        create_aisle=create_aisle,
+    )
     return ConfirmLocalInventoryPackage(
         package_repo=container.get_local_inventory_package_repo(),
+        csv_import_repo=container.get_local_csv_import_repo(),
         result_writer=container.get_local_csv_result_writer(),
         materializer=materializer,
         aisle_repo=aisle_repo,
         inventory_repo=inventory_repo,
+        aisle_resolver=aisle_resolver,
         clock=clock,
         enabled=bool(getattr(settings, "server_local_inventory_package_enabled", False)),
         position_materializer=LocalCsvPositionMaterializer(

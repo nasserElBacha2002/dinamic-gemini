@@ -9,7 +9,9 @@ from pathlib import Path
 import pytest
 
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
+from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.application.services.product_labels.issued_product_label_resolver import (
     IssuedProductLabelResolver,
@@ -26,6 +28,10 @@ from src.infrastructure.repositories.local_csv_inventory_result_writer import (
     MemoryLocalCsvInventoryResultWriter,
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
+from src.infrastructure.repositories.memory_client_supplier_repository import (
+    MemoryClientSupplierRepository,
+)
 from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
     MemoryInventoryCountedProductLabelRepository,
 )
@@ -112,6 +118,7 @@ def _seed_previewed(tmp_path: Path):
     preview = PreviewLocalInventoryPackage(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        client_repo=MemoryClientRepository(),
         csv_import_repo=csv_repo,
         package_repo=package_repo,
         csv_preview=PreviewLocalCsvImport(
@@ -126,12 +133,29 @@ def _seed_previewed(tmp_path: Path):
         staging_root=tmp_path,
     )
     pkg = preview.execute(inventory_id="inventory-1", content=_build_zip())
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+    supplier_repo = MemoryClientSupplierRepository()
+    create_aisle = CreateAisleUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        clock=clock,
+        status_reconciler=reconciler,
+    )
+    aisle_resolver = DinamicScannerAisleResolver(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        create_aisle=create_aisle,
+    )
     confirm = ConfirmLocalInventoryPackage(
         package_repo=package_repo,
+        csv_import_repo=csv_repo,
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
         inventory_repo=inv_repo,
+        aisle_resolver=aisle_resolver,
         clock=clock,
         enabled=True,
         position_materializer=position_materializer,
@@ -240,21 +264,34 @@ def test_invalid_package_status_rejected(tmp_path: Path) -> None:
     assets_before = len(list(assets.list_by_aisle("aisle-1")))
     productive_before = len(writer.list_for_inventory("inventory-1"))
     clock = FixedClock()
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
+    supplier_repo = MemoryClientSupplierRepository()
+    create_aisle = CreateAisleUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        clock=clock,
+        status_reconciler=reconciler,
+    )
+    aisle_resolver = DinamicScannerAisleResolver(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        create_aisle=create_aisle,
+    )
     confirm = ConfirmLocalInventoryPackage(
         package_repo=package_repo,
+        csv_import_repo=csv_repo,
         result_writer=writer,
         materializer=AisleSourceAssetMaterializer(
             aisle_repo=aisle_repo,
             asset_repo=assets,
             artifact_storage=storage,  # type: ignore[arg-type]
-            status_reconciler=InventoryStatusReconciler(
-                inventory_repo=inv_repo,
-                aisle_repo=aisle_repo,
-                clock=clock,
-            ),
+            status_reconciler=reconciler,
         ),
         aisle_repo=aisle_repo,
         inventory_repo=inv_repo,
+        aisle_resolver=aisle_resolver,
         clock=clock,
         enabled=True,
     )

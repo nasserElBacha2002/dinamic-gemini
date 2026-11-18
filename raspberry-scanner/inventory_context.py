@@ -43,10 +43,16 @@ class InventoryOperationalConfig:
         client_raw = data.get("client_id")
         client_id = str(client_raw).strip() if client_raw is not None else ""
         raw_aisles = data.get("aisles")
-        if not isinstance(raw_aisles, list) or not raw_aisles:
+        if not isinstance(raw_aisles, list):
             raise InventoryContextError(
                 "INVENTORY_CONTEXT_INVALID",
-                "aisles must be a non-empty array",
+                "aisles must be an array",
+            )
+        if not raw_aisles:
+            return cls(
+                inventory_id=inventory_id,
+                aisles=(),
+                client_id=client_id or None,
             )
         pairs: list[tuple[str, str]] = []
         seen_codes: set[str] = set()
@@ -302,6 +308,65 @@ def resolve_inventory_aisle_for_capture(
     return operational.resolve_aisle(aisle_code)
 
 
+def resolve_or_provision_aisle_for_capture(
+    aisle_code: str,
+    *,
+    config: InventoryOperationalConfig | None = None,
+    inventory_id: str | None = None,
+    client_id: str | None = None,
+) -> ResolvedInventoryAisle:
+    """Bind aisle by context or provision a pending local aisle for later import."""
+    from provisional_ids import PENDING_AISLE_ID
+
+    if config is not None:
+        try:
+            return config.resolve_aisle(aisle_code)
+        except InventoryContextError as exc:
+            if exc.code != "AISLE_NOT_IN_INVENTORY_CONTEXT":
+                raise
+            return ResolvedInventoryAisle(
+                inventory_id=config.inventory_id,
+                aisle_id=PENDING_AISLE_ID,
+                aisle_code=aisle_code.strip(),
+            )
+
+    target_inventory = (inventory_id or "").strip() or None
+    target_client = (client_id or "").strip() or None
+    operational: InventoryOperationalConfig | None = None
+    try:
+        operational = load_inventory_operational_config(
+            inventory_id=target_inventory,
+            client_id=target_client,
+        )
+    except InventoryContextError as exc:
+        if exc.code not in {
+            "INVENTORY_SELECTION_REQUIRED",
+            "INVENTORY_CONTEXT_UNAVAILABLE_OFFLINE",
+        }:
+            raise
+        if not target_inventory:
+            raise
+        operational = activate_inventory_context_from_catalog(
+            target_inventory,
+            expected_client_id=target_client,
+        )
+    if operational is None:
+        raise InventoryContextError(
+            "INVENTORY_SELECTION_REQUIRED",
+            "seleccioná un inventario antes de iniciar captura",
+        )
+    try:
+        return operational.resolve_aisle(aisle_code)
+    except InventoryContextError as exc:
+        if exc.code != "AISLE_NOT_IN_INVENTORY_CONTEXT":
+            raise
+        return ResolvedInventoryAisle(
+            inventory_id=operational.inventory_id,
+            aisle_id=PENDING_AISLE_ID,
+            aisle_code=aisle_code.strip(),
+        )
+
+
 def activate_inventory_context_from_catalog(
     inventory_id: str,
     *,
@@ -346,11 +411,28 @@ _CATALOG_FALLBACK_CODES = frozenset(
 )
 
 
+def _catalog_local_provisional_inventory(inventory_id: str) -> bool:
+    from config.inventory_catalog import (
+        InventoryCatalogRepository,
+        default_catalog_path,
+    )
+
+    entry = InventoryCatalogRepository(default_catalog_path()).load().inventories.get(
+        inventory_id.strip()
+    )
+    return entry is not None and entry.status == "local_provisional"
+
+
 def sync_or_load_inventory_context(
     inventory_id: str,
     *,
     expected_client_id: str | None = None,
 ) -> InventoryOperationalConfig:
+    if _catalog_local_provisional_inventory(inventory_id):
+        return activate_inventory_context_from_catalog(
+            inventory_id,
+            expected_client_id=expected_client_id,
+        )
     if _device_sync_credentials() is None:
         return activate_inventory_context_from_catalog(
             inventory_id,

@@ -91,13 +91,30 @@ def device_id_from_environment() -> str:
 
 
 def export_context_for_session(session: CaptureSessionState) -> SessionPackageExportContext:
+    from config.inventory_catalog import InventoryCatalogRepository, default_catalog_path
+    from provisional_ids import is_pending_aisle_id
     from session_package_export import _session_inventory_context
 
     inventory_id, aisle_id = _session_inventory_context(session)
+    client_id = str(session.selection.get("client_id") or "").strip() or None
+    inventory_provisional = False
+    inventory_name: str | None = None
+    if inventory_id:
+        entry = InventoryCatalogRepository(default_catalog_path()).load().inventories.get(
+            inventory_id
+        )
+        if entry is not None and entry.status == "local_provisional":
+            inventory_provisional = True
+            inventory_name = entry.name
     return SessionPackageExportContext(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
         device_id=device_id_from_environment(),
+        aisle_code=session.aisle_code,
+        client_id=client_id,
+        aisle_provisional=is_pending_aisle_id(aisle_id),
+        inventory_name=inventory_name,
+        inventory_provisional=inventory_provisional,
     )
 
 

@@ -175,6 +175,30 @@ class SqlLocalInventoryPackageRepository:
             self._persist(cur, record)
         return self.get_by_id(record.id) or record
 
+    def replace_staged_package(self, record: LocalInventoryPackage) -> LocalInventoryPackage:
+        existing = self.get_by_id(record.id)
+        if existing is None:
+            raise LocalInventoryPackageImportError(
+                PACKAGE_NOT_FOUND, "Package not found"
+            )
+        if existing.status != "PREVIEWED":
+            raise LocalInventoryPackageImportError(
+                "PACKAGE_INVALID_STATUS",
+                f"Package status {existing.status!r} cannot be updated",
+            )
+        with sql_repository_cursor(self._client) as cur:  # type: ignore[arg-type]
+            cur.execute(
+                "UPDATE local_inventory_packages SET aisle_id=?, csv_import_id=?, updated_at=? "
+                "WHERE id=? AND status='PREVIEWED'",
+                (
+                    record.aisle_id,
+                    record.csv_import_id,
+                    record.updated_at,
+                    record.id,
+                ),
+            )
+        return self.get_by_id(record.id) or record
+
     def confirm_package_atomically(
         self,
         *,

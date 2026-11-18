@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import tempfile
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -17,7 +18,13 @@ from src.application.ports.local_inventory_package_repository import (
     LocalInventoryPackageRepository,
     PackageConfirmEvidenceStager,
 )
-from src.application.ports.repositories import AisleRepository, InventoryRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    ClientRepository,
+    InventoryRepository,
+)
+from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
+from src.application.services.local_csv_parser import parse_local_csv
 from src.application.ports.sql_cursor import SqlCursorLike
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
 from src.application.services.import_canonical_position_materializer import (
@@ -49,11 +56,20 @@ from src.domain.local_inventory_package.entities import (
     LocalInventoryPackage,
     LocalInventoryPackagePhoto,
 )
+from src.domain.dinamic_scanner_txt.constants import SCANNER_TXT_PENDING_AISLE_ID
+from src.domain.inventory.entities import (
+    Inventory,
+    InventoryProcessingMode,
+    InventoryStatus,
+)
 from src.domain.local_inventory_package.errors import (
     PACKAGE_INVENTORY_MISMATCH,
     PACKAGE_NOT_FOUND,
     LocalInventoryPackageDisabledError,
     LocalInventoryPackageImportError,
+)
+from src.domain.local_inventory_package.scanner_metadata import (
+    LocalScannerPackageImportMetadata,
 )
 
 
@@ -63,6 +79,7 @@ class PreviewLocalInventoryPackage:
         *,
         inventory_repo: InventoryRepository,
         aisle_repo: AisleRepository,
+        client_repo: ClientRepository,
         csv_import_repo: LocalCsvImportRepository,
         package_repo: LocalInventoryPackageRepository,
         csv_preview: PreviewLocalCsvImport,
@@ -72,6 +89,7 @@ class PreviewLocalInventoryPackage:
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
+        self._client_repo = client_repo
         self._csv_import_repo = csv_import_repo
         self._package_repo = package_repo
         self._csv_preview = csv_preview
@@ -82,10 +100,6 @@ class PreviewLocalInventoryPackage:
     def execute(self, *, inventory_id: str, content: bytes) -> LocalInventoryPackage:
         if not self._enabled:
             raise LocalInventoryPackageDisabledError()
-        if self._inventory_repo.get_by_id(inventory_id) is None:
-            raise LocalInventoryPackageImportError(
-                "INVENTORY_NOT_FOUND", f"Inventory {inventory_id} not found"
-            )
         try:
             parsed = parse_local_inventory_package(content)
         except LocalInventoryPackageError as exc:
@@ -99,6 +113,12 @@ class PreviewLocalInventoryPackage:
                     f"(package={parsed.inventory_id!r} path={inventory_id!r} "
                     f"export_id={parsed.export_id!r})"
                 ),
+            )
+
+        self._ensure_inventory_from_manifest(inventory_id=inventory_id, parsed=parsed)
+        if self._inventory_repo.get_by_id(inventory_id) is None:
+            raise LocalInventoryPackageImportError(
+                "INVENTORY_NOT_FOUND", f"Inventory {inventory_id} not found"
             )
 
         existing = self._package_repo.get_by_export_id(
@@ -115,19 +135,41 @@ class PreviewLocalInventoryPackage:
             return existing
 
         try:
-            csv_record = self._csv_preview.execute(
-                inventory_id=inventory_id, content=parsed.csv_bytes
-            )
+            parsed_csv = parse_local_csv(parsed.csv_bytes)
         except LocalCsvDocumentError as exc:
             raise LocalInventoryPackageImportError(exc.code, str(exc)) from exc
 
+        aisle_id, aisle_code, aisle_will_be_created = self._resolve_scanner_aisle_binding(
+            inventory_id=inventory_id,
+            parsed=parsed,
+        )
+        pending = (
+            frozenset({SCANNER_TXT_PENDING_AISLE_ID})
+            if aisle_id == SCANNER_TXT_PENDING_AISLE_ID
+            else None
+        )
+        try:
+            csv_record = self._csv_preview.execute_from_parsed(
+                inventory_id=inventory_id,
+                parsed=parsed_csv,
+                pending_aisle_ids=pending,
+            )
+        except LocalCsvImportError as exc:
+            raise LocalInventoryPackageImportError(exc.code, str(exc)) from exc
+
+        metadata = LocalScannerPackageImportMetadata(
+            aisle_code=aisle_code,
+            aisle_will_be_created=aisle_will_be_created,
+            client_id=str(parsed.manifest.get("client_id") or "").strip() or None,
+            inventory_name=str(parsed.manifest.get("inventory_name") or "").strip() or None,
+            inventory_provisional=bool(parsed.manifest.get("inventory_provisional")),
+        )
+        csv_record = self._csv_import_repo.save(
+            replace(csv_record, source_metadata_json=metadata.to_json())
+        )
+
         assert_package_csv_rows_ready(csv_record.rows)
         self._validate_photo_row_linkage(csv_record, parsed)
-        aisle_id = self._resolve_package_aisle_id(
-            inventory_id=inventory_id,
-            manifest_aisle_id=parsed.aisle_id,
-            csv_record=csv_record,
-        )
 
         package_id = str(uuid.uuid4())
         staging_dir = self._make_staging_dir(package_id)
@@ -156,40 +198,77 @@ class PreviewLocalInventoryPackage:
         )
         return self._package_repo.stage_or_get_existing(record)
 
-    def _resolve_package_aisle_id(
+    def _ensure_inventory_from_manifest(
         self,
         *,
         inventory_id: str,
-        manifest_aisle_id: str | None,
-        csv_record: LocalCsvImport,
-    ) -> str:
-        candidates: set[str] = set()
-        if manifest_aisle_id and str(manifest_aisle_id).strip():
-            candidates.add(str(manifest_aisle_id).strip())
-        for row in csv_record.rows:
-            if row.status == "REJECTED":
-                continue
-            aid = (row.aisle_id or "").strip()
-            if aid:
-                candidates.add(aid)
-        if not candidates:
+        parsed: ParsedLocalInventoryPackage,
+    ) -> None:
+        if self._inventory_repo.get_by_id(inventory_id) is not None:
+            return
+        manifest = parsed.manifest
+        if not manifest.get("inventory_provisional"):
             raise LocalInventoryPackageImportError(
-                "PACKAGE_AISLE_REQUIRED",
-                "Package must declare a single aisle_id (manifest or CSV rows)",
+                "INVENTORY_NOT_FOUND",
+                f"Inventory {inventory_id} not found",
             )
-        if len(candidates) > 1:
+        name = str(manifest.get("inventory_name") or inventory_id).strip()
+        client_id = str(manifest.get("client_id") or "").strip()
+        if not client_id:
             raise LocalInventoryPackageImportError(
-                "PACKAGE_AISLE_AMBIGUOUS",
-                "Package references more than one aisle_id; import one aisle per ZIP",
+                "INVENTORY_CLIENT_REQUIRED",
+                "Package missing client_id for provisional inventory",
             )
-        aisle_id = next(iter(candidates))
-        aisle = self._aisle_repo.get_by_id(aisle_id)
-        if aisle is None or aisle.inventory_id != inventory_id:
+        if self._client_repo.get_by_id(client_id) is None:
             raise LocalInventoryPackageImportError(
-                "PACKAGE_AISLE_NOT_FOUND",
-                f"Aisle {aisle_id} was not found in this inventory",
+                "CLIENT_NOT_FOUND",
+                f"Client {client_id} not found",
             )
-        return aisle_id
+        now = self._clock.now()
+        inventory = Inventory(
+            id=inventory_id,
+            name=name,
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+            processing_mode=InventoryProcessingMode.PRODUCTION,
+            client_id=client_id,
+        )
+        self._inventory_repo.save(inventory)
+
+    def _resolve_scanner_aisle_binding(
+        self,
+        *,
+        inventory_id: str,
+        parsed: ParsedLocalInventoryPackage,
+    ) -> tuple[str, str, bool]:
+        manifest = parsed.manifest
+        aisle_code = str(manifest.get("aisle_code") or "").strip()
+        manifest_aisle_id = (parsed.aisle_id or "").strip() or None
+        if manifest_aisle_id and manifest_aisle_id != SCANNER_TXT_PENDING_AISLE_ID:
+            aisle = self._aisle_repo.get_by_id(manifest_aisle_id)
+            if aisle is not None and aisle.inventory_id == inventory_id:
+                return (
+                    manifest_aisle_id,
+                    aisle_code or aisle.code,
+                    False,
+                )
+        if aisle_code:
+            existing = self._aisle_repo.get_by_inventory_and_code(
+                inventory_id,
+                aisle_code,
+            )
+            if existing is not None:
+                return existing.id, aisle_code, False
+            return SCANNER_TXT_PENDING_AISLE_ID, aisle_code, True
+        if manifest_aisle_id:
+            aisle = self._aisle_repo.get_by_id(manifest_aisle_id)
+            if aisle is not None and aisle.inventory_id == inventory_id:
+                return manifest_aisle_id, aisle.code, False
+        raise LocalInventoryPackageImportError(
+            "PACKAGE_AISLE_REQUIRED",
+            "Package must declare aisle_code or a known aisle_id",
+        )
 
     def _make_staging_dir(self, package_id: str) -> Path:
         root = self._staging_root or Path(tempfile.gettempdir()) / "dinamic_local_packages"
@@ -248,10 +327,12 @@ class ConfirmLocalInventoryPackage:
         self,
         *,
         package_repo: LocalInventoryPackageRepository,
+        csv_import_repo: LocalCsvImportRepository,
         result_writer: LocalCsvInventoryResultWriter,
         materializer: AisleSourceAssetMaterializer,
         aisle_repo: AisleRepository,
         inventory_repo: InventoryRepository,
+        aisle_resolver: DinamicScannerAisleResolver,
         clock: Clock,
         enabled: bool,
         position_materializer: LocalCsvPositionMaterializer | None = None,
@@ -259,15 +340,59 @@ class ConfirmLocalInventoryPackage:
         materialization_lease_sec: int = 120,
     ) -> None:
         self._package_repo = package_repo
+        self._csv_import_repo = csv_import_repo
         self._result_writer = result_writer
         self._materializer = materializer
         self._aisle_repo = aisle_repo
         self._inventory_repo = inventory_repo
+        self._aisle_resolver = aisle_resolver
         self._clock = clock
         self._enabled = enabled
         self._position_materializer = position_materializer
         self._canonical_position_materializer = canonical_position_materializer
         self._materialization_lease_sec = materialization_lease_sec
+
+    def _materialize_pending_aisle(
+        self,
+        *,
+        inventory_id: str,
+        package: LocalInventoryPackage,
+        client_supplier_id: str | None,
+    ) -> LocalInventoryPackage:
+        csv_import = package.csv_import
+        if csv_import is None:
+            csv_import = self._csv_import_repo.get_by_id(package.csv_import_id)
+        if csv_import is None:
+            return package
+        metadata = LocalScannerPackageImportMetadata.from_json(
+            csv_import.source_metadata_json
+        )
+        if metadata is None or not metadata.aisle_will_be_created:
+            return package
+        created, _ = self._aisle_resolver.create_for_confirm(
+            inventory_id=inventory_id,
+            aisle_code=metadata.aisle_code,
+            client_supplier_id=client_supplier_id,
+        )
+        if not any(row.aisle_id == SCANNER_TXT_PENDING_AISLE_ID for row in csv_import.rows):
+            return replace(package, aisle_id=created.id, csv_import=csv_import)
+        updated_rows = tuple(replace(row, aisle_id=created.id) for row in csv_import.rows)
+        metadata = LocalScannerPackageImportMetadata(
+            aisle_code=metadata.aisle_code,
+            aisle_will_be_created=metadata.aisle_will_be_created,
+            client_id=metadata.client_id,
+            inventory_name=metadata.inventory_name,
+            inventory_provisional=metadata.inventory_provisional,
+            aisle_created_on_confirm=True,
+        )
+        csv_import = self._csv_import_repo.save(
+            replace(
+                csv_import,
+                rows=updated_rows,
+                source_metadata_json=metadata.to_json(),
+            )
+        )
+        return replace(package, aisle_id=created.id, csv_import=csv_import)
 
     def execute(
         self,
@@ -277,6 +402,7 @@ class ConfirmLocalInventoryPackage:
         conflict_policy: str = "SKIP",
         confirmed_by_user_id: str | None = None,
         owner: str | None = None,
+        client_supplier_id: str | None = None,
     ) -> tuple[LocalInventoryPackage, bool]:
         from src.domain.inventory.write_policy import (
             InventoryNotWritableError,
@@ -314,6 +440,18 @@ class ConfirmLocalInventoryPackage:
             raise LocalInventoryPackageImportError(
                 PACKAGE_NOT_FOUND, "Package not found for export_id"
             )
+
+        aisle_id_before_materialize = package.aisle_id
+        package = self._materialize_pending_aisle(
+            inventory_id=inventory_id,
+            package=package,
+            client_supplier_id=client_supplier_id,
+        )
+        if (
+            package.status == "PREVIEWED"
+            and package.aisle_id != aisle_id_before_materialize
+        ):
+            self._package_repo.replace_staged_package(package)
 
         if package.status == LOCAL_CSV_IMPORT_STATUS_CONFIRMED:
             productive = self._result_writer.list_published_for_import(package.csv_import_id)

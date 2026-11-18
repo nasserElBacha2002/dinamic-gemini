@@ -22,7 +22,10 @@ from capture_session_store import (
     CaptureSessionStore,
     PhotoCaptureRecord,
 )
-from inventory_context import InventoryContextError, resolve_inventory_aisle_for_capture
+from inventory_context import (
+    InventoryContextError,
+    resolve_or_provision_aisle_for_capture,
+)
 from recognition import RecognitionService
 from scan_semantics import build_scan_semantics
 from scanner_service import Reading
@@ -125,7 +128,7 @@ class CaptureService:
         aisle_id: str | None = None
         if self._session_store is not None and self._bind_inventory_context:
             try:
-                resolved = resolve_inventory_aisle_for_capture(
+                resolved = resolve_or_provision_aisle_for_capture(
                     code,
                     inventory_id=requested_inventory_id,
                     client_id=str(selection.get("client_id") or "") or None,

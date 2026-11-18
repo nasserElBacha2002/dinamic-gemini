@@ -50,6 +50,11 @@ class SessionPackageExportContext:
     inventory_id: str
     aisle_id: str
     device_id: str
+    aisle_code: str = ""
+    client_id: str | None = None
+    aisle_provisional: bool = False
+    inventory_name: str | None = None
+    inventory_provisional: bool = False
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -284,7 +289,7 @@ def _build_manifest(
             }
         )
     included = len(photo_entries)
-    return {
+    body: dict[str, object] = {
         "schema_version": LOCAL_CSV_SCHEMA_VERSION,
         "package_kind": PACKAGE_KIND,
         "package_version": PACKAGE_VERSION,
@@ -293,6 +298,7 @@ def _build_manifest(
         "exported_at": csv_build.exported_at,
         "inventory_id": context.inventory_id,
         "aisle_id": context.aisle_id,
+        "aisle_code": context.aisle_code or session.aisle_code,
         "capture_session_id": session.capture_session_id,
         "freeze_id": None,
         "freeze_generation": None,
@@ -312,6 +318,15 @@ def _build_manifest(
         },
         "photos": photo_entries,
     }
+    if context.client_id:
+        body["client_id"] = context.client_id
+    if context.aisle_provisional:
+        body["aisle_provisional"] = True
+    if context.inventory_name:
+        body["inventory_name"] = context.inventory_name
+    if context.inventory_provisional:
+        body["inventory_provisional"] = True
+    return body
 
 
 def _validate_csv_manifest_consistency(

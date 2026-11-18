@@ -21,11 +21,14 @@
     <section aria-label="Selección de reconocimiento">
       <label>Cliente <select id="client"><option value="">Seleccionar cliente…</option></select></label>
       <label>Inventario <select id="inventory" disabled><option value="">Seleccionar inventario…</option></select></label>
+      <label>Nuevo inventario local <input id="inventory-new-name" autocomplete="off" placeholder="nombre del inventario"></label>
+      <button id="inventory-create-local" type="button" disabled>Crear inventario local</button>
       <label>Modo / Proveedor <select id="supplier" disabled><option value="">Sin validación (escanear todo)</option></select></label>
       <p class="muted" id="selection">Sin selección de cliente.</p>
     </section>
     <section aria-label="Captura de pasillo">
-      <label>Pasillo <input id="aisle" autocomplete="off" placeholder="PASILLO_04"></label>
+      <label>Pasillo <input id="aisle" autocomplete="off" placeholder="código libre, ej. 02"></label>
+      <p class="muted">Pasillo e inventario local se reconcilian al importar el ZIP en el sistema.</p>
       <button id="capture-start">Iniciar captura</button><button id="capture-finish">Finalizar y exportar</button><button id="capture-download" disabled>Descargar ZIP</button>
       <p class="muted" id="capture">Sin captura activa.</p>
     </section>
@@ -91,7 +94,27 @@
           if (currentClient) await loadInventories(currentClient, currentInventory);
         } catch (e) { status.textContent = ''; error.textContent = e.message; }
       };
-      client.onchange = async () => { try { error.textContent = ''; currentInventory = ''; await loadSuppliers(client.value, ''); await loadInventories(client.value, ''); await applySelection(client.value, null); } catch (e) { error.textContent = e.message; } };
+      document.querySelector('#inventory-create-local').onclick = async () => {
+        const name = document.querySelector('#inventory-new-name').value.trim();
+        if (!client.value || !name) { error.textContent = 'Elegí cliente y nombre de inventario.'; return; }
+        try {
+          error.textContent = '';
+          const data = await json('/api/inventories/local', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({client_id: client.value, name})});
+          await loadInventories(client.value, data.inventory_id);
+          await applyInventory(data.inventory_id);
+          document.querySelector('#inventory-new-name').value = '';
+        } catch (e) { error.textContent = e.message; }
+      };
+      client.onchange = async () => {
+        try {
+          error.textContent = '';
+          currentInventory = '';
+          document.querySelector('#inventory-create-local').disabled = !client.value;
+          await loadSuppliers(client.value, '');
+          await loadInventories(client.value, '');
+          await applySelection(client.value, null);
+        } catch (e) { error.textContent = e.message; }
+      };
       inventory.onchange = async () => { try { error.textContent = ''; await applyInventory(inventory.value); } catch (e) { error.textContent = e.message; } };
       supplier.onchange = async () => { try { await applySelection(currentClient, supplier.value); } catch (e) { error.textContent = e.message; } };
       async function update() {

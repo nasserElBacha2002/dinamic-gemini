@@ -14,7 +14,9 @@ from pathlib import Path
 import pytest
 
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
+from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.application.services.product_labels.issued_product_label_resolver import (
     IssuedProductLabelResolver,
@@ -33,6 +35,10 @@ from src.infrastructure.repositories.local_csv_inventory_result_writer import (
     SqlLocalCsvInventoryResultWriter,
 )
 from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
+from src.infrastructure.repositories.sql_client_repository import SqlClientRepository
+from src.infrastructure.repositories.sql_client_supplier_repository import (
+    SqlClientSupplierRepository,
+)
 from src.infrastructure.repositories.sql_inventory_counted_product_label_repository import (
     SqlInventoryCountedProductLabelRepository,
 )
@@ -265,9 +271,29 @@ def _build_stack(client: SqlServerClient, *, staging_root: Path) -> dict[str, ob
         clock=clock,
         enabled=True,
     )
+    client_repo = SqlClientRepository(client)
+    supplier_repo = SqlClientSupplierRepository(client)
+    create_aisle = CreateAisleUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        clock=clock,
+        status_reconciler=InventoryStatusReconciler(
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+            clock=clock,
+        ),
+    )
+    aisle_resolver = DinamicScannerAisleResolver(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        create_aisle=create_aisle,
+    )
     preview = PreviewLocalInventoryPackage(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        client_repo=client_repo,
         csv_import_repo=csv_repo,
         package_repo=package_repo,
         csv_preview=csv_preview,
@@ -277,10 +303,12 @@ def _build_stack(client: SqlServerClient, *, staging_root: Path) -> dict[str, ob
     )
     confirm = ConfirmLocalInventoryPackage(
         package_repo=package_repo,
+        csv_import_repo=csv_repo,
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
         inventory_repo=inv_repo,
+        aisle_resolver=aisle_resolver,
         clock=clock,
         enabled=True,
         position_materializer=position_materializer,

@@ -13,7 +13,9 @@ from pathlib import Path
 import pytest
 
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
+from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.application.services.local_inventory_package_parser import (
     LocalInventoryPackageError,
@@ -34,6 +36,10 @@ from src.infrastructure.repositories.local_csv_inventory_result_writer import (
     MemoryLocalCsvInventoryResultWriter,
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
+from src.infrastructure.repositories.memory_client_supplier_repository import (
+    MemoryClientSupplierRepository,
+)
 from src.infrastructure.repositories.memory_inventory_counted_product_label_repository import (
     MemoryInventoryCountedProductLabelRepository,
 )
@@ -87,6 +93,28 @@ JPEG_BYTES = (
 class FixedClock:
     def now(self) -> datetime:
         return NOW
+
+
+def _scanner_aisle_resolver(
+    inventory_repo: MemoryInventoryRepository,
+    aisle_repo: MemoryAisleRepository,
+    clock: FixedClock,
+) -> DinamicScannerAisleResolver:
+    reconciler = InventoryStatusReconciler(inventory_repo, aisle_repo, clock)
+    supplier_repo = MemoryClientSupplierRepository()
+    create_aisle = CreateAisleUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        clock=clock,
+        status_reconciler=reconciler,
+    )
+    return DinamicScannerAisleResolver(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        create_aisle=create_aisle,
+    )
 
 
 class MemoryArtifactStorage:
@@ -305,6 +333,7 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
     preview = PreviewLocalInventoryPackage(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        client_repo=MemoryClientRepository(),
         csv_import_repo=csv_repo,
         package_repo=package_repo,
         csv_preview=csv_preview,
@@ -341,10 +370,12 @@ def test_preview_and_confirm_creates_source_assets(tmp_path: Path) -> None:
     product_repo = MemoryProductRecordRepository()
     confirm = ConfirmLocalInventoryPackage(
         package_repo=package_repo,
+        csv_import_repo=csv_repo,
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
         inventory_repo=inventory_repo,
+        aisle_resolver=_scanner_aisle_resolver(inventory_repo, aisle_repo, clock),
         clock=clock,
         enabled=True,
         position_materializer=LocalCsvPositionMaterializer(
@@ -450,6 +481,7 @@ def test_confirm_fits_long_mobile_client_file_id(tmp_path: Path) -> None:
     preview = PreviewLocalInventoryPackage(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        client_repo=MemoryClientRepository(),
         csv_import_repo=csv_repo,
         package_repo=package_repo,
         csv_preview=csv_preview,
@@ -488,10 +520,12 @@ def test_confirm_fits_long_mobile_client_file_id(tmp_path: Path) -> None:
     )
     confirm = ConfirmLocalInventoryPackage(
         package_repo=package_repo,
+        csv_import_repo=csv_repo,
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
         inventory_repo=inventory_repo,
+        aisle_resolver=_scanner_aisle_resolver(inventory_repo, aisle_repo, clock),
         clock=clock,
         enabled=True,
         position_materializer=LocalCsvPositionMaterializer(
@@ -544,6 +578,7 @@ def test_preview_rejects_inventory_mismatch(tmp_path: Path) -> None:
     preview = PreviewLocalInventoryPackage(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        client_repo=MemoryClientRepository(),
         csv_import_repo=csv_repo,
         package_repo=package_repo,
         csv_preview=csv_preview,
@@ -672,6 +707,7 @@ def test_preview_rejects_local_pending_only_package(tmp_path: Path) -> None:
     preview = PreviewLocalInventoryPackage(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        client_repo=MemoryClientRepository(),
         csv_import_repo=csv_repo,
         package_repo=package_repo,
         csv_preview=csv_preview,
@@ -802,6 +838,7 @@ def test_confirm_multiproduct_same_photo_reuses_one_source_asset(tmp_path: Path)
     preview = PreviewLocalInventoryPackage(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        client_repo=MemoryClientRepository(),
         csv_import_repo=csv_repo,
         package_repo=package_repo,
         csv_preview=csv_preview,
@@ -836,10 +873,12 @@ def test_confirm_multiproduct_same_photo_reuses_one_source_asset(tmp_path: Path)
     )
     confirm = ConfirmLocalInventoryPackage(
         package_repo=package_repo,
+        csv_import_repo=csv_repo,
         result_writer=writer,
         materializer=materializer,
         aisle_repo=aisle_repo,
         inventory_repo=inventory_repo,
+        aisle_resolver=_scanner_aisle_resolver(inventory_repo, aisle_repo, clock),
         clock=clock,
         enabled=True,
         position_materializer=LocalCsvPositionMaterializer(

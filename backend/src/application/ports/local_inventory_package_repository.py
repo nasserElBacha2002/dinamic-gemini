@@ -49,6 +49,10 @@ class LocalInventoryPackageRepository(Protocol):
 
     def stage_or_get_existing(self, record: LocalInventoryPackage) -> LocalInventoryPackage: ...
 
+    def replace_staged_package(self, record: LocalInventoryPackage) -> LocalInventoryPackage:
+        """Persist aisle/csv binding updates on a PREVIEWED package before confirm."""
+        ...
+
     def confirm_package_atomically(
         self,
         *,

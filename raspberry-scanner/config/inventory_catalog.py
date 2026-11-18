@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -218,6 +219,42 @@ class InventoryCatalogRepository:
             if entry.client_id == wanted
         ]
         return tuple(sorted(items, key=lambda row: row.name.casefold()))
+
+    def register_local_inventory(
+        self,
+        *,
+        client_id: str,
+        name: str,
+    ) -> InventoryCatalogEntry:
+        wanted_client = (client_id or "").strip()
+        label = (name or "").strip()
+        if not wanted_client:
+            raise InventoryCatalogError(
+                "INVENTORY_CLIENT_REQUIRED",
+                "client_id is required",
+            )
+        if not label:
+            raise InventoryCatalogError(
+                "INVENTORY_NAME_REQUIRED",
+                "inventory name is required",
+            )
+        inventory_id = str(uuid.uuid4())
+        entry = InventoryCatalogEntry(
+            inventory_id=inventory_id,
+            name=label,
+            client_id=wanted_client,
+            status="local_provisional",
+        )
+        context = InventoryOperationalConfig(
+            inventory_id=inventory_id,
+            aisles=(),
+            client_id=wanted_client,
+        )
+        document = self.load()
+        document.inventories[inventory_id] = entry
+        document.contexts[inventory_id] = context
+        self.save(document)
+        return entry
 
 
 def merge_catalog_documents(

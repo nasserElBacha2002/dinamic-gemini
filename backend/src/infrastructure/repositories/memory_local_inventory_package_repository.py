@@ -58,6 +58,21 @@ class MemoryLocalInventoryPackageRepository:
             self._by_id[record.id] = record
             return self._with_csv(record)
 
+    def replace_staged_package(self, record: LocalInventoryPackage) -> LocalInventoryPackage:
+        with self._lock:
+            existing = self._by_id.get(record.id)
+            if existing is None:
+                raise LocalInventoryPackageImportError(
+                    PACKAGE_NOT_FOUND, "Package not found"
+                )
+            if existing.status != "PREVIEWED":
+                raise LocalInventoryPackageImportError(
+                    "PACKAGE_INVALID_STATUS",
+                    f"Package status {existing.status!r} cannot be updated",
+                )
+            self._by_id[record.id] = record
+            return self._with_csv(record)
+
     def confirm_package_atomically(
         self,
         *,

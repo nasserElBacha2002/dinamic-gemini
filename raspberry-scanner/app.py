@@ -328,6 +328,54 @@ def make_handler(
                 self._send_json(HTTPStatus.OK, selection)
                 return
 
+            if path == "/api/inventories/local":
+                try:
+                    payload = self._read_json_body()
+                    selection = recognition_service.selection()
+                    client_id = str(
+                        payload.get("client_id") or selection.get("client_id") or ""
+                    ).strip()
+                    name = str(payload.get("name") or "").strip()
+                    if not client_id:
+                        raise InventoryCatalogError(
+                            "INVENTORY_CLIENT_REQUIRED",
+                            "seleccioná un cliente antes de crear un inventario local",
+                        )
+                    with selection_operation_lock:
+                        if capture_service.snapshot()["state"] == "ACTIVE":
+                            self._send_json(
+                                HTTPStatus.CONFLICT,
+                                {"error": "selection_locked_while_capture_active"},
+                            )
+                            return
+                        from config.inventory_catalog import (
+                            InventoryCatalogRepository,
+                            default_catalog_path,
+                        )
+
+                        entry = InventoryCatalogRepository(
+                            default_catalog_path()
+                        ).register_local_inventory(client_id=client_id, name=name)
+                except InventoryCatalogError as exc:
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"error": exc.code, "message": str(exc)},
+                    )
+                    return
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_json"})
+                    return
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "inventory_id": entry.inventory_id,
+                        "name": entry.name,
+                        "client_id": entry.client_id,
+                        "status": entry.status,
+                    },
+                )
+                return
+
             if path == "/api/inventory-context":
                 try:
                     payload = self._read_json_body()
