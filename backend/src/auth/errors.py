@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from src.auth.schemas import AuthError, AuthErrorResponse
 
 
-@dataclass(frozen=True)
+@dataclass
 class AuthHttpError(Exception):
     """
     Auth-specific HTTP error used to return a stable AuthErrorResponse payload.
