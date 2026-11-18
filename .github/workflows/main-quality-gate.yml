@@ -72,6 +72,12 @@ jobs:
 
       # Root pytest.ini expects tests under backend/tests and pythonpath=backend.
       - name: Pytest
+        env:
+          SQLSERVER_CONNECTION_STRING: ""
+          SQLSERVER_SERVER: ""
+          SQLSERVER_DATABASE: ""
+          SQLSERVER_UID: ""
+          SQLSERVER_PWD: ""
         run: pytest
 
   frontend-main-quality:

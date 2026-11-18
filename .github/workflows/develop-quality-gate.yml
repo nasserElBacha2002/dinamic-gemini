@@ -64,7 +64,15 @@ jobs:
         run: mypy src
 
       # Root pytest.ini expects tests under backend/tests and pythonpath=backend.
+      # Org/repo Actions secrets may define SQLSERVER_* for deploy; clear them so
+      # ``assert_pytest_sqlserver_database_is_safe()`` does not refuse a non-test DB name.
       - name: Pytest
+        env:
+          SQLSERVER_CONNECTION_STRING: ""
+          SQLSERVER_SERVER: ""
+          SQLSERVER_DATABASE: ""
+          SQLSERVER_UID: ""
+          SQLSERVER_PWD: ""
         run: pytest
 
   frontend-quality:
