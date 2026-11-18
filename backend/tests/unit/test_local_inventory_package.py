@@ -15,7 +15,6 @@ import pytest
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
 from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.application.services.local_inventory_package_parser import (
     LocalInventoryPackageError,
@@ -24,6 +23,7 @@ from src.application.services.local_inventory_package_parser import (
 from src.application.services.product_labels.issued_product_label_resolver import (
     IssuedProductLabelResolver,
 )
+from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
 from src.application.use_cases.inventories.manage_local_csv_import import PreviewLocalCsvImport
 from src.application.use_cases.inventories.manage_local_inventory_package import (
     ConfirmLocalInventoryPackage,

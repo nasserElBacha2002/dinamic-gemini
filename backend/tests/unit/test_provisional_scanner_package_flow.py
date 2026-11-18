@@ -9,8 +9,6 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
 from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler

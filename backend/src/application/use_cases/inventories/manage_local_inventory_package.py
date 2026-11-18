@@ -23,14 +23,13 @@ from src.application.ports.repositories import (
     ClientRepository,
     InventoryRepository,
 )
-from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
-from src.application.services.local_csv_parser import parse_local_csv
 from src.application.ports.sql_cursor import SqlCursorLike
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
+from src.application.services.dinamic_scanner_aisle_resolver import DinamicScannerAisleResolver
 from src.application.services.import_canonical_position_materializer import (
     ImportCanonicalPositionMaterializer,
 )
-from src.application.services.local_csv_parser import LocalCsvDocumentError
+from src.application.services.local_csv_parser import LocalCsvDocumentError, parse_local_csv
 from src.application.services.local_csv_position_materializer import LocalCsvPositionMaterializer
 from src.application.services.local_inventory_package_client_file_id import (
     fit_source_asset_upload_client_file_id,
@@ -42,6 +41,12 @@ from src.application.services.local_inventory_package_parser import (
 )
 from src.application.services.local_inventory_package_row_gate import assert_package_csv_rows_ready
 from src.application.use_cases.inventories.manage_local_csv_import import PreviewLocalCsvImport
+from src.domain.dinamic_scanner_txt.constants import SCANNER_TXT_PENDING_AISLE_ID
+from src.domain.inventory.entities import (
+    Inventory,
+    InventoryProcessingMode,
+    InventoryStatus,
+)
 from src.domain.local_csv_import.entities import (
     LocalCsvImport,
     LocalCsvImportRow,
@@ -55,12 +60,6 @@ from src.domain.local_csv_import.errors import (
 from src.domain.local_inventory_package.entities import (
     LocalInventoryPackage,
     LocalInventoryPackagePhoto,
-)
-from src.domain.dinamic_scanner_txt.constants import SCANNER_TXT_PENDING_AISLE_ID
-from src.domain.inventory.entities import (
-    Inventory,
-    InventoryProcessingMode,
-    InventoryStatus,
 )
 from src.domain.local_inventory_package.errors import (
     PACKAGE_INVENTORY_MISMATCH,
