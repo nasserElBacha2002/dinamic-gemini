@@ -139,6 +139,7 @@ def _build_provisional_scanner_zip(
         "aisle_id": SCANNER_TXT_PENDING_AISLE_ID,
         "aisle_code": AISLE_CODE,
         "client_id": CLIENT_ID,
+        "client_supplier_id": "supplier-a",
         "inventory_name": "Inventario Pi local",
         "inventory_provisional": True,
         "aisle_provisional": True,
@@ -296,6 +297,7 @@ def test_preview_creates_inventory_and_pending_aisle_binding(tmp_path: Path) -> 
     assert metadata is not None
     assert metadata.aisle_will_be_created is True
     assert metadata.aisle_code == AISLE_CODE
+    assert metadata.client_supplier_id == "supplier-a"
     assert metadata.inventory_provisional is True
 
 
@@ -331,3 +333,38 @@ def test_confirm_materializes_aisle_and_replaces_pending_rows(tmp_path: Path) ->
     )
     assert metadata is not None
     assert metadata.aisle_created_on_confirm is True
+
+
+def test_confirm_uses_manifest_supplier_when_multiple_suppliers(tmp_path: Path) -> None:
+    stack = _build_stack(tmp_path)
+    supplier_repo = stack["supplier_repo"]
+    assert isinstance(supplier_repo, MemoryClientSupplierRepository)
+    supplier_repo.save(
+        ClientSupplier(
+            id="supplier-b",
+            client_id=CLIENT_ID,
+            name="Proveedor B",
+            status=ClientSupplierStatus.ACTIVE,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    preview = stack["preview"]
+    confirm = stack["confirm"]
+    aisle_repo = stack["aisle_repo"]
+    assert isinstance(preview, PreviewLocalInventoryPackage)
+    assert isinstance(confirm, ConfirmLocalInventoryPackage)
+    assert isinstance(aisle_repo, MemoryAisleRepository)
+
+    preview.execute(inventory_id=INVENTORY_ID, content=_build_provisional_scanner_zip())
+    confirmed, duplicate = confirm.execute(
+        inventory_id=INVENTORY_ID,
+        export_id="export-provisional-1",
+        conflict_policy="SKIP",
+        confirmed_by_user_id="user-test",
+    )
+    assert duplicate is False
+    aisle = aisle_repo.get_by_inventory_and_code(INVENTORY_ID, AISLE_CODE)
+    assert aisle is not None
+    assert aisle.client_supplier_id == "supplier-a"
+    assert confirmed.aisle_id == aisle.id

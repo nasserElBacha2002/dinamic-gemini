@@ -21,6 +21,7 @@ from session_package_export import SessionPackageExportContext
 from session_package_upload import (
     PackageUploadError,
     ensure_session_package_exported,
+    export_context_for_session,
     upload_session_package,
 )
 from inventory_context_fixture import install_test_inventory_context
@@ -69,12 +70,14 @@ class RecordingBackendClient:
         inventory_id: str,
         export_id: str,
         conflict_policy: str = "SKIP",
+        client_supplier_id: str | None = None,
     ) -> PackageApiResponse:
         self.confirm_calls.append(
             {
                 "inventory_id": inventory_id,
                 "export_id": export_id,
                 "conflict_policy": conflict_policy,
+                "client_supplier_id": client_supplier_id,
             }
         )
         if self._confirm_error is not None:
@@ -187,6 +190,33 @@ class SessionPackageUploadTests(unittest.TestCase):
         self.assertEqual(len(client.confirm_calls), 1)
         self.assertEqual(client.confirm_calls[0]["export_id"], export_id)
         self.assertEqual(client.confirm_calls[0]["conflict_policy"], "SKIP")
+
+    def test_confirm_includes_client_supplier_from_session(self) -> None:
+        _, store, photos_root, session_id = build_finished_session(self.root)
+        outcome = ensure_session_package_exported(
+            session_store=store,
+            photos_root=photos_root,
+            output_directory=self.out,
+            capture_session_id=session_id,
+            context=self.context,
+            upload_store=self.upload_store,
+        )
+        stored = store.load_session(session_id)
+        assert stored is not None
+        supplier_id = export_context_for_session(stored).client_supplier_id
+        self.assertEqual(supplier_id, "supplier-a")
+        client = RecordingBackendClient(
+            preview=_preview_response(export_id=outcome.export_id),
+            confirm=_confirm_response(export_id=outcome.export_id),
+        )
+        upload_session_package(
+            capture_session_id=session_id,
+            inventory_id=self.context.inventory_id,
+            upload_store=self.upload_store,
+            backend_client=client,
+            client_supplier_id=supplier_id,
+        )
+        self.assertEqual(client.confirm_calls[0]["client_supplier_id"], "supplier-a")
 
     def test_rejected_preview_never_calls_confirm(self) -> None:
         session_id, export_id, _ = self._export_session()

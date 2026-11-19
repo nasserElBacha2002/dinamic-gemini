@@ -385,6 +385,25 @@ class SessionPackageExportTests(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.code, "EXPORT_SESSION_AISLE_MISMATCH")
 
+    def test_manifest_includes_client_supplier_when_in_context(self) -> None:
+        _, store, photos_root, session_id = build_finished_session(self.root)
+        context = SessionPackageExportContext(
+            inventory_id="inventory-1",
+            aisle_id="aisle-1",
+            device_id="device-rpi-1",
+            client_supplier_id="supplier-a",
+        )
+        result = export_finished_session_package(
+            session_store=store,
+            photos_root=photos_root,
+            output_directory=self.out,
+            capture_session_id=session_id,
+            context=context,
+        )
+        with zipfile.ZipFile(result.zip_path, "r") as zf:
+            manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+        self.assertEqual(manifest.get("client_supplier_id"), "supplier-a")
+
     def test_missing_inventory_or_aisle_ids_fail(self) -> None:
         _, store, photos_root, session_id = build_finished_session(self.root)
         with self.assertRaises(SessionPackageExportError):

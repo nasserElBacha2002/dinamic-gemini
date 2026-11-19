@@ -83,6 +83,7 @@ class PackageBackendClient(Protocol):
         inventory_id: str,
         export_id: str,
         conflict_policy: str = "SKIP",
+        client_supplier_id: str | None = None,
     ) -> PackageApiResponse: ...
 
 
@@ -97,6 +98,7 @@ def export_context_for_session(session: CaptureSessionState) -> SessionPackageEx
 
     inventory_id, aisle_id = _session_inventory_context(session)
     client_id = str(session.selection.get("client_id") or "").strip() or None
+    client_supplier_id = str(session.selection.get("supplier_id") or "").strip() or None
     inventory_provisional = False
     inventory_name: str | None = None
     if inventory_id:
@@ -112,6 +114,7 @@ def export_context_for_session(session: CaptureSessionState) -> SessionPackageEx
         device_id=device_id_from_environment(),
         aisle_code=session.aisle_code,
         client_id=client_id,
+        client_supplier_id=client_supplier_id,
         aisle_provisional=is_pending_aisle_id(aisle_id),
         inventory_name=inventory_name,
         inventory_provisional=inventory_provisional,
@@ -224,6 +227,7 @@ def upload_session_package(
     upload_store: PackageUploadStore,
     backend_client: PackageBackendClient,
     conflict_policy: str = DEFAULT_CONFLICT_POLICY,
+    client_supplier_id: str | None = None,
 ) -> SessionPackageUploadOutcome:
     with _session_operation_lock(capture_session_id):
         return _upload_session_package_locked(
@@ -232,6 +236,7 @@ def upload_session_package(
             upload_store=upload_store,
             backend_client=backend_client,
             conflict_policy=conflict_policy,
+            client_supplier_id=client_supplier_id,
         )
 
 
@@ -242,6 +247,7 @@ def _upload_session_package_locked(
     upload_store: PackageUploadStore,
     backend_client: PackageBackendClient,
     conflict_policy: str,
+    client_supplier_id: str | None = None,
 ) -> SessionPackageUploadOutcome:
     record = upload_store.load(capture_session_id)
     if record is None:
@@ -306,6 +312,7 @@ def _upload_session_package_locked(
             inventory_id=inventory_id,
             export_id=record.export_id,
             conflict_policy=conflict_policy,
+            client_supplier_id=client_supplier_id,
         )
     except InventoryBackendClientError as exc:
         _mark_failed(upload_store, record, exc.code, str(exc))

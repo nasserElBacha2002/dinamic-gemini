@@ -11,6 +11,7 @@ class LocalScannerPackageImportMetadata:
     aisle_code: str
     aisle_will_be_created: bool
     client_id: str | None = None
+    client_supplier_id: str | None = None
     inventory_name: str | None = None
     inventory_provisional: bool = False
     aisle_created_on_confirm: bool = False
@@ -23,6 +24,8 @@ class LocalScannerPackageImportMetadata:
         }
         if self.client_id:
             payload["client_id"] = self.client_id
+        if self.client_supplier_id:
+            payload["client_supplier_id"] = self.client_supplier_id
         if self.inventory_name:
             payload["inventory_name"] = self.inventory_name
         if self.inventory_provisional:
@@ -48,6 +51,7 @@ class LocalScannerPackageImportMetadata:
             aisle_code=aisle_code,
             aisle_will_be_created=bool(data.get("aisle_will_be_created")),
             client_id=str(data.get("client_id") or "").strip() or None,
+            client_supplier_id=str(data.get("client_supplier_id") or "").strip() or None,
             inventory_name=str(data.get("inventory_name") or "").strip() or None,
             inventory_provisional=bool(data.get("inventory_provisional")),
             aisle_created_on_confirm=bool(data.get("aisle_created_on_confirm")),

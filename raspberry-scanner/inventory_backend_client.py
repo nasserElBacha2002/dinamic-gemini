@@ -92,16 +92,19 @@ class InventoryBackendClient:
         inventory_id: str,
         export_id: str,
         conflict_policy: str = "SKIP",
+        client_supplier_id: str | None = None,
     ) -> PackageApiResponse:
         url = (
             f"{self._config.base_url}/api/v3/inventories/"
             f"{urllib.parse.quote(inventory_id, safe='')}"
             f"/local-inventory-packages/confirm"
         )
-        payload = {
+        payload: dict[str, object] = {
             "export_id": export_id,
             "conflict_policy": conflict_policy,
         }
+        if client_supplier_id:
+            payload["client_supplier_id"] = client_supplier_id
         return self._post(
             url,
             body=json.dumps(payload).encode("utf-8"),

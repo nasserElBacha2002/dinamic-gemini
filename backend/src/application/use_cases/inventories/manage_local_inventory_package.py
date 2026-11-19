@@ -160,6 +160,9 @@ class PreviewLocalInventoryPackage:
             aisle_code=aisle_code,
             aisle_will_be_created=aisle_will_be_created,
             client_id=str(parsed.manifest.get("client_id") or "").strip() or None,
+            client_supplier_id=(
+                str(parsed.manifest.get("client_supplier_id") or "").strip() or None
+            ),
             inventory_name=str(parsed.manifest.get("inventory_name") or "").strip() or None,
             inventory_provisional=bool(parsed.manifest.get("inventory_provisional")),
         )
@@ -389,10 +392,13 @@ class ConfirmLocalInventoryPackage:
         )
         if metadata is None or not metadata.aisle_will_be_created:
             return package
+        effective_supplier = (client_supplier_id or "").strip() or None
+        if effective_supplier is None and metadata.client_supplier_id:
+            effective_supplier = metadata.client_supplier_id.strip()
         created, _ = self._aisle_resolver.create_for_confirm(
             inventory_id=inventory_id,
             aisle_code=metadata.aisle_code,
-            client_supplier_id=client_supplier_id,
+            client_supplier_id=effective_supplier,
         )
         if not any(row.aisle_id == SCANNER_TXT_PENDING_AISLE_ID for row in csv_import.rows):
             return replace(package, aisle_id=created.id, csv_import=csv_import)
@@ -401,6 +407,7 @@ class ConfirmLocalInventoryPackage:
             aisle_code=metadata.aisle_code,
             aisle_will_be_created=metadata.aisle_will_be_created,
             client_id=metadata.client_id,
+            client_supplier_id=metadata.client_supplier_id,
             inventory_name=metadata.inventory_name,
             inventory_provisional=metadata.inventory_provisional,
             aisle_created_on_confirm=True,

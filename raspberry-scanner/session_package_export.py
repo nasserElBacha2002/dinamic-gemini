@@ -52,6 +52,7 @@ class SessionPackageExportContext:
     device_id: str
     aisle_code: str = ""
     client_id: str | None = None
+    client_supplier_id: str | None = None
     aisle_provisional: bool = False
     inventory_name: str | None = None
     inventory_provisional: bool = False
@@ -336,6 +337,8 @@ def _build_manifest(
     }
     if context.client_id:
         body["client_id"] = context.client_id
+    if context.client_supplier_id:
+        body["client_supplier_id"] = context.client_supplier_id
     if context.aisle_provisional:
         body["aisle_provisional"] = True
     if context.inventory_name:

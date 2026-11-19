@@ -641,6 +641,7 @@ def make_handler(
                     inventory_id=context.inventory_id,
                     upload_store=package_upload_store,
                     backend_client=backend_client,
+                    client_supplier_id=context.client_supplier_id,
                 )
             except PackageUploadError as exc:
                 status = HTTPStatus.BAD_REQUEST
