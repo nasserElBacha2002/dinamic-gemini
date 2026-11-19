@@ -285,7 +285,7 @@ class SessionPackageExportTests(unittest.TestCase):
                 context=self.context,
             )
 
-    def test_photo_failed_blocks_strict_export(self) -> None:
+    def test_photo_failed_exports_partial_package(self) -> None:
         install_test_inventory_context(self.root)
         store = CaptureSessionStore(self.root / "sessions")
         photos_root = self.root / "photos"
@@ -306,15 +306,51 @@ class SessionPackageExportTests(unittest.TestCase):
         session_id = capture.snapshot()["capture_session_id"]
         assert isinstance(session_id, str)
         capture.finish()
-        with self.assertRaises(SessionPackageExportError) as ctx:
-            export_finished_session_package(
-                session_store=store,
-                photos_root=photos_root,
-                output_directory=self.out,
-                capture_session_id=session_id,
-                context=self.context,
-            )
-        self.assertEqual(ctx.exception.code, "EXPORT_PHOTO_EVIDENCE_FAILED")
+        result = export_finished_session_package(
+            session_store=store,
+            photos_root=photos_root,
+            output_directory=self.out,
+            capture_session_id=session_id,
+            context=self.context,
+        )
+        self.assertTrue(result.zip_path.is_file())
+        parsed = parse_local_inventory_package(result.zip_path.read_bytes())
+        self.assertEqual(parsed.status, "PARTIAL")
+        self.assertEqual(parsed.expected_photo_count, 3)
+        self.assertEqual(parsed.included_photo_count, 2)
+        self.assertEqual(len(parsed.photos), 2)
+
+    def test_all_photo_failed_exports_csv_only_partial_package(self) -> None:
+        install_test_inventory_context(self.root)
+        store = CaptureSessionStore(self.root / "sessions")
+        photos_root = self.root / "photos"
+        capture = CaptureService(
+            FakeRecognition(),
+            self.root / "exports",
+            camera=FakeCamera(fail_after=1),
+            session_store=store,
+            photos_root=photos_root,
+        )
+        valid = build_product_label_payload(label_id="A1B2C3D4E5", internal_code="SKU", quantity=1)
+        capture.start("A1")
+        capture.record(position_reading(1))
+        capture.record(item_reading(2, valid))
+        capture.wait_for_photo_pipeline_idle()
+        session_id = capture.snapshot()["capture_session_id"]
+        assert isinstance(session_id, str)
+        capture.finish()
+        result = export_finished_session_package(
+            session_store=store,
+            photos_root=photos_root,
+            output_directory=self.out,
+            capture_session_id=session_id,
+            context=self.context,
+        )
+        parsed = parse_local_inventory_package(result.zip_path.read_bytes())
+        self.assertEqual(parsed.status, "PARTIAL")
+        self.assertEqual(parsed.included_photo_count, 0)
+        self.assertGreater(parsed.expected_photo_count, 0)
+        self.assertEqual(len(parsed.photos), 0)
 
     def test_legacy_session_without_durable_binding_blocks_export(self) -> None:
         _, store, photos_root, session_id = build_finished_session(self.root)

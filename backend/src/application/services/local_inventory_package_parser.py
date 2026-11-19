@@ -286,12 +286,6 @@ def parse_local_inventory_package(
                 "PACKAGE_STATUS_INVALID",
                 f"Unsupported package status: {status}",
             )
-        if status == "PARTIAL":
-            raise LocalInventoryPackageError(
-                "PACKAGE_PARTIAL_NOT_ACCEPTED",
-                "PARTIAL packages are not accepted for import; re-export COMPLETE",
-            )
-
         envelope = _resolve_package_envelope(manifest, csv_bytes)
 
         csv_checksum = str(
@@ -398,11 +392,56 @@ def parse_local_inventory_package(
                 "PACKAGE_PHOTO_COUNT_MISMATCH",
                 "included_photo_count does not match photos array",
             )
-        if expected_i != included_i:
-            raise LocalInventoryPackageError(
-                "PACKAGE_INCOMPLETE",
-                "expected_photo_count != included_photo_count; only COMPLETE packages are accepted",
-            )
+        missing_raw = manifest.get("missing_photos")
+        if not isinstance(missing_raw, list):
+            missing_raw = []
+        if status == "COMPLETE":
+            if expected_i != included_i:
+                raise LocalInventoryPackageError(
+                    "PACKAGE_INCOMPLETE",
+                    "expected_photo_count != included_photo_count; COMPLETE packages must include all photos",
+                )
+            if missing_raw:
+                raise LocalInventoryPackageError(
+                    "PACKAGE_MANIFEST_INVALID",
+                    "COMPLETE packages must not declare missing_photos",
+                )
+        else:
+            gap = expected_i - included_i
+            if gap < 0:
+                raise LocalInventoryPackageError(
+                    "PACKAGE_MANIFEST_INVALID",
+                    "expected_photo_count cannot be less than included_photo_count",
+                )
+            if gap != len(missing_raw):
+                raise LocalInventoryPackageError(
+                    "PACKAGE_MISSING_PHOTOS_MISMATCH",
+                    "missing_photos length must equal expected_photo_count - included_photo_count",
+                )
+            declared_missing: set[str] = set()
+            for entry in missing_raw:
+                if not isinstance(entry, dict):
+                    raise LocalInventoryPackageError(
+                        "PACKAGE_MANIFEST_INVALID",
+                        "missing_photos entries must be objects",
+                    )
+                capture_photo_id = str(entry.get("capture_photo_id") or "").strip()
+                if not capture_photo_id:
+                    raise LocalInventoryPackageError(
+                        "PACKAGE_MANIFEST_INVALID",
+                        "missing_photos entries require capture_photo_id",
+                    )
+                if capture_photo_id in seen_ids:
+                    raise LocalInventoryPackageError(
+                        "PACKAGE_MANIFEST_INVALID",
+                        f"missing photo duplicates included capture_photo_id: {capture_photo_id}",
+                    )
+                if capture_photo_id in declared_missing:
+                    raise LocalInventoryPackageError(
+                        "PACKAGE_MANIFEST_INVALID",
+                        f"duplicate missing capture_photo_id: {capture_photo_id}",
+                    )
+                declared_missing.add(capture_photo_id)
 
         return ParsedLocalInventoryPackage(
             package_kind=package_kind,

@@ -306,14 +306,35 @@ class PreviewLocalInventoryPackage:
         return tuple(photos)
 
     @staticmethod
+    def _missing_capture_photo_ids(manifest: dict[str, object]) -> frozenset[str]:
+        raw = manifest.get("missing_photos")
+        if not isinstance(raw, list):
+            return frozenset()
+        ids: set[str] = set()
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            capture_photo_id = str(entry.get("capture_photo_id") or "").strip()
+            if capture_photo_id:
+                ids.add(capture_photo_id)
+        return frozenset(ids)
+
+    @staticmethod
     def _validate_photo_row_linkage(
         csv_record: LocalCsvImport, parsed: ParsedLocalInventoryPackage
     ) -> None:
         by_photo = {p.capture_photo_id: p for p in parsed.photos}
+        missing_ids = (
+            PreviewLocalInventoryPackage._missing_capture_photo_ids(parsed.manifest)
+            if parsed.status == "PARTIAL"
+            else frozenset()
+        )
         for row in csv_record.rows:
             if row.status == "REJECTED":
                 continue
             if row.capture_photo_id not in by_photo:
+                if row.capture_photo_id in missing_ids:
+                    continue
                 raise LocalInventoryPackageImportError(
                     "PACKAGE_ROW_PHOTO_MISSING",
                     f"CSV row {row.row_number} has no matching package photo "

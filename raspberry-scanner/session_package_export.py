@@ -178,36 +178,49 @@ def _validate_session_export_context(
         )
 
 
-def _validate_photo_evidence(session: CaptureSessionState) -> None:
+def _validate_photos_terminal(session: CaptureSessionState) -> None:
     if any(photo.status == "CAPTURING" for photo in session.photos):
         raise SessionPackageExportError(
             "EXPORT_PHOTOS_NOT_TERMINAL",
             "session still has CAPTURING photos",
         )
-    failed = [photo for photo in session.photos if photo.status == "PHOTO_FAILED"]
-    if failed:
-        raise SessionPackageExportError(
-            "EXPORT_PHOTO_EVIDENCE_FAILED",
-            "session has PHOTO_FAILED captures; cannot publish COMPLETE package",
-        )
 
 
-def _select_complete_photos(session: CaptureSessionState) -> list[PhotoCaptureRecord]:
-    _validate_photo_evidence(session)
-    complete = [photo for photo in session.photos if photo.status == "COMPLETE"]
-    capture_ids = [photo.capture_photo_id for photo in complete]
+def _select_export_photos(session: CaptureSessionState) -> list[PhotoCaptureRecord]:
+    """Terminal capture rows for CSV (COMPLETE and PHOTO_FAILED)."""
+    _validate_photos_terminal(session)
+    exportable = [
+        photo
+        for photo in session.photos
+        if photo.status in {"COMPLETE", "PHOTO_FAILED"}
+    ]
+    capture_ids = [photo.capture_photo_id for photo in exportable]
     if len(capture_ids) != len(set(capture_ids)):
         raise SessionPackageExportError(
             "EXPORT_DUPLICATE_CAPTURE_PHOTO_ID",
             "duplicate capture_photo_id in session",
         )
-    sequences = [photo.sequence_number for photo in complete]
+    sequences = [photo.sequence_number for photo in exportable]
     if len(sequences) != len(set(sequences)):
         raise SessionPackageExportError(
             "EXPORT_DUPLICATE_SEQUENCE_NUMBER",
             "duplicate sequence_number in session",
         )
-    return sorted(complete, key=lambda p: p.sequence_number)
+    return sorted(exportable, key=lambda p: p.sequence_number)
+
+
+def _missing_photo_manifest_entries(
+    failed_photos: list[PhotoCaptureRecord],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "capture_photo_id": photo.capture_photo_id,
+            "sequence_number": photo.sequence_number,
+            "reason": "PHOTO_FAILED",
+            "error": photo.error or "",
+        }
+        for photo in failed_photos
+    ]
 
 
 def _resolve_photo_assets(
@@ -269,6 +282,9 @@ def _build_manifest(
     context: SessionPackageExportContext,
     photos: list[ResolvedPhotoAsset],
     package_checksum_sha256: str,
+    expected_photo_count: int,
+    package_status: str,
+    missing_photos: list[dict[str, object]],
 ) -> dict[str, object]:
     photo_entries: list[dict[str, object]] = []
     for asset in photos:
@@ -293,7 +309,7 @@ def _build_manifest(
         "schema_version": LOCAL_CSV_SCHEMA_VERSION,
         "package_kind": PACKAGE_KIND,
         "package_version": PACKAGE_VERSION,
-        "status": "COMPLETE",
+        "status": package_status,
         "export_id": csv_build.export_id,
         "exported_at": csv_build.exported_at,
         "inventory_id": context.inventory_id,
@@ -303,9 +319,9 @@ def _build_manifest(
         "freeze_id": None,
         "freeze_generation": None,
         "row_count": csv_build.row_count,
-        "expected_photo_count": included,
+        "expected_photo_count": expected_photo_count,
         "included_photo_count": included,
-        "missing_photos": [],
+        "missing_photos": missing_photos,
         "csv_checksum_sha256": csv_build.csv_checksum_sha256,
         "checksum_sha256": csv_build.csv_checksum_sha256,
         "checksum_algorithm": CHECKSUM_ALGORITHM,
@@ -332,8 +348,10 @@ def _build_manifest(
 def _validate_csv_manifest_consistency(
     csv_build: LocalCsvBuildResult,
     photos: list[ResolvedPhotoAsset],
+    *,
+    missing_capture_photo_ids: frozenset[str],
 ) -> None:
-    photo_ids = {asset.record.capture_photo_id for asset in photos}
+    photo_ids = {asset.record.capture_photo_id for asset in photos} | missing_capture_photo_ids
     for row in csv_build.rows:
         capture_photo_id = row["capture_photo_id"]
         if capture_photo_id and capture_photo_id not in photo_ids:
@@ -377,17 +395,22 @@ def export_finished_session_package(
     _validate_ids(context.inventory_id, context.aisle_id)
     session = _load_finished_session(session_store, capture_session_id)
     _validate_session_export_context(session, context)
-    complete_photos = _select_complete_photos(session)
-    if not complete_photos:
+    export_photos = _select_export_photos(session)
+    if not export_photos:
         raise SessionPackageExportError(
-            "EXPORT_NO_COMPLETE_PHOTOS",
-            "session has no COMPLETE photos to export",
+            "EXPORT_NO_EXPORTABLE_CAPTURES",
+            "session has no terminal captures to export",
         )
+    complete_photos = [photo for photo in export_photos if photo.status == "COMPLETE"]
+    failed_photos = [photo for photo in export_photos if photo.status == "PHOTO_FAILED"]
+    expected_photo_count = len(export_photos)
+    package_status = "COMPLETE" if not failed_photos else "PARTIAL"
+    missing_photos = _missing_photo_manifest_entries(failed_photos)
     photo_assets = _resolve_photo_assets(session, photos_root, complete_photos)
     try:
         csv_build = build_local_csv_rows(
             session,
-            complete_photos=complete_photos,
+            complete_photos=export_photos,
             inventory_id=context.inventory_id,
             aisle_id=context.aisle_id,
             device_id=context.device_id,
@@ -404,7 +427,13 @@ def export_finished_session_package(
             "EXPORT_IDENTITY_CSV_MISMATCH",
             "rebuilt CSV checksum does not match persisted export identity",
         )
-    _validate_csv_manifest_consistency(csv_build, photo_assets)
+    _validate_csv_manifest_consistency(
+        csv_build,
+        photo_assets,
+        missing_capture_photo_ids=frozenset(
+            photo.capture_photo_id for photo in failed_photos
+        ),
+    )
     package_checksum = build_package_content_fingerprint(
         csv_checksum_sha256=csv_build.csv_checksum_sha256,
         photos=photo_assets,
@@ -423,6 +452,9 @@ def export_finished_session_package(
         context=context,
         photos=photo_assets,
         package_checksum_sha256=package_checksum,
+        expected_photo_count=expected_photo_count,
+        package_status=package_status,
+        missing_photos=missing_photos,
     )
     output_directory.mkdir(parents=True, exist_ok=True)
     final_name = f"{session.aisle_code}_{csv_build.export_id}.zip"
