@@ -318,7 +318,9 @@ def test_parser_applies_d1_without_supplier_metadata() -> None:
             }
         )
     )
-    assert "label_id:invalid_format" in parsed.rows[0].errors
+    assert "label_id:invalid_format" not in parsed.rows[0].errors
+    assert "label_id:invalid_format_omitted" in parsed.rows[0].warnings
+    assert parsed.rows[0].values["label_id"] == ""
 
 
 def test_golden_item_preview_accepted() -> None:
@@ -600,11 +602,47 @@ def test_d1_valid_label_still_accepted() -> None:
     assert record.rows[0].label_id == label_id
 
 
-def test_d1_invalid_letter_still_rejected_without_metadata() -> None:
+def test_d1_invalid_label_omitted_when_internal_code_present() -> None:
     parsed = parse_local_csv(
         _csv_bytes(
             {
                 "internal_code": "SKU-1",
+                "label_id": "LPNA000184",
+                "quantity": "1",
+            }
+        )
+    )
+    assert "label_id:invalid_format" not in parsed.rows[0].errors
+    assert "label_id:invalid_format_omitted" in parsed.rows[0].warnings
+    assert parsed.rows[0].values["label_id"] == ""
+
+
+def test_parser_omits_supplier_sku_copied_into_label_id() -> None:
+    """Pi used to mirror internal_code into label_id; import must keep SKU only."""
+    parsed = parse_local_csv(
+        _csv_bytes(
+            {
+                "capture_photo_id": "photo-asi",
+                "internal_code": "ASI-KRGKSN",
+                "label_id": "ASI-KRGKSN",
+                "quantity": "",
+                "quantity_status": "PRESENT",
+                "source": "LOCAL_CODE_SCAN",
+            }
+        )
+    )
+    row = parsed.rows[0]
+    assert "label_id:invalid_format" not in row.errors
+    assert "label_id:invalid_format_omitted" in row.warnings
+    assert row.values["label_id"] == ""
+    assert row.values["internal_code"] == "ASI-KRGKSN"
+
+
+def test_d1_invalid_label_still_rejected_without_product_identity() -> None:
+    parsed = parse_local_csv(
+        _csv_bytes(
+            {
+                "internal_code": "",
                 "label_id": "LPNA000184",
                 "quantity": "1",
             }

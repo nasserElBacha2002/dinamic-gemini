@@ -83,15 +83,28 @@ _FORMULA_AWARE_COLUMNS = frozenset(
 )
 
 
-def _normalize_optional_label_id(raw: str, errors: list[str]) -> str:
-    """Return uppercase label_id, empty string for legacy, or record format error."""
+def _normalize_optional_label_id(
+    raw: str,
+    errors: list[str],
+    warnings: list[str],
+    *,
+    internal_code: str,
+) -> str:
+    """Return uppercase Dinamic D1 label_id when valid.
+
+    Non-D1 transport values are omitted (warning only) when ``internal_code`` is
+    present so scanner/SKU-only rows still import productively.
+    """
     text = (raw or "").strip()
     if not text:
         return ""
     normalized = text.upper()
     if len(normalized) != LABEL_ID_LENGTH or any(ch not in _LABEL_ID_ALLOWED for ch in normalized):
+        if (internal_code or "").strip():
+            warnings.append("label_id:invalid_format_omitted")
+            return ""
         errors.append("label_id:invalid_format")
-        return normalized
+        return ""
     return normalized
 
 
@@ -109,12 +122,16 @@ def _normalize_supplier_transport_label_id(raw: str, errors: list[str]) -> str:
 def _normalize_row_label_id(
     raw: str,
     errors: list[str],
+    warnings: list[str],
     *,
     supplier_import: SupplierImportMetadata | None,
+    internal_code: str,
 ) -> str:
     if supplier_import is not None:
         return _normalize_supplier_transport_label_id(raw, errors)
-    return _normalize_optional_label_id(raw, errors)
+    return _normalize_optional_label_id(
+        raw, errors, warnings, internal_code=internal_code
+    )
 
 
 class LocalCsvDocumentError(ValueError):
@@ -269,7 +286,9 @@ def parse_local_csv(content: bytes) -> ParsedLocalCsv:
                 values["label_id"] = _normalize_row_label_id(
                     label_value,
                     errors,
+                    warnings,
                     supplier_import=supplier_import,
+                    internal_code=values.get("internal_code", ""),
                 )
 
             for optional_name in ("position_label_id", "position_payload_raw"):
