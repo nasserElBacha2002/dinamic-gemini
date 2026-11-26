@@ -45,7 +45,6 @@ export default function HlsLivePlayer({
       authMode === 'basic' && username
         ? `Basic ${btoa(`${username}:${password}`)}`
         : null;
-    const sessionToken = authMode === 'session' ? getStoredToken() : null;
     let hls: Hls | null = null;
     let cancelled = false;
     let fatalRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -66,8 +65,11 @@ export default function HlsLivePlayer({
     const applyXhrAuth = (xhr: XMLHttpRequest) => {
       if (basicAuthHeader) {
         xhr.setRequestHeader('Authorization', basicAuthHeader);
-      } else if (sessionToken) {
-        xhr.setRequestHeader('Authorization', `Bearer ${sessionToken}`);
+      } else if (authMode === 'session') {
+        const token = getStoredToken();
+        if (token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
       }
     };
 
@@ -97,6 +99,7 @@ export default function HlsLivePlayer({
     };
 
     let detachNative: (() => void) | undefined;
+    let detachHlsPlaying: (() => void) | undefined;
 
     if (Hls.isSupported()) {
       video.crossOrigin = 'anonymous';
@@ -142,18 +145,28 @@ export default function HlsLivePlayer({
         emit('ended');
       };
 
+      const onPlaying = () => {
+        if (video.videoWidth > 0) {
+          emit('live');
+        }
+      };
+      video.addEventListener('playing', onPlaying);
+      detachHlsPlaying = () => video.removeEventListener('playing', onPlaying);
+
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        emit('live');
+        emit('connecting');
         void video.play().catch(() => emit('no_stream'));
       });
       hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (cancelled || !data.fatal) return;
+        if (cancelled) return;
+        if (!data.fatal && data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR) {
+          hls?.recoverMediaError();
+          return;
+        }
+        if (!data.fatal) return;
         recoverOrFail(data);
       });
-      const sourceUrl = playlistUrl.endsWith('index.m3u8')
-        ? playlistUrl.replace(/index\.m3u8$/, 'main_stream.m3u8')
-        : playlistUrl;
-      hls.loadSource(sourceUrl);
+      hls.loadSource(playlistUrl);
       hls.attachMedia(video);
       emit('connecting');
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -166,6 +179,7 @@ export default function HlsLivePlayer({
       cancelled = true;
       clearRecoveryTimer();
       detachNative?.();
+      detachHlsPlaying?.();
       if (hls) {
         hls.destroy();
         hls = null;

@@ -12,6 +12,20 @@ def test_rewrite_hls_playlist_relative_segments():
     assert "/api/v3/" not in out
 
 
+def test_rewrite_hls_playlist_fmp4_master_variant_uris():
+    body = (
+        "#EXTM3U\n#EXT-X-VERSION:9\n"
+        '#EXT-X-MEDIA:TYPE=AUDIO,URI="audio2_stream.m3u8"\n'
+        "#EXT-X-STREAM-INF:BANDWIDTH=1\nvideo1_stream.m3u8\n"
+    )
+    out = rewrite_hls_playlist(
+        body,
+        channel_resource_prefix="live/prueba-26-11/01",
+    )
+    assert "video1_stream.m3u8" in out
+    assert "audio2_stream.m3u8" in out
+
+
 def test_rewrite_hls_playlist_skips_comments():
     body = "#EXTINF:1,\nsegment.ts\n"
     out = rewrite_hls_playlist(

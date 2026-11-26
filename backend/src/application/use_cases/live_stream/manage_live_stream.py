@@ -531,12 +531,12 @@ class ManageLiveStreamUseCase:
             aisle = urllib.parse.quote(canonical_aisle_code, safe="")
             return (
                 f"/api/v3/inventories/{inv}/live-stream/hls/"
-                f"{aisle}/main_stream.m3u8"
+                f"{aisle}/index.m3u8"
             )
         return self._build_direct_hls_url(mediamtx_path)
 
     def _build_public_viewer_hls_playlist_url(self, *, token: str, mediamtx_path: str) -> str:
         if self.hls_proxy_enabled:
             tok = urllib.parse.quote(token, safe="")
-            return f"/api/public/live/{tok}/hls/main_stream.m3u8"
+            return f"/api/public/live/{tok}/hls/index.m3u8"
         return self._build_direct_hls_url(mediamtx_path)

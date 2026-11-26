@@ -60,7 +60,7 @@ hls: yes
 hlsAddress: :8888
 hlsEncryption: no
 hlsAllowOrigin: '*'
-hlsVariant: mpegts
+hlsVariant: fmp4
 hlsSegmentCount: 7
 hlsSegmentDuration: 1s
 hlsMuxerCloseAfter: 60s

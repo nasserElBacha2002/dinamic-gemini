@@ -58,5 +58,5 @@ def test_prepare_returns_api_proxy_playlist_when_internal_hls_configured() -> No
     )
     result = uc.prepare_channel(inventory_id=inv_id, aisle_code="P1", principal=principal)
     assert "/live-stream/hls/" in result.hls_playlist_url
-    assert result.hls_playlist_url.endswith("/main_stream.m3u8")
+    assert result.hls_playlist_url.endswith("/index.m3u8")
     assert "live-hls" not in result.hls_playlist_url
