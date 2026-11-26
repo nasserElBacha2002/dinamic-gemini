@@ -117,7 +117,9 @@ export default function HlsLivePlayer({
         if (cancelled || !data.fatal) return;
         recoverOrFail(data);
       });
-      hls.loadSource(buildAuthedPlaylistUrl(playlistUrl, username, password));
+      // Use a clean playlist URL; auth is sent via xhrSetup (MediaMTX HLS + nginx).
+      // Embedding user:pass in the URL breaks segment resolution in some browsers.
+      hls.loadSource(playlistUrl);
       hls.attachMedia(video);
       emit('connecting');
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
