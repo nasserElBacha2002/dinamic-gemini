@@ -23,7 +23,6 @@ from src.application.services.live_stream_credential_crypto import (
     mint_public_token,
     mint_public_view_username,
     mint_readable_stream_username,
-    mint_stream_username,
 )
 from src.application.services.live_stream_mediamtx_control import LiveStreamMediaMtxControl
 from src.application.services.live_stream_status_service import (

@@ -26,12 +26,6 @@ class LiveChannelCredentials:
     @property
     def publish_blocked(self) -> bool:
         return self.publish_blocked_at is not None
-    publish_blocked_at: datetime | None = None
-    publish_blocked_by_principal_id: str | None = None
-
-    @property
-    def publish_blocked(self) -> bool:
-        return self.publish_blocked_at is not None
 
 
 @dataclass(frozen=True)

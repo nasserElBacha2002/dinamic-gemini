@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from src.application.services.live_stream_credential_crypto import hash_public_token, mint_stream_username
+from src.application.services.live_stream_credential_crypto import (
+    hash_public_token,
+    mint_stream_username,
+)
 from src.domain.live_stream.entities import LiveViewGrant
 from src.infrastructure.repositories.memory_live_stream_repository import MemoryLiveStreamRepository
 

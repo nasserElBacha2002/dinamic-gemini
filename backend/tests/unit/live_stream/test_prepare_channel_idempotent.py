@@ -10,7 +10,6 @@ from src.application.ports.clock import Clock
 from src.application.services.live_stream_mediamtx_control import LiveStreamMediaMtxControl
 from src.application.services.live_stream_status_service import LiveStreamStatusService
 from src.application.use_cases.live_stream.manage_live_stream import ManageLiveStreamUseCase
-from src.domain.live_stream.entities import LiveChannelCredentials
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_live_stream_repository import MemoryLiveStreamRepository
 

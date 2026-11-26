@@ -25,8 +25,8 @@ from src.api.constants.error_wire import (
 from src.api.errors.structured_api_http import INTERNAL_SERVER_ERROR, StructuredApiHttpError
 from src.api.routes.internal_mediamtx_auth import router as internal_mediamtx_auth_router
 from src.api.routes.lab_attestation import lab_attestation_enabled
-from src.api.routes.public_live import router as public_live_router
 from src.api.routes.lab_attestation import router as lab_attestation_router
+from src.api.routes.public_live import router as public_live_router
 from src.api.routes.v3 import router as v3_router
 from src.api.routes.v3.admin_ai_config import router as v3_admin_ai_config_router
 from src.api.routes.v3.admin_finalization_recovery import (

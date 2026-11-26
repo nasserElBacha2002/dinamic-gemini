@@ -56,7 +56,7 @@ def derive_channel_password(*, server_secret: str, mediamtx_path: str, purpose: 
     key = (server_secret or "").encode("utf-8")
     if not key:
         raise ValueError("server_secret required for live stream credentials")
-    msg = f"din508:{purpose}:{mediamtx_path}".encode("utf-8")
+    msg = f"din508:{purpose}:{mediamtx_path}".encode()
     digest = hmac.new(key, msg, hashlib.sha256).digest()
     # Short hex — easier to type in DJI Fly; still server-derived per path.
     return digest.hex()[:12]
@@ -64,7 +64,7 @@ def derive_channel_password(*, server_secret: str, mediamtx_path: str, purpose: 
 
 def derive_public_grant_password(*, server_secret: str, grant_id: str) -> str:
     key = (server_secret or "").encode("utf-8")
-    msg = f"din508:public:{grant_id}".encode("utf-8")
+    msg = f"din508:public:{grant_id}".encode()
     digest = hmac.new(key, msg, hashlib.sha256).digest()
     raw = base64.urlsafe_b64encode(digest).decode("ascii")
     return raw.replace("%", "")[:40]

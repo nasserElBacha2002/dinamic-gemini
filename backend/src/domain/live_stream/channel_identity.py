@@ -33,7 +33,7 @@ def canonical_aisle_code_for_channel(code: str) -> str:
 def channel_slug(inventory_id: str, aisle_code: str) -> str:
     inv = normalize_inventory_id(inventory_id)
     code = canonical_aisle_code_for_channel(aisle_code)
-    payload = f"{inv}\0{code}".encode("utf-8")
+    payload = f"{inv}\0{code}".encode()
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
