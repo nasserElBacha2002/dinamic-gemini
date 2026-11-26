@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from src.api.deps.live_stream import get_mediamtx_auth_service
+from src.application.services.mediamtx_auth_credentials import resolve_mediamtx_auth_fields
 from src.application.services.mediamtx_auth_service import MediaMtxAuthService
 from src.config import load_settings
 
@@ -56,13 +57,21 @@ async def mediamtx_auth(
     except Exception:
         return Response(status_code=status.HTTP_401_UNAUTHORIZED)
 
+    user, pwd, path, action = resolve_mediamtx_auth_fields(body)
     decision = auth_service.authorize(
-        username=str(body.get("user") or ""),
-        password=str(body.get("password") or ""),
-        path=str(body.get("path") or ""),
-        action=str(body.get("action") or ""),
+        username=user,
+        password=pwd,
+        path=path,
+        action=action,
     )
     if not decision.allowed:
+        logger.info(
+            "event=mediamtx_auth_http_denied user=%s path=%s action=%s has_password=%s",
+            user or "(empty)",
+            path,
+            action,
+            bool(pwd),
+        )
         return Response(status_code=status.HTTP_401_UNAUTHORIZED)
 
     payload: dict[str, str] = {}

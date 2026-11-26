@@ -136,6 +136,40 @@ def test_publish_allows_empty_path_for_known_publisher() -> None:
     ).allowed
 
 
+def test_publish_by_path_with_fixed_env_password() -> None:
+    repo = MemoryLiveStreamRepository()
+    now = datetime.now(timezone.utc)
+    mediamtx_path = "live/prueba-26-11/01"
+    record = LiveChannelCredentials(
+        id=str(uuid4()),
+        inventory_id="inv-1",
+        canonical_aisle_code="01",
+        channel_slug="01",
+        mediamtx_path=mediamtx_path,
+        publish_username="nasser",
+        publish_password_hash="",
+        read_username="nasser",
+        read_password_hash="",
+        created_by_principal_id="admin",
+        created_at=now,
+        updated_at=now,
+    )
+    repo.upsert_channel_credentials(record)
+    svc = MediaMtxAuthService(
+        repo=repo,
+        server_secret=SECRET,
+        enabled=True,
+        fixed_publish_username="nasser",
+        fixed_publish_password="Libano02",
+    )
+    assert svc.authorize(
+        username="nasser",
+        password="Libano02",
+        path=mediamtx_path,
+        action="publish",
+    ).allowed
+
+
 def test_publish_allows_stream_key_suffix() -> None:
     repo = MemoryLiveStreamRepository()
     record = _seed_channel(repo)

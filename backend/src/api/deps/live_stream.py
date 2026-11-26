@@ -54,4 +54,6 @@ def get_mediamtx_auth_service() -> MediaMtxAuthService:
         repo=get_app_container().get_live_stream_repo(),
         server_secret=(settings.auth_token_secret or "").strip(),
         enabled=bool(getattr(settings, "live_stream_enabled", False)),
+        fixed_publish_username=getattr(settings, "live_stream_fixed_publish_username", ""),
+        fixed_publish_password=getattr(settings, "live_stream_fixed_publish_password", ""),
     )
