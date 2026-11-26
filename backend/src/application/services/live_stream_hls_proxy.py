@@ -52,17 +52,30 @@ def rewrite_hls_playlist(
                 rel = upstream_path[len(channel_prefix) + 1 :]
             else:
                 rel = upstream_path.split("/")[-1]
-        elif uri.startswith("/"):
+            try:
+                rel = _normalize_rel_path(rel)
+            except ValueError:
+                continue
+            out_lines.append(rel)
+            continue
+        if uri.startswith("/"):
             rel = uri.lstrip("/")
             if channel_prefix and rel.startswith(channel_prefix + "/"):
                 rel = rel[len(channel_prefix) + 1 :]
-        else:
-            rel = uri
+            else:
+                rel = rel.split("/")[-1]
+            try:
+                rel = _normalize_rel_path(rel)
+            except ValueError:
+                continue
+            out_lines.append(rel)
+            continue
+        # Bare segment / child playlist names — resolve relative to the proxied playlist URL.
         try:
-            rel = _normalize_rel_path(rel)
+            _normalize_rel_path(uri)
         except ValueError:
             continue
-        out_lines.append(f"{entry}{urllib.parse.quote(rel, safe='/')}")
+        out_lines.append(uri)
     return "\n".join(out_lines) + "\n"
 
 

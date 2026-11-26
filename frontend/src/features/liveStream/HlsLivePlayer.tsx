@@ -99,10 +99,12 @@ export default function HlsLivePlayer({
     let detachNative: (() => void) | undefined;
 
     if (Hls.isSupported()) {
+      video.crossOrigin = 'anonymous';
       hls = new Hls({
-        enableWorker: true,
+        enableWorker: false,
         lowLatencyMode: false,
         liveBackBufferLength: 0,
+        maxBufferHole: 0.5,
         xhrSetup: (xhr) => {
           applyXhrAuth(xhr);
         },

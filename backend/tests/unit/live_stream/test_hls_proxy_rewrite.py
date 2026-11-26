@@ -9,7 +9,8 @@ def test_rewrite_hls_playlist_relative_segments():
         channel_resource_prefix="live/foo/01",
     )
     assert "seg0001.ts" in out
-    assert out.strip().endswith("/api/v3/inventories/inv/live-stream/hls/A01/seg0002.ts")
+    assert out.strip().endswith("seg0002.ts")
+    assert "/api/v3/" not in out
 
 
 def test_rewrite_hls_playlist_skips_comments():
@@ -20,4 +21,4 @@ def test_rewrite_hls_playlist_skips_comments():
         channel_resource_prefix="live/x/y",
     )
     assert "#EXTINF:1," in out
-    assert "/api/public/live/tok/hls/segment.ts" in out
+    assert out.strip().endswith("segment.ts")
