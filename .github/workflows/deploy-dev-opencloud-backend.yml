@@ -245,6 +245,7 @@ jobs:
 
             if docker-compose "${COMPOSE_FILES[@]}" ps -q api 2>/dev/null | grep -q .; then
               echo "Recreating API service without restarting dependencies..."
+              docker-compose "${COMPOSE_FILES[@]}" rm -sf api 2>/dev/null || true
               docker-compose "${COMPOSE_FILES[@]}" up -d --no-deps --build api
             else
               echo "First API start..."
