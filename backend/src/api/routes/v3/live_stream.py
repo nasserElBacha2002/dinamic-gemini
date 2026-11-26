@@ -113,7 +113,7 @@ def proxy_inventory_hls(
     if not proxy.enabled:
         raise HTTPException(status_code=503, detail="HLS proxy is not configured")
     try:
-        resolved, read_user, read_pass = use_case.resolve_hls_proxy_source(
+        resolved, mediamtx_path, read_user, read_pass = use_case.resolve_hls_proxy_source(
             inventory_id=inventory_id,
             aisle_code=canonical_aisle_code,
             principal=principal,
@@ -121,14 +121,12 @@ def proxy_inventory_hls(
     except Exception as exc:
         reraise_if_mapped(exc)
         raise
-    if resolved.canonical_aisle_code != canonical_aisle_code.strip():
-        raise HTTPException(status_code=404, detail="Unknown live aisle for this inventory")
     inv = urllib.parse.quote(inventory_id, safe="")
     aisle = urllib.parse.quote(resolved.canonical_aisle_code, safe="")
     proxy_prefix = f"/api/v3/inventories/{inv}/live-stream/hls/{aisle}"
     try:
         result = proxy.fetch(
-            mediamtx_path=resolved.mediamtx_path,
+            mediamtx_path=mediamtx_path,
             resource=resource_path,
             read_username=read_user,
             read_password=read_pass,

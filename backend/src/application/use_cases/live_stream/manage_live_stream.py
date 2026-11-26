@@ -354,8 +354,8 @@ class ManageLiveStreamUseCase:
         inventory_id: str,
         aisle_code: str,
         principal: AccessPrincipal,
-    ) -> tuple[ResolvedLiveChannel, str, str]:
-        """Return channel + read credentials for an authenticated HLS proxy request."""
+    ) -> tuple[ResolvedLiveChannel, str, str, str]:
+        """Return channel + stored MediaMTX path + read credentials for HLS proxy."""
         self._require_enabled()
         self._access.require_inventory(inventory_id, principal)
         resolved = self._resolver.resolve(inventory_id=inventory_id, aisle_code=aisle_code)
@@ -372,7 +372,8 @@ class ManageLiveStreamUseCase:
             inv_name=inv_name,
             resolved=resolved,
         )
-        return resolved, creds.read_username, read_password
+        playout_path = (creds.mediamtx_path or resolved.mediamtx_path).strip().lstrip("/")
+        return resolved, playout_path, creds.read_username, read_password
 
     def resolve_public_hls_proxy_source(
         self, *, token: str

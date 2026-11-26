@@ -8,11 +8,18 @@ export type HlsLiveAuthMode = 'basic' | 'session' | 'none';
 /** Prefix relative API playlist paths with ``VITE_API_BASE_URL``. */
 export function resolveLiveStreamPlaylistUrl(playlistUrl: string): string {
   const trimmed = playlistUrl.trim();
-  if (trimmed.startsWith('/')) {
-    const base = API_BASE.replace(/\/$/, '');
-    return `${base}${trimmed}`;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
   }
-  return trimmed;
+  let base = API_BASE.replace(/\/$/, '');
+  let path = trimmed;
+  if (path.startsWith('/api/v3') && base.endsWith('/api/v3')) {
+    base = base.slice(0, -'/api/v3'.length);
+  }
+  if (path.startsWith('/')) {
+    return `${base}${path}`;
+  }
+  return `${base}/${path}`;
 }
 
 export function inferLiveStreamAuthMode(playlistPathOrUrl: string): HlsLiveAuthMode {
