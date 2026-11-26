@@ -233,6 +233,10 @@ jobs:
             echo "Starting backend service (required before exec migrations)..."
             docker-compose up -d
 
+            chmod +x scripts/attach_api_mediamtx_network.sh 2>/dev/null || true
+            echo "==> Attach API to MediaMTX Docker network (DIN-508 live stream)..."
+            bash scripts/attach_api_mediamtx_network.sh || true
+
             docker-compose ps
 
             echo "==> GCP secrets preflight (inside api container)..."

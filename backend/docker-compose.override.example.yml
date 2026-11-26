@@ -15,3 +15,11 @@ services:
   api:
     volumes:
       - ./secrets:/app/secrets:ro
+    networks:
+      - default
+      - mediamtx_poc
+
+networks:
+  mediamtx_poc:
+    external: true
+    name: dinamic-mediamtx-poc-net
