@@ -17,6 +17,9 @@ SECRET = "test-mtx-callback-secret"
 def mtx_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("MEDIAMTX_HTTP_AUTH_SECRET", SECRET)
     monkeypatch.setenv("LIVE_STREAM_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
 
     app = FastAPI()
     app.include_router(router)
