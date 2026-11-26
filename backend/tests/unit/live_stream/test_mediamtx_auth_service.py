@@ -123,6 +123,32 @@ def test_same_username_publish_and_read_for_fixed_credentials() -> None:
     ).allowed is False
 
 
+def test_publish_allows_empty_path_for_known_publisher() -> None:
+    repo = MemoryLiveStreamRepository()
+    record = _seed_channel(repo)
+    svc = MediaMtxAuthService(repo=repo, server_secret=SECRET, enabled=True)
+    pub_pass = derive_channel_password(server_secret=SECRET, mediamtx_path=PATH, purpose="publish")
+    assert svc.authorize(
+        username=record.publish_username,
+        password=pub_pass,
+        path="",
+        action="publish",
+    ).allowed
+
+
+def test_publish_allows_stream_key_suffix() -> None:
+    repo = MemoryLiveStreamRepository()
+    record = _seed_channel(repo)
+    svc = MediaMtxAuthService(repo=repo, server_secret=SECRET, enabled=True)
+    pub_pass = derive_channel_password(server_secret=SECRET, mediamtx_path=PATH, purpose="publish")
+    assert svc.authorize(
+        username=record.publish_username,
+        password=pub_pass,
+        path="abc123",
+        action="publish",
+    ).allowed
+
+
 def test_cross_path_denied() -> None:
     repo = MemoryLiveStreamRepository()
     record = _seed_channel(repo)

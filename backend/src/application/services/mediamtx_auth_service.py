@@ -55,13 +55,19 @@ class MediaMtxAuthService:
         pwd = password or ""
         mtx_path = self._normalize_path(path)
         act = (action or "").strip().lower()
-        if not user or not pwd or not mtx_path or not act:
+        if not user or not pwd or not act:
             return MediaMtxAuthDecision(allowed=False)
 
         if act in _PUBLISH_ACTIONS:
             channel = self._repo.find_channel_credentials_by_publish_user(user)
             if channel is not None:
-                if channel.mediamtx_path != mtx_path:
+                if mtx_path and not self._paths_compatible(mtx_path, channel.mediamtx_path):
+                    logger.info(
+                        "event=mediamtx_auth_denied reason=path_mismatch path=%s expected=%s user=%s",
+                        mtx_path,
+                        channel.mediamtx_path,
+                        user,
+                    )
                     return MediaMtxAuthDecision(allowed=False)
                 expected = derive_channel_password(
                     server_secret=self._server_secret,
@@ -90,7 +96,7 @@ class MediaMtxAuthService:
         if channel_read is not None:
             if act not in _READ_ACTIONS:
                 return MediaMtxAuthDecision(allowed=False)
-            if channel_read.mediamtx_path != mtx_path:
+            if mtx_path and not self._paths_compatible(mtx_path, channel_read.mediamtx_path):
                 return MediaMtxAuthDecision(allowed=False)
             expected = derive_channel_password(
                 server_secret=self._server_secret,
@@ -107,7 +113,7 @@ class MediaMtxAuthService:
         if grant is not None:
             if act not in _READ_ACTIONS:
                 return MediaMtxAuthDecision(allowed=False)
-            if grant.mediamtx_path != mtx_path:
+            if mtx_path and not self._paths_compatible(mtx_path, grant.mediamtx_path):
                 return MediaMtxAuthDecision(allowed=False)
             instant = now or datetime.now(timezone.utc)
             if grant.revoked_at is not None or grant.expires_at <= instant:
@@ -125,3 +131,16 @@ class MediaMtxAuthService:
     @staticmethod
     def _normalize_path(path: str) -> str:
         return (path or "").strip().lstrip("/")
+
+    @staticmethod
+    def _paths_compatible(requested: str, channel_path: str) -> bool:
+        """Match exact path or DJI-style stream key suffix / empty path on RTMP connect."""
+        req = MediaMtxAuthService._normalize_path(requested)
+        ch = MediaMtxAuthService._normalize_path(channel_path)
+        if not req:
+            return True
+        if req == ch:
+            return True
+        if ch.endswith(f"/{req}") or ch.split("/")[-1] == req:
+            return True
+        return False
