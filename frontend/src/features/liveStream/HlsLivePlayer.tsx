@@ -80,13 +80,19 @@ export default function HlsLivePlayer({
     if (Hls.isSupported()) {
       hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: true,
+        // LL-HLS + MPEG-TS from MediaMTX can play audio while video MSE stalls in Chrome.
+        lowLatencyMode: false,
+        liveBackBufferLength: 0,
         xhrSetup: (xhr) => {
           xhr.setRequestHeader('Authorization', authHeader);
         },
       });
 
-      const recoverOrFail = (data: { type: string; response?: { code?: number } }) => {
+      const recoverOrFail = (data: {
+        type: string;
+        details?: string;
+        response?: { code?: number };
+      }) => {
         if (cancelled || !hls) return;
         const httpStatus = data.response?.code;
         if (httpStatus === 401 || httpStatus === 403) {
@@ -95,6 +101,11 @@ export default function HlsLivePlayer({
         }
         if (httpStatus === 404) {
           emit('no_stream');
+          return;
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          emit('reconnecting');
+          hls.recoverMediaError();
           return;
         }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
@@ -117,9 +128,11 @@ export default function HlsLivePlayer({
         if (cancelled || !data.fatal) return;
         recoverOrFail(data);
       });
-      // Use a clean playlist URL; auth is sent via xhrSetup (MediaMTX HLS + nginx).
-      // Embedding user:pass in the URL breaks segment resolution in some browsers.
-      hls.loadSource(playlistUrl);
+      // Prefer media playlist directly (avoids multivariant + LL quirks in some browsers).
+      const sourceUrl = playlistUrl.endsWith('index.m3u8')
+        ? playlistUrl.replace(/index\.m3u8$/, 'main_stream.m3u8')
+        : playlistUrl;
+      hls.loadSource(sourceUrl);
       hls.attachMedia(video);
       emit('connecting');
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -148,7 +161,13 @@ export default function HlsLivePlayer({
       controls
       playsInline
       muted
-      style={{ width: '100%', maxHeight: '70vh', backgroundColor: '#000' }}
+      style={{
+        width: '100%',
+        maxHeight: '70vh',
+        minHeight: 240,
+        backgroundColor: '#000',
+        objectFit: 'contain',
+      }}
     />
   );
 }
