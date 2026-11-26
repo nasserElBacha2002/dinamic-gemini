@@ -32,11 +32,9 @@ def _normalize_rel_path(path: str) -> str:
 def rewrite_hls_playlist(
     body: str,
     *,
-    proxy_entry_prefix: str,
     channel_resource_prefix: str,
 ) -> str:
-    """Rewrite segment / variant URIs to point at the API HLS proxy."""
-    entry = proxy_entry_prefix.rstrip("/") + "/"
+    """Normalize segment / variant URIs for proxied HLS playlists."""
     channel_prefix = channel_resource_prefix.strip().lstrip("/")
     out_lines: list[str] = []
     for raw in body.splitlines():
@@ -132,7 +130,6 @@ class LiveStreamHlsProxyService:
             text = body.decode("utf-8", errors="replace")
             rewritten = rewrite_hls_playlist(
                 text,
-                proxy_entry_prefix=proxy_entry_prefix,
                 channel_resource_prefix=channel,
             )
             return HlsProxyFetchResult(
