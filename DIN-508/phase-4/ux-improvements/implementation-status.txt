@@ -1,0 +1,29 @@
+ M DIN-508/phase-4/final-diff.txt
+ M DIN-508/phase-4/final-diffstat.txt
+ M DIN-508/phase-4/final-report.md
+ M DIN-508/phase-4/final-status.txt
+ M DIN-508/phase-4/final-tests.txt
+M  backend/src/api/routes/v3/live_stream.py
+M  backend/src/api/schemas/live_stream_schemas.py
+M  backend/src/application/ports/live_stream_repository.py
+M  backend/src/application/use_cases/live_stream/manage_live_stream.py
+M  backend/src/infrastructure/repositories/memory_live_stream_repository.py
+M  backend/src/infrastructure/repositories/sql_live_stream_repository.py
+A  backend/tests/unit/live_stream/test_get_prepared_channel.py
+M  frontend/src/api/liveStreamApi.ts
+M  frontend/src/features/inventories/components/InventoryDetailHeader.tsx
+A  frontend/src/features/liveStream/InventoryLiveStreamBar.tsx
+M  frontend/src/features/liveStream/LiveStreamDialog.tsx
+A  frontend/src/features/liveStream/liveStreamPresence.ts
+A  frontend/src/features/liveStream/useInventoryLiveStreamChannels.ts
+M  frontend/src/i18n/locales/es/translation.json
+M  frontend/src/pages/InventoryDetail.tsx
+A  frontend/tests/features/liveStream/liveStreamPresence.test.ts
+?? DIN-508/phase-2/corrections/csp-playback-validation.md
+?? DIN-508/phase-4/deployment-validation.md
+?? DIN-508/phase-4/docker-network-validation.md
+?? DIN-508/phase-4/hls-end-to-end-validation.md
+?? DIN-508/phase-4/informe-incidente-visor-hls-2026-11-26.md
+?? DIN-508/phase-4/root-cause-validation.md
+?? DIN-508/phase-4/ux-improvements/
+?? backend/uv.lock

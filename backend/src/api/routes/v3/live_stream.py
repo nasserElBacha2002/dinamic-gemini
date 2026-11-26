@@ -16,6 +16,7 @@ from src.api.deps.security import require_inventory_client_scope
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.live_stream_schemas import (
     CreatePublicLiveGrantRequest,
+    LiveStreamChannelSummary,
     LiveStreamPlaybackResponse,
     LiveStreamPrepareRequest,
     LiveStreamPrepareResponse,
@@ -147,6 +148,63 @@ def proxy_inventory_hls(
         media_type=result.content_type,
         headers={"Cache-Control": result.cache_control},
     )
+
+
+@router.get("/channel", response_model=LiveStreamPrepareResponse)
+def get_prepared_live_stream_channel(
+    inventory_id: str,
+    aisle_code: str,
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case: ManageLiveStreamUseCase = Depends(get_manage_live_stream_use_case),
+) -> LiveStreamPrepareResponse:
+    try:
+        result = use_case.get_prepared_channel(
+            inventory_id=inventory_id,
+            aisle_code=aisle_code,
+            principal=principal,
+        )
+    except Exception as exc:
+        reraise_if_mapped(exc)
+        raise
+    ch = result.channel
+    return LiveStreamPrepareResponse(
+        inventory_id=ch.inventory_id,
+        aisle_code=ch.aisle_code_input,
+        canonical_aisle_code=ch.canonical_aisle_code,
+        channel_slug=ch.channel_slug,
+        mediamtx_path=ch.mediamtx_path,
+        aisle_id=ch.aisle_id,
+        rtmp_publish_url=result.rtmp_publish_url,
+        publish_username=result.publish_username,
+        publish_password=result.publish_password,
+        read_username=result.read_username,
+        read_password=result.read_password,
+        hls_playlist_url=result.hls_playlist_url,
+        status=_status_to_response(result.status),
+    )
+
+
+@router.get("/channels", response_model=list[LiveStreamChannelSummary])
+def list_prepared_live_stream_channels(
+    inventory_id: str,
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case: ManageLiveStreamUseCase = Depends(get_manage_live_stream_use_case),
+) -> list[LiveStreamChannelSummary]:
+    try:
+        items = use_case.list_prepared_channels(inventory_id=inventory_id, principal=principal)
+    except Exception as exc:
+        reraise_if_mapped(exc)
+        raise
+    return [
+        LiveStreamChannelSummary(
+            aisle_code=item.aisle_code,
+            canonical_aisle_code=item.canonical_aisle_code,
+            channel_slug=item.channel_slug,
+            mediamtx_path=item.mediamtx_path,
+            status=_status_to_response(item.status),
+        )
+        for item in items
+    ]
 
 
 @router.get("/status", response_model=LiveStreamStatusResponse)

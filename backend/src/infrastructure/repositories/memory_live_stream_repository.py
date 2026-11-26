@@ -30,6 +30,15 @@ class MemoryLiveStreamRepository(LiveStreamRepository):
     ) -> LiveChannelCredentials | None:
         return self._channels.get((inventory_id, channel_slug))
 
+    def list_channel_credentials_for_inventory(
+        self, inventory_id: str
+    ) -> list[LiveChannelCredentials]:
+        return [
+            creds
+            for (inv_id, _), creds in self._channels.items()
+            if inv_id == inventory_id
+        ]
+
     def get_channel_credentials_by_path(self, mediamtx_path: str) -> LiveChannelCredentials | None:
         return self._channels_by_path.get(mediamtx_path)
 

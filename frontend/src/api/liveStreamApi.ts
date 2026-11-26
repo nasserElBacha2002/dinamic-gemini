@@ -56,6 +56,21 @@ export interface LiveStreamStopResponse {
   status: LiveStreamStatus;
 }
 
+export interface LiveStreamChannelSummary {
+  aisle_code: string;
+  canonical_aisle_code: string;
+  channel_slug: string;
+  mediamtx_path: string;
+  status: LiveStreamStatus;
+}
+
+export interface PublicLiveGrantListItem {
+  grant_id: string;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+}
+
 export interface LiveStreamPrepareResponse {
   inventory_id: string;
   aisle_code: string;
@@ -89,6 +104,22 @@ export interface PublicLivePlaybackResponse {
   publish_blocked: boolean;
 }
 
+export async function getPreparedLiveStreamChannel(
+  inventoryId: string,
+  aisleCode: string,
+): Promise<LiveStreamPrepareResponse> {
+  const qs = new URLSearchParams({ aisle_code: aisleCode });
+  const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/channel?${qs}`;
+  return apiRequestJson<LiveStreamPrepareResponse>(url);
+}
+
+export async function listLiveStreamChannels(
+  inventoryId: string,
+): Promise<LiveStreamChannelSummary[]> {
+  const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/channels`;
+  return apiRequestJson<LiveStreamChannelSummary[]>(url);
+}
+
 export async function prepareLiveStream(
   inventoryId: string,
   aisleCode: string,
@@ -120,6 +151,15 @@ export async function stopLiveStream(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ aisle_code: aisleCode }),
   });
+}
+
+export async function listPublicLiveGrants(
+  inventoryId: string,
+  aisleCode: string,
+): Promise<PublicLiveGrantListItem[]> {
+  const qs = new URLSearchParams({ aisle_code: aisleCode });
+  const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/public-grants?${qs}`;
+  return apiRequestJson<PublicLiveGrantListItem[]>(url);
 }
 
 export async function createPublicLiveGrant(

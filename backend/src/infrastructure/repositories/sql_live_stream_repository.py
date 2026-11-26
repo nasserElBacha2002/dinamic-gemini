@@ -135,6 +135,25 @@ class SqlLiveStreamRepository(LiveStreamRepository):
                     ),
                 )
 
+    def list_channel_credentials_for_inventory(
+        self, inventory_id: str
+    ) -> list[LiveChannelCredentials]:
+        with sql_repository_cursor(self._client) as cur:
+            cur.execute(
+                """
+                SELECT id, inventory_id, canonical_aisle_code, channel_slug, mediamtx_path,
+                       publish_username, publish_password_hash, read_username, read_password_hash,
+                       created_by_principal_id, created_at, updated_at,
+                       publish_blocked_at, publish_blocked_by_principal_id
+                FROM aisle_live_channel_credentials
+                WHERE inventory_id = ?
+                ORDER BY canonical_aisle_code
+                """,
+                (inventory_id,),
+            )
+            rows = cur.fetchall()
+        return [_channel_from_row(r) for r in rows]
+
     def get_channel_credentials(
         self, *, inventory_id: str, channel_slug: str
     ) -> LiveChannelCredentials | None:

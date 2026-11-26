@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Box, Button, Menu, MenuItem, Typography } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +17,7 @@ export interface InventoryDetailHeaderProps {
   onOpenCreateAisle: () => void;
   onEditName?: () => void;
   onImportPackage?: () => void;
+  liveStreamBar?: ReactNode;
   onOpenLiveStream?: () => void;
 }
 
@@ -27,6 +28,7 @@ export default function InventoryDetailHeader({
   onOpenCreateAisle,
   onEditName,
   onImportPackage,
+  liveStreamBar,
   onOpenLiveStream,
 }: InventoryDetailHeaderProps) {
   const { t } = useTranslation();
@@ -56,6 +58,7 @@ export default function InventoryDetailHeader({
           <Box component="span" sx={{ color: 'text.secondary', typography: 'caption' }}>
             {headerVm.createdDateCaption}
           </Box>
+          {liveStreamBar ? <Box sx={{ mt: 1 }}>{liveStreamBar}</Box> : null}
         </Box>
       }
       actions={
@@ -72,7 +75,12 @@ export default function InventoryDetailHeader({
           ) : null}
           <InventoryExportMenu inventoryId={inventoryId} />
           {onOpenLiveStream ? (
-            <Button variant="outlined" size="small" onClick={onOpenLiveStream}>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={onOpenLiveStream}
+              data-testid="inventory-live-stream-menu"
+            >
               {t('live_stream.action_menu')}
             </Button>
           ) : null}

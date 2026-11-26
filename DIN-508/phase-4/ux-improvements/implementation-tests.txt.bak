@@ -1,0 +1,11 @@
+uv run pytest tests/unit/live_stream/test_get_prepared_channel.py tests/unit/live_stream/test_prepare_channel_idempotent.py -q
+# 2 passed in 9.10s
+
+npm run test -- tests/features/liveStream/liveStreamPresence.test.ts
+# 2 passed
+
+npm run typecheck
+# OK
+
+npm run build
+# OK (vite build + dist secrets scan OK)

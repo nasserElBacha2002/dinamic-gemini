@@ -1,0 +1,1851 @@
+diff --git a/backend/src/api/routes/v3/live_stream.py b/backend/src/api/routes/v3/live_stream.py
+index 23776f8e3..feb9e4bd7 100644
+--- a/backend/src/api/routes/v3/live_stream.py
++++ b/backend/src/api/routes/v3/live_stream.py
+@@ -1,38 +1,39 @@
+ """v3 live stream routes — DIN-508 Phase 3."""
+ 
+ from __future__ import annotations
+ 
+ import urllib.error
+ import urllib.parse
+ 
+ from fastapi import APIRouter, Depends, HTTPException, status
+ from fastapi.responses import Response
+ 
+ from src.api.deps.live_stream import (
+     get_live_stream_hls_proxy_service,
+     get_manage_live_stream_use_case,
+ )
+ from src.api.deps.security import require_inventory_client_scope
+ from src.api.errors import reraise_if_mapped
+ from src.api.schemas.live_stream_schemas import (
+     CreatePublicLiveGrantRequest,
++    LiveStreamChannelSummary,
+     LiveStreamPlaybackResponse,
+     LiveStreamPrepareRequest,
+     LiveStreamPrepareResponse,
+     LiveStreamStatusResponse,
+     LiveStreamStopRequest,
+     LiveStreamStopResponse,
+     PublicLiveGrantListItem,
+     PublicLiveGrantResponse,
+ )
+ from src.application.dto.access_principal import AccessPrincipal
+ from src.application.services.live_stream_hls_proxy import LiveStreamHlsProxyService
+ from src.application.use_cases.live_stream.manage_live_stream import ManageLiveStreamUseCase
+ 
+ router = APIRouter(prefix="/{inventory_id}/live-stream")
+ 
+ 
+ def _status_to_response(status) -> LiveStreamStatusResponse:
+     return LiveStreamStatusResponse(
+         presence=status.presence,
+         publisher_ready=status.publisher_ready,
+@@ -132,40 +133,97 @@ def proxy_inventory_hls(
+             read_password=read_pass,
+             proxy_entry_prefix=proxy_prefix,
+         )
+     except urllib.error.HTTPError as exc:
+         if exc.code == 404:
+             raise HTTPException(status_code=404, detail="HLS resource not found") from exc
+         if exc.code in (401, 403):
+             raise HTTPException(status_code=502, detail="HLS upstream unauthorized") from exc
+         raise HTTPException(status_code=502, detail="HLS upstream error") from exc
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail="Invalid HLS resource path") from exc
+     except Exception as exc:
+         raise HTTPException(status_code=502, detail="HLS upstream unavailable") from exc
+     return Response(
+         content=result.body,
+         media_type=result.content_type,
+         headers={"Cache-Control": result.cache_control},
+     )
+ 
+ 
++@router.get("/channel", response_model=LiveStreamPrepareResponse)
++def get_prepared_live_stream_channel(
++    inventory_id: str,
++    aisle_code: str,
++    principal: AccessPrincipal = Depends(require_inventory_client_scope),
++    use_case: ManageLiveStreamUseCase = Depends(get_manage_live_stream_use_case),
++) -> LiveStreamPrepareResponse:
++    try:
++        result = use_case.get_prepared_channel(
++            inventory_id=inventory_id,
++            aisle_code=aisle_code,
++            principal=principal,
++        )
++    except Exception as exc:
++        reraise_if_mapped(exc)
++        raise
++    ch = result.channel
++    return LiveStreamPrepareResponse(
++        inventory_id=ch.inventory_id,
++        aisle_code=ch.aisle_code_input,
++        canonical_aisle_code=ch.canonical_aisle_code,
++        channel_slug=ch.channel_slug,
++        mediamtx_path=ch.mediamtx_path,
++        aisle_id=ch.aisle_id,
++        rtmp_publish_url=result.rtmp_publish_url,
++        publish_username=result.publish_username,
++        publish_password=result.publish_password,
++        read_username=result.read_username,
++        read_password=result.read_password,
++        hls_playlist_url=result.hls_playlist_url,
++        status=_status_to_response(result.status),
++    )
++
++
++@router.get("/channels", response_model=list[LiveStreamChannelSummary])
++def list_prepared_live_stream_channels(
++    inventory_id: str,
++    principal: AccessPrincipal = Depends(require_inventory_client_scope),
++    use_case: ManageLiveStreamUseCase = Depends(get_manage_live_stream_use_case),
++) -> list[LiveStreamChannelSummary]:
++    try:
++        items = use_case.list_prepared_channels(inventory_id=inventory_id, principal=principal)
++    except Exception as exc:
++        reraise_if_mapped(exc)
++        raise
++    return [
++        LiveStreamChannelSummary(
++            aisle_code=item.aisle_code,
++            canonical_aisle_code=item.canonical_aisle_code,
++            channel_slug=item.channel_slug,
++            mediamtx_path=item.mediamtx_path,
++            status=_status_to_response(item.status),
++        )
++        for item in items
++    ]
++
++
+ @router.get("/status", response_model=LiveStreamStatusResponse)
+ def get_live_stream_status(
+     inventory_id: str,
+     aisle_code: str,
+     principal: AccessPrincipal = Depends(require_inventory_client_scope),
+     use_case: ManageLiveStreamUseCase = Depends(get_manage_live_stream_use_case),
+ ) -> LiveStreamStatusResponse:
+     try:
+         _resolved, status = use_case.get_status(
+             inventory_id=inventory_id,
+             aisle_code=aisle_code,
+             principal=principal,
+         )
+     except Exception as exc:
+         reraise_if_mapped(exc)
+         raise
+     return _status_to_response(status)
+ 
+ 
+ @router.get("/playback", response_model=LiveStreamPlaybackResponse)
+diff --git a/backend/src/api/schemas/live_stream_schemas.py b/backend/src/api/schemas/live_stream_schemas.py
+index 36708ec32..d554a37eb 100644
+--- a/backend/src/api/schemas/live_stream_schemas.py
++++ b/backend/src/api/schemas/live_stream_schemas.py
+@@ -37,40 +37,48 @@ class LiveStreamPrepareResponse(BaseModel):
+     channel_slug: str
+     mediamtx_path: str
+     aisle_id: str | None
+     rtmp_publish_url: str
+     publish_username: str
+     publish_password: str
+     read_username: str
+     read_password: str
+     hls_playlist_url: str
+     status: LiveStreamStatusResponse
+ 
+ 
+ class LiveStreamPlaybackResponse(BaseModel):
+     mediamtx_path: str
+     hls_playlist_url: str
+     read_username: str
+     read_password: str
+     status: LiveStreamStatusResponse
+ 
+ 
++class LiveStreamChannelSummary(BaseModel):
++    aisle_code: str
++    canonical_aisle_code: str
++    channel_slug: str
++    mediamtx_path: str
++    status: LiveStreamStatusResponse
++
++
+ class CreatePublicLiveGrantRequest(BaseModel):
+     aisle_code: str = Field(min_length=1, max_length=64)
+     ttl_hours: int | None = Field(default=None, ge=1, le=24 * 30)
+ 
+ 
+ class PublicLiveGrantResponse(BaseModel):
+     grant_id: str
+     public_url: str
+     expires_at: datetime
+     view_username: str
+     view_password: str
+ 
+ 
+ class PublicLiveGrantListItem(BaseModel):
+     grant_id: str
+     created_at: datetime
+     expires_at: datetime
+     revoked_at: datetime | None
+ 
+ 
+diff --git a/backend/src/application/ports/live_stream_repository.py b/backend/src/application/ports/live_stream_repository.py
+index 40a1ace29..f8affca2b 100644
+--- a/backend/src/application/ports/live_stream_repository.py
++++ b/backend/src/application/ports/live_stream_repository.py
+@@ -2,40 +2,46 @@
+ 
+ from __future__ import annotations
+ 
+ from abc import ABC, abstractmethod
+ from datetime import datetime
+ 
+ from src.domain.live_stream.entities import LiveChannelCredentials, LiveViewGrant
+ 
+ 
+ class LiveStreamRepository(ABC):
+     @abstractmethod
+     def upsert_channel_credentials(self, record: LiveChannelCredentials) -> None:
+         raise NotImplementedError
+ 
+     @abstractmethod
+     def get_channel_credentials(
+         self, *, inventory_id: str, channel_slug: str
+     ) -> LiveChannelCredentials | None:
+         raise NotImplementedError
+ 
++    @abstractmethod
++    def list_channel_credentials_for_inventory(
++        self, inventory_id: str
++    ) -> list[LiveChannelCredentials]:
++        raise NotImplementedError
++
+     @abstractmethod
+     def get_channel_credentials_by_path(self, mediamtx_path: str) -> LiveChannelCredentials | None:
+         raise NotImplementedError
+ 
+     @abstractmethod
+     def find_channel_credentials_by_publish_user(
+         self, username: str
+     ) -> LiveChannelCredentials | None:
+         raise NotImplementedError
+ 
+     @abstractmethod
+     def find_channel_credentials_by_read_user(self, username: str) -> LiveChannelCredentials | None:
+         raise NotImplementedError
+ 
+     @abstractmethod
+     def save_view_grant(self, grant: LiveViewGrant) -> None:
+         raise NotImplementedError
+ 
+     @abstractmethod
+     def get_view_grant_by_token_hash(self, token_hash: str) -> LiveViewGrant | None:
+diff --git a/backend/src/application/use_cases/live_stream/manage_live_stream.py b/backend/src/application/use_cases/live_stream/manage_live_stream.py
+index 562ffbb95..710605695 100644
+--- a/backend/src/application/use_cases/live_stream/manage_live_stream.py
++++ b/backend/src/application/use_cases/live_stream/manage_live_stream.py
+@@ -63,40 +63,49 @@ class PublicLiveGrantItem:
+     created_at: object
+ 
+ 
+ @dataclass(frozen=True)
+ class CreatedPublicGrantResult:
+     grant_id: str
+     public_url: str
+     public_token: str
+     expires_at: object
+     view_username: str
+     view_password: str
+ 
+ 
+ @dataclass(frozen=True)
+ class StopTransmissionResult:
+     channel: ResolvedLiveChannel
+     status: LiveStreamStatusSnapshot
+     publisher_kicked: bool
+ 
+ 
++@dataclass(frozen=True)
++class LiveStreamChannelSummaryItem:
++    aisle_code: str
++    canonical_aisle_code: str
++    channel_slug: str
++    mediamtx_path: str
++    status: LiveStreamStatusSnapshot
++
++
+ class ManageLiveStreamUseCase:
+     def __init__(
+         self,
+         *,
+         inventory_repo: InventoryRepository,
+         aisle_repo: AisleRepository | None,
+         live_repo: LiveStreamRepository,
+         clock: Clock,
+         enabled: bool,
+         server_secret: str,
+         rtmp_publish_base_url: str,
+         hls_public_base_url: str,
+         status_service: LiveStreamStatusService,
+         mediamtx_control: LiveStreamMediaMtxControl,
+         public_link_base_url: str,
+         public_grant_default_ttl_hours: int,
+         fixed_publish_username: str = "",
+         fixed_publish_password: str = "",
+         fixed_read_username: str = "",
+         fixed_read_password: str = "",
+@@ -215,56 +224,113 @@ class ManageLiveStreamUseCase:
+         )
+         record = LiveChannelCredentials(
+             id=existing.id if existing else str(uuid4()),
+             inventory_id=resolved.inventory_id,
+             canonical_aisle_code=resolved.canonical_aisle_code,
+             channel_slug=resolved.channel_slug,
+             mediamtx_path=resolved.mediamtx_path,
+             publish_username=publish_user,
+             publish_password_hash=hash_live_stream_secret(publish_password),
+             read_username=read_user,
+             read_password_hash=hash_live_stream_secret(read_password),
+             created_by_principal_id=(
+                 existing.created_by_principal_id if existing else principal.actor_id
+             ),
+             created_at=existing.created_at if existing else now,
+             updated_at=now,
+             publish_blocked_at=None,
+             publish_blocked_by_principal_id=None,
+         )
+         self._live_repo.upsert_channel_credentials(record)
+-        status = self._channel_status(mediamtx_path=resolved.mediamtx_path, creds=record)
++        return self._prepared_channel_result(resolved=resolved, creds=record)
++
++    def _prepared_channel_result(
++        self,
++        *,
++        resolved: ResolvedLiveChannel,
++        creds: LiveChannelCredentials,
++    ) -> PreparedLiveChannelResult:
++        inventory = self._inventory_repo.get_by_id(resolved.inventory_id)
++        inv_name = inventory.name if inventory is not None else ""
++        publish_user, publish_password, read_user, read_password = self._resolve_channel_credentials(
++            inv_name=inv_name,
++            resolved=resolved,
++        )
++        status = self._channel_status(mediamtx_path=resolved.mediamtx_path, creds=creds)
+         return PreparedLiveChannelResult(
+             channel=resolved,
+             rtmp_publish_url=self._build_rtmp_url(resolved.mediamtx_path),
+             publish_username=publish_user,
+             publish_password=publish_password,
+             read_username=read_user,
+             read_password=read_password,
+             hls_playlist_url=self._build_viewer_hls_playlist_url(
+                 inventory_id=resolved.inventory_id,
+                 canonical_aisle_code=resolved.canonical_aisle_code,
+                 mediamtx_path=resolved.mediamtx_path,
+             ),
+             status=status,
+         )
+ 
++    def get_prepared_channel(
++        self,
++        *,
++        inventory_id: str,
++        aisle_code: str,
++        principal: AccessPrincipal,
++    ) -> PreparedLiveChannelResult:
++        """Return prepared channel credentials without mutating persistence."""
++        self._require_enabled()
++        self._access.require_inventory(inventory_id, principal)
++        resolved = self._resolver.resolve(inventory_id=inventory_id, aisle_code=aisle_code)
++        creds = self._live_repo.get_channel_credentials(
++            inventory_id=resolved.inventory_id, channel_slug=resolved.channel_slug
++        )
++        if creds is None:
++            from src.application.errors import LiveStreamNotPreparedError
++
++            raise LiveStreamNotPreparedError("Live channel has not been prepared for this aisle")
++        return self._prepared_channel_result(resolved=resolved, creds=creds)
++
++    def list_prepared_channels(
++        self,
++        *,
++        inventory_id: str,
++        principal: AccessPrincipal,
++    ) -> list[LiveStreamChannelSummaryItem]:
++        self._require_enabled()
++        self._access.require_inventory(inventory_id, principal)
++        creds_list = self._live_repo.list_channel_credentials_for_inventory(inventory_id)
++        items: list[LiveStreamChannelSummaryItem] = []
++        for creds in creds_list:
++            status = self._channel_status(mediamtx_path=creds.mediamtx_path, creds=creds)
++            items.append(
++                LiveStreamChannelSummaryItem(
++                    aisle_code=creds.canonical_aisle_code,
++                    canonical_aisle_code=creds.canonical_aisle_code,
++                    channel_slug=creds.channel_slug,
++                    mediamtx_path=creds.mediamtx_path,
++                    status=status,
++                )
++            )
++        return items
++
+     def get_status(
+         self,
+         *,
+         inventory_id: str,
+         aisle_code: str,
+         principal: AccessPrincipal,
+     ) -> tuple[ResolvedLiveChannel, LiveStreamStatusSnapshot]:
+         self._require_enabled()
+         self._access.require_inventory(inventory_id, principal)
+         resolved = self._resolver.resolve(inventory_id=inventory_id, aisle_code=aisle_code)
+         creds = self._live_repo.get_channel_credentials(
+             inventory_id=resolved.inventory_id, channel_slug=resolved.channel_slug
+         )
+         return resolved, self._channel_status(mediamtx_path=resolved.mediamtx_path, creds=creds)
+ 
+     def stop_transmission(
+         self,
+         *,
+         inventory_id: str,
+         aisle_code: str,
+diff --git a/backend/src/infrastructure/repositories/memory_live_stream_repository.py b/backend/src/infrastructure/repositories/memory_live_stream_repository.py
+index 33986bdeb..8ee656819 100644
+--- a/backend/src/infrastructure/repositories/memory_live_stream_repository.py
++++ b/backend/src/infrastructure/repositories/memory_live_stream_repository.py
+@@ -13,40 +13,49 @@ class MemoryLiveStreamRepository(LiveStreamRepository):
+         self._channels: dict[tuple[str, str], LiveChannelCredentials] = {}
+         self._channels_by_path: dict[str, LiveChannelCredentials] = {}
+         self._channels_by_pub: dict[str, LiveChannelCredentials] = {}
+         self._channels_by_read: dict[str, LiveChannelCredentials] = {}
+         self._grants_by_hash: dict[str, LiveViewGrant] = {}
+         self._grants_by_user: dict[str, LiveViewGrant] = {}
+         self._grants_by_channel: dict[tuple[str, str], list[LiveViewGrant]] = {}
+ 
+     def upsert_channel_credentials(self, record: LiveChannelCredentials) -> None:
+         key = (record.inventory_id, record.channel_slug)
+         self._channels[key] = record
+         self._channels_by_path[record.mediamtx_path] = record
+         self._channels_by_pub[record.publish_username] = record
+         self._channels_by_read[record.read_username] = record
+ 
+     def get_channel_credentials(
+         self, *, inventory_id: str, channel_slug: str
+     ) -> LiveChannelCredentials | None:
+         return self._channels.get((inventory_id, channel_slug))
+ 
++    def list_channel_credentials_for_inventory(
++        self, inventory_id: str
++    ) -> list[LiveChannelCredentials]:
++        return [
++            creds
++            for (inv_id, _), creds in self._channels.items()
++            if inv_id == inventory_id
++        ]
++
+     def get_channel_credentials_by_path(self, mediamtx_path: str) -> LiveChannelCredentials | None:
+         return self._channels_by_path.get(mediamtx_path)
+ 
+     def find_channel_credentials_by_publish_user(
+         self, username: str
+     ) -> LiveChannelCredentials | None:
+         return self._channels_by_pub.get(username)
+ 
+     def find_channel_credentials_by_read_user(self, username: str) -> LiveChannelCredentials | None:
+         return self._channels_by_read.get(username)
+ 
+     def save_view_grant(self, grant: LiveViewGrant) -> None:
+         self._grants_by_hash[grant.token_hash] = grant
+         self._grants_by_user[grant.view_username] = grant
+         key = (grant.inventory_id, grant.channel_slug)
+         self._grants_by_channel.setdefault(key, []).append(grant)
+ 
+     def get_view_grant_by_token_hash(self, token_hash: str) -> LiveViewGrant | None:
+         return self._grants_by_hash.get(token_hash)
+ 
+diff --git a/backend/src/infrastructure/repositories/sql_live_stream_repository.py b/backend/src/infrastructure/repositories/sql_live_stream_repository.py
+index a3662707f..bef0baede 100644
+--- a/backend/src/infrastructure/repositories/sql_live_stream_repository.py
++++ b/backend/src/infrastructure/repositories/sql_live_stream_repository.py
+@@ -118,40 +118,59 @@ class SqlLiveStreamRepository(LiveStreamRepository):
+                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     """,
+                     (
+                         record.id,
+                         record.inventory_id,
+                         record.canonical_aisle_code,
+                         record.channel_slug,
+                         record.mediamtx_path,
+                         record.publish_username,
+                         record.publish_password_hash,
+                         record.read_username,
+                         record.read_password_hash,
+                         record.created_by_principal_id,
+                         record.created_at,
+                         record.updated_at,
+                         record.publish_blocked_at,
+                         record.publish_blocked_by_principal_id,
+                     ),
+                 )
+ 
++    def list_channel_credentials_for_inventory(
++        self, inventory_id: str
++    ) -> list[LiveChannelCredentials]:
++        with sql_repository_cursor(self._client) as cur:
++            cur.execute(
++                """
++                SELECT id, inventory_id, canonical_aisle_code, channel_slug, mediamtx_path,
++                       publish_username, publish_password_hash, read_username, read_password_hash,
++                       created_by_principal_id, created_at, updated_at,
++                       publish_blocked_at, publish_blocked_by_principal_id
++                FROM aisle_live_channel_credentials
++                WHERE inventory_id = ?
++                ORDER BY canonical_aisle_code
++                """,
++                (inventory_id,),
++            )
++            rows = cur.fetchall()
++        return [_channel_from_row(r) for r in rows]
++
+     def get_channel_credentials(
+         self, *, inventory_id: str, channel_slug: str
+     ) -> LiveChannelCredentials | None:
+         with sql_repository_cursor(self._client) as cur:
+             cur.execute(
+                 """
+                 SELECT id, inventory_id, canonical_aisle_code, channel_slug, mediamtx_path,
+                        publish_username, publish_password_hash, read_username, read_password_hash,
+                        created_by_principal_id, created_at, updated_at,
+                        publish_blocked_at, publish_blocked_by_principal_id
+                 FROM aisle_live_channel_credentials
+                 WHERE inventory_id = ? AND channel_slug = ?
+                 """,
+                 (inventory_id, channel_slug),
+             )
+             row = cur.fetchone()
+         return _channel_from_row(row) if row else None
+ 
+     def get_channel_credentials_by_path(self, mediamtx_path: str) -> LiveChannelCredentials | None:
+         with sql_repository_cursor(self._client) as cur:
+diff --git a/backend/tests/unit/live_stream/test_get_prepared_channel.py b/backend/tests/unit/live_stream/test_get_prepared_channel.py
+new file mode 100644
+index 000000000..9a3168460
+--- /dev/null
++++ b/backend/tests/unit/live_stream/test_get_prepared_channel.py
+@@ -0,0 +1,80 @@
++"""Read-only channel recovery must not clear publish block."""
++
++from __future__ import annotations
++
++from datetime import datetime, timezone
++from uuid import uuid4
++
++from src.application.dto.access_principal import AccessPrincipal
++from src.application.ports.clock import Clock
++from src.application.services.live_stream_mediamtx_control import LiveStreamMediaMtxControl
++from src.application.services.live_stream_status_service import LiveStreamStatusService
++from src.application.use_cases.live_stream.manage_live_stream import ManageLiveStreamUseCase
++from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
++from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
++from src.infrastructure.repositories.memory_live_stream_repository import MemoryLiveStreamRepository
++
++
++class _FixedClock(Clock):
++    def __init__(self, instant: datetime) -> None:
++        self._instant = instant
++
++    def now(self) -> datetime:
++        return self._instant
++
++
++def test_get_prepared_channel_preserves_publish_block() -> None:
++    live_repo = MemoryLiveStreamRepository()
++    inv_repo = MemoryInventoryRepository()
++    inv_id = str(uuid4())
++    now = datetime.now(timezone.utc)
++    inv_repo.save(
++        Inventory(
++            id=inv_id,
++            name="t",
++            client_id="c1",
++            status=InventoryStatus.DRAFT,
++            processing_mode=InventoryProcessingMode.PRODUCTION,
++            created_at=now,
++            updated_at=now,
++        )
++    )
++    uc = ManageLiveStreamUseCase(
++        inventory_repo=inv_repo,
++        aisle_repo=None,
++        live_repo=live_repo,
++        clock=_FixedClock(now),
++        enabled=True,
++        server_secret="unit-test-secret",
++        rtmp_publish_base_url="rtmp://127.0.0.1:1935",
++        hls_public_base_url="http://127.0.0.1:8888",
++        status_service=LiveStreamStatusService(api_base_url=None),
++        mediamtx_control=LiveStreamMediaMtxControl(api_base_url=None),
++        public_link_base_url="http://localhost:5173",
++        public_grant_default_ttl_hours=24,
++    )
++    principal = AccessPrincipal(
++        actor_id="admin", client_id="c1", roles=frozenset({"admin"}), is_platform=True
++    )
++    prepared = uc.prepare_channel(inventory_id=inv_id, aisle_code="P1", principal=principal)
++    blocked_at = now
++    live_repo.set_channel_publish_blocked(
++        inventory_id=inv_id,
++        channel_slug=prepared.channel.channel_slug,
++        blocked_at=blocked_at,
++        blocked_by_principal_id="admin",
++        updated_at=blocked_at,
++    )
++    creds = live_repo.get_channel_credentials(
++        inventory_id=inv_id, channel_slug=prepared.channel.channel_slug
++    )
++    assert creds is not None
++    assert creds.publish_blocked_at is not None
++
++    recovered = uc.get_prepared_channel(inventory_id=inv_id, aisle_code="P1", principal=principal)
++    assert recovered.status.publish_blocked is True
++    after = live_repo.get_channel_credentials(
++        inventory_id=inv_id, channel_slug=prepared.channel.channel_slug
++    )
++    assert after is not None
++    assert after.publish_blocked_at is not None
+\ No newline at end of file
+diff --git a/frontend/src/api/liveStreamApi.ts b/frontend/src/api/liveStreamApi.ts
+index 7a5f210ba..52123bc40 100644
+--- a/frontend/src/api/liveStreamApi.ts
++++ b/frontend/src/api/liveStreamApi.ts
+@@ -39,106 +39,146 @@ export type LiveStreamPresence =
+   | 'live'
+   | 'reconnecting'
+   | 'ended'
+   | 'service_unavailable';
+ 
+ export interface LiveStreamStatus {
+   presence: LiveStreamPresence;
+   publisher_ready: boolean;
+   bytes_received: number | null;
+   publish_blocked: boolean;
+ }
+ 
+ export interface LiveStreamStopResponse {
+   aisle_code: string;
+   canonical_aisle_code: string;
+   mediamtx_path: string;
+   publisher_kicked: boolean;
+   status: LiveStreamStatus;
+ }
+ 
++export interface LiveStreamChannelSummary {
++  aisle_code: string;
++  canonical_aisle_code: string;
++  channel_slug: string;
++  mediamtx_path: string;
++  status: LiveStreamStatus;
++}
++
++export interface PublicLiveGrantListItem {
++  grant_id: string;
++  created_at: string;
++  expires_at: string;
++  revoked_at: string | null;
++}
++
+ export interface LiveStreamPrepareResponse {
+   inventory_id: string;
+   aisle_code: string;
+   canonical_aisle_code: string;
+   channel_slug: string;
+   mediamtx_path: string;
+   aisle_id: string | null;
+   rtmp_publish_url: string;
+   publish_username: string;
+   publish_password: string;
+   read_username: string;
+   read_password: string;
+   hls_playlist_url: string;
+   status: LiveStreamStatus;
+ }
+ 
+ export interface PublicLiveGrantResponse {
+   grant_id: string;
+   public_url: string;
+   expires_at: string;
+   view_username: string;
+   view_password: string;
+ }
+ 
+ export interface PublicLivePlaybackResponse {
+   presence: LiveStreamPresence;
+   hls_playlist_url: string;
+   view_username: string;
+   view_password: string;
+   expires_at: string;
+   publish_blocked: boolean;
+ }
+ 
++export async function getPreparedLiveStreamChannel(
++  inventoryId: string,
++  aisleCode: string,
++): Promise<LiveStreamPrepareResponse> {
++  const qs = new URLSearchParams({ aisle_code: aisleCode });
++  const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/channel?${qs}`;
++  return apiRequestJson<LiveStreamPrepareResponse>(url);
++}
++
++export async function listLiveStreamChannels(
++  inventoryId: string,
++): Promise<LiveStreamChannelSummary[]> {
++  const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/channels`;
++  return apiRequestJson<LiveStreamChannelSummary[]>(url);
++}
++
+ export async function prepareLiveStream(
+   inventoryId: string,
+   aisleCode: string,
+ ): Promise<LiveStreamPrepareResponse> {
+   const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/prepare`;
+   return apiRequestJson<LiveStreamPrepareResponse>(url, {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ aisle_code: aisleCode }),
+   });
+ }
+ 
+ export async function getLiveStreamStatus(
+   inventoryId: string,
+   aisleCode: string,
+ ): Promise<LiveStreamStatus> {
+   const qs = new URLSearchParams({ aisle_code: aisleCode });
+   const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/status?${qs}`;
+   return apiRequestJson<LiveStreamStatus>(url);
+ }
+ 
+ export async function stopLiveStream(
+   inventoryId: string,
+   aisleCode: string,
+ ): Promise<LiveStreamStopResponse> {
+   const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/stop`;
+   return apiRequestJson<LiveStreamStopResponse>(url, {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ aisle_code: aisleCode }),
+   });
+ }
+ 
++export async function listPublicLiveGrants(
++  inventoryId: string,
++  aisleCode: string,
++): Promise<PublicLiveGrantListItem[]> {
++  const qs = new URLSearchParams({ aisle_code: aisleCode });
++  const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/public-grants?${qs}`;
++  return apiRequestJson<PublicLiveGrantListItem[]>(url);
++}
++
+ export async function createPublicLiveGrant(
+   inventoryId: string,
+   aisleCode: string,
+   ttlHours?: number,
+ ): Promise<PublicLiveGrantResponse> {
+   const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/public-grants`;
+   return apiRequestJson<PublicLiveGrantResponse>(url, {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ aisle_code: aisleCode, ttl_hours: ttlHours ?? null }),
+   });
+ }
+ 
+ export async function revokePublicLiveGrant(inventoryId: string, grantId: string): Promise<void> {
+   const url = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/live-stream/public-grants/${encodeURIComponent(grantId)}`;
+   await apiRequestJson<void>(url, { method: 'DELETE' });
+ }
+ 
+ export async function getPublicLivePlayback(token: string): Promise<PublicLivePlaybackResponse> {
+   const url = `${API_BASE}/api/public/live/${encodeURIComponent(token)}`;
+diff --git a/frontend/src/features/inventories/components/InventoryDetailHeader.tsx b/frontend/src/features/inventories/components/InventoryDetailHeader.tsx
+index 7c1a3f768..ae2cddbed 100644
+--- a/frontend/src/features/inventories/components/InventoryDetailHeader.tsx
++++ b/frontend/src/features/inventories/components/InventoryDetailHeader.tsx
+@@ -1,95 +1,103 @@
+-import { useState, type MouseEvent } from 'react';
++import { useState, type MouseEvent, type ReactNode } from 'react';
+ import { Box, Button, Menu, MenuItem, Typography } from '@mui/material';
+ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+ import { useTranslation } from 'react-i18next';
+ import { useNavigate } from 'react-router-dom';
+ import { ROUTE_HOME, pathToInventoryAnalyticsCompare } from '../../../constants/appRoutes';
+ import type { Inventory } from '../../../api/types';
+ import { PageHeader, type PageHeaderBreadcrumb } from '../../../components/shell';
+ import { StatusBadge } from '../../../components/ui';
+ import type { InventoryHeaderViewModel } from '../adapters';
+ import InventoryExportMenu from './InventoryExportMenu';
+ 
+ export interface InventoryDetailHeaderProps {
+   inventory: Inventory;
+   inventoryId: string;
+   headerVm: InventoryHeaderViewModel;
+   onOpenCreateAisle: () => void;
+   onEditName?: () => void;
+   onImportPackage?: () => void;
++  liveStreamBar?: ReactNode;
+   onOpenLiveStream?: () => void;
+ }
+ 
+ export default function InventoryDetailHeader({
+   inventory,
+   inventoryId,
+   headerVm,
+   onOpenCreateAisle,
+   onEditName,
+   onImportPackage,
++  liveStreamBar,
+   onOpenLiveStream,
+ }: InventoryDetailHeaderProps) {
+   const { t } = useTranslation();
+   const navigate = useNavigate();
+   const [moreActionsAnchorEl, setMoreActionsAnchorEl] = useState<null | HTMLElement>(null);
+   const moreActionsOpen = Boolean(moreActionsAnchorEl);
+ 
+   const breadcrumbs: PageHeaderBreadcrumb[] = [
+     { label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME },
+   ];
+ 
+   return (
+     <PageHeader
+       breadcrumbs={breadcrumbs}
+       title={headerVm.title}
+       subtitle={
+         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+           <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
+             <StatusBadge label={headerVm.statusLabel} semantic={headerVm.statusSemantic} />
+             <StatusBadge label={headerVm.processingModeLabel} semantic={headerVm.processingModeSemantic} />
+           </Box>
+           {headerVm.primaryConfigCaption ? (
+             <Typography variant="caption" color="text.secondary" display="block">
+               {headerVm.primaryConfigCaption}
+             </Typography>
+           ) : null}
+           <Box component="span" sx={{ color: 'text.secondary', typography: 'caption' }}>
+             {headerVm.createdDateCaption}
+           </Box>
++          {liveStreamBar ? <Box sx={{ mt: 1 }}>{liveStreamBar}</Box> : null}
+         </Box>
+       }
+       actions={
+         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
+           {inventory.processing_mode === 'test' ? (
+             <Button
+               variant="outlined"
+               size="small"
+               data-testid="inventory-header-compare-runs"
+               onClick={() => navigate(pathToInventoryAnalyticsCompare(inventoryId))}
+             >
+               {t('analytics.compare_runs_link')}
+             </Button>
+           ) : null}
+           <InventoryExportMenu inventoryId={inventoryId} />
+           {onOpenLiveStream ? (
+-            <Button variant="outlined" size="small" onClick={onOpenLiveStream}>
++            <Button
++              variant="outlined"
++              size="small"
++              onClick={onOpenLiveStream}
++              data-testid="inventory-live-stream-menu"
++            >
+               {t('live_stream.action_menu')}
+             </Button>
+           ) : null}
+           {onImportPackage ? (
+             <Button
+               variant="outlined"
+               size="small"
+               data-testid="inventory-import-package"
+               onClick={onImportPackage}
+             >
+               {t('inventory.import_package.action')}
+             </Button>
+           ) : null}
+           {onEditName ? (
+             <>
+               <Button
+                 variant="outlined"
+                 size="small"
+                 data-testid="inventory-more-actions"
+                 endIcon={<KeyboardArrowDownIcon fontSize="small" />}
+diff --git a/frontend/src/features/liveStream/InventoryLiveStreamBar.tsx b/frontend/src/features/liveStream/InventoryLiveStreamBar.tsx
+new file mode 100644
+index 000000000..c433f1be4
+--- /dev/null
++++ b/frontend/src/features/liveStream/InventoryLiveStreamBar.tsx
+@@ -0,0 +1,104 @@
++import { Box, Button, Chip, Stack, Typography } from '@mui/material';
++import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
++import { useTranslation } from 'react-i18next';
++import type { LiveStreamChannelSummary } from '../../api/liveStreamApi';
++import { stopLiveStream } from '../../api/liveStreamApi';
++import { useAppSnackbar } from '../../components/ui';
++import { isPublisherActivePresence } from './liveStreamPresence';
++
++export interface InventoryLiveStreamBarProps {
++  inventoryId: string;
++  channels: LiveStreamChannelSummary[];
++  onPrepare: () => void;
++  onManage: (aisleCode: string) => void;
++  onChannelsChanged: () => void;
++}
++
++export default function InventoryLiveStreamBar({
++  inventoryId,
++  channels,
++  onPrepare,
++  onManage,
++  onChannelsChanged,
++}: InventoryLiveStreamBarProps) {
++  const { t } = useTranslation();
++  const { showSnackbar } = useAppSnackbar();
++
++  const activeChannels = channels.filter((ch) => isPublisherActivePresence(ch.status.presence));
++
++  const handleStop = async (aisleCode: string) => {
++    const ok = window.confirm(t('live_stream.stop_confirm'));
++    if (!ok) return;
++    try {
++      await stopLiveStream(inventoryId, aisleCode);
++      showSnackbar(t('live_stream.stop_success'), 'success');
++      onChannelsChanged();
++    } catch {
++      showSnackbar(t('live_stream.stop_error'), 'error');
++    }
++  };
++
++  if (channels.length === 0) {
++    return (
++      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
++        <Button variant="outlined" size="small" onClick={onPrepare} data-testid="inventory-live-prepare">
++          {t('live_stream.inventory_prepare')}
++        </Button>
++      </Box>
++    );
++  }
++
++  return (
++    <Stack spacing={1} data-testid="inventory-live-stream-bar">
++      {activeChannels.length === 0 ? (
++        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
++          <Typography variant="body2" color="text.secondary">
++            {t('live_stream.inventory_prepared_channels')}
++          </Typography>
++          <Button variant="outlined" size="small" onClick={onPrepare}>
++            {t('live_stream.inventory_prepare')}
++          </Button>
++        </Box>
++      ) : null}
++      {channels.map((ch) => {
++        const live = isPublisherActivePresence(ch.status.presence);
++        return (
++          <Box
++            key={ch.channel_slug}
++            sx={{
++              display: 'flex',
++              flexWrap: 'wrap',
++              gap: 1,
++              alignItems: 'center',
++              py: 0.5,
++            }}
++          >
++            {live ? (
++              <Chip
++                size="small"
++                color="error"
++                icon={<FiberManualRecordIcon sx={{ fontSize: 12 }} />}
++                label={t('live_stream.inventory_live_badge', { aisle: ch.aisle_code })}
++              />
++            ) : (
++              <Typography variant="body2" color="text.secondary">
++                {t('live_stream.inventory_channel_status', {
++                  aisle: ch.aisle_code,
++                  status: t(`live_stream.presence_${ch.status.presence}`),
++                })}
++              </Typography>
++            )}
++            <Button size="small" onClick={() => onManage(ch.aisle_code)}>
++              {t('live_stream.inventory_manage')}
++            </Button>
++            {live ? (
++              <Button size="small" color="error" onClick={() => void handleStop(ch.aisle_code)}>
++                {t('live_stream.stop_action')}
++              </Button>
++            ) : null}
++          </Box>
++        );
++      })}
++    </Stack>
++  );
++}
+\ No newline at end of file
+diff --git a/frontend/src/features/liveStream/LiveStreamDialog.tsx b/frontend/src/features/liveStream/LiveStreamDialog.tsx
+index 2e96cb730..0d5390cdf 100644
+--- a/frontend/src/features/liveStream/LiveStreamDialog.tsx
++++ b/frontend/src/features/liveStream/LiveStreamDialog.tsx
+@@ -1,315 +1,421 @@
+ import { useCallback, useEffect, useMemo, useState } from 'react';
+ import {
++  Accordion,
++  AccordionDetails,
++  AccordionSummary,
++  Alert,
+   Box,
+   Button,
+   Dialog,
+   DialogActions,
+   DialogContent,
+   DialogTitle,
+   MenuItem,
+   TextField,
+   Typography,
+ } from '@mui/material';
++import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
++import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+ import { useTranslation } from 'react-i18next';
+ import {
+   createPublicLiveGrant,
+   getLiveStreamStatus,
+-  inferLiveStreamAuthMode,
++  getPreparedLiveStreamChannel,
++  listPublicLiveGrants,
+   prepareLiveStream,
+-  resolveLiveStreamPlaylistUrl,
+   revokePublicLiveGrant,
+   stopLiveStream,
+   type LiveStreamPrepareResponse,
+   type LiveStreamPresence,
++  type PublicLiveGrantListItem,
+ } from '../../api/liveStreamApi';
+ import type { Aisle } from '../../api/types';
+ import { useAppSnackbar } from '../../components/ui';
+-import HlsLivePlayer from './HlsLivePlayer';
++import { isApiNotPreparedError } from './liveStreamPresence';
+ 
+ export interface LiveStreamDialogProps {
+   open: boolean;
+   inventoryId: string;
+   aisles: Aisle[];
+   initialAisleCode?: string;
+   onClose: () => void;
++  onChannelsChanged?: () => void;
+ }
+ 
+ function buildRtmpEmbeddedAuthUrl(publishUrl: string, username: string, password: string): string {
+   const trimmed = publishUrl.trim();
+   const user = encodeURIComponent(username);
+   const pass = encodeURIComponent(password);
+   const sep = trimmed.includes('?') ? '&' : '?';
+   return `${trimmed}${sep}user=${user}&pass=${pass}`;
+ }
+ 
+ const presenceLabelKey: Record<LiveStreamPresence, string> = {
+   no_stream: 'live_stream.presence_no_stream',
+   connecting: 'live_stream.presence_connecting',
+   live: 'live_stream.presence_live',
+   reconnecting: 'live_stream.presence_reconnecting',
+   ended: 'live_stream.presence_ended',
+   service_unavailable: 'live_stream.presence_service_unavailable',
+ };
+ 
+ export default function LiveStreamDialog({
+   open,
+   inventoryId,
+   aisles,
+   initialAisleCode,
+   onClose,
++  onChannelsChanged,
+ }: LiveStreamDialogProps) {
+   const { t } = useTranslation();
+   const { showSnackbar } = useAppSnackbar();
+   const [aisleCode, setAisleCode] = useState(initialAisleCode ?? '');
+   const [prepared, setPrepared] = useState<LiveStreamPrepareResponse | null>(null);
+   const [presence, setPresence] = useState<LiveStreamPresence>('no_stream');
+   const [busy, setBusy] = useState(false);
+   const [lastPublicUrl, setLastPublicUrl] = useState<string | null>(null);
+   const [lastGrantId, setLastGrantId] = useState<string | null>(null);
+   const [publishBlocked, setPublishBlocked] = useState(false);
+-
+-  useEffect(() => {
+-    if (open) {
+-      setAisleCode(initialAisleCode ?? '');
+-      setPrepared(null);
+-      setPresence('no_stream');
+-      setLastPublicUrl(null);
+-      setLastGrantId(null);
+-      setPublishBlocked(false);
+-    }
+-  }, [open, initialAisleCode]);
++  const [activeGrants, setActiveGrants] = useState<PublicLiveGrantListItem[]>([]);
++  const [rtmpExpanded, setRtmpExpanded] = useState(false);
+ 
+   const presenceLabel = useMemo(
+     () => t(presenceLabelKey[presence] ?? presenceLabelKey.no_stream),
+     [presence, t],
+   );
+ 
+-  const viewerPlayback = useMemo(() => {
+-    if (!prepared) return null;
+-    const playlistUrl = resolveLiveStreamPlaylistUrl(prepared.hls_playlist_url);
+-    const authMode = inferLiveStreamAuthMode(prepared.hls_playlist_url);
+-    return {
+-      playlistUrl,
+-      authMode,
+-      username: authMode === 'basic' ? prepared.read_username : undefined,
+-      password: authMode === 'basic' ? prepared.read_password : undefined,
+-    };
+-  }, [prepared]);
++  const syncFromPrepared = useCallback((result: LiveStreamPrepareResponse) => {
++    setPrepared(result);
++    setPresence(result.status.presence);
++    setPublishBlocked(result.status.publish_blocked);
++  }, []);
++
++  const loadGrants = useCallback(
++    async (code: string) => {
++      try {
++        const grants = await listPublicLiveGrants(inventoryId, code);
++        const active = grants.filter((g) => g.revoked_at == null);
++        setActiveGrants(active);
++      } catch {
++        setActiveGrants([]);
++      }
++    },
++    [inventoryId],
++  );
++
++  const loadPreparedChannel = useCallback(
++    async (code: string) => {
++      const trimmed = code.trim();
++      if (!trimmed) {
++        setPrepared(null);
++        setPresence('no_stream');
++        setPublishBlocked(false);
++        setActiveGrants([]);
++        return;
++      }
++      try {
++        const result = await getPreparedLiveStreamChannel(inventoryId, trimmed);
++        syncFromPrepared(result);
++        await loadGrants(trimmed);
++      } catch (error) {
++        if (isApiNotPreparedError(error)) {
++          setPrepared(null);
++          try {
++            const status = await getLiveStreamStatus(inventoryId, trimmed);
++            setPresence(status.presence);
++            setPublishBlocked(status.publish_blocked);
++          } catch {
++            setPresence('service_unavailable');
++          }
++          setActiveGrants([]);
++          return;
++        }
++        setPresence('service_unavailable');
++      }
++    },
++    [inventoryId, loadGrants, syncFromPrepared],
++  );
++
++  useEffect(() => {
++    if (!open) return;
++    const nextCode = initialAisleCode ?? aisleCode;
++    if (initialAisleCode) {
++      setAisleCode(initialAisleCode);
++    }
++    setLastPublicUrl(null);
++    setLastGrantId(null);
++    setRtmpExpanded(false);
++    void loadPreparedChannel(nextCode);
++  }, [open, initialAisleCode]); // eslint-disable-line react-hooks/exhaustive-deps -- recover on open only
++
++  useEffect(() => {
++    if (!open) return undefined;
++    const code = aisleCode.trim();
++    if (!code) return undefined;
++    void loadPreparedChannel(code);
++  }, [aisleCode]); // eslint-disable-line react-hooks/exhaustive-deps -- aisle selection
+ 
+   const refreshStatus = useCallback(async () => {
+     if (!aisleCode.trim()) return;
+     try {
+       const status = await getLiveStreamStatus(inventoryId, aisleCode.trim());
+       setPresence(status.presence);
+       setPublishBlocked(status.publish_blocked);
++      if (prepared) {
++        setPrepared({ ...prepared, status });
++      }
+     } catch {
+       setPresence('service_unavailable');
+     }
+-  }, [aisleCode, inventoryId]);
++  }, [aisleCode, inventoryId, prepared]);
+ 
+   useEffect(() => {
+     if (!open || !prepared) return undefined;
+     const timer = window.setInterval(() => {
+       void refreshStatus();
+     }, 8000);
+     return () => window.clearInterval(timer);
+   }, [open, prepared, refreshStatus]);
+ 
+   const handlePrepare = async () => {
+     const code = aisleCode.trim();
+     if (!code) return;
+     setBusy(true);
+     try {
+       const result = await prepareLiveStream(inventoryId, code);
+-      setPrepared(result);
+-      setPresence(result.status.presence);
+-      setPublishBlocked(result.status.publish_blocked);
++      syncFromPrepared(result);
++      await loadGrants(code);
+       showSnackbar(t('live_stream.prepare_success'), 'success');
++      onChannelsChanged?.();
+     } catch {
+       showSnackbar(t('live_stream.prepare_error'), 'error');
+       setPresence('service_unavailable');
+     } finally {
+       setBusy(false);
+     }
+   };
+ 
+   const copyText = async (text: string, okKey: string) => {
+     try {
+       await navigator.clipboard.writeText(text);
+       showSnackbar(t(okKey), 'success');
+     } catch {
+       showSnackbar(t('live_stream.copy_failed'), 'error');
+     }
+   };
+ 
+   const handlePublicLink = async () => {
+     if (!aisleCode.trim()) return;
+     setBusy(true);
+     try {
+       const grant = await createPublicLiveGrant(inventoryId, aisleCode.trim());
+       setLastPublicUrl(grant.public_url);
+       setLastGrantId(grant.grant_id);
++      await loadGrants(aisleCode.trim());
+       await copyText(grant.public_url, 'live_stream.public_link_copied');
+     } catch {
+       showSnackbar(t('live_stream.public_link_error'), 'error');
+     } finally {
+       setBusy(false);
+     }
+   };
+ 
++  const handleOpenPublicViewer = () => {
++    if (!lastPublicUrl) return;
++    window.open(lastPublicUrl, '_blank', 'noopener,noreferrer');
++  };
++
+   const handleStopTransmission = async () => {
+     const code = aisleCode.trim();
+-    if (!code || !prepared) return;
++    if (!code) return;
+     const ok = window.confirm(t('live_stream.stop_confirm'));
+     if (!ok) return;
+     setBusy(true);
+     try {
+       const result = await stopLiveStream(inventoryId, code);
+       setPresence(result.status.presence);
+       setPublishBlocked(result.status.publish_blocked);
++      if (prepared) {
++        setPrepared({ ...prepared, status: result.status });
++      }
+       showSnackbar(t('live_stream.stop_success'), 'success');
++      onChannelsChanged?.();
+     } catch {
+       showSnackbar(t('live_stream.stop_error'), 'error');
+     } finally {
+       setBusy(false);
+     }
+   };
+ 
+-  const handleRevoke = async () => {
+-    if (!lastGrantId) return;
++  const handleRevoke = async (grantId: string) => {
+     setBusy(true);
+     try {
+-      await revokePublicLiveGrant(inventoryId, lastGrantId);
+-      setLastGrantId(null);
+-      setLastPublicUrl(null);
++      await revokePublicLiveGrant(inventoryId, grantId);
++      if (lastGrantId === grantId) {
++        setLastGrantId(null);
++        setLastPublicUrl(null);
++      }
++      await loadGrants(aisleCode.trim());
+       showSnackbar(t('live_stream.public_link_revoked'), 'success');
+     } catch {
+       showSnackbar(t('live_stream.public_link_revoke_error'), 'error');
+     } finally {
+       setBusy(false);
+     }
+   };
+ 
++  const channelPrepared = prepared !== null;
++
+   return (
+-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
++    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+       <DialogTitle>{t('live_stream.dialog_title')}</DialogTitle>
+       <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
+         {aisles.length > 0 ? (
+           <TextField
+             select
+             label={t('live_stream.aisle_code_label')}
+             value={aisleCode}
+             onChange={(e) => setAisleCode(e.target.value)}
+             helperText={t('live_stream.aisle_code_help')}
+             fullWidth
+           >
+             {aisles.map((a) => (
+               <MenuItem key={a.id} value={a.code}>
+                 {a.code}
+               </MenuItem>
+             ))}
+           </TextField>
+         ) : (
+           <TextField
+             label={t('live_stream.aisle_code_label')}
+             value={aisleCode}
+             onChange={(e) => setAisleCode(e.target.value)}
+             helperText={t('live_stream.aisle_code_help')}
+             fullWidth
+           />
+         )}
+         <Typography variant="body2" color="text.secondary">
+           {t('live_stream.status_label')}: {presenceLabel}
+           {publishBlocked ? ` — ${t('live_stream.publish_blocked_hint')}` : ''}
+         </Typography>
+-        {prepared ? (
++        {channelPrepared && prepared ? (
+           <Box sx={{ display: 'grid', gap: 1 }}>
+-            <Typography variant="subtitle2">{t('live_stream.rtmp_section')}</Typography>
+-            <TextField
+-              label={t('live_stream.rtmp_url')}
+-              value={prepared.rtmp_publish_url}
+-              InputProps={{ readOnly: true }}
+-              fullWidth
+-              size="small"
+-            />
+-            <TextField
+-              label={t('live_stream.publish_username')}
+-              value={prepared.publish_username}
+-              InputProps={{ readOnly: true }}
+-              fullWidth
+-              size="small"
+-            />
+-            <TextField
+-              label={t('live_stream.publish_password')}
+-              value={prepared.publish_password}
+-              InputProps={{ readOnly: true }}
+-              fullWidth
+-              size="small"
+-            />
+-            <Typography variant="caption" color="text.secondary">
+-              {t('live_stream.dji_rtmp_help')}
+-            </Typography>
+-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+-              <Button size="small" onClick={() => void copyText(prepared.rtmp_publish_url, 'live_stream.rtmp_copied')}>
+-                {t('live_stream.copy_rtmp')}
+-              </Button>
+-              <Button
+-                size="small"
+-                onClick={() =>
+-                  void copyText(
+-                    buildRtmpEmbeddedAuthUrl(
+-                      prepared.rtmp_publish_url,
+-                      prepared.publish_username,
+-                      prepared.publish_password,
+-                    ),
+-                    'live_stream.rtmp_copied',
+-                  )
+-                }
+-              >
+-                {t('live_stream.copy_rtmp_with_auth')}
+-              </Button>
+-            </Box>
+-            <Typography variant="subtitle2" sx={{ mt: 1 }}>
+-              {t('live_stream.viewer_section')}
+-            </Typography>
+-            {viewerPlayback ? (
+-              <HlsLivePlayer
+-                playlistUrl={viewerPlayback.playlistUrl}
+-                authMode={viewerPlayback.authMode}
+-                username={viewerPlayback.username}
+-                password={viewerPlayback.password}
+-              />
++            <Accordion
++              expanded={rtmpExpanded}
++              onChange={(_, expanded) => setRtmpExpanded(expanded)}
++              disableGutters
++              elevation={0}
++              sx={{ border: 1, borderColor: 'divider', '&:before': { display: 'none' } }}
++            >
++              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
++                <Typography variant="subtitle2">{t('live_stream.rtmp_section')}</Typography>
++              </AccordionSummary>
++              <AccordionDetails sx={{ display: 'grid', gap: 1 }}>
++                <TextField
++                  label={t('live_stream.rtmp_url')}
++                  value={prepared.rtmp_publish_url}
++                  InputProps={{ readOnly: true }}
++                  fullWidth
++                  size="small"
++                />
++                <TextField
++                  label={t('live_stream.publish_username')}
++                  value={prepared.publish_username}
++                  InputProps={{ readOnly: true }}
++                  fullWidth
++                  size="small"
++                />
++                <TextField
++                  label={t('live_stream.publish_password')}
++                  value={prepared.publish_password}
++                  InputProps={{ readOnly: true }}
++                  fullWidth
++                  size="small"
++                />
++                <Typography variant="caption" color="text.secondary">
++                  {t('live_stream.dji_rtmp_help')}
++                </Typography>
++                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
++                  <Button
++                    size="small"
++                    onClick={() => void copyText(prepared.rtmp_publish_url, 'live_stream.rtmp_copied')}
++                  >
++                    {t('live_stream.copy_rtmp')}
++                  </Button>
++                  <Button
++                    size="small"
++                    onClick={() =>
++                      void copyText(
++                        buildRtmpEmbeddedAuthUrl(
++                          prepared.rtmp_publish_url,
++                          prepared.publish_username,
++                          prepared.publish_password,
++                        ),
++                        'live_stream.rtmp_copied',
++                      )
++                    }
++                  >
++                    {t('live_stream.copy_rtmp_with_auth')}
++                  </Button>
++                </Box>
++              </AccordionDetails>
++            </Accordion>
++            <Typography variant="subtitle2">{t('live_stream.public_section')}</Typography>
++            {lastPublicUrl ? (
++              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
++                <Typography variant="body2" sx={{ wordBreak: 'break-all', flex: '1 1 100%' }}>
++                  {lastPublicUrl}
++                </Typography>
++                <Button size="small" onClick={() => void copyText(lastPublicUrl, 'live_stream.public_link_copied')}>
++                  {t('live_stream.copy_public_link')}
++                </Button>
++                <Button size="small" startIcon={<OpenInNewIcon />} onClick={handleOpenPublicViewer}>
++                  {t('live_stream.open_public_viewer')}
++                </Button>
++              </Box>
++            ) : activeGrants.length > 0 ? (
++              <Alert severity="info" sx={{ py: 0 }}>
++                {t('live_stream.public_link_not_stored')}
++              </Alert>
++            ) : null}
++            {activeGrants.length > 0 ? (
++              <Box sx={{ display: 'grid', gap: 0.5 }}>
++                {activeGrants.map((g) => (
++                  <Box key={g.grant_id} sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
++                    <Typography variant="caption" color="text.secondary">
++                      {t('live_stream.public_grant_expires', { date: new Date(g.expires_at).toLocaleString() })}
++                    </Typography>
++                    <Button size="small" color="warning" disabled={busy} onClick={() => void handleRevoke(g.grant_id)}>
++                      {t('live_stream.revoke_public_link')}
++                    </Button>
++                  </Box>
++                ))}
++              </Box>
+             ) : null}
+           </Box>
+         ) : null}
+-        {lastPublicUrl ? (
+-          <Typography variant="caption" color="text.secondary">
+-            {t('live_stream.last_public_url')}: {lastPublicUrl}
+-          </Typography>
+-        ) : null}
+       </DialogContent>
+       <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
+         <Button onClick={onClose}>{t('common.close')}</Button>
+         <Button onClick={() => void refreshStatus()} disabled={!aisleCode.trim() || busy}>
+           {t('live_stream.refresh_status')}
+         </Button>
+-        <Button variant="contained" onClick={() => void handlePrepare()} disabled={!aisleCode.trim() || busy}>
+-          {t('live_stream.prepare_action')}
+-        </Button>
++        {!channelPrepared ? (
++          <Button variant="contained" onClick={() => void handlePrepare()} disabled={!aisleCode.trim() || busy}>
++            {t('live_stream.prepare_action')}
++          </Button>
++        ) : null}
+         <Button
+           onClick={() => void handleStopTransmission()}
+-          disabled={!prepared || !aisleCode.trim() || busy}
++          disabled={!channelPrepared || !aisleCode.trim() || busy}
+           color="error"
+         >
+           {t('live_stream.stop_action')}
+         </Button>
+-        <Button onClick={() => void handlePublicLink()} disabled={!aisleCode.trim() || busy}>
++        <Button onClick={() => void handlePublicLink()} disabled={!channelPrepared || !aisleCode.trim() || busy}>
+           {t('live_stream.public_link_action')}
+         </Button>
+-        <Button onClick={() => void handleRevoke()} disabled={!lastGrantId || busy} color="warning">
+-          {t('live_stream.revoke_public_link')}
+-        </Button>
+       </DialogActions>
+     </Dialog>
+   );
+ }
+\ No newline at end of file
+diff --git a/frontend/src/features/liveStream/liveStreamPresence.ts b/frontend/src/features/liveStream/liveStreamPresence.ts
+new file mode 100644
+index 000000000..de10e7af7
+--- /dev/null
++++ b/frontend/src/features/liveStream/liveStreamPresence.ts
+@@ -0,0 +1,12 @@
++import type { LiveStreamPresence } from '../../api/liveStreamApi';
++
++export function isPublisherActivePresence(presence: LiveStreamPresence): boolean {
++  return presence === 'live' || presence === 'connecting' || presence === 'reconnecting';
++}
++
++export function isApiNotPreparedError(error: unknown): boolean {
++  if (typeof error !== 'object' || error === null) return false;
++  const status = 'status' in error ? (error as { status?: number }).status : undefined;
++  const data = 'data' in error ? (error as { data?: { code?: string } }).data : undefined;
++  return status === 409 && data?.code === 'LIVE_STREAM_NOT_PREPARED';
++}
+\ No newline at end of file
+diff --git a/frontend/src/features/liveStream/useInventoryLiveStreamChannels.ts b/frontend/src/features/liveStream/useInventoryLiveStreamChannels.ts
+new file mode 100644
+index 000000000..99fcda106
+--- /dev/null
++++ b/frontend/src/features/liveStream/useInventoryLiveStreamChannels.ts
+@@ -0,0 +1,39 @@
++import { useCallback, useEffect, useState } from 'react';
++import {
++  listLiveStreamChannels,
++  type LiveStreamChannelSummary,
++} from '../../api/liveStreamApi';
++
++const POLL_MS = 8000;
++
++export function useInventoryLiveStreamChannels(inventoryId: string, enabled: boolean) {
++  const [channels, setChannels] = useState<LiveStreamChannelSummary[]>([]);
++  const [loading, setLoading] = useState(false);
++
++  const refresh = useCallback(async () => {
++    if (!inventoryId) return;
++    setLoading(true);
++    try {
++      const items = await listLiveStreamChannels(inventoryId);
++      setChannels(items);
++    } catch {
++      setChannels([]);
++    } finally {
++      setLoading(false);
++    }
++  }, [inventoryId]);
++
++  useEffect(() => {
++    if (!enabled || !inventoryId) {
++      setChannels([]);
++      return undefined;
++    }
++    void refresh();
++    const timer = window.setInterval(() => {
++      void refresh();
++    }, POLL_MS);
++    return () => window.clearInterval(timer);
++  }, [enabled, inventoryId, refresh]);
++
++  return { channels, loading, refresh };
++}
+\ No newline at end of file
+diff --git a/frontend/src/i18n/locales/es/translation.json b/frontend/src/i18n/locales/es/translation.json
+index 7298c1332..d61ba4dcf 100644
+--- a/frontend/src/i18n/locales/es/translation.json
++++ b/frontend/src/i18n/locales/es/translation.json
+@@ -3101,37 +3101,47 @@
+     "prepare_action": "Preparar transmisión",
+     "stop_action": "Cortar transmisión",
+     "stop_confirm": "¿Cortar la transmisión activa y bloquear nuevas publicaciones hasta volver a preparar el canal?",
+     "stop_success": "Transmisión cortada; nuevas publicaciones bloqueadas hasta preparar el canal nuevamente",
+     "stop_error": "No se pudo cortar la transmisión",
+     "publish_blocked_hint": "Publicación bloqueada (prepará el canal para rehabilitar)",
+     "prepare_success": "Canal de transmisión preparado",
+     "prepare_error": "No se pudo preparar la transmisión",
+     "refresh_status": "Actualizar estado",
+     "status_label": "Estado",
+     "rtmp_section": "Publicación RTMP (DJI Fly)",
+     "rtmp_url": "URL RTMP (sin credenciales)",
+     "publish_username": "Usuario RTMP (publicación)",
+     "publish_password": "Contraseña RTMP (publicación)",
+     "dji_rtmp_help": "DJI Fly: pegá la URL arriba y, si la app pide usuario/contraseña por separado, usá los dos campos de publicación (no los del visor ni del enlace público). Para un solo campo, usá «Copiar URL RTMP (todo en un campo)»: incluye ?user= y &pass= (compatible con MediaMTX).",
+     "copy_rtmp": "Copiar URL RTMP",
+     "copy_rtmp_with_auth": "Copiar URL RTMP (todo en un campo)",
+     "rtmp_copied": "URL RTMP copiada",
+     "copy_failed": "No se pudo copiar al portapapeles",
+     "viewer_section": "Visor interno",
++    "public_section": "Enlace público",
++    "copy_public_link": "Copiar enlace",
++    "open_public_viewer": "Abrir visor",
++    "public_link_not_stored": "Hay un enlace público vigente; por seguridad la URL no se almacena en el navegador. Generá uno nuevo si necesitás copiarla de nuevo.",
++    "public_grant_expires": "Concesión activa hasta {{date}}",
++    "inventory_prepare": "Preparar transmisión",
++    "inventory_manage": "Gestionar",
++    "inventory_live_badge": "En vivo · Pasillo {{aisle}}",
++    "inventory_channel_status": "Pasillo {{aisle}} — {{status}}",
++    "inventory_prepared_channels": "Hay canales preparados en este inventario.",
+     "public_link_action": "Generar enlace público",
+     "public_link_copied": "Enlace público copiado",
+     "public_link_error": "No se pudo generar el enlace público",
+     "revoke_public_link": "Revocar enlace público",
+     "public_link_revoked": "Enlace público revocado",
+     "public_link_revoke_error": "No se pudo revocar el enlace",
+     "last_public_url": "Último enlace público",
+     "public_page_title": "Transmisión en vivo",
+     "public_invalid": "Enlace no válido, vencido o revocado",
+     "presence_no_stream": "Sin transmisión",
+     "presence_connecting": "Conectando",
+     "presence_live": "En vivo",
+     "presence_reconnecting": "Reconectando",
+     "presence_ended": "Transmisión finalizada",
+     "presence_service_unavailable": "Servicio no disponible"
+   }
+ }
+diff --git a/frontend/src/pages/InventoryDetail.tsx b/frontend/src/pages/InventoryDetail.tsx
+index fb2f37b94..0c70fb062 100644
+--- a/frontend/src/pages/InventoryDetail.tsx
++++ b/frontend/src/pages/InventoryDetail.tsx
+@@ -6,51 +6,54 @@ import { Alert, Box, Button, Typography } from '@mui/material';
+ import { ApiError } from '../api/types';
+ import type { ImportInventorySuccess } from '../api/types';
+ import { queryKeys } from '../api/queryKeys';
+ import { resolveApiErrorMessage } from '../utils/apiErrors';
+ import { rowMatchesSearchQuery } from '../utils/tableSearch';
+ import { isAisleActive } from '../utils/aisleActive';
+ import { ErrorAlert, LoadingBlock, PhotoUploadProgressDialog, useAppSnackbar } from '../components/ui';
+ import CreateAisleDialog from '../components/CreateAisleDialog';
+ import { useInventoryDetail, useAislesList, useCreateAisle, useUpdateInventory } from '../hooks';
+ import { pathToAislePositions, ROUTE_HOME } from '../constants/appRoutes';
+ import { toAisleInventoryTableRows, toInventoryHeaderViewModel } from '../features/inventories/adapters';
+ import { useAisleAssetUploadFlow } from '../features/inventories/hooks/useAisleAssetUploadFlow';
+ import { useAisleProcessingFlow } from '../features/inventories/hooks/useAisleProcessingFlow';
+ import AisleProcessingDialog from '../features/inventories/components/AisleProcessingDialog';
+ import EditInventoryNameDialog from '../features/inventories/components/EditInventoryNameDialog';
+ import ImportLocalInventoryPackageDialog from '../features/inventories/components/ImportLocalInventoryPackageDialog';
+ import InventoryAislesSection from '../features/inventories/components/InventoryAislesSection';
+ import InventoryDetailHeader from '../features/inventories/components/InventoryDetailHeader';
+ import type { AisleActiveFilter } from '../features/inventories/components/InventoryAislesSection';
+ import LiveStreamDialog from '../features/liveStream/LiveStreamDialog';
++import InventoryLiveStreamBar from '../features/liveStream/InventoryLiveStreamBar';
++import { useInventoryLiveStreamChannels } from '../features/liveStream/useInventoryLiveStreamChannels';
+ 
+ export default function InventoryDetail() {
+   const { t } = useTranslation();
+   const { inventoryId } = useParams<{ inventoryId: string }>();
+   const navigate = useNavigate();
+   const queryClient = useQueryClient();
+   const { showSnackbar } = useAppSnackbar();
+   const [createAisleOpen, setCreateAisleOpen] = useState(false);
+   const [editNameOpen, setEditNameOpen] = useState(false);
+   const [importPackageOpen, setImportPackageOpen] = useState(false);
+   const [liveStreamOpen, setLiveStreamOpen] = useState(false);
++  const [liveStreamAisleCode, setLiveStreamAisleCode] = useState<string | undefined>(undefined);
+   const [aisleTableSearch, setAisleTableSearch] = useState('');
+   const [aisleActiveFilter, setAisleActiveFilter] = useState<AisleActiveFilter>('active');
+   const [uploadError, setUploadError] = useState<string | null>(null);
+   const [processError, setProcessError] = useState<string | null>(null);
+ 
+   const inventoryQuery = useInventoryDetail(inventoryId);
+   const aislesQuery = useAislesList(inventoryId, { enabled: Boolean(inventoryId && inventoryQuery.data) });
+ 
+   const inventory = inventoryQuery.data ?? null;
+   const isProductionInventory = (inventory?.processing_mode ?? 'production') !== 'test';
+ 
+   const uploadFlow = useAisleAssetUploadFlow({
+     inventoryId: inventoryId ?? '',
+     uploadError,
+     setUploadError,
+     onBeforeUploadAttempt: () => setProcessError(null),
+   });
+ 
+   const processFlow = useAisleProcessingFlow({
+     inventoryId: inventoryId ?? '',
+@@ -79,65 +82,81 @@ export default function InventoryDetail() {
+ 
+   const createAisleMutation = useCreateAisle(inventoryId ?? '');
+   const updateInventoryMutation = useUpdateInventory(inventoryId ?? '');
+ 
+   const inventoryLoading = inventoryQuery.isLoading;
+   const inventoryError =
+     inventoryQuery.isError && inventoryQuery.error
+       ? inventoryQuery.error instanceof ApiError && inventoryQuery.error.status === 404
+         ? t('inventory.not_found')
+         : resolveApiErrorMessage(inventoryQuery.error, 'errors.load_inventory')
+       : null;
+ 
+   const aislesLoading = aislesQuery.isLoading;
+   const aislesError =
+     aislesQuery.isError && aislesQuery.error
+       ? resolveApiErrorMessage(aislesQuery.error, 'errors.load_aisles')
+       : null;
+ 
+   const headerVm = inventory ? toInventoryHeaderViewModel(inventory, t) : null;
+ 
++  const liveChannels = useInventoryLiveStreamChannels(inventoryId ?? '', Boolean(inventory));
++
++  const openLiveStreamDialog = (aisleCode?: string) => {
++    setLiveStreamAisleCode(aisleCode);
++    setLiveStreamOpen(true);
++  };
++
+   const handleCreateAisleSuccess = () => {
+     showSnackbar(t('aisle.aisle_created_snackbar'), 'success');
+   };
+ 
+   return (
+     <>
+       {inventoryLoading && !inventory ? (
+         <LoadingBlock />
+       ) : inventoryError && !inventory ? (
+         <>
+           <ErrorAlert error={inventoryQuery.error} context="inventory" onRetry={() => inventoryQuery.refetch()} />
+           <Button sx={{ mt: 2 }} onClick={() => navigate(ROUTE_HOME)}>
+             {t('inventory.back_to_list')}
+           </Button>
+         </>
+       ) : inventory && headerVm ? (
+         <>
+           <InventoryDetailHeader
+             inventory={inventory}
+             inventoryId={inventoryId ?? ''}
+             headerVm={headerVm}
+             onOpenCreateAisle={() => setCreateAisleOpen(true)}
+             onEditName={() => setEditNameOpen(true)}
+             onImportPackage={() => setImportPackageOpen(true)}
+-            onOpenLiveStream={() => setLiveStreamOpen(true)}
++            onOpenLiveStream={() => openLiveStreamDialog()}
++            liveStreamBar={
++              <InventoryLiveStreamBar
++                inventoryId={inventoryId ?? ''}
++                channels={liveChannels.channels}
++                onPrepare={() => openLiveStreamDialog()}
++                onManage={(aisleCode) => openLiveStreamDialog(aisleCode)}
++                onChannelsChanged={() => void liveChannels.refresh()}
++              />
++            }
+           />
+           <Box sx={{ display: 'grid', gap: 2 }}>
+             {!inventory.client_id ? (
+               <Alert severity="warning" data-testid="inventory-legacy-no-client">
+                 {t('inventory.legacy_no_client_warning')}
+               </Alert>
+             ) : null}
+             {processError ? (
+               <Box data-testid="inventory-process-error">
+                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                   {t('aisle.process_error_label')}
+                 </Typography>
+                 <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
+               </Box>
+             ) : null}
+ 
+             {uploadError ? (
+               <Box data-testid="inventory-upload-error">
+                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                   {t('aisle.upload_error_label')}
+@@ -196,41 +215,43 @@ export default function InventoryDetail() {
+         providerOptsQuery={processFlow.providerOptsQuery}
+         providerConfig={processFlow.providerConfig}
+         productionMode={processFlow.isProductionInventory}
+         productionOptionsLoading={processFlow.productionOptionsLoading}
+         productionProvidersReady={processFlow.productionProvidersReady}
+         productionProvidersUnavailable={processFlow.productionProvidersUnavailable}
+         onClose={processFlow.closeDialog}
+         onConfirm={() => void processFlow.confirmDialog()}
+         confirmDisabled={
+           processFlow.processingAisleId === processFlow.dialogTarget?.aisleId ||
+           processFlow.productionOptionsLoading ||
+           processFlow.productionProvidersUnavailable
+         }
+         confirmBusyLabel={processFlow.processingAisleId === processFlow.dialogTarget?.aisleId}
+       />
+ 
+       <LiveStreamDialog
+         open={liveStreamOpen}
+         inventoryId={inventoryId ?? ''}
+         aisles={aisles}
++        initialAisleCode={liveStreamAisleCode}
+         onClose={() => setLiveStreamOpen(false)}
++        onChannelsChanged={() => void liveChannels.refresh()}
+       />
+ 
+       <CreateAisleDialog
+         open={createAisleOpen}
+         inventoryId={inventoryId ?? ''}
+         inventoryClientId={inventory?.client_id ?? null}
+         onClose={() => setCreateAisleOpen(false)}
+         onSuccess={handleCreateAisleSuccess}
+         existingAisleCodes={aisles.map((a) => a.code)}
+         createAisleFn={createAisleMutation.mutateAsync}
+       />
+ 
+       <EditInventoryNameDialog
+         open={editNameOpen}
+         currentName={inventory?.name ?? ''}
+         onClose={() => setEditNameOpen(false)}
+         onSuccess={() => showSnackbar(t('inventory.name_updated_snackbar'), 'success')}
+         updateInventoryFn={updateInventoryMutation.mutateAsync}
+       />
+ 
+diff --git a/frontend/tests/features/liveStream/liveStreamPresence.test.ts b/frontend/tests/features/liveStream/liveStreamPresence.test.ts
+new file mode 100644
+index 000000000..f7c1bca2a
+--- /dev/null
++++ b/frontend/tests/features/liveStream/liveStreamPresence.test.ts
+@@ -0,0 +1,17 @@
++import { describe, expect, it } from 'vitest';
++import { ApiError } from '../../../src/api/types/errors';
++import { isApiNotPreparedError, isPublisherActivePresence } from '../../../src/features/liveStream/liveStreamPresence';
++
++describe('liveStreamPresence', () => {
++  it('detects active publisher presence', () => {
++    expect(isPublisherActivePresence('live')).toBe(true);
++    expect(isPublisherActivePresence('connecting')).toBe(true);
++    expect(isPublisherActivePresence('no_stream')).toBe(false);
++  });
++
++  it('detects not prepared API error', () => {
++    const err = new ApiError('conflict', 409, { code: 'LIVE_STREAM_NOT_PREPARED' });
++    expect(isApiNotPreparedError(err)).toBe(true);
++    expect(isApiNotPreparedError(new ApiError('other', 404))).toBe(false);
++  });
++});
+\ No newline at end of file

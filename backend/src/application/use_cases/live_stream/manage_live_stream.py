@@ -80,6 +80,15 @@ class StopTransmissionResult:
     publisher_kicked: bool
 
 
+@dataclass(frozen=True)
+class LiveStreamChannelSummaryItem:
+    aisle_code: str
+    canonical_aisle_code: str
+    channel_slug: str
+    mediamtx_path: str
+    status: LiveStreamStatusSnapshot
+
+
 class ManageLiveStreamUseCase:
     def __init__(
         self,
@@ -232,7 +241,21 @@ class ManageLiveStreamUseCase:
             publish_blocked_by_principal_id=None,
         )
         self._live_repo.upsert_channel_credentials(record)
-        status = self._channel_status(mediamtx_path=resolved.mediamtx_path, creds=record)
+        return self._prepared_channel_result(resolved=resolved, creds=record)
+
+    def _prepared_channel_result(
+        self,
+        *,
+        resolved: ResolvedLiveChannel,
+        creds: LiveChannelCredentials,
+    ) -> PreparedLiveChannelResult:
+        inventory = self._inventory_repo.get_by_id(resolved.inventory_id)
+        inv_name = inventory.name if inventory is not None else ""
+        publish_user, publish_password, read_user, read_password = self._resolve_channel_credentials(
+            inv_name=inv_name,
+            resolved=resolved,
+        )
+        status = self._channel_status(mediamtx_path=resolved.mediamtx_path, creds=creds)
         return PreparedLiveChannelResult(
             channel=resolved,
             rtmp_publish_url=self._build_rtmp_url(resolved.mediamtx_path),
@@ -247,6 +270,49 @@ class ManageLiveStreamUseCase:
             ),
             status=status,
         )
+
+    def get_prepared_channel(
+        self,
+        *,
+        inventory_id: str,
+        aisle_code: str,
+        principal: AccessPrincipal,
+    ) -> PreparedLiveChannelResult:
+        """Return prepared channel credentials without mutating persistence."""
+        self._require_enabled()
+        self._access.require_inventory(inventory_id, principal)
+        resolved = self._resolver.resolve(inventory_id=inventory_id, aisle_code=aisle_code)
+        creds = self._live_repo.get_channel_credentials(
+            inventory_id=resolved.inventory_id, channel_slug=resolved.channel_slug
+        )
+        if creds is None:
+            from src.application.errors import LiveStreamNotPreparedError
+
+            raise LiveStreamNotPreparedError("Live channel has not been prepared for this aisle")
+        return self._prepared_channel_result(resolved=resolved, creds=creds)
+
+    def list_prepared_channels(
+        self,
+        *,
+        inventory_id: str,
+        principal: AccessPrincipal,
+    ) -> list[LiveStreamChannelSummaryItem]:
+        self._require_enabled()
+        self._access.require_inventory(inventory_id, principal)
+        creds_list = self._live_repo.list_channel_credentials_for_inventory(inventory_id)
+        items: list[LiveStreamChannelSummaryItem] = []
+        for creds in creds_list:
+            status = self._channel_status(mediamtx_path=creds.mediamtx_path, creds=creds)
+            items.append(
+                LiveStreamChannelSummaryItem(
+                    aisle_code=creds.canonical_aisle_code,
+                    canonical_aisle_code=creds.canonical_aisle_code,
+                    channel_slug=creds.channel_slug,
+                    mediamtx_path=creds.mediamtx_path,
+                    status=status,
+                )
+            )
+        return items
 
     def get_status(
         self,

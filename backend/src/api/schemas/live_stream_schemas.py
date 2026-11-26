@@ -54,6 +54,14 @@ class LiveStreamPlaybackResponse(BaseModel):
     status: LiveStreamStatusResponse
 
 
+class LiveStreamChannelSummary(BaseModel):
+    aisle_code: str
+    canonical_aisle_code: str
+    channel_slug: str
+    mediamtx_path: str
+    status: LiveStreamStatusResponse
+
+
 class CreatePublicLiveGrantRequest(BaseModel):
     aisle_code: str = Field(min_length=1, max_length=64)
     ttl_hours: int | None = Field(default=None, ge=1, le=24 * 30)

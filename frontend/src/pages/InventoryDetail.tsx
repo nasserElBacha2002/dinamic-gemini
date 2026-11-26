@@ -23,6 +23,8 @@ import InventoryAislesSection from '../features/inventories/components/Inventory
 import InventoryDetailHeader from '../features/inventories/components/InventoryDetailHeader';
 import type { AisleActiveFilter } from '../features/inventories/components/InventoryAislesSection';
 import LiveStreamDialog from '../features/liveStream/LiveStreamDialog';
+import InventoryLiveStreamBar from '../features/liveStream/InventoryLiveStreamBar';
+import { useInventoryLiveStreamChannels } from '../features/liveStream/useInventoryLiveStreamChannels';
 
 export default function InventoryDetail() {
   const { t } = useTranslation();
@@ -34,6 +36,7 @@ export default function InventoryDetail() {
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [importPackageOpen, setImportPackageOpen] = useState(false);
   const [liveStreamOpen, setLiveStreamOpen] = useState(false);
+  const [liveStreamAisleCode, setLiveStreamAisleCode] = useState<string | undefined>(undefined);
   const [aisleTableSearch, setAisleTableSearch] = useState('');
   const [aisleActiveFilter, setAisleActiveFilter] = useState<AisleActiveFilter>('active');
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -96,6 +99,13 @@ export default function InventoryDetail() {
 
   const headerVm = inventory ? toInventoryHeaderViewModel(inventory, t) : null;
 
+  const liveChannels = useInventoryLiveStreamChannels(inventoryId ?? '', Boolean(inventory));
+
+  const openLiveStreamDialog = (aisleCode?: string) => {
+    setLiveStreamAisleCode(aisleCode);
+    setLiveStreamOpen(true);
+  };
+
   const handleCreateAisleSuccess = () => {
     showSnackbar(t('aisle.aisle_created_snackbar'), 'success');
   };
@@ -120,7 +130,16 @@ export default function InventoryDetail() {
             onOpenCreateAisle={() => setCreateAisleOpen(true)}
             onEditName={() => setEditNameOpen(true)}
             onImportPackage={() => setImportPackageOpen(true)}
-            onOpenLiveStream={() => setLiveStreamOpen(true)}
+            onOpenLiveStream={() => openLiveStreamDialog()}
+            liveStreamBar={
+              <InventoryLiveStreamBar
+                inventoryId={inventoryId ?? ''}
+                channels={liveChannels.channels}
+                onPrepare={() => openLiveStreamDialog()}
+                onManage={(aisleCode) => openLiveStreamDialog(aisleCode)}
+                onChannelsChanged={() => void liveChannels.refresh()}
+              />
+            }
           />
           <Box sx={{ display: 'grid', gap: 2 }}>
             {!inventory.client_id ? (
@@ -213,7 +232,9 @@ export default function InventoryDetail() {
         open={liveStreamOpen}
         inventoryId={inventoryId ?? ''}
         aisles={aisles}
+        initialAisleCode={liveStreamAisleCode}
         onClose={() => setLiveStreamOpen(false)}
+        onChannelsChanged={() => void liveChannels.refresh()}
       />
 
       <CreateAisleDialog

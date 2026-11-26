@@ -20,6 +20,12 @@ class LiveStreamRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def list_channel_credentials_for_inventory(
+        self, inventory_id: str
+    ) -> list[LiveChannelCredentials]:
+        raise NotImplementedError
+
+    @abstractmethod
     def get_channel_credentials_by_path(self, mediamtx_path: str) -> LiveChannelCredentials | None:
         raise NotImplementedError
 

@@ -1,0 +1,17 @@
+ backend/src/api/routes/v3/live_stream.py           |  58 ++++
+ backend/src/api/schemas/live_stream_schemas.py     |   8 +
+ .../application/ports/live_stream_repository.py    |   6 +
+ .../use_cases/live_stream/manage_live_stream.py    |  68 ++++-
+ .../repositories/memory_live_stream_repository.py  |   9 +
+ .../repositories/sql_live_stream_repository.py     |  19 ++
+ .../unit/live_stream/test_get_prepared_channel.py  |  80 ++++++
+ frontend/src/api/liveStreamApi.ts                  |  40 +++
+ .../components/InventoryDetailHeader.tsx           |  12 +-
+ .../features/liveStream/InventoryLiveStreamBar.tsx | 104 +++++++
+ .../src/features/liveStream/LiveStreamDialog.tsx   | 316 ++++++++++++++-------
+ .../src/features/liveStream/liveStreamPresence.ts  |  12 +
+ .../liveStream/useInventoryLiveStreamChannels.ts   |  39 +++
+ frontend/src/i18n/locales/es/translation.json      |  10 +
+ frontend/src/pages/InventoryDetail.tsx             |  23 +-
+ .../features/liveStream/liveStreamPresence.test.ts |  17 ++
+ 16 files changed, 712 insertions(+), 109 deletions(-)
