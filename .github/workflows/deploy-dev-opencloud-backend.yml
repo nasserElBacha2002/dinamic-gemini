@@ -231,10 +231,14 @@ jobs:
             bash scripts/ensure_mediamtx_docker_network.sh
 
             COMPOSE_FILES=(-f docker-compose.yml)
+            if [ -f "${REPO_ROOT}/backend/docker-compose.override.yml" ]; then
+              COMPOSE_FILES+=(-f docker-compose.override.yml)
+            fi
             if grep -qE '^[[:space:]]*LIVE_STREAM_ENABLED=(true|1|yes)' "${REPO_ROOT}/.env" 2>/dev/null; then
               COMPOSE_FILES+=(-f docker-compose.mediamtx-network.yml)
               echo "LIVE_STREAM_ENABLED — using docker-compose.mediamtx-network.yml"
             fi
+            export COMPOSE_INTERACTIVE_NO=1
 
             echo "Building backend image (API only; MediaMTX stack untouched)..."
             docker-compose "${COMPOSE_FILES[@]}" build api
