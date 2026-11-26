@@ -283,7 +283,7 @@ class SqlLiveStreamRepository(LiveStreamRepository):
                 """,
                 (revoked_at, grant_id, inventory_id),
             )
-            return cur.rowcount > 0
+            return bool(cur.rowcount > 0)
 
     def set_channel_publish_blocked(
         self,
@@ -309,4 +309,4 @@ class SqlLiveStreamRepository(LiveStreamRepository):
                     channel_slug,
                 ),
             )
-            return cur.rowcount > 0
+            return bool(cur.rowcount > 0)
