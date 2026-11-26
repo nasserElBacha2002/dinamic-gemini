@@ -32,7 +32,6 @@ import {
 import type { Aisle } from '../../api/types';
 import { useAppSnackbar } from '../../components/ui';
 import { isApiNotPreparedError } from './liveStreamPresence';
-import { removePreparedAisle } from './liveStreamPreparedAisles';
 
 export interface LiveStreamDialogProps {
   open: boolean;
@@ -243,7 +242,6 @@ export default function LiveStreamDialog({
       if (prepared) {
         setPrepared({ ...prepared, status: result.status });
       }
-      removePreparedAisle(inventoryId, code);
       showSnackbar(t('live_stream.stop_success'), 'success');
       onChannelsChanged?.();
     } catch {
@@ -406,14 +404,16 @@ export default function LiveStreamDialog({
         <Button onClick={() => void refreshStatus()} disabled={!aisleCode.trim() || busy}>
           {t('live_stream.refresh_status')}
         </Button>
-        {!channelPrepared ? (
+        {!channelPrepared || publishBlocked ? (
           <Button variant="contained" onClick={() => void handlePrepare()} disabled={!aisleCode.trim() || busy}>
-            {t('live_stream.prepare_action')}
+            {publishBlocked && channelPrepared
+              ? t('live_stream.rehabilitate_action')
+              : t('live_stream.prepare_action')}
           </Button>
         ) : null}
         <Button
           onClick={() => void handleStopTransmission()}
-          disabled={!channelPrepared || !aisleCode.trim() || busy}
+          disabled={!channelPrepared || publishBlocked || !aisleCode.trim() || busy}
           color="error"
         >
           {t('live_stream.stop_action')}

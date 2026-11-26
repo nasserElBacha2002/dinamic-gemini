@@ -1,11 +1,11 @@
+import { useState } from 'react';
 import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import { useTranslation } from 'react-i18next';
 import type { LiveStreamChannelSummary } from '../../api/liveStreamApi';
-import { stopLiveStream } from '../../api/liveStreamApi';
+import { prepareLiveStream, stopLiveStream } from '../../api/liveStreamApi';
 import { useAppSnackbar } from '../../components/ui';
 import { isPublisherActivePresence } from './liveStreamPresence';
-import { removePreparedAisle } from './liveStreamPreparedAisles';
 
 export interface InventoryLiveStreamBarProps {
   inventoryId: string;
@@ -24,19 +24,35 @@ export default function InventoryLiveStreamBar({
 }: InventoryLiveStreamBarProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
+  const [busyAisle, setBusyAisle] = useState<string | null>(null);
 
   const activeChannels = channels.filter((ch) => isPublisherActivePresence(ch.status.presence));
+
+  const handleRehabilitate = async (aisleCode: string) => {
+    setBusyAisle(aisleCode);
+    try {
+      await prepareLiveStream(inventoryId, aisleCode);
+      showSnackbar(t('live_stream.rehabilitate_success'), 'success');
+      onChannelsChanged();
+    } catch {
+      showSnackbar(t('live_stream.prepare_error'), 'error');
+    } finally {
+      setBusyAisle(null);
+    }
+  };
 
   const handleStop = async (aisleCode: string) => {
     const ok = window.confirm(t('live_stream.stop_confirm'));
     if (!ok) return;
+    setBusyAisle(aisleCode);
     try {
       await stopLiveStream(inventoryId, aisleCode);
-      removePreparedAisle(inventoryId, aisleCode);
       showSnackbar(t('live_stream.stop_success'), 'success');
       onChannelsChanged();
     } catch {
       showSnackbar(t('live_stream.stop_error'), 'error');
+    } finally {
+      setBusyAisle(null);
     }
   };
 
@@ -64,6 +80,8 @@ export default function InventoryLiveStreamBar({
       ) : null}
       {channels.map((ch) => {
         const live = isPublisherActivePresence(ch.status.presence);
+        const blocked = ch.status.publish_blocked;
+        const busy = busyAisle === ch.aisle_code;
         return (
           <Box
             key={ch.channel_slug}
@@ -82,6 +100,10 @@ export default function InventoryLiveStreamBar({
                 icon={<FiberManualRecordIcon sx={{ fontSize: 12 }} />}
                 label={t('live_stream.inventory_live_badge', { aisle: ch.aisle_code })}
               />
+            ) : blocked ? (
+              <Typography variant="body2" color="warning.main">
+                {t('live_stream.inventory_blocked_badge', { aisle: ch.aisle_code })}
+              </Typography>
             ) : (
               <Typography variant="body2" color="text.secondary">
                 {t('live_stream.inventory_channel_status', {
@@ -90,12 +112,24 @@ export default function InventoryLiveStreamBar({
                 })}
               </Typography>
             )}
-            <Button size="small" onClick={() => onManage(ch.aisle_code)}>
+            <Button size="small" onClick={() => onManage(ch.aisle_code)} disabled={busy}>
               {t('live_stream.inventory_manage')}
             </Button>
-            <Button size="small" color="error" onClick={() => void handleStop(ch.aisle_code)}>
-              {t('live_stream.stop_action')}
-            </Button>
+            {blocked ? (
+              <Button
+                size="small"
+                variant="contained"
+                disabled={busy}
+                onClick={() => void handleRehabilitate(ch.aisle_code)}
+                data-testid="inventory-live-rehabilitate"
+              >
+                {t('live_stream.rehabilitate_action')}
+              </Button>
+            ) : (
+              <Button size="small" color="error" disabled={busy} onClick={() => void handleStop(ch.aisle_code)}>
+                {t('live_stream.stop_action')}
+              </Button>
+            )}
           </Box>
         );
       })}
