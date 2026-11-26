@@ -193,9 +193,14 @@ class MediaMtxAuthService:
             mediamtx_path=channel.mediamtx_path,
             purpose="publish",
         )
-        return passwords_equal(pwd, expected) or verify_live_stream_secret(
+        password_ok = passwords_equal(pwd, expected) or verify_live_stream_secret(
             pwd, channel.publish_password_hash
         )
+        if not password_ok:
+            return False
+        if user and not passwords_equal(user, channel.publish_username):
+            return False
+        return True
 
     @staticmethod
     def _normalize_path(path: str) -> str:

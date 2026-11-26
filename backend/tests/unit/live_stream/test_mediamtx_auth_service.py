@@ -170,6 +170,19 @@ def test_publish_by_path_with_fixed_env_password() -> None:
     ).allowed
 
 
+def test_publish_by_path_requires_publish_password_not_read() -> None:
+    repo = MemoryLiveStreamRepository()
+    _seed_channel(repo)
+    svc = MediaMtxAuthService(repo=repo, server_secret=SECRET, enabled=True)
+    read_pass = derive_channel_password(server_secret=SECRET, mediamtx_path=PATH, purpose="read")
+    assert not svc.authorize(
+        username="",
+        password=read_pass,
+        path=PATH,
+        action="publish",
+    ).allowed
+
+
 def test_publish_allows_stream_key_suffix() -> None:
     repo = MemoryLiveStreamRepository()
     record = _seed_channel(repo)
