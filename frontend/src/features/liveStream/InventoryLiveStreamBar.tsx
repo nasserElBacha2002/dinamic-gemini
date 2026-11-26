@@ -5,6 +5,7 @@ import type { LiveStreamChannelSummary } from '../../api/liveStreamApi';
 import { stopLiveStream } from '../../api/liveStreamApi';
 import { useAppSnackbar } from '../../components/ui';
 import { isPublisherActivePresence } from './liveStreamPresence';
+import { removePreparedAisle } from './liveStreamPreparedAisles';
 
 export interface InventoryLiveStreamBarProps {
   inventoryId: string;
@@ -31,6 +32,7 @@ export default function InventoryLiveStreamBar({
     if (!ok) return;
     try {
       await stopLiveStream(inventoryId, aisleCode);
+      removePreparedAisle(inventoryId, aisleCode);
       showSnackbar(t('live_stream.stop_success'), 'success');
       onChannelsChanged();
     } catch {
@@ -91,11 +93,9 @@ export default function InventoryLiveStreamBar({
             <Button size="small" onClick={() => onManage(ch.aisle_code)}>
               {t('live_stream.inventory_manage')}
             </Button>
-            {live ? (
-              <Button size="small" color="error" onClick={() => void handleStop(ch.aisle_code)}>
-                {t('live_stream.stop_action')}
-              </Button>
-            ) : null}
+            <Button size="small" color="error" onClick={() => void handleStop(ch.aisle_code)}>
+              {t('live_stream.stop_action')}
+            </Button>
           </Box>
         );
       })}

@@ -99,7 +99,8 @@ export default function InventoryDetail() {
 
   const headerVm = inventory ? toInventoryHeaderViewModel(inventory, t) : null;
 
-  const liveChannels = useInventoryLiveStreamChannels(inventoryId ?? '', Boolean(inventory));
+  const aisleCodes = useMemo(() => aisles.map((a) => a.code).filter(Boolean), [aisles]);
+  const liveChannels = useInventoryLiveStreamChannels(inventoryId ?? '', Boolean(inventory), aisleCodes);
 
   const openLiveStreamDialog = (aisleCode?: string) => {
     setLiveStreamAisleCode(aisleCode);
@@ -130,7 +131,6 @@ export default function InventoryDetail() {
             onOpenCreateAisle={() => setCreateAisleOpen(true)}
             onEditName={() => setEditNameOpen(true)}
             onImportPackage={() => setImportPackageOpen(true)}
-            onOpenLiveStream={() => openLiveStreamDialog()}
             liveStreamBar={
               <InventoryLiveStreamBar
                 inventoryId={inventoryId ?? ''}
@@ -235,6 +235,7 @@ export default function InventoryDetail() {
         initialAisleCode={liveStreamAisleCode}
         onClose={() => setLiveStreamOpen(false)}
         onChannelsChanged={() => void liveChannels.refresh()}
+        onPreparedAisle={(code) => liveChannels.notePreparedAisle(code)}
       />
 
       <CreateAisleDialog

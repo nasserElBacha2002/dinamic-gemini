@@ -32,6 +32,7 @@ import {
 import type { Aisle } from '../../api/types';
 import { useAppSnackbar } from '../../components/ui';
 import { isApiNotPreparedError } from './liveStreamPresence';
+import { removePreparedAisle } from './liveStreamPreparedAisles';
 
 export interface LiveStreamDialogProps {
   open: boolean;
@@ -40,6 +41,7 @@ export interface LiveStreamDialogProps {
   initialAisleCode?: string;
   onClose: () => void;
   onChannelsChanged?: () => void;
+  onPreparedAisle?: (aisleCode: string) => void;
 }
 
 function buildRtmpEmbeddedAuthUrl(publishUrl: string, username: string, password: string): string {
@@ -66,6 +68,7 @@ export default function LiveStreamDialog({
   initialAisleCode,
   onClose,
   onChannelsChanged,
+  onPreparedAisle,
 }: LiveStreamDialogProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
@@ -116,6 +119,7 @@ export default function LiveStreamDialog({
       try {
         const result = await getPreparedLiveStreamChannel(inventoryId, trimmed);
         syncFromPrepared(result);
+        onPreparedAisle?.(result.canonical_aisle_code || trimmed);
         await loadGrants(trimmed);
       } catch (error) {
         if (isApiNotPreparedError(error)) {
@@ -184,6 +188,7 @@ export default function LiveStreamDialog({
     try {
       const result = await prepareLiveStream(inventoryId, code);
       syncFromPrepared(result);
+      onPreparedAisle?.(result.canonical_aisle_code || code);
       await loadGrants(code);
       showSnackbar(t('live_stream.prepare_success'), 'success');
       onChannelsChanged?.();
@@ -238,6 +243,7 @@ export default function LiveStreamDialog({
       if (prepared) {
         setPrepared({ ...prepared, status: result.status });
       }
+      removePreparedAisle(inventoryId, code);
       showSnackbar(t('live_stream.stop_success'), 'success');
       onChannelsChanged?.();
     } catch {
