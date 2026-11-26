@@ -21,6 +21,22 @@ def test_prefers_explicit_user_and_password() -> None:
     assert action == "publish"
 
 
+def test_fills_from_path_query_suffix() -> None:
+    user, pwd, path, action = resolve_mediamtx_auth_fields(
+        {
+            "user": "",
+            "password": "",
+            "path": "live/prueba-26-11/01?user=nasser&pass=Libano02",
+            "action": "publish",
+            "query": "",
+        }
+    )
+    assert user == "nasser"
+    assert pwd == "Libano02"
+    assert path == "live/prueba-26-11/01"
+    assert action == "publish"
+
+
 def test_fills_from_rtmp_query() -> None:
     user, pwd, path, action = resolve_mediamtx_auth_fields(
         {
