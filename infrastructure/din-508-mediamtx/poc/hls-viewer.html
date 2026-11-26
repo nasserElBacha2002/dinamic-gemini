@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>DIN-508 POC — HLS viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1rem; max-width: 960px; }
+    video { width: 100%; background: #111; }
+    label { display: block; margin-top: 0.5rem; }
+    input { width: 100%; padding: 0.35rem; }
+    button { margin-top: 0.75rem; padding: 0.5rem 1rem; }
+    #log { white-space: pre-wrap; font-size: 0.85rem; color: #333; }
+  </style>
+</head>
+<body>
+  <h1>MediaMTX POC (HLS)</h1>
+  <p>Reproductor mínimo independiente del frontend productivo.</p>
+  <label>URL playlist (.m3u8)</label>
+  <input id="url" type="url" />
+  <label>Usuario HLS (basic auth)</label>
+  <input id="user" type="text" />
+  <label>Contraseña HLS</label>
+  <input id="pass" type="password" />
+  <button id="play">Reproducir</button>
+  <video id="video" controls muted playsinline></video>
+  <pre id="log"></pre>
+  <script>
+    const log = (m) => { document.getElementById('log').textContent += m + '\n'; };
+    document.getElementById('play').onclick = () => {
+      const url = document.getElementById('url').value.trim();
+      const user = document.getElementById('user').value;
+      const pass = document.getElementById('pass').value;
+      const video = document.getElementById('video');
+      const authHeader = 'Basic ' + btoa(user + ':' + pass);
+      if (window.Hls && Hls.isSupported()) {
+        const hls = new Hls({
+          xhrSetup: (xhr) => { xhr.setRequestHeader('Authorization', authHeader); }
+        });
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}); log('manifest ok'); });
+        hls.on(Hls.Events.ERROR, (_, data) => log('hls error: ' + JSON.stringify(data)));
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        fetch(url, { headers: { Authorization: authHeader } })
+          .then(() => { video.src = url; video.play(); })
+          .catch((e) => log(String(e)));
+      } else {
+        log('HLS no soportado en este navegador');
+      }
+    };
+  </script>
+</body>
+</html>

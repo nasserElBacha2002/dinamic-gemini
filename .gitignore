@@ -63,6 +63,17 @@ backend/docker-compose.override.yml
 .env.test
 .env.local
 .env.*.local
+infrastructure/din-508-mediamtx/.env
+infrastructure/din-508-mediamtx/generated/
+DIN-508/phase-2/phase-2-diff.txt
+DIN-508/phase-2/phase-2-diffstat.txt
+DIN-508/phase-2/phase-2-status.txt
+DIN-508/phase-2/run-*.log
+DIN-508/phase-2/corrections/final-corrections-diff.txt
+DIN-508/phase-2/corrections/final-corrections-diffstat.txt
+DIN-508/phase-2/corrections/final-corrections-status.txt
+DIN-508/phase-2/corrections/final-corrections-tests.txt
+DIN-508/phase-2/corrections/final-corrections-validation.md
 
 # Output files
 output/

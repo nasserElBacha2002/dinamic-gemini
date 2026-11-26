@@ -1,0 +1,40 @@
+-- SELECT
+column_name|data_type|max_length|collation_name
+code|varchar|64|SQL_Latin1_General_CP1_CI_AS
+
+-- SELECT
+index_name|is_unique|column_name|collation_name
+UQ_aisles_inventory_code|True|inventory_id|SQL_Latin1_General_CP1_CI_AS
+UQ_aisles_inventory_code|True|code|SQL_Latin1_General_CP1_CI_AS
+
+-- SELECT TOP (20)
+inventory_id|code|code_bytes|code_len|trimmed_match
+f36cf7f2-9f2a-4f3a-9799-8c72d4c00e3d|P1|2|2|1
+f00e01a8-1514-46a4-a5b9-711ead486509|Interno1|8|8|1
+f00e01a8-1514-46a4-a5b9-711ead486509|Andes3|6|6|1
+f00e01a8-1514-46a4-a5b9-711ead486509|Andes2|6|6|1
+f00e01a8-1514-46a4-a5b9-711ead486509|Andes|5|5|1
+4aaf1c89-a0ed-4d77-93a7-9e9d6957841a|01|2|2|1
+c68b8cc0-9af3-47e3-bdc8-37cc9e1e68ad|Nuevass|7|7|1
+c68b8cc0-9af3-47e3-bdc8-37cc9e1e68ad|Otra|4|4|1
+c68b8cc0-9af3-47e3-bdc8-37cc9e1e68ad|P2|2|2|1
+c68b8cc0-9af3-47e3-bdc8-37cc9e1e68ad|Andes|5|5|1
+c68b8cc0-9af3-47e3-bdc8-37cc9e1e68ad|PruebaAndes|11|11|1
+d9dc8313-45bb-4eee-8ff7-9d255a3188a9|andes-4|7|7|1
+d9dc8313-45bb-4eee-8ff7-9d255a3188a9|andes-3|7|7|1
+d9dc8313-45bb-4eee-8ff7-9d255a3188a9|andes-2|7|7|1
+d9dc8313-45bb-4eee-8ff7-9d255a3188a9|andes|5|5|1
+c68b8cc0-9af3-47e3-bdc8-37cc9e1e68ad|02|2|2|1
+c68b8cc0-9af3-47e3-bdc8-37cc9e1e68ad|01|2|2|1
+d9dc8313-45bb-4eee-8ff7-9d255a3188a9|04|2|2|1
+d9dc8313-45bb-4eee-8ff7-9d255a3188a9|03|2|2|1
+d9dc8313-45bb-4eee-8ff7-9d255a3188a9|02|2|2|1
+
+-- SELECT COUNT(*) AS upper_match_a03
+upper_match_a03
+0
+
+-- SELECT COUNT(*) AS padded_match
+padded_match
+0
+

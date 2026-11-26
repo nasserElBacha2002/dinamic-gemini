@@ -1,0 +1,127 @@
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/infrastructure/din-508-mediamtx/generated/mediamtx.yml
+/Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/infrastructure/din-508-mediamtx/generated/channel-paths.txt
+=== docker compose up ===
+initial health=starting
+initial health=starting
+initial health=starting
+initial health=healthy
+=== unauthorized publish ===
+[vost#0:0/libx264 @ 0x7c0e0c900] Error submitting a packet to the muxer: End of file
+[flv @ 0x7c101e580] Failed to update header with correct duration.
+[flv @ 0x7c101e580] Failed to update header with correct filesize.
+[out#0/flv @ 0x7c0c0a280] Error writing trailer: End of file
+[out#0/flv @ 0x7c0c0a280] Error closing file: End of file
+--- mediamtx tail (unauthorized_publish) ---
+2026/11/26 12:31:00 INF MediaMTX v1.11.3
+2026/11/26 12:31:00 INF configuration loaded from /mediamtx.yml
+2026/11/26 12:31:00 INF [RTMP] listener opened on :1935
+2026/11/26 12:31:00 INF [HLS] listener opened on :8888
+2026/11/26 12:31:00 INF [API] listener opened on 127.0.0.1:9997
+2026/11/26 12:31:06 INF [RTMP] [conn 172.27.0.1:63730] opened
+2026/11/26 12:31:08 INF [RTMP] [conn 172.27.0.1:63730] closed: authentication failed: authentication failed
+ASSERT_OK: unauthorized_publish rejected (log confirmed)
+=== authorized publish A (12s) ===
+hls_playlist_authorized attempt=1 http=200
+ASSERT_OK: hls_playlist_authorized http=200
+ASSERT_OK: hls_playlist_unauthorized http=401
+ASSERT_OK: live_A_segment_auth http=200
+ASSERT_OK: live_A_segment_noauth http=401
+ASSERT_OK: hls_cross_channel_viewer http=401
+=== dual channel publish A+B ===
+[flv @ 0x794c1a580] Failed to update header with correct duration.
+[flv @ 0x794c1a580] Failed to update header with correct filesize.
+ASSERT_OK: hls_channel_b http=200
+[vost#0:0/libx264 @ 0xaf8e10900] Error submitting a packet to the muxer: End of file
+[flv @ 0xaf8c1e580] Failed to update header with correct duration.
+[flv @ 0xaf8c1e580] Failed to update header with correct filesize.
+[out#0/flv @ 0xaf901dd40] Error writing trailer: End of file
+[out#0/flv @ 0xaf901dd40] Error closing file: End of file
+--- mediamtx tail (cross_channel_publish) ---
+2026/11/26 12:31:14 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440001/2d4196bc46b61307] created (requested by 172.27.0.1:57402)
+2026/11/26 12:31:14 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440001/2d4196bc46b61307] is converting into HLS, 2 tracks (H264, MPEG-4 Audio)
+2026/11/26 12:31:17 INF [HLS] connection 172.27.0.1:57462 failed to authenticate: authentication failed
+2026/11/26 12:31:19 INF [RTMP] [conn 172.27.0.1:55772] opened
+2026/11/26 12:31:21 INF [RTMP] [conn 172.27.0.1:55772] is publishing to path 'live/550e8400-e29b-41d4-a716-446655440002/f77f0b86753cad33', 2 tracks (H264, MPEG-4 Audio)
+2026/11/26 12:31:21 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440001/2d4196bc46b61307] destroyed: terminated
+2026/11/26 12:31:21 INF [RTMP] [conn 172.27.0.1:55650] closed: EOF
+2026/11/26 12:31:22 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440002/f77f0b86753cad33] created (requested by 172.27.0.1:55600)
+2026/11/26 12:31:22 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440002/f77f0b86753cad33] is converting into HLS, 2 tracks (MPEG-4 Audio, H264)
+2026/11/26 12:31:25 INF [RTMP] [conn 172.27.0.1:55786] opened
+2026/11/26 12:31:27 INF [RTMP] [conn 172.27.0.1:55786] closed: authentication failed: authentication failed
+ASSERT_OK: cross_channel_publish rejected (log confirmed)
+=== concurrent publisher same channel (overridePublisher=no) ===
+pid_pub_a_initial=53807 already exited
+[flv @ 0xabd01a580] Failed to update header with correct duration.
+[flv @ 0xabd01a580] Failed to update header with correct filesize.
+ASSERT_OK: hls_during_first_publisher http=200
+[vost#0:0/libx264 @ 0x9890c4900] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/flv @ 0x988c19d40] Error muxing a packet
+[out#0/flv @ 0x988c19d40] Task finished with error code: -32 (Broken pipe)
+[out#0/flv @ 0x988c19d40] Terminating thread with return code -32 (Broken pipe)
+[flv @ 0x989022580] Failed to update header with correct duration.
+[flv @ 0x989022580] Failed to update header with correct filesize.
+[out#0/flv @ 0x988c19d40] Error writing trailer: Broken pipe
+[out#0/flv @ 0x988c19d40] Error closing file: Broken pipe
+--- mediamtx tail (concurrent_second_publisher) ---
+2026/11/26 12:31:22 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440002/f77f0b86753cad33] created (requested by 172.27.0.1:55600)
+2026/11/26 12:31:22 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440002/f77f0b86753cad33] is converting into HLS, 2 tracks (MPEG-4 Audio, H264)
+2026/11/26 12:31:25 INF [RTMP] [conn 172.27.0.1:55786] opened
+2026/11/26 12:31:27 INF [RTMP] [conn 172.27.0.1:55786] closed: authentication failed: authentication failed
+2026/11/26 12:31:28 INF [RTMP] [conn 172.27.0.1:55788] opened
+2026/11/26 12:31:29 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440002/f77f0b86753cad33] destroyed: terminated
+2026/11/26 12:31:29 INF [RTMP] [conn 172.27.0.1:55772] closed: EOF
+2026/11/26 12:31:30 INF [RTMP] [conn 172.27.0.1:55788] is publishing to path 'live/550e8400-e29b-41d4-a716-446655440001/2d4196bc46b61307', 2 tracks (H264, MPEG-4 Audio)
+2026/11/26 12:31:32 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440001/2d4196bc46b61307] created (requested by 172.27.0.1:57820)
+2026/11/26 12:31:32 INF [HLS] [muxer live/550e8400-e29b-41d4-a716-446655440001/2d4196bc46b61307] is converting into HLS, 2 tracks (H264, MPEG-4 Audio)
+2026/11/26 12:31:36 INF [RTMP] [conn 172.27.0.1:58410] opened
+2026/11/26 12:31:36 INF [RTMP] [conn 172.27.0.1:58410] closed: someone is already publishing to path 'live/550e8400-e29b-41d4-a716-446655440001/2d4196bc46b61307'
+ASSERT_OK: concurrent_second_publisher rejected (log confirmed)
+pid_pub_a_primary=53886 exit=127
+[vost#0:0/libx264 @ 0x75d0c4900] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/flv @ 0x75cc19d40] Error muxing a packet
+[out#0/flv @ 0x75cc19d40] Task finished with error code: -32 (Broken pipe)
+[out#0/flv @ 0x75cc19d40] Terminating thread with return code -32 (Broken pipe)
+[flv @ 0x75d022580] Failed to update header with correct duration.
+[flv @ 0x75d022580] Failed to update header with correct filesize.
+[out#0/flv @ 0x75cc19d40] Error writing trailer: Broken pipe
+[out#0/flv @ 0x75cc19d40] Error closing file: Broken pipe
+hls_after_republish attempt=1 http=200
+ASSERT_OK: hls_after_republish http=200
+pid_repub_a=53914 already exited
+pid_pub_b=53854 already exited
+=== abrupt publisher stop + republish ===
+[vost#0:0/libx264 @ 0xa4b08c900] Error submitting a packet to the muxer: End of file
+[flv @ 0xa4ac1a580] Failed to update header with correct duration.
+[flv @ 0xa4ac1a580] Failed to update header with correct filesize.
+[out#0/flv @ 0xa4b01dd40] Error writing trailer: End of file
+[out#0/flv @ 0xa4b01dd40] Error closing file: End of file
+[flv @ 0xb17022580] Failed to update header with correct duration.
+[flv @ 0xb17022580] Failed to update header with correct filesize.
+pid_killed_pub=53937 already exited
+hls_after_abrupt_stop attempt=1 http=200
+ASSERT_OK: hls_after_abrupt_stop http=200
+pid_after_kill=53947 exit=127
+=== healthcheck stop/start ===
+[vost#0:0/libx264 @ 0xa250c4900] Error submitting a packet to the muxer: End of file
+[flv @ 0xa25022580] Failed to update header with correct duration.
+[flv @ 0xa25022580] Failed to update header with correct filesize.
+[out#0/flv @ 0xa24c19d40] Error writing trailer: End of file
+[out#0/flv @ 0xa24c19d40] Error closing file: Broken pipe
+after_start health=starting
+after_start health=starting
+after_start health=starting
+after_start health=healthy
+=== mediamtx restart + HLS smoke ===
+after_restart health=starting
+after_restart health=starting
+after_restart health=starting
+after_restart health=healthy
+hls_after_container_restart attempt=1 http=200
+ASSERT_OK: hls_after_container_restart http=200
+ASSERT_OK: post_restart_segment_auth http=200
+ASSERT_OK: post_restart_segment_noauth http=401
+[flv @ 0xc1501e580] Failed to update header with correct duration.
+[flv @ 0xc1501e580] Failed to update header with correct filesize.
+backend_health_http=200

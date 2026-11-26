@@ -1,0 +1,54 @@
+# DIN-508 Phase 2 — isolated MediaMTX POC (not wired to backend/docker-compose.yml).
+# Usage: copy .env.example → .env, render config, docker compose up -d
+
+name: dinamic-mediamtx-poc
+
+services:
+  mediamtx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dinamic/mediamtx-poc:1.11.3
+    container_name: dinamic-mediamtx-poc
+    restart: unless-stopped
+    ports:
+      - "${MTX_BIND_HOST:-127.0.0.1}:${MTX_RTMP_HOST_PORT:-19350}:1935"
+      - "${MTX_BIND_HOST:-127.0.0.1}:${MTX_HLS_HOST_PORT:-8888}:8888"
+    volumes:
+      - ./generated/mediamtx.yml:/mediamtx.yml:ro
+    command: ["/mediamtx.yml"]
+    networks:
+      - mediamtx_poc
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Readiness: Control API on 127.0.0.1 only (not published). wget copied from busybox in Dockerfile.
+    # Stream availability is validated separately (host scripts), not via this healthcheck.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/bin/wget",
+          "-q",
+          "--spider",
+          "http://127.0.0.1:9997/v3/config/global/get",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 8s
+
+networks:
+  mediamtx_poc:
+    name: dinamic-mediamtx-poc-net
+    driver: bridge
