@@ -77,11 +77,7 @@ export default function PublicLiveViewPage() {
         {t('live_stream.status_label')}: {t(`live_stream.presence_${presence}`)}
         {publishBlocked ? ` — ${t('live_stream.publish_blocked_hint')}` : ''}
       </Typography>
-      <HlsLivePlayer
-        playlistUrl={playback.url}
-        authMode={playback.authMode}
-        onPresenceChange={(p) => setPresence(p as LiveStreamPresence)}
-      />
+      <HlsLivePlayer playlistUrl={playback.url} authMode={playback.authMode} />
     </Box>
   );
 }

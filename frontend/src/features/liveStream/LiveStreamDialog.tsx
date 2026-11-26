@@ -278,7 +278,6 @@ export default function LiveStreamDialog({
                 authMode={viewerPlayback.authMode}
                 username={viewerPlayback.username}
                 password={viewerPlayback.password}
-                onPresenceChange={(p) => setPresence(p as LiveStreamPresence)}
               />
             ) : null}
           </Box>
