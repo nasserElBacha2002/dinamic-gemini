@@ -99,6 +99,7 @@ import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDi
 import AisleSourceAssetsManageModule from '../features/inventories/components/AisleSourceAssetsManageModule';
 import AisleVisualReferencesModule from '../features/inventories/components/AisleVisualReferencesModule';
 import CodeScanDrawer from '../features/aisle-code-scans/components/CodeScanDrawer';
+import LiveStreamDialog from '../features/liveStream/LiveStreamDialog';
 
 /** List query: photo-grouped order, no SKU merge — matches operator photo-review expectations. */
 const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = {
@@ -138,6 +139,7 @@ export default function AislePositionsPage() {
   const [lastMergeContextKey, setLastMergeContextKey] = useState<string | null>(null);
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [codeScanDrawerOpen, setCodeScanDrawerOpen] = useState(false);
+  const [liveStreamOpen, setLiveStreamOpen] = useState(false);
   const [editCodeOpen, setEditCodeOpen] = useState(false);
   const [deactivateConfirmOpen, setDeactivateConfirmOpen] = useState(false);
   const [reactivateConfirmOpen, setReactivateConfirmOpen] = useState(false);
@@ -777,6 +779,9 @@ export default function AislePositionsPage() {
         }
         assetsAction={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+            <Button size="small" variant="outlined" onClick={() => setLiveStreamOpen(true)}>
+              {t('live_stream.action_menu')}
+            </Button>
             <AisleSourceAssetsManageModule
               inventoryId={inventoryId}
               aisleId={aisleId}
@@ -1278,6 +1283,14 @@ export default function AislePositionsPage() {
             }
           })();
         }}
+      />
+
+      <LiveStreamDialog
+        open={liveStreamOpen}
+        inventoryId={inventoryId ?? ''}
+        aisles={aisle ? [aisle] : []}
+        initialAisleCode={aisle?.code}
+        onClose={() => setLiveStreamOpen(false)}
       />
 
       <ConfirmDialog

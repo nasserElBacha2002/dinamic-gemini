@@ -17,6 +17,7 @@ export interface InventoryDetailHeaderProps {
   onOpenCreateAisle: () => void;
   onEditName?: () => void;
   onImportPackage?: () => void;
+  onOpenLiveStream?: () => void;
 }
 
 export default function InventoryDetailHeader({
@@ -26,6 +27,7 @@ export default function InventoryDetailHeader({
   onOpenCreateAisle,
   onEditName,
   onImportPackage,
+  onOpenLiveStream,
 }: InventoryDetailHeaderProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -69,6 +71,11 @@ export default function InventoryDetailHeader({
             </Button>
           ) : null}
           <InventoryExportMenu inventoryId={inventoryId} />
+          {onOpenLiveStream ? (
+            <Button variant="outlined" size="small" onClick={onOpenLiveStream}>
+              {t('live_stream.action_menu')}
+            </Button>
+          ) : null}
           {onImportPackage ? (
             <Button
               variant="outlined"

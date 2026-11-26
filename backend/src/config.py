@@ -27,6 +27,7 @@ from src.env_settings.grouped_settings import (
     DebugRuntimeSettings,
     EvidenceSettings,
     LimitsAndSchemaSettings,
+    LiveStreamSettings,
     LlmProviderSettings,
     ObservabilitySettings,
     PathsOutputSettings,
@@ -97,6 +98,7 @@ class AppSettings(
     EvidenceSettings,
     ConsolidationSettings,
     ObservabilitySettings,
+    LiveStreamSettings,
 ):
     """Top-level application settings — composed groups (field validators live on group mixins)."""
 

@@ -65,7 +65,10 @@ def test_invalid_inventory_uuid() -> None:
         normalize_inventory_id("550e8400-e29b-41d4-a716-44665544000g")
 
 
-def test_path_uses_canonical_uuid() -> None:
-    path = mediamtx_path("550E8400-E29B-41D4-A716-446655440001", "A-03")
-    assert path.startswith(f"live/{INV_A}/")
-    assert len(path.split("/")[-1]) == 16
+def test_path_uses_inventory_name_and_aisle() -> None:
+    path = mediamtx_path(
+        "550E8400-E29B-41D4-A716-446655440001",
+        "A-03",
+        inventory_name="Prueba18-09",
+    )
+    assert path == "live/Prueba18-09/A-03"

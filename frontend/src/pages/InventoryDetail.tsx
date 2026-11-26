@@ -22,6 +22,7 @@ import ImportLocalInventoryPackageDialog from '../features/inventories/component
 import InventoryAislesSection from '../features/inventories/components/InventoryAislesSection';
 import InventoryDetailHeader from '../features/inventories/components/InventoryDetailHeader';
 import type { AisleActiveFilter } from '../features/inventories/components/InventoryAislesSection';
+import LiveStreamDialog from '../features/liveStream/LiveStreamDialog';
 
 export default function InventoryDetail() {
   const { t } = useTranslation();
@@ -32,6 +33,7 @@ export default function InventoryDetail() {
   const [createAisleOpen, setCreateAisleOpen] = useState(false);
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [importPackageOpen, setImportPackageOpen] = useState(false);
+  const [liveStreamOpen, setLiveStreamOpen] = useState(false);
   const [aisleTableSearch, setAisleTableSearch] = useState('');
   const [aisleActiveFilter, setAisleActiveFilter] = useState<AisleActiveFilter>('active');
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -118,6 +120,7 @@ export default function InventoryDetail() {
             onOpenCreateAisle={() => setCreateAisleOpen(true)}
             onEditName={() => setEditNameOpen(true)}
             onImportPackage={() => setImportPackageOpen(true)}
+            onOpenLiveStream={() => setLiveStreamOpen(true)}
           />
           <Box sx={{ display: 'grid', gap: 2 }}>
             {!inventory.client_id ? (
@@ -204,6 +207,13 @@ export default function InventoryDetail() {
           processFlow.productionProvidersUnavailable
         }
         confirmBusyLabel={processFlow.processingAisleId === processFlow.dialogTarget?.aisleId}
+      />
+
+      <LiveStreamDialog
+        open={liveStreamOpen}
+        inventoryId={inventoryId ?? ''}
+        aisles={aisles}
+        onClose={() => setLiveStreamOpen(false)}
       />
 
       <CreateAisleDialog

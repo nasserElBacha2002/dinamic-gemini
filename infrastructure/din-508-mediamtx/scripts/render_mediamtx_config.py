@@ -79,8 +79,10 @@ def main() -> int:
     validate_credentials(env)
     inv_a = normalize_inventory_id(env["POC_INVENTORY_A"])
     inv_b = normalize_inventory_id(env["POC_INVENTORY_B"])
-    path_a = mediamtx_path(inv_a, env["POC_AISLE_CODE_A"])
-    path_b = mediamtx_path(inv_b, env["POC_AISLE_CODE_B"])
+    path_a_override = env.get("POC_STREAM_PATH_A", "").strip()
+    path_b_override = env.get("POC_STREAM_PATH_B", "").strip()
+    path_a = path_a_override or mediamtx_path(inv_a, env["POC_AISLE_CODE_A"])
+    path_b = path_b_override or mediamtx_path(inv_b, env["POC_AISLE_CODE_B"])
 
     def user_block(user: str, password: str, actions: list[tuple[str, str]]) -> str:
         lines = [f"  - user: {yaml_escape(user)}", f"    pass: {yaml_escape(password)}", "    ips: []", "    permissions:"]

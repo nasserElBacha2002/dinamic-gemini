@@ -413,6 +413,9 @@ from src.application.errors import (
     InventoryClientRequiredForAisleError,
     InventoryClientRequiredForSupplierError,
     InventoryNotFoundError,
+    LiveStreamDisabledError,
+    LiveStreamGrantNotFoundError,
+    LiveStreamNotPreparedError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     JobPromotionNotAllowedError,
@@ -1217,6 +1220,21 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         503,
         error_code=POSITION_LABEL_SIGNING_NOT_CONFIGURED,
         detail=HTTP_DETAIL_POSITION_LABEL_SIGNING_NOT_CONFIGURED,
+    ),
+    LiveStreamDisabledError: _structured_fixed(
+        503,
+        error_code="LIVE_STREAM_DISABLED",
+        detail="Live stream integration is disabled",
+    ),
+    LiveStreamNotPreparedError: _structured_fixed(
+        409,
+        error_code="LIVE_STREAM_NOT_PREPARED",
+        detail="Live channel must be prepared before this operation",
+    ),
+    LiveStreamGrantNotFoundError: _structured_fixed(
+        404,
+        error_code="LIVE_STREAM_GRANT_NOT_FOUND",
+        detail="Public live link is invalid, expired, or revoked",
     ),
 }
 

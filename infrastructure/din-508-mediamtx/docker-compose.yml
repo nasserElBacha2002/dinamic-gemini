@@ -14,6 +14,7 @@ services:
     ports:
       - "${MTX_BIND_HOST:-127.0.0.1}:${MTX_RTMP_HOST_PORT:-19350}:1935"
       - "${MTX_BIND_HOST:-127.0.0.1}:${MTX_HLS_HOST_PORT:-8888}:8888"
+      - "${MTX_BIND_HOST:-127.0.0.1}:${MTX_API_HOST_PORT:-9997}:9997"
     volumes:
       - ./generated/mediamtx.yml:/mediamtx.yml:ro
     command: ["/mediamtx.yml"]

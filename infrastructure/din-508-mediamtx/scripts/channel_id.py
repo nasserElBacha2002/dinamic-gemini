@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import sys
 import uuid
 
@@ -45,16 +46,38 @@ def channel_slug(inventory_id: str, aisle_code: str) -> str:
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
-def mediamtx_path(inventory_id: str, aisle_code: str) -> str:
+def slugify_path_segment(value: str, *, max_len: int = 48) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    normalized = re.sub(r"[^\w\-]+", "_", raw, flags=re.UNICODE)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    if not normalized:
+        return ""
+    return normalized[:max_len]
+
+
+def mediamtx_path(
+    inventory_id: str, aisle_code: str, *, inventory_name: str = ""
+) -> str:
     inv = normalize_inventory_id(inventory_id)
-    return f"live/{inv}/{channel_slug(inv, aisle_code)}"
+    code = canonical_aisle_code_for_channel(aisle_code)
+    inv_part = slugify_path_segment(inventory_name)
+    if not inv_part:
+        inv_part = slugify_path_segment(inv.replace("-", ""))[:16]
+    aisle_part = slugify_path_segment(code) or slugify_path_segment(aisle_code)
+    return f"live/{inv_part}/{aisle_part}"
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print("usage: channel_id.py <inventory_id> <aisle_code>", file=sys.stderr)
+    if len(sys.argv) not in (3, 4):
+        print(
+            "usage: channel_id.py <inventory_id> <aisle_code> [inventory_name]",
+            file=sys.stderr,
+        )
         return 2
-    print(mediamtx_path(sys.argv[1], sys.argv[2]))
+    inv_name = sys.argv[3] if len(sys.argv) == 4 else ""
+    print(mediamtx_path(sys.argv[1], sys.argv[2], inventory_name=inv_name))
     return 0
 
 

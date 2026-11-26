@@ -1,6 +1,6 @@
 # DIN-508 Phase 2 — Guía de validación física DJI Air 3S
 
-**Estado:** infraestructura local lista; **sin vuelo real en esta ejecución**.
+**Estado:** validación física **ejecutada** (Air 3S + RC 2 → RTMP path corto `dji` → HLS 200). Ver sección RC 2 / micrófono para limitaciones de DJI Fly.
 
 ## Prerrequisitos
 
@@ -26,12 +26,25 @@ FFmpeg validó publicación con:
 rtmp://<HOST>:19350/<path>?user=<POC_PUB_*_USER>&pass=<POC_PUB_*_PASS>
 ```
 
-**Pendiente confirmar en DJI Fly** si acepta `user`/`pass` en query string en el campo URL personalizada, o si exige formato `rtmp://host/app/stream` sin query. Si Fly no admite query auth, Phase 3 debe usar clave en path + `authHTTP` vía FastAPI.
+**Campo (RC 2, Fly ≥ 1.16.0):** probado con URL en un solo campo, query `user` / `pass`, path corto vía `POC_STREAM_PATH_A=dji` (ver `infrastructure/din-508-mediamtx/.env.example`). Si Fly no admite query auth en otros modelos de control, Phase 3 debe usar clave en path + `authHTTP` vía FastAPI.
 
 ### RTMPS
 
 - MediaMTX POC: `rtmpEncryption: "no"` (puerto 19350 plano).
 - RTMPS en DJI Fly: **no verificado**; requiere TLS en edge o `rtmps://` en despliegue productivo.
+
+## DJI RC 2 — micrófono obligatorio para **iniciar** RTMP (no es MediaMTX)
+
+Desde **DJI Fly v1.16.0**, en **RC 2 / RC Pro / Smart Controller** (sin micrófono integrado) la app **no arranca** la transmisión RTMP hasta detectar un micrófono en el **USB‑C inferior**. No se puede omitir desde el servidor ni con la URL RTMP.
+
+| Objetivo operativo | Qué hacer |
+|--------------------|-----------|
+| **No llevar mic dedicado al inventario** | Usar **RC‑N2/RC‑N3 + teléfono** (el mic del teléfono satisface a DJI) o **RC Pro 2** (mic integrado). |
+| **Seguir con RC 2** | Micrófono USB‑C mínimo en el kit de campo (auricular con mic o adaptador USB‑C → 3.5 mm). No hace falta hablar: DJI exige **pista de audio en el stream**, no uso de voz. El operador puede silenciar en el reproductor HLS. |
+| **Android sin cable extra** | Apps de terceros que simulan mic Bluetooth hacia el RC 2 (no aplican en iPhone). No validado en este repo. |
+| **Bajar versión de DJI Fly** | Versiones &lt; 1.16 permitían RTMP sin mic; **no recomendado** (compatibilidad Air 3S / seguridad / soporte DJI). |
+
+**Dinamic no puede eliminar este requisito en software propio** mientras el ingest sea RTMP saliente de DJI Fly en RC 2. Decisiones de producto: estándar de controlador en campo o ítem de kit barato en cada maletín RC 2.
 
 ## Pasos operador (manual)
 
@@ -45,7 +58,9 @@ rtmp://<HOST>:19350/<path>?user=<POC_PUB_*_USER>&pass=<POC_PUB_*_PASS>
 
 ## Checklist de evidencia (campo)
 
-- [ ] RTMP personalizado disponible en el controlador usado (RC 2 vs RC-N3)
+- [x] RTMP personalizado (RC 2 + Fly, path `dji`, query auth)
+- [x] Publicación MediaMTX (`2 tracks: H264, MPEG-4 Audio`)
+- [x] HLS playlist HTTP 200 con credencial de lectura
 - [ ] Resolución / FPS / codec reales (screenshot o log DJI)
 - [ ] Reproducción HLS y latencia percibida
 - [ ] Pérdida de red y reconexión

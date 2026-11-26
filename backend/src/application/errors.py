@@ -755,3 +755,15 @@ class PositionAssignmentNotFoundError(PositionReconciliationError):
 
 class PositionAssignmentAccessDeniedError(PositionReconciliationError):
     code = "POSITION_ASSIGNMENT_ACCESS_DENIED"
+
+
+class LiveStreamDisabledError(Exception):
+    """Raised when live stream integration is disabled."""
+
+
+class LiveStreamNotPreparedError(Exception):
+    """Raised when playback or public grant is requested before channel prepare."""
+
+
+class LiveStreamGrantNotFoundError(Exception):
+    """Raised when a public live grant is missing, expired, or revoked."""

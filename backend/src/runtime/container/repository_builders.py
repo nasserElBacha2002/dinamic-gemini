@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Protocol, TypeVar
 
 from src.application.ports.code_scan_repository import CodeScanRepository
+from src.application.ports.live_stream_repository import LiveStreamRepository
 from src.application.ports.local_csv_import_repository import LocalCsvImportRepository
 from src.application.ports.mobile_preliminary_detection_repository import (
     MobilePreliminaryDetectionRepository,
@@ -68,6 +69,31 @@ def build_inventory_repository(
     return build_repo(
         backend_info_name="InventoryRepository",
         sql_error_subject="repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_live_stream_repository(
+    build_repo: BuildSqlOrMemory[LiveStreamRepository],
+) -> LiveStreamRepository:
+    def _sql(client: SqlServerClient) -> LiveStreamRepository:
+        from src.infrastructure.repositories.sql_live_stream_repository import (
+            SqlLiveStreamRepository,
+        )
+
+        return SqlLiveStreamRepository(client)
+
+    def _memory() -> LiveStreamRepository:
+        from src.infrastructure.repositories.memory_live_stream_repository import (
+            MemoryLiveStreamRepository,
+        )
+
+        return MemoryLiveStreamRepository()
+
+    return build_repo(
+        backend_info_name="LiveStreamRepository",
+        sql_error_subject="live stream repo",
         build_sql=_sql,
         build_memory=_memory,
     )

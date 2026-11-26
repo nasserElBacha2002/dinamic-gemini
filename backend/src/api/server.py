@@ -23,7 +23,9 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_UNEXPECTED_ERROR,
 )
 from src.api.errors.structured_api_http import INTERNAL_SERVER_ERROR, StructuredApiHttpError
+from src.api.routes.internal_mediamtx_auth import router as internal_mediamtx_auth_router
 from src.api.routes.lab_attestation import lab_attestation_enabled
+from src.api.routes.public_live import router as public_live_router
 from src.api.routes.lab_attestation import router as lab_attestation_router
 from src.api.routes.v3 import router as v3_router
 from src.api.routes.v3.admin_ai_config import router as v3_admin_ai_config_router
@@ -165,6 +167,8 @@ elif (settings.api_key or "").strip():
 
 # Include routers (v3 only for inventory operations; legacy v1 jobs/entities removed in Stage 3).
 app.include_router(v3_router)
+app.include_router(public_live_router)
+app.include_router(internal_mediamtx_auth_router)
 app.include_router(v3_clients_router)
 app.include_router(raspberry_recognition_config_router)
 app.include_router(raspberry_router)

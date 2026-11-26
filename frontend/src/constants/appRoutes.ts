@@ -7,6 +7,8 @@ import { ANALYTICS_TAB_QUERY_KEY, analyticsTabToUrl } from './analyticsTabs';
 import type { AnalyticsDashboardTab } from '../features/analytics-dashboard/types';
 
 export const ROUTE_LOGIN = '/login';
+/** Anonymous public live viewer (no auth shell). */
+export const ROUTE_PUBLIC_LIVE = '/live/:token';
 export const ROUTE_HOME = '/';
 export const ROUTE_METRICS = '/metrics';
 export const ROUTE_ANALITICA = '/analitica';

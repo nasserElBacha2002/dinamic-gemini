@@ -22,6 +22,7 @@ from . import (
     image_results,
     inventories,
     local_csv_imports,
+    live_stream,
     local_inventory_packages,
     ordered_capture,
     position_label_detections,
@@ -43,6 +44,7 @@ router = APIRouter(
 )
 
 router.include_router(inventories.router)
+router.include_router(live_stream.router)
 router.include_router(local_csv_imports.router)
 router.include_router(local_inventory_packages.router)
 router.include_router(dinamic_scanner_txt_imports.router)

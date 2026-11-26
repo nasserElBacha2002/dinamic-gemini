@@ -26,6 +26,8 @@ import AdminAiConfigPage from './pages/AdminAiConfigPage';
 import AdminStorageMaintenancePage from './pages/AdminStorageMaintenancePage';
 import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
 import IngestionSessionsLegacyRedirect from './features/ingestionSessions/pages/IngestionSessionsLegacyRedirect';
+import PublicLiveViewPage from './pages/PublicLiveViewPage';
+import { ROUTE_PUBLIC_LIVE } from './constants/appRoutes';
 
 /** Aisle-scoped physical locations were removed; keep legacy URLs from 404ing. */
 function AisleLocationsRedirect() {
@@ -90,10 +92,12 @@ function App() {
   );
   const ingestionSessionsRedirectEl = useMemo(() => <IngestionSessionsLegacyRedirect />, []);
   const aisleObservabilityEl = useMemo(() => <AisleObservabilityPage />, []);
+  const publicLiveEl = useMemo(() => <PublicLiveViewPage />, []);
+  const isPublicLiveRoute = location.pathname.startsWith('/live/');
   if (!initialized) {
     return <AuthLoading />;
   }
-  if (!user && location.pathname !== ROUTE_LOGIN) {
+  if (!user && location.pathname !== ROUTE_LOGIN && !isPublicLiveRoute) {
     return <Navigate to={ROUTE_LOGIN} replace />;
   }
   if (user && location.pathname === ROUTE_LOGIN) {
@@ -102,6 +106,7 @@ function App() {
 
   return (
     <Routes>
+      <Route path={ROUTE_PUBLIC_LIVE} element={publicLiveEl} />
       <Route path={ROUTE_LOGIN} element={loginEl} />
       <Route path={ROUTE_HOME} element={shellEl}>
         <Route index element={listEl} />

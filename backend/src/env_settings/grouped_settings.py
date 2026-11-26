@@ -2897,3 +2897,56 @@ class ConsolidationSettings(BaseModel):
         le=1.0,
         description="Mínima confianza final para no descartar producto fantasma (0 a 1).",
     )
+
+
+class LiveStreamSettings(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    live_stream_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("LIVE_STREAM_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+        ),
+        description="Enable DIN-508 live stream API and MediaMTX auth callback. Env: LIVE_STREAM_ENABLED.",
+    )
+    live_stream_rtmp_publish_base_url: str = Field(
+        default_factory=lambda: (os.getenv("LIVE_STREAM_RTMP_PUBLISH_BASE_URL", "") or "").strip(),
+        description="RTMP publish URL prefix (e.g. rtmp://host:1935). Env: LIVE_STREAM_RTMP_PUBLISH_BASE_URL.",
+    )
+    live_stream_hls_base_url: str = Field(
+        default_factory=lambda: (os.getenv("LIVE_STREAM_HLS_BASE_URL", "") or "").strip(),
+        description="HLS origin base (browser may use same-origin proxy in production). Env: LIVE_STREAM_HLS_BASE_URL.",
+    )
+    live_stream_mediamtx_api_url: str = Field(
+        default_factory=lambda: (os.getenv("LIVE_STREAM_MEDIAMTX_API_URL", "") or "").strip(),
+        description="Optional MediaMTX API for path status (localhost only). Env: LIVE_STREAM_MEDIAMTX_API_URL.",
+    )
+    mediamtx_http_auth_secret: str = Field(
+        default_factory=lambda: (os.getenv("MEDIAMTX_HTTP_AUTH_SECRET", "") or "").strip(),
+        description="Shared secret header for MediaMTX → FastAPI auth callback. Env: MEDIAMTX_HTTP_AUTH_SECRET.",
+    )
+    live_stream_public_link_base_url: str = Field(
+        default_factory=lambda: (os.getenv("LIVE_STREAM_PUBLIC_LINK_BASE_URL", "") or "").strip(),
+        description="Public site origin for /live/<token> links. Env: LIVE_STREAM_PUBLIC_LINK_BASE_URL.",
+    )
+    live_stream_public_grant_default_ttl_hours: int = Field(
+        default_factory=lambda: int(os.getenv("LIVE_STREAM_PUBLIC_GRANT_DEFAULT_TTL_HOURS", "24")),
+        ge=1,
+        le=24 * 30,
+        description="Default public link TTL hours. Env: LIVE_STREAM_PUBLIC_GRANT_DEFAULT_TTL_HOURS.",
+    )
+    live_stream_fixed_publish_username: str = Field(
+        default_factory=lambda: (os.getenv("LIVE_STREAM_FIXED_PUBLISH_USERNAME", "") or "").strip(),
+        description="Optional fixed RTMP publish user (local DJI). Env: LIVE_STREAM_FIXED_PUBLISH_USERNAME.",
+    )
+    live_stream_fixed_publish_password: str = Field(
+        default_factory=lambda: (os.getenv("LIVE_STREAM_FIXED_PUBLISH_PASSWORD", "") or "").strip(),
+        description="Optional fixed RTMP publish password. Env: LIVE_STREAM_FIXED_PUBLISH_PASSWORD.",
+    )
+    live_stream_fixed_read_username: str = Field(
+        default_factory=lambda: (os.getenv("LIVE_STREAM_FIXED_READ_USERNAME", "") or "").strip(),
+        description="Optional fixed HLS read user (defaults to publish user + _view). Env: LIVE_STREAM_FIXED_READ_USERNAME.",
+    )
+    live_stream_fixed_read_password: str = Field(
+        default_factory=lambda: (os.getenv("LIVE_STREAM_FIXED_READ_PASSWORD", "") or "").strip(),
+        description="Optional fixed HLS read password (defaults to publish password). Env: LIVE_STREAM_FIXED_READ_PASSWORD.",
+    )

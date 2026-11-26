@@ -1,0 +1,19 @@
+DIN-508 Phase 4 — test execution log (sanitized)
+
+EXECUTED LOCALLY:
+- frontend: npm run typecheck — PASS
+- backend: python3 -m compileall (live_stream Phase 4 modules) — PASS
+
+NOT EXECUTED LOCALLY (environment):
+- backend: pytest tests/unit/live_stream — no editable venv on agent host
+- backend: full pytest / ruff / mypy — defer to Develop quality gate on push
+
+PREPARED IN REPO (CI):
+- backend/tests/unit/live_stream/test_stop_transmission.py
+- backend/tests/database/test_migration_0113_live_publish_blocked.py
+- prior Phase 3 live_stream tests (unchanged contract + constructor arg mediamtx_control)
+
+NOT EXECUTED:
+- infrastructure/din-508-mediamtx run_poc_validation.sh (FFmpeg)
+- DJI physical RTMP on OpenCloud
+- Browser Safari/mobile public HLS
