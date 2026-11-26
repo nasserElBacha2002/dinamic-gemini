@@ -235,7 +235,7 @@ jobs:
 
             chmod +x scripts/attach_api_mediamtx_network.sh 2>/dev/null || true
             echo "==> Attach API to MediaMTX Docker network (DIN-508 live stream)..."
-            bash scripts/attach_api_mediamtx_network.sh || true
+            bash scripts/attach_api_mediamtx_network.sh
 
             docker-compose ps
 
@@ -261,6 +261,9 @@ jobs:
               exit 1
             fi
             echo "Local /health OK"
+
+            echo "==> Re-attach API to MediaMTX network after health (post-recreate)..."
+            bash scripts/attach_api_mediamtx_network.sh
 
   public-smoke:
     name: Optional public /health
