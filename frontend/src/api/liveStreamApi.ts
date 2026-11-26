@@ -12,7 +12,7 @@ export function resolveLiveStreamPlaylistUrl(playlistUrl: string): string {
     return trimmed;
   }
   let base = API_BASE.replace(/\/$/, '');
-  let path = trimmed;
+  const path = trimmed;
   if (path.startsWith('/api/v3') && base.endsWith('/api/v3')) {
     base = base.slice(0, -'/api/v3'.length);
   }
