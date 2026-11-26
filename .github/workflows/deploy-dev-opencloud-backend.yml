@@ -83,7 +83,13 @@ jobs:
           HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
           echo "workflow_run: conclusion=${CONCLUSION} event=${EVENT} head_branch=${HEAD_BRANCH}"
 
-          # Push to develop with a failed gate: fail the workflow (no SSH deploy).
+          # Push to develop with failed gate: block deploy. Cancelled = superseded by a newer push (skip, green).
+          if [ "${EVENT}" = "push" ] && [ "${HEAD_BRANCH}" = "develop" ] && [ "${CONCLUSION}" = "cancelled" ]; then
+            echo "Quality gate was cancelled (likely superseded by a newer develop push); skipping deploy."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "${EVENT}" = "push" ] && [ "${HEAD_BRANCH}" = "develop" ] && [ "${CONCLUSION}" != "success" ]; then
             echo "::error::DEV backend deploy is blocked because Develop quality gate did not succeed (conclusion=${CONCLUSION}). Fix the gate or use workflow_dispatch on this workflow for a manual deploy."
             exit 1
