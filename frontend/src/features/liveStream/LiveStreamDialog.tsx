@@ -34,9 +34,10 @@ export interface LiveStreamDialogProps {
 
 function buildRtmpEmbeddedAuthUrl(publishUrl: string, username: string, password: string): string {
   const trimmed = publishUrl.trim();
-  const match = /^rtmp:\/\/([^/]+)(\/.*)$/.exec(trimmed);
-  if (!match) return trimmed;
-  return `rtmp://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${match[1]}${match[2]}`;
+  const user = encodeURIComponent(username);
+  const pass = encodeURIComponent(password);
+  const sep = trimmed.includes('?') ? '&' : '?';
+  return `${trimmed}${sep}user=${user}&pass=${pass}`;
 }
 
 const presenceLabelKey: Record<LiveStreamPresence, string> = {

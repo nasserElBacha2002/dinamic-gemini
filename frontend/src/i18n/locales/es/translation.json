@@ -3112,7 +3112,7 @@
     "rtmp_url": "URL RTMP (sin credenciales)",
     "publish_username": "Usuario RTMP (publicación)",
     "publish_password": "Contraseña RTMP (publicación)",
-    "dji_rtmp_help": "DJI Fly: pegá la URL arriba y, si la app pide usuario/contraseña por separado, usá los dos campos de publicación (no los del visor ni del enlace público). Alternativa: «Copiar URL con usuario/contraseña» (un solo campo).",
+    "dji_rtmp_help": "DJI Fly: pegá la URL arriba y, si la app pide usuario/contraseña por separado, usá los dos campos de publicación (no los del visor ni del enlace público). Para un solo campo, usá «Copiar URL RTMP (todo en un campo)»: incluye ?user= y &pass= (compatible con MediaMTX).",
     "copy_rtmp": "Copiar URL RTMP",
     "copy_rtmp_with_auth": "Copiar URL RTMP (todo en un campo)",
     "rtmp_copied": "URL RTMP copiada",
