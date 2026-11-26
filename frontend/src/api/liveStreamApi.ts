@@ -3,6 +3,29 @@ import { apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
+export type HlsLiveAuthMode = 'basic' | 'session' | 'none';
+
+/** Prefix relative API playlist paths with ``VITE_API_BASE_URL``. */
+export function resolveLiveStreamPlaylistUrl(playlistUrl: string): string {
+  const trimmed = playlistUrl.trim();
+  if (trimmed.startsWith('/')) {
+    const base = API_BASE.replace(/\/$/, '');
+    return `${base}${trimmed}`;
+  }
+  return trimmed;
+}
+
+export function inferLiveStreamAuthMode(playlistPathOrUrl: string): HlsLiveAuthMode {
+  const url = playlistPathOrUrl.trim();
+  if (url.includes('/api/public/live/') && url.includes('/hls/')) {
+    return 'none';
+  }
+  if (url.includes('/live-stream/hls/')) {
+    return 'session';
+  }
+  return 'basic';
+}
+
 export type LiveStreamPresence =
   | 'no_stream'
   | 'connecting'

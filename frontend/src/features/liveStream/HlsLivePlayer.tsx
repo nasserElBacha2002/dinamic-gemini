@@ -1,10 +1,14 @@
 import { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
+import { getStoredToken } from '../../features/auth/storage';
+
+export type HlsLiveAuthMode = 'basic' | 'session' | 'none';
 
 export interface HlsLivePlayerProps {
   playlistUrl: string;
-  username: string;
-  password: string;
+  authMode?: HlsLiveAuthMode;
+  username?: string;
+  password?: string;
   onPresenceChange?: (presence: string) => void;
 }
 
@@ -21,8 +25,9 @@ function buildAuthedPlaylistUrl(playlistUrl: string, username: string, password:
 
 export default function HlsLivePlayer({
   playlistUrl,
-  username,
-  password,
+  authMode = 'basic',
+  username = '',
+  password = '',
   onPresenceChange,
 }: HlsLivePlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -36,10 +41,14 @@ export default function HlsLivePlayer({
     const video = videoRef.current;
     if (!video || !playlistUrl) return undefined;
 
-    const authHeader = `Basic ${btoa(`${username}:${password}`)}`;
+    const basicAuthHeader =
+      authMode === 'basic' && username
+        ? `Basic ${btoa(`${username}:${password}`)}`
+        : null;
+    const sessionToken = authMode === 'session' ? getStoredToken() : null;
     let hls: Hls | null = null;
     let cancelled = false;
-  let fatalRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+    let fatalRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const emit = (presence: string) => {
       if (!cancelled) {
@@ -54,9 +63,21 @@ export default function HlsLivePlayer({
       }
     };
 
+    const applyXhrAuth = (xhr: XMLHttpRequest) => {
+      if (basicAuthHeader) {
+        xhr.setRequestHeader('Authorization', basicAuthHeader);
+      } else if (sessionToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${sessionToken}`);
+      }
+    };
+
     const startNative = () => {
       video.crossOrigin = 'anonymous';
-      video.src = buildAuthedPlaylistUrl(playlistUrl, username, password);
+      if (authMode === 'basic' && username) {
+        video.src = buildAuthedPlaylistUrl(playlistUrl, username, password);
+      } else {
+        video.src = playlistUrl;
+      }
       emit('connecting');
       const onPlaying = () => emit('live');
       const onWaiting = () => emit('reconnecting');
@@ -80,11 +101,10 @@ export default function HlsLivePlayer({
     if (Hls.isSupported()) {
       hls = new Hls({
         enableWorker: true,
-        // LL-HLS + MPEG-TS from MediaMTX can play audio while video MSE stalls in Chrome.
         lowLatencyMode: false,
         liveBackBufferLength: 0,
         xhrSetup: (xhr) => {
-          xhr.setRequestHeader('Authorization', authHeader);
+          applyXhrAuth(xhr);
         },
       });
 
@@ -128,7 +148,6 @@ export default function HlsLivePlayer({
         if (cancelled || !data.fatal) return;
         recoverOrFail(data);
       });
-      // Prefer media playlist directly (avoids multivariant + LL quirks in some browsers).
       const sourceUrl = playlistUrl.endsWith('index.m3u8')
         ? playlistUrl.replace(/index\.m3u8$/, 'main_stream.m3u8')
         : playlistUrl;
@@ -153,7 +172,7 @@ export default function HlsLivePlayer({
       video.removeAttribute('src');
       video.load();
     };
-  }, [playlistUrl, username, password]);
+  }, [playlistUrl, authMode, username, password]);
 
   return (
     <video

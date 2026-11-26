@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+import urllib.error
+import urllib.parse
 
-from src.api.deps.live_stream import get_manage_live_stream_use_case
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
+
+from src.api.deps.live_stream import (
+    get_live_stream_hls_proxy_service,
+    get_manage_live_stream_use_case,
+)
 from src.api.deps.security import require_inventory_client_scope
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.live_stream_schemas import (
@@ -19,6 +26,7 @@ from src.api.schemas.live_stream_schemas import (
     PublicLiveGrantResponse,
 )
 from src.application.dto.access_principal import AccessPrincipal
+from src.application.services.live_stream_hls_proxy import LiveStreamHlsProxyService
 from src.application.use_cases.live_stream.manage_live_stream import ManageLiveStreamUseCase
 
 router = APIRouter(prefix="/{inventory_id}/live-stream")
@@ -90,6 +98,56 @@ def stop_live_stream(
         mediamtx_path=ch.mediamtx_path,
         publisher_kicked=result.publisher_kicked,
         status=_status_to_response(result.status),
+    )
+
+
+@router.get("/hls/{canonical_aisle_code}/{resource_path:path}")
+def proxy_inventory_hls(
+    inventory_id: str,
+    canonical_aisle_code: str,
+    resource_path: str,
+    principal: AccessPrincipal = Depends(require_inventory_client_scope),
+    use_case: ManageLiveStreamUseCase = Depends(get_manage_live_stream_use_case),
+    proxy: LiveStreamHlsProxyService = Depends(get_live_stream_hls_proxy_service),
+) -> Response:
+    if not proxy.enabled:
+        raise HTTPException(status_code=503, detail="HLS proxy is not configured")
+    try:
+        resolved, read_user, read_pass = use_case.resolve_hls_proxy_source(
+            inventory_id=inventory_id,
+            aisle_code=canonical_aisle_code,
+            principal=principal,
+        )
+    except Exception as exc:
+        reraise_if_mapped(exc)
+        raise
+    if resolved.canonical_aisle_code != canonical_aisle_code.strip():
+        raise HTTPException(status_code=404, detail="Unknown live aisle for this inventory")
+    inv = urllib.parse.quote(inventory_id, safe="")
+    aisle = urllib.parse.quote(resolved.canonical_aisle_code, safe="")
+    proxy_prefix = f"/api/v3/inventories/{inv}/live-stream/hls/{aisle}"
+    try:
+        result = proxy.fetch(
+            mediamtx_path=resolved.mediamtx_path,
+            resource=resource_path,
+            read_username=read_user,
+            read_password=read_pass,
+            proxy_entry_prefix=proxy_prefix,
+        )
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise HTTPException(status_code=404, detail="HLS resource not found") from exc
+        if exc.code in (401, 403):
+            raise HTTPException(status_code=502, detail="HLS upstream unauthorized") from exc
+        raise HTTPException(status_code=502, detail="HLS upstream error") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid HLS resource path") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="HLS upstream unavailable") from exc
+    return Response(
+        content=result.body,
+        media_type=result.content_type,
+        headers={"Cache-Control": result.cache_control},
     )
 
 

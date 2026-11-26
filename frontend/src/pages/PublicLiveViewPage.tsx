@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
-import { getPublicLivePlayback, type LiveStreamPresence } from '../api/liveStreamApi';
+import {
+  getPublicLivePlayback,
+  inferLiveStreamAuthMode,
+  resolveLiveStreamPlaylistUrl,
+  type LiveStreamPresence,
+} from '../api/liveStreamApi';
 import { ErrorAlert } from '../components/ui';
 import HlsLivePlayer from '../features/liveStream/HlsLivePlayer';
 
@@ -15,8 +20,7 @@ export default function PublicLiveViewPage() {
   const [publishBlocked, setPublishBlocked] = useState(false);
   const [playback, setPlayback] = useState<{
     url: string;
-    user: string;
-    pass: string;
+    authMode: ReturnType<typeof inferLiveStreamAuthMode>;
   } | null>(null);
 
   useEffect(() => {
@@ -30,9 +34,8 @@ export default function PublicLiveViewPage() {
       .then((res) => {
         if (cancelled) return;
         setPlayback({
-          url: res.hls_playlist_url,
-          user: res.view_username,
-          pass: res.view_password,
+          url: resolveLiveStreamPlaylistUrl(res.hls_playlist_url),
+          authMode: inferLiveStreamAuthMode(res.hls_playlist_url),
         });
         setPresence(res.presence);
         setPublishBlocked(res.publish_blocked);
@@ -76,8 +79,7 @@ export default function PublicLiveViewPage() {
       </Typography>
       <HlsLivePlayer
         playlistUrl={playback.url}
-        username={playback.user}
-        password={playback.pass}
+        authMode={playback.authMode}
         onPresenceChange={(p) => setPresence(p as LiveStreamPresence)}
       />
     </Box>

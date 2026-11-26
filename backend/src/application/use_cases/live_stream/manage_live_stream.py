@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import urllib.parse
 from dataclasses import dataclass
 from datetime import timedelta
 from uuid import uuid4
@@ -99,6 +100,7 @@ class ManageLiveStreamUseCase:
         fixed_publish_password: str = "",
         fixed_read_username: str = "",
         fixed_read_password: str = "",
+        mediamtx_hls_internal_url: str = "",
     ) -> None:
         self._inventory_repo = inventory_repo
         self._access = InventoryAccessPolicy(inventory_repo, aisle_repo=aisle_repo)
@@ -120,6 +122,11 @@ class ManageLiveStreamUseCase:
         self._fixed_publish_password = fixed_publish_password or ""
         self._fixed_read_user = (fixed_read_username or "").strip()
         self._fixed_read_password = fixed_read_password or ""
+        self._mediamtx_hls_internal = (mediamtx_hls_internal_url or "").strip().rstrip("/")
+
+    @property
+    def hls_proxy_enabled(self) -> bool:
+        return bool(self._mediamtx_hls_internal)
 
     def _resolve_channel_credentials(
         self,
@@ -233,7 +240,11 @@ class ManageLiveStreamUseCase:
             publish_password=publish_password,
             read_username=read_user,
             read_password=read_password,
-            hls_playlist_url=self._build_hls_url(resolved.mediamtx_path),
+            hls_playlist_url=self._build_viewer_hls_playlist_url(
+                inventory_id=resolved.inventory_id,
+                canonical_aisle_code=resolved.canonical_aisle_code,
+                mediamtx_path=resolved.mediamtx_path,
+            ),
             status=status,
         )
 
@@ -327,11 +338,61 @@ class ManageLiveStreamUseCase:
         status = self._channel_status(mediamtx_path=resolved.mediamtx_path, creds=creds)
         return (
             resolved,
-            self._build_hls_url(resolved.mediamtx_path),
+            self._build_viewer_hls_playlist_url(
+                inventory_id=resolved.inventory_id,
+                canonical_aisle_code=resolved.canonical_aisle_code,
+                mediamtx_path=resolved.mediamtx_path,
+            ),
             creds.read_username,
             read_password,
             status,
         )
+
+    def resolve_hls_proxy_source(
+        self,
+        *,
+        inventory_id: str,
+        aisle_code: str,
+        principal: AccessPrincipal,
+    ) -> tuple[ResolvedLiveChannel, str, str]:
+        """Return channel + read credentials for an authenticated HLS proxy request."""
+        self._require_enabled()
+        self._access.require_inventory(inventory_id, principal)
+        resolved = self._resolver.resolve(inventory_id=inventory_id, aisle_code=aisle_code)
+        creds = self._live_repo.get_channel_credentials(
+            inventory_id=resolved.inventory_id, channel_slug=resolved.channel_slug
+        )
+        if creds is None:
+            from src.application.errors import LiveStreamNotPreparedError
+
+            raise LiveStreamNotPreparedError("Live channel has not been prepared for this aisle")
+        inventory = self._inventory_repo.get_by_id(resolved.inventory_id)
+        inv_name = inventory.name if inventory is not None else ""
+        _, _, _, read_password = self._resolve_channel_credentials(
+            inv_name=inv_name,
+            resolved=resolved,
+        )
+        return resolved, creds.read_username, read_password
+
+    def resolve_public_hls_proxy_source(
+        self, *, token: str
+    ) -> tuple[str, str, str]:
+        """Return mediamtx_path, view_username, view_password for public proxy."""
+        self._require_enabled()
+        grant = self._live_repo.get_view_grant_by_token_hash(hash_public_token(token))
+        if grant is None:
+            from src.application.errors import LiveStreamGrantNotFoundError
+
+            raise LiveStreamGrantNotFoundError("Invalid or unknown public live link")
+        now = self._clock.now()
+        if grant.revoked_at is not None or grant.expires_at <= now:
+            from src.application.errors import LiveStreamGrantNotFoundError
+
+            raise LiveStreamGrantNotFoundError("Public live link is expired or revoked")
+        view_password = derive_public_grant_password(
+            server_secret=self._server_secret, grant_id=grant.id
+        )
+        return grant.mediamtx_path, grant.view_username, view_password
 
     def create_public_grant(
         self,
@@ -440,7 +501,10 @@ class ManageLiveStreamUseCase:
         status = self._channel_status(mediamtx_path=grant.mediamtx_path, creds=channel_creds)
         return PublicLivePlaybackTicket(
             presence=status.presence,
-            hls_playlist_url=self._build_hls_url(grant.mediamtx_path),
+            hls_playlist_url=self._build_public_viewer_hls_playlist_url(
+                token=token,
+                mediamtx_path=grant.mediamtx_path,
+            ),
             view_username=grant.view_username,
             view_password=view_password,
             expires_at=grant.expires_at,
@@ -450,6 +514,28 @@ class ManageLiveStreamUseCase:
     def _build_rtmp_url(self, mediamtx_path: str) -> str:
         return f"{self._rtmp_base}/{mediamtx_path.strip().lstrip('/')}"
 
-    def _build_hls_url(self, mediamtx_path: str) -> str:
+    def _build_direct_hls_url(self, mediamtx_path: str) -> str:
         path = mediamtx_path.strip().lstrip("/")
         return f"{self._hls_base}/{path}/index.m3u8"
+
+    def _build_viewer_hls_playlist_url(
+        self,
+        *,
+        inventory_id: str,
+        canonical_aisle_code: str,
+        mediamtx_path: str,
+    ) -> str:
+        if self.hls_proxy_enabled:
+            inv = urllib.parse.quote(inventory_id, safe="")
+            aisle = urllib.parse.quote(canonical_aisle_code, safe="")
+            return (
+                f"/api/v3/inventories/{inv}/live-stream/hls/"
+                f"{aisle}/main_stream.m3u8"
+            )
+        return self._build_direct_hls_url(mediamtx_path)
+
+    def _build_public_viewer_hls_playlist_url(self, *, token: str, mediamtx_path: str) -> str:
+        if self.hls_proxy_enabled:
+            tok = urllib.parse.quote(token, safe="")
+            return f"/api/public/live/{tok}/hls/main_stream.m3u8"
+        return self._build_direct_hls_url(mediamtx_path)

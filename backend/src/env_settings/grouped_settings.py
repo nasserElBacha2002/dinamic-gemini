@@ -2920,6 +2920,14 @@ class LiveStreamSettings(BaseModel):
         default_factory=lambda: (os.getenv("LIVE_STREAM_MEDIAMTX_API_URL", "") or "").strip(),
         description="Optional MediaMTX API for path status (localhost only). Env: LIVE_STREAM_MEDIAMTX_API_URL.",
     )
+    live_stream_mediamtx_hls_url: str = Field(
+        default_factory=lambda: (os.getenv("LIVE_STREAM_MEDIAMTX_HLS_URL", "") or "").strip(),
+        description=(
+            "Internal MediaMTX HLS origin for API-side proxy (e.g. http://dinamic-mediamtx-poc:8888). "
+            "When set, browser clients use same-origin HLS via /live-stream/hls. "
+            "Env: LIVE_STREAM_MEDIAMTX_HLS_URL."
+        ),
+    )
     mediamtx_http_auth_secret: str = Field(
         default_factory=lambda: (os.getenv("MEDIAMTX_HTTP_AUTH_SECRET", "") or "").strip(),
         description="Shared secret header for MediaMTX → FastAPI auth callback. Env: MEDIAMTX_HTTP_AUTH_SECRET.",

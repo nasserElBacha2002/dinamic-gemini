@@ -6,6 +6,7 @@ from fastapi import Depends
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, InventoryRepository
+from src.application.services.live_stream_hls_proxy import LiveStreamHlsProxyService
 from src.application.services.live_stream_mediamtx_control import LiveStreamMediaMtxControl
 from src.application.services.live_stream_status_service import LiveStreamStatusService
 from src.application.services.mediamtx_auth_service import MediaMtxAuthService
@@ -45,6 +46,14 @@ def get_manage_live_stream_use_case(
         fixed_publish_password=getattr(settings, "live_stream_fixed_publish_password", ""),
         fixed_read_username=getattr(settings, "live_stream_fixed_read_username", ""),
         fixed_read_password=getattr(settings, "live_stream_fixed_read_password", ""),
+        mediamtx_hls_internal_url=getattr(settings, "live_stream_mediamtx_hls_url", ""),
+    )
+
+
+def get_live_stream_hls_proxy_service() -> LiveStreamHlsProxyService:
+    settings = load_settings()
+    return LiveStreamHlsProxyService(
+        mediamtx_hls_base_url=getattr(settings, "live_stream_mediamtx_hls_url", None),
     )
 
 

@@ -14,7 +14,9 @@ import { useTranslation } from 'react-i18next';
 import {
   createPublicLiveGrant,
   getLiveStreamStatus,
+  inferLiveStreamAuthMode,
   prepareLiveStream,
+  resolveLiveStreamPlaylistUrl,
   revokePublicLiveGrant,
   stopLiveStream,
   type LiveStreamPrepareResponse,
@@ -81,6 +83,18 @@ export default function LiveStreamDialog({
     () => t(presenceLabelKey[presence] ?? presenceLabelKey.no_stream),
     [presence, t],
   );
+
+  const viewerPlayback = useMemo(() => {
+    if (!prepared) return null;
+    const playlistUrl = resolveLiveStreamPlaylistUrl(prepared.hls_playlist_url);
+    const authMode = inferLiveStreamAuthMode(prepared.hls_playlist_url);
+    return {
+      playlistUrl,
+      authMode,
+      username: authMode === 'basic' ? prepared.read_username : undefined,
+      password: authMode === 'basic' ? prepared.read_password : undefined,
+    };
+  }, [prepared]);
 
   const refreshStatus = useCallback(async () => {
     if (!aisleCode.trim()) return;
@@ -258,12 +272,15 @@ export default function LiveStreamDialog({
             <Typography variant="subtitle2" sx={{ mt: 1 }}>
               {t('live_stream.viewer_section')}
             </Typography>
-            <HlsLivePlayer
-              playlistUrl={prepared.hls_playlist_url}
-              username={prepared.read_username}
-              password={prepared.read_password}
-              onPresenceChange={(p) => setPresence(p as LiveStreamPresence)}
-            />
+            {viewerPlayback ? (
+              <HlsLivePlayer
+                playlistUrl={viewerPlayback.playlistUrl}
+                authMode={viewerPlayback.authMode}
+                username={viewerPlayback.username}
+                password={viewerPlayback.password}
+                onPresenceChange={(p) => setPresence(p as LiveStreamPresence)}
+              />
+            ) : null}
           </Box>
         ) : null}
         {lastPublicUrl ? (
