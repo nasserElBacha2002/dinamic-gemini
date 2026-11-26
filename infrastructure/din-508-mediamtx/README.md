@@ -16,6 +16,7 @@ cp .env.example .env
 # Editar .env: contraseñas locales (no versionar)
 
 python3 scripts/render_mediamtx_config.py
+bash ../../backend/scripts/ensure_mediamtx_docker_network.sh
 docker compose build
 docker compose up -d
 docker compose ps

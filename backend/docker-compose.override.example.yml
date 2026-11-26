@@ -15,11 +15,7 @@ services:
   api:
     volumes:
       - ./secrets:/app/secrets:ro
-    networks:
-      - default
-      - mediamtx_poc
 
-networks:
-  mediamtx_poc:
-    external: true
-    name: dinamic-mediamtx-poc-net
+# MediaMTX shared network: prefer committed overlay (no duplicate config):
+#   docker-compose -f docker-compose.yml -f docker-compose.mediamtx-network.yml up -d
+# Or merge docker-compose.mediamtx-network.yml into this override on the server.

@@ -1,0 +1,21 @@
+# DIN-508 — join API to the shared MediaMTX bridge (production / OpenCloud deploy).
+# Does not affect local `docker-compose up` when this file is omitted.
+#
+# Usage on server:
+#   bash scripts/ensure_mediamtx_docker_network.sh
+#   docker-compose -f docker-compose.yml -f docker-compose.mediamtx-network.yml up -d --no-deps --build api
+#
+# Optional server copy: merge into docker-compose.override.yml (see docker-compose.override.example.yml).
+
+services:
+  api:
+    networks:
+      default: {}
+      mediamtx_poc:
+        aliases:
+          - dinamic-backend-api
+
+networks:
+  mediamtx_poc:
+    external: true
+    name: dinamic-mediamtx-poc-net

@@ -18,8 +18,13 @@ services:
     volumes:
       - ./generated/mediamtx.yml:/mediamtx.yml:ro
     command: ["/mediamtx.yml"]
+    # authHTTP → FastAPI on shared bridge (dinamic-backend-api) or host gateway fallback.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
-      - mediamtx_poc
+      mediamtx_poc:
+        aliases:
+          - dinamic-mediamtx-poc
     deploy:
       resources:
         limits:
@@ -51,5 +56,5 @@ services:
 
 networks:
   mediamtx_poc:
+    external: true
     name: dinamic-mediamtx-poc-net
-    driver: bridge

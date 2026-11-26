@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Attach the running API container to MediaMTX (DIN-508) for internal HLS + status API DNS.
+# Legacy fallback: attach API to MediaMTX when docker-compose.mediamtx-network.yml is not used.
+# Prefer declarative compose: ensure_mediamtx_docker_network.sh + docker-compose.mediamtx-network.yml.
 # Idempotent — safe to run after every compose up / deploy.
 set -euo pipefail
 

@@ -30,7 +30,7 @@
 # BACKEND_HOST_PORT on the server overrides.
 #
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
-#   cd backend → docker-compose down → build api → up -d → dev_deploy_db_migrate.sh
+#   cd backend → ensure MediaMTX network → selective api recreate → dev_deploy_db_migrate.sh
 #   check_deploy_secrets (host + container) → migrations (doctor skipped by default) → /health poll.
 #   Server-local backend/docker-compose.override.yml is preserved (not deleted on deploy).
 # git fetch origin must work non-interactively (deploy key or credentials on the server).
@@ -225,19 +225,29 @@ jobs:
             echo "==> Ensure data/output is writable by container appuser (uid 10001)..."
             bash scripts/ensure_output_volume_perms.sh "${REPO_ROOT}"
 
-            docker-compose down --remove-orphans || true
+            chmod +x scripts/ensure_mediamtx_docker_network.sh scripts/smoke_live_stream_infrastructure.sh \
+              scripts/attach_api_mediamtx_network.sh 2>/dev/null || true
+            echo "==> Ensure shared MediaMTX Docker network (DIN-508)..."
+            bash scripts/ensure_mediamtx_docker_network.sh
 
-            echo "Building backend image..."
-            docker-compose build api
+            COMPOSE_FILES=(-f docker-compose.yml)
+            if grep -qE '^[[:space:]]*LIVE_STREAM_ENABLED=(true|1|yes)' "${REPO_ROOT}/.env" 2>/dev/null; then
+              COMPOSE_FILES+=(-f docker-compose.mediamtx-network.yml)
+              echo "LIVE_STREAM_ENABLED — using docker-compose.mediamtx-network.yml"
+            fi
 
-            echo "Starting backend service (required before exec migrations)..."
-            docker-compose up -d
+            echo "Building backend image (API only; MediaMTX stack untouched)..."
+            docker-compose "${COMPOSE_FILES[@]}" build api
 
-            chmod +x scripts/attach_api_mediamtx_network.sh 2>/dev/null || true
-            echo "==> Attach API to MediaMTX Docker network (DIN-508 live stream)..."
-            bash scripts/attach_api_mediamtx_network.sh
+            if docker-compose "${COMPOSE_FILES[@]}" ps -q api 2>/dev/null | grep -q .; then
+              echo "Recreating API service without restarting dependencies..."
+              docker-compose "${COMPOSE_FILES[@]}" up -d --no-deps --build api
+            else
+              echo "First API start..."
+              docker-compose "${COMPOSE_FILES[@]}" up -d --build api
+            fi
 
-            docker-compose ps
+            docker-compose "${COMPOSE_FILES[@]}" ps
 
             echo "==> GCP secrets preflight (inside api container)..."
             bash scripts/check_deploy_secrets.sh container
@@ -262,8 +272,8 @@ jobs:
             fi
             echo "Local /health OK"
 
-            echo "==> Re-attach API to MediaMTX network after health (post-recreate)..."
-            bash scripts/attach_api_mediamtx_network.sh
+            echo "==> Live stream infrastructure smoke (DIN-508)..."
+            bash scripts/smoke_live_stream_infrastructure.sh
 
   public-smoke:
     name: Optional public /health
