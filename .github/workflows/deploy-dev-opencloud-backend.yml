@@ -29,8 +29,11 @@
 # appleboy/ssh-action wraps lines and breaks heredocs). Default host port 8001→container 8000;
 # BACKEND_HOST_PORT on the server overrides.
 #
+# IMPORTANT: GitHub Actions runs this workflow file from the repo DEFAULT BRANCH (main).
+# Server steps live in backend/scripts/opencloud_deploy_api.sh (pulled via origin/develop on the VPS).
+#
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
-#   cd backend → ensure MediaMTX network → selective api recreate → dev_deploy_db_migrate.sh
+#   bash backend/scripts/opencloud_deploy_api.sh
 #   check_deploy_secrets (host + container) → migrations (doctor skipped by default) → /health poll.
 #   Server-local backend/docker-compose.override.yml is preserved (not deleted on deploy).
 # git fetch origin must work non-interactively (deploy key or credentials on the server).
@@ -214,77 +217,10 @@ jobs:
             fi
             BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8001}"
             export BACKEND_HOST_PORT
-
             echo "Using backend host port: ${BACKEND_HOST_PORT}"
 
-            python3 "${REPO_ROOT}/backend/scripts/patch_compose_host_port.py" \
-              --compose "${REPO_ROOT}/backend/docker-compose.yml" \
-              --host-port "${BACKEND_HOST_PORT}"
-
-            cd "${REPO_ROOT}/backend"
-
-            chmod +x scripts/check_deploy_secrets.sh scripts/dev_deploy_db_migrate.sh scripts/ensure_output_volume_perms.sh 2>/dev/null || true
-            echo "==> GCP secrets preflight (host paths + optional compose override)..."
-            bash scripts/check_deploy_secrets.sh ensure-override
-            bash scripts/check_deploy_secrets.sh host
-
-            echo "==> Ensure data/output is writable by container appuser (uid 10001)..."
-            bash scripts/ensure_output_volume_perms.sh "${REPO_ROOT}"
-
-            chmod +x scripts/ensure_mediamtx_docker_network.sh scripts/smoke_live_stream_infrastructure.sh \
-              scripts/attach_api_mediamtx_network.sh 2>/dev/null || true
-            echo "==> Ensure shared MediaMTX Docker network (DIN-508)..."
-            bash scripts/ensure_mediamtx_docker_network.sh
-
-            COMPOSE_FILES=(-f docker-compose.yml)
-            if [ -f "${REPO_ROOT}/backend/docker-compose.override.yml" ]; then
-              COMPOSE_FILES+=(-f docker-compose.override.yml)
-            fi
-            if grep -qE '^[[:space:]]*LIVE_STREAM_ENABLED=(true|1|yes)' "${REPO_ROOT}/.env" 2>/dev/null; then
-              COMPOSE_FILES+=(-f docker-compose.mediamtx-network.yml)
-              echo "LIVE_STREAM_ENABLED — using docker-compose.mediamtx-network.yml"
-            fi
-            export COMPOSE_INTERACTIVE_NO=1
-
-            echo "Building backend image (API only; MediaMTX stack untouched)..."
-            docker-compose "${COMPOSE_FILES[@]}" build api
-
-            if docker-compose "${COMPOSE_FILES[@]}" ps -q api 2>/dev/null | grep -q .; then
-              echo "Recreating API service without restarting dependencies..."
-              docker-compose "${COMPOSE_FILES[@]}" rm -sf api 2>/dev/null || true
-              docker-compose "${COMPOSE_FILES[@]}" up -d --no-deps --build api
-            else
-              echo "First API start..."
-              docker-compose "${COMPOSE_FILES[@]}" up -d --build api
-            fi
-
-            docker-compose "${COMPOSE_FILES[@]}" ps
-
-            echo "==> GCP secrets preflight (inside api container)..."
-            bash scripts/check_deploy_secrets.sh container
-
-            export AUTO_APPLY_DEV_MIGRATIONS="${AUTO_APPLY_DEV_MIGRATIONS:-true}"
-            export RUN_MIGRATION_DOCTOR_ON_DEPLOY="${RUN_MIGRATION_DOCTOR_ON_DEPLOY:-false}"
-            echo "Running DEV database migrations (AUTO_APPLY_DEV_MIGRATIONS=${AUTO_APPLY_DEV_MIGRATIONS}, RUN_MIGRATION_DOCTOR_ON_DEPLOY=${RUN_MIGRATION_DOCTOR_ON_DEPLOY})..."
-            bash "${REPO_ROOT}/backend/scripts/dev_deploy_db_migrate.sh"
-            ok=0
-            for i in $(seq 1 45); do
-              if curl -sfS --connect-timeout 5 --max-time 15 "http://127.0.0.1:${BACKEND_HOST_PORT}/health" >/dev/null; then
-                ok=1
-                break
-              fi
-              echo "Local /health attempt ${i}/45 not ready on port ${BACKEND_HOST_PORT}; sleeping 3s..."
-              sleep 3
-            done
-            if [ "${ok}" -ne 1 ]; then
-              echo "ERROR: GET http://127.0.0.1:${BACKEND_HOST_PORT}/health did not succeed within ~135s (45 attempts x 3s; allow time after Uvicorn binds for app import/DB)." >&2
-              echo "Hint: cd ${REPO_ROOT}/backend && docker-compose ps && docker-compose logs --tail=100 api" >&2
-              exit 1
-            fi
-            echo "Local /health OK"
-
-            echo "==> Live stream infrastructure smoke (DIN-508)..."
-            bash scripts/smoke_live_stream_infrastructure.sh
+            chmod +x "${REPO_ROOT}/backend/scripts/opencloud_deploy_api.sh"
+            bash "${REPO_ROOT}/backend/scripts/opencloud_deploy_api.sh"
 
   public-smoke:
     name: Optional public /health
